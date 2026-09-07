@@ -77,3 +77,37 @@ func TestMandatoryApplicabilityCannotBeSkippedByOmittingPins(t *testing.T) {
 		t.Fatalf("qualified policy missing: %+v %v", p, err)
 	}
 }
+
+func TestNonoverlappingInstructionPinsDoNotCreatePolicyConflict(t *testing.T) {
+	ctx := context.Background()
+	op, root := testOperator(t)
+	for _, dimension := range []string{"revision", "validity"} {
+		t.Run(dimension, func(t *testing.T) {
+			repo := uuid.NewString()
+			past := time.Now().Add(-time.Hour)
+			now := time.Now().Add(-time.Minute)
+			left, right := &Applicability{Revision: strings.Repeat("a", 40)}, &Applicability{Revision: strings.Repeat("b", 40)}
+			if dimension == "validity" {
+				left = &Applicability{ValidFrom: &past, ValidUntil: &now}
+				right = &Applicability{ValidFrom: &now}
+			}
+			for i, pins := range []*Applicability{left, right} {
+				d := projectNote(repo)
+				d.Kind = "instruction"
+				d.Pins = pins
+				if i == 0 {
+					d.Body = "Use the prior workflow"
+				} else {
+					d.Body = "Use the current workflow"
+				}
+				if _, err := op.Issue(ctx, IssueRequest{uuid.NewString(), d, root.ID, true, false, "workflow", "Issue distinct applicability fixture"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			pkg, err := op.Compile(ctx, CompileRequest{Context: &ContextPins{Revision: strings.Repeat("b", 40)}, RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
+			if err != nil || len(pkg.Semantic.Selected) != 1 || pkg.Semantic.Selected[0].Record.Body != "Use the current workflow" {
+				t.Fatalf("nonoverlapping instructions conflicted: %+v %v", pkg, err)
+			}
+		})
+	}
+}

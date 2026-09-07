@@ -19,10 +19,36 @@ is preserved; old retained text is not purged.
 
 Retraction impact covers all versions and direct uses, with a 1,000-use refusal
 limit. Cross-record dependency impact and durable hard-refusal explanations remain
-open. The generated demand product and record-specific usefulness join remain
-unimplemented. See roadmap R1–R5 for completion boundaries and the
+open. The observation and generated-demand additions below now implement a bounded
+part of that loop. See roadmap R1–R5 for completion boundaries and the
 [repair verification](verification/contract-repairs-2026-09-07.md) for tests and
 local installation evidence.
+
+## Observation, retrieval and recovery additions — 2026-09-07
+
+Migrations 006–012 add versioned task assessments, declared run bindings, usage
+coverage, task-close delegate findings, currentness pins, reviewed failure/recovery
+proposals, unsigned audit checkpoints and bounded index expansion. The Unix API
+establishes separate authenticated agent/observer channels. Record-specific use
+reports reduce repeated observations before joining outcomes and preserve unknowns.
+
+Semantic v3 supports declared currentness; v4 additionally seals compact indexes.
+Historical recompilation rebuilds selection from retained candidate facts and
+version bytes, verifies the query digest and compares the original seal. Saved v1
+receipts still replay. Body pulls recheck eligibility and mandatory bootstrap on
+retries and spend per-retrieval credits transactionally. The original index
+exposure and later body pull remain distinct observations.
+
+Backups now retain a separately usable expected audit-set catalog. The restore
+drill validates it, recompiles both body packages and indexes, and fences restored
+handles. Checkpoints cover emitted C/governance metadata; D operations and newer
+revocation/deletion reconciliation are still missing.
+
+A native Striatum coverage trial uses three accepted clauses and 12 committed
+subjects in a disposable store. All 12 read sets reconstruct their seals. This
+establishes coverage/reproducibility only; broad lexical matches do not establish
+relevance, causal benefit, or avoided recurring failures. No live Striatum lane
+or model dispatch was changed. See [verification](verification/roadmap-build-2026-09-07.md).
 
 ## Working paths
 

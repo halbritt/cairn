@@ -101,3 +101,23 @@ func applicabilityReason(p *Applicability, context *ContextPins, now time.Time) 
 	}
 	return ""
 }
+
+// False means the declared applicability sets cannot intersect. Missing pins
+// are unconstrained, so they do not justify suppressing a potential conflict.
+func applicabilityOverlaps(a, b *Applicability) bool {
+	if a == nil || b == nil {
+		return true
+	}
+	for _, pair := range [][2]string{{a.Revision, b.Revision}, {a.WorkspaceSHA256, b.WorkspaceSHA256}, {a.TaskClass, b.TaskClass}, {a.BindingID, b.BindingID}, {a.CapabilityID, b.CapabilityID}} {
+		if pair[0] != "" && pair[1] != "" && pair[0] != pair[1] {
+			return false
+		}
+	}
+	if a.ValidUntil != nil && b.ValidFrom != nil && !b.ValidFrom.Before(*a.ValidUntil) {
+		return false
+	}
+	if b.ValidUntil != nil && a.ValidFrom != nil && !a.ValidFrom.Before(*b.ValidUntil) {
+		return false
+	}
+	return true
+}

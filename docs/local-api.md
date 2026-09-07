@@ -71,3 +71,30 @@ include it as a permitted dispatch input, retain the Cairn receipt ID beside the
 host attempt identity, and forward host terminal/task-state observations. Task
 acceptance must come from the host's actual gate evidence; a backend process exit
 cannot set it. No live Striatum lane was altered by this implementation.
+
+## User services
+
+The units under `deploy/` manage this repository's dedicated PostgreSQL cluster
+and Unix API. They assume the checkout is `~/git/cairn`, the installed binary is
+`~/.local/bin/cairn`, and the store is `~/.local/share/cairn`. Adjust those paths
+before installation if your layout differs. The API requires the store service;
+neither unit uses the host PostgreSQL cluster or opens a TCP listener.
+
+After building/installing the binary and creating the owner-only identity/token
+files described above, install both units into `~/.config/systemd/user/` and run
+`systemctl --user daemon-reload`. If the dedicated cluster was started manually,
+back it up, then stop it with `bash scripts/local-store.sh stop` before starting
+it under systemd. Enable/start `cairn-api.service`; it brings up `cairn-store.service`.
+The store service uses `CAIRN_BINARY` to run migrations with the installed binary.
+
+```sh
+systemctl --user enable --now cairn-api.service
+systemctl --user status cairn-api.service cairn-store.service
+journalctl --user -u cairn-api.service -n 30
+```
+
+The API runs for the user-manager lifetime. Whether that includes time before
+login or after logout depends on the machine's existing user lingering policy.
+Stopping the API leaves the dedicated store running. Stop the store service to
+shut down both. Unit files, source code and generated credentials have separate
+lifecycles; never commit the token/config files.

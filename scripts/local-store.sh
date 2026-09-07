@@ -3,6 +3,7 @@
 set -euo pipefail
 umask 077
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
+cairn_binary="${CAIRN_BINARY:-$project_dir/bin/cairn}"
 store_dir="${CAIRN_HOME:-$HOME/.local/share/cairn}"
 pg_bin="${CAIRN_PG_BIN:-$(pg_config --bindir)}"
 case "$store_dir" in /*) ;; *) printf '%s\n' 'CAIRN_HOME must be absolute' >&2; exit 2;; esac
@@ -32,7 +33,7 @@ EOF
     fi
     exists="$("$pg_bin/psql" -h "$store_dir/socket" -d postgres -Atqc "SELECT 1 FROM pg_database WHERE datname='cairn'")"
     if [[ "$exists" != 1 ]]; then "$pg_bin/createdb" -h "$store_dir/socket" cairn; fi
-    CAIRN_DATABASE_URL="host=$store_dir/socket dbname=cairn sslmode=disable" "$project_dir/bin/cairn" migrate
+    CAIRN_DATABASE_URL="host=$store_dir/socket dbname=cairn sslmode=disable" "$cairn_binary" migrate
     printf '%s\n' "Cairn store ready at $store_dir/socket"
     ;;
 stop)
@@ -45,7 +46,7 @@ status)
 backup)
     mkdir -p "$store_dir/backups"
     backup="$store_dir/backups/cairn-$(date -u +%Y%m%dT%H%M%S)-$$.dump"
-    python3 - "$backup" <<'PYREQ' | CAIRN_DATABASE_URL="host=$store_dir/socket dbname=cairn sslmode=disable" "$project_dir/bin/cairn" checkpoint >"$backup.checkpoint.pending"
+    python3 - "$backup" <<'PYREQ' | CAIRN_DATABASE_URL="host=$store_dir/socket dbname=cairn sslmode=disable" "$cairn_binary" checkpoint >"$backup.checkpoint.pending"
 import json, pathlib, sys, uuid
 print(json.dumps({'request_id':str(uuid.uuid4()), 'export_id':pathlib.Path(sys.argv[1]).name}))
 PYREQ

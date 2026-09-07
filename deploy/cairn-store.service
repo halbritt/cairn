@@ -1,0 +1,16 @@
+[Unit]
+Description=Cairn dedicated local PostgreSQL store
+
+[Service]
+Type=forking
+Environment=CAIRN_BINARY=%h/.local/bin/cairn
+ExecStart=/bin/bash %h/git/cairn/scripts/local-store.sh start
+ExecStop=/bin/bash %h/git/cairn/scripts/local-store.sh stop
+PIDFile=%h/.local/share/cairn/data/postmaster.pid
+TimeoutStartSec=90
+TimeoutStopSec=60
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

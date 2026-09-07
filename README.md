@@ -5,8 +5,8 @@ evidence-backed claims, and authorized instructions in PostgreSQL, then compiles
 a bounded context package before a task starts.
 
 **Status: usable local alpha.** Remember/search, manual authority and evidence,
-context compilation, process wrapping, replay, impact inspection, and outcome
-reports work. OpenCode 1.18.21 was probed through the wrapper against an isolated
+context compilation, process wrapping, historical recompilation, authenticated
+local access, bounded index/pull, evidence-attached review, and outcome joins work. OpenCode 1.18.21 was probed through the wrapper against an isolated
 local fixture endpoint. Runtime mediation and measured model benefit are not
 established.
 
@@ -176,7 +176,8 @@ The integration target starts and removes its own temporary PostgreSQL cluster
 and uses Go's race detector. It covers migration from the original schema,
 concurrent edits/retries, grant revocation races, evidence and destination gates,
 conflicts, package seals, process launch/timeout, and duplicate-launch refusal.
-The lifecycle target checks startup, backup, restore, exact replay, and restart.
+The lifecycle target checks startup, catalog-backed backup/restore, replay,
+recompilation, restored-handle invalidation, and restart.
 Neither target touches the running local or host PostgreSQL instance.
 
 To repeat the real OpenCode ingress probe without provider credentials:
@@ -192,10 +193,9 @@ need an enabled Go module proxy; dependencies and CI actions are pinned.
 ## Remaining work
 
 The [decision record](docs/decisions/0002-local-memory-loop.md) settles the
-operating defaults. Remaining implementation includes authenticated agent
-transport integration into real host lanes, broader scope matching, evidence lifecycle jobs,
-redaction/deletion effects and retention, richer conflict delivery, expansion
-credits, real-history usefulness trials, and Striatum orchestration wiring.
+operating defaults. Remaining implementation includes real host lane integration, broader intent
+matching, evidence lifecycle jobs,
+redaction/deletion effects and retention, richer conflict delivery, host-level context budgets, real-history usefulness trials, and Striatum orchestration wiring.
 No automatic grooming, learned ranking, or automatic promotion is running.
 Do not retain secrets until redaction and recovery obligations are implemented.
 

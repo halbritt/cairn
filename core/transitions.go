@@ -163,6 +163,13 @@ func openPolicyConflicts(ctx context.Context, tx pgx.Tx, record Record, key stri
 		return err
 	}
 	for _, m := range members {
+		other, err := readRecord(ctx, tx, m.ID)
+		if err != nil {
+			return err
+		}
+		if !applicabilityOverlaps(record.Pins, other.Pins) {
+			continue
+		}
 		if _, err = grantChain(ctx, tx, m.GrantID, false); Code(err) == "AUTHORITY_DENIED" {
 			continue
 		}
