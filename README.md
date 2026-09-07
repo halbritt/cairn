@@ -1,91 +1,185 @@
 # Cairn
 
-Cairn is a local memory subsystem for agents. It aims to carry useful, current
-knowledge between runs while keeping ordinary notes, evidence-backed claims,
-and binding instructions distinct.
+Cairn carries useful, scoped memory between agent runs. It stores ordinary notes,
+evidence-backed claims, and authorized instructions in PostgreSQL, then compiles
+a bounded context package before a task starts.
 
-**Status: experimental foundation; part of Stage 1.** The PostgreSQL store and
-local JSON CLI work. The context compiler, authority transitions, evidence
-resolver, and OpenCode wrapper are still to be built. This version is for
-synthetic fixtures and development, not production memory or secrets.
+**Status: usable local alpha.** Remember/search, manual authority and evidence,
+context compilation, process wrapping, replay, impact inspection, and outcome
+reports work. OpenCode 1.18.21 was probed through the wrapper against an isolated
+local fixture endpoint. Runtime mediation and measured model benefit are not
+established.
 
-See the [design evaluation and next steps](docs/design-review.md) and the
-[source design](docs/sources/agent-memory/design/agent-memory-design.md).
+## Get started
 
-## Run the verified development path
-
-Requires Go 1.25 or later and PostgreSQL 16 or later, including `initdb`, `pg_ctl`,
-and `createdb`. Run as an ordinary user; PostgreSQL refuses to run as root.
+Requires Go 1.25+, PostgreSQL 16+ client/server binaries, Bash, Python 3, and
+`flock`. Run as an ordinary user. The local store uses its own private Unix
+socket and opens no TCP listener.
 
 ```sh
 make build
+bash scripts/local-store.sh start
+bin/cairn remember 'When changing Cairn storage, run make test-integration.'
+bin/cairn search 'changing storage'
+bin/cairn run --prompt 'Inspect the supplied note' -- /bin/cat
+bin/cairn report "$PWD"
+```
+
+The example wraps `cat`, so you can inspect the exact input without a model or
+provider credentials. The repository defaults to the current directory. Notes
+created by `remember` apply to all tasks and runs in that repository; empty scope
+bindings are never treated as wildcards.
+
+The default database and run artifacts live under `~/.local/share/cairn`.
+`CAIRN_HOME` changes that directory. `CAIRN_DATABASE_URL` selects an existing
+**dedicated Cairn database** for the CLI; it does not redirect the local-store
+script. Use `CAIRN_PG_BIN` to select PostgreSQL binaries when necessary.
+
+```sh
+bash scripts/local-store.sh status
+bash scripts/local-store.sh backup
+bash scripts/local-store.sh stop
+```
+
+`start` also applies checksummed forward migrations. Back up before upgrading an
+existing store. The database retains captured evidence bytes and semantic
+packages, so a PostgreSQL backup covers those. Run-directory copies require
+separate retention accounting. No backup rotation, timer, or automatic deletion
+is enabled.
+
+## Use an agent harness
+
+For a remote model, explicitly allow a note to be delivered outside the local
+machine when you create it:
+
+```sh
+bin/cairn remember --shareable 'Run make test-integration for storage changes.'
+bin/cairn run --destination hosted --carrier argv \
+  --query 'storage tests' --prompt 'Review the storage changes' -- \
+  /path/to/opencode run -m provider/model
+```
+
+`run` appends the compiled context and task to the command for `argv`, or writes
+it to the command's stdin for `stdin`. It executes argv directly, without a
+shell. Use `--dir` for the process working directory and `--repo` for memory
+scope when they differ. Only shareable memory reaches the hosted package.
+The command's own filesystem/network access is outside this memory filter.
+
+The `--tokens` value is the actual input room you reserve for memory after
+allowing for the task prompt, tool schemas, session history, and output. Default:
+32,000. The compiler limits optional memory to 10% of that room, capped at 6,000,
+and counts UTF-8 bytes as a conservative token upper bound. Required instructions
+must fit completely. Unsupported mandatory runtime enforcement blocks launch.
+
+Process output streams to stdout/stderr. The final Cairn receipt envelope goes
+to stderr. Cairn records process exit, timing, and output digests, without keeping
+raw model outputs. Per-run `context.txt` and `outcome.json` live in the owner-only
+run directory named in the receipt. A failed DB write retains
+`outcome.pending.json` for `cairn recover-run RECEIPT_UUID` recovery. Do not retry a
+process blindly: the same compile request UUID cannot launch twice.
+
+The wrapper records supplied context as `available`. The separate OpenCode probe
+established model-request contact for its tested fixture. Neither observation
+proves obedience, internal tool coverage, compaction behavior, or task acceptance.
+User native-memory files are left in place and their influence is declared
+unisolated.
+
+## Inspect memory and outcomes
+
+```sh
+bin/cairn list "$PWD"
+bin/cairn get RECORD_UUID
+bin/cairn search --purpose planning 'placement or planning question'
+bin/cairn impact RECORD_UUID
+bin/cairn replay RECEIPT_UUID
+bin/cairn docket "$PWD"
+bin/cairn report "$PWD"
+```
+
+Planning, placement, capability, and security retrieval excludes Class A notes.
+Class B requires retained supporting evidence and valid authority. A revoked
+parent grant invalidates its descendants at the next compile. Class C
+instructions are issued through a separate authorized path. Disputed optional
+material is omitted whole; binding conflicts refuse compilation.
+
+`replay` is labelled historical and verifies the retained canonical package and
+BLAKE3 seal. It cannot authorize a fresh delivery. `impact` reports exposure, with
+pagination/truncation metadata; it does not claim causal influence. The report
+keeps exit-zero observations separate from unknown task outcomes.
+
+The docket surfaces attribution contradictions, evidence-unavailable B records,
+and launches lacking outcomes. An unfinished run may still be executing. A
+manual inspection is required before declaring it abandoned.
+
+## Authority and structured commands
+
+The CLI is trusted local operator administration, identified by its OS UID.
+Embedded orchestrators supply a `core.Channel` after authenticating their caller;
+request JSON cannot choose identity, witness, or operator status. Agents must
+not receive database credentials or the operator CLI. This is a light local
+trust model, not isolation against hostile processes sharing the operator's OS
+account.
+
+Initialize the root grant once:
+
+```sh
+printf '%s\n' '{"request_id":"1a8dd335-e71b-44f5-a0b3-65e391c22259","reason":"Install the local Cairn operator root"}' | bin/cairn bootstrap
+bin/cairn grants
+```
+
+The same request UUID safely retries the bootstrap. A different request cannot
+install another root. Promotion requires a live grant, deliberately captured
+evidence, and an actor absent from the record's producing/editing history.
+Attributing work to another agent cannot defeat that check. Grant chains have at
+most two delegated levels. Direct instruction authoring requires the `issue`
+capability and a policy key.
+
+JSON request commands include `create`, `edit`, `compile`, `capture-evidence`,
+`grant`, `revoke-grant`, `promote`, `issue`, `correct`, `retract`, `dispute`,
+`resolve`, and `usage`. See [request examples](docs/commands.md).
+Use new request UUIDs for new intent and reuse them for transport retries.
+Mutation retries return the original result; use `get` for current state.
+
+Ordinary edits retain previous versions and require `expected_version`. They
+cannot change scope or sensitivity. Corrections replace active B content with
+new evidence references and an audit link. C changes use retraction followed by
+new issuance. Explicit conflict resolution retains the original members and
+reasoned audit history.
+
+## Verify changes
+
+```sh
 make test-integration
+make test-lifecycle
 make check
 ```
 
-`test-integration` creates a private temporary PostgreSQL cluster, runs the tests
-with Go's race detector, exercises the CLI, and removes the cluster. It opens no
-TCP listener and does not use the host's running PostgreSQL service. Set
-`CAIRN_PG_BIN` to a PostgreSQL binary directory if `pg_config` selects the wrong
-installation. Dependencies are pinned in `go.mod` and `go.sum`; initial module
-and toolchain downloads require an enabled Go module proxy.
+The integration target starts and removes its own temporary PostgreSQL cluster
+and uses Go's race detector. It covers migration from the original schema,
+concurrent edits/retries, grant revocation races, evidence and destination gates,
+conflicts, package seals, process launch/timeout, and duplicate-launch refusal.
+The lifecycle target checks startup, backup, restore, exact replay, and restart.
+Neither target touches the running local or host PostgreSQL instance.
 
-`make test` runs unit tests and explicitly skips database tests unless
-`CAIRN_TEST_DATABASE_URL` is set. Only point that test variable at a disposable
-database: tests install Cairn's schema and retain synthetic rows there.
-
-## Use a dedicated development database
-
-Once you have created a separate development database:
+To repeat the real OpenCode ingress probe without provider credentials:
 
 ```sh
-export CAIRN_DATABASE_URL='host=/var/run/postgresql dbname=cairn_dev'
-bin/cairn migrate
-bin/cairn create < fixtures/note.json
-bin/cairn get RECORD_UUID
+CAIRN_OPENCODE_BINARY=/path/to/opencode make test-integration
 ```
 
-`create` returns the UUID. Use a new `request_id` UUID for each intended write;
-reuse it for a transport retry. Identical retries return the original response,
-even if the record has since changed. `get` returns current state.
+`make test` explicitly skips DB tests unless `CAIRN_TEST_DATABASE_URL` is set.
+Only point that variable at a disposable database. Initial dependency downloads
+need an enabled Go module proxy; dependencies and CI actions are pinned.
 
-`edit` accepts JSON containing `request_id`, `record_id`, `expected_version`, and
-a complete `draft` of the same shape as the fixture. A competing edit returns
-`VERSION_CONFLICT`; a changed body under the same request UUID returns
-`IDEMPOTENCY_CONFLICT`. Exact scope is fixed for this initial slice.
+## Remaining work
 
-The CLI returns `cairn.response/1` JSON. Exit codes are 0 success, 2 invalid
-request, 3 missing record, 4 conflict/schema mismatch, 6 authority denial, and
-7 database failure. Database failures never return an empty success response.
+The [decision record](docs/decisions/0002-local-memory-loop.md) settles the
+operating defaults. Remaining implementation includes authenticated agent
+transport, full revision/workspace scope pins, evidence lifecycle jobs,
+redaction/deletion effects and retention, richer conflict delivery, expansion
+credits, real-history usefulness trials, and Striatum orchestration wiring.
+No automatic grooming, learned ranking, or automatic promotion is running.
+Do not retain secrets until redaction and recovery obligations are implemented.
 
-## Trust and current limits
-
-The CLI is a local development/administration surface. Its writer is the OS
-effective UID and its witness is always `testimony`. It has no caller-selected
-principal, instrumentation, promotion, or instruction flag. OS identity does
-not distinguish several agents running under the same account.
-
-The Go `core` package is for a trusted embedding host. The host supplies a
-`Channel` after authenticating its caller, keeps database credentials away from
-agents, and uses an instrumented channel only for observed service events.
-`Channel` is not an authentication implementation. Never deserialize it from an
-agent's request. The production orchestrator transport remains an open contract.
-
-All current records are local Class A advisory material. Reads are local
-inspection, with no destination or consequential-use contract. There is no
-automatic capture, pruning, model call, background timer, or live harness
-integration. Do not expose this CLI or library directly to untrusted callers.
-
-## Implemented
-
-- Transactional, checksummed initial migration and exact current-version links.
-- Store-stamped writer, witness, time, and transaction identity.
-- Create, retained revisions, optimistic concurrency, and durable retry identity.
-- Service-owned spawn and terminal events, with exact attempt/result matching.
-- Visible unreconciled/contradicted attribution and an idempotent correction docket.
-- One instrumented Class A failure observation per failed attempt, even when
-  nobody submits a completion claim.
-
-The integration suite tests real PostgreSQL behavior. Passing it verifies this
-slice; the complete Stage 1 acceptance suite and memory usefulness evaluation
-remain outstanding.
+The [initial design evaluation](docs/design-review.md) is historical; the
+[implementation status](docs/implementation-status.md) records current evidence.

@@ -4,19 +4,21 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-//go:embed schema/001_initial.sql
-var initialSchema string
+//go:embed schema/*.sql
+var schemas embed.FS
 
 type Store struct {
 	pool    *pgxpool.Pool
@@ -38,7 +40,7 @@ func Open(ctx context.Context, dsn string, channel Channel) (*Store, error) {
 	}
 	if err = pool.Ping(ctx); err != nil {
 		pool.Close()
-		return nil, err
+		return nil, &Error{Code: "STORE_UNREACHABLE", Message: "cannot connect to the configured Cairn database", Cause: err}
 	}
 	return &Store{pool, channel}, nil
 }
@@ -59,34 +61,47 @@ func (s *Store) Migrate(ctx context.Context) error {
         version integer PRIMARY KEY, digest bytea NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
-	digest := sha256.Sum256([]byte(initialSchema))
-	var existing []byte
-	err = tx.QueryRow(ctx, `SELECT digest FROM public.cairn_migration WHERE version=1`).Scan(&existing)
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		if _, err = tx.Exec(ctx, initialSchema); err != nil {
-			return err
-		}
-		if _, err = tx.Exec(ctx, `INSERT INTO public.cairn_migration(version,digest) VALUES(1,$1)`, digest[:]); err != nil {
-			return err
-		}
-	case err != nil:
+	files, err := schemas.ReadDir("schema")
+	if err != nil {
 		return err
-	case !bytes.Equal(existing, digest[:]):
-		return failure("SCHEMA_MISMATCH", "migration checksum differs")
 	}
 	var newest int
-	if err = tx.QueryRow(ctx, `SELECT max(version) FROM public.cairn_migration`).Scan(&newest); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT COALESCE(max(version),0) FROM public.cairn_migration`).Scan(&newest); err != nil {
 		return err
 	}
-	if newest != 1 {
+	if newest > len(files) {
 		return failure("SCHEMA_MISMATCH", "database is newer than this binary")
+	}
+	for index, file := range files {
+		contents, err := schemas.ReadFile("schema/" + file.Name())
+		if err != nil {
+			return err
+		}
+		digest := sha256.Sum256(contents)
+		var existing []byte
+		err = tx.QueryRow(ctx, `SELECT digest FROM public.cairn_migration WHERE version=$1`, index+1).Scan(&existing)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			if _, err = tx.Exec(ctx, string(contents)); err != nil {
+				return err
+			}
+			if _, err = tx.Exec(ctx, `INSERT INTO public.cairn_migration(version,digest) VALUES($1,$2)`, index+1, digest[:]); err != nil {
+				return err
+			}
+		case err != nil:
+			return err
+		case !bytes.Equal(existing, digest[:]):
+			return failure("SCHEMA_MISMATCH", "migration checksum differs")
+		}
 	}
 	return tx.Commit(ctx)
 }
 
 func (s *Store) begin(ctx context.Context) (pgx.Tx, error) {
-	tx, err := s.pool.Begin(ctx)
+	return s.beginLevel(ctx, pgx.ReadCommitted)
+}
+func (s *Store) beginLevel(ctx context.Context, level pgx.TxIsoLevel) (pgx.Tx, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: level})
 	if err != nil {
 		return nil, err
 	}
@@ -105,6 +120,27 @@ func (s *Store) begin(ctx context.Context) (pgx.Tx, error) {
 // One request lock covers lookup, effect and stored response. A lost response can
 // be retried without repeating the effect; a different intent cannot reuse a key.
 func mutate[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error)) (T, error) {
+	return mutateOnce(ctx, s, operation, requestID, request, pgx.ReadCommitted, apply)
+}
+
+func privileged[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error)) (T, error) {
+	var zero T
+	for attempt := 0; attempt < 4; attempt++ {
+		result, err := mutateOnce(ctx, s, operation, requestID, request, pgx.Serializable, apply)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && pgErr.Code != "40P01" && !(pgErr.Code == "23505" && pgErr.ConstraintName == "mutation_request_pkey")) {
+			return result, err
+		}
+		select {
+		case <-ctx.Done():
+			return zero, ctx.Err()
+		case <-time.After(time.Duration(attempt+1) * 5 * time.Millisecond):
+		}
+	}
+	return zero, failure("VERSION_CONFLICT", "serialization retry limit reached; retry the same request")
+}
+
+func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID string, request any, level pgx.TxIsoLevel, apply func(pgx.Tx) (T, error)) (T, error) {
 	var zero T
 	if err := validID(requestID); err != nil {
 		return zero, err
@@ -114,7 +150,7 @@ func mutate[T any](ctx context.Context, s *Store, operation, requestID string, r
 		return zero, err
 	}
 	digest := sha256.Sum256(canonical)
-	tx, err := s.begin(ctx)
+	tx, err := s.beginLevel(ctx, level)
 	if err != nil {
 		return zero, err
 	}
@@ -161,6 +197,15 @@ func lock(ctx context.Context, tx pgx.Tx, key string) error {
 }
 
 func (s *Store) Create(ctx context.Context, req CreateRequest) (Record, error) {
+	if req.Draft.Sensitivity == "" {
+		req.Draft.Sensitivity = "local"
+	}
+	if req.Draft.Sensitivity != "local" && req.Draft.Sensitivity != "shareable" {
+		return Record{}, failure("INVALID_REQUEST", "unknown sensitivity")
+	}
+	if err := s.checkRepo(req.Draft.Scope.Repo); err != nil {
+		return Record{}, err
+	}
 	if err := req.Draft.validate(); err != nil {
 		return Record{}, err
 	}
@@ -171,7 +216,7 @@ func (s *Store) Create(ctx context.Context, req CreateRequest) (Record, error) {
 			}
 		}
 		id := uuid.NewString()
-		if _, err := tx.Exec(ctx, `INSERT INTO cairn.memory_record(record_id,current_version) VALUES($1,1)`, id); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO cairn.memory_record(record_id,current_version,sensitivity) VALUES($1,1,$2)`, id, req.Draft.Sensitivity); err != nil {
 			return Record{}, err
 		}
 		return insertVersion(ctx, tx, id, 1, req.Draft)
@@ -209,8 +254,17 @@ func (s *Store) Edit(ctx context.Context, req EditRequest) (Record, error) {
 		if err != nil {
 			return Record{}, err
 		}
+		if err = s.checkRepo(old.Scope.Repo); err != nil {
+			return Record{}, err
+		}
+		if old.Class != "A" || old.Lifecycle != "active" {
+			return Record{}, failure("AUTHORITY_DENIED", "ordinary edit requires an active A record; use an audited transition")
+		}
 		if old.Scope != req.Draft.Scope {
 			return Record{}, failure("AUTHORITY_DENIED", "scope changes require an authority path; exact scope is fixed in this slice")
+		}
+		if req.Draft.Sensitivity != "" && req.Draft.Sensitivity != old.Sensitivity {
+			return Record{}, failure("AUTHORITY_DENIED", "sensitivity changes require an audited transition")
 		}
 		if _, err = tx.Exec(ctx, `UPDATE cairn.memory_record SET current_version=current_version+1 WHERE record_id=$1 AND current_version=$2`, req.RecordID, req.ExpectedVersion); err != nil {
 			return Record{}, err
@@ -220,8 +274,8 @@ func (s *Store) Edit(ctx context.Context, req EditRequest) (Record, error) {
 }
 
 func insertVersion(ctx context.Context, tx pgx.Tx, id string, version int, draft Draft) (Record, error) {
-	_, err := tx.Exec(ctx, `INSERT INTO cairn.record_version(record_id,version,kind,body,repo,task_id,run_id,attributed_producer,attempt_id,result_ref,claim_type)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,$10,$11)`, id, version, draft.Kind, draft.Body, draft.Scope.Repo, draft.Scope.TaskID, draft.Scope.RunID, draft.AttributedProducer, draft.AttemptID, draft.ResultRef, draft.ClaimType)
+	_, err := tx.Exec(ctx, `INSERT INTO cairn.record_version(record_id,version,kind,body,repo,task_id,run_id,attributed_producer,attempt_id,result_ref,claim_type,version_class)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,$10,$11,(SELECT class FROM cairn.memory_record WHERE record_id=$1))`, id, version, draft.Kind, draft.Body, draft.Scope.Repo, draft.Scope.TaskID, draft.Scope.RunID, draft.AttributedProducer, draft.AttemptID, draft.ResultRef, draft.ClaimType)
 	if err != nil {
 		return Record{}, err
 	}
@@ -251,6 +305,7 @@ func readRecord(ctx context.Context, tx pgx.Tx, id string) (Record, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, failure("NOT_FOUND", "record not found")
 	}
+	r.Draft.Sensitivity = r.Sensitivity
 	return r, err
 }
 
@@ -267,6 +322,9 @@ func (s *Store) Get(ctx context.Context, id string) (Record, error) {
 	defer tx.Rollback(context.Background())
 	record, err := readRecord(ctx, tx, id)
 	if err != nil {
+		return Record{}, err
+	}
+	if err = s.checkRepo(record.Scope.Repo); err != nil {
 		return Record{}, err
 	}
 	return record, tx.Commit(ctx)

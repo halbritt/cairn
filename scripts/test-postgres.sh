@@ -20,3 +20,7 @@ export CAIRN_DATABASE_URL="$CAIRN_TEST_DATABASE_URL"
 go test -race -count=1 ./...
 go run ./cmd/cairn migrate
 go run ./cmd/cairn create < fixtures/note.json
+if [[ -n "${CAIRN_OPENCODE_BINARY:-}" ]]; then
+    go build -o "$test_root/cairn" ./cmd/cairn
+    python3 scripts/probe-opencode.py "$CAIRN_OPENCODE_BINARY" --cairn-binary "$test_root/cairn" --output "${CAIRN_PROBE_OUTPUT:-$test_root/opencode-probe.json}"
+fi

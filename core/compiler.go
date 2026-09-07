@@ -1,0 +1,413 @@
+package core
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/fxamacker/cbor/v2"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/zeebo/blake3"
+)
+
+type CompileRequest struct {
+	RequestID       string `json:"request_id"`
+	Scope           Scope  `json:"scope"`
+	Query           string `json:"query"`
+	Purpose         string `json:"purpose"`
+	AvailableTokens int    `json:"available_tokens"`
+}
+
+// Destination comes from trusted host configuration, never request JSON.
+// RuntimeEnforced is deliberately absent: no shipped adapter can claim H3.
+type Destination struct {
+	Name       string `json:"name"`
+	AllowLocal bool   `json:"allow_local"`
+}
+type Selection struct {
+	Record    Record     `json:"record"`
+	Evidence  []Evidence `json:"evidence"`
+	Authority []Grant    `json:"authority"`
+	Mandatory bool       `json:"mandatory"`
+	Reason    string     `json:"reason"`
+}
+type SemanticPackage struct {
+	Schema          string         `json:"schema"`
+	Status          string         `json:"status"`
+	Scope           Scope          `json:"scope"`
+	Query           string         `json:"query"`
+	Purpose         string         `json:"purpose"`
+	Destination     Destination    `json:"destination"`
+	Policy          string         `json:"policy"`
+	Ranking         string         `json:"ranking"`
+	Tokenizer       string         `json:"tokenizer"`
+	AvailableTokens int            `json:"available_tokens"`
+	OptionalLimit   int            `json:"optional_limit"`
+	Selected        []Selection    `json:"selected"`
+	Omitted         map[string]int `json:"omitted"`
+}
+type Package struct {
+	ReceiptID string          `json:"receipt_id"`
+	Nonce     string          `json:"nonce"`
+	Seal      string          `json:"seal"`
+	Semantic  SemanticPackage `json:"semantic"`
+}
+
+func (p Package) Render() (string, error) {
+	// JSON strings keep imported content in labelled data slots; this is not a
+	// guarantee that a model will ignore instructions embedded in advisory text.
+	body, err := json.Marshal(p.Semantic)
+	if err != nil {
+		return "", err
+	}
+	return "MEM-STATUS/" + p.Semantic.Status + "\nCairn context (A is advisory; only C is an authorized instruction):\n" + string(body) + "\n", nil
+}
+func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Destination) (Package, error) {
+	if err := validID(req.RequestID); err != nil {
+		return Package{}, err
+	}
+	if err := req.Scope.validate(); err != nil {
+		return Package{}, err
+	}
+	if req.Scope.TaskID == "*" || req.Scope.RunID == "*" {
+		return Package{}, failure("INVALID_REQUEST", "compile requires exact task and run pins")
+	}
+	if err := s.checkRepo(req.Scope.Repo); err != nil {
+		return Package{}, err
+	}
+	if len(req.Query) > 4096 || req.AvailableTokens < 256 || req.AvailableTokens > 1000000 {
+		return Package{}, failure("INVALID_REQUEST", "query or context budget outside limits")
+	}
+	switch req.Purpose {
+	case "context", "planning", "placement", "capability", "security":
+	default:
+		return Package{}, failure("INVALID_REQUEST", "unknown retrieval purpose")
+	}
+	if destination.Name != "local" && destination.Name != "hosted" {
+		return Package{}, failure("DESTINATION_PROHIBITED", "unknown destination")
+	}
+	if destination.Name == "hosted" && destination.AllowLocal {
+		return Package{}, failure("DESTINATION_PROHIBITED", "hosted binding cannot receive local content")
+	}
+	for attempt := 0; attempt < 4; attempt++ {
+		pkg, err := s.compileOnce(ctx, req, destination)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && !(pgErr.Code == "23505" && pgErr.ConstraintName == "retrieval_receipt_caller_request_id_key")) {
+			return pkg, err
+		}
+		select {
+		case <-ctx.Done():
+			return Package{}, ctx.Err()
+		case <-time.After(time.Duration(attempt+1) * 5 * time.Millisecond):
+		}
+	}
+	return Package{}, failure("VERSION_CONFLICT", "compile retry limit reached")
+}
+
+func (s *Store) compileOnce(ctx context.Context, req CompileRequest, destination Destination) (Package, error) {
+	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
+	if err != nil {
+		return Package{}, err
+	}
+	defer tx.Rollback(ctx)
+	semantic, err := s.compileSnapshot(ctx, tx, req, destination)
+	if err != nil {
+		return Package{}, err
+	}
+	canonical, seal, err := sealPackage(semantic)
+	if err != nil {
+		return Package{}, err
+	}
+	pkg, err := s.commitRetrieval(ctx, tx, req, semantic, canonical, seal)
+	if err != nil {
+		return Package{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return Package{}, err
+	}
+	return pkg, nil
+}
+func sealPackage(semantic SemanticPackage) ([]byte, string, error) {
+	options := cbor.CanonicalEncOptions()
+	options.Time = cbor.TimeRFC3339Nano
+	encoder, err := options.EncMode()
+	if err != nil {
+		return nil, "", err
+	}
+	canonical, err := encoder.Marshal(semantic)
+	if err != nil {
+		return nil, "", err
+	}
+	digest := blake3.Sum256(canonical)
+	return canonical, "blake3:" + hex.EncodeToString(digest[:]), nil
+}
+
+type candidate struct {
+	selection   Selection
+	score       int
+	specificity int
+}
+
+func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination) (SemanticPackage, error) {
+	p := SemanticPackage{Schema: "cairn.semantic/1", Status: "READY", Scope: req.Scope, Query: req.Query, Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/1", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: map[string]int{}}
+	rows, err := tx.Query(ctx, `SELECT m.record_id::text FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id AND v.version=m.current_version
+ WHERE v.repo=$1 AND v.task_id IN ('*',$2) AND v.run_id IN ('*',$3) AND m.lifecycle='active' ORDER BY m.record_id LIMIT 10001`, req.Scope.Repo, req.Scope.TaskID, req.Scope.RunID)
+	if err != nil {
+		return p, err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return p, err
+	}
+	if len(ids) > 10000 {
+		return p, failure("BUDGET_REFUSED", "repository selection exceeds bounded scan; narrow task scope")
+	}
+	candidates := []candidate{}
+	policyKeys := map[string]string{}
+	for _, id := range ids {
+		record, err := readRecord(ctx, tx, id)
+		if err != nil {
+			return p, err
+		}
+		// Private records are outside a hosted visibility domain: no hidden IDs,
+		// omission counts, or secret-bearing rejection explanations leave it.
+		if !dest.AllowLocal && record.Sensitivity == "local" {
+			if record.Class == "C" {
+				var mandatory bool
+				var grantID string
+				if err = tx.QueryRow(ctx, `SELECT mandatory,grant_id::text FROM cairn.record_authority WHERE record_id=$1 AND version=$2`, id, record.Version).Scan(&mandatory, &grantID); err != nil {
+					return p, err
+				}
+				if mandatory {
+					_, chainErr := grantChain(ctx, tx, grantID, false)
+					if Code(chainErr) == "AUTHORITY_DENIED" {
+						continue
+					}
+					if chainErr != nil {
+						return p, chainErr
+					}
+					return p, failure("POLICY_UNENFORCEABLE", "destination cannot satisfy required policy")
+				}
+			}
+			continue
+		}
+		selection, reason, err := eligible(ctx, tx, record, req.Purpose)
+		if err != nil {
+			return p, err
+		}
+		if reason != "" {
+			p.Omitted[reason]++
+			continue
+		}
+		if record.Class == "C" {
+			var key string
+			if err = tx.QueryRow(ctx, `SELECT policy_key FROM cairn.record_authority WHERE record_id=$1 AND version=$2`, id, record.Version).Scan(&key); err != nil {
+				return p, err
+			}
+			if previous, ok := policyKeys[key]; ok && previous != record.Body {
+				return p, failure("OPEN_CONFLICT", "applicable instructions disagree on a policy key")
+			}
+			policyKeys[key] = record.Body
+		}
+		terms := lexical(req.Query)
+		words := lexical(record.Body)
+		score := 0
+		for word := range terms {
+			if words[word] {
+				score++
+			}
+		}
+		specificity := 0
+		if record.Scope.TaskID != "*" {
+			specificity++
+		}
+		if record.Scope.RunID != "*" {
+			specificity++
+		}
+		selection.Reason = fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)
+		if !selection.Mandatory && len(terms) > 0 && score == 0 {
+			p.Omitted["NO_LEXICAL_MATCH"]++
+			continue
+		}
+		candidates = append(candidates, candidate{selection, score, specificity})
+	}
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		if a.selection.Mandatory != b.selection.Mandatory {
+			if a.selection.Mandatory {
+				return -1
+			}
+			return 1
+		}
+		if a.score != b.score {
+			return b.score - a.score
+		}
+		if a.specificity != b.specificity {
+			return b.specificity - a.specificity
+		}
+		if c := b.selection.Record.WrittenAt.Compare(a.selection.Record.WrittenAt); c != 0 {
+			return c
+		}
+		return strings.Compare(a.selection.Record.RecordID, b.selection.Record.RecordID)
+	})
+	optionalCost := 0
+	seenBodies := map[string]bool{}
+	for _, candidate := range candidates {
+		entry := candidate.selection
+		encoded, err := json.Marshal(entry)
+		if err != nil {
+			return p, err
+		}
+		cost := len(encoded) + 1
+		if !entry.Mandatory && seenBodies[entry.Record.Body] {
+			p.Omitted["REDUNDANT"]++
+			continue
+		}
+		if !entry.Mandatory && optionalCost+cost > p.OptionalLimit {
+			p.Omitted["OPTIONAL_BUDGET"]++
+			continue
+		}
+		p.Selected = append(p.Selected, entry)
+		seenBodies[entry.Record.Body] = true
+		if !entry.Mandatory {
+			optionalCost += cost
+		}
+	}
+	if len(p.Selected) == 0 {
+		p.Status = "SCOPE_EMPTY"
+	}
+	for {
+		rendered, err := (Package{Semantic: p}).Render()
+		if err != nil {
+			return p, err
+		}
+		if len(rendered) <= req.AvailableTokens {
+			break
+		}
+		n := len(p.Selected)
+		if n == 0 || p.Selected[n-1].Mandatory {
+			return p, failure("BUDGET_REFUSED", "mandatory context and envelope exceed available input room")
+		}
+		p.Selected = p.Selected[:n-1]
+		p.Omitted["TOTAL_BUDGET"]++
+		if len(p.Selected) == 0 {
+			p.Status = "SCOPE_EMPTY"
+		}
+	}
+	return p, nil
+}
+
+func eligible(ctx context.Context, tx pgx.Tx, r Record, purpose string) (Selection, string, error) {
+	entry := Selection{Record: r, Evidence: []Evidence{}, Authority: []Grant{}}
+	if r.Class == "A" && purpose != "context" {
+		return entry, "CLASS_NOT_CONSEQUENTIAL", nil
+	}
+	if r.Class != "A" {
+		var grantID string
+		var runtime bool
+		err := tx.QueryRow(ctx, `SELECT grant_id::text,mandatory,requires_runtime FROM cairn.record_authority WHERE record_id=$1 AND version=$2`, r.RecordID, r.Version).Scan(&grantID, &entry.Mandatory, &runtime)
+		if err != nil {
+			return entry, "", err
+		}
+		chain, err := grantChain(ctx, tx, grantID, false)
+		if Code(err) == "AUTHORITY_DENIED" {
+			return entry, "AUTHORITY_INACTIVE", nil
+		}
+		if err != nil {
+			return entry, "", err
+		}
+		entry.Authority = chain
+		if runtime && entry.Mandatory {
+			return entry, "", failure("POLICY_UNENFORCEABLE", "required runtime mediation is unavailable")
+		}
+		if runtime {
+			return entry, "POLICY_UNENFORCEABLE", nil
+		}
+	}
+	var disputed bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.conflict_member m JOIN cairn.conflict_group g USING(conflict_id) WHERE m.record_id=$1 AND g.resolved_event IS NULL)`, r.RecordID).Scan(&disputed); err != nil {
+		return entry, "", err
+	}
+	if disputed {
+		if r.Class == "C" {
+			return entry, "", failure("OPEN_CONFLICT", "binding instruction has an unresolved dispute")
+		}
+		return entry, "OPEN_CONFLICT", nil
+	}
+	if r.Class == "B" {
+		if r.AttributionState != "self" && r.AttributionState != "reconciled" {
+			return entry, "ATTRIBUTION_UNRECONCILED", nil
+		}
+		evidence, err := supportingEvidence(ctx, tx, r.RecordID, r.Version)
+		if err != nil {
+			return entry, "", err
+		}
+		entry.Evidence = evidence
+		resolvable := false
+		for _, e := range evidence {
+			if e.State == "resolvable" {
+				resolvable = true
+			}
+		}
+		if !resolvable {
+			return entry, "EVIDENCE_UNAVAILABLE", nil
+		}
+	}
+	return entry, "", nil
+}
+
+func lexical(text string) map[string]bool {
+	words := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' })
+	result := map[string]bool{}
+	for _, word := range words {
+		result[word] = true
+	}
+	return result
+}
+
+func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileRequest, semantic SemanticPackage, canonical []byte, seal string) (Package, error) {
+	encoded, err := json.Marshal(struct {
+		Request     CompileRequest
+		Destination Destination
+	}{req, semantic.Destination})
+	if err != nil {
+		return Package{}, err
+	}
+	digest := sha256.Sum256(encoded)
+	var oldDigest []byte
+	var oldSeal, id, nonce string
+	err = tx.QueryRow(ctx, `SELECT receipt_id::text,nonce::text,request_digest,seal FROM cairn.retrieval_receipt WHERE caller=$1 AND request_id=$2`, s.channel.Principal, req.RequestID).Scan(&id, &nonce, &oldDigest, &oldSeal)
+	if err == nil {
+		if !bytes.Equal(oldDigest, digest[:]) {
+			return Package{}, failure("IDEMPOTENCY_CONFLICT", "compile request ID has different intent")
+		}
+		if oldSeal != seal {
+			return Package{}, failure("STALE_PACKAGE", "source state changed; use a new compile request")
+		}
+		return Package{id, nonce, seal, semantic}, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return Package{}, err
+	}
+	id = uuid.NewString()
+	nonce = uuid.NewString()
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.retrieval_receipt(receipt_id,request_id,request_digest,scope,purpose,destination,semantic_body,seal,status,nonce) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, id, req.RequestID, digest[:], req.Scope, req.Purpose, semantic.Destination.Name, canonical, seal, semantic.Status, nonce)
+	if err != nil {
+		return Package{}, err
+	}
+	for _, entry := range semantic.Selected {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.record_use(receipt_id,record_id,version,purpose) VALUES($1,$2,$3,$4)`, id, entry.Record.RecordID, entry.Record.Version, req.Purpose); err != nil {
+			return Package{}, err
+		}
+	}
+	return Package{id, nonce, seal, semantic}, nil
+}

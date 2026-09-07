@@ -13,10 +13,12 @@ import (
 type Error struct {
 	Code    string
 	Message string
+	Cause   error
 }
 
 func (e *Error) Error() string           { return e.Code + ": " + e.Message }
-func failure(code, message string) error { return &Error{code, message} }
+func (e *Error) Unwrap() error           { return e.Cause }
+func failure(code, message string) error { return &Error{Code: code, Message: message} }
 func Code(err error) string {
 	var e *Error
 	if errors.As(err, &e) {
@@ -30,6 +32,8 @@ func Code(err error) string {
 type Channel struct {
 	Principal    string
 	Instrumented bool
+	Operator     bool
+	Repo         string
 }
 
 type Scope struct {
@@ -40,14 +44,25 @@ type Scope struct {
 
 func (s Scope) validate() error {
 	for _, v := range []string{s.Repo, s.TaskID, s.RunID} {
-		if strings.TrimSpace(v) == "" || v == "*" || len(v) > 256 {
-			return failure("INVALID_REQUEST", "scope requires exact repo, task_id and run_id (1-256 bytes)")
+		if strings.TrimSpace(v) == "" || len(v) > 256 {
+			return failure("INVALID_REQUEST", "scope requires explicit repo, task_id and run_id (1-256 bytes)")
 		}
+	}
+	if s.Repo == "*" {
+		return failure("INVALID_REQUEST", "repository cannot be global")
+	}
+	return nil
+}
+
+func (s *Store) checkRepo(repo string) error {
+	if s.channel.Repo != "" && s.channel.Repo != repo {
+		return failure("AUTHORITY_DENIED", "repository outside authenticated channel scope")
 	}
 	return nil
 }
 
 type Draft struct {
+	Sensitivity        string `json:"sensitivity,omitempty"`
 	Kind               string `json:"kind"`
 	Body               string `json:"body"`
 	Scope              Scope  `json:"scope"`
