@@ -23,12 +23,12 @@ Everyday commands:
   list REPO | get UUID | use-report REPO | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
-  create edit compile bootstrap grant revoke-grant capture-evidence
+  create edit compile index expand bootstrap grant revoke-grant capture-evidence
   promote issue correct retract dispute resolve usage assess-run recompile generate-proposals review-proposal
   grants (no input)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
-Administration: migrate | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH]
+Administration: migrate | invalidate-handles < request.json | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH]
 Default store: ~/.local/share/cairn/socket, database cairn.
 Override with CAIRN_DATABASE_URL. Initialize with scripts/local-store.sh start.
 CLI is trusted operator administration. Agents use a host-established core Channel.
@@ -143,6 +143,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return nil, invalid("unexpected arguments")
 	}
 	switch args[0] {
+	case "invalidate-handles":
+		return invoke(ctx, input, store.InvalidateHandles)
 	case "checkpoint":
 		return invoke(ctx, input, store.Checkpoint)
 	case "verify-checkpoint":
@@ -195,6 +197,14 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.AssessRun)
 	case "usage":
 		return invoke(ctx, input, store.RecordUsage)
+	case "index":
+		return invoke(ctx, input, func(ctx context.Context, req core.CompileRequest) (core.IndexResult, error) {
+			return store.Index(ctx, req, core.Destination{Name: "local", AllowLocal: true})
+		})
+	case "expand":
+		return invoke(ctx, input, func(ctx context.Context, req core.ExpandRequest) (core.Expansion, error) {
+			return store.Expand(ctx, req, core.Destination{Name: "local", AllowLocal: true})
+		})
 	case "compile":
 		return invoke(ctx, input, func(ctx context.Context, req core.CompileRequest) (core.Package, error) {
 			return store.Compile(ctx, req, core.Destination{Name: "local", AllowLocal: true})

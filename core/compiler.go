@@ -21,6 +21,7 @@ import (
 )
 
 type CompileRequest struct {
+	Mode            string       `json:"mode,omitempty"`
 	Context         *ContextPins `json:"context,omitempty"`
 	RequestID       string       `json:"request_id"`
 	Scope           Scope        `json:"scope"`
@@ -43,6 +44,8 @@ type Selection struct {
 	Reason    string     `json:"reason"`
 }
 type SemanticPackage struct {
+	Mode            string         `json:"mode,omitempty"`
+	Index           []IndexEntry   `json:"index,omitempty"`
 	Context         *ContextPins   `json:"context,omitempty"`
 	Schema          string         `json:"schema"`
 	Status          string         `json:"status"`
@@ -75,6 +78,9 @@ func (p Package) Render() (string, error) {
 	return "MEM-STATUS/" + p.Semantic.Status + "\nCairn context (A is advisory; only C is an authorized instruction):\n" + string(body) + "\n", nil
 }
 func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Destination) (Package, error) {
+	if req.Mode != "" && req.Mode != "index" {
+		return Package{}, failure("INVALID_REQUEST", "unknown compile mode")
+	}
 	if err := req.Context.validate(); err != nil {
 		return Package{}, err
 	}
@@ -165,30 +171,43 @@ type candidate struct {
 }
 
 func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation) (SemanticPackage, error) {
+	p, candidates, err := s.collectCandidates(ctx, tx, req, dest, evaluations)
+	if err != nil {
+		return p, err
+	}
+	if req.Mode == "index" {
+		p.Mode = "index"
+		p.Schema = "cairn.semantic/4"
+		return packIndex(p, candidates, evaluations)
+	}
+	return packCandidates(p, candidates, evaluations)
+}
+
+func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation) (SemanticPackage, []candidate, error) {
 	queryDigest := sha256.Sum256([]byte(req.Query))
 	p := SemanticPackage{Context: req.Context, Schema: "cairn.semantic/3", Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/2", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
 	rows, err := tx.Query(ctx, `SELECT m.record_id::text FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id AND v.version=m.current_version
  WHERE v.repo=$1 AND v.task_id IN ('*',$2) AND v.run_id IN ('*',$3) AND m.lifecycle='active' ORDER BY m.record_id LIMIT 10001`, req.Scope.Repo, req.Scope.TaskID, req.Scope.RunID)
 	if err != nil {
-		return p, err
+		return p, nil, err
 	}
 	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
-		return p, err
+		return p, nil, err
 	}
 	if len(ids) > 10000 {
-		return p, failure("BUDGET_REFUSED", "repository selection exceeds bounded scan; narrow task scope")
+		return p, nil, failure("BUDGET_REFUSED", "repository selection exceeds bounded scan; narrow task scope")
 	}
 	var now time.Time
 	if err = tx.QueryRow(ctx, `SELECT transaction_timestamp()`).Scan(&now); err != nil {
-		return p, err
+		return p, nil, err
 	}
 	candidates := []candidate{}
 	policyKeys := map[string]string{}
 	for _, id := range ids {
 		record, err := readRecord(ctx, tx, id)
 		if err != nil {
-			return p, err
+			return p, nil, err
 		}
 		// Private records are outside a hosted visibility domain: no hidden IDs,
 		// omission counts, or secret-bearing rejection explanations leave it.
@@ -197,7 +216,7 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 				var mandatory bool
 				var grantID string
 				if err = tx.QueryRow(ctx, `SELECT mandatory,grant_id::text FROM cairn.record_authority WHERE record_id=$1 AND version=$2`, id, record.Version).Scan(&mandatory, &grantID); err != nil {
-					return p, err
+					return p, nil, err
 				}
 				if mandatory {
 					_, chainErr := grantChain(ctx, tx, grantID, false)
@@ -205,9 +224,9 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 						continue
 					}
 					if chainErr != nil {
-						return p, chainErr
+						return p, nil, chainErr
 					}
-					return p, failure("POLICY_UNENFORCEABLE", "destination cannot satisfy required policy")
+					return p, nil, failure("POLICY_UNENFORCEABLE", "destination cannot satisfy required policy")
 				}
 			}
 			continue
@@ -233,10 +252,10 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 			if record.Class == "C" && reason == "CONTEXT_MISSING" {
 				entry, gate, err := eligible(ctx, tx, record, req.Purpose)
 				if err != nil {
-					return p, err
+					return p, nil, err
 				}
 				if gate == "" && entry.Mandatory {
-					return p, failure("POLICY_UNENFORCEABLE", "required instruction applicability cannot be established without context pins")
+					return p, nil, failure("POLICY_UNENFORCEABLE", "required instruction applicability cannot be established without context pins")
 				}
 			}
 			evaluation.Reason = reason
@@ -245,7 +264,7 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 		}
 		selection, reason, err := eligible(ctx, tx, record, req.Purpose)
 		if err != nil {
-			return p, err
+			return p, nil, err
 		}
 		evaluation.Mandatory = selection.Mandatory
 		evaluation.Reason = reason
@@ -257,10 +276,10 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 		if record.Class == "C" {
 			var key string
 			if err = tx.QueryRow(ctx, `SELECT policy_key FROM cairn.record_authority WHERE record_id=$1 AND version=$2`, id, record.Version).Scan(&key); err != nil {
-				return p, err
+				return p, nil, err
 			}
 			if previous, ok := policyKeys[key]; ok && previous != record.Body {
-				return p, failure("OPEN_CONFLICT", "applicable instructions disagree on a policy key")
+				return p, nil, failure("OPEN_CONFLICT", "applicable instructions disagree on a policy key")
 			}
 			policyKeys[key] = record.Body
 		}
@@ -275,28 +294,11 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 		}
 		candidates = append(candidates, candidate{selection, score, specificity})
 	}
-	return packCandidates(p, candidates, evaluations)
+	return p, candidates, nil
 }
 
 func packCandidates(p SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation) (SemanticPackage, error) {
-	slices.SortFunc(candidates, func(a, b candidate) int {
-		if a.selection.Mandatory != b.selection.Mandatory {
-			if a.selection.Mandatory {
-				return -1
-			}
-			return 1
-		}
-		if a.score != b.score {
-			return b.score - a.score
-		}
-		if a.specificity != b.specificity {
-			return b.specificity - a.specificity
-		}
-		if c := b.selection.Record.WrittenAt.Compare(a.selection.Record.WrittenAt); c != 0 {
-			return c
-		}
-		return strings.Compare(a.selection.Record.RecordID, b.selection.Record.RecordID)
-	})
+	sortCandidates(candidates)
 	optionalCost := 0
 	seenBodies := map[string]bool{}
 	for rank, candidate := range candidates {
@@ -456,9 +458,20 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	// Lock exposure generations in stable ID order, independent of query rank.
 	uses := slices.Clone(semantic.Selected)
+	kinds := map[string]string{}
+	for _, e := range semantic.Index {
+		uses = append(uses, Selection{Record: Record{RecordID: e.RecordID, Version: e.Version}})
+		kinds[e.RecordID] = "index"
+	}
+
 	slices.SortFunc(uses, func(a, b Selection) int { return strings.Compare(a.Record.RecordID, b.Record.RecordID) })
 	for _, entry := range uses {
-		if _, err = tx.Exec(ctx, `INSERT INTO cairn.record_use(receipt_id,record_id,version,purpose) VALUES($1,$2,$3,$4)`, id, entry.Record.RecordID, entry.Record.Version, req.Purpose); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.record_use(receipt_id,record_id,version,purpose,exposure_kind) VALUES($1,$2,$3,$4,$5)`, id, entry.Record.RecordID, entry.Record.Version, req.Purpose, exposureKind(kinds[entry.Record.RecordID])); err != nil {
+			return Package{}, err
+		}
+	}
+	if semantic.Mode == "index" {
+		if err := createIndexSession(ctx, tx, id, semantic); err != nil {
 			return Package{}, err
 		}
 	}
@@ -475,4 +488,32 @@ func rankingTerms(text, version string) map[string]bool {
 		}
 	}
 	return terms
+}
+
+func sortCandidates(candidates []candidate) {
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		if a.selection.Mandatory != b.selection.Mandatory {
+			if a.selection.Mandatory {
+				return -1
+			}
+			return 1
+		}
+		if a.score != b.score {
+			return b.score - a.score
+		}
+		if a.specificity != b.specificity {
+			return b.specificity - a.specificity
+		}
+		if c := b.selection.Record.WrittenAt.Compare(a.selection.Record.WrittenAt); c != 0 {
+			return c
+		}
+		return strings.Compare(a.selection.Record.RecordID, b.selection.Record.RecordID)
+	})
+}
+
+func exposureKind(kind string) string {
+	if kind == "index" {
+		return kind
+	}
+	return "body"
 }

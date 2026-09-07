@@ -46,6 +46,14 @@ try:
     record = json.loads(result.stdout)['data']
     assert record['observed_writer'] == 'agent:socket-fixture'
     assert record['witness'] == 'testimony'
+    index_request = dict(request_id=str(uuid.uuid4()), scope=dict(repo='fixture:socket',task_id='fixture:task',run_id='fixture:run'), query='socket', purpose='context',available_tokens=32000)
+    result = subprocess.run([binary,'agent','index'],input=json.dumps(index_request),env=env,capture_output=True,text=True,check=True)
+    index = json.loads(result.stdout)['data']
+    assert len(index['package']['semantic']['index']) == 1
+    pull = dict(request_id=str(uuid.uuid4()),receipt_id=index['package']['receipt_id'],handle=index['handles'][0]['handle'])
+    result = subprocess.run([binary,'agent','expand'],input=json.dumps(pull),env=env,capture_output=True,text=True,check=True)
+    expansion=json.loads(result.stdout)['data']
+    assert expansion['selection']['record']['record_id']==record['record_id'] and expansion['credits_remaining']==3
     # A second listener must not remove or replace the active socket.
     collision = subprocess.run([binary, 'serve'], env=env, capture_output=True,
                                text=True, timeout=10)

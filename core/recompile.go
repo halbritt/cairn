@@ -54,7 +54,7 @@ func (s *Store) Recompile(ctx context.Context, req RecompileRequest) (Package, e
 	if original.Semantic.Query != "sha256:"+hex.EncodeToString(digest[:]) {
 		return Package{}, failure("INVALID_REQUEST", "query does not match the historical intent digest")
 	}
-	if original.Semantic.Schema != "cairn.semantic/3" || original.Semantic.Policy != "local-loop/1" || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2") {
+	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4") || original.Semantic.Policy != "local-loop/1" || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2") {
 		return Package{}, failure("REPLAY_INCOMPLETE", "historical compiler version is not supported")
 	}
 	rows, err := tx.Query(ctx, `SELECT detail FROM cairn.retrieval_candidate WHERE receipt_id=$1 ORDER BY record_id,version`, req.ReceiptID)
@@ -127,7 +127,11 @@ func (s *Store) Recompile(ctx context.Context, req RecompileRequest) (Package, e
 		}
 		candidates = append(candidates, candidate{selection, score, specificity})
 	}
-	p, err = packCandidates(p, candidates, evaluations)
+	if p.Mode == "index" {
+		p, err = packIndex(p, candidates, evaluations)
+	} else {
+		p, err = packCandidates(p, candidates, evaluations)
+	}
 	if err != nil {
 		return Package{}, err
 	}

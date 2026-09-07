@@ -93,6 +93,17 @@ func TestAuthenticatedChannelOwnsIdentityAndScope(t *testing.T) {
 	if status != 200 {
 		t.Fatal(result)
 	}
+	status, indexed := call("/v1/index", token, core.CompileRequest{RequestID: uuid.NewString(), Scope: core.Scope{Repo: repo, TaskID: "t", RunID: "r"}, Purpose: "context", AvailableTokens: 32000})
+	if status != 200 {
+		t.Fatal(indexed)
+	}
+	safeIndex, err := json.Marshal(indexed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(safeIndex, []byte("API lesson")) || bytes.Contains(safeIndex, []byte(record["record_id"].(string))) {
+		t.Fatal("hosted index disclosed local record")
+	}
 	encoded, _ := json.Marshal(result)
 	if bytes.Contains(encoded, []byte("API lesson")) {
 		t.Fatal("hosted profile leaked local content")

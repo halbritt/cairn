@@ -14,6 +14,7 @@ type UseReportRequest struct {
 	Offset   int    `json:"offset"`
 }
 type UseRow struct {
+	ExposureKind      string    `json:"exposure_kind"`
 	UsageWitness      string    `json:"usage_witness"`
 	UsageMethod       string    `json:"usage_method"`
 	UsageCoverage     string    `json:"usage_coverage"`
@@ -70,7 +71,7 @@ func (s *Store) UseReport(ctx context.Context, req UseReportRequest) (UseReport,
 	rows, err := tx.Query(ctx, `SELECT u.receipt_id::text,u.record_id::text,u.version,r.scope,u.purpose,u.used_at,
  CASE WHEN d.contact THEN 'delivered' WHEN d.available THEN 'available' WHEN d.failed THEN 'failed' ELSE 'unknown' END,
  COALESCE(g.signal,CASE WHEN d.contact AND c.coverage='complete' THEN 'delivered_only' ELSE 'unknown' END),
- COALESCE(o.process_state,'unknown'),o.exit_code,o.duration_ms,COALESCE(a.task_outcome,o.task_outcome,'unknown'),m.current_version,m.lifecycle,COALESCE(b.task_class,'unknown'),COALESCE(b.binding_id,'unknown'),COALESCE(b.capability_id,'unknown'),COALESCE(a.version,0),COALESCE(a.witness,'unknown'),COALESCE(a.failure_domain,'unknown'),COALESCE(a.failure_kind,''),COALESCE(a.detail->>'error_signature_sha256',''),COALESCE(g.witness,'unknown'),COALESCE(g.method,''),COALESCE(c.coverage,'unknown')
+ COALESCE(o.process_state,'unknown'),o.exit_code,o.duration_ms,COALESCE(a.task_outcome,o.task_outcome,'unknown'),m.current_version,m.lifecycle,COALESCE(b.task_class,'unknown'),COALESCE(b.binding_id,'unknown'),COALESCE(b.capability_id,'unknown'),COALESCE(a.version,0),COALESCE(a.witness,'unknown'),COALESCE(a.failure_domain,'unknown'),COALESCE(a.failure_kind,''),COALESCE(a.detail->>'error_signature_sha256',''),COALESCE(g.witness,'unknown'),COALESCE(g.method,''),COALESCE(c.coverage,'unknown'),u.exposure_kind
  FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id)
  JOIN cairn.memory_record m ON m.record_id=u.record_id
  LEFT JOIN cairn.run_outcome o USING(receipt_id)
@@ -87,7 +88,7 @@ func (s *Store) UseReport(ctx context.Context, req UseReportRequest) (UseReport,
 	report := UseReport{Rows: []UseRow{}, Interpretation: "One row per exposed record/version/receipt. Repeated observations do not multiply rows. Exit zero is not acceptance; citations are testimony, inferred use is not citation, and missing telemetry is unknown. Associations do not establish causal benefit."}
 	for rows.Next() {
 		var row UseRow
-		if err = rows.Scan(&row.ReceiptID, &row.RecordID, &row.Version, &row.Scope, &row.Purpose, &row.UsedAt, &row.Delivery, &row.Usage, &row.ProcessState, &row.ExitCode, &row.DurationMS, &row.TaskOutcome, &row.CurrentVersion, &row.CurrentLifecycle, &row.TaskClass, &row.BindingID, &row.CapabilityID, &row.AssessmentVersion, &row.AssessmentWitness, &row.FailureDomain, &row.FailureKind, &row.ErrorSignature, &row.UsageWitness, &row.UsageMethod, &row.UsageCoverage); err != nil {
+		if err = rows.Scan(&row.ReceiptID, &row.RecordID, &row.Version, &row.Scope, &row.Purpose, &row.UsedAt, &row.Delivery, &row.Usage, &row.ProcessState, &row.ExitCode, &row.DurationMS, &row.TaskOutcome, &row.CurrentVersion, &row.CurrentLifecycle, &row.TaskClass, &row.BindingID, &row.CapabilityID, &row.AssessmentVersion, &row.AssessmentWitness, &row.FailureDomain, &row.FailureKind, &row.ErrorSignature, &row.UsageWitness, &row.UsageMethod, &row.UsageCoverage, &row.ExposureKind); err != nil {
 			rows.Close()
 			return report, err
 		}

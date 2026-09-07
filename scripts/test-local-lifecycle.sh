@@ -26,6 +26,12 @@ PYBOOT
 bin/cairn remember --repo fixture:restore 'Restore fixture: preserve this exact note.' >"$test_root/note.json"
 bin/cairn search --repo fixture:restore --tokens 64000 'Restore fixture' >"$test_root/package.json"
 receipt="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["data"]["receipt_id"])' "$test_root/package.json")"
+python3 - "$test_root" <<'PYINDEX'
+import json, pathlib, subprocess, sys, uuid
+request=dict(request_id=str(uuid.uuid4()),scope=dict(repo='fixture:restore',task_id='restore',run_id='restore'),query='Restore fixture',purpose='context',available_tokens=64000)
+result=subprocess.check_output(['bin/cairn','index'],input=json.dumps(request).encode())
+(pathlib.Path(sys.argv[1])/'index.json').write_bytes(result)
+PYINDEX
 backup="$(bash scripts/local-store.sh backup)"
 "$pg_bin/createdb" -h "$CAIRN_HOME/socket" cairn_restore
 "$pg_bin/pg_restore" -h "$CAIRN_HOME/socket" --no-owner --no-privileges -d cairn_restore "$backup"
@@ -59,7 +65,14 @@ later=invoke('checkpoint',{'request_id':str(uuid.uuid4()),'export_id':'fixture:n
 request={'checkpoint_id':later['checkpoint_id'],'expected_sha256':later['sha256'],'expected_export_id':later['export_id']}
 missing=subprocess.run(['bin/cairn','verify-checkpoint'],input=json.dumps(request).encode(),env=env,capture_output=True)
 assert missing.returncode!=0 and json.loads(missing.stdout)['status']=='CHECKPOINT_MISMATCH'
-print('Restored inputs recompile; audit catalog verifies and rejects a missing newer expected checkpoint')
+index=json.loads((root/'index.json').read_text())['data']
+index_recompile=invoke('recompile',{'receipt_id':index['package']['receipt_id'],'query':'Restore fixture'},env)
+assert index_recompile['package']['seal']==index['package']['seal']
+invoke('invalidate-handles',{'request_id':str(uuid.uuid4()),'reason':'Fence sessions before admitting traffic to restored fixture'},env)
+pull=dict(request_id=str(uuid.uuid4()),receipt_id=index['package']['receipt_id'],handle=index['handles'][0]['handle'])
+fenced=subprocess.run(['bin/cairn','expand'],input=json.dumps(pull).encode(),env=env,capture_output=True)
+assert fenced.returncode!=0 and json.loads(fenced.stdout)['status']=='STALE_HANDLE'
+print('Restored inputs and index recompile; expected audit set verifies; restored handles are fenced')
 PYVERIFY
 bash scripts/local-store.sh stop
 bash scripts/local-store.sh start

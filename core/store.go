@@ -123,10 +123,10 @@ func mutate[T any](ctx context.Context, s *Store, operation, requestID string, r
 	return mutateOnce(ctx, s, operation, requestID, request, pgx.ReadCommitted, apply)
 }
 
-func privileged[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error)) (T, error) {
+func privileged[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
 	var zero T
 	for attempt := 0; attempt < 4; attempt++ {
-		result, err := mutateOnce(ctx, s, operation, requestID, request, pgx.Serializable, apply)
+		result, err := mutateOnce(ctx, s, operation, requestID, request, pgx.Serializable, apply, guards...)
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && pgErr.Code != "40P01" && !(pgErr.Code == "23505" && pgErr.ConstraintName == "mutation_request_pkey")) {
 			return result, err
@@ -140,7 +140,7 @@ func privileged[T any](ctx context.Context, s *Store, operation, requestID strin
 	return zero, failure("VERSION_CONFLICT", "serialization retry limit reached; retry the same request")
 }
 
-func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID string, request any, level pgx.TxIsoLevel, apply func(pgx.Tx) (T, error)) (T, error) {
+func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID string, request any, level pgx.TxIsoLevel, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
 	var zero T
 	if err := validID(requestID); err != nil {
 		return zero, err
@@ -157,6 +157,13 @@ func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID strin
 	defer tx.Rollback(context.Background())
 	if err = lock(ctx, tx, "request:"+s.channel.Principal+":"+operation+":"+requestID); err != nil {
 		return zero, err
+	}
+	// Disclosure mutations must recheck live authorization even when the
+	// request has already committed and its original response is cached.
+	for _, guard := range guards {
+		if err = guard(tx); err != nil {
+			return zero, err
+		}
 	}
 	var previousDigest, response []byte
 	err = tx.QueryRow(ctx, `SELECT request_digest,response FROM cairn.mutation_request WHERE caller=$1 AND operation=$2 AND request_id=$3`, s.channel.Principal, operation, requestID).Scan(&previousDigest, &response)

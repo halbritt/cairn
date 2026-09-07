@@ -92,6 +92,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveJSON(w, r, c.store.Create)
 	case "/v1/edit":
 		serveJSON(w, r, c.store.Edit)
+	case "/v1/index":
+		serveJSON(w, r, func(ctx context.Context, req core.CompileRequest) (core.IndexResult, error) {
+			return c.store.Index(ctx, req, c.destination)
+		})
+	case "/v1/expand":
+		serveJSON(w, r, func(ctx context.Context, req core.ExpandRequest) (core.Expansion, error) {
+			return c.store.Expand(ctx, req, c.destination)
+		})
 	case "/v1/compile":
 		serveJSON(w, r, func(ctx context.Context, req core.CompileRequest) (core.Package, error) {
 			return c.store.Compile(ctx, req, c.destination)
@@ -175,7 +183,7 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 			status = 400
 		case "NOT_FOUND":
 			status = 404
-		case "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "STALE_PACKAGE", "RUN_ALREADY_STARTED":
+		case "STALE_HANDLE", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "STALE_PACKAGE", "RUN_ALREADY_STARTED":
 			status = 409
 		case "STORE_ERROR":
 			status = 500

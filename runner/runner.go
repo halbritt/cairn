@@ -46,6 +46,9 @@ type Result struct {
 }
 
 func Run(ctx context.Context, store *core.Store, req Request, stdout, stderr io.Writer) (Result, error) {
+	if req.Compile.Mode != "" {
+		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "H0 requires body compilation; index pull needs a host tool route"}
+	}
 	if len(req.Command) == 0 || (req.Carrier != "stdin" && req.Carrier != "argv") || req.Timeout <= 0 || req.Timeout > time.Hour || len(req.Prompt) > 131072 {
 		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "invalid command, carrier, timeout or prompt"}
 	}

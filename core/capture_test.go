@@ -20,7 +20,7 @@ func TestQueryIsTransient(t *testing.T) {
 		t.Fatal(err)
 	}
 	query := "fixture_error CAIRN_TRANSIENT_QUERY_CANARY"
-	p, err := s.Compile(ctx, CompileRequest{nil, uuid.NewString(), Scope{repo, "task", "run"}, query, "context", 64000}, Destination{"local", true})
+	p, err := s.Compile(ctx, CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, query, "context", 64000}, Destination{"local", true})
 	if err != nil {
 		t.Fatal(err)
 	}
