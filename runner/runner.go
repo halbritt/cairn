@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/halbritt/cairn/artifacts"
 	"github.com/halbritt/cairn/core"
 )
 
@@ -84,14 +85,12 @@ func Run(ctx context.Context, store *core.Store, req Request, stdout, stderr io.
 		return Result{}, err
 	}
 	result := Result{ReceiptID: pkg.ReceiptID, Seal: pkg.Seal, ProcessState: "unknown", Artifacts: filepath.Join(req.ArtifactDirectory, pkg.ReceiptID)}
-	if err = os.MkdirAll(result.Artifacts, 0700); err != nil {
+	result.Artifacts, err = artifacts.WriteContext(ctx, store, pkg, req.ArtifactDirectory)
+	if err != nil {
 		return result, err
 	}
 	rendered, err := pkg.Render()
 	if err != nil {
-		return result, err
-	}
-	if err = os.WriteFile(filepath.Join(result.Artifacts, "context.txt"), []byte(rendered), 0600); err != nil {
 		return result, err
 	}
 	input := rendered + "\nTASK\n" + req.Prompt

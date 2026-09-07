@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/halbritt/cairn/artifacts"
 	"github.com/halbritt/cairn/core"
 )
 
@@ -73,7 +74,7 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return agentRequest(ctx, args[1:], input)
 	}
 	channel := core.Channel{Principal: "local-uid:" + strconv.Itoa(os.Geteuid()), Operator: true}
-	if args[0] == "run" || args[0] == "recover-run" {
+	if args[0] == "run" || args[0] == "recover-run" || args[0] == "purge-deletion" {
 		channel.Instrumented = true
 	}
 	dsn, err := databaseURL()
@@ -115,7 +116,7 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		case "deletion-status":
 			return store.DeletionStatus(ctx, args[1])
 		case "purge-deletion":
-			return store.PurgeDeletion(ctx, args[1])
+			return artifacts.PurgeDeletion(ctx, store, args[1])
 		case "evidence-checks":
 			return store.EvidenceChecks(ctx, args[1])
 		case "refusal":

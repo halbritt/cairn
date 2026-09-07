@@ -81,7 +81,7 @@ raw model outputs. Task and query text are transient: new semantic v2/v3 package
 retain only a SHA-256 query digest. Digests are not anonymization, and old v1
 receipts retain their original query text unless their containing package is excluded through explicit [record forgetting](docs/deletion.md).
 Per-run `context.txt` and `outcome.json` live in the owner-only
-run directory named in the receipt. A failed DB write retains
+run directory named in the receipt. New context files are [registered for controlled deletion](docs/managed-context.md). A failed DB write retains
 `outcome.pending.json` for `cairn recover-run RECEIPT_UUID` recovery. Do not retry a
 process blindly: the same compile request UUID cannot launch twice.
 

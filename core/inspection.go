@@ -63,6 +63,15 @@ func (s *Store) Replay(ctx context.Context, receiptID string) (Package, error) {
 	if err = receiptPayloadAvailable(ctx, tx, receiptID); err != nil {
 		return Package{}, err
 	}
+	p, err := readPackage(ctx, tx, receiptID)
+	if err != nil {
+		return Package{}, err
+	}
+	return p, tx.Commit(ctx)
+}
+
+func readPackage(ctx context.Context, tx pgx.Tx, receiptID string) (Package, error) {
+	var err error
 	var p Package
 	var encoded []byte
 	p.ReceiptID = receiptID
@@ -79,7 +88,7 @@ func (s *Store) Replay(ctx context.Context, receiptID string) (Package, error) {
 	if seal != p.Seal {
 		return p, failure("INTEGRITY_FAILURE", "stored package does not reproduce its seal")
 	}
-	return p, tx.Commit(ctx)
+	return p, nil
 }
 
 type Impact struct {

@@ -57,8 +57,17 @@ record/package/cached-response payloads, tombstones, dependency flags and durabl
 per-target database purge effects. D events join the unsigned checkpoint subset.
 Disposable tests cover stale previews, citation races, interrupted worker recovery,
 restored pending deletion and explicit backup/provider/metadata residuals. This
-is partial L5 implementation; metadata/evidence redaction, controlled file purge,
+is partial L5 implementation; metadata/evidence redaction, historical file adoption,
 newer-deletion restore reconciliation and retention remain open.
+
+## Managed context files — 2026-09-07
+
+Migration 017 registers new run context slots with their directory identity and
+ownership marker. The CLI purge worker removes those slots under the writer's
+filesystem lock and retains observed completion/failure. Process-death tests
+cover unlink before DB commit, retry and restored pending effects. Outcome files
+survive. Existing unregistered run directories are not automatically adopted.
+See [ownership and remaining limits](managed-context.md).
 
 ## Working paths
 

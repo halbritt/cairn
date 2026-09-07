@@ -29,7 +29,7 @@ Submit the returned token with a live grant containing `redact`:
 
 Pass this JSON to `cairn forget`. The transaction creates a new tombstoned
 version, a matching `forget` audit event, deletion request, dependency flags and
-per-target effects. A cited A record follows this D path too. Open conflicts on
+per-target effects, including registered context files. A cited A record follows this D path too. Open conflicts on
 the record or known dependent versions refuse with a retained refusal ID.
 Emergency redaction of conflicted content remains a separate unfinished path.
 The audit uses a fixed action description and does not copy a user-supplied
@@ -50,12 +50,12 @@ does not erase related records or separately captured evidence automatically.
 New citations to the tombstoned record refuse.
 
 Use `cairn deletion-status DELETION_UUID` for current effects, then
-`cairn purge-deletion DELETION_UUID` to execute pending or failed database purges.
+`cairn purge-deletion DELETION_UUID` to execute pending or failed database and [managed context-file purges](managed-context.md).
 Each effect and its completion commit together. A worker crash rolls back its
 current effect, leaving earlier completed effects intact. A retry resumes
 remaining work. SQL failures retain a bounded error code and increment the
 attempt count; failure to retain that observation returns `PURGE_UNRECORDED`.
-Effect state changes append actor-stamped history. A lost response never
+Filesystem effects hold their registered directory lock across unlink and completion observation. Effect state changes append actor-stamped history. A lost response never
 requires repeating the forgetting transition: retry its original request UUID
 and use `deletion-status` for current progress.
 
@@ -80,7 +80,7 @@ user files, provider deliveries and unregistered run directories can also retain
 copies. Supporting evidence, related records, scope/attribution metadata,
 observation details and audit reasons need separate review. Digests and identity
 metadata are not anonymization. No backup rotation or automatic purge timer is
-enabled. Run-file ownership/registration, evidence and metadata redaction,
+enabled. Historical run-file adoption, evidence and metadata redaction,
 access-policy changes and retention scheduling remain roadmap work.
 
 The restore drill proves that a backup containing a pending deletion preserves

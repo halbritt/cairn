@@ -33,6 +33,37 @@ def sql(query):
     return subprocess.check_output([str(pg_bin / 'psql'), os.environ['CAIRN_DATABASE_URL'], '-XAt', '-v', 'ON_ERROR_STOP=1', '-c', query], stderr=subprocess.PIPE).decode().strip()
 
 
+def crash_worker(deletion_id, table, column, condition, absent_path=None):
+    # Pause a statement belonging only to this disposable effect. Observe the
+    # exact live backend before killing our own CLI and cancelling its SQL.
+    name = 'deletion_crash_' + uuid.uuid4().hex
+    sql(f"CREATE FUNCTION cairn.{name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF {condition} THEN PERFORM pg_sleep(30); END IF; RETURN NEW; END $$; CREATE TRIGGER {name} BEFORE UPDATE OF {column} ON cairn.{table} FOR EACH ROW EXECUTE FUNCTION cairn.{name}()")
+    app = 'cairn-deletion-crash-' + uuid.uuid4().hex
+    env = dict(os.environ, CAIRN_DATABASE_URL=os.environ['CAIRN_DATABASE_URL'] + ' application_name=' + app)
+    worker = subprocess.Popen([binary, 'purge-deletion', deletion_id], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        deadline = time.monotonic() + 10
+        backend = ''
+        while time.monotonic() < deadline:
+            backend = sql(f"SELECT pid FROM pg_stat_activity WHERE application_name='{app}' AND datname=current_database() AND state='active' AND wait_event='PgSleep'")
+            if backend:
+                break
+            assert worker.poll() is None, 'purge worker terminated before fault boundary'
+            time.sleep(.025)
+        assert backend.isdigit(), 'did not observe exact live worker at purge boundary'
+        if absent_path is not None:
+            assert not absent_path.exists(), 'file unlink did not precede completion observation'
+        worker.kill()
+        worker.communicate(timeout=5)
+        assert worker.returncode < 0
+        assert sql(f'SELECT pg_terminate_backend({int(backend)})') == 't'
+    finally:
+        if worker.poll() is None:
+            worker.kill()
+            worker.communicate(timeout=5)
+        sql(f'DROP TRIGGER {name} ON cairn.{table}; DROP FUNCTION cairn.{name}()')
+
+
 repo = 'fixture:deletion:' + uid()
 create = dict(request_id=uid(), draft=dict(kind='note', body='deletion_cli_canary_' + uid(), scope=dict(repo=repo, task_id='*', run_id='*'), claim_type='self'))
 record = invoke('create', create)
@@ -51,33 +82,8 @@ assert invoke('forget', delete)['deletion_id'] == deleted['deletion_id']
 backup = root / 'deletion-pending.dump'
 subprocess.run([str(pg_bin / 'pg_dump'), '--format=custom', '--file', str(backup), os.environ['CAIRN_DATABASE_URL']], check=True)
 
-# The trigger pauses only this synthetic receipt's purge statement. Observe the
-# live worker backend before terminating our exact CLI process and backend.
-name = 'deletion_crash_' + uuid.uuid4().hex
 receipt = package['receipt_id']
-sql(f"CREATE FUNCTION cairn.{name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.receipt_id='{receipt}'::uuid AND NEW.semantic_body IS NULL THEN PERFORM pg_sleep(30); END IF; RETURN NEW; END $$; CREATE TRIGGER {name} BEFORE UPDATE OF semantic_body ON cairn.retrieval_receipt FOR EACH ROW EXECUTE FUNCTION cairn.{name}()")
-app = 'cairn-deletion-crash-' + uuid.uuid4().hex
-env = dict(os.environ, CAIRN_DATABASE_URL=os.environ['CAIRN_DATABASE_URL'] + ' application_name=' + app)
-worker = subprocess.Popen([binary, 'purge-deletion', deleted['deletion_id']], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-backend = ''
-try:
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        backend = sql(f"SELECT pid FROM pg_stat_activity WHERE application_name='{app}' AND datname=current_database() AND state='active' AND wait_event='PgSleep'")
-        if backend:
-            break
-        assert worker.poll() is None, 'purge worker terminated before fault boundary'
-        time.sleep(.025)
-    assert backend.isdigit(), 'did not observe exact live worker at purge boundary'
-    worker.kill()
-    worker.communicate(timeout=5)
-    assert worker.returncode < 0
-    assert sql(f'SELECT pg_terminate_backend({int(backend)})') == 't'
-finally:
-    if worker.poll() is None:
-        worker.kill()
-        worker.communicate(timeout=5)
-    sql(f'DROP TRIGGER {name} ON cairn.retrieval_receipt; DROP FUNCTION cairn.{name}()')
+crash_worker(deleted['deletion_id'], 'retrieval_receipt', 'semantic_body', f"NEW.receipt_id='{receipt}'::uuid AND NEW.semantic_body IS NULL")
 status = invoke('deletion-status', deleted['deletion_id'])
 assert status['state'] == 'partial'
 assert sum(e['status'] == 'completed' for e in status['effects']) == 2
@@ -95,3 +101,33 @@ invoke('replay', receipt, env=restored_env, expected='PAYLOAD_UNAVAILABLE')
 assert invoke('deletion-status', deleted['deletion_id'], env=restored_env)['state'] == 'partial'
 assert invoke('purge-deletion', deleted['deletion_id'], env=restored_env)['state'] == 'limited'
 print('Abrupt worker death rolls back its active effect; retry and restored pending deletion preserve exclusion and complete database purge')
+
+
+# A filesystem unlink survives worker death even when its DB completion rolls
+# back. The durable intent lets a new worker confirm absence and finish it.
+managed_repo = 'fixture:managed-context:' + uid()
+managed_record = invoke('create', dict(request_id=uid(), draft=dict(kind='note', body='managed file crash fixture', scope=dict(repo=managed_repo, task_id='*', run_id='*'), claim_type='self')))
+run = subprocess.run([binary, 'run', '--repo', managed_repo, '--prompt', 'Synthetic managed context fixture', '--', '/bin/cat'], capture_output=True, check=True)
+run_receipt = json.loads(run.stderr.splitlines()[-1])['data']
+context_file = Path(run_receipt['artifacts']) / 'context.txt'
+assert context_file.is_file()
+preview = invoke('preview-delete', managed_record['record_id'])
+assert any(t['target_type']=='managed_context' for t in preview['deletion_targets'])
+managed_deletion = invoke('forget', dict(request_id=uid(), record_id=managed_record['record_id'], expected_version=managed_record['version'], grant_id=grant, preview_id=preview['preview_id']))
+managed_backup = root / 'managed-deletion-pending.dump'
+subprocess.run([str(pg_bin / 'pg_dump'), '--format=custom', '--file', str(managed_backup), os.environ['CAIRN_DATABASE_URL']], check=True)
+managed_id = managed_deletion['deletion_id']
+crash_worker(managed_id, 'deletion_effect', 'status', f"NEW.deletion_id='{managed_id}'::uuid AND NEW.target_type='managed_context' AND NEW.status='completed'", context_file)
+status = invoke('deletion-status', managed_id)
+assert any(e['target_type']=='managed_context' and e['status']=='pending' for e in status['effects'])
+assert not context_file.exists()
+status = invoke('purge-deletion', managed_id)
+assert any(e['target_type']=='managed_context' and e['status']=='completed' for e in status['effects'])
+assert (context_file.parent / 'outcome.json').is_file()
+subprocess.run([str(pg_bin / 'createdb'), '-h', str(socket), 'cairn_managed_restore'], check=True)
+subprocess.run([str(pg_bin / 'pg_restore'), '-h', str(socket), '--no-owner', '--no-privileges', '-d', 'cairn_managed_restore', str(managed_backup)], check=True)
+managed_env = dict(os.environ, CAIRN_DATABASE_URL=f'host={socket} dbname=cairn_managed_restore sslmode=disable')
+status = invoke('purge-deletion', managed_id, env=managed_env)
+assert any(e['target_type']=='managed_context' and e['status']=='completed' for e in status['effects'])
+assert not context_file.exists()
+print('Registered context unlink survives worker death; retry and restored pending effect confirm absence without deleting outcome files')

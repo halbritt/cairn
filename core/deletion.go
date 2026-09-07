@@ -166,19 +166,21 @@ func deletionInventory(ctx context.Context, tx pgx.Tx, id string, refs []RecordV
 		{"unmanaged_copies", id, "not_possible", "Previously returned content, user files, exports and unregistered copies cannot be recalled by this store."},
 		{"retained_metadata", id, "not_possible", "Scope, attribution, relations, digests, audit reasons and observation metadata remain. This operation purges record bodies and their package copies, not arbitrary sensitive metadata."},
 	}
-	rows, err := tx.Query(ctx, `SELECT DISTINCT r.receipt_id::text,r.launch_claimed,r.destination FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE u.record_id=$1 ORDER BY r.receipt_id::text LIMIT 1001`, id)
+	rows, err := tx.Query(ctx, `SELECT DISTINCT r.receipt_id::text,r.launch_claimed,r.destination,EXISTS(SELECT 1 FROM cairn.managed_context c WHERE c.receipt_id=r.receipt_id) FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE u.record_id=$1 ORDER BY r.receipt_id::text LIMIT 1001`, id)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var receipt, destination string
-		var claimed bool
-		if err = rows.Scan(&receipt, &claimed, &destination); err != nil {
+		var claimed, managed bool
+		if err = rows.Scan(&receipt, &claimed, &destination, &managed); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		targets = append(targets, DeletionTarget{"db_retrieval_package", receipt, "pending", ""})
-		if claimed {
+		if managed {
+			targets = append(targets, DeletionTarget{"managed_context", receipt, "pending", ""})
+		} else if claimed {
 			targets = append(targets, DeletionTarget{"run_artifacts", receipt, "not_possible", "This launch may have a context file or in-process copy; historical run paths are not registered for controlled deletion."})
 		}
 		if destination == "hosted" {
@@ -322,6 +324,9 @@ func (s *Store) PurgeDeletion(ctx context.Context, id string) (Deletion, error) 
 		return Deletion{}, err
 	}
 	for _, effect := range status.Effects {
+		if effect.TargetType == "managed_context" {
+			continue
+		}
 		if effect.Status != "pending" && effect.Status != "failed" {
 			continue
 		}

@@ -57,3 +57,20 @@ This proves database-value purge and controlled crash recovery. It does not
 prove physical storage, backup, provider, metadata, evidence or unmanaged-file
 erasure. Older-than-deletion restore reconciliation remains required. Runtime
 upgrades preserve existing operational records; no automatic purge is enabled.
+
+
+## Managed context-file custody and purge
+
+Migration 017 registers new wrapper context slots before their bytes are written.
+`runner/context_purge_test.go` exercises the actual wrapper and operator purge;
+`artifacts/context_test.go` checks substituted directories/markers, final symlink
+isolation, private ownership, writer exclusion, partial writes, stale previews,
+and registration after forgetting. No new filesystem library dependency is added.
+
+The lifecycle CLI test now also kills an observed purge process after unlink and
+before completion commits. It confirms the slot is absent while the effect is
+still pending, then retries it and restores a pending-effect backup. Outcome
+files survive, and the restored worker confirms the already absent slot. Exact
+slot unlink is the established observation; old unregistered files, snapshots,
+provider copies, media erasure and post-backup security reconciliation remain
+outside that claim. The full race suite, static checks and lifecycle drill pass.
