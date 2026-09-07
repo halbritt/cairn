@@ -103,3 +103,46 @@ func supportingEvidence(ctx context.Context, tx pgx.Tx, id string, version int) 
 	}
 	return result, rows.Err()
 }
+
+type EvidenceDocument struct {
+	Evidence
+	Repo         string `json:"repo"`
+	Source       string `json:"source"`
+	Sensitivity  string `json:"sensitivity"`
+	Body         string `json:"body"`
+	ActualSHA256 string `json:"actual_sha256"`
+}
+
+// ReadEvidence is local inspection of explicitly captured bytes and their state.
+// Unavailable/divergent material remains labelled, never silently revalidated.
+func (s *Store) ReadEvidence(ctx context.Context, id string) (EvidenceDocument, error) {
+	if err := validID(id); err != nil {
+		return EvidenceDocument{}, err
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return EvidenceDocument{}, err
+	}
+	defer tx.Rollback(ctx)
+	var doc EvidenceDocument
+	var body, digest []byte
+	doc.ID = id
+	err = tx.QueryRow(ctx, `SELECT repo,source,sensitivity,body,digest,witness,state FROM cairn.evidence WHERE evidence_id=$1`, id).Scan(&doc.Repo, &doc.Source, &doc.Sensitivity, &body, &digest, &doc.Witness, &doc.State)
+	if err == pgx.ErrNoRows {
+		return doc, failure("NOT_FOUND", "evidence not found")
+	}
+	if err != nil {
+		return doc, err
+	}
+	if err = s.checkRepo(doc.Repo); err != nil {
+		return EvidenceDocument{}, err
+	}
+	actual := sha256.Sum256(body)
+	doc.Digest = hex.EncodeToString(digest)
+	doc.ActualSHA256 = hex.EncodeToString(actual[:])
+	doc.Body = string(body)
+	if !bytes.Equal(digest, actual[:]) {
+		doc.State = "divergent"
+	}
+	return doc, tx.Commit(ctx)
+}

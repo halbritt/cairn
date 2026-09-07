@@ -2,17 +2,19 @@ package core
 
 import (
 	"context"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 )
 
 type DocketItem struct {
-	AttemptID string `json:"attempt_id,omitempty"`
-	Reason    string `json:"reason"`
-	RecordID  string `json:"record_id,omitempty"`
-	Version   int    `json:"version,omitempty"`
-	ReceiptID string `json:"receipt_id,omitempty"`
-	Action    string `json:"suggested_action"`
+	ProposalID string `json:"proposal_id,omitempty"`
+	AttemptID  string `json:"attempt_id,omitempty"`
+	Reason     string `json:"reason"`
+	RecordID   string `json:"record_id,omitempty"`
+	Version    int    `json:"version,omitempty"`
+	ReceiptID  string `json:"receipt_id,omitempty"`
+	Action     string `json:"suggested_action"`
 }
 type Docket struct {
 	Items     []DocketItem `json:"items"`
@@ -149,6 +151,28 @@ func (s *Store) Docket(ctx context.Context, repo string) (Docket, error) {
 			docket.Items = append(docket.Items, DocketItem{Reason: "EVIDENCE_UNAVAILABLE", RecordID: ref.ID, Version: ref.Version, Action: "Re-establish supporting evidence or retract the claim."})
 		}
 	}
+	proposalRows, err := tx.Query(ctx, `SELECT p.proposal_id::text FROM cairn.lesson_proposal p WHERE p.repo=$1 AND (p.disposition='open' OR (p.disposition='deferred' AND p.due_at<=clock_timestamp()))
+ AND p.failure_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=p.failure_receipt)
+ AND p.recovery_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=p.recovery_receipt)
+ ORDER BY p.created_at,p.proposal_id LIMIT 101`, repo)
+	if err != nil {
+		return docket, err
+	}
+	for proposalRows.Next() {
+		item := DocketItem{Reason: "FAILURE_RECOVERY", Action: "Review the attached failure/recovery evidence before proposing a reusable lesson; no causal benefit is established."}
+		if err = proposalRows.Scan(&item.ProposalID); err != nil {
+			proposalRows.Close()
+			return docket, err
+		}
+		docket.Items = append(docket.Items, item)
+	}
+	err = proposalRows.Err()
+	proposalRows.Close()
+	if err != nil {
+		return docket, err
+	}
+	priority := map[string]int{"ATTRIBUTION_CONTRADICTED": 0, "OPEN_DELEGATE_AFTER_TASK": 1, "EVIDENCE_UNAVAILABLE": 2, "UNFINISHED_RUN": 3, "FAILURE_RECOVERY": 4, "ESCALATION_BLOCKED": 5}
+	slices.SortStableFunc(docket.Items, func(a, b DocketItem) int { return priority[a.Reason] - priority[b.Reason] })
 	if len(docket.Items) > 100 {
 		docket.Truncated = true
 		docket.Items = docket.Items[:100]

@@ -123,6 +123,14 @@ Depends on U4/U5 and E3/E4. R4's early protected event does not satisfy this sta
 | D1 — evidence-attached demand docket | partial | Extend attribution/evidence/unfinished-run hints with failure→recovery pairing, novel failures, blocked promotion, conflicts and source-attached proposal groups. Add explicit review dispositions and bounded duplicate grouping. Measure review burden, not just generated item count. |
 | D2 — adaptation acceptance | open | Approve a justified correction/promotion through existing authority, then replay or run a recurrence and observe next-run selection/outcome. Preserve negative results. Exposure alone must not amplify ranking. Demonstrate one avoided recurring failure within budget before claiming useful adaptation. |
 
+The [demand review path](demand-review.md) now generates bounded, source-attached
+failure/recovery proposals from assessed task outcomes. It excludes binding
+failures and unknown comparison labels, groups duplicate pairs, and retains
+versioned deferral/dismissal/conversion decisions. New source assessments make
+old proposals stale. The docket prioritizes existing correction/recovery work.
+Novel-failure grouping and demonstrated next-run benefit remain open; no groomer
+or automatic promotion has been added.
+
 ### 5. Complete lifecycle, governance and recovery gates
 
 These are remaining accepted requirements, not an invitation to restore the
@@ -138,9 +146,16 @@ Stage 1–2 acceptance or scaling sensitive/consequential retention.
 | L5 — class D and deletion | open | Redact/forget/access-policy transitions, cited-A escalation, tombstones, per-target purge accounting and durable retryable effects worker. Include context files, canonical receipts, selected content copies and backup residuals, including pre-R1 task/query text. Enumerations are not functionality. Test worker crashes, repeated requests, citation/delete races and truthful incomplete purge status. |
 | L6 — retention | open | Enforce record_use's 90-day minimum with extension while decisions remain live/reviewable, audited B/use pruning and backup residual tracking. Infinite retention currently preserves the floor but does not implement forgetting. Test cutoff/dependency boundaries and recovery. |
 | L7 — import and capture policy | partial | Explicit native/repository import quarantine, inherited source restrictions, per-class capture policy and secret handling. Existing advisory labels and hosted local-content exclusion remain. Test laundering attempts through imports and selected artifacts without adopting a hostile-agent threat model. |
-| L8 — unsigned C/D checkpoints | open | Reproducible checkpoint of the audit subset, expected restore-set catalog and verification. Dump checksum alone is insufficient. Signing/off-box keys stay withdrawn. Test missing/altered audit members and restore set. |
+| L8 — unsigned C/D checkpoints | partial | Reproducible checkpoint of the audit subset, expected restore-set catalog and verification. Dump checksum alone is insufficient. Signing/off-box keys stay withdrawn. Test missing/altered audit members and restore set. |
 | L9 — restore reconciliation | partial | Rebuild projections and freshly recompile under identical pins; verify state/audit, reapply newer revocations/deletions, invalidate handles and recover external effects. Existing dump/restore/stored-replay drill remains useful but narrower. Test restore after revocation/deletion and interrupted effects. |
 | L10 — fault and conformance acceptance | partial | Add abrupt process death around privileged commit, D-worker/citation races, task-close open loops, policy rollback, cutoff replay and adapter transformations. Keep CAS, identity, attribution, grant, evidence, budget and process tests. Record which gate each test establishes; green checks do not imply all-stage acceptance. |
+
+[Audit checkpoints](audit-checkpoints.md) now cover the emitted governance/C audit
+subset with explicit membership and no payload/reason commitment. Backups retain
+an external expectation catalog. Restore tests recompile from restored candidate
+inputs and reject missing newer expectations. Automated scheduling, future D
+operations, projection rebuilding and newer revocation/deletion reconciliation
+remain open.
 
 ### 6. Later extensions
 

@@ -24,11 +24,11 @@ Everyday commands:
 
 JSON commands (read one request from stdin):
   create edit compile bootstrap grant revoke-grant capture-evidence
-  promote issue correct retract dispute resolve usage assess-run recompile
+  promote issue correct retract dispute resolve usage assess-run recompile generate-proposals review-proposal
   grants (no input)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
-Administration: migrate | serve [--identities FILE] [--socket PATH]
+Administration: migrate | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH]
 Default store: ~/.local/share/cairn/socket, database cairn.
 Override with CAIRN_DATABASE_URL. Initialize with scripts/local-store.sh start.
 CLI is trusted operator administration. Agents use a host-established core Channel.
@@ -104,11 +104,15 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return remember(ctx, store, args[1:])
 	case "search":
 		return search(ctx, store, args[1:])
-	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments":
+	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
 		}
 		switch args[0] {
+		case "proposal":
+			return store.Proposal(ctx, args[1])
+		case "evidence":
+			return store.ReadEvidence(ctx, args[1])
 		case "assessments":
 			return store.Assessments(ctx, args[1])
 		case "use-report":
@@ -139,6 +143,14 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return nil, invalid("unexpected arguments")
 	}
 	switch args[0] {
+	case "checkpoint":
+		return invoke(ctx, input, store.Checkpoint)
+	case "verify-checkpoint":
+		result, err := invoke(ctx, input, store.VerifyCheckpoint)
+		if err == nil && !result.Valid {
+			err = &core.Error{Code: "INTEGRITY_FAILURE", Message: "audit members differ from expected restore set"}
+		}
+		return result, err
 	case "migrate":
 		return nil, store.Migrate(ctx)
 	case "grants":
@@ -167,6 +179,10 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.Dispute)
 	case "resolve":
 		return invoke(ctx, input, store.Resolve)
+	case "generate-proposals":
+		return invoke(ctx, input, store.GenerateProposals)
+	case "review-proposal":
+		return invoke(ctx, input, store.ReviewProposal)
 	case "recompile":
 		return invoke(ctx, input, func(ctx context.Context, req core.RecompileRequest) (any, error) {
 			p, err := store.Recompile(ctx, req)
