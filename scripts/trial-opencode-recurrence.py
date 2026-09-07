@@ -218,11 +218,13 @@ def assess_arm(binary, environment, result, records):
                 excluded_preflight_rows=len(joined['rows']) - len(rows), interpretation=joined['interpretation'])
 
 
-def run_trial(root, binary, opencode):
+def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_tokens=65536):
     for key in ('GPU_FLEET_LEASE_ID', 'GPU_FLEET_ENDPOINT_URL', 'GPU_FLEET_SERVED_MODEL'):
         if not os.environ.get(key):
             raise RuntimeError('run requires an active gpu-fleet-run environment')
     scenario = json.loads(SCENARIO.read_text())
+    if arm is not None:
+        scenario['arms'] = [arm]
     state = json.loads((root / 'preflight.json').read_text())
     if state['scenario_sha256'] != sha(SCENARIO.read_bytes()) or state['gate_sha256'] != sha(GATE.read_bytes()):
         raise RuntimeError('scenario or held-out gate changed after preflight')
@@ -240,6 +242,9 @@ def run_trial(root, binary, opencode):
                   model=os.environ['GPU_FLEET_SERVED_MODEL'], lease_id=os.environ['GPU_FLEET_LEASE_ID'],
                   opencode_sha256=sha(opencode.read_bytes()), cairn_sha256=sha(binary.read_bytes()),
                   controller_sha256=sha(Path(__file__).read_bytes()), arms=[], limits=scenario['limits'])
+    report['experiment_kind'] = 'harness_calibration' if arm is not None else 'memory_comparison'
+    report['settings'] = dict(arms=scenario['arms'], disable_thinking=disable_thinking,
+                              context_tokens=context_tokens, output_limit=8192, process_seconds=300, steps=20)
     try:
         subprocess.run([str(pg_bin / 'pg_ctl'), '-D', str(store / 'data'), '-l', str(store / 'postgres.log'), '-o', f"-k {store}/socket -c listen_addresses=''", '-w', 'start'], check=True, stdout=subprocess.DEVNULL)
         subprocess.run([str(pg_bin / 'createdb'), '-h', str(store / 'socket'), 'cairn_trial'], check=True)
@@ -292,7 +297,8 @@ def run_trial(root, binary, opencode):
             model = os.environ['GPU_FLEET_SERVED_MODEL']
             private_file(config, json.dumps(dict(autoupdate=False, share='disabled', enabled_providers=['fleet'],
                 provider=dict(fleet=dict(npm='@ai-sdk/openai-compatible', name='Leased local fleet', options=dict(baseURL=os.environ['GPU_FLEET_ENDPOINT_URL'], apiKey='local-fleet'),
-                     models={model:dict(name=model, limit=dict(context=65536, output=8192))})),
+                     models={model:dict(name=model, limit=dict(context=context_tokens, output=8192),
+                         options={'chat_template_kwargs': {'enable_thinking': False}} if disable_thinking else {})})),
                 agent=dict(build=dict(temperature=0, steps=20)),
                 permission=dict(external_directory='deny', webfetch='deny', websearch='deny', task='deny', skill='deny', edit='allow', read='allow', bash={'*':'deny','go test*':'allow','go version*':'allow','gofmt*':'allow','git diff*':'allow','git status*':'allow','rg *':'allow','ls*':'allow','pwd':'allow'}))))
             child_env = dict(PATH='/opt/go/bin:/usr/bin:/bin', HOME='/trial-home', GOROOT='/opt/go', GOPATH='/trial-home/go', GOMODCACHE='/opt/gomod', GOCACHE='/trial-cache', GOTOOLCHAIN='local', GOPROXY='off',
@@ -378,11 +384,15 @@ def main():
     sub = parser.add_subparsers(dest='operation', required=True)
     p = sub.add_parser('prepare'); p.add_argument('--source', required=True, type=Path); p.add_argument('--output', required=True, type=Path)
     p = sub.add_parser('run'); p.add_argument('--trial', required=True, type=Path); p.add_argument('--cairn', required=True, type=Path); p.add_argument('--opencode', required=True, type=Path)
+    p.add_argument('--arm', choices=['repo_only', 'native_excerpt', 'cairn_h0'], help='one-arm harness calibration; not a memory comparison')
+    p.add_argument('--disable-thinking', action='store_true', help='request chat_template_kwargs.enable_thinking=false from the local model')
+    p.add_argument('--context-tokens', type=int, choices=[65536, 131072], default=65536,
+                   help='verified model context; acquire a fleet lease supporting at least this value')
     args = parser.parse_args()
     if args.operation == 'prepare':
         prepare(args.source.resolve(strict=True), args.output.resolve())
     else:
-        run_trial(args.trial.resolve(strict=True), args.cairn.resolve(strict=True), args.opencode.resolve(strict=True))
+        run_trial(args.trial.resolve(strict=True), args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, args.disable_thinking, args.context_tokens)
 
 
 if __name__ == '__main__':

@@ -100,3 +100,30 @@ Then use a currently routable exact model and an installed OpenCode binary:
 The commands create only a disposable PostgreSQL cluster and isolated trial
 workspaces. They refuse to reuse a trial store, so a retry requires a new trial
 and fresh run identities. Preserve failed attempts when interpreting a later run.
+
+For harness calibration, `--arm repo_only` runs just that arm and labels the
+report `harness_calibration`. It cannot produce a memory comparison. The optional
+`--disable-thinking` sends `chat_template_kwargs.enable_thinking=false` through
+the custom provider. This is a per-request model setting; the default leaves it
+unspecified. The installed OpenCode binary can be checked against a local fixture:
+
+```sh
+python3 -B scripts/probe-opencode.py /path/to/opencode --disable-thinking \
+  --output /tmp/cairn-thinking-probe.json
+```
+
+The fixture verifies the outgoing field and keeps only request metadata.
+Add `--check-edit` to have the fixture request a read and an edit of a disposable
+file through OpenCode's actual tools. The probe checks the resulting bytes. The
+opt-in OpenCode integration suite runs both checks through the Cairn wrapper;
+its ingress canary exists only in compiled memory, not in the task prompt.
+OpenCode documents [model options](https://opencode.ai/docs/models/#configure-models),
+and llama.cpp documents the
+[chat template parameter](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).
+Model support still depends on the actual serving template.
+
+`--context-tokens 131072` permits a second calibration context size. Acquire a
+fleet lease for at least that context and verify the live server supports it;
+the default remains 65,536. The available room passed to Cairn stays 32,000.
+All settings appear in the report. A change of context size, thinking setting or
+tool policy creates a new experimental condition; preserve the prior result.

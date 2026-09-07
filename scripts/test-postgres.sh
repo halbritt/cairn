@@ -15,14 +15,26 @@ trap cleanup EXIT
 mkdir "$test_root/socket"
 "$pg_bin/pg_ctl" -D "$test_root/data" -l "$test_root/postgres.log" -o "-F -k $test_root/socket -c listen_addresses=''" -w start >/dev/null
 "$pg_bin/createdb" -h "$test_root/socket" cairn_test
+# Package suites are independent consumers, not one shared database workload.
+# Keep their explicit race tests while preventing unrelated package writes from
+# exhausting bounded Serializable retries in another package's setup.
+go list ./... > "$test_root/packages"
+test_db_number=0
+while IFS= read -r test_package; do
+    test_db_number=$((test_db_number + 1))
+    test_database="cairn_package_$test_db_number"
+    "$pg_bin/createdb" -h "$test_root/socket" "$test_database"
+    test_dsn="host=$test_root/socket dbname=$test_database sslmode=disable"
+    CAIRN_TEST_DATABASE_URL="$test_dsn" CAIRN_DATABASE_URL="$test_dsn" \
+        go test -race -count=1 "$test_package"
+done < "$test_root/packages"
 export CAIRN_TEST_DATABASE_URL="host=$test_root/socket dbname=cairn_test sslmode=disable"
 export CAIRN_DATABASE_URL="$CAIRN_TEST_DATABASE_URL"
-go test -race -count=1 ./...
 go run ./cmd/cairn migrate
 go run ./cmd/cairn create < fixtures/note.json
 go build -o "$test_root/cairn" ./cmd/cairn
 python3 scripts/check-capture.py "$test_root/cairn" "$test_root/capture-home"
 python3 scripts/check-local-api.py "$test_root/cairn" "$test_root/api-home"
 if [[ -n "${CAIRN_OPENCODE_BINARY:-}" ]]; then
-    python3 scripts/probe-opencode.py "$CAIRN_OPENCODE_BINARY" --cairn-binary "$test_root/cairn" --output "${CAIRN_PROBE_OUTPUT:-$test_root/opencode-probe.json}"
+    python3 scripts/probe-opencode.py "$CAIRN_OPENCODE_BINARY" --cairn-binary "$test_root/cairn" --check-edit --disable-thinking --output "${CAIRN_PROBE_OUTPUT:-$test_root/opencode-probe.json}"
 fi

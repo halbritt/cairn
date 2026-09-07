@@ -126,9 +126,12 @@ explicitly later recurrence. A subsequent [real OpenCode repair trial](verificat
 compares repository-only, native-excerpt and Cairn H0 inputs on one historical
 defect. No arm produced a repair; a corrected preflight now refuses missing
 memory treatment. Real receipt/outcome joins are retained, with usage unknown.
-The harness and response budget need a successful repair calibration before
-another comparison. Full native/search baselines, relevance judgments and
-avoided-failure evidence remain open.
+Two [harness calibrations](verification/opencode-calibration-2026-09-07.md)
+then disabled thinking and increased context; neither produced a repair. A
+provider-free probe now verifies actual read/edit execution through the wrapper.
+Further comparison needs a binding/task combination that completes a real
+repair or new evidence explaining the failure. Full native/search baselines,
+relevance judgments and avoided-failure evidence remain open.
 
 ### 4. Turn observed demand into next-run improvement
 

@@ -61,6 +61,13 @@ labelled. Earlier invalid launches and missing memory treatment are preserved.
 This advances E4's evidence collection without establishing memory benefit,
 Striatum integration or adaptation acceptance.
 
+Two [follow-up calibrations](verification/opencode-calibration-2026-09-07.md)
+also failed to repair the task after disabling thinking and increasing context.
+A separate local fixture now verifies actual read/edit execution and model-option
+forwarding through the wrapper. Local package tests use separate databases and
+CI serializes packages to prevent unrelated writes exhausting bounded retries.
+The real model's ability to finish the repair remains unestablished.
+
 ## Record-body deletion — 2026-09-07
 
 Migration 016 adds [operator forgetting](deletion.md), immediate exclusion of
