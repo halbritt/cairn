@@ -30,7 +30,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	}
 	operation := f.Arg(0)
 	switch operation {
-	case "index", "expand", "create", "edit", "compile", "get", "usage", "usage-coverage", "evidence", "spawn", "terminal", "task-state", "bind-run", "delivery", "outcome", "assess-run", "use-report":
+	case "refusal", "index", "expand", "create", "edit", "compile", "get", "usage", "usage-coverage", "evidence", "spawn", "terminal", "task-state", "bind-run", "delivery", "outcome", "assess-run", "use-report":
 	default:
 		return nil, invalid("unknown agent operation")
 	}
@@ -74,17 +74,18 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	}
 	defer response.Body.Close()
 	var result struct {
-		OK      bool            `json:"ok"`
-		Status  string          `json:"status"`
-		Message string          `json:"message"`
-		Data    json.RawMessage `json:"data"`
+		RefusalID string          `json:"refusal_id"`
+		OK        bool            `json:"ok"`
+		Status    string          `json:"status"`
+		Message   string          `json:"message"`
+		Data      json.RawMessage `json:"data"`
 	}
 	decoder := json.NewDecoder(io.LimitReader(response.Body, 8*1024*1024))
 	if err = decoder.Decode(&result); err != nil {
 		return nil, err
 	}
 	if response.StatusCode != 200 || !result.OK {
-		return nil, &core.Error{Code: result.Status, Message: result.Message}
+		return nil, &core.Error{Code: result.Status, Message: result.Message, RefusalID: result.RefusalID}
 	}
 	return result.Data, nil
 }

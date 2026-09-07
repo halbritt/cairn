@@ -11,9 +11,10 @@ import (
 )
 
 type Error struct {
-	Code    string
-	Message string
-	Cause   error
+	RefusalID string
+	Code      string
+	Message   string
+	Cause     error
 }
 
 func (e *Error) Error() string           { return e.Code + ": " + e.Message }

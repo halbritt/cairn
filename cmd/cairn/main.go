@@ -16,11 +16,12 @@ import (
 )
 
 type response struct {
-	Schema  string `json:"schema"`
-	OK      bool   `json:"ok"`
-	Status  string `json:"status"`
-	Data    any    `json:"data,omitempty"`
-	Message string `json:"message,omitempty"`
+	RefusalID string `json:"refusal_id,omitempty"`
+	Schema    string `json:"schema"`
+	OK        bool   `json:"ok"`
+	Status    string `json:"status"`
+	Data      any    `json:"data,omitempty"`
+	Message   string `json:"message,omitempty"`
 }
 
 func main() {
@@ -31,9 +32,13 @@ func main() {
 	exitCode := 0
 	if err != nil {
 		envelope.Status = core.Code(err)
+		var refusal *core.Error
+		if errors.As(err, &refusal) {
+			envelope.RefusalID = refusal.RefusalID
+		}
 		envelope.Message = err.Error()
 		switch envelope.Status {
-		case "INTEGRITY_FAILURE", "CHECKPOINT_MISMATCH":
+		case "REFUSAL_UNRECORDED", "INTEGRITY_FAILURE", "CHECKPOINT_MISMATCH":
 			exitCode = 7
 		case "RUN_FAILED":
 			exitCode = 1

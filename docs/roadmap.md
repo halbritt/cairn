@@ -59,8 +59,10 @@ with refusal above 1,000 uses. Known relation traversal is also capped at
 1,000 retained versions, with no partial preview token. Known versioned record relations now participate in previews; evidence-object
 dependencies and broader lifecycle operations remain under L1/L4. R5 now stores
 candidate IDs/versions, eligibility reason, lexical/scope/recency/stable-ID ranking
-and packing cost, with owner-authorized `explain` and fixed census buckets. Hard
-refusals still return errors without durable explanation and are tracked by L2.
+and packing cost, with owner-authorized `explain` and fixed census buckets. Named hard
+policy refusals now return a durable caller-owned observation ID and a partial
+protected trace; full refusal explanations and the remaining policy paths are
+tracked by L2.
 No legacy copies were purged and no real model usefulness claim is made.
 
 Baseline synthetic probes confirmed R1–R4 on `e3b47c7`; R5 is a source/schema
@@ -165,6 +167,11 @@ and sensitivity restrictions. B→A is unaudited, preserves consumed history and
 refuses active C/open-conflict dependencies. Retraction previews include known
 transitive uses and reject changed dependency/exposure state. Ordinary delete,
 explicit supersession and scope-broadening operations remain open.
+
+[Durable refusals](refusals.md) now preserve bounded metadata for compile policy
+failures and blocked demotion/retraction, without raw queries or record bodies.
+Transport repeats group by exact intent and status; failed observation writes
+are explicit. Other policy paths and refusal analytics remain open.
 
 [Audit checkpoints](audit-checkpoints.md) now cover the emitted governance/C audit
 subset with explicit membership and no payload/reason commitment. Backups retain

@@ -16,6 +16,7 @@ measured agent benefit.
 | Expected audit restore set | `core/checkpoint_test.go`; altered/missing members, later uncovered events, A exclusion, catalog mismatch and operator access |
 | Sealed index, expiring body handles and transactional credits | `core/index_test.go`; current version/authority/bootstrap checks on retry, concurrent credit limit, oversized body refusal and preview invalidation |
 | Versioned relations, cheap B demotion and transitive preview guards | `core/relations_test.go`; inherited source restrictions, C/conflict refusal, historical B/relations preservation, transitive exposure invalidation |
+| Durable policy refusals | `core/refusals_test.go`, Unix client fixture; exact-intent grouping, source privacy, caller ownership and explicit observation-write failure |
 | Restore recomputation and handle fencing | `scripts/test-local-lifecycle.sh`; independent dump, audit catalog verification, exact body/index recompile and rejection of restored handles |
 
 `make check`, `make test-integration` and `make test-lifecycle` pass against

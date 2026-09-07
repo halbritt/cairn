@@ -108,11 +108,13 @@ func (s *Store) Demote(ctx context.Context, req DemoteRequest) (Record, error) {
 	if err := validID(req.RecordID); err != nil {
 		return Record{}, err
 	}
-	return privileged(ctx, s, "demote", req.RequestID, req, func(tx pgx.Tx) (Record, error) {
+	var scope Scope
+	result, err := privileged(ctx, s, "demote", req.RequestID, req, func(tx pgx.Tx) (Record, error) {
 		current, err := readRecord(ctx, tx, req.RecordID)
 		if err != nil {
 			return Record{}, err
 		}
+		scope = current.Scope
 		// Existing correct authority governs lowering a B claim. Demotion does not
 		// issue authority and deliberately creates no C/D audit event.
 		if _, err = s.authorize(ctx, tx, req.GrantID, "correct", current.Scope.Repo); err != nil {
@@ -143,6 +145,10 @@ func (s *Store) Demote(ctx context.Context, req DemoteRequest) (Record, error) {
 		}
 		return advanceRecord(ctx, tx, current, current.Draft, "A", "active")
 	})
+	if durablePolicyRefusal(err) {
+		err = s.retainRefusal(ctx, req, Refusal{RequestID: req.RequestID, Operation: "demote", Scope: scope, Considered: []RecordVersionRef{{req.RecordID, req.ExpectedVersion}}, TraceComplete: false}, err)
+	}
+	return result, err
 }
 
 // The starting set includes every retained version, preserving citations to a

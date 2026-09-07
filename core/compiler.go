@@ -134,7 +134,26 @@ func (s *Store) compileOnce(ctx context.Context, req CompileRequest, destination
 	evaluations := map[string]*CandidateEvaluation{}
 	semantic, err := s.compileSnapshot(ctx, tx, req, destination, evaluations)
 	if err != nil {
-		return Package{}, err
+		if !durablePolicyRefusal(err) {
+			return Package{}, err
+		}
+		refusal := Refusal{RequestID: req.RequestID, Operation: "compile", Scope: req.Scope, Destination: destination.Name, TraceComplete: false}
+		digest := sha256.Sum256([]byte(req.Query))
+		refusal.QuerySHA256 = hex.EncodeToString(digest[:])
+		for _, e := range evaluations {
+			refusal.Considered = append(refusal.Considered, RecordVersionRef{e.RecordID, e.Version})
+		}
+		if snapshotErr := tx.QueryRow(ctx, `SELECT pg_current_snapshot()::text`).Scan(&refusal.Snapshot); snapshotErr != nil {
+			return Package{}, snapshotErr
+		}
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+			return Package{}, rollbackErr
+		}
+		intent := struct {
+			Request     CompileRequest
+			Destination Destination
+		}{req, destination}
+		return Package{}, s.retainRefusal(ctx, intent, refusal, err)
 	}
 	canonical, seal, err := sealPackage(semantic)
 	if err != nil {

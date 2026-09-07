@@ -104,11 +104,13 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return remember(ctx, store, args[1:])
 	case "search":
 		return search(ctx, store, args[1:])
-	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence":
+	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
 		}
 		switch args[0] {
+		case "refusal":
+			return store.Refusal(ctx, args[1])
 		case "proposal":
 			return store.Proposal(ctx, args[1])
 		case "evidence":

@@ -240,11 +240,13 @@ func (s *Store) Retract(ctx context.Context, req RetractRequest) (Record, error)
 	if err := validID(req.RecordID); err != nil {
 		return Record{}, err
 	}
-	return privileged(ctx, s, "retract", req.RequestID, req, func(tx pgx.Tx) (Record, error) {
+	var scope Scope
+	result, err := privileged(ctx, s, "retract", req.RequestID, req, func(tx pgx.Tx) (Record, error) {
 		current, err := readRecord(ctx, tx, req.RecordID)
 		if err != nil {
 			return Record{}, err
 		}
+		scope = current.Scope
 		chain, err := s.authorize(ctx, tx, req.GrantID, "retract", current.Scope.Repo)
 		if err != nil {
 			return Record{}, err
@@ -275,6 +277,10 @@ func (s *Store) Retract(ctx context.Context, req RetractRequest) (Record, error)
 		}
 		return next, nil
 	})
+	if durablePolicyRefusal(err) {
+		err = s.retainRefusal(ctx, req, Refusal{RequestID: req.RequestID, Operation: "retract", Scope: scope, Considered: []RecordVersionRef{{req.RecordID, req.ExpectedVersion}}, TraceComplete: false}, err)
+	}
+	return result, err
 }
 
 func advanceRecord(ctx context.Context, tx pgx.Tx, old Record, draft Draft, class, lifecycle string) (Record, error) {

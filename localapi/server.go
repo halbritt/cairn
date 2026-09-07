@@ -124,6 +124,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveJSON(w, r, c.store.RecordOutcome)
 	case "/v1/assess-run":
 		serveJSON(w, r, c.store.AssessRun)
+	case "/v1/refusal":
+		if !c.destination.AllowLocal {
+			writeError(w, 403, "AUTHORITY_DENIED", "protected refusal inspection requires a local profile")
+			return
+		}
+		serveJSON(w, r, func(ctx context.Context, req struct {
+			RefusalID string `json:"refusal_id"`
+		}) (core.Refusal, error) {
+			return c.store.Refusal(ctx, req.RefusalID)
+		})
 	case "/v1/use-report":
 		if !c.destination.AllowLocal {
 			writeError(w, 403, "AUTHORITY_DENIED", "protected reports require a local profile")
@@ -147,16 +157,21 @@ type recordRequest struct {
 	RecordID string `json:"record_id"`
 }
 type response struct {
-	Schema  string `json:"schema"`
-	OK      bool   `json:"ok"`
-	Status  string `json:"status"`
-	Data    any    `json:"data,omitempty"`
-	Message string `json:"message,omitempty"`
+	RefusalID string `json:"refusal_id,omitempty"`
+	Schema    string `json:"schema"`
+	OK        bool   `json:"ok"`
+	Status    string `json:"status"`
+	Data      any    `json:"data,omitempty"`
+	Message   string `json:"message,omitempty"`
 }
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
+func writeError(w http.ResponseWriter, status int, code, message string, refusalIDs ...string) {
+	id := ""
+	if len(refusalIDs) > 0 {
+		id = refusalIDs[0]
+	}
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(response{Schema: "cairn.response/1", Status: code, Message: message})
+	_ = json.NewEncoder(w).Encode(response{Schema: "cairn.response/1", Status: code, Message: message, RefusalID: id})
 }
 func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(context.Context, Q) (R, error)) {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128*1024))
@@ -185,11 +200,16 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 			status = 404
 		case "STALE_HANDLE", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "STALE_PACKAGE", "RUN_ALREADY_STARTED":
 			status = 409
-		case "STORE_ERROR":
+		case "STORE_ERROR", "REFUSAL_UNRECORDED":
 			status = 500
 			message = "store operation failed"
 		}
-		writeError(w, status, code, message)
+		var failure *core.Error
+		id := ""
+		if errors.As(err, &failure) {
+			id = failure.RefusalID
+		}
+		writeError(w, status, code, message, id)
 		return
 	}
 	// HTTP write errors mean the caller may not have received a committed result;

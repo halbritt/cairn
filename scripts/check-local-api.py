@@ -54,6 +54,13 @@ try:
     result = subprocess.run([binary,'agent','expand'],input=json.dumps(pull),env=env,capture_output=True,text=True,check=True)
     expansion=json.loads(result.stdout)['data']
     assert expansion['selection']['record']['record_id']==record['record_id'] and expansion['credits_remaining']==3
+    refused = dict(index_request,request_id=str(uuid.uuid4()),available_tokens=256)
+    result=subprocess.run([binary,'agent','index'],input=json.dumps(refused),env=env,capture_output=True,text=True)
+    assert result.returncode != 0
+    refusal=json.loads(result.stdout)
+    assert refusal['status']=='BUDGET_REFUSED' and refusal['refusal_id']
+    inspected=subprocess.run([binary,'agent','refusal'],input=json.dumps(dict(refusal_id=refusal['refusal_id'])),env=env,capture_output=True,text=True,check=True)
+    assert json.loads(inspected.stdout)['data']['code']=='BUDGET_REFUSED'
     # A second listener must not remove or replace the active socket.
     collision = subprocess.run([binary, 'serve'], env=env, capture_output=True,
                                text=True, timeout=10)

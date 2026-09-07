@@ -17,16 +17,16 @@ preview and rejects new exposure after preview, including concurrent compile.
 These changes use forward migrations 004 and 005. Historical v1 seal verification
 is preserved; old retained text is not purged.
 
-Retraction impact covers all versions and direct uses, with a 1,000-use refusal
-limit. Cross-record dependency impact and durable hard-refusal explanations remain
-open. The observation and generated-demand additions below now implement a bounded
+The initial repair covered direct uses with a 1,000-use limit. The additions
+below now cover known transitive relations and retain named policy refusals;
+evidence-object dependencies and full refusal traces remain open. The observation and generated-demand additions below now implement a bounded
 part of that loop. See roadmap R1–R5 for completion boundaries and the
 [repair verification](verification/contract-repairs-2026-09-07.md) for tests and
 local installation evidence.
 
 ## Observation, retrieval and recovery additions — 2026-09-07
 
-Migrations 006–013 add versioned task assessments, declared run bindings, usage
+Migrations 006–014 add versioned task assessments, declared run bindings, usage
 coverage, task-close delegate findings, currentness pins, reviewed failure/recovery
 proposals, unsigned audit checkpoints and bounded index expansion. The Unix API
 establishes separate authenticated agent/observer channels. Record-specific use
@@ -115,9 +115,14 @@ sensitivity restrictions. B→A preserves consumed history without an authority
 transition event and refuses current C/open-conflict dependencies. Retraction
 previews include known transitive uses and reject changed dependency state.
 
+Named compiler and lifecycle policy denials now retain caller-owned refusal
+observations. They store bounded partial traces and digests, never raw queries or
+record bodies. A failed observation commit returns `REFUSAL_UNRECORDED` without
+claiming a durable identifier.
+
 ## Current local installation
 
-The installed build applies migrations 001–013 to Cairn's dedicated PostgreSQL 17
+The installed build applies migrations 001–014 to Cairn's dedicated PostgreSQL 17
 store. The upgrade was preceded by a private dump. A subsequent dump includes the
 new expected audit-set catalog and verifies against the installed store.
 
