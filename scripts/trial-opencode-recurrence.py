@@ -188,6 +188,9 @@ def assess_arm(binary, environment, result, records):
     if not result['runtime_observed']:
         outcome, domain, kind = 'unknown', 'binding', 'adapter'
         reason = 'No model activity observed; mechanical failure cannot establish a model task failure.'
+    elif not result['gate']['passed'] and result['gate'].get('actions') != ['fail'] and not result['outside_scope']:
+        outcome, domain, kind = 'unknown', 'unknown', ''
+        reason = 'The evaluator did not run the necessary behavioral condition to failure. A build or evaluation error needs separate diagnosis before task assessment.'
     elif not result['gate']['passed']:
         outcome, domain, kind = 'rejected', 'task', 'historical_cache_gate'
         reason = 'The candidate failed a necessary cache-lifetime condition or the authorized write scope. This is bounded trial assessment, not a Striatum verdict or a capability diagnosis.'

@@ -61,6 +61,8 @@ full task acceptance unknown. No observed model activity leaves task outcome
 unknown and is classified as a binding problem. Assessments and optional UUID
 citations enter through the operator CLI as testimony, with stable retry IDs.
 They do not impersonate a Striatum acceptance service or prove causal influence.
+An evaluator that fails before executing the behavioral condition also leaves
+task outcome unknown; compilation or infrastructure errors need separate diagnosis.
 
 The compiler receives 32,000 units of available memory input room, leaving a
 3,200-unit optional allowance under the current 10% policy. The model has a
