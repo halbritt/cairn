@@ -177,7 +177,9 @@ and uses Go's race detector. It covers migration from the original schema,
 concurrent edits/retries, grant revocation races, evidence and destination gates,
 conflicts, package seals, process launch/timeout, and duplicate-launch refusal.
 The lifecycle target checks startup, catalog-backed backup/restore, replay,
-recompilation, restored-handle invalidation, and restart.
+recompilation, restored-handle invalidation, and restart. It also checks
+[external recovery expectations](docs/recovery-inspection.md) against a real
+dump taken before later revocation and forgetting.
 Neither target touches the running local or host PostgreSQL instance.
 
 To repeat the real OpenCode ingress probe without provider credentials:

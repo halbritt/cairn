@@ -74,3 +74,16 @@ files survive, and the restored worker confirms the already absent slot. Exact
 slot unlink is the established observation; old unregistered files, snapshots,
 provider copies, media erasure and post-backup security reconciliation remain
 outside that claim. The full race suite, static checks and lifecycle drill pass.
+
+## External recovery expectations
+
+`core/recovery_test.go` detects revived grant flags with intact revocation audit,
+missing cached-payload exclusion, altered checksums, unrelated roots and scoped
+callers. CLI file tests reject overwrites, symlinks, FIFO inputs, public modes,
+malformed/trailing JSON and oversize input. `scripts/check-recovery.py` restores
+an actual pre-withdrawal dump and detects revived grants/content, missing audit
+and later context custody against an independently retained export. Inspection
+is read-only; consistent exclusion can still have pending purge and residuals.
+
+These checks establish detection against a supplied known snapshot. Automatic
+freshness, reapplication, projection recovery and admission remain unimplemented.

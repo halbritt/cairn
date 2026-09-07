@@ -30,7 +30,8 @@ JSON commands (read one request from stdin):
   grants (no input)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
-Administration: migrate | invalidate-handles < request.json | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH]
+Administration: recovery-export FILE | recovery-inspect FILE
+  migrate | invalidate-handles < request.json | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH]
 Default store: ~/.local/share/cairn/socket, database cairn.
 Override with CAIRN_DATABASE_URL. Initialize with scripts/local-store.sh start.
 CLI is trusted operator administration. Agents use a host-established core Channel.
@@ -97,6 +98,14 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	switch args[0] {
+	case "recovery-export", "recovery-inspect":
+		if len(args) != 2 {
+			return nil, invalid("recovery command requires one file path")
+		}
+		if args[0] == "recovery-export" {
+			return exportRecovery(ctx, store, args[1])
+		}
+		return inspectRecovery(ctx, store, args[1])
 	case "recover-run":
 		if len(args) != 2 {
 			return nil, invalid("recover-run requires a receipt UUID")

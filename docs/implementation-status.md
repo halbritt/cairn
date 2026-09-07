@@ -186,3 +186,10 @@ provide managed startup and shutdown; the current machine already has user linge
 and its required store can run without an interactive login. Use the systemd units for lifecycle
 operations on the managed store. The standalone lifecycle script remains the
 basis of isolated verification and manual installations.
+
+[Recovery inspection](recovery-inspection.md) exports bounded private withdrawal,
+audit and context-custody evidence for comparison with an older database. The
+lifecycle drill detects later revocation/forgetting and missing post-backup file
+custody in a real restored dump. It also checks mutable exclusion state when
+audit events are intact. This read-only report does not reapply restrictions,
+prove export freshness or authorize service resumption. L9 remains partial.

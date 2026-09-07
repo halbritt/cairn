@@ -158,7 +158,7 @@ Stage 1–2 acceptance or scaling sensitive/consequential retention.
 | L6 — retention | open | Enforce record_use's 90-day minimum with extension while decisions remain live/reviewable, audited B/use pruning and backup residual tracking. Infinite retention currently preserves the floor but does not implement forgetting. Test cutoff/dependency boundaries and recovery. |
 | L7 — import and capture policy | partial | Explicit native/repository import quarantine, inherited source restrictions, per-class capture policy and secret handling. Existing advisory labels and hosted local-content exclusion remain. Test laundering attempts through imports and selected artifacts without adopting a hostile-agent threat model. |
 | L8 — unsigned C/D checkpoints | partial | Reproducible checkpoint of the audit subset, expected restore-set catalog and verification. Dump checksum alone is insufficient. Signing/off-box keys stay withdrawn. Test missing/altered audit members and restore set. |
-| L9 — restore reconciliation | partial | Rebuild projections and freshly recompile under identical pins; verify state/audit, reapply newer revocations/deletions, invalidate handles and recover external effects. Existing dump/restore/stored-replay drill remains useful but narrower. Test restore after revocation/deletion and interrupted effects. |
+| L9 — restore reconciliation | partial | Rebuild projections and freshly recompile under identical pins; verify state/audit, reapply newer revocations/deletions, invalidate handles and recover external effects. External recovery exports now detect later withdrawals and missing context custody in actual older restores; reapplication, freshness and admission remain open. Test restore after revocation/deletion and interrupted effects. |
 | L10 — fault and conformance acceptance | partial | Add abrupt process death around privileged commit, D-worker/citation races, task-close open loops, policy rollback, cutoff replay and adapter transformations. Keep CAS, identity, attribution, grant, evidence, budget and process tests. Record which gate each test establishes; green checks do not imply all-stage acceptance. |
 
 [Versioned relations and demotion](relations-and-demotion.md) now implement
@@ -197,6 +197,12 @@ an external expectation catalog. Restore tests recompile from restored candidate
 inputs and reject missing newer expectations. Automated scheduling, remaining D
 operations, projection rebuilding and newer revocation/deletion reconciliation
 remain open.
+
+[Recovery inspection](recovery-inspection.md) now compares an isolated restore with
+a separately retained later withdrawal/audit/custody record. A real older dump
+correctly reports revived grants and content plus missing audit and file custody.
+This is read-only consistency evidence. Export freshness, auditable reapplication,
+projection rebuilding and restore admission remain required.
 
 ### 6. Later extensions
 
