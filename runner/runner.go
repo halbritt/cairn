@@ -29,6 +29,11 @@ type Request struct {
 	Carrier           string
 	Prompt            string
 	Timeout           time.Duration
+	TaskClass         string
+	BindingID         string
+	CapabilityID      string
+	Revision          string
+	WorkspaceSHA256   string
 	ArtifactDirectory string
 }
 type Result struct {
@@ -45,6 +50,25 @@ func Run(ctx context.Context, store *core.Store, req Request, stdout, stderr io.
 		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "invalid command, carrier, timeout or prompt"}
 	}
 	pkg, err := store.Compile(ctx, req.Compile, req.Destination)
+	if err != nil {
+		return Result{}, err
+	}
+	encodedCommand, err := json.Marshal(req.Command)
+	if err != nil {
+		return Result{}, err
+	}
+	commandDigest := sha256.Sum256(encodedCommand)
+	taskClass, bindingID, capabilityID := req.TaskClass, req.BindingID, req.CapabilityID
+	if taskClass == "" {
+		taskClass = "unknown"
+	}
+	if bindingID == "" {
+		bindingID = filepath.Base(req.Command[0]) + "/process-h0"
+	}
+	if capabilityID == "" {
+		capabilityID = "unknown"
+	}
+	_, err = store.BindRun(ctx, core.RunBindingRequest{RequestID: req.Compile.RequestID, ReceiptID: pkg.ReceiptID, TaskClass: taskClass, BindingID: bindingID, CapabilityID: capabilityID, CommandSHA256: hex.EncodeToString(commandDigest[:]), Revision: req.Revision, WorkspaceSHA256: req.WorkspaceSHA256})
 	if err != nil {
 		return Result{}, err
 	}

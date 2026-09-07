@@ -74,10 +74,21 @@ accepted usefulness milestone, before historical evaluation and generated demand
 | --- | --- | --- |
 | U1 — real host and agent ingress | partial | Integrate real Striatum/OpenCode H0 spawn/terminal boundaries with authenticated channel identity and stable task/run/attempt/binding IDs. Add narrow local agent access or in-process embedding. Current CLI stamps one OS UID, so its own A notes cannot independently self-promote to B. Keep operator administration distinct. Test real input route, terminal/recovery paths and one authorized wrapped build; synthetic adapter fixtures alone do not qualify. |
 | U2 — bounded run evidence | partial | Add command/argv digest, explicitly selected artifact/diff digests, permitted failure signatures, retry correlation and externally verified task outcome with correction. Process exit/duration/stream digests already exist. Default raw prompts/outputs/secrets/workspace capture stays off. Test allowed fields and absence of raw bodies. |
-| U3 — binding versus capability failures | open | Represent execution binding separately from capability identity; distinguish quota, credentials, transport and adapter failures from task/model results. Enforce no capability inference from binding failure in schema/API tests. Exit zero continues to mean process status, not task acceptance. |
-| U4 — record-specific outcome join | open | Join exposure, delivery, citations/expansions, outcomes and corrections by record/version and comparable task class/scope. Report coverage, unknowns, recurrence, resolution cost and uncertainty without multiplying rows across observations. Current independent counters are only operational telemetry. Verify multi-record/multi-observation fixtures and missing observations. |
+| U3 — binding versus capability failures | implemented/tested | Represent execution binding separately from capability identity; distinguish quota, credentials, transport and adapter failures from task/model results. Enforce no capability inference from binding failure in schema/API tests. Exit zero continues to mean process status, not task acceptance. |
+| U4 — record-specific outcome join | partial | Join exposure, delivery, citations/expansions, outcomes and corrections by record/version and comparable task class/scope. Report coverage, unknowns, recurrence, resolution cost and uncertainty without multiplying rows across observations. Current independent counters are only operational telemetry. Verify multi-record/multi-observation fixtures and missing observations. |
 | U5 — usage ladder | partial | Preserve cited > expanded > behaviorally implicated > delivered-only, with inference method/version and observation coverage. Connect actual citation/expansion ingress; manual testimony does not prove use. Do not infer unknown H0 tool actions or benefit from delivery. Test coverage-aware reporting. |
-| U6 — completed tasks with open delegates | partial | Add task completion observations and detect still-open service-observed attempts at completion. Existing exact-attempt attribution/failure recovery stays intact. `UNFINISHED_RUN` is a separate wrapper-recovery hint. Test late terminal recovery and completed-task open attempts. |
+| U6 — completed tasks with open delegates | implemented/tested | Add task completion observations and detect still-open service-observed attempts at completion. Existing exact-attempt attribution/failure recovery stays intact. `UNFINISHED_RUN` is a separate wrapper-recovery hint. Test late terminal recovery and completed-task open attempts. |
+
+The [observation join](use-outcome-loop.md) now associates each exposure with
+reduced delivery/usage streams, process outcome and versioned task assessments;
+repeated observations do not multiply rows. Task class and binding/capability
+metadata are recorded by the wrapper with command digest. Service inference is
+labelled with its method and coverage; H0 remains unknown. Closed-task open
+delegates have their own docket finding. U4 still needs recurrence/resolution
+analysis and real-history evaluation. U1 now has an authenticated Unix API and
+agent client, with role/repository/destination enforcement; actual Striatum
+integration must respect its sealed dispatch-input boundary, as described in
+[local API integration](local-api.md). No live Striatum lane is changed.
 
 ### 3. Make retrieval current and evaluate real history
 

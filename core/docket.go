@@ -7,6 +7,7 @@ import (
 )
 
 type DocketItem struct {
+	AttemptID string `json:"attempt_id,omitempty"`
 	Reason    string `json:"reason"`
 	RecordID  string `json:"record_id,omitempty"`
 	Version   int    `json:"version,omitempty"`
@@ -31,6 +32,25 @@ func (s *Store) Docket(ctx context.Context, repo string) (Docket, error) {
 	}
 	defer tx.Rollback(ctx)
 	docket := Docket{Items: []DocketItem{}}
+	openRows, err := tx.Query(ctx, `SELECT a.attempt_id::text FROM cairn.delegation_attempt a
+ JOIN (SELECT DISTINCT ON(observer,repo,task_id) observer,repo,task_id,state FROM cairn.task_state WHERE repo=$1 ORDER BY observer,repo,task_id,version DESC) t ON t.observer=a.observed_by AND t.repo=a.repo AND t.task_id=a.task_id
+ WHERE a.terminal_state IS NULL AND t.state IN ('completed','cancelled') ORDER BY a.spawned_at,a.attempt_id LIMIT 101`, repo)
+	if err != nil {
+		return docket, err
+	}
+	for openRows.Next() {
+		item := DocketItem{Reason: "OPEN_DELEGATE_AFTER_TASK", Action: "Reconcile the service-observed delegate still open after task completion."}
+		if err = openRows.Scan(&item.AttemptID); err != nil {
+			openRows.Close()
+			return docket, err
+		}
+		docket.Items = append(docket.Items, item)
+	}
+	err = openRows.Err()
+	openRows.Close()
+	if err != nil {
+		return docket, err
+	}
 	demandRows, err := tx.Query(ctx, `SELECT DISTINCT ON (c.record_id,c.version) c.record_id::text,c.version,c.receipt_id::text
  FROM cairn.retrieval_candidate c JOIN cairn.retrieval_receipt r USING(receipt_id)
  JOIN cairn.memory_record m ON m.record_id=c.record_id AND m.current_version=c.version

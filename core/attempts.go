@@ -20,6 +20,9 @@ func (s *Store) RecordSpawn(ctx context.Context, req SpawnRequest) (Attempt, err
 	if err := req.Scope.validate(); err != nil {
 		return Attempt{}, err
 	}
+	if err := s.checkRepo(req.Scope.Repo); err != nil {
+		return Attempt{}, err
+	}
 	for _, principal := range []string{req.Dispatcher, req.Delegate} {
 		if strings.TrimSpace(principal) == "" || len(principal) > 256 {
 			return Attempt{}, failure("INVALID_REQUEST", "dispatcher and delegate are required")
@@ -68,6 +71,9 @@ func (s *Store) RecordTerminal(ctx context.Context, req TerminalRequest) (Attemp
 			return Attempt{}, failure("NOT_FOUND", "attempt not found")
 		}
 		if err != nil {
+			return Attempt{}, err
+		}
+		if err := s.checkRepo(scope.Repo); err != nil {
 			return Attempt{}, err
 		}
 		if owner != s.channel.Principal {

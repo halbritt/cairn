@@ -70,6 +70,11 @@ func runTask(ctx context.Context, s *core.Store, args []string) (runner.Result, 
 	dest := f.String("destination", "local", "destination")
 	tokens := f.Int("tokens", 32000, "available input room reserved for memory")
 	timeout := f.Duration("timeout", 10*time.Minute, "process timeout")
+	taskClass := f.String("task-class", "unknown", "comparable task category")
+	binding := f.String("binding", "", "execution binding identity")
+	capability := f.String("capability", "unknown", "capability identity; distinct from binding")
+	revision := f.String("revision", "", "declared repository revision")
+	workspace := f.String("workspace-sha256", "", "declared dirty-workspace digest")
 	task := f.String("task", "interactive", "task identity")
 	run := f.String("run", uuid.NewString(), "run identity")
 	request := f.String("request-id", uuid.NewString(), "compile and launch identity")
@@ -90,7 +95,7 @@ func runTask(ctx context.Context, s *core.Store, args []string) (runner.Result, 
 	if err != nil {
 		return runner.Result{}, err
 	}
-	req := runner.Request{Compile: core.CompileRequest{RequestID: *request, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: *query, Purpose: "context", AvailableTokens: *tokens}, Destination: core.Destination{Name: *dest, AllowLocal: *dest == "local"}, Command: command, Directory: *directory, Carrier: *carrier, Prompt: *prompt, Timeout: *timeout, ArtifactDirectory: filepath.Join(artifacts, "runs")}
+	req := runner.Request{Compile: core.CompileRequest{RequestID: *request, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: *query, Purpose: "context", AvailableTokens: *tokens}, Destination: core.Destination{Name: *dest, AllowLocal: *dest == "local"}, Command: command, Directory: *directory, Carrier: *carrier, Prompt: *prompt, Timeout: *timeout, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability, Revision: *revision, WorkspaceSHA256: *workspace, ArtifactDirectory: filepath.Join(artifacts, "runs")}
 	result, err := runner.Run(ctx, s, req, os.Stdout, os.Stderr)
 	if err != nil && core.Code(err) == "STORE_ERROR" && result.ReceiptID != "" {
 		err = &core.Error{Code: "RUN_FAILED", Message: "wrapped task failed; inspect process_state and the run artifact directory", Cause: err}

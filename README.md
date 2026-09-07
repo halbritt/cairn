@@ -26,6 +26,7 @@ bin/cairn remember 'When changing Cairn storage, run make test-integration.'
 bin/cairn search 'changing storage'
 bin/cairn run --prompt 'Inspect the supplied note' -- /bin/cat
 bin/cairn report "$PWD"
+bin/cairn use-report "$PWD"
 ```
 
 The example wraps `cat`, so you can inspect the exact input without a model or
@@ -119,6 +120,11 @@ keeps exit-zero observations separate from unknown task outcomes.
 The docket surfaces attribution contradictions, evidence-unavailable B records,
 launches lacking outcomes, and matching A notes blocked from consequential use. An unfinished run may still be executing. A
 manual inspection is required before declaring it abandoned.
+
+The [use/outcome loop](docs/use-outcome-loop.md) documents joined observations,
+versioned task assessments and completed-task delegate findings.
+[Authenticated local access](docs/local-api.md) gives agents and host observers
+scoped Unix-socket access without the operator CLI or database credentials.
 
 ## Authority and structured commands
 

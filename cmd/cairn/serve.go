@@ -1,0 +1,101 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"github.com/halbritt/cairn/localapi"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"syscall"
+	"time"
+)
+
+func serveLocal(ctx context.Context, dsn string, args []string) error {
+	directory, err := dataDirectory()
+	if err != nil {
+		return err
+	}
+	f := flags("serve")
+	config := f.String("identities", filepath.Join(directory, "identities.json"), "owner-only identity configuration")
+	socket := f.String("socket", filepath.Join(directory, "api.sock"), "private Unix socket")
+	if err = f.Parse(args); err != nil {
+		return invalid(err.Error())
+	}
+	if f.NArg() != 0 {
+		return invalid("unexpected serve arguments")
+	}
+	info, err := os.Lstat(*config)
+	if err != nil {
+		return err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || stat.Uid != uint32(os.Geteuid()) {
+		return invalid("identity configuration must be a regular owner-only file owned by the current user")
+	}
+	file, err := os.Open(*config)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(io.LimitReader(file, 128*1024))
+	decoder.DisallowUnknownFields()
+	var identities []localapi.Identity
+	if err = decoder.Decode(&identities); err != nil {
+		return invalid("invalid identity configuration")
+	}
+	var extra any
+	if err = decoder.Decode(&extra); err != io.EOF {
+		return invalid("expected one identity array")
+	}
+	handler, err := localapi.New(ctx, dsn, identities)
+	if err != nil {
+		return err
+	}
+	defer handler.Close()
+	parent := filepath.Dir(*socket)
+	if err = os.MkdirAll(parent, 0700); err != nil {
+		return err
+	}
+	parentInfo, err := os.Stat(parent)
+	if err != nil {
+		return err
+	}
+	if parentInfo.Mode().Perm()&0077 != 0 {
+		return invalid("socket directory must be owner-only")
+	}
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: *socket, Net: "unix"})
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	if err = os.Chmod(*socket, 0600); err != nil {
+		return err
+	}
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 35 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 60 * time.Second}
+	defer server.Close()
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		select {
+		case <-ctx.Done():
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				_ = server.Close()
+			}
+		case <-done:
+		}
+	}()
+	err = server.Serve(listener)
+	close(done)
+	<-stopped
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}

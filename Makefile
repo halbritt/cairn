@@ -9,4 +9,4 @@ test-lifecycle: build
 	bash scripts/test-local-lifecycle.sh
 check:
 	go vet ./...
-	test -z "$$(gofmt -l core cmd runner)"
+	test -z "$$(gofmt -l core cmd runner localapi)"

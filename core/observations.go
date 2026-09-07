@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/hex"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -137,12 +138,26 @@ type UsageRequest struct {
 	RecordID  string `json:"record_id"`
 	Version   int    `json:"version"`
 	Signal    string `json:"signal"`
+	Method    string `json:"method,omitempty"`
 }
 
 func (s *Store) RecordUsage(ctx context.Context, req UsageRequest) (Observation, error) {
-	if req.Signal != "cited" && req.Signal != "expanded" {
-		return Observation{}, failure("INVALID_REQUEST", "usage must be cited or expanded")
+	witness := "testimony"
+	if req.Signal == "behaviorally_implicated" {
+		if strings.TrimSpace(req.Method) == "" || len(req.Method) > 256 {
+			return Observation{}, failure("INVALID_REQUEST", "inferred usage requires a bounded method/version label")
+		}
+		if !s.channel.Instrumented {
+			return Observation{}, failure("AUTHORITY_DENIED", "inferred usage requires a service observer")
+		}
+		witness = "inferred"
+	} else if req.Signal != "cited" && req.Signal != "expanded" {
+		return Observation{}, failure("INVALID_REQUEST", "unknown usage signal")
 	}
+	if len(req.Method) > 256 {
+		return Observation{}, failure("INVALID_REQUEST", "usage method too long")
+	}
+
 	if err := validID(req.RecordID); err != nil {
 		return Observation{}, err
 	}
@@ -158,7 +173,34 @@ func (s *Store) RecordUsage(ctx context.Context, req UsageRequest) (Observation,
 			return Observation{}, failure("INVALID_REQUEST", "citation must name an exposed record version")
 		}
 		id := uuid.NewString()
-		_, err := tx.Exec(ctx, `INSERT INTO cairn.usage_observation(observation_id,receipt_id,record_id,version,signal) VALUES($1,$2,$3,$4,$5)`, id, req.ReceiptID, req.RecordID, req.Version, req.Signal)
+		_, err := tx.Exec(ctx, `INSERT INTO cairn.usage_observation(observation_id,receipt_id,record_id,version,signal,witness,method) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, req.ReceiptID, req.RecordID, req.Version, req.Signal, witness, req.Method)
+		return Observation{id}, err
+	})
+}
+
+type UsageCoverageRequest struct {
+	RequestID string `json:"request_id"`
+	ReceiptID string `json:"receipt_id"`
+	Coverage  string `json:"coverage"`
+	Method    string `json:"method"`
+}
+
+func (s *Store) RecordUsageCoverage(ctx context.Context, req UsageCoverageRequest) (Observation, error) {
+	if !s.channel.Instrumented {
+		return Observation{}, failure("AUTHORITY_DENIED", "coverage requires a service observer")
+	}
+	if (req.Coverage != "unknown" && req.Coverage != "partial" && req.Coverage != "complete") || strings.TrimSpace(req.Method) == "" || len(req.Method) > 256 {
+		return Observation{}, failure("INVALID_REQUEST", "valid coverage and observer method/version required")
+	}
+	return mutate(ctx, s, "usage-coverage", req.RequestID, req, func(tx pgx.Tx) (Observation, error) {
+		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
+			return Observation{}, err
+		}
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM cairn.retrieval_receipt WHERE receipt_id=$1 FOR UPDATE`, req.ReceiptID); err != nil {
+			return Observation{}, err
+		}
+		id := uuid.NewString()
+		_, err := tx.Exec(ctx, `INSERT INTO cairn.usage_coverage(observation_id,receipt_id,coverage,method) VALUES($1,$2,$3,$4)`, id, req.ReceiptID, req.Coverage, req.Method)
 		return Observation{id}, err
 	})
 }

@@ -16,18 +16,19 @@ import (
 const help = `Cairn: local memory for agents
 
 Everyday commands:
+  agent [--token-file FILE] [--socket PATH] OPERATION < request.json
   remember [--repo PATH] [--shareable] TEXT
   search [--repo PATH] [--purpose context] [--destination local] QUERY
   run [--repo PATH] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
-  list REPO | get UUID | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
+  list REPO | get UUID | use-report REPO | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
   create edit compile bootstrap grant revoke-grant capture-evidence
-  promote issue correct retract dispute resolve usage
+  promote issue correct retract dispute resolve usage assess-run
   grants (no input)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
-Administration: migrate
+Administration: migrate | serve [--identities FILE] [--socket PATH]
 Default store: ~/.local/share/cairn/socket, database cairn.
 Override with CAIRN_DATABASE_URL. Initialize with scripts/local-store.sh start.
 CLI is trusted operator administration. Agents use a host-established core Channel.
@@ -67,6 +68,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	if len(args) == 0 {
 		return nil, invalid("expected a command; use --help")
 	}
+	if args[0] == "agent" {
+		return agentRequest(ctx, args[1:], input)
+	}
 	channel := core.Channel{Principal: "local-uid:" + strconv.Itoa(os.Geteuid()), Operator: true}
 	if args[0] == "run" || args[0] == "recover-run" {
 		channel.Instrumented = true
@@ -74,6 +78,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	dsn, err := databaseURL()
 	if err != nil {
 		return nil, err
+	}
+	if args[0] == "serve" {
+		return nil, serveLocal(ctx, dsn, args[1:])
 	}
 	connectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	store, err := core.Open(connectCtx, dsn, channel)
@@ -97,11 +104,15 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return remember(ctx, store, args[1:])
 	case "search":
 		return search(ctx, store, args[1:])
-	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract":
+	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
 		}
 		switch args[0] {
+		case "assessments":
+			return store.Assessments(ctx, args[1])
+		case "use-report":
+			return store.UseReport(ctx, core.UseReportRequest{Repo: args[1], Limit: 100})
 		case "preview-retract":
 			return store.PreviewRetraction(ctx, args[1])
 		case "explain":
@@ -156,6 +167,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.Dispute)
 	case "resolve":
 		return invoke(ctx, input, store.Resolve)
+	case "assess-run":
+		return invoke(ctx, input, store.AssessRun)
 	case "usage":
 		return invoke(ctx, input, store.RecordUsage)
 	case "compile":
