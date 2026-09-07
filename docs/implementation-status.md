@@ -50,6 +50,17 @@ establishes coverage/reproducibility only; broad lexical matches do not establis
 relevance, causal benefit, or avoided recurring failures. No live Striatum lane
 or model dispatch was changed. See [verification](verification/roadmap-build-2026-09-07.md).
 
+## Real OpenCode repair trial — 2026-09-07
+
+A [historical repair trial](verification/opencode-recurrence-2026-09-07.md) now
+compares a real local model through OpenCode using repository-only, native-excerpt
+and Cairn H0 inputs. All three arms failed to produce a repair under the fixed
+budget. The corrected H0 arm received both intended B records; two actual use
+rows join to rejected trial assessments, with usage unknown and testimony clearly
+labelled. Earlier invalid launches and missing memory treatment are preserved.
+This advances E4's evidence collection without establishing memory benefit,
+Striatum integration or adaptation acceptance.
+
 ## Record-body deletion — 2026-09-07
 
 Migration 016 adds [operator forgetting](deletion.md), immediate exclusion of
@@ -164,9 +175,11 @@ These are implementation gaps, not questions waiting on the operator:
 1. Wire a real Striatum/OpenCode task through declared sealed inputs and actual
    authenticated spawn/terminal and acceptance boundaries. The local Unix API
    and fixture harness tests are prerequisites, not real-host acceptance.
-2. Evaluate recurrence on reproducible tasks against no-memory, native/search
-   and model baselines. The 12-subject coverage trial has no relevance labels
-   or avoided-failure evidence. Do not enable grooming from coverage alone.
+2. Calibrate a harness and response budget that can finish a historical repair,
+   then extend recurrence evaluation against native/search and model baselines.
+   The first real OpenCode comparison produced no repair in any arm. The
+   12-subject coverage trial still has no relevance labels or avoided-failure
+   evidence. Do not enable grooming from coverage or delivery alone.
 3. Complete class-proportional lifecycle, including ordinary deletion, explicit
    supersession, governed scope/policy changes and richer conflict outcomes.
 4. Implement evidence lifecycle, class D redaction/deletion effects, retention,

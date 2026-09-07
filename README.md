@@ -6,9 +6,10 @@ a bounded context package before a task starts.
 
 **Status: usable local alpha.** Remember/search, manual authority and evidence,
 context compilation, process wrapping, historical recompilation, authenticated
-local access, bounded index/pull, evidence-attached review, and outcome joins work. OpenCode 1.18.21 was probed through the wrapper against an isolated
-local fixture endpoint. Runtime mediation and measured model benefit are not
-established.
+local access, bounded index/pull, evidence-attached review, and outcome joins work.
+A [real OpenCode repair trial](docs/verification/opencode-recurrence-2026-09-07.md)
+compared three context conditions; none produced a repair within its budget.
+Runtime mediation and measured memory benefit remain unestablished.
 
 The [roadmap](docs/roadmap.md) tracks accepted requirements, remaining gaps and
 acceptance evidence.

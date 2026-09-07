@@ -1,0 +1,45 @@
+package llm_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/halbritt/striatum-next/internal/backend"
+)
+
+// Observe the real confined runtime and subsequent workspace reclamation. The
+// cache directory name and the implementation used to pass the setting are free.
+func TestCairnRecurrenceRuntimeCacheLifetime(t *testing.T) {
+	requireDelegation(t)
+	marker := filepath.Join(t.TempDir(), "runtime-cache-observation")
+	script := `printf '%s\n%s\n' "$GOCACHE" "$PWD" > ` + marker + `
+if test -d "$GOCACHE"; then printf 'directory\n' >> ` + marker + `; fi
+`
+	supervisor, spool := newSupervisor(t, script)
+	manifestPath, manifest := writeBundle(t, spool, "proposal-generation")
+	submission, err := supervisor.Run(manifest, filepath.Dir(manifestPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = backend.ReadSubmissionManifest(filepath.Join(submission, "manifest.json")); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+	if len(lines) != 3 || lines[0] == "" || lines[2] != "directory" {
+		t.Fatalf("runtime cache directory unavailable: %q", body)
+	}
+	cache, work := lines[0], lines[1]
+	rel, err := filepath.Rel(work, cache)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		t.Fatalf("cache %q is outside lane workspace %q", cache, work)
+	}
+	if _, err = os.Stat(cache); !os.IsNotExist(err) {
+		t.Fatalf("cache survived lane reclamation: %v", err)
+	}
+}

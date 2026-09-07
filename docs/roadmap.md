@@ -122,8 +122,13 @@ actual H1 routing, evidence-body expansion and overall host task budgets remain 
 A [native-history coverage trial](verification/history-coverage-2026-09-07.md)
 now uses three committed accepted clauses and 12 native commit subjects in a
 disposable store. All read sets recompile exactly; the scenario availability is
-explicitly later recurrence. No-memory comparison is present. Native/search/model
-baselines, relevance judgments and avoided-failure evidence remain absent.
+explicitly later recurrence. A subsequent [real OpenCode repair trial](verification/opencode-recurrence-2026-09-07.md)
+compares repository-only, native-excerpt and Cairn H0 inputs on one historical
+defect. No arm produced a repair; a corrected preflight now refuses missing
+memory treatment. Real receipt/outcome joins are retained, with usage unknown.
+The harness and response budget need a successful repair calibration before
+another comparison. Full native/search baselines, relevance judgments and
+avoided-failure evidence remain open.
 
 ### 4. Turn observed demand into next-run improvement
 

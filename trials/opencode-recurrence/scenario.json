@@ -1,0 +1,16 @@
+{
+  "schema": "cairn.recurrence-scenario/1",
+  "id": "striatum-lane-go-cache",
+  "historical_fix": "56840cf694ecf451980abbd694fd3c8c01cbc7d7",
+  "earlier_experience": "3a9550d0b27449bc2655c825dd1ab3af8c7cf946",
+  "arms": ["repo_only", "native_excerpt", "cairn_h0"],
+  "task": "Repair the Go build-cache lifecycle in this isolated historical Striatum snapshot. Agent runtimes launched by the LLM supervisor inherit an operator or harness cache that accumulates across lanes. Give each lane a cache directory inside its own workspace, created before launch, usable for incremental builds during the lane, and removed with workspace reclamation. Per-invocation environment overrides at the supervise.Spec seam must reach the confined runtime despite the init helper's stripped environment. Propagate preparation failures before launch. Preserve dispatch identity, semantic pins and other environment behavior. Change only internal/backend/llm/supervisor.go and internal/backend/supervise/supervise.go; you may add new focused _test.go files in those two packages, but must not alter existing tests. This is an isolated historical repair experiment, not a live graph or architectural pass. Do not run striatum, change backend declarations, access files outside the supplied workspace, use the network, or inspect later Git history. Implement the repair and run relevant available checks. If supplemental memory influenced your change, cite its record UUID in your final explanation; omit citations that did not help.",
+  "query": "Go build cache lane workspace runtime lifecycle environment GOCACHE",
+  "gate": "TestCairnRecurrenceRuntimeCacheLifetime",
+  "limits": [
+    "Later recurrence experiment; memories are captured now from sources that predate the historical repair",
+    "One task and one run per arm cannot establish general causal benefit",
+    "Mechanical regression results are not Striatum graph acceptance",
+    "Future fix and held-out gate are excluded from model workspace"
+  ]
+}
