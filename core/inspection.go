@@ -80,6 +80,7 @@ func (s *Store) Replay(ctx context.Context, receiptID string) (Package, error) {
 }
 
 type Impact struct {
+	RecordID  string `json:"record_id"`
 	ReceiptID string `json:"receipt_id"`
 	Version   int    `json:"version"`
 	Purpose   string `json:"purpose"`
@@ -110,7 +111,7 @@ func (s *Store) Impact(ctx context.Context, recordID string, offset int) (Impact
 	if err = s.checkRepo(record.Scope.Repo); err != nil {
 		return ImpactPage{}, err
 	}
-	rows, err := tx.Query(ctx, `SELECT u.receipt_id::text,u.version,u.purpose,r.scope FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE u.record_id=$1 ORDER BY u.used_at,u.receipt_id LIMIT 101 OFFSET $2`, recordID, offset)
+	rows, err := tx.Query(ctx, `SELECT u.record_id::text,u.receipt_id::text,u.version,u.purpose,r.scope FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE u.record_id=$1 ORDER BY u.used_at,u.receipt_id LIMIT 101 OFFSET $2`, recordID, offset)
 	if err != nil {
 		return ImpactPage{}, err
 	}
@@ -118,7 +119,7 @@ func (s *Store) Impact(ctx context.Context, recordID string, offset int) (Impact
 	page := ImpactPage{Uses: []Impact{}}
 	for rows.Next() {
 		var impact Impact
-		if err = rows.Scan(&impact.ReceiptID, &impact.Version, &impact.Purpose, &impact.Scope); err != nil {
+		if err = rows.Scan(&impact.RecordID, &impact.ReceiptID, &impact.Version, &impact.Purpose, &impact.Scope); err != nil {
 			return page, err
 		}
 		page.Uses = append(page.Uses, impact)

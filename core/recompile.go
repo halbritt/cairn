@@ -154,6 +154,10 @@ func historicalRecord(ctx context.Context, tx pgx.Tx, e *CandidateEvaluation) (R
 	if err != nil {
 		return r, err
 	}
+	r.Relations, err = readRelations(ctx, tx, r.RecordID, r.Version)
+	if err != nil {
+		return r, err
+	}
 	r.Draft.Sensitivity = r.Sensitivity
 	err = tx.QueryRow(ctx, `SELECT pins FROM cairn.record_applicability WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&r.Pins)
 	if err != nil && err != pgx.ErrNoRows {

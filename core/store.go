@@ -240,7 +240,7 @@ func (s *Store) Edit(ctx context.Context, req EditRequest) (Record, error) {
 	if req.ExpectedVersion < 1 {
 		return Record{}, failure("INVALID_REQUEST", "expected_version must be positive")
 	}
-	return mutate(ctx, s, "edit", req.RequestID, req, func(tx pgx.Tx) (Record, error) {
+	return privileged(ctx, s, "edit", req.RequestID, req, func(tx pgx.Tx) (Record, error) {
 		if req.Draft.AttemptID != "" {
 			if err := lock(ctx, tx, "attempt:"+req.Draft.AttemptID); err != nil {
 				return Record{}, err
@@ -291,6 +291,9 @@ func insertVersion(ctx context.Context, tx pgx.Tx, id string, version int, draft
 			return Record{}, err
 		}
 	}
+	if err = linkRelations(ctx, tx, id, version, draft); err != nil {
+		return Record{}, err
+	}
 	if err = queueContradictions(ctx, tx, draft.AttemptID); err != nil {
 		return Record{}, err
 	}
@@ -322,6 +325,9 @@ func readRecord(ctx context.Context, tx pgx.Tx, id string) (Record, error) {
 		if pinErr != nil && !errors.Is(pinErr, pgx.ErrNoRows) {
 			return r, pinErr
 		}
+	}
+	if err == nil {
+		r.Relations, err = readRelations(ctx, tx, id, r.Version)
 	}
 	r.Draft.Sensitivity = r.Sensitivity
 	return r, err

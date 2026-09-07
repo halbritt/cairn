@@ -55,7 +55,9 @@ contract repair, not completion of the later generated-demand product.
 capture canary, and frozen v1 replay compatibility. R3 now requires caller-owned
 one-hour previews, invalidates on new exposure and version changes, and serializes
 concurrent compile/retract; coverage is all retained versions and direct uses,
-with refusal above 1,000 uses. Cross-record dependencies await L1/L4. R5 now stores
+with refusal above 1,000 uses. Known relation traversal is also capped at
+1,000 retained versions, with no partial preview token. Known versioned record relations now participate in previews; evidence-object
+dependencies and broader lifecycle operations remain under L1/L4. R5 now stores
 candidate IDs/versions, eligibility reason, lexical/scope/recency/stable-ID ranking
 and packing cost, with owner-authorized `explain` and fixed census buckets. Hard
 refusals still return errors without durable explanation and are tracked by L2.
@@ -156,6 +158,13 @@ Stage 1–2 acceptance or scaling sensitive/consequential retention.
 | L8 — unsigned C/D checkpoints | partial | Reproducible checkpoint of the audit subset, expected restore-set catalog and verification. Dump checksum alone is insufficient. Signing/off-box keys stay withdrawn. Test missing/altered audit members and restore set. |
 | L9 — restore reconciliation | partial | Rebuild projections and freshly recompile under identical pins; verify state/audit, reapply newer revocations/deletions, invalidate handles and recover external effects. Existing dump/restore/stored-replay drill remains useful but narrower. Test restore after revocation/deletion and interrupted effects. |
 | L10 — fault and conformance acceptance | partial | Add abrupt process death around privileged commit, D-worker/citation races, task-close open loops, policy rollback, cutoff replay and adapter transformations. Keep CAS, identity, attribution, grant, evidence, budget and process tests. Record which gate each test establishes; green checks do not imply all-stage acceptance. |
+
+[Versioned relations and demotion](relations-and-demotion.md) now implement
+bounded derived/specializing/contradicting links with inherited scope, currentness
+and sensitivity restrictions. B→A is unaudited, preserves consumed history and
+refuses active C/open-conflict dependencies. Retraction previews include known
+transitive uses and reject changed dependency/exposure state. Ordinary delete,
+explicit supersession and scope-broadening operations remain open.
 
 [Audit checkpoints](audit-checkpoints.md) now cover the emitted governance/C audit
 subset with explicit membership and no payload/reason commitment. Backups retain

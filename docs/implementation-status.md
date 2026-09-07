@@ -26,7 +26,7 @@ local installation evidence.
 
 ## Observation, retrieval and recovery additions — 2026-09-07
 
-Migrations 006–012 add versioned task assessments, declared run bindings, usage
+Migrations 006–013 add versioned task assessments, declared run bindings, usage
 coverage, task-close delegate findings, currentness pins, reviewed failure/recovery
 proposals, unsigned audit checkpoints and bounded index expansion. The Unix API
 establishes separate authenticated agent/observer channels. Record-specific use
@@ -110,36 +110,50 @@ compiled package, and its report recorded one available delivery, one zero
 process exit, and one unknown task outcome. A local database backup was created.
 This is a working smoke path, not measured model usefulness.
 
+Versioned record relations now retain declared dependencies with scope/currentness/
+sensitivity restrictions. B→A preserves consumed history without an authority
+transition event and refuses current C/open-conflict dependencies. Retraction
+previews include known transitive uses and reject changed dependency state.
+
+## Current local installation
+
+The installed build applies migrations 001–013 to Cairn's dedicated PostgreSQL 17
+store. The upgrade was preceded by a private dump. A subsequent dump includes the
+new expected audit-set catalog and verifies against the installed store.
+
+The `cairn-api.service` user service is enabled and requires
+`cairn-store.service`. Both are running. Agent and observer profiles have distinct
+trusted principals, are limited to the Cairn repository and local destination,
+and use owner-only credentials outside the checkout. The installed client created
+an ordinary currentness lesson, retrieved its v4 pointer index and expanded its
+body with one credit spent. No promotion or task-acceptance claim was inferred.
+
 ## Limits and next work
 
-Operating choices are settled in [decision 0002](decisions/0002-local-memory-loop.md).
-The following are implementation gaps, not decisions waiting on the operator:
+These are implementation gaps, not questions waiting on the operator:
 
-1. Add a narrow authenticated agent transport. The current CLI is trusted
-   local operator administration; embedding hosts establish channels separately.
-2. Extend scope with revision/workspace pins, validity and domain-specific
-   applicability. Current repository/task/run scope does not establish code
-   currentness after revision changes. Capture revision-sensitive notes with
-   explicit short-lived task/run constraints meanwhile.
-3. Add audit-backed redaction, deletion effects, backup residual tracking,
-   evidence lifecycle jobs, retention, and restore handling for later deletions.
-   The current backup drill precedes those features. Do not retain secrets.
-4. Add full conflict packages, explicit C supersession notices, and authorized
-   expansions. Optional disputed material is currently omitted whole; there is
-   no in-run expansion tool or compaction hook.
-5. Wire Striatum's actual authenticated spawn/terminal callbacks and durable
-   task identity. Standalone process outcomes do not replace upstream task
-   acceptance or binding/capability assessment.
-6. Build a cutoff-pinned real-history recurrence trial and baseline comparison.
-   The current replay reproduces selected bytes; it is not a counterfactual
-   usefulness evaluation. Grooming and learned ranking remain disabled.
+1. Wire a real Striatum/OpenCode task through declared sealed inputs and actual
+   authenticated spawn/terminal and acceptance boundaries. The local Unix API
+   and fixture harness tests are prerequisites, not real-host acceptance.
+2. Evaluate recurrence on reproducible tasks against no-memory, native/search
+   and model baselines. The 12-subject coverage trial has no relevance labels
+   or avoided-failure evidence. Do not enable grooming from coverage alone.
+3. Complete class-proportional lifecycle, including ordinary deletion, explicit
+   supersession, governed scope/policy changes and richer conflict outcomes.
+4. Implement evidence lifecycle, class D redaction/deletion effects, retention,
+   backup residual accounting and restoration of newer revoked/deleted state.
+5. Extend intent matching and qualified expansion to evidence bodies. Current
+   credits are per retrieval; a host must budget the whole task and establish
+   any mid-run refresh/compaction behavior.
 
 The wrapper retains permitted context files in its private run directory and
-does not isolate all user native-memory facilities. Generic command destination
-selection is trusted operator configuration, not network confinement. Production
-receipts report availability; only the controlled fixture probe observed model
-request contact. There is no H3 claim.
+does not isolate every native-memory facility. Destination selection is trusted
+host/operator configuration, not network confinement. Production receipts report
+availability; the controlled OpenCode fixture observed model-request contact.
+There is no H3 claim. Legacy raw task/query copies have not been purged.
 
-No automatic backup/pruning/grooming timers were installed. PostgreSQL can be
-stopped with the local-store script and restarted without data loss. Reboot
-autostart is not configured.
+No automatic backup, pruning or grooming timers are installed. User services
+provide managed startup and shutdown; the current machine already has user lingering enabled, so the enabled API
+and its required store can run without an interactive login. Use the systemd units for lifecycle
+operations on the managed store. The standalone lifecycle script remains the
+basis of isolated verification and manual installations.

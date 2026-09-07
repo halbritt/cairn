@@ -33,13 +33,15 @@ func main() {
 		envelope.Status = core.Code(err)
 		envelope.Message = err.Error()
 		switch envelope.Status {
+		case "INTEGRITY_FAILURE", "CHECKPOINT_MISMATCH":
+			exitCode = 7
 		case "RUN_FAILED":
 			exitCode = 1
 		case "INVALID_REQUEST":
 			exitCode = 2
 		case "NOT_FOUND":
 			exitCode = 3
-		case "STALE_HANDLE", "STALE_PROPOSAL", "STALE_PREVIEW", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "SCHEMA_MISMATCH", "STALE_PACKAGE", "RUN_ALREADY_STARTED":
+		case "DEPENDENCY_CONFLICT", "STALE_HANDLE", "STALE_PROPOSAL", "STALE_PREVIEW", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "SCHEMA_MISMATCH", "STALE_PACKAGE", "RUN_ALREADY_STARTED":
 			exitCode = 4
 		case "AUTHORITY_DENIED", "SELF_PROMOTION_DENIED":
 			exitCode = 6

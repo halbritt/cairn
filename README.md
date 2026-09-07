@@ -160,8 +160,8 @@ cannot change scope or sensitivity. Corrections replace active B content with
 new evidence references and an audit link. C changes use retraction followed by
 new issuance. Retraction requires a caller-owned `preview-retract` token, valid
 for one hour and invalidated by content/version changes or new exposure. The
-preview covers all retained versions and direct runs (at most 1,000 uses);
-cross-record dependency analysis remains unfinished. Explicit conflict resolution retains the original members and
+preview covers retained versions, known versioned dependents and their runs
+(at most 1,000 versions and 1,000 uses). See [relations and demotion](docs/relations-and-demotion.md). Explicit conflict resolution retains the original members and
 reasoned audit history.
 
 ## Verify changes

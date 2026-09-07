@@ -15,6 +15,7 @@ measured agent benefit.
 | Evidence-attached failure/recovery proposals and review decisions | `core/proposals_test.go`; duplicate grouping, source corrections, stale review, deferral and repo boundary |
 | Expected audit restore set | `core/checkpoint_test.go`; altered/missing members, later uncovered events, A exclusion, catalog mismatch and operator access |
 | Sealed index, expiring body handles and transactional credits | `core/index_test.go`; current version/authority/bootstrap checks on retry, concurrent credit limit, oversized body refusal and preview invalidation |
+| Versioned relations, cheap B demotion and transitive preview guards | `core/relations_test.go`; inherited source restrictions, C/conflict refusal, historical B/relations preservation, transitive exposure invalidation |
 | Restore recomputation and handle fencing | `scripts/test-local-lifecycle.sh`; independent dump, audit catalog verification, exact body/index recompile and rejection of restored handles |
 
 `make check`, `make test-integration` and `make test-lifecycle` pass against
@@ -28,7 +29,7 @@ inferred from process exit, exposure, citation, pairing or coverage; no changes 
 Striatum's sealed dispatch input contract. Applied migrations are unchanged.
 
 Remaining material work is tracked in the roadmap: real host/model acceptance,
-causal recurrence evaluation, transitive dependency impact, class D deletion and
+causal recurrence evaluation, broader lifecycle/evidence dependencies, class D deletion and
 retention, governed policy and richer conflicts, evidence lifecycle, and recovery
 of newer revocations/deletion effects. The endpoint credits are per retrieval,
 not a global host task budget. Checkpoints are unsigned metadata integrity checks,

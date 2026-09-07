@@ -62,18 +62,22 @@ func (s *Store) checkRepo(repo string) error {
 }
 
 type Draft struct {
-	Pins               *Applicability `json:"pins,omitempty"`
-	Sensitivity        string         `json:"sensitivity,omitempty"`
-	Kind               string         `json:"kind"`
-	Body               string         `json:"body"`
-	Scope              Scope          `json:"scope"`
-	AttributedProducer string         `json:"attributed_producer,omitempty"`
-	AttemptID          string         `json:"attempt_id,omitempty"`
-	ResultRef          string         `json:"result_ref,omitempty"`
-	ClaimType          string         `json:"claim_type"`
+	Relations          []RecordRelation `json:"relations,omitempty"`
+	Pins               *Applicability   `json:"pins,omitempty"`
+	Sensitivity        string           `json:"sensitivity,omitempty"`
+	Kind               string           `json:"kind"`
+	Body               string           `json:"body"`
+	Scope              Scope            `json:"scope"`
+	AttributedProducer string           `json:"attributed_producer,omitempty"`
+	AttemptID          string           `json:"attempt_id,omitempty"`
+	ResultRef          string           `json:"result_ref,omitempty"`
+	ClaimType          string           `json:"claim_type"`
 }
 
 func (d Draft) validate() error {
+	if err := validateRelations(d.Relations); err != nil {
+		return err
+	}
 	if err := d.Pins.validate(); err != nil {
 		return err
 	}
