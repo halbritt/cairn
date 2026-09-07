@@ -36,3 +36,24 @@ retention, governed policy and richer conflicts, evidence lifecycle, and recover
 of newer revocations/deletion effects. The endpoint credits are per retrieval,
 not a global host task budget. Checkpoints are unsigned metadata integrity checks,
 not proof that newer commits never existed.
+
+## Record forgetting and purge recovery
+
+Migration 016 adds operator record-body forgetting, cache/package exclusion,
+known-dependent flags and retryable database effects. `core/deletion_test.go`
+covers exclusion before purge, retained use history, idempotent requests, SQL
+failure persistence/resume, preview/authority/conflict boundaries, cached index
+pulls, mandatory dependencies, concurrent citations and D checkpoint membership.
+The proposal test also refuses conversion into a forgotten record.
+
+`make check`, the complete PostgreSQL race suite and `make test-lifecycle` pass.
+The lifecycle test kills an observed real CLI purge worker during a blocked
+statement and terminates only its identified disposable backend. It confirms
+that completed effects survive and the active effect rolls back, then retries
+and restores a backup taken while deletion was pending. Restored reads remain
+excluded and the worker resumes remaining effects.
+
+This proves database-value purge and controlled crash recovery. It does not
+prove physical storage, backup, provider, metadata, evidence or unmanaged-file
+erasure. Older-than-deletion restore reconciliation remains required. Runtime
+upgrades preserve existing operational records; no automatic purge is enabled.

@@ -204,7 +204,7 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 			status = 400
 		case "NOT_FOUND":
 			status = 404
-		case "STALE_HANDLE", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "STALE_PACKAGE", "RUN_ALREADY_STARTED":
+		case "PAYLOAD_UNAVAILABLE", "STALE_HANDLE", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "STALE_PACKAGE", "RUN_ALREADY_STARTED":
 			status = 409
 		case "STORE_ERROR", "REFUSAL_UNRECORDED":
 			status = 500

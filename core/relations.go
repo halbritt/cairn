@@ -57,13 +57,16 @@ func linkRelations(ctx context.Context, tx pgx.Tx, id string, version int, draft
 	for _, ref := range refs {
 		// Relation insertion changes the target's impact generation, so take its
 		// lifecycle lock before inspecting its restrictions. Targets lock by ID.
-		var repo, task, run, sensitivity string
-		err := tx.QueryRow(ctx, `SELECT v.repo,v.task_id,v.run_id,m.sensitivity FROM cairn.record_version v JOIN cairn.memory_record m USING(record_id) WHERE v.record_id=$1 AND v.version=$2 FOR UPDATE OF m`, ref.RecordID, ref.Version).Scan(&repo, &task, &run, &sensitivity)
+		var repo, task, run, sensitivity, lifecycle string
+		err := tx.QueryRow(ctx, `SELECT v.repo,v.task_id,v.run_id,m.sensitivity,m.lifecycle FROM cairn.record_version v JOIN cairn.memory_record m USING(record_id) WHERE v.record_id=$1 AND v.version=$2 FOR UPDATE OF m`, ref.RecordID, ref.Version).Scan(&repo, &task, &run, &sensitivity, &lifecycle)
 		if err == pgx.ErrNoRows {
 			return failure("NOT_FOUND", "referenced record version not found")
 		}
 		if err != nil {
 			return err
+		}
+		if lifecycle == "tombstoned" {
+			return failure("PAYLOAD_UNAVAILABLE", "cannot add a citation to forgotten content")
 		}
 		if repo != draft.Scope.Repo || (task != "*" && task != draft.Scope.TaskID) || (run != "*" && run != draft.Scope.RunID) || (sensitivity == "local" && destinationSensitivity == "shareable") {
 			return failure("AUTHORITY_DENIED", "relation cannot broaden source scope or sensitivity")

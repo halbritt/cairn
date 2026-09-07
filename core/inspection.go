@@ -30,7 +30,7 @@ func (s *Store) List(ctx context.Context, req ListRequest) (RecordPage, error) {
 		return RecordPage{}, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT m.record_id::text FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id AND v.version=m.current_version WHERE v.repo=$1 ORDER BY m.created_at DESC,m.record_id LIMIT $2 OFFSET $3`, req.Repo, req.Limit+1, req.Offset)
+	rows, err := tx.Query(ctx, `SELECT m.record_id::text FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id AND v.version=m.current_version WHERE v.repo=$1 AND m.lifecycle<>'tombstoned' ORDER BY m.created_at DESC,m.record_id LIMIT $2 OFFSET $3`, req.Repo, req.Limit+1, req.Offset)
 	if err != nil {
 		return RecordPage{}, err
 	}
@@ -52,12 +52,15 @@ func (s *Store) List(ctx context.Context, req ListRequest) (RecordPage, error) {
 // Replay is historical inspection, never a current-authorized package delivery.
 // It verifies retained canonical bytes and does not invoke a harness.
 func (s *Store) Replay(ctx context.Context, receiptID string) (Package, error) {
-	tx, err := s.begin(ctx)
+	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
 	if err != nil {
 		return Package{}, err
 	}
 	defer tx.Rollback(ctx)
 	if err = s.receiptAccess(ctx, tx, receiptID); err != nil {
+		return Package{}, err
+	}
+	if err = receiptPayloadAvailable(ctx, tx, receiptID); err != nil {
 		return Package{}, err
 	}
 	var p Package

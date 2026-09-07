@@ -12,19 +12,24 @@ import (
 )
 
 type RetractionPreview struct {
-	Dependents []RecordVersionRef `json:"dependents"`
-	PreviewID  string             `json:"preview_id"`
-	RecordID   string             `json:"record_id"`
-	Version    int                `json:"version"`
-	ExpiresAt  time.Time          `json:"expires_at"`
-	Uses       []Impact           `json:"uses"`
-	Coverage   string             `json:"coverage"`
+	DeletionTargets []DeletionTarget   `json:"deletion_targets,omitempty"`
+	Dependents      []RecordVersionRef `json:"dependents"`
+	PreviewID       string             `json:"preview_id"`
+	RecordID        string             `json:"record_id"`
+	Version         int                `json:"version"`
+	ExpiresAt       time.Time          `json:"expires_at"`
+	Uses            []Impact           `json:"uses"`
+	Coverage        string             `json:"coverage"`
 }
 
 // PreviewRetraction covers retained versions, explicit versioned dependencies
 // and their exposures. Oversized results are refused rather than certified as
 // complete. The token proves this caller obtained the preview, not human review.
 func (s *Store) PreviewRetraction(ctx context.Context, recordID string) (RetractionPreview, error) {
+	return s.previewRetraction(ctx, recordID, false)
+}
+
+func (s *Store) previewRetraction(ctx context.Context, recordID string, deletion bool) (RetractionPreview, error) {
 	if err := validID(recordID); err != nil {
 		return RetractionPreview{}, err
 	}
@@ -40,7 +45,7 @@ func (s *Store) PreviewRetraction(ctx context.Context, recordID string) (Retract
 	if err = s.checkRepo(record.Scope.Repo); err != nil {
 		return RetractionPreview{}, err
 	}
-	if record.Lifecycle != "active" {
+	if record.Lifecycle == "tombstoned" || (!deletion && record.Lifecycle != "active") {
 		return RetractionPreview{}, failure("VERSION_CONFLICT", "record is already inactive")
 	}
 	result := RetractionPreview{PreviewID: uuid.NewString(), RecordID: recordID, Version: record.Version, Uses: []Impact{}, Coverage: "Retained versions, known versioned relation dependents and their exposures; at most 1000 versions and 1000 uses. Unknown derivations and unmanaged evidence dependencies are not inferred."}
@@ -78,7 +83,18 @@ func (s *Store) PreviewRetraction(ctx context.Context, recordID string) (Retract
 	if len(result.Uses) > 1000 {
 		return RetractionPreview{}, failure("BUDGET_REFUSED", "retraction impact exceeds 1000 uses; no preview token issued")
 	}
-	err = tx.QueryRow(ctx, `INSERT INTO cairn.retraction_preview(preview_id,record_id,version,use_generation,dependency_digest) VALUES($1,$2,$3,$4,$5) RETURNING expires_at`, result.PreviewID, recordID, record.Version, generation, dependencyDigest).Scan(&result.ExpiresAt)
+	var inventoryDigest []byte
+	if deletion {
+		result.DeletionTargets, err = deletionInventory(ctx, tx, recordID, result.Dependents)
+		if err != nil {
+			return result, err
+		}
+		inventoryDigest, err = deletionInventoryDigest(result.DeletionTargets)
+		if err != nil {
+			return result, err
+		}
+	}
+	err = tx.QueryRow(ctx, `INSERT INTO cairn.retraction_preview(preview_id,record_id,version,use_generation,dependency_digest,deletion_inventory_digest) VALUES($1,$2,$3,$4,$5,$6) RETURNING expires_at`, result.PreviewID, recordID, record.Version, generation, dependencyDigest, inventoryDigest).Scan(&result.ExpiresAt)
 	if err != nil {
 		return result, err
 	}

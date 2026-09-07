@@ -180,3 +180,16 @@ Exit codes: 0 command success, 2 invalid request/policy refusal, 3 not found,
 4 conflict/stale request, 6 authority denial, 7 store or infrastructure failure.
 A wrapped process's nonzero exit gives CLI exit 1; timeout gives 124 and
 cancellation 130. The receipt records the observed child exit separately.
+
+
+## Record-body forgetting
+
+`preview-delete RECORD_UUID` returns the impact and copy inventory. `forget`
+accepts JSON `request_id`, `record_id`, `expected_version`, `grant_id` and
+`preview_id`. The grant must contain `redact`; the channel must be an operator.
+`deletion-status DELETION_UUID` reads current effects, and `purge-deletion
+DELETION_UUID` retries pending/failed database purges. See [deletion semantics and
+residuals](deletion.md). `PAYLOAD_UNAVAILABLE` exits 4 and preserves the explanation
+that the historical mutation or receipt identity remains, while its payload is
+excluded. `PURGE_UNRECORDED` exits 7 when a failed purge cannot retain its failure
+observation. These commands are not exposed through the agent API.

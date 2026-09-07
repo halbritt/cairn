@@ -30,6 +30,9 @@ func (s *Store) Recompile(ctx context.Context, req RecompileRequest) (Package, e
 	if err = s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
 		return Package{}, err
 	}
+	if err = receiptPayloadAvailable(ctx, tx, req.ReceiptID); err != nil {
+		return Package{}, err
+	}
 	var original Package
 	original.ReceiptID = req.ReceiptID
 	var encoded []byte
@@ -146,6 +149,13 @@ func (s *Store) Recompile(ctx context.Context, req RecompileRequest) (Package, e
 	return original, tx.Commit(ctx)
 }
 func historicalRecord(ctx context.Context, tx pgx.Tx, e *CandidateEvaluation) (Record, error) {
+	var deleted bool
+	if err := tx.QueryRow(ctx, `SELECT payload_deleted_by IS NOT NULL FROM cairn.record_version WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&deleted); err != nil && err != pgx.ErrNoRows {
+		return Record{}, err
+	}
+	if deleted {
+		return Record{}, failure("PAYLOAD_UNAVAILABLE", "historical candidate payload was excluded by deletion")
+	}
 	r := Record{RecordID: e.RecordID, Version: e.Version, Class: e.Class, Lifecycle: "active", Sensitivity: e.Facts.Sensitivity, WrittenAt: e.WrittenAt, AttributionState: e.Facts.AttributionState}
 	err := tx.QueryRow(ctx, `SELECT kind,body,repo,task_id,run_id,attributed_producer,COALESCE(attempt_id::text,''),result_ref,claim_type,observed_writer,witness FROM cairn.record_version WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&r.Kind, &r.Body, &r.Scope.Repo, &r.Scope.TaskID, &r.Scope.RunID, &r.AttributedProducer, &r.AttemptID, &r.ResultRef, &r.ClaimType, &r.ObservedWriter, &r.Witness)
 	if err == pgx.ErrNoRows {

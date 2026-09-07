@@ -154,7 +154,7 @@ Stage 1–2 acceptance or scaling sensitive/consequential retention.
 | L2 — conflicts and refusal records | partial | Add conflict inspection, qualified positions, interested-party resolution, acted-under-open-conflict outcomes and durable refusals. Whole-group omission of optional disputed content remains allowed. Test mandatory refusal, qualification and downstream notice; closing a group must not erase interested-party context. |
 | L3 — governed policy | open | Versioned effective policy, revise/rollback, policy-dependent run query, C waivers, discrete instruction category caps and unenforceability decision table. Current hard-coded `local-loop/1` and runtime-required refusal are a restricted implementation. Test rollback and impossible-enforcement outcomes. |
 | L4 — evidence lifecycle | partial | Evidence read/status, managed large artifacts, as-cited span/version relations, persisted check generations/history, freshness/refresh and dependent invalidation. Inline explicit capture and hash checks exist. Test changed/missing bytes, earlier-cutoff availability and invalidation propagation. |
-| L5 — class D and deletion | open | Redact/forget/access-policy transitions, cited-A escalation, tombstones, per-target purge accounting and durable retryable effects worker. Include context files, canonical receipts, selected content copies and backup residuals, including pre-R1 task/query text. Enumerations are not functionality. Test worker crashes, repeated requests, citation/delete races and truthful incomplete purge status. |
+| L5 — class D and deletion | partial | Record-body forgetting, cited-A D escalation, tombstones and database purge effects now work. Remaining: metadata/evidence redaction, access-policy transitions, managed-copy inventory and external effects. Include context files, canonical receipts, selected content copies and backup residuals, including pre-R1 task/query text. Enumerations are not functionality. Test worker crashes, repeated requests, citation/delete races and truthful incomplete purge status. |
 | L6 — retention | open | Enforce record_use's 90-day minimum with extension while decisions remain live/reviewable, audited B/use pruning and backup residual tracking. Infinite retention currently preserves the floor but does not implement forgetting. Test cutoff/dependency boundaries and recovery. |
 | L7 — import and capture policy | partial | Explicit native/repository import quarantine, inherited source restrictions, per-class capture policy and secret handling. Existing advisory labels and hosted local-content exclusion remain. Test laundering attempts through imports and selected artifacts without adopting a hostile-agent threat model. |
 | L8 — unsigned C/D checkpoints | partial | Reproducible checkpoint of the audit subset, expected restore-set catalog and verification. Dump checksum alone is insufficient. Signing/off-box keys stay withdrawn. Test missing/altered audit members and restore set. |
@@ -178,10 +178,18 @@ history, atomically invalidates affected impact previews, and blocks proposal
 conversion when selected evidence is unavailable. Historical gates remain frozen.
 Managed artifacts, scheduled checks, source-span constraints and deletion remain open.
 
+[Record forgetting](deletion.md) now excludes retained record bodies, cached
+mutation responses and canonical package copies atomically. A retryable database
+purge worker preserves per-target progress, bounded failures and explicit residuals.
+Tests cover citation races, dependency exclusion, abrupt worker death and restored
+pending effects. Existing operational records have not been forgotten. Controlled
+run files, metadata/evidence redaction, backup inventory, newer-deletion restore
+reconciliation and automatic retention remain required.
+
 [Audit checkpoints](audit-checkpoints.md) now cover the emitted governance/C audit
-subset with explicit membership and no payload/reason commitment. Backups retain
+subset, including implemented forgetting events, with explicit membership and no payload/reason commitment. Backups retain
 an external expectation catalog. Restore tests recompile from restored candidate
-inputs and reject missing newer expectations. Automated scheduling, future D
+inputs and reject missing newer expectations. Automated scheduling, remaining D
 operations, projection rebuilding and newer revocation/deletion reconciliation
 remain open.
 

@@ -399,6 +399,16 @@ func eligible(ctx context.Context, tx pgx.Tx, r Record, purpose string) (Selecti
 			return entry, "POLICY_UNENFORCEABLE", nil
 		}
 	}
+	var dependencyMissing bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.deletion_dependency WHERE record_id=$1 AND version=$2)`, r.RecordID, r.Version).Scan(&dependencyMissing); err != nil {
+		return entry, "", err
+	}
+	if dependencyMissing {
+		if entry.Mandatory {
+			return entry, "", failure("POLICY_UNENFORCEABLE", "required instruction depends on forgotten content; review and revise its support")
+		}
+		return entry, "EVIDENCE_UNAVAILABLE", nil
+	}
 	var disputed bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.conflict_member m JOIN cairn.conflict_group g USING(conflict_id) WHERE m.record_id=$1 AND g.resolved_event IS NULL)`, r.RecordID).Scan(&disputed); err != nil {
 		return entry, "", err
@@ -455,6 +465,9 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 	if err == nil {
 		if !bytes.Equal(oldDigest, digest[:]) {
 			return Package{}, failure("IDEMPOTENCY_CONFLICT", "compile request ID has different intent")
+		}
+		if err = receiptPayloadAvailable(ctx, tx, id); err != nil {
+			return Package{}, err
 		}
 		if oldSeal != seal {
 			return Package{}, failure("STALE_PACKAGE", "source state changed; use a new compile request")

@@ -10,7 +10,7 @@ import (
 
 func TestFailureRecoveryProposalRetainsEvidenceAndReviewDisposition(t *testing.T) {
 	ctx := context.Background()
-	s, _ := testOperator(t)
+	s, root := testOperator(t)
 	observer := testStore(t, Channel{Principal: s.channel.Principal, Operator: true, Instrumented: true})
 	repo := uuid.NewString()
 	receipts := []string{}
@@ -67,6 +67,21 @@ func TestFailureRecoveryProposalRetainsEvidenceAndReviewDisposition(t *testing.T
 			t.Fatal("deferred proposal remained due")
 		}
 	}
+	t.Run("forgotten result cannot complete review", func(t *testing.T) {
+		target, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		preview, err := s.PreviewDeletion(ctx, target.RecordID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.Forget(ctx, ForgetRequest{uuid.NewString(), target.RecordID, target.Version, root.ID, preview.PreviewID}); err != nil {
+			t.Fatal(err)
+		}
+		_, err = s.ReviewProposal(ctx, ReviewProposalRequest{RequestID: uuid.NewString(), ProposalID: proposal.ID, ExpectedVersion: 2, Disposition: "converted", ResultRecord: target.RecordID, Reason: "Do not convert a forgotten lesson"})
+		requireCode(t, err, "PAYLOAD_UNAVAILABLE")
+	})
 	// Source versions alone do not establish that their selected bytes remain
 	// available. Conversion checks current evidence before linking advice.
 	target, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})

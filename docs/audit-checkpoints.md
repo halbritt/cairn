@@ -14,9 +14,9 @@ the dump; verification reports them as `uncovered_count`. This is an explicit
 minimum expected audit set, not a claim that every dump transaction is covered.
 
 The initial subset includes root installation, grants/revocations, instruction
-issuance/retraction, conflict resolution, and any emitted redaction events.
-Ordinary A history and B promotion/correction/retraction are excluded. Class D
-operations are not implemented yet, so the current store has no real D events.
+issuance/retraction, conflict resolution, and emitted redaction/forgetting events.
+Ordinary A history and B promotion/correction/retraction are excluded. Record-body forgetting now emits a D event regardless of the prior record class.
+Other D transitions remain unfinished.
 An explicit membership list avoids sequence gaps and late-committing transactions
 being silently skipped by a sequence watermark.
 

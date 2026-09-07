@@ -41,14 +41,24 @@ exposure and later body pull remain distinct observations.
 
 Backups now retain a separately usable expected audit-set catalog. The restore
 drill validates it, recompiles both body packages and indexes, and fences restored
-handles. Checkpoints cover emitted C/governance metadata; D operations and newer
-revocation/deletion reconciliation are still missing.
+handles. Checkpoints cover emitted C/governance and forgetting metadata. Newer
+revocation/deletion reconciliation remains unfinished.
 
 A native Striatum coverage trial uses three accepted clauses and 12 committed
 subjects in a disposable store. All 12 read sets reconstruct their seals. This
 establishes coverage/reproducibility only; broad lexical matches do not establish
 relevance, causal benefit, or avoided recurring failures. No live Striatum lane
 or model dispatch was changed. See [verification](verification/roadmap-build-2026-09-07.md).
+
+## Record-body deletion — 2026-09-07
+
+Migration 016 adds [operator forgetting](deletion.md), immediate exclusion of
+record/package/cached-response payloads, tombstones, dependency flags and durable
+per-target database purge effects. D events join the unsigned checkpoint subset.
+Disposable tests cover stale previews, citation races, interrupted worker recovery,
+restored pending deletion and explicit backup/provider/metadata residuals. This
+is partial L5 implementation; metadata/evidence redaction, controlled file purge,
+newer-deletion restore reconciliation and retention remain open.
 
 ## Working paths
 

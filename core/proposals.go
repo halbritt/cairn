@@ -204,9 +204,15 @@ func (s *Store) ReviewProposal(ctx context.Context, req ReviewProposalRequest) (
 				}
 			}
 
+			if _, err = tx.Exec(ctx, `SELECT record_id FROM cairn.memory_record WHERE record_id=$1 FOR SHARE`, req.ResultRecord); err != nil {
+				return p, err
+			}
 			record, err := readRecord(ctx, tx, req.ResultRecord)
 			if err != nil {
 				return p, err
+			}
+			if record.Lifecycle == "tombstoned" {
+				return p, failure("PAYLOAD_UNAVAILABLE", "a forgotten record cannot complete proposal review")
 			}
 			if record.Scope.Repo != p.Repo {
 				return p, failure("AUTHORITY_DENIED", "result record is outside proposal repository")

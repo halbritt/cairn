@@ -79,7 +79,7 @@ Process output streams to stdout/stderr. The final Cairn receipt envelope goes
 to stderr. Cairn records process exit, timing, and output digests, without keeping
 raw model outputs. Task and query text are transient: new semantic v2/v3 packages
 retain only a SHA-256 query digest. Digests are not anonymization, and old v1
-receipts retain their original query text until explicit deletion is implemented.
+receipts retain their original query text unless their containing package is excluded through explicit [record forgetting](docs/deletion.md).
 Per-run `context.txt` and `outcome.json` live in the owner-only
 run directory named in the receipt. A failed DB write retains
 `outcome.pending.json` for `cairn recover-run RECEIPT_UUID` recovery. Do not retry a
@@ -151,7 +151,7 @@ capability and a policy key.
 
 JSON request commands include `create`, `edit`, `compile`, `capture-evidence`,
 `grant`, `revoke-grant`, `promote`, `issue`, `correct`, `retract`, `dispute`,
-`resolve`, and `usage`. See [request examples](docs/commands.md).
+`resolve`, `forget`, and `usage`. See [request examples](docs/commands.md).
 Use new request UUIDs for new intent and reuse them for transport retries.
 Mutation retries return the original result; use `get` for current state.
 

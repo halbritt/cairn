@@ -20,11 +20,12 @@ Everyday commands:
   remember [--repo PATH] [--shareable] TEXT
   search [--repo PATH] [--purpose context] [--destination local] QUERY
   run [--repo PATH] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
+  preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
   list REPO | get UUID | use-report REPO | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
   create edit compile index expand bootstrap grant revoke-grant capture-evidence check-evidence
-  promote demote issue correct retract dispute resolve usage assess-run recompile generate-proposals review-proposal
+  promote demote issue correct retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal
   grants (no input)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
@@ -104,11 +105,17 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return remember(ctx, store, args[1:])
 	case "search":
 		return search(ctx, store, args[1:])
-	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks":
+	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
 		}
 		switch args[0] {
+		case "preview-delete":
+			return store.PreviewDeletion(ctx, args[1])
+		case "deletion-status":
+			return store.DeletionStatus(ctx, args[1])
+		case "purge-deletion":
+			return store.PurgeDeletion(ctx, args[1])
 		case "evidence-checks":
 			return store.EvidenceChecks(ctx, args[1])
 		case "refusal":
@@ -183,6 +190,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.Issue)
 	case "correct":
 		return invoke(ctx, input, store.Correct)
+	case "forget":
+		return invoke(ctx, input, store.Forget)
 	case "retract":
 		return invoke(ctx, input, store.Retract)
 	case "dispute":

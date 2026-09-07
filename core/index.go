@@ -198,6 +198,9 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 		if !expires.After(now) {
 			return failure("STALE_HANDLE", "index expired; retrieve a fresh index")
 		}
+		if err = receiptPayloadAvailable(ctx, tx, req.ReceiptID); err != nil {
+			return err
+		}
 		var body []byte
 		var original SemanticPackage
 		var storedSeal string
