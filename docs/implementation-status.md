@@ -5,6 +5,25 @@ later run, supply a bounded context package to a process, and show the retained
 package and observed outcome afterward. This advances the initial record-only
 slice; it does not complete every Stage 1–2 design contract.
 
+The [roadmap](roadmap.md) is the complete requirements and acceptance tracker.
+
+## Contract repairs — 2026-09-07
+
+New semantic v2 receipts retain a query digest; task/query text still reaches
+the wrapped process transiently. Advisory B includes visible evidence degradation.
+Protected candidate explanations and matching blocked-demand docket entries now
+commit with retrieval receipts. Retraction requires an expiring caller-owned
+preview and rejects new exposure after preview, including concurrent compile.
+These changes use forward migrations 004 and 005. Historical v1 seal verification
+is preserved; old retained text is not purged.
+
+Retraction impact covers all versions and direct uses, with a 1,000-use refusal
+limit. Cross-record dependency impact and durable hard-refusal explanations remain
+open. The generated demand product and record-specific usefulness join remain
+unimplemented. See roadmap R1–R5 for completion boundaries and the
+[repair verification](verification/contract-repairs-2026-09-07.md) for tests and
+local installation evidence.
+
 ## Working paths
 
 - A records have retained versions, stamped writers/witnesses, retry identity,
@@ -35,8 +54,9 @@ slice; it does not complete every Stage 1–2 design contract.
 
 ## Evidence collected
 
-`make test-integration` passed with PostgreSQL 17 and Go's race detector. There
-are 25 top-level tests, with additional scenario subtests. Tests include the
+`make test-integration` passed with PostgreSQL 17 and Go's race detector. The
+baseline had 25 top-level tests; new regression coverage adds capture, legacy
+replay, explanation access, blocked demand, and retraction concurrency checks. Tests include the
 original schema upgrade, concurrent edits and retry collisions, parent-grant
 revocation races, self-promotion, evidence degradation, mandatory overflow,
 conflicts, destination canaries, semantic seals, launch failure, timeout, and

@@ -25,6 +25,14 @@ func TestReusableScopeSealsAndBudgets(t *testing.T) {
 	if len(first.Semantic.Selected) != 1 || first.Semantic.Selected[0].Record.RecordID != r.RecordID {
 		t.Fatalf("did not retrieve reusable lesson %+v", first)
 	}
+	explanation, err := s.Explain(ctx, first.ReceiptID)
+	if err != nil || len(explanation.Candidates) != 1 {
+		t.Fatalf("explanation: %+v %v", explanation, err)
+	}
+	chosen := explanation.Candidates[0]
+	if chosen.Reason != "SELECTED" || chosen.Rank != 1 || chosen.Cost <= 0 || chosen.LexicalMatches != 1 || chosen.RecordID != r.RecordID {
+		t.Fatalf("selection features: %+v", chosen)
+	}
 	request.RequestID = uuid.NewString()
 	second, err := s.Compile(ctx, request, Destination{"local", true})
 	if err != nil {
@@ -50,6 +58,14 @@ func TestReusableScopeSealsAndBudgets(t *testing.T) {
 	if len(rendered) > 1000 || len(small.Semantic.Selected) != 0 {
 		t.Fatal("small context overflow")
 	}
+	explanation, err = s.Explain(ctx, small.ReceiptID)
+	if err != nil || len(explanation.Candidates) != 1 || explanation.Candidates[0].Reason != "OPTIONAL_BUDGET" {
+		t.Fatalf("packing explanation: %+v %v", explanation, err)
+	}
+	if len(small.Semantic.Omitted) != 10 || small.Semantic.Omitted["OPTIONAL_BUDGET"] != 1 {
+		t.Fatal("fixed omission census missing")
+	}
+
 }
 
 func TestConcurrentCompileRetry(t *testing.T) {
@@ -131,6 +147,20 @@ func TestConsequentialGatesAndEvidenceDegradation(t *testing.T) {
 	if err != nil || len(pkg.Semantic.Selected) != 0 || pkg.Semantic.Omitted["EVIDENCE_UNAVAILABLE"] != 1 {
 		t.Fatalf("dangling B escaped: %+v %v", pkg, err)
 	}
+	req.RequestID = uuid.NewString()
+	req.Purpose = "context"
+	pkg, err = operator.Compile(ctx, req, Destination{"local", true})
+	if err != nil || len(pkg.Semantic.Selected) != 1 {
+		t.Fatalf("advisory degraded B missing: %+v %v", pkg, err)
+	}
+	states := map[string]bool{}
+	for _, evidence := range pkg.Semantic.Selected[0].Evidence {
+		states[evidence.State] = true
+	}
+	if !states["divergent"] || !states["dangling"] {
+		t.Fatalf("degradation invisible: %v", states)
+	}
+
 }
 
 func TestMandatoryPolicyConflictAndUnenforceable(t *testing.T) {
@@ -163,7 +193,7 @@ func TestMandatoryPolicyConflictAndUnenforceable(t *testing.T) {
 	req.AvailableTokens = 32000
 	_, err = operator.Compile(ctx, req, Destination{"local", true})
 	requireCode(t, err, "OPEN_CONFLICT")
-	_, err = operator.Retract(ctx, RetractRequest{uuid.NewString(), policy.RecordID, policy.Version, root.ID, "Try to erase a deterministic policy conflict"})
+	_, err = operator.Retract(ctx, RetractRequest{uuid.NewString(), policy.RecordID, policy.Version, root.ID, "Try to erase a deterministic policy conflict", ""})
 	requireCode(t, err, "OPEN_CONFLICT")
 	repo2 := uuid.NewString()
 	draft.Scope.Repo = repo2
@@ -195,8 +225,13 @@ func TestHostedPrivacyAndScopeBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(rendered, "SECRET-CANARY") || len(pkg.Semantic.Omitted) != 0 {
+	if strings.Contains(rendered, "SECRET-CANARY") {
 		t.Fatal("hosted package disclosed a private record or its census")
+	}
+	for _, count := range pkg.Semantic.Omitted {
+		if count != 0 {
+			t.Fatal("private omission census leaked")
+		}
 	}
 	d.Sensitivity = "shareable"
 	d.Body = "Safe shareable fixture"
@@ -242,12 +277,16 @@ func TestConflictRetractionAndStaleRequest(t *testing.T) {
 	if err != nil || len(pkg.Semantic.Selected) != 0 {
 		t.Fatalf("unqualified disputed item escaped %+v %v", pkg, err)
 	}
-	_, err = s.Retract(ctx, RetractRequest{uuid.NewString(), r1.RecordID, 1, root.ID, "Try to erase an open disagreement"})
+	_, err = s.Retract(ctx, RetractRequest{uuid.NewString(), r1.RecordID, 1, root.ID, "Try to erase an open disagreement", ""})
 	requireCode(t, err, "OPEN_CONFLICT")
 	if _, err = s.Resolve(ctx, ResolveRequest{uuid.NewString(), conflict.ID, 1, root.ID, "Resolve explicitly while preserving the original dissent"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.Retract(ctx, RetractRequest{uuid.NewString(), r1.RecordID, 1, root.ID, "Retract the obsolete advice after resolution"}); err != nil {
+	preview, err := s.PreviewRetraction(ctx, r1.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Retract(ctx, RetractRequest{uuid.NewString(), r1.RecordID, 1, root.ID, "Retract the obsolete advice after resolution", preview.PreviewID}); err != nil {
 		t.Fatal(err)
 	}
 }

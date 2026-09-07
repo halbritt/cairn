@@ -118,7 +118,12 @@ Open a dispute with `cairn dispute`:
 `resolve` takes `request_id`, `conflict_id`, `expected_version`, `grant_id`, and
 `reason`. It records the resolving actor and retains all original members.
 Resolution does not silently retract a member. `retract` is an explicit later
-transition with `record_id`, `expected_version`, `grant_id`, and `reason`.
+transition with `request_id`, `record_id`, `expected_version`, `grant_id`,
+`reason`, and `preview_id`. First run `cairn preview-retract RECORD_UUID` and
+inspect its affected runs. Pass the returned token as `preview_id`. It expires
+after one hour. A new exposure or version change requires a fresh preview.
+The preview currently covers direct uses across all versions, up to 1,000 uses;
+it does not claim transitive dependency coverage.
 
 Compile with `cairn compile` (local binding only), or use `search` for the
 operator-selected hosted binding:
@@ -137,6 +142,23 @@ A caller cannot add a destination, principal, or instrumented flag to this
 request. A host supplies destination configuration separately. Compile retries
 return the same receipt while the semantic package is unchanged; changed source
 state returns `STALE_PACKAGE` and requires a new request.
+
+Query text is used transiently for lexical ranking. Semantic schema
+`cairn.semantic/2` retains `query` as `sha256:<hex>`, without raw query text.
+The field name and CBOR shape stay compatible with historical v1 decoding;
+old receipts still replay their original bytes and query text. Retained context
+files likewise omit new raw task/query text. There is no raw-text opt-in.
+
+`cairn explain RECEIPT_UUID` returns protected candidate versions, gate reasons,
+ranking features, order and packing costs for the authenticated receipt owner.
+Hidden destination records are excluded. Detail is separate from model rendering,
+which exposes a fixed census with zero counts. Explanation version 0 means a
+legacy receipt has no retained detail; version 1 covers successful compilations,
+including empty results. Hard compilation refusals do not yet have durable
+explanations. `ESCALATION_BLOCKED` docket entries point to relevant current A
+versions requested for consequential use. They are grouped by record/version;
+editing or promoting the record removes that old version from current demand
+without deleting its historical receipt.
 
 Record an explicit citation with `cairn usage`:
 

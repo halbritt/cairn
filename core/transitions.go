@@ -40,6 +40,7 @@ type RetractRequest struct {
 	ExpectedVersion int    `json:"expected_version"`
 	GrantID         string `json:"grant_id"`
 	Reason          string `json:"reason"`
+	PreviewID       string `json:"preview_id"`
 }
 
 func (s *Store) Promote(ctx context.Context, req PromoteRequest) (Record, error) {
@@ -254,6 +255,9 @@ func (s *Store) Retract(ctx context.Context, req RetractRequest) (Record, error)
 		}
 		if conflicted {
 			return Record{}, failure("OPEN_CONFLICT", "resolve the conflict before retracting")
+		}
+		if err = s.checkRetractionPreview(ctx, tx, req); err != nil {
+			return Record{}, err
 		}
 		next, err := advanceRecord(ctx, tx, current, current.Draft, current.Class, "retracted")
 		if err != nil {

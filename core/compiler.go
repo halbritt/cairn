@@ -45,7 +45,7 @@ type SemanticPackage struct {
 	Schema          string         `json:"schema"`
 	Status          string         `json:"status"`
 	Scope           Scope          `json:"scope"`
-	Query           string         `json:"query"`
+	Query           string         `json:"query"` // v1: legacy text; v2: SHA-256 digest only.
 	Purpose         string         `json:"purpose"`
 	Destination     Destination    `json:"destination"`
 	Policy          string         `json:"policy"`
@@ -102,7 +102,7 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	for attempt := 0; attempt < 4; attempt++ {
 		pkg, err := s.compileOnce(ctx, req, destination)
 		var pgErr *pgconn.PgError
-		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && !(pgErr.Code == "23505" && pgErr.ConstraintName == "retrieval_receipt_caller_request_id_key")) {
+		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && pgErr.Code != "40P01" && !(pgErr.Code == "23505" && pgErr.ConstraintName == "retrieval_receipt_caller_request_id_key")) {
 			return pkg, err
 		}
 		select {
@@ -120,7 +120,8 @@ func (s *Store) compileOnce(ctx context.Context, req CompileRequest, destination
 		return Package{}, err
 	}
 	defer tx.Rollback(ctx)
-	semantic, err := s.compileSnapshot(ctx, tx, req, destination)
+	evaluations := map[string]*CandidateEvaluation{}
+	semantic, err := s.compileSnapshot(ctx, tx, req, destination, evaluations)
 	if err != nil {
 		return Package{}, err
 	}
@@ -128,7 +129,7 @@ func (s *Store) compileOnce(ctx context.Context, req CompileRequest, destination
 	if err != nil {
 		return Package{}, err
 	}
-	pkg, err := s.commitRetrieval(ctx, tx, req, semantic, canonical, seal)
+	pkg, err := s.commitRetrieval(ctx, tx, req, semantic, canonical, seal, evaluations)
 	if err != nil {
 		return Package{}, err
 	}
@@ -158,8 +159,9 @@ type candidate struct {
 	specificity int
 }
 
-func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination) (SemanticPackage, error) {
-	p := SemanticPackage{Schema: "cairn.semantic/1", Status: "READY", Scope: req.Scope, Query: req.Query, Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/1", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: map[string]int{}}
+func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation) (SemanticPackage, error) {
+	queryDigest := sha256.Sum256([]byte(req.Query))
+	p := SemanticPackage{Schema: "cairn.semantic/2", Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/1", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
 	rows, err := tx.Query(ctx, `SELECT m.record_id::text FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id AND v.version=m.current_version
  WHERE v.repo=$1 AND v.task_id IN ('*',$2) AND v.run_id IN ('*',$3) AND m.lifecycle='active' ORDER BY m.record_id LIMIT 10001`, req.Scope.Repo, req.Scope.TaskID, req.Scope.RunID)
 	if err != nil {
@@ -201,24 +203,6 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 			}
 			continue
 		}
-		selection, reason, err := eligible(ctx, tx, record, req.Purpose)
-		if err != nil {
-			return p, err
-		}
-		if reason != "" {
-			p.Omitted[reason]++
-			continue
-		}
-		if record.Class == "C" {
-			var key string
-			if err = tx.QueryRow(ctx, `SELECT policy_key FROM cairn.record_authority WHERE record_id=$1 AND version=$2`, id, record.Version).Scan(&key); err != nil {
-				return p, err
-			}
-			if previous, ok := policyKeys[key]; ok && previous != record.Body {
-				return p, failure("OPEN_CONFLICT", "applicable instructions disagree on a policy key")
-			}
-			policyKeys[key] = record.Body
-		}
 		terms := lexical(req.Query)
 		words := lexical(record.Body)
 		score := 0
@@ -234,8 +218,33 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 		if record.Scope.RunID != "*" {
 			specificity++
 		}
+		evaluation := &CandidateEvaluation{RecordID: id, Version: record.Version, Class: record.Class, LexicalMatches: score, ScopeSpecificity: specificity, WrittenAt: record.WrittenAt}
+		evaluations[id] = evaluation
+		selection, reason, err := eligible(ctx, tx, record, req.Purpose)
+		if err != nil {
+			return p, err
+		}
+		evaluation.Mandatory = selection.Mandatory
+		evaluation.Reason = reason
+		evaluation.EscalationBlocked = reason == "CLASS_NOT_CONSEQUENTIAL" && (len(terms) == 0 || score > 0)
+		if reason != "" {
+			p.Omitted[reason]++
+			continue
+		}
+		if record.Class == "C" {
+			var key string
+			if err = tx.QueryRow(ctx, `SELECT policy_key FROM cairn.record_authority WHERE record_id=$1 AND version=$2`, id, record.Version).Scan(&key); err != nil {
+				return p, err
+			}
+			if previous, ok := policyKeys[key]; ok && previous != record.Body {
+				return p, failure("OPEN_CONFLICT", "applicable instructions disagree on a policy key")
+			}
+			policyKeys[key] = record.Body
+		}
+
 		selection.Reason = fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)
 		if !selection.Mandatory && len(terms) > 0 && score == 0 {
+			evaluation.Reason = "NO_LEXICAL_MATCH"
 			p.Omitted["NO_LEXICAL_MATCH"]++
 			continue
 		}
@@ -261,21 +270,27 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	})
 	optionalCost := 0
 	seenBodies := map[string]bool{}
-	for _, candidate := range candidates {
+	for rank, candidate := range candidates {
 		entry := candidate.selection
+		evaluation := evaluations[entry.Record.RecordID]
+		evaluation.Rank = rank + 1
 		encoded, err := json.Marshal(entry)
 		if err != nil {
 			return p, err
 		}
 		cost := len(encoded) + 1
+		evaluation.Cost = cost
 		if !entry.Mandatory && seenBodies[entry.Record.Body] {
+			evaluation.Reason = "REDUNDANT"
 			p.Omitted["REDUNDANT"]++
 			continue
 		}
 		if !entry.Mandatory && optionalCost+cost > p.OptionalLimit {
+			evaluation.Reason = "OPTIONAL_BUDGET"
 			p.Omitted["OPTIONAL_BUDGET"]++
 			continue
 		}
+		evaluation.Reason = "SELECTED"
 		p.Selected = append(p.Selected, entry)
 		seenBodies[entry.Record.Body] = true
 		if !entry.Mandatory {
@@ -297,6 +312,7 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 		if n == 0 || p.Selected[n-1].Mandatory {
 			return p, failure("BUDGET_REFUSED", "mandatory context and envelope exceed available input room")
 		}
+		evaluations[p.Selected[n-1].Record.RecordID].Reason = "TOTAL_BUDGET"
 		p.Selected = p.Selected[:n-1]
 		p.Omitted["TOTAL_BUDGET"]++
 		if len(p.Selected) == 0 {
@@ -358,7 +374,7 @@ func eligible(ctx context.Context, tx pgx.Tx, r Record, purpose string) (Selecti
 				resolvable = true
 			}
 		}
-		if !resolvable {
+		if !resolvable && purpose != "context" {
 			return entry, "EVIDENCE_UNAVAILABLE", nil
 		}
 	}
@@ -374,7 +390,7 @@ func lexical(text string) map[string]bool {
 	return result
 }
 
-func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileRequest, semantic SemanticPackage, canonical []byte, seal string) (Package, error) {
+func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileRequest, semantic SemanticPackage, canonical []byte, seal string, evaluations map[string]*CandidateEvaluation) (Package, error) {
 	encoded, err := json.Marshal(struct {
 		Request     CompileRequest
 		Destination Destination
@@ -400,11 +416,19 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	id = uuid.NewString()
 	nonce = uuid.NewString()
-	_, err = tx.Exec(ctx, `INSERT INTO cairn.retrieval_receipt(receipt_id,request_id,request_digest,scope,purpose,destination,semantic_body,seal,status,nonce) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, id, req.RequestID, digest[:], req.Scope, req.Purpose, semantic.Destination.Name, canonical, seal, semantic.Status, nonce)
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.retrieval_receipt(receipt_id,request_id,request_digest,scope,purpose,destination,semantic_body,seal,status,nonce,explanation_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1)`, id, req.RequestID, digest[:], req.Scope, req.Purpose, semantic.Destination.Name, canonical, seal, semantic.Status, nonce)
 	if err != nil {
 		return Package{}, err
 	}
-	for _, entry := range semantic.Selected {
+	for _, e := range evaluations {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.retrieval_candidate(receipt_id,record_id,version,reason,escalation_blocked,detail) VALUES($1,$2,$3,$4,$5,$6)`, id, e.RecordID, e.Version, e.Reason, e.EscalationBlocked, e); err != nil {
+			return Package{}, err
+		}
+	}
+	// Lock exposure generations in stable ID order, independent of query rank.
+	uses := slices.Clone(semantic.Selected)
+	slices.SortFunc(uses, func(a, b Selection) int { return strings.Compare(a.Record.RecordID, b.Record.RecordID) })
+	for _, entry := range uses {
 		if _, err = tx.Exec(ctx, `INSERT INTO cairn.record_use(receipt_id,record_id,version,purpose) VALUES($1,$2,$3,$4)`, id, entry.Record.RecordID, entry.Record.Version, req.Purpose); err != nil {
 			return Package{}, err
 		}

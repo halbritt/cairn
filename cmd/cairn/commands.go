@@ -19,7 +19,7 @@ Everyday commands:
   remember [--repo PATH] [--shareable] TEXT
   search [--repo PATH] [--purpose context] [--destination local] QUERY
   run [--repo PATH] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
-  list REPO | get UUID | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID
+  list REPO | get UUID | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
   create edit compile bootstrap grant revoke-grant capture-evidence
@@ -97,11 +97,15 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return remember(ctx, store, args[1:])
 	case "search":
 		return search(ctx, store, args[1:])
-	case "get", "replay", "report", "list", "impact", "docket":
+	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
 		}
 		switch args[0] {
+		case "preview-retract":
+			return store.PreviewRetraction(ctx, args[1])
+		case "explain":
+			return store.Explain(ctx, args[1])
 		case "docket":
 			return store.Docket(ctx, args[1])
 		case "get":

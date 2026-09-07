@@ -10,6 +10,9 @@ reports work. OpenCode 1.18.21 was probed through the wrapper against an isolate
 local fixture endpoint. Runtime mediation and measured model benefit are not
 established.
 
+The [roadmap](docs/roadmap.md) tracks accepted requirements, remaining gaps and
+acceptance evidence.
+
 ## Get started
 
 Requires Go 1.25+, PostgreSQL 16+ client/server binaries, Bash, Python 3, and
@@ -73,7 +76,10 @@ must fit completely. Unsupported mandatory runtime enforcement blocks launch.
 
 Process output streams to stdout/stderr. The final Cairn receipt envelope goes
 to stderr. Cairn records process exit, timing, and output digests, without keeping
-raw model outputs. Per-run `context.txt` and `outcome.json` live in the owner-only
+raw model outputs. Task and query text are transient: new semantic v2 packages
+retain only a SHA-256 query digest. Digests are not anonymization, and old v1
+receipts retain their original query text until explicit deletion is implemented.
+Per-run `context.txt` and `outcome.json` live in the owner-only
 run directory named in the receipt. A failed DB write retains
 `outcome.pending.json` for `cairn recover-run RECEIPT_UUID` recovery. Do not retry a
 process blindly: the same compile request UUID cannot launch twice.
@@ -92,12 +98,15 @@ bin/cairn get RECORD_UUID
 bin/cairn search --purpose planning 'placement or planning question'
 bin/cairn impact RECORD_UUID
 bin/cairn replay RECEIPT_UUID
+bin/cairn explain RECEIPT_UUID
+bin/cairn preview-retract RECORD_UUID
 bin/cairn docket "$PWD"
 bin/cairn report "$PWD"
 ```
 
 Planning, placement, capability, and security retrieval excludes Class A notes.
-Class B requires retained supporting evidence and valid authority. A revoked
+Consequential Class B reads require resolvable supporting evidence and valid
+authority. Advisory reads can include degraded B with its evidence state visible. A revoked
 parent grant invalidates its descendants at the next compile. Class C
 instructions are issued through a separate authorized path. Disputed optional
 material is omitted whole; binding conflicts refuse compilation.
@@ -108,7 +117,7 @@ pagination/truncation metadata; it does not claim causal influence. The report
 keeps exit-zero observations separate from unknown task outcomes.
 
 The docket surfaces attribution contradictions, evidence-unavailable B records,
-and launches lacking outcomes. An unfinished run may still be executing. A
+launches lacking outcomes, and matching A notes blocked from consequential use. An unfinished run may still be executing. A
 manual inspection is required before declaring it abandoned.
 
 ## Authority and structured commands
@@ -143,7 +152,10 @@ Mutation retries return the original result; use `get` for current state.
 Ordinary edits retain previous versions and require `expected_version`. They
 cannot change scope or sensitivity. Corrections replace active B content with
 new evidence references and an audit link. C changes use retraction followed by
-new issuance. Explicit conflict resolution retains the original members and
+new issuance. Retraction requires a caller-owned `preview-retract` token, valid
+for one hour and invalidated by content/version changes or new exposure. The
+preview covers all retained versions and direct runs (at most 1,000 uses);
+cross-record dependency analysis remains unfinished. Explicit conflict resolution retains the original members and
 reasoned audit history.
 
 ## Verify changes

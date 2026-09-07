@@ -31,6 +31,27 @@ func (s *Store) Docket(ctx context.Context, repo string) (Docket, error) {
 	}
 	defer tx.Rollback(ctx)
 	docket := Docket{Items: []DocketItem{}}
+	demandRows, err := tx.Query(ctx, `SELECT DISTINCT ON (c.record_id,c.version) c.record_id::text,c.version,c.receipt_id::text
+ FROM cairn.retrieval_candidate c JOIN cairn.retrieval_receipt r USING(receipt_id)
+ JOIN cairn.memory_record m ON m.record_id=c.record_id AND m.current_version=c.version
+ WHERE r.scope->>'repo'=$1 AND c.escalation_blocked AND m.class='A' AND m.lifecycle='active'
+ ORDER BY c.record_id,c.version,r.created_at DESC,c.receipt_id LIMIT 101`, repo)
+	if err != nil {
+		return docket, err
+	}
+	for demandRows.Next() {
+		item := DocketItem{Reason: "ESCALATION_BLOCKED", Action: "Review supporting evidence for independent promotion; repetition does not confer authority."}
+		if err = demandRows.Scan(&item.RecordID, &item.Version, &item.ReceiptID); err != nil {
+			demandRows.Close()
+			return docket, err
+		}
+		docket.Items = append(docket.Items, item)
+	}
+	err = demandRows.Err()
+	demandRows.Close()
+	if err != nil {
+		return docket, err
+	}
 	rows, err := tx.Query(ctx, `SELECT d.record_id::text,d.version FROM cairn.correction_docket d
  JOIN cairn.memory_record m ON m.record_id=d.record_id AND m.current_version=d.version
  JOIN cairn.record_version v ON v.record_id=d.record_id AND v.version=d.version WHERE v.repo=$1 ORDER BY d.created_at,d.record_id LIMIT 101`, repo)
