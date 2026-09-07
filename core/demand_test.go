@@ -17,7 +17,7 @@ func TestCouncilAuditBlockedDemandDocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := op.Compile(ctx, CompileRequest{uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "planning", 64000}, Destination{"local", true})
+	p, err := op.Compile(ctx, CompileRequest{nil, uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "planning", 64000}, Destination{"local", true})
 	if err != nil || p.Semantic.Omitted["CLASS_NOT_CONSEQUENTIAL"] != 1 {
 		t.Fatalf("fixture compile %+v %v", p, err)
 	}
@@ -51,7 +51,7 @@ func TestProtectedDemandExplanationAndRelevance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := CompileRequest{uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error QUERY_CANARY", "planning", 64000}
+	req := CompileRequest{nil, uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error QUERY_CANARY", "planning", 64000}
 	p, err := s.Compile(ctx, req, Destination{"hosted", false})
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestProtectedDemandExplanationAndRelevance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if explanation.Version != 1 || len(explanation.Candidates) != 2 {
+	if explanation.Version != 2 || len(explanation.Candidates) != 2 {
 		t.Fatalf("detail missing or retry duplicated: %+v", explanation)
 	}
 	blocked := 0

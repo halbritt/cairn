@@ -49,15 +49,6 @@ func Run(ctx context.Context, store *core.Store, req Request, stdout, stderr io.
 	if len(req.Command) == 0 || (req.Carrier != "stdin" && req.Carrier != "argv") || req.Timeout <= 0 || req.Timeout > time.Hour || len(req.Prompt) > 131072 {
 		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "invalid command, carrier, timeout or prompt"}
 	}
-	pkg, err := store.Compile(ctx, req.Compile, req.Destination)
-	if err != nil {
-		return Result{}, err
-	}
-	encodedCommand, err := json.Marshal(req.Command)
-	if err != nil {
-		return Result{}, err
-	}
-	commandDigest := sha256.Sum256(encodedCommand)
 	taskClass, bindingID, capabilityID := req.TaskClass, req.BindingID, req.CapabilityID
 	if taskClass == "" {
 		taskClass = "unknown"
@@ -68,6 +59,20 @@ func Run(ctx context.Context, store *core.Store, req Request, stdout, stderr io.
 	if capabilityID == "" {
 		capabilityID = "unknown"
 	}
+	pins := core.ContextPins{Revision: req.Revision, WorkspaceSHA256: req.WorkspaceSHA256, TaskClass: taskClass, BindingID: bindingID, CapabilityID: capabilityID}
+	if req.Compile.Context != nil && *req.Compile.Context != pins {
+		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "compile context must match declared run metadata"}
+	}
+	req.Compile.Context = &pins
+	pkg, err := store.Compile(ctx, req.Compile, req.Destination)
+	if err != nil {
+		return Result{}, err
+	}
+	encodedCommand, err := json.Marshal(req.Command)
+	if err != nil {
+		return Result{}, err
+	}
+	commandDigest := sha256.Sum256(encodedCommand)
 	_, err = store.BindRun(ctx, core.RunBindingRequest{RequestID: req.Compile.RequestID, ReceiptID: pkg.ReceiptID, TaskClass: taskClass, BindingID: bindingID, CapabilityID: capabilityID, CommandSHA256: hex.EncodeToString(commandDigest[:]), Revision: req.Revision, WorkspaceSHA256: req.WorkspaceSHA256})
 	if err != nil {
 		return Result{}, err

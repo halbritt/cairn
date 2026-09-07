@@ -206,7 +206,7 @@ func (s *Store) Correct(ctx context.Context, req CorrectRequest) (Record, error)
 		if current.Class != "B" || current.Lifecycle != "active" {
 			return Record{}, failure("AUTHORITY_DENIED", "correction requires active B; C changes require retraction and a new issuance")
 		}
-		if current.Scope != req.Draft.Scope || (req.Draft.Sensitivity != "" && current.Sensitivity != req.Draft.Sensitivity) {
+		if current.Scope != req.Draft.Scope || !sameApplicability(current.Pins, req.Draft.Pins) || (req.Draft.Sensitivity != "" && current.Sensitivity != req.Draft.Sensitivity) {
 			return Record{}, failure("AUTHORITY_DENIED", "correction cannot change scope or sensitivity")
 		}
 		next, err := advanceRecord(ctx, tx, current, req.Draft, "B", "active")

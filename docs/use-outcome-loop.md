@@ -23,8 +23,8 @@ benefit score or a completed recurrence evaluation. Exposures never increase ran
 `cairn run` records a SHA-256 digest of its command argv before launch. Raw argv is
 not retained. `--task-class`, `--binding`, `--capability`, `--revision` and
 `--workspace-sha256` supply declared comparison metadata. Binding and capability
-are distinct; unknown capability stays `unknown`. Revision/workspace labels in
-this table describe the run and do not yet establish retrieval eligibility.
+are distinct; unknown capability stays `unknown`. The same declared tuple is supplied to the compiler for
+[currentness matching](currentness-and-replay.md).
 Run metadata is bound before launch and cannot be replaced under a new request.
 
 ## Task assessments and corrections

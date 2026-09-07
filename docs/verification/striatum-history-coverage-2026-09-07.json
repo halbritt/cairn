@@ -1,0 +1,131 @@
+{
+  "availability": "later_recurrence_only",
+  "interpretation": "Native commit subjects drive this provider-free retrieval coverage probe. Clauses were captured now, not before the historical incident. Recompiled seals establish retained-input reproducibility, not avoided failures, task acceptance, search/native-model baseline superiority or causal benefit.",
+  "scenario_count": 12,
+  "scenarios": [
+    {
+      "commit": "e1d8124de3511a8f7a46ea2f23182d0150a35433",
+      "query_sha256": "d0544aafce7130bdf3a2e3ad503199b0739f9fc43d637c6d195ad6b2d943fa75",
+      "selected_clauses": [
+        "D0013.C2",
+        "D0008.C1"
+      ],
+      "recompiled": true,
+      "no_memory_selected": 0
+    },
+    {
+      "commit": "df98810240936b843d4875c5b8ab01c4832201d3",
+      "query_sha256": "1836226975146feaebb821aa13aa310476b842adb2680f2cb82bba3952dc2899",
+      "selected_clauses": [
+        "D0013.C2",
+        "D0008.C1"
+      ],
+      "recompiled": true,
+      "no_memory_selected": 0
+    },
+    {
+      "commit": "9172e4649e7694a4c59d54f9e9fab1a108e71460",
+      "query_sha256": "596c68e9ef81d7970461203ae879d89eaf702813e4813e8e76d740407b243d8f",
+      "selected_clauses": [
+        "D0013.C2"
+      ],
+      "recompiled": true,
+      "no_memory_selected": 0
+    },
+    {
+      "commit": "00cd2d32dd80411317e809b0e99b6cb6ca50b847",
+      "query_sha256": "61340ffda9ba0bf7cd9981235542c019efa609c7cf1dd7d9483d4a4be9506408",
+      "selected_clauses": [
+        "D0013.C2",
+        "D0008.C1"
+      ],
+      "recompiled": true,
+      "no_memory_selected": 0
+    },
+    {
+      "commit": "ce9dfc138ce2658c4ad0a23bd1c479c9e6965677",
+      "query_sha256": "3e3a10b70d21d0e28b05be24260cb3c65abefcb29c4393baf11be9ca6c66926c",
+      "selected_clauses": [
+        "D0008.C1"
+      ],
+      "recompiled": true,
+      "no_memory_selected": 0
+    },
+    {
+      "commit": "0714fb58ecbc0e795798b987e8fc1f814cabf024",
+      "query_sha256": "6d2c1af02c7a3159ff25c71bb87014d1b87ee3ebcb09740cb09a21f7d18e5a0f",
+      "selected_clauses": [
+        "D0008.C1",
+        "D0013.C2"
+      ],
+      "recompiled": true,
+      "no_memory_selected": 0
+    },
+    {
+      "commit": "e63f4626c68f139d9addee8a15a713f56e34cd03",
+      "query_sha256": "52a2054fe761e6bfffefd8e86f582966d1d798eb83ba94a34572fab564d22fdc",
+      "selected_clauses": [
+        "D0008.C1"
+      ],
+      "recompiled": true,
+      "no_memory_selected": 0
+    },
+    {
+      "commit": "eccf75c2bab323aa94e7195fcc5943b1e32126d8",
+      "query_sha256": "2bade5f769b543df58207d8e6e77f9a07e65e1bf095470d561fa3c6f2f5af831",
+      "selected_clauses": [
+        "D0005.C10",
+        "D0008.C1"
+      ],
+      "recompiled": true,
+      "no_memory_selected": 0
+    },
+    {
+      "commit": "56840cf694ecf451980abbd694fd3c8c01cbc7d7",
+      "query_sha256": "85851eb0c72e2219fdb8deb2759cbfec27c0047f750ffe917bfcc553179330d4",
+      "selected_clauses": [
+        "D0013.C2",
+        "D0008.C1"
+      ],
+      "recompiled": true,
+      "no_memory_selected": 0
+    },
+    {
+      "commit": "ad29bc088874f3c9ce6ddb27242fda1a66ef8dfe",
+      "query_sha256": "6c9188264b3ed71d5b471d7e2bc74ffd43a4b537ab94f7ffe6d7807ab3eac82e",
+      "selected_clauses": [
+        "D0013.C2",
+        "D0008.C1"
+      ],
+      "recompiled": true,
+      "no_memory_selected": 0
+    },
+    {
+      "commit": "68ec49bfbacb165bf36c0e9362f1867b91bd4f95",
+      "query_sha256": "1891c2fa2f8e46236f29513667ab050f00b7cb39ac930677348fa920bedaa997",
+      "selected_clauses": [
+        "D0008.C1"
+      ],
+      "recompiled": true,
+      "no_memory_selected": 0
+    },
+    {
+      "commit": "98759de9d5f1bfa855cc8d7ff43456be243db7db",
+      "query_sha256": "00e94746a5cb4271f9331b5c84d051d56a6b01078a4bb130207fed6ba2fd384a",
+      "selected_clauses": [
+        "D0008.C1"
+      ],
+      "recompiled": true,
+      "no_memory_selected": 0
+    }
+  ],
+  "scenarios_with_selected_memory": 12,
+  "schema": "cairn.history-coverage/1",
+  "source_clause_count": 3,
+  "source_hashes": {
+    "decisions/D0005-artifact-lifecycle-and-state-machine.md": "1a052ddadb019f50d4b6535de3d96068c64dc0089e24601189424c8e951f6000",
+    "decisions/D0008-scheduler-and-capacity-policy.md": "633ff75395813a196974c32eeb258d76842b900b74f4b10be563a81ed727d7f0",
+    "decisions/D0013-adapter-supervision.md": "4e639e5e4136c2cdacc97c0f9b6bcd33060d45f76e79210980e9f60d06824905"
+  },
+  "source_head": "768171873e84c25cde464511f77b3646d842a96a"
+}

@@ -21,11 +21,12 @@ import (
 )
 
 type CompileRequest struct {
-	RequestID       string `json:"request_id"`
-	Scope           Scope  `json:"scope"`
-	Query           string `json:"query"`
-	Purpose         string `json:"purpose"`
-	AvailableTokens int    `json:"available_tokens"`
+	Context         *ContextPins `json:"context,omitempty"`
+	RequestID       string       `json:"request_id"`
+	Scope           Scope        `json:"scope"`
+	Query           string       `json:"query"`
+	Purpose         string       `json:"purpose"`
+	AvailableTokens int          `json:"available_tokens"`
 }
 
 // Destination comes from trusted host configuration, never request JSON.
@@ -42,6 +43,7 @@ type Selection struct {
 	Reason    string     `json:"reason"`
 }
 type SemanticPackage struct {
+	Context         *ContextPins   `json:"context,omitempty"`
 	Schema          string         `json:"schema"`
 	Status          string         `json:"status"`
 	Scope           Scope          `json:"scope"`
@@ -73,6 +75,9 @@ func (p Package) Render() (string, error) {
 	return "MEM-STATUS/" + p.Semantic.Status + "\nCairn context (A is advisory; only C is an authorized instruction):\n" + string(body) + "\n", nil
 }
 func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Destination) (Package, error) {
+	if err := req.Context.validate(); err != nil {
+		return Package{}, err
+	}
 	if err := validID(req.RequestID); err != nil {
 		return Package{}, err
 	}
@@ -161,7 +166,7 @@ type candidate struct {
 
 func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation) (SemanticPackage, error) {
 	queryDigest := sha256.Sum256([]byte(req.Query))
-	p := SemanticPackage{Schema: "cairn.semantic/2", Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/1", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
+	p := SemanticPackage{Context: req.Context, Schema: "cairn.semantic/3", Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/2", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
 	rows, err := tx.Query(ctx, `SELECT m.record_id::text FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id AND v.version=m.current_version
  WHERE v.repo=$1 AND v.task_id IN ('*',$2) AND v.run_id IN ('*',$3) AND m.lifecycle='active' ORDER BY m.record_id LIMIT 10001`, req.Scope.Repo, req.Scope.TaskID, req.Scope.RunID)
 	if err != nil {
@@ -173,6 +178,10 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	if len(ids) > 10000 {
 		return p, failure("BUDGET_REFUSED", "repository selection exceeds bounded scan; narrow task scope")
+	}
+	var now time.Time
+	if err = tx.QueryRow(ctx, `SELECT transaction_timestamp()`).Scan(&now); err != nil {
+		return p, err
 	}
 	candidates := []candidate{}
 	policyKeys := map[string]string{}
@@ -203,8 +212,8 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 			}
 			continue
 		}
-		terms := lexical(req.Query)
-		words := lexical(record.Body)
+		terms := rankingTerms(req.Query, p.Ranking)
+		words := rankingTerms(record.Body, p.Ranking)
 		score := 0
 		for word := range terms {
 			if words[word] {
@@ -220,13 +229,27 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 		}
 		evaluation := &CandidateEvaluation{RecordID: id, Version: record.Version, Class: record.Class, LexicalMatches: score, ScopeSpecificity: specificity, WrittenAt: record.WrittenAt}
 		evaluations[id] = evaluation
+		if reason := applicabilityReason(record.Pins, req.Context, now); reason != "" {
+			if record.Class == "C" && reason == "CONTEXT_MISSING" {
+				entry, gate, err := eligible(ctx, tx, record, req.Purpose)
+				if err != nil {
+					return p, err
+				}
+				if gate == "" && entry.Mandatory {
+					return p, failure("POLICY_UNENFORCEABLE", "required instruction applicability cannot be established without context pins")
+				}
+			}
+			evaluation.Reason = reason
+			p.Omitted[reason]++
+			continue
+		}
 		selection, reason, err := eligible(ctx, tx, record, req.Purpose)
 		if err != nil {
 			return p, err
 		}
 		evaluation.Mandatory = selection.Mandatory
 		evaluation.Reason = reason
-		evaluation.EscalationBlocked = reason == "CLASS_NOT_CONSEQUENTIAL" && (len(terms) == 0 || score > 0)
+		evaluation.EscalationBlocked = reason == "CLASS_NOT_CONSEQUENTIAL" && (strings.TrimSpace(req.Query) == "" || score > 0)
 		if reason != "" {
 			p.Omitted[reason]++
 			continue
@@ -242,14 +265,20 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 			policyKeys[key] = record.Body
 		}
 
+		digest := sha256.Sum256([]byte(record.Body))
+		evaluation.Facts = &CandidateFacts{BodySHA256: hex.EncodeToString(digest[:]), Sensitivity: record.Sensitivity, AttributionState: record.AttributionState, Evidence: selection.Evidence, Authority: selection.Authority}
 		selection.Reason = fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)
-		if !selection.Mandatory && len(terms) > 0 && score == 0 {
+		if !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 {
 			evaluation.Reason = "NO_LEXICAL_MATCH"
 			p.Omitted["NO_LEXICAL_MATCH"]++
 			continue
 		}
 		candidates = append(candidates, candidate{selection, score, specificity})
 	}
+	return packCandidates(p, candidates, evaluations)
+}
+
+func packCandidates(p SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation) (SemanticPackage, error) {
 	slices.SortFunc(candidates, func(a, b candidate) int {
 		if a.selection.Mandatory != b.selection.Mandatory {
 			if a.selection.Mandatory {
@@ -305,7 +334,7 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 		if err != nil {
 			return p, err
 		}
-		if len(rendered) <= req.AvailableTokens {
+		if len(rendered) <= p.AvailableTokens {
 			break
 		}
 		n := len(p.Selected)
@@ -416,7 +445,7 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	id = uuid.NewString()
 	nonce = uuid.NewString()
-	_, err = tx.Exec(ctx, `INSERT INTO cairn.retrieval_receipt(receipt_id,request_id,request_digest,scope,purpose,destination,semantic_body,seal,status,nonce,explanation_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1)`, id, req.RequestID, digest[:], req.Scope, req.Purpose, semantic.Destination.Name, canonical, seal, semantic.Status, nonce)
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.retrieval_receipt(receipt_id,request_id,request_digest,scope,purpose,destination,semantic_body,seal,status,nonce,explanation_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,2)`, id, req.RequestID, digest[:], req.Scope, req.Purpose, semantic.Destination.Name, canonical, seal, semantic.Status, nonce)
 	if err != nil {
 		return Package{}, err
 	}
@@ -434,4 +463,16 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 		}
 	}
 	return Package{id, nonce, seal, semantic}, nil
+}
+
+// Version 1 remains available for historical receipts. Version 2 excludes a
+// fixed English function-word set; domain tokens and negation remain meaningful.
+func rankingTerms(text, version string) map[string]bool {
+	terms := lexical(text)
+	if version == "lexical-scope-recency/2" {
+		for _, word := range strings.Fields("a an and are as at be by for from in is it of on or that the this to was were with") {
+			delete(terms, word)
+		}
+	}
+	return terms
 }

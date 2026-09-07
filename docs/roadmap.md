@@ -94,10 +94,25 @@ integration must respect its sealed dispatch-input boundary, as described in
 
 | ID | Status | Work and acceptance evidence |
 | --- | --- | --- |
-| E1 — currentness and intent | open | Add repository revision/dirty-workspace identity, validity, task type/phase, entities/files/error signatures and capability/binding pins. Define ordinary declared pin matching first; executable currentness predicates are an optional later experiment. Test obsolete guidance across code revisions and mismatched scopes. |
+| E1 — currentness and intent | partial | Add repository revision/dirty-workspace identity, validity, task type/phase, entities/files/error signatures and capability/binding pins. Define ordinary declared pin matching first; executable currentness predicates are an optional later experiment. Test obsolete guidance across code revisions and mismatched scopes. |
 | E2 — compact index and pull | open | Deliver minimal bootstrap plus bounded index; add authorized record/body/evidence expansion. H0 uses permitted overlay or fresh compile, never imaginary mid-run hooks. H1 later gets opaque expiring handles and expansion credits. Test budget, destination, revocation and stale-handle behavior. |
-| E3 — cutoff-pinned recompilation | open | Recompile historical selection under cutoff/revision/policy/evidence pins. Keep saved-byte replay as inspection. Distinguish original-time availability from recurrence scenarios. Test that later claims, revocations and evidence state cannot leak backward; test deterministic reconstructed seals where the contract promises equality. |
-| E4 — real corpus and baselines | open | Inventory authorized current Striatum history; seed justified B from existing evidence and include real correction/supersession/conflict cases. Do not use historical decision counts as current inventory. Compare no-memory, search/native and H0 runs on reproducible tasks, context cost and repeated failures. Publish bounded usefulness findings, including failures and unknowns. Three repository notes and a wrapped `cat` are not acceptance. |
+| E3 — cutoff-pinned recompilation | partial | Recompile historical selection under cutoff/revision/policy/evidence pins. Keep saved-byte replay as inspection. Distinguish original-time availability from recurrence scenarios. Test that later claims, revocations and evidence state cannot leak backward; test deterministic reconstructed seals where the contract promises equality. |
+| E4 — real corpus and baselines | partial | Inventory authorized current Striatum history; seed justified B from existing evidence and include real correction/supersession/conflict cases. Do not use historical decision counts as current inventory. Compare no-memory, search/native and H0 runs on reproducible tasks, context cost and repeated failures. Publish bounded usefulness findings, including failures and unknowns. Three repository notes and a wrapped `cat` are not acceptance. |
+
+[Currentness and replay](currentness-and-replay.md) now implement declared
+revision/workspace/task-class/binding/capability and validity gates. Missing pins
+cannot suppress a mandatory instruction. Semantic v3 seals context; old formats
+remain readable. Explanation v2 preserves gate facts for historical ranking and
+packing from the named receipt's read set, with input digest and result-seal
+checks. Later B corrections and evidence changes cannot rewrite that selection.
+Arbitrary historical cutoffs without retained observations, entity/file/error/phase
+matching, and the real-history usefulness trial remain open.
+
+A [native-history coverage trial](verification/history-coverage-2026-09-07.md)
+now uses three committed accepted clauses and 12 native commit subjects in a
+disposable store. All read sets recompile exactly; the scenario availability is
+explicitly later recurrence. No-memory comparison is present. Native/search/model
+baselines, relevance judgments and avoided-failure evidence remain absent.
 
 ### 4. Turn observed demand into next-run improvement
 

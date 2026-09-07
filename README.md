@@ -77,7 +77,7 @@ must fit completely. Unsupported mandatory runtime enforcement blocks launch.
 
 Process output streams to stdout/stderr. The final Cairn receipt envelope goes
 to stderr. Cairn records process exit, timing, and output digests, without keeping
-raw model outputs. Task and query text are transient: new semantic v2 packages
+raw model outputs. Task and query text are transient: new semantic v2/v3 packages
 retain only a SHA-256 query digest. Digests are not anonymization, and old v1
 receipts retain their original query text until explicit deletion is implemented.
 Per-run `context.txt` and `outcome.json` live in the owner-only
@@ -193,7 +193,7 @@ need an enabled Go module proxy; dependencies and CI actions are pinned.
 
 The [decision record](docs/decisions/0002-local-memory-loop.md) settles the
 operating defaults. Remaining implementation includes authenticated agent
-transport, full revision/workspace scope pins, evidence lifecycle jobs,
+transport integration into real host lanes, broader scope matching, evidence lifecycle jobs,
 redaction/deletion effects and retention, richer conflict delivery, expansion
 credits, real-history usefulness trials, and Striatum orchestration wiring.
 No automatic grooming, learned ranking, or automatic promotion is running.

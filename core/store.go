@@ -260,7 +260,7 @@ func (s *Store) Edit(ctx context.Context, req EditRequest) (Record, error) {
 		if old.Class != "A" || old.Lifecycle != "active" {
 			return Record{}, failure("AUTHORITY_DENIED", "ordinary edit requires an active A record; use an audited transition")
 		}
-		if old.Scope != req.Draft.Scope {
+		if old.Scope != req.Draft.Scope || !sameApplicability(old.Pins, req.Draft.Pins) {
 			return Record{}, failure("AUTHORITY_DENIED", "scope changes require an authority path; exact scope is fixed in this slice")
 		}
 		if req.Draft.Sensitivity != "" && req.Draft.Sensitivity != old.Sensitivity {
@@ -278,6 +278,11 @@ func insertVersion(ctx context.Context, tx pgx.Tx, id string, version int, draft
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,$10,$11,(SELECT class FROM cairn.memory_record WHERE record_id=$1))`, id, version, draft.Kind, draft.Body, draft.Scope.Repo, draft.Scope.TaskID, draft.Scope.RunID, draft.AttributedProducer, draft.AttemptID, draft.ResultRef, draft.ClaimType)
 	if err != nil {
 		return Record{}, err
+	}
+	if draft.Pins != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.record_applicability(record_id,version,pins) VALUES($1,$2,$3)`, id, version, draft.Pins); err != nil {
+			return Record{}, err
+		}
 	}
 	if err = queueContradictions(ctx, tx, draft.AttemptID); err != nil {
 		return Record{}, err
@@ -304,6 +309,12 @@ func readRecord(ctx context.Context, tx pgx.Tx, id string) (Record, error) {
         WHERE m.record_id=$1`, id).Scan(&r.RecordID, &r.Version, &r.Class, &r.Lifecycle, &r.Sensitivity, &r.Kind, &r.Body, &r.Scope.Repo, &r.Scope.TaskID, &r.Scope.RunID, &r.AttributedProducer, &r.AttemptID, &r.ResultRef, &r.ClaimType, &r.ObservedWriter, &r.Witness, &r.WrittenAt, &r.AttributionState)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, failure("NOT_FOUND", "record not found")
+	}
+	if err == nil {
+		pinErr := tx.QueryRow(ctx, `SELECT pins FROM cairn.record_applicability WHERE record_id=$1 AND version=$2`, id, r.Version).Scan(&r.Pins)
+		if pinErr != nil && !errors.Is(pinErr, pgx.ErrNoRows) {
+			return r, pinErr
+		}
 	}
 	r.Draft.Sensitivity = r.Sensitivity
 	return r, err

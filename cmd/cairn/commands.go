@@ -24,7 +24,7 @@ Everyday commands:
 
 JSON commands (read one request from stdin):
   create edit compile bootstrap grant revoke-grant capture-evidence
-  promote issue correct retract dispute resolve usage assess-run
+  promote issue correct retract dispute resolve usage assess-run recompile
   grants (no input)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
@@ -167,6 +167,14 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.Dispute)
 	case "resolve":
 		return invoke(ctx, input, store.Resolve)
+	case "recompile":
+		return invoke(ctx, input, func(ctx context.Context, req core.RecompileRequest) (any, error) {
+			p, err := store.Recompile(ctx, req)
+			return struct {
+				Historical bool         `json:"historical"`
+				Package    core.Package `json:"package"`
+			}{true, p}, err
+		})
 	case "assess-run":
 		return invoke(ctx, input, store.AssessRun)
 	case "usage":

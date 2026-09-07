@@ -17,7 +17,7 @@ func TestReusableScopeSealsAndBudgets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := CompileRequest{uuid.NewString(), Scope{repo, "next-task", "next-run"}, "fixture_error", "context", 32000}
+	request := CompileRequest{nil, uuid.NewString(), Scope{repo, "next-task", "next-run"}, "fixture_error", "context", 32000}
 	first, err := s.Compile(ctx, request, Destination{"local", true})
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestReusableScopeSealsAndBudgets(t *testing.T) {
 	if err != nil || len(explanation.Candidates) != 1 || explanation.Candidates[0].Reason != "OPTIONAL_BUDGET" {
 		t.Fatalf("packing explanation: %+v %v", explanation, err)
 	}
-	if len(small.Semantic.Omitted) != 10 || small.Semantic.Omitted["OPTIONAL_BUDGET"] != 1 {
+	if len(small.Semantic.Omitted) != 13 || small.Semantic.Omitted["OPTIONAL_BUDGET"] != 1 {
 		t.Fatal("fixed omission census missing")
 	}
 
@@ -70,7 +70,7 @@ func TestReusableScopeSealsAndBudgets(t *testing.T) {
 
 func TestConcurrentCompileRetry(t *testing.T) {
 	s := testStore(t, Channel{Principal: "compile:retry"})
-	req := CompileRequest{uuid.NewString(), Scope{uuid.NewString(), "task", "run"}, "", "context", 32000}
+	req := CompileRequest{nil, uuid.NewString(), Scope{uuid.NewString(), "task", "run"}, "", "context", 32000}
 	var wg sync.WaitGroup
 	results := make(chan Package, 6)
 	errs := make(chan error, 6)
@@ -111,7 +111,7 @@ func TestConsequentialGatesAndEvidenceDegradation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := CompileRequest{uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "planning", 64000}
+	req := CompileRequest{nil, uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "planning", 64000}
 	pkg, err := operator.Compile(ctx, req, Destination{"local", true})
 	if err != nil || len(pkg.Semantic.Selected) != 0 {
 		t.Fatalf("A entered planning: %+v %v", pkg, err)
@@ -174,7 +174,7 @@ func TestMandatoryPolicyConflictAndUnenforceable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := CompileRequest{uuid.NewString(), Scope{repo, "t", "r"}, "unrelated-query", "context", 32000}
+	req := CompileRequest{nil, uuid.NewString(), Scope{repo, "t", "r"}, "unrelated-query", "context", 32000}
 	pkg, err := operator.Compile(ctx, req, Destination{"local", true})
 	if err != nil || len(pkg.Semantic.Selected) != 1 {
 		t.Fatalf("mandatory disappeared without lexical match: %+v %v", pkg, err)
@@ -216,7 +216,7 @@ func TestHostedPrivacyAndScopeBoundary(t *testing.T) {
 	if _, err := s.Create(ctx, CreateRequest{uuid.NewString(), d}); err != nil {
 		t.Fatal(err)
 	}
-	req := CompileRequest{uuid.NewString(), Scope{repo, "t", "r"}, "", "context", 32000}
+	req := CompileRequest{nil, uuid.NewString(), Scope{repo, "t", "r"}, "", "context", 32000}
 	pkg, err := s.Compile(ctx, req, Destination{"hosted", false})
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +262,7 @@ func TestConflictRetractionAndStaleRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := CompileRequest{uuid.NewString(), Scope{repo, "t", "r"}, "fixture_error", "context", 64000}
+	req := CompileRequest{nil, uuid.NewString(), Scope{repo, "t", "r"}, "fixture_error", "context", 64000}
 	if _, err = s.Compile(ctx, req, Destination{"local", true}); err != nil {
 		t.Fatal(err)
 	}
@@ -288,5 +288,28 @@ func TestConflictRetractionAndStaleRequest(t *testing.T) {
 	}
 	if _, err = s.Retract(ctx, RetractRequest{uuid.NewString(), r1.RecordID, 1, root.ID, "Retract the obsolete advice after resolution", preview.PreviewID}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCommonWordsDoNotCreateRelevanceOrBlockedDemand(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t, Channel{Principal: "lexical:common"})
+	repo := uuid.NewString()
+	if _, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)}); err != nil {
+		t.Fatal(err)
+	}
+	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "the and", Purpose: "context", AvailableTokens: 64000}
+	p, err := s.Compile(ctx, req, Destination{"local", true})
+	if err != nil || len(p.Semantic.Selected) != 0 {
+		t.Fatalf("common words created relevance: %+v %v", p, err)
+	}
+	req.RequestID = uuid.NewString()
+	req.Purpose = "planning"
+	if _, err = s.Compile(ctx, req, Destination{"local", true}); err != nil {
+		t.Fatal(err)
+	}
+	docket, err := s.Docket(ctx, repo)
+	if err != nil || len(docket.Items) != 0 {
+		t.Fatalf("common words generated promotion demand: %+v %v", docket, err)
 	}
 }

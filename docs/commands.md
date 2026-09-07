@@ -144,7 +144,7 @@ return the same receipt while the semantic package is unchanged; changed source
 state returns `STALE_PACKAGE` and requires a new request.
 
 Query text is used transiently for lexical ranking. Semantic schema
-`cairn.semantic/2` retains `query` as `sha256:<hex>`, without raw query text.
+`cairn.semantic/2` and `/3` retain `query` as `sha256:<hex>`, without raw query text.
 The field name and CBOR shape stay compatible with historical v1 decoding;
 old receipts still replay their original bytes and query text. Retained context
 files likewise omit new raw task/query text. There is no raw-text opt-in.
@@ -153,7 +153,8 @@ files likewise omit new raw task/query text. There is no raw-text opt-in.
 ranking features, order and packing costs for the authenticated receipt owner.
 Hidden destination records are excluded. Detail is separate from model rendering,
 which exposes a fixed census with zero counts. Explanation version 0 means a
-legacy receipt has no retained detail; version 1 covers successful compilations,
+legacy receipt has no retained detail; version 1 covers the initial successful compilations; version 2 adds frozen
+gate facts for [historical recompilation](currentness-and-replay.md),
 including empty results. Hard compilation refusals do not yet have durable
 explanations. `ESCALATION_BLOCKED` docket entries point to relevant current A
 versions requested for consequential use. They are grouped by record/version;

@@ -53,12 +53,17 @@ func search(ctx context.Context, s *core.Store, args []string) (core.Package, er
 	purpose := f.String("purpose", "context", "consumer purpose")
 	dest := f.String("destination", "local", "destination")
 	tokens := f.Int("tokens", 32000, "available memory input room")
+	revision := f.String("revision", "", "Git object ID")
+	workspace := f.String("workspace-sha256", "", "workspace digest")
+	taskClass := f.String("task-class", "", "task category")
+	binding := f.String("binding", "", "binding identity")
+	capability := f.String("capability", "", "capability identity")
 	task := f.String("task", "interactive", "task pin")
 	run := f.String("run", uuid.NewString(), "run pin")
 	if err := f.Parse(args); err != nil {
 		return core.Package{}, invalid(err.Error())
 	}
-	return s.Compile(ctx, core.CompileRequest{RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: strings.Join(f.Args(), " "), Purpose: *purpose, AvailableTokens: *tokens}, core.Destination{Name: *dest, AllowLocal: *dest == "local"})
+	return s.Compile(ctx, core.CompileRequest{Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability}, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: strings.Join(f.Args(), " "), Purpose: *purpose, AvailableTokens: *tokens}, core.Destination{Name: *dest, AllowLocal: *dest == "local"})
 }
 func runTask(ctx context.Context, s *core.Store, args []string) (runner.Result, error) {
 	f := flags("run")
