@@ -198,6 +198,12 @@ func (s *Store) ReviewProposal(ctx context.Context, req ReviewProposalRequest) (
 			return p, failure("STALE_PROPOSAL", "source assessment changed; generate and review a current proposal")
 		}
 		if req.ResultRecord != "" {
+			for _, id := range p.EvidenceIDs {
+				if err = checkAssessmentEvidence(ctx, tx, id, p.Repo); err != nil {
+					return p, err
+				}
+			}
+
 			record, err := readRecord(ctx, tx, req.ResultRecord)
 			if err != nil {
 				return p, err

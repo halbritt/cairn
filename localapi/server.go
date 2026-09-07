@@ -108,6 +108,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveJSON(w, r, c.store.RecordUsage)
 	case "/v1/usage-coverage":
 		serveJSON(w, r, c.store.RecordUsageCoverage)
+	case "/v1/check-evidence":
+		if !c.destination.AllowLocal {
+			writeError(w, 403, "AUTHORITY_DENIED", "evidence inspection requires a local profile")
+			return
+		}
+		serveJSON(w, r, c.store.CheckEvidence)
 	case "/v1/evidence":
 		serveJSON(w, r, c.store.CaptureEvidence)
 	case "/v1/spawn":

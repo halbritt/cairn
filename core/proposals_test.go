@@ -67,6 +67,20 @@ func TestFailureRecoveryProposalRetainsEvidenceAndReviewDisposition(t *testing.T
 			t.Fatal("deferred proposal remained due")
 		}
 	}
+	// Source versions alone do not establish that their selected bytes remain
+	// available. Conversion checks current evidence before linking advice.
+	target, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE cairn.evidence SET body='changed proposal evidence' WHERE evidence_id=$1`, proposal.EvidenceIDs[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.CheckEvidence(ctx, EvidenceCheckRequest{uuid.NewString(), proposal.EvidenceIDs[0]}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.ReviewProposal(ctx, ReviewProposalRequest{RequestID: uuid.NewString(), ProposalID: proposal.ID, ExpectedVersion: 2, Disposition: "converted", ResultRecord: target.RecordID, Reason: "Do not convert unavailable source evidence"})
+	requireCode(t, err, "EVIDENCE_UNAVAILABLE")
 	// A correction invalidates review based on the old pair, while preserving
 	// the old source attachment for inspection.
 	_, err = observer.AssessRun(ctx, AssessmentRequest{RequestID: uuid.NewString(), ReceiptID: receipts[1], ExpectedVersion: 1, TaskOutcome: "unknown", FailureDomain: "unknown", Method: "fixture-correction/1", Reason: "Withdraw premature acceptance after reviewing the fixture"})

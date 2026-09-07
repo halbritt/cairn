@@ -26,7 +26,7 @@ local installation evidence.
 
 ## Observation, retrieval and recovery additions — 2026-09-07
 
-Migrations 006–014 add versioned task assessments, declared run bindings, usage
+Migrations 006–015 add versioned task assessments, declared run bindings, usage
 coverage, task-close delegate findings, currentness pins, reviewed failure/recovery
 proposals, unsigned audit checkpoints and bounded index expansion. The Unix API
 establishes separate authenticated agent/observer channels. Record-specific use
@@ -120,9 +120,14 @@ observations. They store bounded partial traces and digests, never raw queries o
 record bodies. A failed observation commit returns `REFUSAL_UNRECORDED` without
 claiming a durable identifier.
 
+Inline evidence refresh now persists check generations and digest observations,
+invalidates dependent previews and blocks conversion of proposals with unavailable
+evidence. Binary inspection is lossless. Managed artifacts and scheduled refresh
+remain open.
+
 ## Current local installation
 
-The installed build applies migrations 001–014 to Cairn's dedicated PostgreSQL 17
+The installed build applies migrations 001–015 to Cairn's dedicated PostgreSQL 17
 store. The upgrade was preceded by a private dump. A subsequent dump includes the
 new expected audit-set catalog and verifies against the installed store.
 

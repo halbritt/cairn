@@ -23,7 +23,7 @@ Everyday commands:
   list REPO | get UUID | use-report REPO | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
-  create edit compile index expand bootstrap grant revoke-grant capture-evidence
+  create edit compile index expand bootstrap grant revoke-grant capture-evidence check-evidence
   promote demote issue correct retract dispute resolve usage assess-run recompile generate-proposals review-proposal
   grants (no input)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
@@ -104,11 +104,13 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return remember(ctx, store, args[1:])
 	case "search":
 		return search(ctx, store, args[1:])
-	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal":
+	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
 		}
 		switch args[0] {
+		case "evidence-checks":
+			return store.EvidenceChecks(ctx, args[1])
 		case "refusal":
 			return store.Refusal(ctx, args[1])
 		case "proposal":
@@ -169,6 +171,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.Grant)
 	case "revoke-grant":
 		return invoke(ctx, input, store.RevokeGrant)
+	case "check-evidence":
+		return invoke(ctx, input, store.CheckEvidence)
 	case "capture-evidence":
 		return invoke(ctx, input, store.CaptureEvidence)
 	case "demote":

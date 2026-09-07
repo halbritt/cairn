@@ -17,6 +17,7 @@ measured agent benefit.
 | Sealed index, expiring body handles and transactional credits | `core/index_test.go`; current version/authority/bootstrap checks on retry, concurrent credit limit, oversized body refusal and preview invalidation |
 | Versioned relations, cheap B demotion and transitive preview guards | `core/relations_test.go`; inherited source restrictions, C/conflict refusal, historical B/relations preservation, transitive exposure invalidation |
 | Durable policy refusals | `core/refusals_test.go`, Unix client fixture; exact-intent grouping, source privacy, caller ownership and explicit observation-write failure |
+| Evidence refresh and lossless inspection | `core/evidence_check_test.go`, proposal regression; generations, retry grouping, dependent preview invalidation, historical gates and binary inspection |
 | Restore recomputation and handle fencing | `scripts/test-local-lifecycle.sh`; independent dump, audit catalog verification, exact body/index recompile and rejection of restored handles |
 
 `make check`, `make test-integration` and `make test-lifecycle` pass against

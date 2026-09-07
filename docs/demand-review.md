@@ -33,6 +33,7 @@ not silently revalidate them.
 Review decisions retain versions and actors. Conversion does not create or
 promote a record. Stale source assessments cannot be reopened or converted;
 review locks their receipt boundaries against concurrent assessment changes.
+Conversion also checks that selected evidence is currently resolvable and digest-valid.
 
 The docket prioritizes attribution contradictions and incomplete delegated work
 above ordinary blocked demand. New failure/recovery proposals appear as

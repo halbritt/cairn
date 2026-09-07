@@ -173,6 +173,11 @@ failures and blocked demotion/retraction, without raw queries or record bodies.
 Transport repeats group by exact intent and status; failed observation writes
 are explicit. Other policy paths and refusal analytics remain open.
 
+[Evidence refresh](evidence-refresh.md) now records inline check generations and
+history, atomically invalidates affected impact previews, and blocks proposal
+conversion when selected evidence is unavailable. Historical gates remain frozen.
+Managed artifacts, scheduled checks, source-span constraints and deletion remain open.
+
 [Audit checkpoints](audit-checkpoints.md) now cover the emitted governance/C audit
 subset with explicit membership and no payload/reason commitment. Backups retain
 an external expectation catalog. Restore tests recompile from restored candidate

@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -19,10 +22,12 @@ type EvidenceRequest struct {
 	Sensitivity string `json:"sensitivity"`
 }
 type Evidence struct {
-	ID      string `json:"evidence_id"`
-	Digest  string `json:"sha256"`
-	Witness string `json:"witness"`
-	State   string `json:"state"`
+	CheckGeneration int        `json:"check_generation,omitempty"`
+	CheckedAt       *time.Time `json:"checked_at,omitempty"`
+	ID              string     `json:"evidence_id"`
+	Digest          string     `json:"sha256"`
+	Witness         string     `json:"witness"`
+	State           string     `json:"state"`
 }
 
 func (s *Store) CaptureEvidence(ctx context.Context, req EvidenceRequest) (Evidence, error) {
@@ -46,7 +51,7 @@ func (s *Store) CaptureEvidence(ctx context.Context, req EvidenceRequest) (Evide
 			witness = "instrumented"
 		}
 		_, err := tx.Exec(ctx, `INSERT INTO cairn.evidence(evidence_id,repo,body,digest,source,witness,sensitivity) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, req.Repo, []byte(req.Body), digest[:], req.Source, witness, req.Sensitivity)
-		return Evidence{id, hex.EncodeToString(digest[:]), witness, "resolvable"}, err
+		return Evidence{ID: id, Digest: hex.EncodeToString(digest[:]), Witness: witness, State: "resolvable"}, err
 	})
 }
 
@@ -82,7 +87,7 @@ func linkEvidence(ctx context.Context, tx pgx.Tx, r Record, ids []string) error 
 }
 
 func supportingEvidence(ctx context.Context, tx pgx.Tx, id string, version int) ([]Evidence, error) {
-	rows, err := tx.Query(ctx, `SELECT e.evidence_id::text,e.body,e.digest,e.witness,e.state FROM cairn.evidence e JOIN cairn.evidence_ref r USING(evidence_id) WHERE r.record_id=$1 AND r.version=$2 ORDER BY e.evidence_id`, id, version)
+	rows, err := tx.Query(ctx, `SELECT e.evidence_id::text,e.body,e.digest,e.witness,e.state,e.check_generation,e.checked_at FROM cairn.evidence e JOIN cairn.evidence_ref r USING(evidence_id) WHERE r.record_id=$1 AND r.version=$2 ORDER BY e.evidence_id`, id, version)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +96,7 @@ func supportingEvidence(ctx context.Context, tx pgx.Tx, id string, version int) 
 	for rows.Next() {
 		var e Evidence
 		var body, digest []byte
-		if err = rows.Scan(&e.ID, &body, &digest, &e.Witness, &e.State); err != nil {
+		if err = rows.Scan(&e.ID, &body, &digest, &e.Witness, &e.State, &e.CheckGeneration, &e.CheckedAt); err != nil {
 			return nil, err
 		}
 		actual := sha256.Sum256(body)
@@ -105,6 +110,7 @@ func supportingEvidence(ctx context.Context, tx pgx.Tx, id string, version int) 
 }
 
 type EvidenceDocument struct {
+	BodyBase64 string `json:"body_base64,omitempty"`
 	Evidence
 	Repo         string `json:"repo"`
 	Source       string `json:"source"`
@@ -127,7 +133,7 @@ func (s *Store) ReadEvidence(ctx context.Context, id string) (EvidenceDocument, 
 	var doc EvidenceDocument
 	var body, digest []byte
 	doc.ID = id
-	err = tx.QueryRow(ctx, `SELECT repo,source,sensitivity,body,digest,witness,state FROM cairn.evidence WHERE evidence_id=$1`, id).Scan(&doc.Repo, &doc.Source, &doc.Sensitivity, &body, &digest, &doc.Witness, &doc.State)
+	err = tx.QueryRow(ctx, `SELECT repo,source,sensitivity,body,digest,witness,state,check_generation,checked_at FROM cairn.evidence WHERE evidence_id=$1`, id).Scan(&doc.Repo, &doc.Source, &doc.Sensitivity, &body, &digest, &doc.Witness, &doc.State, &doc.CheckGeneration, &doc.CheckedAt)
 	if err == pgx.ErrNoRows {
 		return doc, failure("NOT_FOUND", "evidence not found")
 	}
@@ -140,7 +146,11 @@ func (s *Store) ReadEvidence(ctx context.Context, id string) (EvidenceDocument, 
 	actual := sha256.Sum256(body)
 	doc.Digest = hex.EncodeToString(digest)
 	doc.ActualSHA256 = hex.EncodeToString(actual[:])
-	doc.Body = string(body)
+	if utf8.Valid(body) {
+		doc.Body = string(body)
+	} else {
+		doc.BodyBase64 = base64.StdEncoding.EncodeToString(body)
+	}
 	if !bytes.Equal(digest, actual[:]) {
 		doc.State = "divergent"
 	}
