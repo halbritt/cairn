@@ -87,3 +87,17 @@ is read-only; consistent exclusion can still have pending purge and residuals.
 
 These checks establish detection against a supplied known snapshot. Automatic
 freshness, reapplication, projection recovery and admission remain unimplemented.
+
+## Restored launch and pull fencing
+
+Migration 018 preserves historical semantic bytes while assigning receipt delivery
+generations. `core/restore_fence_test.go` covers old launch/binding/pull refusals,
+fresh compilation, idempotent fence retries, historical replay, delayed outcomes,
+operator scope and late context registration. It verifies that an old snapshot
+cannot commit under a new generation, and that fencing waits for an uncommitted
+receipt. Whole-store tests use separate disposable databases.
+
+`scripts/check-restore-fence.py` uses a real restored dump and authenticated observer
+API: old launch and binding retries refuse, historical seals remain equal, and a
+fresh compile permits one claim. This establishes the shipped admission boundary,
+not process cancellation, complete restore admission or Striatum integration.

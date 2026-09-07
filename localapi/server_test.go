@@ -81,6 +81,10 @@ func TestAuthenticatedChannelOwnsIdentityAndScope(t *testing.T) {
 	if status != 403 {
 		t.Fatal("agent asserted service observation")
 	}
+	status, _ = call("/v1/claim-run", token, map[string]any{"receipt_id": uuid.NewString()})
+	if status != 403 {
+		t.Fatal("agent claimed host launch authority")
+	}
 	status, _ = call("/v1/bootstrap", token, map[string]any{})
 	if status != 404 {
 		t.Fatal("operator path exposed")

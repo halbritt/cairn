@@ -119,8 +119,8 @@ func (s *Store) beginLevel(ctx context.Context, level pgx.TxIsoLevel) (pgx.Tx, e
 
 // One request lock covers lookup, effect and stored response. A lost response can
 // be retried without repeating the effect; a different intent cannot reuse a key.
-func mutate[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error)) (T, error) {
-	return mutateOnce(ctx, s, operation, requestID, request, pgx.ReadCommitted, apply)
+func mutate[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
+	return mutateOnce(ctx, s, operation, requestID, request, pgx.ReadCommitted, apply, guards...)
 }
 
 func privileged[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {

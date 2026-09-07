@@ -33,6 +33,12 @@ func (s *Store) BindRun(ctx context.Context, req RunBindingRequest) (Observation
 	if !digestValid(req.CommandSHA256) || len(req.Revision) > 256 || (req.WorkspaceSHA256 != "" && !digestValid(req.WorkspaceSHA256)) {
 		return Observation{}, failure("INVALID_REQUEST", "invalid command or workspace digest or revision")
 	}
+	guard := func(tx pgx.Tx) error {
+		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
+			return err
+		}
+		return receiptCurrentGeneration(ctx, tx, req.ReceiptID)
+	}
 	return mutate(ctx, s, "bind-run", req.RequestID, req, func(tx pgx.Tx) (Observation, error) {
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
 			return Observation{}, err
@@ -52,7 +58,7 @@ func (s *Store) BindRun(ctx context.Context, req RunBindingRequest) (Observation
 			return Observation{}, failure("VERSION_CONFLICT", "run already bound; retry original request")
 		}
 		return Observation{req.ReceiptID}, nil
-	})
+	}, guard)
 }
 
 type AssessmentRequest struct {

@@ -451,6 +451,10 @@ func lexical(text string) map[string]bool {
 }
 
 func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileRequest, semantic SemanticPackage, canonical []byte, seal string, evaluations map[string]*CandidateEvaluation) (Package, error) {
+	generation, err := retrievalGeneration(ctx, tx)
+	if err != nil {
+		return Package{}, err
+	}
 	encoded, err := json.Marshal(struct {
 		Request     CompileRequest
 		Destination Destination
@@ -466,6 +470,9 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 		if !bytes.Equal(oldDigest, digest[:]) {
 			return Package{}, failure("IDEMPOTENCY_CONFLICT", "compile request ID has different intent")
 		}
+		if err = receiptCurrentGeneration(ctx, tx, id); err != nil {
+			return Package{}, err
+		}
 		if err = receiptPayloadAvailable(ctx, tx, id); err != nil {
 			return Package{}, err
 		}
@@ -479,7 +486,7 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	id = uuid.NewString()
 	nonce = uuid.NewString()
-	_, err = tx.Exec(ctx, `INSERT INTO cairn.retrieval_receipt(receipt_id,request_id,request_digest,scope,purpose,destination,semantic_body,seal,status,nonce,explanation_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,2)`, id, req.RequestID, digest[:], req.Scope, req.Purpose, semantic.Destination.Name, canonical, seal, semantic.Status, nonce)
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.retrieval_receipt(receipt_id,request_id,request_digest,scope,purpose,destination,semantic_body,seal,status,nonce,explanation_version,generation) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,2,$11)`, id, req.RequestID, digest[:], req.Scope, req.Purpose, semantic.Destination.Name, canonical, seal, semantic.Status, nonce, generation)
 	if err != nil {
 		return Package{}, err
 	}

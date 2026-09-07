@@ -31,7 +31,7 @@ JSON commands (read one request from stdin):
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
 Administration: recovery-export FILE | recovery-inspect FILE
-  migrate | invalidate-handles < request.json | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH]
+  migrate | fence-restore < request.json | invalidate-handles < request.json | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH]
 Default store: ~/.local/share/cairn/socket, database cairn.
 Override with CAIRN_DATABASE_URL. Initialize with scripts/local-store.sh start.
 CLI is trusted operator administration. Agents use a host-established core Channel.
@@ -164,6 +164,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return nil, invalid("unexpected arguments")
 	}
 	switch args[0] {
+	case "fence-restore":
+		return invoke(ctx, input, store.FenceRestore)
 	case "invalidate-handles":
 		return invoke(ctx, input, store.InvalidateHandles)
 	case "checkpoint":

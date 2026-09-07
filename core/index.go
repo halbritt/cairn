@@ -148,6 +148,9 @@ func (s *Store) Index(ctx context.Context, req CompileRequest, dest Destination)
 	if err = s.receiptAccess(ctx, tx, p.ReceiptID); err != nil {
 		return result, err
 	}
+	if err = receiptCurrentGeneration(ctx, tx, p.ReceiptID); err != nil {
+		return result, err
+	}
 	if err = tx.QueryRow(ctx, `SELECT expires_at,credits,remaining_bytes FROM cairn.index_session WHERE receipt_id=$1`, p.ReceiptID).Scan(&result.ExpiresAt, &result.CreditsRemaining, &result.BytesRemaining); err != nil {
 		return result, err
 	}
@@ -185,6 +188,9 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 	var credits, remaining int
 	guard := func(tx pgx.Tx) error {
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
+			return err
+		}
+		if err := receiptCurrentGeneration(ctx, tx, req.ReceiptID); err != nil {
 			return err
 		}
 		var expires, now time.Time

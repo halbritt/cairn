@@ -50,7 +50,8 @@ The command changes neither the database nor external files.
 
 Restore admission remains unfinished. Missing restrictions must still be reapplied
 with auditable provenance, newer file custody reconciled, projections rebuilt,
-old run attestations fenced and fresh packages compiled before service resumes.
+[old delivery capabilities fenced](restore-fencing.md) and fresh packages compiled
+before service resumes.
 Inspection success alone does not authorize that resume. The ordinary API has no
 recovery endpoints, and this change adds no automatic service-start guard.
 

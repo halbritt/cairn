@@ -146,7 +146,7 @@ remain open.
 
 ## Current local installation
 
-The installed build applies migrations 001–015 to Cairn's dedicated PostgreSQL 17
+This build includes migrations 001–018 for Cairn's dedicated PostgreSQL 17
 store. The upgrade was preceded by a private dump. A subsequent dump includes the
 new expected audit-set catalog and verifies against the installed store.
 
@@ -193,3 +193,10 @@ lifecycle drill detects later revocation/forgetting and missing post-backup file
 custody in a real restored dump. It also checks mutable exclusion state when
 audit events are intact. This read-only report does not reapply restrictions,
 prove export freshness or authorize service resumption. L9 remains partial.
+
+Migration 018 adds [restore delivery fencing](restore-fencing.md). Old receipt
+claims, binding retries, context registration and pulls refuse after an explicit
+operator fence; historical inspection and delayed outcomes survive. The observer
+API can reserve a launch once through `claim-run`. A real restored-database API
+drill covers the transition. Migration alone does not invalidate operational
+receipts, and full restore reconciliation and live Striatum wiring remain open.

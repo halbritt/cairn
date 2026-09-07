@@ -51,12 +51,17 @@ write failure does not roll back a committed mutation.
 
 Operations: `create`, `edit`, `compile`, `get`, `evidence`, `usage`, `use-report`,
 `assess-run`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
-`delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
+`claim-run`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`. `compile` takes
 no destination field; the configured profile owns that decision. A hosted profile
 cannot use the protected `use-report` endpoint. The server checks repository scope
 at the store boundary as well as endpoint authorization. SIGTERM shuts down
 requests and removes the owned socket; a second listener cannot replace it.
+
+An observer may reserve one launch with `claim-run` and a `receipt_id`. The
+receipt must belong to that observer. Repeated claims do not authorize another
+execution; ambiguous responses require run inspection. [Restore fences](restore-fencing.md)
+make old receipts unusable for new claims without changing historical outcomes.
 
 ## Striatum boundary
 

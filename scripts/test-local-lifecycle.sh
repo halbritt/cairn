@@ -74,6 +74,7 @@ fenced=subprocess.run(['bin/cairn','expand'],input=json.dumps(pull).encode(),env
 assert fenced.returncode!=0 and json.loads(fenced.stdout)['status']=='STALE_HANDLE'
 print('Restored inputs and index recompile; expected audit set verifies; restored handles are fenced')
 PYVERIFY
+python3 scripts/check-restore-fence.py "$test_root"
 python3 scripts/check-deletion.py "$test_root" "$pg_bin"
 python3 scripts/check-recovery.py "$test_root" "$pg_bin"
 bash scripts/local-store.sh stop
