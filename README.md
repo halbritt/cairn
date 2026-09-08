@@ -11,8 +11,14 @@ A [real OpenCode repair trial](docs/verification/opencode-recurrence-2026-09-07.
 compared three context conditions; none produced a repair within its budget.
 A later [reviewed-lesson recurrence](docs/verification/reviewed-recurrence-2026-09-08.md)
 found that H0 selected and cited a lesson while avoiding the baseline's environment
-regression within budget. Full task acceptance, runtime mediation and general
+regression within budget. Full repair-task acceptance, runtime mediation and general
 memory benefit remain unestablished.
+
+A [native MCP configuration follow-up](docs/verification/mcp-host-use-2026-09-08.md)
+retrieved a curated procedure revision and produced a configuration that connected
+after an earlier run produced an unusable one. Both tasks have retrievals linked
+to observed host runs and separate task assessments. This is one accepted
+configuration task, with broader memory benefit still unproved.
 
 The [roadmap](docs/roadmap.md) tracks accepted requirements, remaining gaps and
 acceptance evidence.

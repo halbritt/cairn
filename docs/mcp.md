@@ -94,7 +94,16 @@ IDs. Add the entry to the configuration owned by the launching host:
 }
 ```
 
-`opencode mcp list --pure` checks connection. OpenCode prefixes tool names with
+`command` is an array containing the executable and its arguments. Do not use a
+string `command` with a separate `args` field. Tool permissions belong in the
+top-level `permission` object, not a `tools` object inside the server entry.
+For a task restricted to memory search and body pulls, that permission object is
+`{"*":"deny","cairn_cairn_search":"allow","cairn_cairn_pull":"allow"}`.
+Choose permissions appropriate to the full task when adding other tools.
+
+`opencode mcp list --pure` checks connection. Verify that it lists `cairn` as
+connected: an observed invalid configuration returned exit zero while reporting
+no configured servers. OpenCode prefixes tool names with
 the configured server name; this entry exposes names such as
 `cairn_cairn_search`. Its permission configuration can allow search/pull while
 denying capture. See the [OpenCode MCP documentation](https://opencode.ai/docs/mcp-servers/)
@@ -104,3 +113,9 @@ The facade uses the official [MCP Go SDK v1.7.0](https://github.com/modelcontext
 including its protocol negotiation and typed input validation. The
 [verification report](verification/mcp-2026-09-08.md) distinguishes protocol tests,
 actual OpenCode tool use and remaining usefulness claims.
+
+A [configuration task and follow-up](verification/mcp-host-use-2026-09-08.md)
+demonstrate a curated procedure revision, native MCP use and host-run association.
+The host observes tool results and calls `link-run-retrieval` with its observer
+profile; the model keeps its ordinary agent profile. The association does not
+turn a process exit into task acceptance.

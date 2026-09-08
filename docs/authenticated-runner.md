@@ -10,6 +10,14 @@ Keep its token separate from an ordinary agent's token. The server derives the
 principal, observation role and destination from its private configuration; flags
 cannot choose a different principal or elevate an agent profile.
 
+The owner's installation has separate `observer.token` (local destination) and
+`hosted-observer.token` (hosted destination) profiles. A hosted OpenCode launch
+uses the latter with `--destination hosted`. Its MCP process uses the separate
+ordinary `hosted-agent.token`; do not pass the observer token to the model.
+The [native MCP task report](verification/mcp-host-use-2026-09-08.md) records this
+setup and the resulting retrieval/outcome associations. Hosted observer access
+does not expose the protected `use-report`; operator inspection remains separate.
+
 ```sh
 cairn agent --token-file ~/.local/share/cairn/observer.token run \
   --repo /path/to/repository --dir /path/to/repository \

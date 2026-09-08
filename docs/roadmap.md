@@ -11,7 +11,11 @@ The [MCP facade](mcp.md) now exposes ordinary memory tools through the existing
 authenticated API. A [real OpenCode model](verification/mcp-2026-09-08.md) searched
 and pulled a note saved in a Codex session, then correctly answered the
 storage questions with its source. This adds native tool contact and one useful
-operational transfer; host-run association, native Striatum ingress and broader
+operational transfer. A [later configuration task](verification/mcp-host-use-2026-09-08.md)
+now has native retrievals associated with observed host runs: the first generated
+an unusable configuration, then a fresh run retrieved a curated procedure revision
+and produced a configuration that OpenCode connected successfully. This is a
+bounded correction-and-reuse observation. Native Striatum ingress and broader
 task benefit remain open.
 
 The [MCP context extension](verification/mcp-currentness-2026-09-08.md) lets hosts
@@ -20,8 +24,9 @@ Public stdio checks verify matching retrieval and missing/mismatched withholding
 This closes a facade capability gap; it adds no model-task benefit evidence.
 
 [Current usefulness evidence](verification/usefulness-status-2026-09-08.md) is
-one exploratory avoided-regression case, a real failure-to-lesson loop and an
-operational note transfer. No baseline advantage or durable task improvement
+one exploratory avoided-regression case, a real failure-to-lesson loop, an
+operational note transfer and one accepted configuration follow-up after a
+procedure revision. No baseline advantage or durable task improvement
 across harnesses is established. Prioritize a real
 accepted task, retrieval quality and transfer evidence. Further recovery
 engineering is deferred for this experimental stage unless an observed problem

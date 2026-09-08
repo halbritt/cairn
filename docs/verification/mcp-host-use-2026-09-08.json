@@ -1,0 +1,90 @@
+{
+  "schema": "cairn.mcp-host-use/1",
+  "source_revision": "f889cdff766740fbd21e11f1a9d76c1ca1f02658",
+  "cairn_code_revision": "cda676257538b9f5b6ca415ea7caacd57ae5e243",
+  "observations": [
+    {
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "opencode_version": "1.18.21",
+      "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+      "cairn_sha256": "e2b67b2b7061db1991f2d25ebe58e5b61ab57d80f26137f4d6be3da7ed4ab3e9",
+      "task_sha256": "3b1a22a7cbe96853283cdd3a7c7db976eec7edbd5bf5612c57daef39f96adb3e",
+      "process_exit": 0,
+      "elapsed_seconds": 20.762608140939847,
+      "relay_requests": 5,
+      "relay_rejections": {},
+      "native_searches": 1,
+      "native_pulls": 2,
+      "tool_errors": 1,
+      "configuration_check_exit": 0,
+      "configured_server_observed": false,
+      "linked_retrievals": 1,
+      "task_outcome": "rejected",
+      "assessment_version": 1,
+      "expanded_rows": 2,
+      "unknown_usage_rows": 1,
+      "procedure_version": 1,
+      "candidate_sha256": "76255ae6d7fe62e7340c8077710ec9da68c29a57cea3c673a4252643d5774db0",
+      "model_output_sha256": "f5372c12206cae1ff5f7b29812c0ede968e66642adc620b95042aabccd067a3b",
+      "reported_models": [
+        "deepseek/deepseek-v4-flash-0731"
+      ],
+      "reported_provider_counts": {
+        "Relace": 1,
+        "Baidu": 4
+      }
+    },
+    {
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "opencode_version": "1.18.21",
+      "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+      "cairn_sha256": "e2b67b2b7061db1991f2d25ebe58e5b61ab57d80f26137f4d6be3da7ed4ab3e9",
+      "task_sha256": "3b1a22a7cbe96853283cdd3a7c7db976eec7edbd5bf5612c57daef39f96adb3e",
+      "process_exit": 0,
+      "elapsed_seconds": 7.2325066779740155,
+      "relay_requests": 4,
+      "relay_rejections": {},
+      "native_searches": 1,
+      "native_pulls": 2,
+      "tool_errors": 0,
+      "configuration_check_exit": 0,
+      "configured_server_observed": true,
+      "linked_retrievals": 1,
+      "task_outcome": "accepted",
+      "assessment_version": 1,
+      "expanded_rows": 2,
+      "unknown_usage_rows": 2,
+      "procedure_version": 2,
+      "candidate_sha256": "74910cecb71fcac8aa46cd2597be30acd987a71f291f5425859041b272f29ebe",
+      "model_output_sha256": "76ae08c201fd9e40d9c0a4bad0b16e235dc9cb3584a4f59fbb51b84794dac94a",
+      "reported_models": [
+        "deepseek/deepseek-v4-flash-0731"
+      ],
+      "reported_provider_counts": {
+        "StreamLake": 1,
+        "Baidu": 3
+      }
+    }
+  ],
+  "limits": [
+    "Exploratory before/after observation; no no-memory/direct-context control or causal benefit claim.",
+    "Same prompt; fresh model session and host run each time.",
+    "Task criteria were in the prompt; detailed review checklist was written after the first run, before output inspection.",
+    "Both tasks used the ordinary hosted profile; writer independence is not established.",
+    "No native Striatum ingress, automatic learning or broad coding-task improvement.",
+    "Citation text was inspected separately; use-report records expanded usage, not inferred cited usage."
+  ],
+  "deployment": {
+    "new_api_pid": 3934153,
+    "new_api_sha256": "e2b67b2b7061db1991f2d25ebe58e5b61ab57d80f26137f4d6be3da7ed4ab3e9",
+    "observer_authenticated": true
+  },
+  "doctrine": {
+    "packet_id": "pkt-39a81e300a273cfc",
+    "packet_content_sha256": "39a81e300a273cfc4d2c88a601380da5bdfcadd6221034b94a5f6c16ebaa99c6",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "unmet_obligations_count": 31
+  }
+}
