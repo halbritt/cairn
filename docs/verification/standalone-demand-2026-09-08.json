@@ -28,6 +28,25 @@
     "Recovery pair precedence, dismissal, correction and standalone reappearance pass",
     "Standalone conversion links Class A without promotion",
     "Old pair JSON without kind remains readable",
-    "go vet and formatting pass"
-  ]
+    "go vet and formatting pass",
+    "Local backup/restore lifecycle drill passes"
+  ],
+  "installation": {
+    "schema": "cairn.standalone-install/1",
+    "revision": "7bc9165b0b58dc46b0bc5021e62ea276c3c0affb",
+    "binary_sha256": "668ae51b25d95f2bb6c2ac5a3ee80eb2247a4efeb8106fca66e3629f6dc2f4b2",
+    "api_pid": 1510837,
+    "api_running_same_binary": true,
+    "agent_get": {
+      "ok": true,
+      "record_id": "e6321836-e12d-49af-8a66-04d6d6c8abff",
+      "version": 1
+    },
+    "record_version_digest_unchanged": true,
+    "record_version_sha256": "1bd01848904e3739a3e748601d3ccce45ec009f8a451fc1b8f3937efd4279ce6",
+    "preupgrade_backup_pointer": "/tmp/cairn-pre-standalone-backup.txt",
+    "migration_version": 19,
+    "ci": "https://github.com/halbritt/cairn/actions/runs/34187744968",
+    "ci_status": "success"
+  }
 }

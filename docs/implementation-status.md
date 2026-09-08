@@ -180,7 +180,7 @@ remain open.
 
 ## Current local installation
 
-This build includes migrations 001–018 for Cairn's dedicated PostgreSQL 17
+This build includes migrations 001–019 for Cairn's dedicated PostgreSQL 17
 store. The upgrade was preceded by a private dump. A subsequent dump includes the
 new expected audit-set catalog and verifies against the installed store.
 
@@ -198,11 +198,11 @@ These are implementation gaps, not questions waiting on the operator:
 1. Wire a real Striatum/OpenCode task through declared sealed inputs and actual
    authenticated spawn/terminal and acceptance boundaries. The local Unix API
    and fixture harness tests are prerequisites, not real-host acceptance.
-2. Calibrate a harness and response budget that can finish a historical repair,
-   then extend recurrence evaluation against native/search and model baselines.
-   The first real OpenCode comparison produced no repair in any arm. The
-   12-subject coverage trial still has no relevance labels or avoided-failure
-   evidence. Do not enable grooming from coverage or delivery alone.
+2. Extend the [reviewed recurrence](verification/reviewed-recurrence-2026-09-08.md)
+   to broader task/host acceptance and transfer. The H0 run finished within its
+   budget and avoided the baseline's inherited-environment regression; overall
+   task acceptance remains unknown. The earlier negative trials remain valid.
+   Do not enable grooming from this one known-case observation.
 3. Complete class-proportional lifecycle, including ordinary deletion, explicit
    supersession, governed scope/policy changes and richer conflict outcomes.
 4. Implement evidence lifecycle, class D redaction/deletion effects, retention,
@@ -236,3 +236,9 @@ operator fence; historical inspection and delayed outcomes survive. The observer
 API can reserve a launch once through `claim-run`. A real restored-database API
 drill covers the transition. Migration alone does not invalidate operational
 receipts, and full restore reconciliation and live Striatum wiring remain open.
+
+Migration 019 adds [standalone task-failure review](demand-review.md). The local
+installation runs clean commit `7bc9165b0b58dc46b0bc5021e62ea276c3c0affb` after a
+backup and verified migration. CI, the disposable integration suite and the
+backup/restore lifecycle drill passed. The authenticated API runs that binary;
+retained operational record versions have the same digest before and after.

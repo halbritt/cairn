@@ -39,3 +39,12 @@ This verifies a review path for an observed failure. It does not establish
 novelty, reduced review burden, a reusable fix, or broader task acceptance.
 Cross-task signature clustering and measured next-run improvement remain open.
 No automatic grooming, promotion or ranking change is introduced.
+
+## Local installation
+
+Clean commit `7bc9165b0b58dc46b0bc5021e62ea276c3c0affb` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34187744968) and the local
+backup/restore lifecycle drill. After a private operational backup, migration
+019 and the clean binary were installed. The API process uses the same binary,
+authenticated record retrieval succeeded, and the retained record-version
+digest is unchanged. Installation metadata is included in the JSON result.
