@@ -193,9 +193,12 @@ remain open.
 
 ## Current local installation
 
-This build includes migrations 001–020 for Cairn's dedicated PostgreSQL 17
-store. The upgrade was preceded by a private dump. A subsequent dump includes the
-new expected audit-set catalog and verifies against the installed store.
+The current installed executable is clean revision
+`35543dd6136d10766d097f78677d62e31902ef45`, with migrations 001–024 in Cairn's
+dedicated PostgreSQL 17 store. A private dump preceded migration. The running API
+matches the installed binary; an authenticated read and unchanged record-version
+digest were verified. See [installation evidence](verification/instruction-limits-2026-09-08.md#local-installation).
+No explicit policy was adopted in the operational Cairn repository.
 
 The `cairn-api.service` user service is enabled and requires
 `cairn-store.service`. Both are running. Agent and observer profiles have distinct

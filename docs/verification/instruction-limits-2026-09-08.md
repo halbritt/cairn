@@ -55,3 +55,18 @@ Repository precedence, preservation of existing behavior and bounded authority
 informed the change. The local decision receipt records typed source/test evidence,
 two evidence passes and the remaining nonmaterial obligations. No UI, database
 index optimization, ranking change or model-evaluation claim is part of this slice.
+
+
+## Local installation
+
+Commit `35543dd6136d10766d097f78677d62e31902ef45` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34217040022) and was built from
+a clean local clone with Go 1.25.0. The clean release binary also passed the
+isolated old-backup upgrade and compatibility checks above before installation.
+The installed binary and running API both have SHA-256
+`4f50727182a9e091bae12e30fcebe18622aef98baab72d16a16de02dfb518c14`.
+
+The operational store is now schema 024. A private backup preceded migration;
+an authenticated existing-record read passed after restart. The record-version
+digest stayed unchanged. The Cairn repository still uses builtin `local-loop/1`:
+verification created no operational category policy or instruction.

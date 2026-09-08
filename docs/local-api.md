@@ -93,6 +93,15 @@ Native integration must establish the permitted input and provenance path in
 the owning compiler contract before enabling delivery; an adapter probe cannot
 establish that contract change.
 
+The same inspected tree has an accepted
+`catalog/target-states/recall-compiles-to-knowledge.yaml` target. It names hippo
+recall entering knowledge promotion through existing foreign-head attestations
+and exogenous-change records. That is a relevant existing admission path to
+investigate before adding Cairn-specific artifact machinery. It does not declare
+Cairn a producer, make raw recall authoritative, or authorize ambient build inputs.
+The owning RFC 0015 lineage and current admission code still need reconciliation
+for a Cairn integration.
+
 ## User services
 
 The units under `deploy/` manage this repository's dedicated PostgreSQL cluster
