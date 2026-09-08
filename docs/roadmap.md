@@ -114,7 +114,12 @@ integration must respect its sealed dispatch-input boundary, as described in
 reconciles the existing knowledge-promotion source with the historical fixture
 proof and records the remaining contract, provenance, sealed-input and real-host
 evidence needed to close U1. A recorded Verified target does not supply that
-evidence by itself.
+evidence by itself. The
+[OpenCode trial host](verification/opencode-host-observation-2026-09-08.md) now
+uses per-arm authenticated observers, exact package/attempt joins and pending
+spawn/terminal recovery. Its full real-harness fixture verification includes
+exit-zero with no returned candidate; further real-model usefulness and native
+Striatum ingress remain open.
 
 ### 3. Make retrieval current and evaluate real history
 

@@ -59,3 +59,12 @@ Late process outcomes and host terminal observations remain separate and can
 arrive in either order. Historical reports retain the link after policy changes
 or restore fences. Existing payload/delivery gates remain in force. No raw
 command, prompt, result text or model identity is added by the link.
+
+## OpenCode trial host
+
+The [recurrence controller](experiments/opencode-recurrence.md) now implements
+this sequence with per-arm observer identities and private pending-observation
+journals. It checks the observer's exact package before launch, records actual
+wrapper termination, and supplies a candidate-patch reference independently of
+the evaluator's task assessment. This is a concrete opt-in trial host; it does
+not change every external OpenCode invocation or Striatum's native dispatch.

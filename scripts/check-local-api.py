@@ -10,11 +10,16 @@ import sys
 import time
 import uuid
 
+from trial_host import TrialHost
+
 binary, home = sys.argv[1:]
 root = Path(home)
 root.mkdir(mode=0o700)
 token = secrets.token_urlsafe(32)
 observer_token = secrets.token_urlsafe(32)
+hosted_token = secrets.token_urlsafe(32)
+(root / 'hosted.token').write_text(hosted_token)
+(root / 'hosted.token').chmod(0o600)
 (root / 'observer.token').write_text(observer_token + '\n')
 (root / 'observer.token').chmod(0o600)
 (root / 'agent.token').write_text(token + '\n')
@@ -23,7 +28,9 @@ observer_token = secrets.token_urlsafe(32)
     token_sha256=hashlib.sha256(token.encode()).hexdigest(), principal='agent:socket-fixture',
     repo='fixture:socket', role='agent', destination='local'), dict(
     token_sha256=hashlib.sha256(observer_token.encode()).hexdigest(), principal='host:socket-fixture',
-    repo='fixture:socket', role='observer', destination='local')]))
+    repo='fixture:socket', role='observer', destination='local'), dict(
+    token_sha256=hashlib.sha256(hosted_token.encode()).hexdigest(), principal='host:hosted-fixture',
+    repo='fixture:socket', role='observer', destination='hosted')]))
 (root / 'identities.json').chmod(0o600)
 env = dict(os.environ, CAIRN_HOME=str(root))
 process = subprocess.Popen([binary, 'serve'], env=env, stdout=subprocess.PIPE,
@@ -129,6 +136,40 @@ try:
     rows = json.loads(report.stdout)['data']['rows']
     assert len(rows) == 3 and all(r['outcome_observed'] and r['task_outcome'] == 'unknown' for r in rows)
     assert [r['attempt_id'] for r in rows if 'attempt_id' in r] == [attempt_id]
+    # Exercise the same host controller as the OpenCode trial, using a real
+    # wrapper process, the hosted profile, and an unusable client DSN.
+    actual_host = TrialHost(root / 'observed-host',
+                           [binary, 'agent', '--token-file', root / 'hosted.token', '--socket', root / 'api.sock'],
+                           client_env, dict(repo='fixture:socket', task_id='actual-host', run_id='actual-host'))
+    checked_package = actual_host.call('compile', dict(request_id=actual_host.request_id, scope=actual_host.scope,
+                                      query='HOST-PROMPT', purpose='context', available_tokens=32000,
+                                      context=dict(task_class='unknown', binding_id='python3/process-h0', capability_id='unknown')))
+    actual = actual_host.run(['--destination', 'hosted', '--binding', 'python3/process-h0', '--prompt', 'HOST-PROMPT', '--',
+                             sys.executable, '-c',
+                             'import os,sys; assert "HOST-PROMPT" in sys.stdin.read(); '
+                             'assert not any(k.startswith("CAIRN_") for k in os.environ); print("host-candidate")'], timeout=15)
+    assert actual.returncode == 0, actual.stderr
+    linked = json.loads(actual.stderr)['data']
+    assert linked['attempt_id'] == actual_host.attempt_id
+    assert linked['receipt_id'] == checked_package['receipt_id'] and linked['seal'] == checked_package['seal']
+    verified = actual_host.call('run-status', dict(receipt_id=linked['receipt_id']))
+    assert verified['outcome']['observation_id'] == linked['outcome_id']
+    result_ref = 'sha256:' + hashlib.sha256(actual.stdout).hexdigest()
+    finished = actual_host.finish(result_ref)
+    assert finished['state'] == 'completed'
+    pending_payload = json.loads((actual_host.root / 'terminal.confirmed.json').read_text())
+    assert actual_host.call('terminal', pending_payload) == finished
+    evidence = actual_host.call('evidence', dict(request_id=str(uuid.uuid4()), repo='fixture:socket',
+                                body='The fixture process returned its corresponding candidate.',
+                                source='isolated host verification', sensitivity='local'))
+    assessment = actual_host.call('assess-run', dict(request_id=str(uuid.uuid4()), receipt_id=linked['receipt_id'],
+                                  expected_version=0, task_outcome='unknown', failure_domain='unknown',
+                                  failure_kind='', method='isolated observed-host condition',
+                                  evidence_ids=[evidence['evidence_id']], reason='Task acceptance is not established by process completion.'))
+    assert assessment['observer'] == 'host:hosted-fixture' and assessment['task_outcome'] == 'unknown'
+    assert (actual_host.root / 'spawn.confirmed.json').exists()
+    assert not list(actual_host.root.glob('*.pending.json'))
+    print('Trial host coordinates a real hosted-profile wrapper, exact outcome, corresponding terminal, and separate assessment')
     print('Host-issued attempt ID survives authenticated wrapper invocation and run reporting')
     print('Owner-only run status works without client database access and does not grant observer authority')
     print('Authenticated host CLI records process outcomes without database access and preserves output/exit semantics')

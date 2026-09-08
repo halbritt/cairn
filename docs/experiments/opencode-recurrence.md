@@ -104,6 +104,8 @@ The compiler receives 32,000 units of available memory input room, leaving a
 schemas, output and accumulating tool results. The controller checks all three
 selections before model launch, including the exact versions and body digests of
 every intended H0 record. It checks the actual launch receipt again afterward.
+The host now compiles its own package under the exact request ID used by the
+wrapper and compares the returned receipt and seal, preserving receipt ownership.
 These checks matter: the first completed attempt used only 12,000 units of room
 and silently omitted both notes. That attempt is invalid for memory comparison.
 
@@ -134,6 +136,39 @@ Then use a currently routable exact model and an installed OpenCode binary:
 The commands create only a disposable PostgreSQL cluster and isolated trial
 workspaces. They refuse to reuse a trial store, so a retry requires a new trial
 and fresh run identities. Preserve failed attempts when interpreting a later run.
+
+The controller provisions a distinct hosted observer for each arm. Setup and
+promotion remain operator work in the disposable store; execution, host events,
+gate observations and citations use the owning observer without database access.
+The wrapper receives a deliberately unusable DSN. The API token remains outside
+the existing model sandbox.
+
+Each `ARM-host/` directory journals one real wrapper attempt. A pipe holds that
+process before it can prepare its child; only confirmed `spawn` releases it.
+`identity.json`, `intent.json` and process metadata retain IDs and digests, while
+`spawn.pending.json` and `terminal.pending.json` retain exact unconfirmed API
+requests. Confirmed requests and responses stay beside them. Writes are private,
+exclusive and synced. Reusing the directory or launch intent refuses execution.
+
+A nonempty returned patch supplies the host's corresponding result reference.
+Exit zero without a patch records `no_result`; even a completed host attempt does
+not accept the task. The held-out evaluator still owns the bounded assessment.
+The report includes `host_attempt` and the host-controller source hash.
+
+After an ambiguous response, restore access to that trial's API and replay the
+exact pending request under its original observer. Confirm pending spawn before
+pending terminal; preserve the response. Do not rerun the arm as transport
+recovery. A postprocessing error leaves a terminal request based on observed
+process completion without inventing a corresponding patch. If the controller
+was killed before observing termination, inspect the original process and receipt
+first: intent or a saved PID alone does not establish termination or authorize
+killing a possibly reused PID. This is retained recovery evidence, not an
+automatic recovery daemon.
+
+The [host-controller verification](../verification/opencode-host-observation-2026-09-08.md)
+includes real OpenCode against a synthetic local endpoint. It establishes the
+controller's authenticated ingress path, not model usefulness or native Striatum
+admission.
 
 `--arm` runs one arm. The reviewed recurrence scenario labels it as part of that
 experiment; a single arm cannot establish a memory comparison. Older scenarios

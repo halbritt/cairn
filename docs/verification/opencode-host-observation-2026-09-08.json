@@ -1,0 +1,73 @@
+{
+  "schema": "cairn.opencode-host-observation/1",
+  "date": "2026-09-08",
+  "kind": "real_harness_synthetic_provider",
+  "model_called": false,
+  "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+  "cairn_sha256": "7ea5247162e79f70f87c439f36e3aa6f335f4d2969fc3dd98f5b470e642e6b21",
+  "exercised_controller_sha256": "47a17c2057bffd14ac3243b2b69ba8dd84460c66642d06068f85431d0136415d",
+  "exercised_host_controller_sha256": "e5fdc0e91a2a406185317ba9af10787d5a8d299886f55499066ccfb442a3dcfb",
+  "proof": {
+    "schema": "cairn.trial-host-fixture/1",
+    "real_opencode": true,
+    "model_called": false,
+    "requests": 2,
+    "host": {
+      "attempt_id": "b408dfd7-086e-4289-a51d-6566219b76ae",
+      "terminal": {
+        "attempt_id": "b408dfd7-086e-4289-a51d-6566219b76ae",
+        "state": "no_result"
+      },
+      "run_status": {
+        "receipt_id": "96891135-5520-43b8-b67a-97a454cf4a7e",
+        "observed_at": "2026-09-08T05:32:19.355657-07:00",
+        "launch_claimed": true,
+        "binding_observed": true,
+        "outcome": {
+          "observation_id": "a24406b9-a12f-4ae1-995f-6fdddf2dc081",
+          "process_state": "exited",
+          "exit_code": 0,
+          "duration_ms": 2039
+        }
+      },
+      "observer": "host:recurrence:cairn_h0",
+      "journal": "/tmp/cairn-trial-host-fixture-20260908/cairn_h0-host"
+    },
+    "selected_records": [
+      "e920e49b-a5a0-412b-ad22-52b80ef9716f"
+    ],
+    "assessment": {
+      "receipt_id": "96891135-5520-43b8-b67a-97a454cf4a7e",
+      "version": 1,
+      "task_outcome": "rejected",
+      "failure_domain": "task",
+      "failure_kind": "historical_cache_gate",
+      "method": "cairn.historical-cache-gate/2; host-observed condition, not full task acceptance",
+      "evidence_ids": [
+        "6997776b-463f-47fc-9537-fe7e84919658"
+      ],
+      "reason": "The candidate failed a necessary cache-lifetime condition or the authorized write scope. This is bounded trial assessment, not a Striatum verdict or a capability diagnosis.",
+      "witness": "instrumented",
+      "observer": "host:recurrence:cairn_h0",
+      "observed_at": "2026-09-08T05:32:19.961893-07:00"
+    },
+    "interpretation": "Real harness and full trial host ingress against synthetic endpoint. No model repair or usefulness claim."
+  },
+  "source_changes_after_full_fixture": [
+    "Pending terminal retention after postprocess failure; separately covered by fault test",
+    "Progress event names identify arm preparation and completion, not model contact"
+  ],
+  "limitations": [
+    "No new model usefulness trial",
+    "No native Striatum lane change",
+    "No operational database or service changed",
+    "Abrupt host death requires inspection; no automatic relaunch"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-400efe7653f3e2ea",
+    "packet_content_sha256": "400efe7653f3e2eaecb67fca9c0365ce9b2bc614f76efbb4c5f38d08e3c972be",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  }
+}

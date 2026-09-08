@@ -19,6 +19,8 @@ import tarfile
 import time
 import uuid
 
+from trial_host import TrialHost, invoke
+
 PROJECT = Path(__file__).resolve().parent.parent
 SCENARIO = PROJECT / 'trials/opencode-recurrence/scenario.json'
 GATE = PROJECT / 'trials/opencode-recurrence/supervisor_cache_test.go.txt'
@@ -82,16 +84,6 @@ def prepare(source, root):
 def private_file(path, text):
     with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as stream:
         stream.write(text)
-
-
-def invoke(binary, environment, command, request=None, arguments=()):
-    result = subprocess.run([str(binary), command, *map(str, arguments)],
-                            input=None if request is None else json.dumps(request).encode(),
-                            env=environment, capture_output=True, check=False, timeout=40)
-    response = json.loads(result.stdout)
-    if result.returncode or not response['ok']:
-        raise RuntimeError(command + ': ' + response['status'] + ': ' + response.get('message',''))
-    return response.get('data')
 
 
 def native_notes(source, state, scenario):
@@ -194,13 +186,13 @@ def retain_last_explanation(root, arm, trace):
                 interpretation='Last model text event, not proof of task completion or necessarily a terminal answer')
 
 
-def assess_arm(binary, environment, result, records):
+def assess_arm(binary, environment, result, records, host):
     receipt_id = result['receipt'].get('receipt_id')
     if not receipt_id:
         return dict(status='unavailable', reason='no run receipt')
     repo = 'trial:' + result['arm']
     request_id = lambda operation: str(uuid.uuid5(uuid.NAMESPACE_URL, 'cairn-recurrence/1/' + receipt_id + '/' + operation))
-    evidence = invoke(binary, environment, 'capture-evidence', dict(
+    evidence = host.call('evidence', dict(
         request_id=request_id('gate-evidence'), repo=repo, sensitivity='local',
         source='Explicit historical repair gate observation; no model output',
         body=json.dumps({k: result[k] for k in ('arm', 'receipt', 'gate', 'changed_paths', 'outside_scope', 'patch_sha256', 'runtime_observed')})))
@@ -216,16 +208,16 @@ def assess_arm(binary, environment, result, records):
     else:
         outcome, domain, kind = 'unknown', 'unknown', ''
         reason = 'The cache-lifetime condition passed; full task correctness and Striatum acceptance remain unverified.'
-    assessment = invoke(binary, environment, 'assess-run', dict(
+    assessment = host.call('assess-run', dict(
         request_id=request_id('assessment'), receipt_id=receipt_id, expected_version=0,
         task_outcome=outcome, failure_domain=domain, failure_kind=kind,
-        method='cairn.historical-cache-gate/1; operator testimony', evidence_ids=[evidence['evidence_id']], reason=reason))
+        method='cairn.historical-cache-gate/2; host-observed condition, not full task acceptance', evidence_ids=[evidence['evidence_id']], reason=reason))
     citations = []
     by_id = {r['record_id']: r for r in records}
     for record_id in result.get('trace_summary', {}).get('cited_record_ids', []):
         if record_id not in result['selected_records']:
             raise RuntimeError('citation refers to a record outside the actual delivery')
-        citations.append(invoke(binary, environment, 'usage', dict(
+        citations.append(host.call('usage', dict(
             request_id=request_id('citation/' + record_id), receipt_id=receipt_id, record_id=record_id,
             version=by_id[record_id]['version'], signal='cited',
             method='cairn.opencode-text-uuid/1; model-authored UUID is testimony, not causal influence')))
@@ -260,12 +252,13 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
     (store / 'socket').mkdir(mode=0o700)
     subprocess.run([str(pg_bin / 'initdb'), '-D', str(store / 'data'), '--auth-local=trust', '--auth-host=reject', '--no-locale', '-E', 'UTF8'], check=True, stdout=subprocess.DEVNULL)
     server = None
+    host = None
     report = dict(schema='cairn.opencode-recurrence/1', scenario=scenario['id'], availability=scenario.get('availability', 'later_recurrence'),
                   base=state['base'], fix=state['fix'], preflight=state['results'],
                   scenario_sha256=sha(SCENARIO.read_bytes()), gate_sha256=sha(GATE.read_bytes()),
                   model=route['model'], lease_id=route['lease_id'], binding=route['binding'],
                   opencode_sha256=sha(opencode.read_bytes()), cairn_sha256=sha(binary.read_bytes()),
-                  controller_sha256=sha(Path(__file__).read_bytes()), arms=[], limits=scenario['limits'])
+                  controller_sha256=sha(Path(__file__).read_bytes()), host_controller_sha256=sha((PROJECT / 'scripts/trial_host.py').read_bytes()), arms=[], limits=scenario['limits'])
     report['experiment_kind'] = scenario.get('experiment_kind', 'harness_calibration' if arm is not None else 'memory_comparison')
     if route['provider'] == 'trial-openrouter':
         report['relay_sha256'] = sha((PROJECT / 'scripts/trial_openrouter.py').read_bytes())
@@ -280,8 +273,14 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
         authority = invoke(binary, environment, 'bootstrap', dict(request_id=str(uuid.uuid4()), reason='Bootstrap isolated historical repair trial'))
         token = secrets.token_urlsafe(32)
         private_file(store / 'collector.token', token)
-        private_file(store / 'identities.json', json.dumps([dict(token_sha256=sha(token.encode()), principal='collector:recurrence',
-                     repo='trial:cairn_h0', role='agent', destination='local')]))
+        identities = [dict(token_sha256=sha(token.encode()), principal='collector:recurrence',
+                           repo='trial:cairn_h0', role='agent', destination='local')]
+        for trial_arm in scenario['arms']:
+            observer_token = secrets.token_urlsafe(32)
+            private_file(store / (trial_arm + '-observer.token'), observer_token)
+            identities.append(dict(token_sha256=sha(observer_token.encode()), principal='host:recurrence:' + trial_arm,
+                                   repo='trial:' + trial_arm, role='observer', destination='hosted'))
+        private_file(store / 'identities.json', json.dumps(identities))
         server = subprocess.Popen([str(binary), 'serve', '--identities', str(store / 'identities.json'), '--socket', str(store / 'api.sock')], env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         deadline = time.monotonic() + 10
         while not (store / 'api.sock').exists():
@@ -331,20 +330,30 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
             child_env = dict(PATH='/opt/go/bin:/usr/bin:/bin', HOME='/trial-home', GOROOT='/opt/go', GOPATH='/trial-home/go', GOMODCACHE='/opt/gomod', GOCACHE='/trial-cache', GOTOOLCHAIN='local', GOPROXY='off',
                              XDG_CONFIG_HOME='/trial-home/.config', XDG_DATA_HOME='/trial-home/.local/share', XDG_CACHE_HOME='/trial-home/.cache', XDG_STATE_HOME='/trial-home/.local/state',
                              OPENCODE_CONFIG='/opt/opencode.json', OPENCODE_DISABLE_AUTOUPDATE='true', OPENCODE_DISABLE_MODELS_FETCH='true')
-            # bwrap inherits the clean child environment; Cairn itself still gets
-            # its isolated store DSN and artifact location through these two keys.
-            child_env.update(CAIRN_HOME=str(store), CAIRN_DATABASE_URL=environment['CAIRN_DATABASE_URL'])
+            # The wrapper uses the observer API. Its deliberately unusable DSN
+            # makes accidental return to operator/database access fail.
+            child_env.update(CAIRN_HOME=str(store), CAIRN_DATABASE_URL='host=/nonexistent-cairn-trial-client dbname=denied')
             prompt = scenario['task']
             if arm == 'native_excerpt':
                 prompt += '\n\nSupplemental reviewed experience:\n' + '\n\n'.join(n['source']+'\n'+n['body'] for n in notes)
-            command = [str(binary), 'run', '--repo', 'trial:'+arm, '--dir', str(work), '--destination', 'hosted', '--carrier', 'argv', '--tokens', str(MEMORY_ROOM), '--timeout', str(process_seconds) + 's',
-                       '--task', scenario['id'], '--run', arm, '--task-class', 'historical-go-cache-repair', '--binding', route['binding'], '--capability', model,
+            arguments = ['--dir', str(work), '--destination', 'hosted', '--carrier', 'argv', '--tokens', str(MEMORY_ROOM), '--timeout', str(process_seconds) + 's',
+                       '--task-class', 'historical-go-cache-repair', '--binding', route['binding'], '--capability', model,
                        '--revision', state['base'], '--query', scenario['query'], '--prompt', prompt, '--', *sandbox(opencode, work, home, cache, config, goroot, gomod, route)]
             report['active_arm'] = arm
             (root / 'report.json').write_text(json.dumps(report, indent=2))
-            event('model_started', arm=arm)
+            event('arm_preparing', arm=arm)
+            host = TrialHost(root / (arm + '-host'),
+                             [binary, 'agent', '--token-file', store / (arm + '-observer.token'), '--socket', store / 'api.sock'],
+                             child_env, dict(repo='trial:' + arm, task_id=scenario['id'], run_id=arm))
+            package = host.call('compile', dict(request_id=host.request_id, scope=host.scope,
+                                query=scenario['query'], purpose='context', available_tokens=MEMORY_ROOM,
+                                context=dict(revision=state['base'], task_class='historical-go-cache-repair',
+                                             binding_id=route['binding'], capability_id=model)))
+            selected = check_selection(package, records, arm)
+            report['selection_preflight'][arm]['host_package'] = selected
+            (root / 'report.json').write_text(json.dumps(report, indent=2))
             started = time.monotonic()
-            result = subprocess.run(command, env=child_env, capture_output=True, timeout=process_seconds + 30)
+            result = host.run(arguments, timeout=process_seconds + 30)
             elapsed = time.monotonic() - started
             envelope = json.loads(result.stderr.splitlines()[-1])
             receipt = envelope.get('data', {})
@@ -356,11 +365,19 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
                     pass
             patch, paths, outside = candidate_diff(work)
             private_file(root / (arm + '.patch'), patch.decode())
+            # Correspondence is to the returned candidate, not its correctness.
+            # A zero exit with no candidate remains no_result.
+            terminal = host.finish('sha256:' + sha(patch) if patch else '')
+            status = host.call('run-status', dict(receipt_id=receipt['receipt_id'])) if receipt.get('receipt_id') else None
+            if status is not None and (receipt.get('attempt_id') != host.attempt_id or
+                                       (status.get('outcome') or {}).get('observation_id') != receipt.get('outcome_id')):
+                raise RuntimeError('host receipt/outcome correspondence mismatch')
             scored = gate(work, root) if not outside else dict(passed=False, reason='write_scope_violation')
-            replay = invoke(binary, environment, 'replay', arguments=[receipt['receipt_id']])['package'] if receipt.get('receipt_id') else None
-            if replay is not None:
-                check_selection(replay, records, arm)
+            if receipt.get('receipt_id') and (receipt['receipt_id'] != selected['receipt_id'] or receipt['seal'] != selected['seal']):
+                raise RuntimeError('wrapped execution did not use its checked host package')
             arm_result = dict(arm=arm, process_exit=result.returncode, duration_seconds=round(elapsed,3), receipt=receipt,
+                              host_attempt=dict(attempt_id=host.attempt_id, terminal=terminal, run_status=status,
+                                                observer='host:recurrence:' + arm, journal=str(host.root)),
                               gate=scored, changed_paths=paths, outside_scope=outside, patch_sha256=sha(patch),
                               model_stdout_sha256=sha(result.stdout), model_stderr_sha256=sha(result.stderr),
                               runtime_observed=any(e.get('type') in ('step_finish', 'tool_use', 'text') for e in trace),
@@ -368,15 +385,15 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
                               trace_events=len(trace), trace_types=sorted(set(str(e.get('type')) for e in trace)),
                               trace_summary=trace_summary(trace, [r['record_id'] for r in records]),
                               config_sha256=sha(config.read_bytes()),
-                              selected_records=[s['record']['record_id'] for s in replay['semantic']['selected']] if replay else [])
+                              selected_records=selected['selected_records'] if receipt.get('receipt_id') else [])
             if retain_final:
                 explanation = retain_last_explanation(root, arm, trace)
                 if explanation is not None:
                     arm_result['last_explanation'] = explanation
-            arm_result['assessment_join'] = assess_arm(binary, environment, arm_result, records)
+            arm_result['assessment_join'] = assess_arm(binary, environment, arm_result, records, host)
             report['arms'].append(arm_result)
             (root / 'report.json').write_text(json.dumps(report, indent=2))
-            event('model_finished', arm=arm, process_exit=result.returncode, gate=scored, paths=paths, trace_types=arm_result['trace_types'])
+            event('arm_finished', arm=arm, process_exit=result.returncode, gate=scored, paths=paths, trace_types=arm_result['trace_types'])
             shutil.rmtree(home)
             shutil.rmtree(cache)
         report['status'] = 'completed'
@@ -384,6 +401,8 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
         (root / 'report.json').write_text(json.dumps(report, indent=2))
         subprocess.run([str(pg_bin / 'pg_dump'), '-Fc', '-f', str(root / 'trial.dump'), environment['CAIRN_DATABASE_URL']], check=True)
     except BaseException as error:
+        if host is not None:
+            host.retain_terminal()
         report['status'] = 'interrupted' if isinstance(error, (KeyboardInterrupt, InterruptedError)) else 'failed'
         report['failure_type'] = type(error).__name__
         (root / 'report.json').write_text(json.dumps(report, indent=2))
