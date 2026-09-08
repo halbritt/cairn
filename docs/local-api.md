@@ -53,6 +53,64 @@ explicit token path is not replaced with the default token. The agent client
 never opens the database. Use the same request UUID for a transport retry. The
 server has bounded request bodies and deadlines; an HTTP write failure does not roll back a committed mutation.
 
+
+## Save an ordinary note
+
+With a provisioned agent token, save text without constructing a `create` request:
+
+```sh
+cairn agent remember --kind lesson --shareable 'Run make test-integration for storage changes.'
+```
+
+`remember` is a client command that calls the existing `/v1/create` endpoint.
+The server still checks repository scope, assigns the writer and witness, and
+creates an ordinary A record. It does not promote the note or authorize an
+instruction. The returned record is the server's normal `create` response.
+
+Both `cairn remember` and `cairn agent remember` accept the same note options:
+
+| Option | Default or behavior |
+| --- | --- |
+| `--repo REPO` | Current working directory; must match the agent's provisioned repository. |
+| `--task TASK`, `--run RUN` | `*`, so the note can apply to later tasks/runs in that repository. |
+| `--kind KIND` | `note`; ordinary kinds include `lesson`, `procedure`, `decision`, and `preference`. |
+| `--shareable` | Omitted: local-only. Explicit: eligible for hosted delivery. |
+| `--request-id UUID` | A fresh UUID per invocation unless supplied. |
+| `--stdin` | Read note text from standard input, preserving line breaks. Cannot be combined with note arguments. |
+
+For retryable capture, generate the request ID before the first attempt and
+reuse it with the same options and text:
+
+```sh
+capture_request="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+cairn agent remember --shareable --request-id "$capture_request" 'Check integration before shipping storage changes.'
+```
+
+Repeating the second command returns the same record. Changing its text or scope
+with that request ID returns `IDEMPOTENCY_CONFLICT`. Omitting `--request-id` on
+repeated invocations creates separate notes. Authentication owns the request-ID
+namespace; two writers do not share retry identity.
+
+For a file you have explicitly chosen to capture:
+
+```sh
+capture_request="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+cairn agent remember --request-id "$capture_request" --stdin < note.txt
+```
+
+Use a new request ID for a new note. Empty/blank input, invalid UTF-8, input over
+65,536 bytes, or a mixture of `--stdin` and argument text returns `INVALID_REQUEST`.
+The API's encoded-request size limit still applies. A note that begins with a
+hyphen can follow `--`, as in `cairn agent remember -- '-literal note text'`.
+No directory scan, implicit stdin capture, or automatic shareability is added.
+
+Use a profile configured with `destination: hosted` when the retrieved material
+will enter a hosted model. Passing `--shareable` on a write does not change the
+profile's read destination. An ordinary hosted agent can save a note and later
+search/pull another writer's shareable note within the same authorized repository.
+
+## API operations
+
 Operations: `create`, `edit`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,

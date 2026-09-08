@@ -13,6 +13,7 @@ import uuid
 from trial_host import TrialHost
 from check_run_retrieval import check as check_run_retrieval
 from check_agent_search import check as check_agent_search
+from check_agent_remember import check as check_agent_remember
 
 binary, home = sys.argv[1:]
 root = Path(home)
@@ -20,6 +21,9 @@ root.mkdir(mode=0o700)
 token = secrets.token_urlsafe(32)
 observer_token = secrets.token_urlsafe(32)
 hosted_token = secrets.token_urlsafe(32)
+hosted_agent_token = secrets.token_urlsafe(32)
+(root / 'hosted-agent.token').write_text(hosted_agent_token)
+(root / 'hosted-agent.token').chmod(0o600)
 (root / 'hosted.token').write_text(hosted_token)
 (root / 'hosted.token').chmod(0o600)
 (root / 'observer.token').write_text(observer_token + '\n')
@@ -32,7 +36,9 @@ hosted_token = secrets.token_urlsafe(32)
     token_sha256=hashlib.sha256(observer_token.encode()).hexdigest(), principal='host:socket-fixture',
     repo='fixture:socket', role='observer', destination='local'), dict(
     token_sha256=hashlib.sha256(hosted_token.encode()).hexdigest(), principal='host:hosted-fixture',
-    repo='fixture:socket', role='observer', destination='hosted')]))
+    repo='fixture:socket', role='observer', destination='hosted'), dict(
+    token_sha256=hashlib.sha256(hosted_agent_token.encode()).hexdigest(), principal='agent:hosted-capture',
+    repo='fixture:socket', role='agent', destination='hosted')]))
 (root / 'identities.json').chmod(0o600)
 env = dict(os.environ, CAIRN_HOME=str(root))
 process = subprocess.Popen([binary, 'serve'], env=env, stdout=subprocess.PIPE,
@@ -211,6 +217,7 @@ try:
     print('Authenticated host CLI records process outcomes without database access and preserves output/exit semantics')
     check_run_retrieval(binary, root, client_env, record)
     check_agent_search(binary, root, env, grant, claim, support)
+    check_agent_remember(binary, root, env)
 finally:
     process.send_signal(signal.SIGTERM)
     try:

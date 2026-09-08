@@ -17,3 +17,29 @@ producer-attribution correction where it supersedes earlier synthesis.
   credentials, generated binaries, model output, or raw workspace exhaust.
 - Report the implemented slice and tested claims separately from full design
   acceptance and measured usefulness.
+
+## Use the provisioned memory interface
+
+On the owner's host, when `~/.local/share/cairn/hosted-agent.token` exists and
+`cairn` is installed, use that profile for hosted-agent memory in this repository.
+At the start of a substantive task, search for relevant prior lessons with a
+specific task/run identity:
+
+```sh
+cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" search \
+  --repo "$PWD" --task TASK_ID --run RUN_ID 'relevant task terms'
+```
+
+Choose actual task/run identifiers and reuse them for that work. Inspect relevant
+bodies with the returned `pull_command`; A records are fallible notes, so verify
+current source before applying them. A missing profile or unavailable service
+does not block work. Never substitute a local-destination profile when its result
+will enter a hosted model, and do not provision credentials as part of routine
+retrieval.
+
+Use `agent remember` with the same profile for explicitly selected, useful
+repository findings. Include source/verification context in the note, choose
+`--shareable` only for material suitable for hosted delivery, and supply a stable
+`--request-id` when retrying. `--stdin` accepts a chosen note body. Do not capture
+raw sessions, private Council content, credentials or workspace dumps; ordinary
+capture does not confer authority or prove task success.

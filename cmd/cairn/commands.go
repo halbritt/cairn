@@ -22,7 +22,10 @@ Everyday commands:
   agent [--token-file FILE] [--socket PATH] pull [--request-id UUID] RECEIPT_UUID HANDLE_UUID
   agent [--token-file FILE] [--socket PATH] pull-evidence [--request-id UUID] RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256
   agent [--token-file OBSERVER_TOKEN] [--socket PATH] run RUN_FLAGS -- COMMAND ARGS...
-  remember [--repo PATH] [--shareable] TEXT
+  agent [--token-file FILE] [--socket PATH] remember [--repo REPO] [--kind KIND] [--shareable] [--task TASK] [--run RUN] [--request-id UUID] TEXT
+  agent [--token-file FILE] [--socket PATH] remember [FLAGS] --stdin < note.txt
+  remember [--repo PATH] [--kind KIND] [--shareable] [--task TASK] [--run RUN] [--request-id UUID] TEXT
+  remember [FLAGS] --stdin < note.txt
   search [--repo PATH] [--purpose context] [--destination local] QUERY
   run [--repo PATH] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
@@ -145,7 +148,7 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		}
 		return recoverRun(ctx, store, args[1])
 	case "remember":
-		return remember(ctx, store, args[1:])
+		return remember(ctx, store, args[1:], input)
 	case "search":
 		return search(ctx, store, args[1:])
 	case "proposal-group":

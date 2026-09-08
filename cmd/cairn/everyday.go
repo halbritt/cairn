@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
@@ -26,8 +27,16 @@ func defaultRepo() string {
 	}
 	return cwd
 }
-func remember(ctx context.Context, s *core.Store, args []string) (core.Record, error) {
+func remember(ctx context.Context, s *core.Store, args []string, input io.Reader) (core.Record, error) {
+	req, err := rememberRequest(args, input)
+	if err != nil {
+		return core.Record{}, err
+	}
+	return s.Create(ctx, req)
+}
+func rememberRequest(args []string, input io.Reader) (core.CreateRequest, error) {
 	f := flags("remember")
+	fromStdin := f.Bool("stdin", false, "read note text from stdin instead of arguments")
 	repo := f.String("repo", defaultRepo(), "repository identity")
 	kind := f.String("kind", "note", "record kind")
 	share := f.Bool("shareable", false, "allow hosted delivery")
@@ -35,17 +44,27 @@ func remember(ctx context.Context, s *core.Store, args []string) (core.Record, e
 	run := f.String("run", "*", "run scope")
 	request := f.String("request-id", uuid.NewString(), "retry identity")
 	if err := f.Parse(args); err != nil {
-		return core.Record{}, invalid(err.Error())
+		return core.CreateRequest{}, invalid(err.Error())
 	}
 	body := strings.Join(f.Args(), " ")
-	if body == "" {
-		return core.Record{}, invalid("remember requires note text")
+	if *fromStdin {
+		if f.NArg() != 0 {
+			return core.CreateRequest{}, invalid("remember accepts either --stdin or note arguments")
+		}
+		encoded, err := io.ReadAll(io.LimitReader(input, 65536+1))
+		if err != nil {
+			return core.CreateRequest{}, err
+		}
+		body = string(encoded)
+	}
+	if strings.TrimSpace(body) == "" || len(body) > 65536 || !utf8.ValidString(body) {
+		return core.CreateRequest{}, invalid("remember requires 1-65536 bytes of nonblank UTF-8 text")
 	}
 	sensitivity := "local"
 	if *share {
 		sensitivity = "shareable"
 	}
-	return s.Create(ctx, core.CreateRequest{RequestID: *request, Draft: core.Draft{Kind: *kind, Body: body, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, ClaimType: "self", Sensitivity: sensitivity}})
+	return core.CreateRequest{RequestID: *request, Draft: core.Draft{Kind: *kind, Body: body, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, ClaimType: "self", Sensitivity: sensitivity}}, nil
 }
 func search(ctx context.Context, s *core.Store, args []string) (core.Package, error) {
 	f := flags("search")

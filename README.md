@@ -152,16 +152,23 @@ The [use/outcome loop](docs/use-outcome-loop.md) documents joined observations,
 versioned task assessments and completed-task delegate findings.
 [Authenticated local access](docs/local-api.md) gives agents and host observers
 scoped Unix-socket access without the operator CLI or database credentials.
-With a provisioned agent token, [search and pull commands](docs/index-and-pull.md#agent-commands-without-request-json)
-provide the same route without writing request JSON:
+With a provisioned agent token, save notes and use
+[search and pull commands](docs/index-and-pull.md#agent-commands-without-request-json)
+without writing request JSON:
 
 ```sh
+bin/cairn agent remember --kind lesson --shareable 'Run make test-integration for storage changes.'
 bin/cairn agent search --repo "$PWD" --task TASK_ID --run RUN_ID 'relevant query'
 ```
 
 Each result includes a complete `pull_command` for its full body. Reuse the
 host's task/run IDs across queries; the configured token controls destination
-and access.
+and access. With an ordinary agent profile, `agent remember` saves A testimony,
+local-only unless
+`--shareable` is explicit. Repository scope defaults to the current directory;
+task/run scope defaults to `*`. Use `--stdin` for multiline text and choose a
+`--request-id` before the first attempt when capture must be retryable. The
+[save-note examples](docs/local-api.md#save-an-ordinary-note) cover both forms.
 
 ## Authority and structured commands
 
