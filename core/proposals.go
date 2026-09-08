@@ -13,6 +13,7 @@ type GenerateProposalsRequest struct {
 	Offset    int    `json:"offset"`
 }
 type Proposal struct {
+	Kind            string     `json:"kind"`
 	SourceCurrent   bool       `json:"source_current"`
 	ID              string     `json:"proposal_id"`
 	Repo            string     `json:"repo"`
@@ -49,9 +50,9 @@ func (s *Store) GenerateProposals(ctx context.Context, req GenerateProposalsRequ
 	}
 	return mutate(ctx, s, "generate-proposals", req.RequestID, req, func(tx pgx.Tx) (ProposalBatch, error) {
 		rows, err := tx.Query(ctx, `WITH latest AS (SELECT DISTINCT ON(receipt_id) * FROM cairn.run_assessment ORDER BY receipt_id,version DESC)
- SELECT f.receipt_id::text,f.version,success.receipt_id::text,success.version,b.task_class,b.binding_id,b.capability_id,f.detail->>'error_signature_sha256'
+ SELECT f.receipt_id::text,f.version,COALESCE(success.receipt_id::text,''),COALESCE(success.version,0),b.task_class,b.binding_id,b.capability_id,f.detail->>'error_signature_sha256'
  FROM latest f JOIN cairn.retrieval_receipt r USING(receipt_id) JOIN cairn.run_binding b USING(receipt_id)
- JOIN LATERAL (SELECT a.receipt_id,a.version FROM latest a JOIN cairn.retrieval_receipt rr USING(receipt_id) JOIN cairn.run_binding bb USING(receipt_id)
+ LEFT JOIN LATERAL (SELECT a.receipt_id,a.version FROM latest a JOIN cairn.retrieval_receipt rr USING(receipt_id) JOIN cairn.run_binding bb USING(receipt_id)
  WHERE a.task_outcome='accepted' AND rr.scope->>'repo'=r.scope->>'repo' AND rr.scope->>'task_id'=r.scope->>'task_id'
  AND bb.task_class=b.task_class AND bb.binding_id=b.binding_id AND bb.capability_id=b.capability_id
  AND rr.created_at>r.created_at ORDER BY rr.created_at,rr.receipt_id LIMIT 1) success ON true
@@ -68,6 +69,11 @@ func (s *Store) GenerateProposals(ctx context.Context, req GenerateProposalsRequ
 				rows.Close()
 				return ProposalBatch{}, err
 			}
+			p.Kind = "failure_recovery"
+			if p.RecoveryReceipt == "" {
+				p.Kind = "failure"
+				p.Method = "standalone-task-failure/1"
+			}
 			candidates = append(candidates, p)
 		}
 		err = rows.Err()
@@ -80,16 +86,16 @@ func (s *Store) GenerateProposals(ctx context.Context, req GenerateProposalsRequ
 			candidates = candidates[:100]
 		}
 		for _, p := range candidates {
-			if err = tx.QueryRow(ctx, `SELECT COALESCE(array_agg(DISTINCT evidence_id::text ORDER BY evidence_id::text),'{}') FROM cairn.assessment_evidence WHERE (receipt_id=$1 AND version=$2) OR (receipt_id=$3 AND version=$4)`, p.FailureReceipt, p.FailureVersion, p.RecoveryReceipt, p.RecoveryVersion).Scan(&p.EvidenceIDs); err != nil {
+			if err = tx.QueryRow(ctx, `SELECT COALESCE(array_agg(DISTINCT evidence_id::text ORDER BY evidence_id::text),'{}') FROM cairn.assessment_evidence WHERE (receipt_id=$1 AND version=$2) OR (receipt_id=NULLIF($3,'')::uuid AND version=$4)`, p.FailureReceipt, p.FailureVersion, p.RecoveryReceipt, p.RecoveryVersion).Scan(&p.EvidenceIDs); err != nil {
 				return batch, err
 			}
 			p.ID = uuid.NewString()
-			_, err = tx.Exec(ctx, `INSERT INTO cairn.lesson_proposal(proposal_id,repo,failure_receipt,failure_version,recovery_receipt,recovery_version,detail) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(failure_receipt,failure_version,recovery_receipt,recovery_version) DO NOTHING`, p.ID, p.Repo, p.FailureReceipt, p.FailureVersion, p.RecoveryReceipt, p.RecoveryVersion, p)
+			_, err = tx.Exec(ctx, `INSERT INTO cairn.lesson_proposal(proposal_id,repo,failure_receipt,failure_version,recovery_receipt,recovery_version,detail) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,NULLIF($6,0),$7) ON CONFLICT DO NOTHING`, p.ID, p.Repo, p.FailureReceipt, p.FailureVersion, p.RecoveryReceipt, p.RecoveryVersion, p)
 			if err != nil {
 				return batch, err
 			}
 			var id string
-			if err = tx.QueryRow(ctx, `SELECT proposal_id::text FROM cairn.lesson_proposal WHERE failure_receipt=$1 AND failure_version=$2 AND recovery_receipt=$3 AND recovery_version=$4`, p.FailureReceipt, p.FailureVersion, p.RecoveryReceipt, p.RecoveryVersion).Scan(&id); err != nil {
+			if err = tx.QueryRow(ctx, `SELECT proposal_id::text FROM cairn.lesson_proposal WHERE failure_receipt=$1 AND failure_version=$2 AND recovery_receipt IS NOT DISTINCT FROM NULLIF($3,'')::uuid AND recovery_version IS NOT DISTINCT FROM NULLIF($4,0)`, p.FailureReceipt, p.FailureVersion, p.RecoveryReceipt, p.RecoveryVersion).Scan(&id); err != nil {
 				return batch, err
 			}
 			stored, err := readProposal(ctx, tx, id)
@@ -106,7 +112,7 @@ func readProposal(ctx context.Context, tx pgx.Tx, id string) (Proposal, error) {
 	var version int
 	var disposition, result string
 	var due *time.Time
-	err := tx.QueryRow(ctx, `SELECT detail,version,disposition,due_at,COALESCE(result_record::text,''),failure_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=failure_receipt) AND recovery_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=recovery_receipt) FROM cairn.lesson_proposal WHERE proposal_id=$1`, id).Scan(&p, &version, &disposition, &due, &result, &p.SourceCurrent)
+	err := tx.QueryRow(ctx, `SELECT detail,version,disposition,due_at,COALESCE(result_record::text,''),failure_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=failure_receipt) AND (recovery_receipt IS NULL OR recovery_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=recovery_receipt)) FROM cairn.lesson_proposal WHERE proposal_id=$1`, id).Scan(&p, &version, &disposition, &due, &result, &p.SourceCurrent)
 	if err == pgx.ErrNoRows {
 		return p, failure("NOT_FOUND", "proposal not found")
 	}
@@ -114,6 +120,11 @@ func readProposal(ctx context.Context, tx pgx.Tx, id string) (Proposal, error) {
 	p.Disposition = disposition
 	p.DueAt = due
 	p.ResultRecord = result
+	// Older pair details predate the kind field; derive it from retained sources.
+	p.Kind = "failure_recovery"
+	if p.RecoveryReceipt == "" {
+		p.Kind = "failure"
+	}
 	return p, err
 }
 func (s *Store) Proposal(ctx context.Context, id string) (Proposal, error) {
@@ -187,7 +198,7 @@ func (s *Store) ReviewProposal(ctx context.Context, req ReviewProposalRequest) (
 		if p.Version != req.ExpectedVersion {
 			return p, failure("VERSION_CONFLICT", "proposal review version changed")
 		}
-		if _, err = tx.Exec(ctx, `SELECT 1 FROM cairn.retrieval_receipt WHERE receipt_id IN ($1,$2) ORDER BY receipt_id FOR SHARE`, p.FailureReceipt, p.RecoveryReceipt); err != nil {
+		if _, err = tx.Exec(ctx, `SELECT 1 FROM cairn.retrieval_receipt WHERE receipt_id IN ($1,NULLIF($2,'')::uuid) ORDER BY receipt_id FOR SHARE`, p.FailureReceipt, p.RecoveryReceipt); err != nil {
 			return p, err
 		}
 		p, err = readProposal(ctx, tx, p.ID)

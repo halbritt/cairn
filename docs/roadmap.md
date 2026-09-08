@@ -166,7 +166,7 @@ Depends on U4/U5 and E3/E4. R4's early protected event does not satisfy this sta
 
 | ID | Status | Work and acceptance evidence |
 | --- | --- | --- |
-| D1 — evidence-attached demand docket | partial | Extend attribution/evidence/unfinished-run hints with failure→recovery pairing, novel failures, blocked promotion, conflicts and source-attached proposal groups. Add explicit review dispositions and bounded duplicate grouping. Measure review burden, not just generated item count. |
+| D1 — evidence-attached demand docket | partial | Failure→recovery pairs and standalone explicitly assessed task failures now share evidence-attached review dispositions. Current pairs suppress duplicate standalone demand without rewriting source history. A [restored real-trial check](verification/standalone-demand-2026-09-08.md) verified generation and dismissal with zero memory exposures. Cross-task novel-failure clustering, richer conflict/promotion groups and measured review burden remain open. |
 | D2 — adaptation acceptance | partial | A reviewed, evidence-backed lesson was promoted, selected and cited in a real H0 run that avoided the baseline's environment regression within budget. Preserve the bounded [recurrence result](verification/reviewed-recurrence-2026-09-08.md), negative results and unknown overall acceptance. Broader task/host acceptance and transfer remain open. Exposure alone must not amplify ranking. |
 
 The [demand review path](demand-review.md) now generates bounded, source-attached
