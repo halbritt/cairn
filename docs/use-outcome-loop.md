@@ -48,6 +48,12 @@ process outcomes and earlier assessments survive corrections. `cairn assessments
 RECEIPT_UUID` inspects that history. An assessment does not promote memory or mint
 a capability qualification. Current receipt-owner access applies.
 
+`cairn report REPO` counts unknown task outcomes among retained process outcomes.
+It uses the latest task assessment when one exists, then falls back to the
+process-derived task outcome. A correction back to unknown restores that count.
+Compile-only receipts are outside this denominator, and a run needs no memory
+exposure to be counted. Other summary counters remain operational observations.
+
 ## Completed tasks with open delegates
 
 An authenticated observer calls `core.ObserveTask` or `/v1/task-state` with an exact

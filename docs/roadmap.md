@@ -85,7 +85,10 @@ accepted usefulness milestone, before historical evaluation and generated demand
 
 The [observation join](use-outcome-loop.md) now associates each exposure with
 reduced delivery/usage streams, process outcome and versioned task assessments;
-repeated observations do not multiply rows. Task class and binding/capability
+repeated observations do not multiply rows. The
+[summary counter](verification/summary-assessments-2026-09-08.md) now also honors
+the latest task assessment, including corrections on runs with no memory exposure.
+Task class and binding/capability
 metadata are recorded by the wrapper with command digest. Service inference is
 labelled with its method and coverage; H0 remains unknown. Closed-task open
 delegates have their own docket finding. U4 still needs recurrence/resolution

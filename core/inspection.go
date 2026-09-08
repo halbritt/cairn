@@ -168,7 +168,7 @@ func (s *Store) Report(ctx context.Context, repo string) (Report, error) {
 		return Report{}, err
 	}
 	defer tx.Rollback(ctx)
-	report := Report{Interpretation: "Exposure and process outcomes are observational. Exit zero is not task acceptance; citation is testimony, not proof of benefit."}
+	report := Report{Interpretation: "Exposure and process outcomes are observational. Task outcome counts use the latest assessment when present. Exit zero is not task acceptance; citation is testimony, not proof of benefit."}
 	err = tx.QueryRow(ctx, `SELECT
  (SELECT count(*) FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE r.scope->>'repo'=$1),
  (SELECT count(*) FROM cairn.delivery_receipt d JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE r.scope->>'repo'=$1 AND d.assurance='available'),
@@ -176,7 +176,9 @@ func (s *Store) Report(ctx context.Context, repo string) (Report, error) {
  (SELECT count(*) FROM cairn.run_outcome o JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE r.scope->>'repo'=$1),
  (SELECT count(*) FROM cairn.run_outcome o JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE r.scope->>'repo'=$1 AND o.exit_code=0),
  (SELECT count(*) FROM cairn.run_outcome o JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE r.scope->>'repo'=$1 AND o.exit_code<>0),
- (SELECT count(*) FROM cairn.run_outcome o JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE r.scope->>'repo'=$1 AND o.task_outcome='unknown'),
+ (SELECT count(*) FROM cairn.run_outcome o JOIN cairn.retrieval_receipt r USING(receipt_id)
+ LEFT JOIN LATERAL (SELECT task_outcome FROM cairn.run_assessment WHERE receipt_id=o.receipt_id ORDER BY version DESC LIMIT 1) a ON true
+ WHERE r.scope->>'repo'=$1 AND COALESCE(a.task_outcome,o.task_outcome)='unknown'),
  (SELECT count(*) FROM cairn.usage_observation u JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE r.scope->>'repo'=$1 AND u.signal='cited')`, repo).Scan(&report.Exposures, &report.Available, &report.Delivered, &report.Outcomes, &report.ExitZero, &report.ExitNonzero, &report.UnknownTaskOutcomes, &report.Citations)
 	if err != nil {
 		return report, err
