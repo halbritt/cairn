@@ -198,8 +198,8 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	if req.Mode == "index" {
 		p.Mode = "index"
-		p.Schema = "cairn.semantic/4"
-		return packIndex(p, candidates, evaluations)
+		p.Schema = "cairn.semantic/5"
+		return packIndex(p, candidates, evaluations, req.Query)
 	}
 	return packCandidates(p, candidates, evaluations)
 }

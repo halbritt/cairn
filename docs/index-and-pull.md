@@ -60,9 +60,19 @@ An index contains mandatory instructions in full, plus optional pointers with
 record/version, class, kind, a summary of at most 160 UTF-8 bytes and a body digest.
 It uses the same currentness, authority, conflict, evidence and destination gates
 as ordinary compilation. It fits at most 100 pointers into the existing optional
-budget and reserves room for the handle envelope. Semantic format v4 seals the
+budget and reserves room for the handle envelope. Semantic format v5 seals the
 index and bootstrap; opaque delivery handles stay outside that seal. Historical
-recompilation reproduces the index without issuing new handles.
+recompilation reproduces the index without issuing new handles, including the
+prefix previews in older v4 packages.
+
+Search previews show a matching passage when it contains more distinct query
+terms than the note's opening 160 bytes. They use the ranker's existing word and
+identifier matching, preserve exact source text, and mark omitted context with
+`...`. Empty queries, unmatched queries and ties keep the opening preview.
+The 160-byte limit includes omission markers. A preview can cut an explanation
+short: pull the body before applying its advice. The
+[verification report](verification/index-previews-2026-09-08.md) records the
+observed problem and compatibility checks.
 
 The result supplies `package`, `handles`, `expires_at`, `credits_remaining` and
 `bytes_remaining`. Each handle is bound to one authenticated caller, receipt,

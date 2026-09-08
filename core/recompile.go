@@ -94,7 +94,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if original.Semantic.Query != "sha256:"+hex.EncodeToString(digest[:]) {
 		return Package{}, failure("INVALID_REQUEST", "query does not match the historical intent digest")
 	}
-	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4") {
+	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4" && original.Semantic.Schema != "cairn.semantic/5") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4") {
 		return Package{}, failure("REPLAY_INCOMPLETE", "historical compiler version is not supported")
 	}
 	switch original.Semantic.Policy {
@@ -181,7 +181,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		candidates = append(candidates, candidate{selection, score, specificity})
 	}
 	if p.Mode == "index" {
-		p, err = packIndex(p, candidates, evaluations)
+		p, err = packIndex(p, candidates, evaluations, req.Query)
 	} else {
 		p, err = packCandidates(p, candidates, evaluations)
 	}

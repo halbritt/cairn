@@ -49,7 +49,7 @@ func indexEntry(r Record) IndexEntry {
 	sum := sha256.Sum256([]byte(r.Body))
 	return IndexEntry{RecordID: r.RecordID, Version: r.Version, Class: r.Class, Kind: r.Kind, Summary: summary, BodySHA256: hex.EncodeToString(sum[:])}
 }
-func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation) (SemanticPackage, error) {
+func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation, query string) (SemanticPackage, error) {
 	sortCandidates(candidates)
 	instructions := newInstructionBudget(&p)
 	p.Index = []IndexEntry{}
@@ -74,6 +74,9 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 			continue
 		}
 		entry := indexEntry(c.selection.Record)
+		if p.Schema == "cairn.semantic/5" {
+			entry.Summary = indexSummary(c.selection.Record.Body, query, p.Ranking)
+		}
 		entry.Category = c.selection.Category
 		encoded, err := json.Marshal(entry)
 		if err != nil {

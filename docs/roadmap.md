@@ -200,6 +200,12 @@ questions. It also records a storage-location rank regression and continuing
 vocabulary misses. Ranker v4 retains historical v1–v3 behavior for recompilation;
 these development results do not close E4.
 
+[Matching index previews](verification/index-previews-2026-09-08.md) address an
+observed operational search whose preview hid the matching command later in the
+note. Bounded source excerpts make that match visible while preserving full-body
+pulls and old index recompilation. Ranking and vocabulary misses remain; reduced
+pull cost and downstream task benefit have not been measured.
+
 A subsequent [actual OpenCode tool experiment](verification/tool-retrieval-2026-09-08.md)
 recovered from the failed query and completed the source-answering task through
 index/pull. Pairing each result with a complete pull command removed three observed
