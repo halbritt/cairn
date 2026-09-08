@@ -146,6 +146,12 @@ measured case without lowering other labelled answer ranks. Vocabulary mismatch,
 common-word noise and recency ties still cause misses or unrelated results.
 This is retrieval development evidence; E4 task benefit and transfer remain open.
 
+A subsequent [actual OpenCode tool experiment](verification/tool-retrieval-2026-09-08.md)
+recovered from the failed query and completed the source-answering task through
+index/pull. Pairing each result with a complete pull command removed three observed
+UUID-confusion errors in one follow-up. This remains an opt-in experimental adapter;
+native integration, broader harness use and learned-lesson transfer remain open.
+
 | ID | Status | Work and acceptance evidence |
 | --- | --- | --- |
 | E1 — currentness and intent | partial | Add repository revision/dirty-workspace identity, validity, task type/phase, entities/files/error signatures and capability/binding pins. Define ordinary declared pin matching first; executable currentness predicates are an optional later experiment. Test obsolete guidance across code revisions and mismatched scopes. |
