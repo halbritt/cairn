@@ -62,5 +62,35 @@
     "corpus_version": "corpus-2026-07-12-a11702cc9217",
     "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
     "retriever_version": "retriever-ec995ecdd083b2c8"
-  }
+  },
+  "deployment": {
+    "schema": "cairn.mcp-install/1",
+    "revision": "196ac7340219091a8dc2c2711979da7ef02da0f6",
+    "ci_run": 34275669225,
+    "ci": {
+      "conclusion": "success",
+      "headSha": "196ac7340219091a8dc2c2711979da7ef02da0f6",
+      "status": "completed"
+    },
+    "binary_sha256": "92efd6548e1ba9ab350f3841b31e2c9655ec8c0ec672303e4e7496965fea8bff",
+    "api_pid": 3769161,
+    "api_binary_sha256": "b497f29194ebb42d4839ceffa0a58bff5a0ae33a68583913f4b41aca38d246e8",
+    "api_restarted": false,
+    "profiles_unchanged": true,
+    "tool_count": 4,
+    "storage_body_matches_prior_capture": true,
+    "pull_retry_identical": true,
+    "procedure_saved_and_retrieved": true,
+    "capture_retry_identical": true,
+    "without_home_or_client_database": true,
+    "clean_stdio_eof": true,
+    "previous_binary": "/tmp/cairn-before-mcp-196ac73"
+  },
+  "reported_models": [
+    "deepseek/deepseek-v4-flash-0731"
+  ],
+  "reported_providers": [
+    "Baidu",
+    "OpenInference"
+  ]
 }
