@@ -43,3 +43,11 @@ retries, preserved referenced history, former B state, open conflicts and
 concurrent citation versus deletion. An authenticated API check exercises the
 same store operation. These checks establish ordinary lifecycle behavior, not
 physical erasure.
+
+The local installation runs clean commit
+`d61769decbc69fed875a6b668b20a6dc155a9b8a`, with
+[passing CI](https://github.com/halbritt/cairn/actions/runs/34188470083), disposable
+integration/static checks and a backup/restore lifecycle drill. Installation
+followed a private backup; migration 020, the API binary and authenticated
+retrieval were verified. Operational record versions retained their previous
+digest. No operational note was deleted for verification.

@@ -33,7 +33,9 @@ the preview or accepted the impact.
 
 The standalone `impact` command remains a paginated direct-use inspection.
 `preview-retract` supplies the broader known-relation analysis required before a
-retraction. Evidence object dependencies, explicit supersession operations,
-ordinary deletion, D purge effects and automatic dependent qualification remain
-unfinished. Retracting a source does not automatically revoke every dependent
+retraction. [Ordinary deletion](ordinary-delete.md) now removes unreferenced A
+notes; [D forgetting and purge effects](deletion.md) cover retained record bodies
+and known managed copies. Evidence object dependencies, explicit supersession
+and automatic dependent qualification remain unfinished. Retracting a source
+does not automatically revoke every dependent
 instruction; authority and affected consumers still require their own review.

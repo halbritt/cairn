@@ -180,7 +180,7 @@ remain open.
 
 ## Current local installation
 
-This build includes migrations 001–019 for Cairn's dedicated PostgreSQL 17
+This build includes migrations 001–020 for Cairn's dedicated PostgreSQL 17
 store. The upgrade was preceded by a private dump. A subsequent dump includes the
 new expected audit-set catalog and verifies against the installed store.
 
@@ -203,8 +203,9 @@ These are implementation gaps, not questions waiting on the operator:
    budget and avoided the baseline's inherited-environment regression; overall
    task acceptance remains unknown. The earlier negative trials remain valid.
    Do not enable grooming from this one known-case observation.
-3. Complete class-proportional lifecycle, including ordinary deletion, explicit
-   supersession, governed scope/policy changes and richer conflict outcomes.
+3. Complete class-proportional lifecycle, including explicit supersession,
+   governed scope/policy changes and richer conflict outcomes. Unreferenced
+   ordinary A deletion now works with preserved request identity.
 4. Implement evidence lifecycle, class D redaction/deletion effects, retention,
    backup residual accounting and restoration of newer revoked/deleted state.
 5. Extend intent matching and qualified expansion to evidence bodies. Current
@@ -237,8 +238,9 @@ API can reserve a launch once through `claim-run`. A real restored-database API
 drill covers the transition. Migration alone does not invalidate operational
 receipts, and full restore reconciliation and live Striatum wiring remain open.
 
-Migration 019 adds [standalone task-failure review](demand-review.md). The local
-installation runs clean commit `7bc9165b0b58dc46b0bc5021e62ea276c3c0affb` after a
-backup and verified migration. CI, the disposable integration suite and the
+Migration 019 adds [standalone task-failure review](demand-review.md); migration
+020 adds [ordinary note deletion](ordinary-delete.md). The local installation
+runs clean commit `d61769decbc69fed875a6b668b20a6dc155a9b8a` after a backup and
+verified migration. CI, the disposable integration suite and the
 backup/restore lifecycle drill passed. The authenticated API runs that binary;
 retained operational record versions have the same digest before and after.
