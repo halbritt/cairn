@@ -1,0 +1,66 @@
+{
+  "schema": "cairn.mcp-model-run/1",
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "opencode_version": "1.18.21",
+  "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+  "cairn_sha256": "518bb933941f297360ace5e696c5290e0148adbec0c9551738a8de0e7fabca55",
+  "prompt_sha256": "4f1c2c103ca31618689628156552307ba890200933269b295a00bfd7c12dcaa9",
+  "exit_code": 0,
+  "timed_out": false,
+  "elapsed_seconds": 8.377312808064744,
+  "tool_calls": [
+    {
+      "name": "cairn_cairn_search",
+      "status": "completed",
+      "truncated": false
+    },
+    {
+      "name": "cairn_cairn_pull",
+      "status": "completed",
+      "truncated": false
+    }
+  ],
+  "selected_first": true,
+  "pull_arguments_reused_exactly": true,
+  "body_matches_prior_codex_capture": true,
+  "source_cited": true,
+  "source_answer_review": {
+    "postgresql_and_default_directory": true,
+    "home_override": true,
+    "database_url_does_not_redirect_local_store": true,
+    "recorded_defaults_distinguished_from_live_state": true,
+    "method": "Task prompt fixed before run; final prose manually checked against full pulled note and repository source. No strict JSON-format criterion."
+  },
+  "relay_requests": 4,
+  "relay_rejections": 0,
+  "usage_reports": [
+    {
+      "prompt_tokens": 10923,
+      "completion_tokens": 78,
+      "total_tokens": 11001,
+      "cost": 0.000666476608
+    },
+    {
+      "prompt_tokens": 12080,
+      "completion_tokens": 164,
+      "total_tokens": 12244,
+      "cost": 0.000247263744
+    },
+    {
+      "prompt_tokens": 12622,
+      "completion_tokens": 510,
+      "total_tokens": 13132,
+      "cost": 0.000793057664
+    }
+  ],
+  "request_without_usage_count": 1,
+  "stdout_sha256": "2d4977ba91d6b412214838cb41e2fd1f0b68fbbc18d2dac88c1f8dfa5376478d",
+  "limits": "One operational source-answer task with a model in OpenCode. Prior Codex capture was explicit manual curation. No no-memory/direct-context baseline, independent task gate, coding-task benefit, automatic learning, native Striatum ingress or host-run outcome association.",
+  "doctrine": {
+    "packet_id": "pkt-4bb29d9f02f54170",
+    "packet_content_sha256": "4bb29d9f02f5417074afa0c9e2e69a5fc5a7e5cb485ff48e21c9a4687c712c62",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  }
+}

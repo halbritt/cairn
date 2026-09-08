@@ -17,6 +17,7 @@ import (
 const help = `Cairn: local memory for agents
 
 Everyday commands:
+  mcp --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N]
   agent [--token-file FILE] [--socket PATH] OPERATION < request.json
   agent [--token-file FILE] [--socket PATH] search --task TASK --run RUN [--repo REPO] QUERY
   agent [--token-file FILE] [--socket PATH] pull [--request-id UUID] RECEIPT_UUID HANDLE_UUID

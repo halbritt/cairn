@@ -6,6 +6,7 @@ contracts. It must not be counted as evidence that memory improves task results.
 
 | Completed observation | Supported conclusion | What remains unproved |
 | --- | --- | --- |
+| [Operational MCP transfer](mcp-2026-09-08.md): DeepSeek in OpenCode searched and pulled a storage note curated by a Codex session, then correctly answered the source questions with its record ID. | Native MCP tool contact and one useful transfer of explicitly captured knowledge across these sessions/harnesses. | No baseline advantage, coding-task improvement, automatic learning, recurrence reduction or native Striatum ingress. No associated Cairn host-run outcome was recorded. |
 | [Reviewed-lesson recurrence](reviewed-recurrence-2026-09-08.md): the no-lesson candidate introduced an environment regression; the Cairn-fed candidate selected/cited the lesson and avoided that regression. | A bounded positive observation on one known repeated repair. | Full task acceptance stayed unknown. The additional regression check was exploratory and applied after the baseline. Directly supplying the lesson also avoided it. No demonstrated time/cost advantage or benefit beyond direct context. |
 | [Real failure to reviewed lesson](observed-model-failure-2026-09-08.md): a real failed model run produced an evidence-linked proposal that was reviewed into a local A lesson. | The capture, observation and review loop works on a real failure. | The new lesson has not yet produced a successful subsequent task or demonstrated transfer. It remains in a reviewed disposable trial dump, not an operationally adopted lesson. |
 | [Actual wrapped build](host-attempt-link-2026-09-08.md): authenticated host attempt, receipt, process result and terminal correspondence survived the deployed path. | The host integration works for that build. | No model was invoked, and no effect of memory on the build was measured. |
@@ -13,7 +14,7 @@ contracts. It must not be counted as evidence that memory improves task results.
 
 Recovery, authority, deletion, compilation and evidence-expansion tests establish
 their named behavior. They do not add a task-usefulness result to this table.
-Native Striatum ingress, broader harness contact, recurrence reduction, review
+Native Striatum ingress, harness coverage beyond these paths, recurrence reduction, review
 burden reduction and general task benefit remain unestablished.
 
 The [documentation retrieval experiment](retrieval-quality-2026-09-08.md) measures

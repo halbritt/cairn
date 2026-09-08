@@ -27,6 +27,13 @@ type response struct {
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		if err := serveMCP(ctx, os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "cairn mcp:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	data, err := run(ctx, os.Args[1:], os.Stdin)
 	envelope := response{Schema: "cairn.response/1", OK: err == nil, Status: "OK", Data: data}
 	exitCode := 0

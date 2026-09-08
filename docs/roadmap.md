@@ -7,9 +7,17 @@ The next product milestone is memory used in real Striatum/OpenCode builds, with
 record-specific observations showing whether it prevents recurring failures. Passing the
 current tests does not establish that result or full design acceptance.
 
+The [MCP facade](mcp.md) now exposes ordinary memory tools through the existing
+authenticated API. A [real OpenCode model](verification/mcp-2026-09-08.md) searched
+and pulled a note saved in a Codex session, then correctly answered the
+storage questions with its source. This adds native tool contact and one useful
+operational transfer; host-run association, native Striatum ingress and broader
+task benefit remain open.
+
 [Current usefulness evidence](verification/usefulness-status-2026-09-08.md) is
-one exploratory avoided-regression case and a real failure-to-lesson loop; no
-completed cross-task or cross-harness benefit is established. Prioritize a real
+one exploratory avoided-regression case, a real failure-to-lesson loop and an
+operational note transfer. No baseline advantage or durable task improvement
+across harnesses is established. Prioritize a real
 accepted task, retrieval quality and transfer evidence. Further recovery
 engineering is deferred for this experimental stage unless an observed problem
 requires it; the existing implementation remains available.

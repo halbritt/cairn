@@ -69,6 +69,11 @@ which pauses ordinary transactions until reconciliation and operator resume.
 
 ## Use an agent harness
 
+MCP-capable harnesses can discover Cairn's search, pull and capture tools through
+the [local MCP server](docs/mcp.md). An actual OpenCode model retrieved a note
+saved by another agent session and used it to answer the storage questions; the
+[verification report](docs/verification/mcp-2026-09-08.md) records that bounded result.
+
 For a remote model, explicitly allow a note to be delivered outside the local
 machine when you create it:
 

@@ -1,0 +1,35 @@
+package main
+
+import (
+	"context"
+	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/localapi"
+	"github.com/halbritt/cairn/mcpapi"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func serveMCP(ctx context.Context, args []string) error {
+	f := flags("mcp")
+	socket := f.String("socket", "", "Cairn Unix socket (required)")
+	token := f.String("token-file", "", "owner-only ordinary agent token (required)")
+	repo := f.String("repo", "", "repository identity (required)")
+	task := f.String("task", "", "host task identity (required)")
+	run := f.String("run", "", "host run identity (required)")
+	room := f.Int("tokens", 32000, "memory input room per tool result")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if f.NArg() != 0 || *socket == "" || *token == "" {
+		return invalid("mcp requires --socket and --token-file and accepts no positional arguments")
+	}
+	client, err := localapi.NewClient(*socket, *token)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	server, err := mcpapi.NewServer(client, mcpapi.Config{Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, AvailableTokens: *room})
+	if err != nil {
+		return err
+	}
+	return server.Run(ctx, &mcp.StdioTransport{})
+}

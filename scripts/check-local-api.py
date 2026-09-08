@@ -14,6 +14,7 @@ from trial_host import TrialHost
 from check_run_retrieval import check as check_run_retrieval
 from check_agent_search import check as check_agent_search
 from check_agent_remember import check as check_agent_remember
+from check_mcp import check as check_mcp
 
 binary, home = sys.argv[1:]
 root = Path(home)
@@ -218,6 +219,7 @@ try:
     check_run_retrieval(binary, root, client_env, record)
     check_agent_search(binary, root, env, grant, claim, support)
     check_agent_remember(binary, root, env)
+    check_mcp(binary, root, env)
 finally:
     process.send_signal(signal.SIGTERM)
     try:
