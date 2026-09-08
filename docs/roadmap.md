@@ -226,7 +226,7 @@ Stage 1–2 acceptance or scaling sensitive/consequential retention.
 | L6 — retention | open | Enforce record_use's 90-day minimum with extension while decisions remain live/reviewable, audited B/use pruning and backup residual tracking. Infinite retention currently preserves the floor but does not implement forgetting. Test cutoff/dependency boundaries and recovery. |
 | L7 — import and capture policy | partial | Explicit native/repository import quarantine, inherited source restrictions, per-class capture policy and secret handling. Existing advisory labels and hosted local-content exclusion remain. Test laundering attempts through imports and selected artifacts without adopting a hostile-agent threat model. |
 | L8 — unsigned C/D checkpoints | partial | Reproducible checkpoint of the audit subset, expected restore-set catalog and verification. Dump checksum alone is insufficient. Signing/off-box keys stay withdrawn. Test missing/altered audit members and restore set. |
-| L9 — restore reconciliation | partial | Rebuild projections and freshly recompile under identical pins; verify state/audit, reapply newer revocations/deletions, invalidate handles and recover external effects. Restore delivery generations now fence old launch/binding/pull paths while preserving history. External recovery exports detect later withdrawals and missing context custody in actual older restores. [Deletion dependency repair](verification/deletion-dependencies-2026-09-08.md) propagates exclusions through later relations, backfills older missed descendants and verifies the retained projection. [Auditable reapplication](recovery-reapplication.md) now applies known revocations/retractions/forgetting, retains original missing-history expectations and queues post-backup custody for the ordinary deletion worker. Freshness, broader projection verification and admission remain open. Test restore after revocation/deletion and interrupted effects. |
+| L9 — restore reconciliation | partial | Rebuild projections and freshly recompile under identical pins; verify state/audit, reapply newer revocations/deletions, invalidate handles and recover external effects. Restore delivery generations now fence old launch/binding/pull paths while preserving history. External recovery exports detect later withdrawals and missing context custody in actual older restores. [Deletion dependency repair](verification/deletion-dependencies-2026-09-08.md) propagates exclusions through later relations, backfills older missed descendants and verifies the retained projection. [Auditable reapplication](recovery-reapplication.md) now applies known revocations/retractions/forgetting, retains original missing-history expectations and queues post-backup custody for the ordinary deletion worker. [Restore admission](restore-admission.md) now gates ordinary core/API transactions, rebuilds known deletion exclusions, checks retained state and compiler fixtures, and requires current-root explicit resume. [Verification](verification/restore-admission-2026-09-08.md) covers a real older dump and refusal before effects finish. External-source freshness, out-of-procedure restore detection and reconstruction of unknown lost state remain open. |
 | L10 — fault and conformance acceptance | partial | Add abrupt process death around privileged commit, D-worker/citation races, task-close open loops, policy rollback, cutoff replay and adapter transformations. Keep CAS, identity, attribution, grant, evidence, budget and process tests. Record which gate each test establishes; green checks do not imply all-stage acceptance. |
 
 [Versioned relations and demotion](relations-and-demotion.md) now implement
@@ -274,9 +274,9 @@ remain explicit residuals; registration does not invent custody of those files.
 [Audit checkpoints](audit-checkpoints.md) now cover the emitted governance/C audit
 subset, including implemented forgetting events, with explicit membership and no payload/reason commitment. Backups retain
 an external expectation catalog. Restore tests recompile from restored candidate
-inputs and reject missing newer expectations. Automated scheduling, remaining D
-operations, projection rebuilding and newer revocation/deletion reconciliation
-remain open.
+inputs and reject missing newer expectations. Automated scheduling and remaining D operations remain open. Known newer
+withdrawals and deletion projections are reconciled by the explicit restore
+workflow; unknown lost state cannot be reconstructed from checkpoint hashes.
 
 [Recovery inspection](recovery-inspection.md) now compares an isolated restore with
 a separately retained later withdrawal/audit/custody record. A real older dump
@@ -285,8 +285,11 @@ This is read-only consistency evidence. [Restore fencing](restore-fencing.md) no
 invalidates old launch claims, binding retries and pulls without rewriting history.
 Its authenticated host claim endpoint requires a fresh receipt after the fence.
 Auditable reapplication and imported custody now have an actual older-dump drill.
-Export freshness, projection rebuilding and complete
-restore admission remain required.
+[Restore sessions](restore-admission.md) now block ordinary transactions until
+current-root verification and explicit resume under `local-restore/1`. The drill
+checks pause, reapplication, purge, known projection rebuilding and retained
+compiler fixtures. Independently establishing export freshness, detecting a
+restore outside that procedure and complete reconstruction remain open.
 
 ### 6. Later extensions
 

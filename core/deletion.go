@@ -205,6 +205,7 @@ func receiptPayloadAvailable(ctx context.Context, tx pgx.Tx, id string) error {
 }
 
 func (s *Store) DeletionStatus(ctx context.Context, id string) (Deletion, error) {
+	ctx = s.recoveryContext(ctx)
 	if !s.channel.Operator {
 		return Deletion{}, failure("AUTHORITY_DENIED", "deletion status requires an operator channel")
 	}
@@ -271,6 +272,7 @@ func readDeletion(ctx context.Context, tx pgx.Tx, id string) (Deletion, error) {
 // the current effect; a retry resumes pending work without rerunning completed
 // effects. External effects require their own ownership and recovery contracts.
 func (s *Store) PurgeDeletion(ctx context.Context, id string) (Deletion, error) {
+	ctx = s.recoveryContext(ctx)
 	status, err := s.DeletionStatus(ctx, id)
 	if err != nil {
 		return Deletion{}, err

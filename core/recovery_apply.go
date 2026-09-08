@@ -34,6 +34,7 @@ type RecoveryApplication struct {
 // External audit expectations are retained as expectations, never reconstructed
 // as local events. The caller must keep the restore isolated through admission.
 func (s *Store) ReapplyRecovery(ctx context.Context, req RecoveryReapplyRequest) (RecoveryApplication, error) {
+	ctx = s.recoveryContext(ctx)
 	if err := s.checkpointAccess(); err != nil {
 		return RecoveryApplication{}, err
 	}

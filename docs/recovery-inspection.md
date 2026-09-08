@@ -51,13 +51,18 @@ purges can coexist with consistent logical exclusion. It does not inspect files,
 prove media erasure, verify all projections or establish the latest security state.
 The command changes neither the database nor external files.
 
-Restore admission remains unfinished. [Recovery reapplication](recovery-reapplication.md)
-can now apply missing restrictions and retain newer file custody with auditable
-provenance. Original missing audit events remain gaps. Projections must still be verified,
-[old delivery capabilities fenced](restore-fencing.md) and fresh packages compiled
-before service resumes.
-Inspection success alone does not authorize that resume. The ordinary API has no
-recovery endpoints, and this change adds no automatic service-start guard.
+[Recovery reapplication](recovery-reapplication.md) applies missing restrictions
+and retains newer file custody with auditable provenance. Original missing audit
+events remain gaps. [Restore sessions](restore-admission.md) pause ordinary core
+and API transactions, verify the known retained structures and compiler fixtures,
+and require an explicit current-root resume. They cover a missing original
+withdrawal only through exact retained reapplication provenance and restricted
+state; inspection continues to report the original gap.
+
+Inspection success alone does not authorize resume. The ordinary API has no
+recovery endpoints. A restore outside the explicit isolated begin/verify/resume
+procedure is not automatically detected; external-source freshness remains an
+operator responsibility.
 
 `make test-lifecycle` takes an actual dump before revocation and forgetting, runs
 a process afterward to create new context custody, exports the later evidence,

@@ -41,6 +41,7 @@ JSON commands (read one request from stdin):
 
 Administration: recovery-export FILE | recovery-inspect FILE
   recovery-reapply --request-id UUID --expected-sha256 DIGEST --reason TEXT FILE
+  begin-restore | restore-status | rebuild-restore | verify-restore | resume-restore
   migrate | fence-restore < request.json | invalidate-handles < request.json | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH]
 Default store: ~/.local/share/cairn/socket, database cairn.
 Override with CAIRN_DATABASE_URL. Initialize with scripts/local-store.sh start.
@@ -251,6 +252,28 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return nil, invalid("unexpected arguments")
 	}
 	switch args[0] {
+	case "begin-restore":
+		return invoke(ctx, input, store.BeginRestore)
+	case "restore-status":
+		return store.RestoreStatus(ctx)
+	case "rebuild-restore":
+		return invoke(ctx, input, store.RebuildRestore)
+	case "verify-restore":
+		var req core.VerifyRestoreRequest
+		if err := decodeBounded(input, &req, 20*1024*1024); err != nil {
+			return nil, invalid(err.Error())
+		}
+		result, err := store.VerifyRestore(ctx, req)
+		if err == nil && !result.Ready {
+			err = &core.Error{Code: "RESTORE_INCOMPLETE", Message: "restore checks failed; service remains paused"}
+		}
+		return result, err
+	case "resume-restore":
+		var req core.ResumeRestoreRequest
+		if err := decodeBounded(input, &req, 20*1024*1024); err != nil {
+			return nil, invalid(err.Error())
+		}
+		return store.ResumeRestore(ctx, req)
 	case "fence-restore":
 		return invoke(ctx, input, store.FenceRestore)
 	case "invalidate-handles":

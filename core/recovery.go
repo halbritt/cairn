@@ -62,6 +62,7 @@ type RecoveryInspection struct {
 }
 
 func (s *Store) CaptureRecovery(ctx context.Context) (RecoveryRecord, error) {
+	ctx = s.recoveryContext(ctx)
 	if err := s.checkpointAccess(); err != nil {
 		return RecoveryRecord{}, err
 	}
@@ -146,6 +147,7 @@ func (r RecoveryRecord) validate() error {
 // Inspection is consistency against an external known snapshot, not permission
 // to resume a restore, a complete recovery audit, or proof of later absence.
 func (s *Store) InspectRecovery(ctx context.Context, record RecoveryRecord) (RecoveryInspection, error) {
+	ctx = s.recoveryContext(ctx)
 	if err := s.checkpointAccess(); err != nil {
 		return RecoveryInspection{}, err
 	}
@@ -157,85 +159,11 @@ func (s *Store) InspectRecovery(ctx context.Context, record RecoveryRecord) (Rec
 		return RecoveryInspection{}, err
 	}
 	defer tx.Rollback(ctx)
-	report := RecoveryInspection{RootGrantID: record.RootGrantID, RecordSHA256: record.SHA256, Gaps: []RecoveryGap{}, Coverage: "Known governance/C/D audit metadata, irreversible withdrawals and retained context custody at the external capture. Does not establish capture freshness, physical file state, complete recovery or permission to resume service."}
-	var root string
-	err = tx.QueryRow(ctx, `SELECT grant_id::text FROM cairn.authority_grant WHERE parent_id IS NULL`).Scan(&root)
-	if err != nil && err != pgx.ErrNoRows {
-		return report, err
-	}
-	if root != record.RootGrantID {
-		report.Gaps = append(report.Gaps, RecoveryGap{Kind: "store", SubjectID: record.RootGrantID, Reason: "ROOT_MISMATCH"})
-		return report, tx.Commit(ctx)
-	}
-	actual, err := auditMembers(ctx, tx)
+	result, err := s.inspectRecoveryTx(ctx, tx, record)
 	if err != nil {
-		return report, err
+		return result, err
 	}
-	members := map[string]string{}
-	for _, m := range actual {
-		members[m.EventID] = m.Digest
-	}
-	for _, m := range record.Audit {
-		if members[m.EventID] == "" {
-			report.Gaps = append(report.Gaps, RecoveryGap{Kind: "audit", EventID: m.EventID, Reason: "AUDIT_MISSING"})
-		} else if members[m.EventID] != m.Digest {
-			report.Gaps = append(report.Gaps, RecoveryGap{Kind: "audit", EventID: m.EventID, Reason: "AUDIT_CHANGED"})
-		}
-	}
-	expectedDigests := map[string]string{}
-	for _, m := range record.Audit {
-		expectedDigests[m.EventID] = m.Digest
-	}
-	for _, w := range record.Withdrawals {
-		local := w
-		if w.Kind == "forget" {
-			var mapped string
-			err := tx.QueryRow(ctx, `SELECT d.event_id::text FROM cairn.recovery_application a
- CROSS JOIN LATERAL jsonb_array_elements(a.actions) action
- JOIN cairn.deletion_request d ON d.deletion_id::text=action->>'deletion_id'
- WHERE a.source_root=$1 AND action->>'event_id'=$2 AND action->>'source_digest'=$3
- AND action->>'subject_id'=$4 AND action->>'repo'=$5 AND action->>'kind'='forget'
- AND d.record_id=$4::uuid AND d.event_id::text=action->>'current_event_id' LIMIT 1`, record.RootGrantID, w.EventID, expectedDigests[w.EventID], w.SubjectID, w.Repo).Scan(&mapped)
-			if err != nil && err != pgx.ErrNoRows {
-				return report, err
-			}
-			if err == nil {
-				local.EventID = mapped
-			}
-		}
-		reason, err := inspectWithdrawal(ctx, tx, local)
-		if err != nil {
-			return report, err
-		}
-		if reason != "" {
-			report.Gaps = append(report.Gaps, RecoveryGap{Kind: w.Kind, SubjectID: w.SubjectID, EventID: w.EventID, Reason: reason})
-		}
-	}
-	for _, c := range record.Contexts {
-		var found bool
-		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.managed_context c JOIN cairn.record_use u USING(receipt_id) JOIN cairn.deletion_request d USING(record_id) JOIN cairn.deletion_effect e ON e.deletion_id=d.deletion_id AND e.target_type='managed_context' AND e.target_id=c.receipt_id::text WHERE c.receipt_id=$1 AND u.record_id=$7 AND directory=$2 AND directory_device=$3 AND directory_inode=$4 AND ownership_id=$5 AND body_sha256=$6)`, c.ReceiptID, c.Directory, c.DirectoryDevice, c.DirectoryInode, c.OwnershipID, c.BodySHA256, c.RecordID).Scan(&found)
-		if err != nil {
-			return report, err
-		}
-		if !found {
-			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.recovery_context c
- JOIN cairn.deletion_request d USING(deletion_id)
- JOIN cairn.deletion_effect e ON e.deletion_id=c.deletion_id AND e.target_type='managed_context' AND e.target_id=c.receipt_id::text
- WHERE c.receipt_id=$1 AND d.record_id=$7 AND c.directory=$2 AND c.directory_device=$3 AND c.directory_inode=$4 AND c.ownership_id=$5 AND c.body_sha256=$6)`, c.ReceiptID, c.Directory, c.DirectoryDevice, c.DirectoryInode, c.OwnershipID, c.BodySHA256, c.RecordID).Scan(&found)
-			if err != nil {
-				return report, err
-			}
-		}
-		if !found {
-			report.Gaps = append(report.Gaps, RecoveryGap{Kind: "managed_context", SubjectID: c.ReceiptID, Reason: "CONTEXT_CUSTODY_MISSING"})
-		}
-	}
-	err = tx.QueryRow(ctx, `SELECT count(*) FILTER(WHERE status IN ('pending','running','failed')),count(*) FILTER(WHERE status='not_possible') FROM cairn.deletion_effect`).Scan(&report.OutstandingEffects, &report.ResidualEffects)
-	if err != nil {
-		return report, err
-	}
-	report.Consistent = len(report.Gaps) == 0
-	return report, tx.Commit(ctx)
+	return result, tx.Commit(ctx)
 }
 func inspectWithdrawal(ctx context.Context, tx pgx.Tx, w RecoveryWithdrawal) (string, error) {
 	if w.Kind == "revoke_grant" {
@@ -386,4 +314,87 @@ func captureRecoveryTx(ctx context.Context, tx pgx.Tx) (RecoveryRecord, error) {
 		return record, err
 	}
 	return record, recoverySizeValid(record)
+}
+
+func (s *Store) inspectRecoveryTx(ctx context.Context, tx pgx.Tx, record RecoveryRecord) (RecoveryInspection, error) {
+	var err error
+	report := RecoveryInspection{RootGrantID: record.RootGrantID, RecordSHA256: record.SHA256, Gaps: []RecoveryGap{}, Coverage: "Known governance/C/D audit metadata, irreversible withdrawals and retained context custody at the external capture. Does not establish capture freshness, physical file state, complete recovery or permission to resume service."}
+	var root string
+	err = tx.QueryRow(ctx, `SELECT grant_id::text FROM cairn.authority_grant WHERE parent_id IS NULL`).Scan(&root)
+	if err != nil && err != pgx.ErrNoRows {
+		return report, err
+	}
+	if root != record.RootGrantID {
+		report.Gaps = append(report.Gaps, RecoveryGap{Kind: "store", SubjectID: record.RootGrantID, Reason: "ROOT_MISMATCH"})
+		return report, nil
+	}
+	actual, err := auditMembers(ctx, tx)
+	if err != nil {
+		return report, err
+	}
+	members := map[string]string{}
+	for _, m := range actual {
+		members[m.EventID] = m.Digest
+	}
+	for _, m := range record.Audit {
+		if members[m.EventID] == "" {
+			report.Gaps = append(report.Gaps, RecoveryGap{Kind: "audit", EventID: m.EventID, Reason: "AUDIT_MISSING"})
+		} else if members[m.EventID] != m.Digest {
+			report.Gaps = append(report.Gaps, RecoveryGap{Kind: "audit", EventID: m.EventID, Reason: "AUDIT_CHANGED"})
+		}
+	}
+	expectedDigests := map[string]string{}
+	for _, m := range record.Audit {
+		expectedDigests[m.EventID] = m.Digest
+	}
+	for _, w := range record.Withdrawals {
+		local := w
+		if w.Kind == "forget" {
+			var mapped string
+			err := tx.QueryRow(ctx, `SELECT d.event_id::text FROM cairn.recovery_application a
+ CROSS JOIN LATERAL jsonb_array_elements(a.actions) action
+ JOIN cairn.deletion_request d ON d.deletion_id::text=action->>'deletion_id'
+ WHERE a.source_root=$1 AND action->>'event_id'=$2 AND action->>'source_digest'=$3
+ AND action->>'subject_id'=$4 AND action->>'repo'=$5 AND action->>'kind'='forget'
+ AND d.record_id=$4::uuid AND d.event_id::text=action->>'current_event_id' LIMIT 1`, record.RootGrantID, w.EventID, expectedDigests[w.EventID], w.SubjectID, w.Repo).Scan(&mapped)
+			if err != nil && err != pgx.ErrNoRows {
+				return report, err
+			}
+			if err == nil {
+				local.EventID = mapped
+			}
+		}
+		reason, err := inspectWithdrawal(ctx, tx, local)
+		if err != nil {
+			return report, err
+		}
+		if reason != "" {
+			report.Gaps = append(report.Gaps, RecoveryGap{Kind: w.Kind, SubjectID: w.SubjectID, EventID: w.EventID, Reason: reason})
+		}
+	}
+	for _, c := range record.Contexts {
+		var found bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.managed_context c JOIN cairn.record_use u USING(receipt_id) JOIN cairn.deletion_request d USING(record_id) JOIN cairn.deletion_effect e ON e.deletion_id=d.deletion_id AND e.target_type='managed_context' AND e.target_id=c.receipt_id::text WHERE c.receipt_id=$1 AND u.record_id=$7 AND directory=$2 AND directory_device=$3 AND directory_inode=$4 AND ownership_id=$5 AND body_sha256=$6)`, c.ReceiptID, c.Directory, c.DirectoryDevice, c.DirectoryInode, c.OwnershipID, c.BodySHA256, c.RecordID).Scan(&found)
+		if err != nil {
+			return report, err
+		}
+		if !found {
+			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.recovery_context c
+ JOIN cairn.deletion_request d USING(deletion_id)
+ JOIN cairn.deletion_effect e ON e.deletion_id=c.deletion_id AND e.target_type='managed_context' AND e.target_id=c.receipt_id::text
+ WHERE c.receipt_id=$1 AND d.record_id=$7 AND c.directory=$2 AND c.directory_device=$3 AND c.directory_inode=$4 AND c.ownership_id=$5 AND c.body_sha256=$6)`, c.ReceiptID, c.Directory, c.DirectoryDevice, c.DirectoryInode, c.OwnershipID, c.BodySHA256, c.RecordID).Scan(&found)
+			if err != nil {
+				return report, err
+			}
+		}
+		if !found {
+			report.Gaps = append(report.Gaps, RecoveryGap{Kind: "managed_context", SubjectID: c.ReceiptID, Reason: "CONTEXT_CUSTODY_MISSING"})
+		}
+	}
+	err = tx.QueryRow(ctx, `SELECT count(*) FILTER(WHERE status IN ('pending','running','failed')),count(*) FILTER(WHERE status='not_possible') FROM cairn.deletion_effect`).Scan(&report.OutstandingEffects, &report.ResidualEffects)
+	if err != nil {
+		return report, err
+	}
+	report.Consistent = len(report.Gaps) == 0
+	return report, nil
 }

@@ -45,6 +45,7 @@ func (s *Store) RecordSpawn(ctx context.Context, req SpawnRequest) (Attempt, err
 }
 
 func (s *Store) RecordTerminal(ctx context.Context, req TerminalRequest) (Attempt, error) {
+	ctx = context.WithValue(ctx, recoveryTransactionKey{}, true)
 	if !s.channel.Instrumented {
 		return Attempt{}, failure("AUTHORITY_DENIED", "terminal event requires a trusted service observation channel")
 	}

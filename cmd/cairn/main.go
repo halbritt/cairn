@@ -38,7 +38,7 @@ func main() {
 		}
 		envelope.Message = err.Error()
 		switch envelope.Status {
-		case "PURGE_UNRECORDED", "REFUSAL_UNRECORDED", "INTEGRITY_FAILURE", "CHECKPOINT_MISMATCH":
+		case "RESTORE_PAUSED", "RESTORE_INCOMPLETE", "PURGE_UNRECORDED", "REFUSAL_UNRECORDED", "INTEGRITY_FAILURE", "CHECKPOINT_MISMATCH":
 			exitCode = 7
 		case "RUN_FAILED":
 			exitCode = 1
@@ -46,7 +46,7 @@ func main() {
 			exitCode = 2
 		case "NOT_FOUND":
 			exitCode = 3
-		case "ARTIFACT_CHANGED", "ARTIFACT_UNSAFE", "PAYLOAD_UNAVAILABLE", "DEPENDENCY_CONFLICT", "STALE_HANDLE", "STALE_PROPOSAL", "STALE_PREVIEW", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "SCHEMA_MISMATCH", "STALE_PACKAGE", "RUN_ALREADY_STARTED", "ATTEMPT_TERMINAL":
+		case "STALE_RESTORE", "RESTORE_IN_PROGRESS", "RESTORE_NOT_PAUSED", "ARTIFACT_CHANGED", "ARTIFACT_UNSAFE", "PAYLOAD_UNAVAILABLE", "DEPENDENCY_CONFLICT", "STALE_HANDLE", "STALE_PROPOSAL", "STALE_PREVIEW", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "SCHEMA_MISMATCH", "STALE_PACKAGE", "RUN_ALREADY_STARTED", "ATTEMPT_TERMINAL":
 			exitCode = 4
 		case "AUTHORITY_DENIED", "AUTHORITY_INACTIVE", "SCOPE_AUTHORITY_INACTIVE", "SELF_PROMOTION_DENIED":
 			exitCode = 6
@@ -85,12 +85,19 @@ func main() {
 }
 
 func decode(input io.Reader, target any) error {
-	body, err := io.ReadAll(io.LimitReader(input, 128*1024+1))
+	return decodeBounded(input, target, 128*1024)
+}
+
+func decodeBounded(input io.Reader, target any, limit int64) error {
+	body, err := io.ReadAll(io.LimitReader(input, limit+1))
 	if err != nil {
 		return err
 	}
-	if len(body) > 128*1024 {
-		return errors.New("request exceeds 128 KiB")
+	if int64(len(body)) > limit {
+		if limit == 128*1024 {
+			return errors.New("request exceeds 128 KiB")
+		}
+		return errors.New("request exceeds size limit")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()

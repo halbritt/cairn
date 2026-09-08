@@ -28,6 +28,7 @@ type EvidenceCheck struct {
 // CheckEvidence verifies retained inline bytes, never the truth of the source
 // or the current contents of a locator. It cannot accept a caller-supplied state.
 func (s *Store) CheckEvidence(ctx context.Context, req EvidenceCheckRequest) (EvidenceCheck, error) {
+	ctx = s.recoveryContext(ctx)
 	if err := validID(req.EvidenceID); err != nil {
 		return EvidenceCheck{}, err
 	}
@@ -83,6 +84,7 @@ func (s *Store) CheckEvidence(ctx context.Context, req EvidenceCheckRequest) (Ev
 	})
 }
 func (s *Store) EvidenceChecks(ctx context.Context, id string) ([]EvidenceCheck, error) {
+	ctx = s.recoveryContext(ctx)
 	if err := validID(id); err != nil {
 		return nil, err
 	}

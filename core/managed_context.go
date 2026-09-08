@@ -101,6 +101,7 @@ type ContextPurgeTarget struct {
 }
 
 func (s *Store) ContextPurgeTarget(ctx context.Context, deletionID, receiptID string) (ContextPurgeTarget, error) {
+	ctx = s.recoveryContext(ctx)
 	if !s.channel.Operator || !s.channel.Instrumented {
 		return ContextPurgeTarget{}, failure("AUTHORITY_DENIED", "context purge requires an instrumented operator")
 	}
@@ -143,6 +144,7 @@ type ContextPurgeResult struct {
 // The instrumented local worker reports only observations made while holding
 // the registered directory lock. This is deliberately absent from agent APIs.
 func (s *Store) RecordContextPurge(ctx context.Context, req ContextPurgeResult) (Deletion, error) {
+	ctx = s.recoveryContext(ctx)
 	if !s.channel.Operator || !s.channel.Instrumented {
 		return Deletion{}, failure("AUTHORITY_DENIED", "file purge observation requires an instrumented operator")
 	}

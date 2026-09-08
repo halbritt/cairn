@@ -19,6 +19,7 @@ type RecompileRequest struct {
 // versions. Its cutoff is the named receipt, not a PostgreSQL snapshot handle or
 // an arbitrary timestamp. It creates no new delivery authorization or exposure.
 func (s *Store) Recompile(ctx context.Context, req RecompileRequest) (Package, error) {
+	ctx = s.recoveryContext(ctx)
 	if len(req.Query) > 4096 {
 		return Package{}, failure("INVALID_REQUEST", "query exceeds limit")
 	}
@@ -27,6 +28,42 @@ func (s *Store) Recompile(ctx context.Context, req RecompileRequest) (Package, e
 		return Package{}, err
 	}
 	defer tx.Rollback(ctx)
+	result, err := s.recompileTx(ctx, tx, req)
+	if err != nil {
+		return result, err
+	}
+	return result, tx.Commit(ctx)
+}
+func historicalRecord(ctx context.Context, tx pgx.Tx, e *CandidateEvaluation) (Record, error) {
+	var deleted bool
+	if err := tx.QueryRow(ctx, `SELECT payload_deleted_by IS NOT NULL FROM cairn.record_version WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&deleted); err != nil && err != pgx.ErrNoRows {
+		return Record{}, err
+	}
+	if deleted {
+		return Record{}, failure("PAYLOAD_UNAVAILABLE", "historical candidate payload was excluded by deletion")
+	}
+	r := Record{RecordID: e.RecordID, Version: e.Version, Class: e.Class, Lifecycle: "active", Sensitivity: e.Facts.Sensitivity, WrittenAt: e.WrittenAt, AttributionState: e.Facts.AttributionState}
+	err := tx.QueryRow(ctx, `SELECT kind,body,repo,task_id,run_id,attributed_producer,COALESCE(attempt_id::text,''),result_ref,claim_type,observed_writer,witness FROM cairn.record_version WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&r.Kind, &r.Body, &r.Scope.Repo, &r.Scope.TaskID, &r.Scope.RunID, &r.AttributedProducer, &r.AttemptID, &r.ResultRef, &r.ClaimType, &r.ObservedWriter, &r.Witness)
+	if err == pgx.ErrNoRows {
+		return r, failure("REPLAY_INCOMPLETE", "historical record version is missing")
+	}
+	if err != nil {
+		return r, err
+	}
+	r.Relations, err = readRelations(ctx, tx, r.RecordID, r.Version)
+	if err != nil {
+		return r, err
+	}
+	r.Draft.Sensitivity = r.Sensitivity
+	err = tx.QueryRow(ctx, `SELECT pins FROM cairn.record_applicability WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&r.Pins)
+	if err != nil && err != pgx.ErrNoRows {
+		return r, err
+	}
+	return r, nil
+}
+
+func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest) (Package, error) {
+	var err error
 	if err = s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
 		return Package{}, err
 	}
@@ -159,32 +196,5 @@ func (s *Store) Recompile(ctx context.Context, req RecompileRequest) (Package, e
 		return Package{}, failure("INTEGRITY_FAILURE", "recompiled historical selection differs from retained seal")
 	}
 	original.Semantic = p
-	return original, tx.Commit(ctx)
-}
-func historicalRecord(ctx context.Context, tx pgx.Tx, e *CandidateEvaluation) (Record, error) {
-	var deleted bool
-	if err := tx.QueryRow(ctx, `SELECT payload_deleted_by IS NOT NULL FROM cairn.record_version WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&deleted); err != nil && err != pgx.ErrNoRows {
-		return Record{}, err
-	}
-	if deleted {
-		return Record{}, failure("PAYLOAD_UNAVAILABLE", "historical candidate payload was excluded by deletion")
-	}
-	r := Record{RecordID: e.RecordID, Version: e.Version, Class: e.Class, Lifecycle: "active", Sensitivity: e.Facts.Sensitivity, WrittenAt: e.WrittenAt, AttributionState: e.Facts.AttributionState}
-	err := tx.QueryRow(ctx, `SELECT kind,body,repo,task_id,run_id,attributed_producer,COALESCE(attempt_id::text,''),result_ref,claim_type,observed_writer,witness FROM cairn.record_version WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&r.Kind, &r.Body, &r.Scope.Repo, &r.Scope.TaskID, &r.Scope.RunID, &r.AttributedProducer, &r.AttemptID, &r.ResultRef, &r.ClaimType, &r.ObservedWriter, &r.Witness)
-	if err == pgx.ErrNoRows {
-		return r, failure("REPLAY_INCOMPLETE", "historical record version is missing")
-	}
-	if err != nil {
-		return r, err
-	}
-	r.Relations, err = readRelations(ctx, tx, r.RecordID, r.Version)
-	if err != nil {
-		return r, err
-	}
-	r.Draft.Sensitivity = r.Sensitivity
-	err = tx.QueryRow(ctx, `SELECT pins FROM cairn.record_applicability WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&r.Pins)
-	if err != nil && err != pgx.ErrNoRows {
-		return r, err
-	}
-	return r, nil
+	return original, nil
 }

@@ -64,6 +64,8 @@ existing store. The database retains captured evidence bytes and semantic
 packages, so a PostgreSQL backup covers those. Run-directory copies require
 separate retention accounting. No backup rotation, timer, or automatic deletion
 is enabled.
+For recovery, follow the [explicit restore-session workflow](docs/restore-admission.md),
+which pauses ordinary transactions until reconciliation and operator resume.
 
 ## Use an agent harness
 

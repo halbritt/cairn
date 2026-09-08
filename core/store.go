@@ -114,6 +114,10 @@ func (s *Store) beginLevel(ctx context.Context, level pgx.TxIsoLevel) (pgx.Tx, e
 		tx.Rollback(context.Background())
 		return nil, err
 	}
+	if err = restoreAdmission(ctx, tx); err != nil {
+		tx.Rollback(context.Background())
+		return nil, err
+	}
 	return tx, nil
 }
 

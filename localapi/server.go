@@ -261,6 +261,8 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 		switch code {
 		case "AUTHORITY_DENIED", "SELF_PROMOTION_DENIED":
 			status = 403
+		case "RESTORE_PAUSED":
+			status = 503
 		case "INVALID_REQUEST":
 			status = 400
 		case "NOT_FOUND":

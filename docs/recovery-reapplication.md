@@ -79,8 +79,10 @@ observations remain separate from the imported descriptor. Process exit after
 reapplication leaves durable work to retry. Unmanaged copies, retained metadata,
 provider state, WAL and backups retain the existing deletion residuals.
 
-This operation does not establish restore admission. Source freshness, unknown
-newer events, lost dependency relations, broader projection reconstruction and
-physical backup restoration remain separate requirements. Restore fencing still
-invalidates old handles without stopping processes or proving restored state is
-safe for fresh compilation. L9 remains incomplete.
+Reapplication alone does not establish restore admission. Follow the
+[restore-session workflow](restore-admission.md): begin while isolated, reapply,
+finish recoverable effects, rebuild known exclusions, verify retained state and
+compiler fixtures, then explicitly resume under the current root. Admission
+retains the missing original history and accepts only named deletion residuals.
+Source freshness, unknown newer events, lost dependency relations and physical
+backup restoration remain separate requirements. L9 remains incomplete.

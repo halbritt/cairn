@@ -25,6 +25,7 @@ type RunOutcomeStatus struct {
 // RunStatus is an owner-only historical observation, never launch permission.
 // It reads no package payload and remains useful after policy or restore fences.
 func (s *Store) RunStatus(ctx context.Context, id string) (RunStatus, error) {
+	ctx = context.WithValue(ctx, recoveryTransactionKey{}, true)
 	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
 	if err != nil {
 		return RunStatus{}, err

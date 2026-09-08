@@ -22,6 +22,7 @@ type RestoreFence struct {
 // generation. It preserves historical receipts and does not stop live processes.
 // The operator must isolate the restored service before invoking it.
 func (s *Store) FenceRestore(ctx context.Context, req RestoreFenceRequest) (RestoreFence, error) {
+	ctx = s.recoveryContext(ctx)
 	if !s.channel.Operator || s.channel.Repo != "" {
 		return RestoreFence{}, failure("AUTHORITY_DENIED", "restore fencing requires an unscoped operator channel")
 	}
@@ -29,21 +30,7 @@ func (s *Store) FenceRestore(ctx context.Context, req RestoreFenceRequest) (Rest
 		return RestoreFence{}, err
 	}
 	return mutate(ctx, s, "fence-restore", req.RequestID, req, func(tx pgx.Tx) (RestoreFence, error) {
-		result := RestoreFence{FenceID: uuid.NewString()}
-		err := tx.QueryRow(ctx, `UPDATE cairn.retrieval_generation SET generation=generation+1 WHERE singleton RETURNING generation`).Scan(&result.Generation)
-		if err != nil {
-			return result, err
-		}
-		if err = tx.QueryRow(ctx, `SELECT count(*) FROM cairn.retrieval_receipt WHERE generation=$1`, result.Generation-1).Scan(&result.Receipts); err != nil {
-			return result, err
-		}
-		tag, err := tx.Exec(ctx, `UPDATE cairn.index_session SET expires_at=clock_timestamp() WHERE expires_at>clock_timestamp()`)
-		if err != nil {
-			return result, err
-		}
-		result.Sessions = tag.RowsAffected()
-		_, err = tx.Exec(ctx, `INSERT INTO cairn.restore_fence(fence_id,generation,reason) VALUES($1,$2,$3)`, result.FenceID, result.Generation, req.Reason)
-		return result, err
+		return fenceRestore(ctx, tx, req.Reason)
 	})
 }
 
@@ -70,4 +57,22 @@ func receiptCurrentGeneration(ctx context.Context, tx pgx.Tx, id string) error {
 		return failure("STALE_PACKAGE", "receipt predates the restore fence; compile with a new request ID")
 	}
 	return nil
+}
+
+func fenceRestore(ctx context.Context, tx pgx.Tx, reason string) (RestoreFence, error) {
+	result := RestoreFence{FenceID: uuid.NewString()}
+	err := tx.QueryRow(ctx, `UPDATE cairn.retrieval_generation SET generation=generation+1 WHERE singleton RETURNING generation`).Scan(&result.Generation)
+	if err != nil {
+		return result, err
+	}
+	if err = tx.QueryRow(ctx, `SELECT count(*) FROM cairn.retrieval_receipt WHERE generation=$1`, result.Generation-1).Scan(&result.Receipts); err != nil {
+		return result, err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE cairn.index_session SET expires_at=clock_timestamp() WHERE expires_at>clock_timestamp()`)
+	if err != nil {
+		return result, err
+	}
+	result.Sessions = tag.RowsAffected()
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.restore_fence(fence_id,generation,reason) VALUES($1,$2,$3)`, result.FenceID, result.Generation, reason)
+	return result, err
 }

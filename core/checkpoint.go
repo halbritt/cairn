@@ -69,9 +69,12 @@ func auditMembers(ctx context.Context, tx pgx.Tx) ([]AuditMember, error) {
  'occurred_at_us',(extract(epoch from e.occurred_at)*1000000)::bigint)
  || CASE WHEN e.event_type='reapply_recovery' THEN jsonb_build_object('reapplication',
  (SELECT jsonb_build_object('source_root',a.source_root,'source_sha256',a.source_sha256,'actions',a.actions)
- FROM cairn.recovery_application a WHERE a.event_id=e.event_id)) ELSE '{}'::jsonb END)::text
+ FROM cairn.recovery_application a WHERE a.event_id=e.event_id))
+ WHEN e.event_type='resume_restore' THEN jsonb_build_object('restore_resume',
+ (SELECT jsonb_build_object('session_id',r.session_id,'policy',r.policy,'verification',r.verification)
+ FROM cairn.restore_resume r WHERE r.event_id=e.event_id)) ELSE '{}'::jsonb END)::text
  FROM cairn.authority_event e
- WHERE e.event_type IN ('bootstrap','grant','revoke_grant','issue','authorize_scope','policy_revise','reapply_recovery','resolve','redact','forget')
+ WHERE e.event_type IN ('bootstrap','grant','revoke_grant','issue','authorize_scope','policy_revise','reapply_recovery','resume_restore','resolve','redact','forget')
  OR EXISTS(SELECT 1 FROM cairn.record_version v WHERE v.record_id=e.subject_id AND v.version=e.resulting_version AND v.version_class='C')
  ORDER BY e.event_id LIMIT 10001`)
 	if err != nil {
@@ -102,6 +105,7 @@ func (s *Store) checkpointAccess() error {
 	return nil
 }
 func (s *Store) Checkpoint(ctx context.Context, req CheckpointRequest) (AuditCheckpoint, error) {
+	ctx = s.recoveryContext(ctx)
 	if err := s.checkpointAccess(); err != nil {
 		return AuditCheckpoint{}, err
 	}
@@ -130,6 +134,7 @@ func (s *Store) Checkpoint(ctx context.Context, req CheckpointRequest) (AuditChe
 	})
 }
 func (s *Store) VerifyCheckpoint(ctx context.Context, req VerifyCheckpointRequest) (CheckpointVerification, error) {
+	ctx = s.recoveryContext(ctx)
 	if err := s.checkpointAccess(); err != nil {
 		return CheckpointVerification{}, err
 	}

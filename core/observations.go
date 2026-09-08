@@ -116,6 +116,7 @@ func (s *Store) RecordDelivery(ctx context.Context, req DeliveryRequest) (Observ
 	})
 }
 func (s *Store) RecordOutcome(ctx context.Context, req OutcomeRequest) (Observation, error) {
+	ctx = context.WithValue(ctx, recoveryTransactionKey{}, true)
 	if !s.channel.Instrumented {
 		return Observation{}, failure("AUTHORITY_DENIED", "outcome requires a service channel")
 	}

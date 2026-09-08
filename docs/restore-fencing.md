@@ -5,8 +5,11 @@ Expiring index handles does not prevent that receipt from claiming a launch.
 `fence-restore` invalidates delivery capabilities from the restored database while
 preserving receipts and their historical semantic seals.
 
-Keep the restored store isolated from runners. After reconciling its security
-state, point the CLI at that restored database and issue a fresh fence request:
+Use [restore sessions](restore-admission.md) for the complete implemented
+reconciliation workflow. `begin-restore` includes a fresh fence and blocks
+ordinary transactions until explicit verified resume. The standalone command
+below only invalidates delivery capabilities; it does not pause fresh work.
+Keep the restored store isolated from runners when using it:
 
 ```sh
 python3 - <<'PY' | cairn fence-restore
