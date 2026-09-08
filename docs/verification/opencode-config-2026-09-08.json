@@ -119,5 +119,25 @@
     "Generates a configuration fragment; no task launch, automatic merge or host-run association.",
     "No model was required or invoked for this deterministic setup check.",
     "Native output compatibility verified with installed OpenCode1.18.21."
-  ]
+  ],
+  "installation": {
+    "revision": "ea2324f2c8cd350c568cb7b7aede7157ff428e57",
+    "binary_sha256": "a471294df74cfda683f064ef69be988751e44e1ea8e808fca7636506533a4926",
+    "ci": {
+      "conclusion": "success",
+      "headSha": "ea2324f2c8cd350c568cb7b7aede7157ff428e57",
+      "status": "completed"
+    },
+    "api_pid": 3934153,
+    "api_binary_sha256": "e2b67b2b7061db1991f2d25ebe58e5b61ab57d80f26137f4d6be3da7ed4ab3e9",
+    "api_restarted": false,
+    "profiles_unchanged": true,
+    "generated_command_retrieves_exact_procedure_v2": true,
+    "pull_retry_identical": true,
+    "native_opencode_connected": true,
+    "clean_eof": true,
+    "generator_without_home_or_database": true,
+    "ci_run": 34281053830
+  },
+  "selected_procedure_updated_and_retrieved": true
 }

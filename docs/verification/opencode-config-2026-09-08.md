@@ -36,3 +36,18 @@ intervention and existing behavior preservation. Its identities and remaining
 nonmaterial obligations are in the metadata; private evidence and decision
 records retain the observations. No general task-benefit or architecture claim
 is inferred from these checks.
+
+## Installed CLI
+
+Code commit `ea2324f2c8cd350c568cb7b7aede7157ff428e57` passed
+[CI run 34281053830](https://github.com/halbritt/cairn/actions/runs/34281053830).
+The clean build is installed at `~/.local/bin/cairn`, SHA-256
+`a471294df74cfda683f064ef69be988751e44e1ea8e808fca7636506533a4926`.
+
+Its generated command retrieved the exact current MCP procedure, preserved
+the declared task class and pull retries, and ended with clean stdio EOF.
+OpenCode connected using the installed generator's unmodified configuration.
+The API remained on its `cda6762` build without restart or profile changes;
+both services stayed active. A selected update to the reusable procedure now
+points future setup tasks to the generator, and its exact new body was retrieved.
+This is source-verified ordinary memory, not an additional model-benefit trial.
