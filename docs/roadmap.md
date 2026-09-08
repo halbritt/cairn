@@ -129,6 +129,12 @@ memory treatment. Real receipt/outcome joins are retained, with usage unknown.
 Two [harness calibrations](verification/opencode-calibration-2026-09-07.md)
 then disabled thinking and increased context; neither produced a repair. A
 provider-free probe now verifies actual read/edit execution through the wrapper.
+Two [hosted calibrations](verification/opencode-hosted-calibration-2026-09-08.md)
+also timed out without patches. The second removed relay request-size refusals,
+but one response reached the relay's elapsed limit and the run reached its
+configured step allowance. The hosted route keeps credentials outside the model
+sandbox and records actual provider/request failures. Further calibration must
+account for these execution limits before diagnosing model capability.
 Further comparison needs a binding/task combination that completes a real
 repair or new evidence explaining the failure. Full native/search baselines,
 relevance judgments and avoided-failure evidence remain open.

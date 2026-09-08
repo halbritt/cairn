@@ -28,4 +28,5 @@ jobs:
       # Packages share this service database; keep their unrelated writers apart.
       # Concurrency exercised explicitly inside each package remains enabled.
       - run: go test -race -count=1 -p 1 ./...
+      - run: python3 -B -m unittest discover -s scripts -p 'test_*.py'
       - run: make check build

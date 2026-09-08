@@ -35,7 +35,8 @@ ownership. Neither source contains the later implementation. Cairn captures thes
 sources now, under explicit recurrence semantics and a pin to the trial's base
 revision. It does not pretend the new memory records existed during the incident.
 
-The local model runs under an exact GPU fleet lease. OpenCode has a fresh private
+The local model runs under an exact GPU fleet lease. The optional hosted
+calibration uses the separately bounded route described below. OpenCode has a fresh private
 home and configuration for each arm. A Bubblewrap filesystem excludes the real
 home, trial controller, database, and later repair. The model can change only its
 trial workspace and cache; the task further limits candidate changes to the two
@@ -127,3 +128,42 @@ fleet lease for at least that context and verify the live server supports it;
 the default remains 65,536. The available room passed to Cairn stays 32,000.
 All settings appear in the report. A change of context size, thinking setting or
 tool policy creates a new experimental condition; preserve the prior result.
+
+
+## Bounded hosted calibration
+
+`--openrouter --arm repo_only --context-tokens 131072` selects the existing
+OpenRouter `deepseek/deepseek-v4-flash-0731` binding for one calibration arm.
+It requires that model and the exact HTTPS API base in the operator's existing
+OpenCode configuration, with an available environment-backed API key. The
+controller reads the key; the sandbox receives only a disposable local relay
+token. Hosted reports use `opencode-openrouter` and a null fleet lease.
+
+The relay permits only chat completions for that model, at most 24 requests,
+1 MiB of request bytes each, and 8,192 output tokens per request. Responses have
+an 8 MiB byte limit, a 45-second socket timeout and a checked 120-second elapsed
+limit; a pending socket operation may finish after that elapsed limit. The
+300-second process budget and 20-step setting still apply. These are request
+and transport bounds, not a verified account billing cap.
+
+Every request forces provider prices at most $0.20 per million input tokens,
+$0.50 per million output tokens, no per-request charge, and `data_collection=deny`.
+These fields use OpenRouter's documented
+[provider routing controls](https://openrouter.ai/docs/guides/routing/provider-selection).
+Unavailable routing fails without relaxing those settings. The relay makes no
+retries; any harness retry consumes another request slot. Different providers
+may serve different calls. Reports retain their declared identities, HTTP status,
+usage/cost when reported, counts and digests. They retain no prompt or completion
+content. Reported usage can be missing after interruption and is not an invoice.
+
+The local test exercises real HTTP streaming, routing refusal, request exhaustion,
+credential separation and upstream HTTP failures without a hosted request:
+
+```sh
+python3 -B -m unittest discover -s scripts -p test_trial_openrouter.py -v
+```
+
+A loopback relay protects the provider credential from the model filesystem and
+environment. It does not confine the sandbox's network or create a production
+credential service. Native session cleanup and all historical-trial limits above
+still apply.

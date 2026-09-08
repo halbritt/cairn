@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in historical repair trial. Run models only under a gpu-fleet lease.
+"""Opt-in historical repair trial. Models use a GPU lease or the bounded hosted relay.
 
 Model workspaces contain one historical Git snapshot. Later fix and behavioral
 checks stay outside the sandbox. Only selected patches and metadata are retained.
@@ -106,10 +106,10 @@ def native_notes(source, state, scenario):
             dict(body=clause, source=state['base'] + ':' + path + '#D0013.C2')]
 
 
-def sandbox(opencode, work, home, cache, config, goroot, gomod):
+def sandbox(opencode, work, home, cache, config, goroot, gomod, route):
     # Hide the real home, trial controller, later reference and PostgreSQL store.
-    # Network remains available for the leased local model endpoint only by task
-    # policy; this is filesystem isolation, not a network confinement claim.
+    # Network remains available for the model endpoint by task policy; this is
+    # filesystem isolation, not a network confinement claim.
     return ['bwrap', '--tmpfs', '/', '--ro-bind', '/usr', '/usr', '--ro-bind', '/bin', '/bin',
             '--ro-bind', '/lib', '/lib', '--ro-bind', '/lib64', '/lib64', '--ro-bind', '/etc', '/etc',
             '--ro-bind', '/sys', '/sys', '--dir', '/tmp', '--dir', '/run',
@@ -118,7 +118,7 @@ def sandbox(opencode, work, home, cache, config, goroot, gomod):
             '--bind', str(cache), '/trial-cache', '--ro-bind', str(opencode), '/opt/opencode',
             '--ro-bind', str(config), '/opt/opencode.json', '--ro-bind', str(goroot), '/opt/go',
             '--ro-bind', str(gomod), '/opt/gomod', '--chdir', '/work', '--', '/opt/opencode',
-            'run', '--pure', '--format', 'json', '-m', 'fleet/' + os.environ['GPU_FLEET_SERVED_MODEL']]
+            'run', '--pure', '--format', 'json', '-m', route['provider'] + '/' + route['model']]
 
 
 def candidate_diff(work):
@@ -218,10 +218,14 @@ def assess_arm(binary, environment, result, records):
                 excluded_preflight_rows=len(joined['rows']) - len(rows), interpretation=joined['interpretation'])
 
 
-def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_tokens=65536):
+def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_tokens=65536, route=None):
     for key in ('GPU_FLEET_LEASE_ID', 'GPU_FLEET_ENDPOINT_URL', 'GPU_FLEET_SERVED_MODEL'):
-        if not os.environ.get(key):
+        if route is None and not os.environ.get(key):
             raise RuntimeError('run requires an active gpu-fleet-run environment')
+    if route is None:
+        route = dict(provider='fleet', model=os.environ['GPU_FLEET_SERVED_MODEL'],
+                     endpoint=os.environ['GPU_FLEET_ENDPOINT_URL'], api_key='local-fleet',
+                     binding='opencode-local-fleet', lease_id=os.environ['GPU_FLEET_LEASE_ID'])
     scenario = json.loads(SCENARIO.read_text())
     if arm is not None:
         scenario['arms'] = [arm]
@@ -239,10 +243,12 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
     report = dict(schema='cairn.opencode-recurrence/1', scenario=scenario['id'], availability='later_recurrence',
                   base=state['base'], fix=state['fix'], preflight=state['results'],
                   scenario_sha256=sha(SCENARIO.read_bytes()), gate_sha256=sha(GATE.read_bytes()),
-                  model=os.environ['GPU_FLEET_SERVED_MODEL'], lease_id=os.environ['GPU_FLEET_LEASE_ID'],
+                  model=route['model'], lease_id=route['lease_id'], binding=route['binding'],
                   opencode_sha256=sha(opencode.read_bytes()), cairn_sha256=sha(binary.read_bytes()),
                   controller_sha256=sha(Path(__file__).read_bytes()), arms=[], limits=scenario['limits'])
     report['experiment_kind'] = 'harness_calibration' if arm is not None else 'memory_comparison'
+    if route['provider'] == 'trial-openrouter':
+        report['relay_sha256'] = sha((PROJECT / 'scripts/trial_openrouter.py').read_bytes())
     report['settings'] = dict(arms=scenario['arms'], disable_thinking=disable_thinking,
                               context_tokens=context_tokens, output_limit=8192, process_seconds=300, steps=20)
     try:
@@ -281,8 +287,8 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
             package = invoke(binary, environment, 'search', arguments=[
                 '--repo', 'trial:' + arm, '--task', scenario['id'], '--run', arm,
                 '--destination', 'hosted', '--tokens', str(MEMORY_ROOM), '--revision', state['base'],
-                '--task-class', 'historical-go-cache-repair', '--binding', 'opencode-local-fleet',
-                '--capability', os.environ['GPU_FLEET_SERVED_MODEL'], scenario['query']])
+                '--task-class', 'historical-go-cache-repair', '--binding', route['binding'],
+                '--capability', route['model'], scenario['query']])
             report['selection_preflight'][arm] = check_selection(package, records, arm)
         (root / 'report.json').write_text(json.dumps(report, indent=2))
         for arm in scenario['arms']:
@@ -294,11 +300,11 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
             home = root / (arm + '-home'); home.mkdir(mode=0o700)
             cache = root / (arm + '-cache'); cache.mkdir(mode=0o700)
             config = root / (arm + '-opencode.json')
-            model = os.environ['GPU_FLEET_SERVED_MODEL']
-            private_file(config, json.dumps(dict(autoupdate=False, share='disabled', enabled_providers=['fleet'],
-                provider=dict(fleet=dict(npm='@ai-sdk/openai-compatible', name='Leased local fleet', options=dict(baseURL=os.environ['GPU_FLEET_ENDPOINT_URL'], apiKey='local-fleet'),
+            model = route['model']
+            private_file(config, json.dumps(dict(autoupdate=False, share='disabled', enabled_providers=[route['provider']],
+                provider={route['provider']:dict(npm='@ai-sdk/openai-compatible', name=route['binding'], options=dict(baseURL=route['endpoint'], apiKey=route['api_key']),
                      models={model:dict(name=model, limit=dict(context=context_tokens, output=8192),
-                         options={'chat_template_kwargs': {'enable_thinking': False}} if disable_thinking else {})})),
+                         options={'chat_template_kwargs': {'enable_thinking': False}} if disable_thinking else {})})},
                 agent=dict(build=dict(temperature=0, steps=20)),
                 permission=dict(external_directory='deny', webfetch='deny', websearch='deny', task='deny', skill='deny', edit='allow', read='allow', bash={'*':'deny','go test*':'allow','go version*':'allow','gofmt*':'allow','git diff*':'allow','git status*':'allow','rg *':'allow','ls*':'allow','pwd':'allow'}))))
             child_env = dict(PATH='/opt/go/bin:/usr/bin:/bin', HOME='/trial-home', GOROOT='/opt/go', GOPATH='/trial-home/go', GOMODCACHE='/opt/gomod', GOCACHE='/trial-cache', GOTOOLCHAIN='local', GOPROXY='off',
@@ -311,8 +317,8 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
             if arm == 'native_excerpt':
                 prompt += '\n\nEarlier native repository context:\n' + '\n\n'.join(n['source']+'\n'+n['body'] for n in notes)
             command = [str(binary), 'run', '--repo', 'trial:'+arm, '--dir', str(work), '--destination', 'hosted', '--carrier', 'argv', '--tokens', str(MEMORY_ROOM), '--timeout', '300s',
-                       '--task', scenario['id'], '--run', arm, '--task-class', 'historical-go-cache-repair', '--binding', 'opencode-local-fleet', '--capability', model,
-                       '--revision', state['base'], '--query', scenario['query'], '--prompt', prompt, '--', *sandbox(opencode, work, home, cache, config, goroot, gomod)]
+                       '--task', scenario['id'], '--run', arm, '--task-class', 'historical-go-cache-repair', '--binding', route['binding'], '--capability', model,
+                       '--revision', state['base'], '--query', scenario['query'], '--prompt', prompt, '--', *sandbox(opencode, work, home, cache, config, goroot, gomod, route)]
             report['active_arm'] = arm
             (root / 'report.json').write_text(json.dumps(report, indent=2))
             event('model_started', arm=arm)
@@ -388,9 +394,17 @@ def main():
     p.add_argument('--disable-thinking', action='store_true', help='request chat_template_kwargs.enable_thinking=false from the local model')
     p.add_argument('--context-tokens', type=int, choices=[65536, 131072], default=65536,
                    help='verified model context; acquire a fleet lease supporting at least this value')
+    p.add_argument('--openrouter', action='store_true', help='one-arm calibration through the bounded hosted credential relay')
     args = parser.parse_args()
     if args.operation == 'prepare':
         prepare(args.source.resolve(strict=True), args.output.resolve())
+    elif args.openrouter:
+        if args.arm is None or args.disable_thinking:
+            parser.error('--openrouter requires one --arm and does not support --disable-thinking')
+        from trial_openrouter import configured_key, relay
+        root = args.trial.resolve(strict=True)
+        with relay(configured_key(), root / 'hosted-relay.json') as route:
+            run_trial(root, args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, False, args.context_tokens, route)
     else:
         run_trial(args.trial.resolve(strict=True), args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, args.disable_thinking, args.context_tokens)
 

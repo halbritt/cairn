@@ -66,7 +66,12 @@ also failed to repair the task after disabling thinking and increasing context.
 A separate local fixture now verifies actual read/edit execution and model-option
 forwarding through the wrapper. Local package tests use separate databases and
 CI serializes packages to prevent unrelated writes exhausting bounded retries.
-The real model's ability to finish the repair remains unestablished.
+Two [hosted calibrations](verification/opencode-hosted-calibration-2026-09-08.md)
+also timed out without a repair. The second removed an overly small relay request
+limit and reached 20 completed steps. The opt-in hosted path now keeps provider
+credentials outside the model sandbox and retains bounded request metadata.
+The binding/task pairing still lacks a successful repair baseline; memory benefit
+and real Striatum integration remain open.
 
 ## Record-body deletion — 2026-09-07
 

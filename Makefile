@@ -3,6 +3,7 @@ build:
 	go build -o bin/cairn ./cmd/cairn
 test:
 	go test ./...
+	python3 -B -m unittest discover -s scripts -p 'test_*.py'
 test-integration:
 	bash scripts/test-postgres.sh
 test-lifecycle: build
