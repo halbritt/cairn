@@ -2078,5 +2078,33 @@
     "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
     "retriever_version": "retriever-ec995ecdd083b2c8"
   },
-  "limits": "Existing authored development workload, 12 passages, 15 answerable questions, 2 no-answer controls; two recency orders and two presentation modes are dependent variants. No model-task or generalization claim. One answer rank worsens; vocabulary misses and absent-GPU false positives persist."
+  "limits": "Existing authored development workload, 12 passages, 15 answerable questions, 2 no-answer controls; two recency orders and two presentation modes are dependent variants. No model-task or generalization claim. One answer rank worsens; vocabulary misses and absent-GPU false positives persist.",
+  "deployment": {
+    "schema": "cairn.question-words-install/1",
+    "revision": "349197446247bd73d2e004c5b191a688dccb98ec",
+    "ci_run": 34272721627,
+    "ci": {
+      "conclusion": "success",
+      "headSha": "349197446247bd73d2e004c5b191a688dccb98ec",
+      "status": "completed"
+    },
+    "binary_sha256": "b497f29194ebb42d4839ceffa0a58bff5a0ae33a68583913f4b41aca38d246e8",
+    "api_pid": 3769161,
+    "profiles_unchanged": true,
+    "ranking": "lexical-scope-recency/4",
+    "question_only_result_count": 0,
+    "client_database_unusable": true,
+    "previous_binary": "/tmp/cairn-before-question-words-3491974"
+  },
+  "operational_capture": {
+    "kind": "note",
+    "class": "A",
+    "destination": "hosted",
+    "source_revision": "349197446247bd73d2e004c5b191a688dccb98ec",
+    "selected_topic": "storage architecture and default paths",
+    "search_query": "storage?",
+    "selected_first": true,
+    "body_pulled_in_current_codex_context": true,
+    "limits": "Manually selected repository knowledge; not independent learning, native host observation or measured model benefit. Operational body and identifiers stay outside Git."
+  }
 }

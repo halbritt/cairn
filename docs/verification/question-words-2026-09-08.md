@@ -68,4 +68,22 @@ the comparison JSON. Repository precedence, evidence before intervention and
 preservation of historical semantics informed the change. The local decision
 records 26 nonmaterial obligations concerning unchanged schema, interfaces,
 configuration, operations and broader review procedures. Deployment is recorded
-separately from these source-level checks.
+separately below.
+
+## Installed and used
+
+Commit `349197446247bd73d2e004c5b191a688dccb98ec` passed
+[CI run 34272721627](https://github.com/halbritt/cairn/actions/runs/34272721627)
+and is installed at `~/.local/bin/cairn`. The clean build and running API use
+SHA-256 `b497f29194ebb42d4839ceffa0a58bff5a0ae33a68583913f4b41aca38d246e8`.
+Both Cairn services are active. The hosted-agent search returned v4 and zero
+optional notes for `what?`, with an unusable client database address. Identity
+profiles were unchanged; no schema migration was needed.
+
+This session also captured a selected, source-checked storage explanation as an
+ordinary shareable A note, then searched `storage?` and pulled its full body through
+the hosted profile into the current Codex context. The note records default paths
+and configuration distinctions, not a live inventory. This is manual operational
+use. Its retrieval succeeds because the captured text includes the topic; it does
+not establish that v4 solves the documentation workload's vocabulary mismatch.
+Operational content and identifiers remain outside this repository.
