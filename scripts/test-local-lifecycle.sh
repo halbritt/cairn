@@ -58,6 +58,25 @@ request=dict(request_id=str(uuid.uuid4()),record_id=record['record_id'],expected
 authorization=invoke('authorize-scope',request)
 (root/'scope-authorization.json').write_text(json.dumps(dict(request=request,authorization=authorization)))
 PYSCOPE
+python3 - "$test_root" <<'PYPOLICY'
+import json, pathlib, subprocess, sys, uuid
+root=pathlib.Path(sys.argv[1]);grant=json.loads((root/'root.json').read_text())
+def invoke(command, request):
+    return json.loads(subprocess.check_output(['bin/cairn',command],input=json.dumps(request).encode()))['data']
+repo='fixture:policy-restore'
+invoke('create',dict(request_id=str(uuid.uuid4()),draft=dict(kind='note',body='Policy restore fixture advice.',scope=dict(repo=repo,task_id='*',run_id='*'),claim_type='self')))
+first=invoke('policy-revise',dict(request_id=str(uuid.uuid4()),repo=repo,grant_id=grant['grant_id'],rules=dict(optional_percent=10,optional_max_tokens=6000),reason='Establish governed restore fixture budget'))
+request=dict(request_id=str(uuid.uuid4()),scope=dict(repo=repo,task_id='task',run_id='run'),purpose='context',available_tokens=64000)
+packages=[invoke('compile',request)]
+request['request_id']=str(uuid.uuid4());request['mode']='index'
+packages.append(invoke('compile',request))
+second=invoke('policy-revise',dict(request_id=str(uuid.uuid4()),repo=repo,expected_revision_id=first['revision_id'],grant_id=grant['grant_id'],rules={},reason='Disable optional advice in a governed baseline'))
+request['request_id']=str(uuid.uuid4());request.pop('mode')
+packages.append(invoke('compile',request))
+rollback_request=dict(request_id=str(uuid.uuid4()),repo=repo,expected_revision_id=second['revision_id'],restore_revision_id=first['revision_id'],grant_id=grant['grant_id'],reason='Restore earlier rules as a new policy revision')
+rollback=invoke('policy-revise',rollback_request)
+(root/'policy.json').write_text(json.dumps(dict(request=rollback_request,rollback=rollback,packages=packages)))
+PYPOLICY
 backup="$(bash scripts/local-store.sh backup)"
 "$pg_bin/createdb" -h "$CAIRN_HOME/socket" cairn_restore
 "$pg_bin/pg_restore" -h "$CAIRN_HOME/socket" --no-owner --no-privileges -d cairn_restore "$backup"
@@ -95,6 +114,18 @@ assert authorization==scope['authorization'] and authorization['scope_grant_live
 compiled=invoke('compile',dict(request_id=str(uuid.uuid4()),scope=dict(repo='fixture:scope-restore',task_id='other',run_id='run'),purpose='context',available_tokens=64000),env)
 assert len(compiled['semantic']['selected'])==1
 print('Restored scope authorization retains its live grant, wider applicability and idempotent retry')
+policy=json.loads((root/'policy.json').read_text())
+assert invoke('policy-revise',policy['request'],env)==policy['rollback']
+effective=json.loads(subprocess.check_output(['bin/cairn','policy','fixture:policy-restore'],env=env))['data']
+assert effective['revision']==policy['rollback'] and effective['revision']['authority_live']
+for original in policy['packages']:
+    historical=invoke('recompile',dict(receipt_id=original['receipt_id']),env)['package']
+    assert historical['seal']==original['seal']
+fresh=invoke('compile',dict(request_id=str(uuid.uuid4()),scope=dict(repo='fixture:policy-restore',task_id='task',run_id='fresh'),purpose='context',available_tokens=64000),env)
+assert len(fresh['semantic']['selected'])==1 and fresh['semantic']['policy_revision']['revision_id']==policy['rollback']['revision_id']
+runs=json.loads(subprocess.check_output(['bin/cairn','runs','--policy-rev',policy['rollback']['revision_id'],'fixture:policy-restore'],env=env))['data']
+assert runs['rows']==[] and not runs['more']
+print('Restored policy rollback retains effective rules, idempotent retry, policy pins and historical body/index seals')
 verified=invoke('verify-checkpoint',catalog['checkpoint_expectation'],env)
 assert verified['valid'] and verified['uncovered_count']==0
 receipt=json.loads((root/'package.json').read_text())['data']

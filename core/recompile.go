@@ -57,8 +57,21 @@ func (s *Store) Recompile(ctx context.Context, req RecompileRequest) (Package, e
 	if original.Semantic.Query != "sha256:"+hex.EncodeToString(digest[:]) {
 		return Package{}, failure("INVALID_REQUEST", "query does not match the historical intent digest")
 	}
-	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4") || original.Semantic.Policy != "local-loop/1" || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2") {
+	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2") {
 		return Package{}, failure("REPLAY_INCOMPLETE", "historical compiler version is not supported")
+	}
+	switch original.Semantic.Policy {
+	case "local-loop/1":
+		if original.Semantic.PolicyRevision != nil {
+			return Package{}, failure("INTEGRITY_FAILURE", "legacy policy cannot carry an explicit revision")
+		}
+	case "local-loop/2":
+		pin := original.Semantic.PolicyRevision
+		if pin == nil || pin.Rules.validate() != nil || original.Semantic.OptionalLimit != min(original.Semantic.AvailableTokens*pin.Rules.OptionalPercent/100, pin.Rules.OptionalMaxTokens) {
+			return Package{}, failure("INTEGRITY_FAILURE", "historical policy revision or budget is invalid")
+		}
+	default:
+		return Package{}, failure("REPLAY_INCOMPLETE", "historical policy engine is not supported")
 	}
 	rows, err := tx.Query(ctx, `SELECT detail FROM cairn.retrieval_candidate WHERE receipt_id=$1 ORDER BY record_id,version`, req.ReceiptID)
 	if err != nil {

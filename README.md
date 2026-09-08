@@ -17,6 +17,11 @@ memory benefit remain unestablished.
 The [roadmap](docs/roadmap.md) tracks accepted requirements, remaining gaps and
 acceptance evidence.
 
+[Governed policy](docs/governed-policy.md) lets an authorized operator revise
+optional-memory budgets, restore earlier rules as a new revision and inspect runs
+by the policy they used. Existing repositories retain their original policy until
+an explicit revision is issued.
+
 ## Get started
 
 Requires Go 1.25+, PostgreSQL 16+ client/server binaries, Bash, Python 3, and

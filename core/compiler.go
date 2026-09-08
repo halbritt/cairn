@@ -44,22 +44,23 @@ type Selection struct {
 	Reason    string     `json:"reason"`
 }
 type SemanticPackage struct {
-	Mode            string         `json:"mode,omitempty"`
-	Index           []IndexEntry   `json:"index,omitempty"`
-	Context         *ContextPins   `json:"context,omitempty"`
-	Schema          string         `json:"schema"`
-	Status          string         `json:"status"`
-	Scope           Scope          `json:"scope"`
-	Query           string         `json:"query"` // v1: legacy text; v2: SHA-256 digest only.
-	Purpose         string         `json:"purpose"`
-	Destination     Destination    `json:"destination"`
-	Policy          string         `json:"policy"`
-	Ranking         string         `json:"ranking"`
-	Tokenizer       string         `json:"tokenizer"`
-	AvailableTokens int            `json:"available_tokens"`
-	OptionalLimit   int            `json:"optional_limit"`
-	Selected        []Selection    `json:"selected"`
-	Omitted         map[string]int `json:"omitted"`
+	Mode            string          `json:"mode,omitempty"`
+	Index           []IndexEntry    `json:"index,omitempty"`
+	Context         *ContextPins    `json:"context,omitempty"`
+	Schema          string          `json:"schema"`
+	Status          string          `json:"status"`
+	Scope           Scope           `json:"scope"`
+	Query           string          `json:"query"` // v1: legacy text; v2: SHA-256 digest only.
+	Purpose         string          `json:"purpose"`
+	Destination     Destination     `json:"destination"`
+	Policy          string          `json:"policy"`
+	PolicyRevision  *PolicySnapshot `json:"policy_revision,omitempty" cbor:"policy_revision,omitempty"`
+	Ranking         string          `json:"ranking"`
+	Tokenizer       string          `json:"tokenizer"`
+	AvailableTokens int             `json:"available_tokens"`
+	OptionalLimit   int             `json:"optional_limit"`
+	Selected        []Selection     `json:"selected"`
+	Omitted         map[string]int  `json:"omitted"`
 }
 type Package struct {
 	ReceiptID string          `json:"receipt_id"`
@@ -205,6 +206,15 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation) (SemanticPackage, []candidate, error) {
 	queryDigest := sha256.Sum256([]byte(req.Query))
 	p := SemanticPackage{Context: req.Context, Schema: "cairn.semantic/3", Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/2", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
+	policy, err := policySnapshot(ctx, tx, req.Scope.Repo)
+	if err != nil {
+		return p, nil, err
+	}
+	if policy != nil {
+		p.Policy = "local-loop/2"
+		p.PolicyRevision = policy
+		p.OptionalLimit = min(req.AvailableTokens*policy.Rules.OptionalPercent/100, policy.Rules.OptionalMaxTokens)
+	}
 	rows, err := tx.Query(ctx, `SELECT m.record_id::text FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id AND v.version=m.current_version
  WHERE v.repo=$1 AND v.task_id IN ('*',$2) AND v.run_id IN ('*',$3) AND m.lifecycle='active' ORDER BY m.record_id LIMIT 10001`, req.Scope.Repo, req.Scope.TaskID, req.Scope.RunID)
 	if err != nil {
@@ -506,7 +516,7 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 		if !bytes.Equal(oldDigest, digest[:]) {
 			return Package{}, failure("IDEMPOTENCY_CONFLICT", "compile request ID has different intent")
 		}
-		if err = receiptCurrentGeneration(ctx, tx, id); err != nil {
+		if err = receiptDeliveryCurrent(ctx, tx, id); err != nil {
 			return Package{}, err
 		}
 		if err = receiptPayloadAvailable(ctx, tx, id); err != nil {
@@ -525,6 +535,11 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 	_, err = tx.Exec(ctx, `INSERT INTO cairn.retrieval_receipt(receipt_id,request_id,request_digest,scope,purpose,destination,semantic_body,seal,status,nonce,explanation_version,generation) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,2,$11)`, id, req.RequestID, digest[:], req.Scope, req.Purpose, semantic.Destination.Name, canonical, seal, semantic.Status, nonce, generation)
 	if err != nil {
 		return Package{}, err
+	}
+	if semantic.PolicyRevision != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.retrieval_policy(receipt_id,revision_id) VALUES($1,$2)`, id, semantic.PolicyRevision.RevisionID); err != nil {
+			return Package{}, err
+		}
 	}
 	for _, e := range evaluations {
 		if _, err = tx.Exec(ctx, `INSERT INTO cairn.retrieval_candidate(receipt_id,record_id,version,reason,escalation_blocked,detail) VALUES($1,$2,$3,$4,$5,$6)`, id, e.RecordID, e.Version, e.Reason, e.EscalationBlocked, e); err != nil {

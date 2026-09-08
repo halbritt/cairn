@@ -30,6 +30,8 @@ JSON commands (read one request from stdin):
   promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal
   supersession RECORD_UUID
   authorize-scope | scope-authorization RECORD_UUID
+  policy-revise | policy REPO | policy-revision REVISION_UUID
+  runs [--policy-rev REVISION_UUID|local-loop/1] [--limit N] [--offset N] REPO
   grants (no input)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
@@ -131,17 +133,26 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return nil, invalid("conflicts requires one repository")
 		}
 		return store.Conflicts(ctx, core.ConflictsRequest{Repo: f.Arg(0), RecordID: *record, IncludeResolved: *resolved, Limit: *limit, Offset: *offset})
-	case "run-report":
+	case "run-report", "runs":
 		f := flags("run-report")
 		limit := f.Int("limit", 100, "maximum rows (1-200)")
 		offset := f.Int("offset", 0, "rows to skip")
+		policy := f.String("policy-rev", "", "filter by policy revision UUID or local-loop/1")
 		if err := f.Parse(args[1:]); err != nil {
 			return nil, invalid(err.Error())
 		}
 		if f.NArg() != 1 {
 			return nil, invalid("run-report requires one repository")
 		}
-		return store.RunReport(ctx, core.RunReportRequest{Repo: f.Arg(0), Limit: *limit, Offset: *offset})
+		return store.RunReport(ctx, core.RunReportRequest{Repo: f.Arg(0), PolicyRevision: *policy, Limit: *limit, Offset: *offset})
+	case "policy", "policy-revision":
+		if len(args) != 2 {
+			return nil, invalid("policy requires a repository; policy-revision requires a revision UUID")
+		}
+		if args[0] == "policy" {
+			return store.Policy(ctx, args[1])
+		}
+		return store.PolicyRevision(ctx, args[1])
 	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict", "supersession", "scope-authorization":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
@@ -241,6 +252,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.Supersede)
 	case "authorize-scope":
 		return invoke(ctx, input, store.AuthorizeScope)
+	case "policy-revise":
+		return invoke(ctx, input, store.RevisePolicy)
 	case "forget":
 		return invoke(ctx, input, store.Forget)
 	case "retract":

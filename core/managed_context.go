@@ -54,7 +54,7 @@ func (s *Store) RegisterManagedContext(ctx context.Context, req ManagedContextRe
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
 			return err
 		}
-		if err := receiptCurrentGeneration(ctx, tx, req.ReceiptID); err != nil {
+		if err := receiptDeliveryCurrent(ctx, tx, req.ReceiptID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `SELECT receipt_id FROM cairn.retrieval_receipt WHERE receipt_id=$1 FOR UPDATE`, req.ReceiptID); err != nil {

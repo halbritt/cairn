@@ -16,6 +16,7 @@ minimum expected audit set, not a claim that every dump transaction is covered.
 The initial subset includes root installation, grants/revocations, instruction
 issuance/retraction, conflict resolution, and emitted redaction/forgetting events.
 Explicit scope authorizations are C events even when their subject stays A or B.
+Governed policy revisions and rollback decisions also enter this C subset.
 Ordinary A history and B promotion/correction/retraction/supersession are excluded.
 Record-body forgetting emits a D event regardless of the prior record class.
 Other D transitions remain unfinished.

@@ -37,7 +37,7 @@ func (s *Store) BindRun(ctx context.Context, req RunBindingRequest) (Observation
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
 			return err
 		}
-		return receiptCurrentGeneration(ctx, tx, req.ReceiptID)
+		return receiptDeliveryCurrent(ctx, tx, req.ReceiptID)
 	}
 	return mutate(ctx, s, "bind-run", req.RequestID, req, func(tx pgx.Tx) (Observation, error) {
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {

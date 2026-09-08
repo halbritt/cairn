@@ -15,6 +15,11 @@ backup/restore. Migration 022 adds [scope authorization](scope-authorization.md)
 a separate C decision can expand applicability while preserving independent
 claim qualification and the original read history.
 
+Migration 023 adds [governed repository policy](governed-policy.md): authorized
+revision/rollback, frozen policy pins, fresh-delivery checks and affected-run
+queries. The first rule format narrows optional-memory budgets while retaining
+mandatory enforcement. Waivers and the full instruction-policy table remain open.
+
 ## Contract repairs — 2026-09-07
 
 New semantic v2 receipts retain a query digest; task/query text still reaches

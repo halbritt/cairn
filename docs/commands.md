@@ -197,6 +197,15 @@ A wrapped process's nonzero exit gives CLI exit 1; timeout gives 124 and
 cancellation 130. The receipt records the observed child exit separately.
 
 
+## Governed policy
+
+Policy administration uses `policy-revise` (JSON), `policy REPO` and
+`policy-revision REVISION_UUID`. `runs --policy-rev REVISION_UUID REPO` and
+`run-report --policy-rev REVISION_UUID REPO` enumerate the retained run population
+for that revision, including zero-memory runs. Use `local-loop/1` for the original
+built-in policy. See [governed policy](governed-policy.md) for request examples,
+rollback, authority and fresh-delivery behavior.
+
 ## Record-body forgetting
 
 `preview-delete RECORD_UUID` returns the impact and copy inventory. `forget`
