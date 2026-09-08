@@ -39,12 +39,18 @@ def fixture(status=200):
         server.shutdown(); server.server_close(); thread.join()
 
 
-def send(route, body=None, token=None, path='/v1/chat/completions'):
+def send(route, body=None, token=None, path='/v1/chat/completions', declared_size=None):
     port = int(route['endpoint'].split(':')[2].split('/')[0])
     connection = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
     payload = json.dumps(body or {'model': MODEL, 'messages': [{'role': 'user', 'content': 'private-input'}], 'stream': True})
     try:
-        connection.request('POST', path, payload, {'Authorization': 'Bearer ' + (token or route['api_key'])})
+        headers = {'Authorization': 'Bearer ' + (token or route['api_key'])}
+        if declared_size is not None:
+            # A length rejection must arrive before any body is uploaded. Sending
+            # that oversized body races the server closing the refused request.
+            headers['Content-Length'] = str(declared_size)
+            payload = None
+        connection.request('POST', path, payload, headers)
         response = connection.getresponse()
         return response.status, response.read()
     finally:
@@ -82,7 +88,7 @@ class RelayTest(unittest.TestCase):
                              {'model': MODEL, 'max_tokens': MAX_OUTPUT + 1},
                              {'model': MODEL, 'max_tokens': True}):
                     self.assertEqual(send(route, body)[0], 400)
-                self.assertEqual(send(route, {'model': MODEL, 'messages': ['x' * MAX_BODY]})[0], 413)
+                self.assertEqual(send(route, declared_size=MAX_BODY + 1)[0], 413)
                 self.assertEqual(len(received), 0)
                 for _ in range(MAX_REQUESTS):
                     self.assertEqual(send(route)[0], 200)
