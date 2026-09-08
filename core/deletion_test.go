@@ -328,7 +328,7 @@ func TestForgettingSourceRefusesMandatoryDependentInstruction(t *testing.T) {
 	draft := projectNote(repo)
 	draft.Kind = "instruction"
 	draft.Relations = []RecordRelation{{r.RecordID, r.Version, "derived_from"}}
-	_, err = s.Issue(ctx, IssueRequest{uuid.NewString(), draft, root.ID, true, false, "deletion-support", "Issue mandatory dependent fixture"})
+	instruction, err := s.Issue(ctx, IssueRequest{uuid.NewString(), draft, root.ID, true, false, "deletion-support", "Issue mandatory dependent fixture"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,4 +342,27 @@ func TestForgettingSourceRefusesMandatoryDependentInstruction(t *testing.T) {
 	}
 	_, err = s.Compile(ctx, CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "context", 64000}, Destination{"local", true})
 	requireCode(t, err, "POLICY_UNENFORCEABLE")
+	// Withdrawal must remain possible after support disappears. It retires the
+	// instruction; it does not make a fresh citation to the forgotten source.
+	preview, err := s.PreviewRetraction(ctx, instruction.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := RetractRequest{RequestID: uuid.NewString(), RecordID: instruction.RecordID, ExpectedVersion: instruction.Version, GrantID: root.ID, PreviewID: preview.PreviewID, Reason: "Withdraw the instruction whose supporting source was forgotten"}
+	retired, err := s.Retract(ctx, req)
+	if err != nil || retired.Lifecycle != "retracted" {
+		t.Fatalf("unable to withdraw invalid instruction: %+v %v", retired, err)
+	}
+	if _, err = s.Retract(ctx, req); err != nil {
+		t.Fatalf("withdrawal retry: %v", err)
+	}
+	pkg, err := s.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
+	if err != nil || len(pkg.Semantic.Selected) != 0 {
+		t.Fatalf("retired instruction still prevents work: %+v %v", pkg, err)
+	}
+	// Original source references still serve impact/history after retirement.
+	var oldLinks int
+	if err = s.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.record_relation WHERE from_id=$1 AND from_version=$2 AND to_id=$3`, instruction.RecordID, instruction.Version, r.RecordID).Scan(&oldLinks); err != nil || oldLinks != 1 {
+		t.Fatalf("original dependency erased: %d %v", oldLinks, err)
+	}
 }

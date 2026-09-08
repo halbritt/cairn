@@ -39,3 +39,10 @@ and known managed copies. Evidence object dependencies, explicit supersession
 and automatic dependent qualification remain unfinished. Retracting a source
 does not automatically revoke every dependent
 instruction; authority and affected consumers still require their own review.
+
+Retraction remains possible after a cited source is forgotten. The inactive
+retraction version does not make new dependency citations; earlier versions keep
+their original links for history and impact. This lets an authorized operator
+withdraw a mandatory instruction whose missing support blocks fresh compilation.
+The live grant, current impact preview, version check and conflict guard still
+apply.

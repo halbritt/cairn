@@ -207,6 +207,10 @@ transitive uses and reject changed dependency/exposure state. Ordinary deletion
 now preserves referenced and formerly privileged records by requiring the audited
 forgetting path. Explicit supersession and scope-broadening operations remain open.
 
+A [withdrawal regression](verification/withdrawal-after-forgetting-2026-09-08.md)
+is repaired: an authorized retraction can retire an instruction after a cited
+source is forgotten, without creating a new citation or erasing the old link.
+
 [Durable refusals](refusals.md) now preserve bounded metadata for compile policy
 failures and blocked demotion/retraction, without raw queries or record bodies.
 Transport repeats group by exact intent and status; failed observation writes

@@ -268,7 +268,11 @@ func (s *Store) Retract(ctx context.Context, req RetractRequest) (Record, error)
 		if err = s.checkRetractionPreview(ctx, tx, req); err != nil {
 			return Record{}, err
 		}
-		next, err := advanceRecord(ctx, tx, current, current.Draft, current.Class, "retracted")
+		// Retraction creates an inactive version, not a fresh claim about its
+		// dependencies. Earlier versions retain their original links for impact.
+		draft := current.Draft
+		draft.Relations = nil
+		next, err := advanceRecord(ctx, tx, current, draft, current.Class, "retracted")
 		if err != nil {
 			return Record{}, err
 		}

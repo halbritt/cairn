@@ -45,7 +45,9 @@ and in-flight reads that precede deletion cannot be recalled.
 
 Known dependent versions remain stored but are excluded from future compilation
 until reviewed and revised. A mandatory instruction with a forgotten dependency
-blocks compilation. A relation does not identify copied spans, so the workflow
+blocks compilation. It can still be withdrawn through the authorized `retract`
+path: retiring it does not cite the forgotten source again, while prior-version
+links remain retained. A relation does not identify copied spans, so the workflow
 does not erase related records or separately captured evidence automatically.
 New citations to the tombstoned record refuse.
 
