@@ -72,10 +72,11 @@ def sandbox(opencode, cairn, work, home, config, store, calls, helper, tool):
                '--die-with-parent', '--bind', str(work), '/work', '--bind', str(home), '/trial-home',
                '--ro-bind', str(opencode), '/opt/opencode', '--ro-bind', str(config), '/opt/opencode.json']
     if tool:
-        command += ['--ro-bind', str(cairn), '/opt/cairn', '--ro-bind', str(helper), '/opt/memory',
+        command += ['--ro-bind', str(cairn), '/opt/cairn',
                     '--ro-bind', str(store / 'api.sock'), '/opt/api.sock',
-                    '--ro-bind', str(store / 'agent.token'), '/opt/agent.token',
-                    '--bind', str(calls), '/memory-calls']
+                    '--ro-bind', str(store / 'agent.token'), '/opt/agent.token']
+        if helper is not None:
+            command += ['--ro-bind', str(helper), '/opt/memory', '--bind', str(calls), '/memory-calls']
     return command + ['--chdir', '/work', '--']
 
 

@@ -18,6 +18,9 @@ const help = `Cairn: local memory for agents
 
 Everyday commands:
   agent [--token-file FILE] [--socket PATH] OPERATION < request.json
+  agent [--token-file FILE] [--socket PATH] search --task TASK --run RUN [--repo REPO] QUERY
+  agent [--token-file FILE] [--socket PATH] pull [--request-id UUID] RECEIPT_UUID HANDLE_UUID
+  agent [--token-file FILE] [--socket PATH] pull-evidence [--request-id UUID] RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256
   agent [--token-file OBSERVER_TOKEN] [--socket PATH] run RUN_FLAGS -- COMMAND ARGS...
   remember [--repo PATH] [--shareable] TEXT
   search [--repo PATH] [--purpose context] [--destination local] QUERY

@@ -5,6 +5,57 @@
 configured destination. This is an explicit tool route; the H0 process wrapper
 continues to compile full context before launch and refuses index mode.
 
+## Agent commands without request JSON
+
+With a host-provisioned token and Unix socket, an agent can search directly:
+
+```sh
+cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
+  search --repo /path/to/repo --task TASK_ID --run RUN_ID 'relevant query'
+```
+
+Use the same host task/run identities across queries. They are required; the
+repository defaults to the current directory. The token determines caller,
+repository boundary and destination. Search does not accept a destination or
+observer override and does not use database credentials. Optional flags are
+`--tokens` (default 32000), `--request-id`, `--revision`, `--workspace-sha256`,
+`--task-class`, `--binding` and `--capability`.
+
+The `cairn.agent-search/1` view retains the index order and metadata, full
+mandatory `selected` entries, scope/currentness/policy fields, omission counts
+and session limits. Each index entry includes a complete `pull_command` with
+the correct receipt and version-bound handle. Run that command to inspect the
+body; it carries the executable/socket/token-file paths used by search. Paths
+are shell-quoted. The token contents never appear in the command. The included
+pull request UUID lets the exact displayed command be retried without spending
+another credit, subject to the usual live checks. A repeated search can generate
+new pull request UUIDs; retain the original command when retrying a pull.
+
+This is a presentation view, not a new sealed semantic package. `source_schema`
+and `source_seal` identify the underlying package; `receipt_id` identifies the
+original retrieval for host observation. The entire encoded view is checked
+against the declared input room. If command paths make it too large, it refuses
+without truncating entries or mandatory context. The original index may already
+be recorded; this refusal does not erase exposure history or prove delivery.
+
+Body and evidence commands are also available directly:
+
+```sh
+cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
+  pull --request-id NEW_UUID RECEIPT_UUID HANDLE_UUID
+cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
+  pull-evidence --request-id NEW_UUID RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256
+```
+
+The evidence ID and expected SHA-256 come from the pulled selection's attached
+evidence metadata. These commands return the existing expansion response. A
+missing request ID generates a new one; preserve an explicit ID for retries.
+The raw JSON `agent index`, `expand` and `expand-evidence` operations remain
+available. A host may [link the retrieval to its run](use-outcome-loop.md#retrieval-during-an-observed-run);
+search itself does not assert that association or task acceptance.
+
+## Index and expansion contract
+
 An index contains mandatory instructions in full, plus optional pointers with
 record/version, class, kind, a summary of at most 160 UTF-8 bytes and a body digest.
 It uses the same currentness, authority, conflict, evidence and destination gates

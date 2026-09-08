@@ -158,6 +158,12 @@ index/pull. Pairing each result with a complete pull command removed three obser
 UUID-confusion errors in one follow-up. This remains an opt-in experimental adapter;
 native integration, broader harness use and learned-lesson transfer remain open.
 
+The reusable [agent search/pull CLI](index-and-pull.md#agent-commands-without-request-json)
+now brings complete pull commands into the shipped client, with explicit task/run
+scope, mandatory-context preservation, quoted paths and ordinary API authentication.
+It replaces request-JSON construction for shell-capable agents. This packaging
+does not itself establish task benefit, global task budgets or native H1 admission.
+
 | ID | Status | Work and acceptance evidence |
 | --- | --- | --- |
 | E1 — currentness and intent | partial | Add repository revision/dirty-workspace identity, validity, task type/phase, entities/files/error signatures and capability/binding pins. Define ordinary declared pin matching first; executable currentness predicates are an optional later experiment. Test obsolete guidance across code revisions and mismatched scopes. |
