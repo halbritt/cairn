@@ -47,3 +47,14 @@ An isolated restore of the actual pre-upgrade backup also advanced from schema
 local-operator packages to identical data and seals. The record-version digest
 remained unchanged, migration retry passed, and no policy revision was created
 by migration. The disposable restored store was stopped and removed afterward.
+
+## Local installation
+
+Commit `b694d7f42a4db565e5ee0dd9f79bc85a62f51246` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34213846617) and was built from
+a clean clone with Go 1.25.0. The installed executable and running API both have
+SHA-256 `4c19a6bef5856fd2bbfa77ea159bafd58e48cac696ce7ef2aeee9c1ce1a03784`.
+The operational store now uses schema 023. Both services are active, an
+authenticated existing-record read passed, and the record-version digest remained
+unchanged. Inspection confirmed the operational Cairn repository still uses the
+original built-in policy. No operational policy was issued for verification.
