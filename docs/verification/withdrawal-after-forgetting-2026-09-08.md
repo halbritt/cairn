@@ -26,3 +26,13 @@ of the original dependency row. `make test-integration check` passes with
 disposable PostgreSQL and the race detector, including existing authority,
 conflict and retraction tests. No operational instruction or source was changed
 for this verification. No schema migration is needed.
+
+Implementation `f6d64c65a4259f8933cb6016eec8296e85c91a2f` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34205110979). A clean Go 1.25.0
+build (`vcs.modified=false`) is installed, with SHA-256
+`5544677a6a2914678a90f370281b6e4c42409ad91818772f2829d7413ca3141d`.
+The API process runs those same bytes, authenticated existing-record reads pass,
+schema 020 remains current, and the operational record-version digest is
+unchanged. A pre-upgrade backup and the previous binary remain local. These
+installation checks establish deployment health; the withdrawal behavior was
+tested only in disposable stores.
