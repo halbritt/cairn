@@ -85,6 +85,13 @@ func linkRelations(ctx context.Context, tx pgx.Tx, id string, version int, draft
 		if _, err = tx.Exec(ctx, `INSERT INTO cairn.record_relation(from_id,from_version,to_id,to_version,relation) VALUES($1,$2,$3,$4,$5)`, id, version, ref.RecordID, ref.Version, ref.Relation); err != nil {
 			return err
 		}
+		// The retained target may itself depend on forgotten support. Keep that
+		// restriction on new versions without erasing their reviewable content.
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.deletion_dependency(record_id,version,deletion_id)
+ SELECT $1,$2,deletion_id FROM cairn.deletion_dependency WHERE record_id=$3 AND version=$4
+ ON CONFLICT DO NOTHING`, id, version, ref.RecordID, ref.Version); err != nil {
+			return err
+		}
 	}
 	return nil
 }

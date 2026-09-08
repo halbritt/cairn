@@ -296,5 +296,20 @@ func inspectWithdrawal(ctx context.Context, tx pgx.Tx, w RecoveryWithdrawal) (st
 	if unsafe {
 		return "PAYLOAD_EXCLUSION_MISSING", nil
 	}
+	refs, err := dependentVersions(ctx, tx, w.SubjectID)
+	if err != nil {
+		return "", err
+	}
+	err = tx.QueryRow(ctx, `SELECT EXISTS(
+ SELECT 1 FROM jsonb_to_recordset($1) AS ref(record_id uuid,version integer)
+ WHERE ref.record_id<>$2::uuid AND NOT EXISTS(
+  SELECT 1 FROM cairn.deletion_dependency dep JOIN cairn.deletion_request d USING(deletion_id)
+  WHERE dep.record_id=ref.record_id AND dep.version=ref.version AND d.record_id=$2 AND d.event_id=$3))`, refs, w.SubjectID, w.EventID).Scan(&unsafe)
+	if err != nil {
+		return "", err
+	}
+	if unsafe {
+		return "DEPENDENCY_EXCLUSION_MISSING", nil
+	}
 	return "", nil
 }

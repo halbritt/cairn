@@ -36,7 +36,10 @@ instead of silently exporting a partial expectation.
 A mismatch exits 7 with `INTEGRITY_FAILURE` and a report in `data`. Reasons include
 `AUDIT_MISSING`, `AUDIT_CHANGED`, `GRANT_REVIVED`, `RECORD_REVIVED`,
 `INSTRUCTION_REVIVED`, `PAYLOAD_EXCLUSION_MISSING`, and
-`CONTEXT_CUSTODY_MISSING`. A grant's revocation flag is checked even when its
+`CONTEXT_CUSTODY_MISSING`. `DEPENDENCY_EXCLUSION_MISSING` identifies a forgotten
+source whose retained relation descendants lack the exact deletion's exclusion.
+This check traverses at most 1,000 retained versions per source and refuses
+overflow instead of certifying a partial set. A grant's revocation flag is checked even when its
 original audit event is still present. Forgotten records must retain the
 logical exclusions on versions, selected receipts and cached mutation responses.
 Missing records and scopes that differ from the expectation also produce gaps.
@@ -60,4 +63,7 @@ a process afterward to create new context custody, exports the later evidence,
 and inspects the restored old dump. It detects all four missing-state categories
 and confirms inspection itself leaves the revived payload and file unchanged.
 Unit/integration tests also cover a revived mutable flag with an intact audit,
-missing cached-payload exclusion, wrong root, damaged checksum and caller scope.
+missing cached-payload and transitive-dependency exclusions, wrong root, damaged
+checksum and caller scope. [Migration 026](verification/deletion-dependencies-2026-09-08.md)
+backfills known dependency exclusions from retained relations. It does not
+reconstruct missing original withdrawal events or newer context custody.

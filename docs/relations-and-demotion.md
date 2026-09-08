@@ -15,6 +15,15 @@ sensitivity even when an edit omits that field. New links can refer to retained
 historical versions; they do not pretend those versions are current. Later edits
 preserve earlier links, and historical recompilation restores the original set.
 
+New links to a retained version with forgotten upstream support inherit that
+version's deletion exclusions. The new note remains available for review but
+cannot regain compilation eligibility merely by adding another relation layer.
+The restriction follows exact versions; a later independent revision without
+those links is not automatically assigned its predecessor's exclusions.
+Forgetting and relation writers order through the affected record generations.
+Migration 026 repairs missing exclusions created by older binaries; keep old
+writers stopped during upgrade. See the [verification](verification/deletion-dependencies-2026-09-08.md).
+
 `cairn demote` accepts JSON `request_id`, `record_id`, `expected_version`, and
 `grant_id`. The existing `correct` capability authorizes lowering an active B
 claim to A. The operation uses compare-and-swap and emits no authority audit event.

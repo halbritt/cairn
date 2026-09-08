@@ -106,6 +106,25 @@ func (s *Store) Forget(ctx context.Context, req ForgetRequest) (Deletion, error)
 		if err != nil {
 			return Deletion{}, err
 		}
+		// Relation writers lock and advance their direct target. Touch every
+		// affected target so concurrent new descendants either precede this
+		// closure or observe its exclusions; old snapshots must retry.
+		ids := map[string]bool{}
+		for _, ref := range refs {
+			if ref.RecordID != req.RecordID {
+				ids[ref.RecordID] = true
+			}
+		}
+		ordered := make([]string, 0, len(ids))
+		for id := range ids {
+			ordered = append(ordered, id)
+		}
+		sort.Strings(ordered)
+		for _, id := range ordered {
+			if _, err = tx.Exec(ctx, `UPDATE cairn.memory_record SET use_generation=use_generation+1 WHERE record_id=$1`, id); err != nil {
+				return Deletion{}, err
+			}
+		}
 		if _, err = tx.Exec(ctx, `INSERT INTO cairn.deletion_dependency(record_id,version,deletion_id) SELECT record_id,version,$1 FROM jsonb_to_recordset($2) AS d(record_id uuid,version integer) WHERE record_id<>$3::uuid`, id, refs, req.RecordID); err != nil {
 			return Deletion{}, err
 		}

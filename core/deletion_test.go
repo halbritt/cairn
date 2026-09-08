@@ -118,6 +118,67 @@ func TestForgetRefusesNewCitationsAndBlocksExistingDependents(t *testing.T) {
 	}
 }
 
+func TestNewDependentInheritsForgottenSourceExclusion(t *testing.T) {
+	ctx := context.Background()
+	s, root := testOperator(t)
+	repo := uuid.NewString()
+	source, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := projectNote(repo)
+	draft.Relations = []RecordRelation{{source.RecordID, source.Version, "derived_from"}}
+	dependent, err := s.Create(ctx, CreateRequest{uuid.NewString(), draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := s.PreviewDeletion(ctx, source.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Forget(ctx, ForgetRequest{uuid.NewString(), source.RecordID, source.Version, root.ID, preview.PreviewID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft.Body = "new_dep_after_forgetting retains a link to unavailable support"
+	draft.Relations = []RecordRelation{{dependent.RecordID, dependent.Version, "derived_from"}}
+	later, err := s.Create(ctx, CreateRequest{uuid.NewString(), draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := s.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "new_dep_after_forgetting", Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range pkg.Semantic.Selected {
+		if entry.Record.RecordID == later.RecordID {
+			t.Fatalf("new relation bypassed forgotten-source exclusion: %+v", entry)
+		}
+	}
+	// An independently revised version without the withdrawn dependency is
+	// distinct from the historical version that still cites unavailable support.
+	independent, err := s.Edit(ctx, EditRequest{RequestID: uuid.NewString(), RecordID: dependent.RecordID, ExpectedVersion: dependent.Version, Draft: projectNote(repo)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft.Body = "independent_revision_fixture has no retained withdrawn dependency"
+	draft.Relations = []RecordRelation{{independent.RecordID, independent.Version, "derived_from"}}
+	fresh, err := s.Create(ctx, CreateRequest{uuid.NewString(), draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err = s.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "independent_revision_fixture", Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range pkg.Semantic.Selected {
+		if entry.Record.RecordID == fresh.RecordID {
+			return
+		}
+	}
+	t.Fatal("version-specific exclusion leaked onto an independently revised source")
+}
+
 func TestPurgeFailureIsDurableAndResumesRemainingEffects(t *testing.T) {
 	ctx := context.Background()
 	s, root := testOperator(t)

@@ -129,3 +129,59 @@ func TestRecoveryRecordDetectsMissingPayloadExclusion(t *testing.T) {
 	}
 	t.Fatalf("missing cached payload exclusion accepted: %+v", report)
 }
+
+func TestRecoveryRecordDetectsMissingTransitiveDependencyExclusion(t *testing.T) {
+	ctx := context.Background()
+	s, root := testOperator(t)
+	repo := uuid.NewString()
+	source, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := projectNote(repo)
+	draft.Relations = []RecordRelation{{source.RecordID, source.Version, "derived_from"}}
+	direct, err := s.Create(ctx, CreateRequest{uuid.NewString(), draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft.Relations = []RecordRelation{{direct.RecordID, direct.Version, "specializes"}}
+	transitive, err := s.Create(ctx, CreateRequest{uuid.NewString(), draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := s.PreviewDeletion(ctx, source.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletion, err := s.Forget(ctx, ForgetRequest{uuid.NewString(), source.RecordID, source.Version, root.ID, preview.PreviewID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := s.CaptureRecovery(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := s.InspectRecovery(ctx, snapshot)
+	if err != nil || !report.Consistent {
+		t.Fatalf("intact deletion projection: %+v %v", report, err)
+	}
+	// Simulate an incomplete restore of this fixture's derived exclusion only.
+	if _, err = s.pool.Exec(ctx, `DELETE FROM cairn.deletion_dependency WHERE record_id=$1 AND version=$2 AND deletion_id=$3`, transitive.RecordID, transitive.Version, deletion.DeletionID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := s.pool.Exec(ctx, `INSERT INTO cairn.deletion_dependency(record_id,version,deletion_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, transitive.RecordID, transitive.Version, deletion.DeletionID); err != nil {
+			t.Error(err)
+		}
+	})
+	report, err = s.InspectRecovery(ctx, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, gap := range report.Gaps {
+		if gap.SubjectID == source.RecordID && gap.Reason == "DEPENDENCY_EXCLUSION_MISSING" && !report.Consistent {
+			return
+		}
+	}
+	t.Fatalf("missing transitive exclusion accepted: %+v", report)
+}
