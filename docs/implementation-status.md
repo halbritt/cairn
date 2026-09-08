@@ -7,6 +7,12 @@ slice; it does not complete every Stage 1–2 design contract.
 
 The [roadmap](roadmap.md) is the complete requirements and acceptance tracker.
 
+[Cross-record supersession](supersession.md), added on 2026-09-08 in migration
+021, preserves exact replacement links and known impact notices while retiring
+obsolete A/B records. Its [verification](verification/supersession-2026-09-08.md)
+covers authority/scope refusals, concurrency, preserved history and an actual
+backup/restore. Scope broadening remains open.
+
 ## Contract repairs — 2026-09-07
 
 New semantic v2 receipts retain a query digest; task/query text still reaches

@@ -47,3 +47,14 @@ implemented lifecycle behavior, not broad memory usefulness or full lifecycle
 acceptance. Scope broadening, notice acknowledgement, future discovery of
 undeclared dependencies and fresh-restore A/B retirement reapplication remain
 outside this slice.
+
+The implementation is in `db33296d6e9119901e1a3d4f4570078f51c35a1e`; the
+timezone assertion correction is in `676b4ae2bfa02aad300c587b55417eaa9794bfc2`.
+The latter passed [CI](https://github.com/halbritt/cairn/actions/runs/34207156401)
+and is installed from a clean Go 1.25.0 build (`vcs.modified=false`), SHA-256
+`2645058318a4f63feea8a13c1f0357b4279f3ff36ed154aab32434ebb6dcd567`.
+An isolated restore of the pre-upgrade schema-020 backup upgraded to 021 and
+accepted a repeated migration without changing record versions. The operational
+upgrade then reached schema 021; the API runs the same binary bytes,
+authenticated existing-record reads pass, and the operational record-version
+digest is unchanged. A pre-upgrade backup and previous binary remain local.

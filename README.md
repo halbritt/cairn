@@ -161,7 +161,7 @@ most two delegated levels. Direct instruction authoring requires the `issue`
 capability and a policy key.
 
 JSON request commands include `create`, `edit`, `compile`, `capture-evidence`,
-`grant`, `revoke-grant`, `promote`, `issue`, `correct`, `retract`, `dispute`,
+`grant`, `revoke-grant`, `promote`, `issue`, `correct`, `supersede`, `retract`, `dispute`,
 `resolve`, `delete`, `forget`, and `usage`. Use [ordinary deletion](docs/ordinary-delete.md)
 for unreferenced A notes; retained history requires the audited forgetting path.
 See [request examples](docs/commands.md).
@@ -176,6 +176,12 @@ for one hour and invalidated by content/version changes or new exposure. The
 preview covers retained versions, known versioned dependents and their runs
 (at most 1,000 versions and 1,000 uses). See [relations and demotion](docs/relations-and-demotion.md). Explicit conflict resolution retains the original members and
 reasoned audit history.
+
+[Supersession](docs/supersession.md) retires A or B in favor of an independently
+eligible pinned replacement. It preserves earlier exposures, emits known impact
+notices for review, and does not widen scope or transfer authority. A retirement
+is unaudited; B requires live correction authority. `supersession RECORD_UUID`
+inspects the retained replacement link.
 
 ## Verify changes
 
