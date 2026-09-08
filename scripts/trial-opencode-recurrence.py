@@ -218,7 +218,7 @@ def assess_arm(binary, environment, result, records):
                 excluded_preflight_rows=len(joined['rows']) - len(rows), interpretation=joined['interpretation'])
 
 
-def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_tokens=65536, route=None):
+def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_tokens=65536, route=None, extended_budget=False):
     for key in ('GPU_FLEET_LEASE_ID', 'GPU_FLEET_ENDPOINT_URL', 'GPU_FLEET_SERVED_MODEL'):
         if route is None and not os.environ.get(key):
             raise RuntimeError('run requires an active gpu-fleet-run environment')
@@ -226,6 +226,7 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
         route = dict(provider='fleet', model=os.environ['GPU_FLEET_SERVED_MODEL'],
                      endpoint=os.environ['GPU_FLEET_ENDPOINT_URL'], api_key='local-fleet',
                      binding='opencode-local-fleet', lease_id=os.environ['GPU_FLEET_LEASE_ID'])
+    process_seconds, steps = (900, 60) if extended_budget else (300, 20)
     scenario = json.loads(SCENARIO.read_text())
     if arm is not None:
         scenario['arms'] = [arm]
@@ -250,7 +251,8 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
     if route['provider'] == 'trial-openrouter':
         report['relay_sha256'] = sha((PROJECT / 'scripts/trial_openrouter.py').read_bytes())
     report['settings'] = dict(arms=scenario['arms'], disable_thinking=disable_thinking,
-                              context_tokens=context_tokens, output_limit=8192, process_seconds=300, steps=20)
+                              context_tokens=context_tokens, output_limit=8192, process_seconds=process_seconds, steps=steps,
+                              work_budget='extended' if extended_budget else 'standard')
     try:
         subprocess.run([str(pg_bin / 'pg_ctl'), '-D', str(store / 'data'), '-l', str(store / 'postgres.log'), '-o', f"-k {store}/socket -c listen_addresses=''", '-w', 'start'], check=True, stdout=subprocess.DEVNULL)
         subprocess.run([str(pg_bin / 'createdb'), '-h', str(store / 'socket'), 'cairn_trial'], check=True)
@@ -305,7 +307,7 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
                 provider={route['provider']:dict(npm='@ai-sdk/openai-compatible', name=route['binding'], options=dict(baseURL=route['endpoint'], apiKey=route['api_key']),
                      models={model:dict(name=model, limit=dict(context=context_tokens, output=8192),
                          options={'chat_template_kwargs': {'enable_thinking': False}} if disable_thinking else {})})},
-                agent=dict(build=dict(temperature=0, steps=20)),
+                agent=dict(build=dict(temperature=0, steps=steps)),
                 permission=dict(external_directory='deny', webfetch='deny', websearch='deny', task='deny', skill='deny', edit='allow', read='allow', bash={'*':'deny','go test*':'allow','go version*':'allow','gofmt*':'allow','git diff*':'allow','git status*':'allow','rg *':'allow','ls*':'allow','pwd':'allow'}))))
             child_env = dict(PATH='/opt/go/bin:/usr/bin:/bin', HOME='/trial-home', GOROOT='/opt/go', GOPATH='/trial-home/go', GOMODCACHE='/opt/gomod', GOCACHE='/trial-cache', GOTOOLCHAIN='local', GOPROXY='off',
                              XDG_CONFIG_HOME='/trial-home/.config', XDG_DATA_HOME='/trial-home/.local/share', XDG_CACHE_HOME='/trial-home/.cache', XDG_STATE_HOME='/trial-home/.local/state',
@@ -316,14 +318,14 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
             prompt = scenario['task']
             if arm == 'native_excerpt':
                 prompt += '\n\nEarlier native repository context:\n' + '\n\n'.join(n['source']+'\n'+n['body'] for n in notes)
-            command = [str(binary), 'run', '--repo', 'trial:'+arm, '--dir', str(work), '--destination', 'hosted', '--carrier', 'argv', '--tokens', str(MEMORY_ROOM), '--timeout', '300s',
+            command = [str(binary), 'run', '--repo', 'trial:'+arm, '--dir', str(work), '--destination', 'hosted', '--carrier', 'argv', '--tokens', str(MEMORY_ROOM), '--timeout', str(process_seconds) + 's',
                        '--task', scenario['id'], '--run', arm, '--task-class', 'historical-go-cache-repair', '--binding', route['binding'], '--capability', model,
                        '--revision', state['base'], '--query', scenario['query'], '--prompt', prompt, '--', *sandbox(opencode, work, home, cache, config, goroot, gomod, route)]
             report['active_arm'] = arm
             (root / 'report.json').write_text(json.dumps(report, indent=2))
             event('model_started', arm=arm)
             started = time.monotonic()
-            result = subprocess.run(command, env=child_env, capture_output=True, timeout=330)
+            result = subprocess.run(command, env=child_env, capture_output=True, timeout=process_seconds + 30)
             elapsed = time.monotonic() - started
             envelope = json.loads(result.stderr.splitlines()[-1])
             receipt = envelope.get('data', {})
@@ -395,16 +397,21 @@ def main():
     p.add_argument('--context-tokens', type=int, choices=[65536, 131072], default=65536,
                    help='verified model context; acquire a fleet lease supporting at least this value')
     p.add_argument('--openrouter', action='store_true', help='one-arm calibration through the bounded hosted credential relay')
+    p.add_argument('--extended-budget', action='store_true', help='hosted one-arm calibration: 900 seconds, 60 steps, 64 requests and 300 seconds per response')
     args = parser.parse_args()
     if args.operation == 'prepare':
         prepare(args.source.resolve(strict=True), args.output.resolve())
+    elif args.extended_budget and not args.openrouter:
+        parser.error('--extended-budget currently requires --openrouter')
     elif args.openrouter:
         if args.arm is None or args.disable_thinking:
             parser.error('--openrouter requires one --arm and does not support --disable-thinking')
         from trial_openrouter import configured_key, relay
         root = args.trial.resolve(strict=True)
-        with relay(configured_key(), root / 'hosted-relay.json') as route:
-            run_trial(root, args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, False, args.context_tokens, route)
+        with relay(configured_key(), root / 'hosted-relay.json',
+                   max_requests=64 if args.extended_budget else 24,
+                   response_seconds=300 if args.extended_budget else 120) as route:
+            run_trial(root, args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, False, args.context_tokens, route, args.extended_budget)
     else:
         run_trial(args.trial.resolve(strict=True), args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, args.disable_thinking, args.context_tokens)
 

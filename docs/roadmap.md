@@ -135,6 +135,10 @@ but one response reached the relay's elapsed limit and the run reached its
 configured step allowance. The hosted route keeps credentials outside the model
 sandbox and records actual provider/request failures. Further calibration must
 account for these execution limits before diagnosing model capability.
+An [extended-budget calibration](verification/opencode-extended-calibration-2026-09-08.md)
+then completed normally within its 900-second/60-step allowance, with no relay
+refusals and still no patch. One output-length finish remains in the trace.
+The unchanged binding/task condition is not a useful next experiment.
 Further comparison needs a binding/task combination that completes a real
 repair or new evidence explaining the failure. Full native/search baselines,
 relevance judgments and avoided-failure evidence remain open.

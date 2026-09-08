@@ -29,3 +29,12 @@ launch, timeout, process-group cleanup and database-outage recovery tests remain
 Local red/green logs are `/tmp/cairn-prelaunch-red.log` and
 `/tmp/cairn-prelaunch-green.log`. This is a repair to known failure reporting,
 not a claim of complete crash recovery or memory usefulness.
+
+Commit `dfa63082ce812f75e104b7a54e4fb18ce0be2d82` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34173479480) and was installed
+from a clean local clone (`vcs.modified=false`). The API process runs that exact
+binary, an authenticated agent read succeeds, both services are active and the
+record/version digest is unchanged. The upgrade needed no migration. The prior
+backup pointer and installation metadata are retained at
+`/tmp/cairn-pre-prelaunch-backup.txt` and
+`/tmp/cairn-prelaunch-install-verification.json`.

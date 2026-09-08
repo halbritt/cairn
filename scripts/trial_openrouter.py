@@ -39,15 +39,16 @@ def configured_key():
 
 
 @contextmanager
-def relay(key, report_path, connection_factory=None):
+def relay(key, report_path, connection_factory=None, *, max_requests=MAX_REQUESTS, response_seconds=120):
     # The optional transport is solely for the local fixture test. CLI callers
     # cannot choose a different upstream or forward arbitrary request headers.
     connect = connection_factory or (lambda: http.client.HTTPSConnection('openrouter.ai', timeout=45))
     token = secrets.token_urlsafe(32)
     lock = threading.Lock()
     report = {'schema': 'cairn.hosted-relay/1', 'model': MODEL,
-              'limits': {'requests': MAX_REQUESTS, 'request_bytes': MAX_BODY,
+              'limits': {'requests': max_requests, 'request_bytes': MAX_BODY,
                          'response_bytes': MAX_RESPONSE, 'output_tokens': MAX_OUTPUT,
+                         'response_seconds': response_seconds, 'socket_seconds': 45,
                          'provider': PROVIDER}, 'requests': [], 'rejections': 0, 'rejection_codes': {}}
 
     def save():
@@ -101,7 +102,7 @@ def relay(key, report_path, connection_factory=None):
             except (ValueError, UnicodeError, TimeoutError, OSError):
                 return self.reject(400)
             with lock:
-                if len(report['requests']) >= MAX_REQUESTS:
+                if len(report['requests']) >= max_requests:
                     exhausted = True
                 else:
                     exhausted = False
@@ -157,7 +158,7 @@ def relay(key, report_path, connection_factory=None):
                     if not chunk:
                         break
                     total += len(chunk)
-                    if total > MAX_RESPONSE or time.monotonic() - started > 120:
+                    if total > MAX_RESPONSE or time.monotonic() - started > response_seconds:
                         raise TimeoutError('relay response bound exceeded')
                     digest.update(chunk)
                     self.wfile.write(chunk)

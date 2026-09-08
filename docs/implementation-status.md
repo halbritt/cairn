@@ -72,6 +72,9 @@ limit and reached 20 completed steps. The opt-in hosted path now keeps provider
 credentials outside the model sandbox and retains bounded request metadata.
 The binding/task pairing still lacks a successful repair baseline; memory benefit
 and real Striatum integration remain open.
+The [extended-budget follow-up](verification/opencode-extended-calibration-2026-09-08.md)
+completed normally after 641 seconds but still made no repair. No memory-benefit
+comparison is qualified by that result.
 
 ## Record-body deletion — 2026-09-07
 

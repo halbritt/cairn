@@ -167,3 +167,10 @@ A loopback relay protects the provider credential from the model filesystem and
 environment. It does not confine the sandbox's network or create a production
 credential service. Native session cleanup and all historical-trial limits above
 still apply.
+
+`--extended-budget` is an explicit hosted, single-arm calibration condition:
+900 process seconds, 60 configured steps, at most 64 requests and a checked
+300-second response limit. Context, output tokens per request, request/response
+byte limits, provider controls, task and gate remain unchanged. The standard
+profile remains the default. This changes the aggregate work budget as a group;
+it does not isolate which individual limit caused an earlier failure.
