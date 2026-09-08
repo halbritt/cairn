@@ -160,6 +160,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		serveJSON(w, r, c.store.RunReport)
+	case "/v1/conflicts":
+		if !c.destination.AllowLocal {
+			writeError(w, 403, "AUTHORITY_DENIED", "conflict inspection requires a local profile")
+			return
+		}
+		serveJSON(w, r, c.store.Conflicts)
+	case "/v1/conflict":
+		if !c.destination.AllowLocal {
+			writeError(w, 403, "AUTHORITY_DENIED", "conflict inspection requires a local profile")
+			return
+		}
+		serveJSON(w, r, func(ctx context.Context, req struct {
+			ConflictID string `json:"conflict_id"`
+		}) (core.ConflictDetail, error) {
+			return c.store.Conflict(ctx, req.ConflictID)
+		})
 	case "/v1/get":
 		serveJSON(w, r, func(ctx context.Context, req recordRequest) (core.Record, error) {
 			record, err := c.store.Get(ctx, req.RecordID)

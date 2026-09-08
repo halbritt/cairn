@@ -117,13 +117,17 @@ Open a dispute with `cairn dispute`:
 
 `resolve` takes `request_id`, `conflict_id`, `expected_version`, `grant_id`, and
 `reason`. It records the resolving actor and retains all original members.
+Use `conflicts [--record RECORD_UUID] REPO` to find open groups and
+`conflict CONFLICT_UUID` to inspect original versioned positions and resolution
+history. See [conflict inspection](conflict-inspection.md) for pagination and
+forgotten-payload behavior.
 Resolution does not silently retract a member. `retract` is an explicit later
 transition with `request_id`, `record_id`, `expected_version`, `grant_id`,
 `reason`, and `preview_id`. First run `cairn preview-retract RECORD_UUID` and
 inspect its affected runs. Pass the returned token as `preview_id`. It expires
 after one hour. A new exposure or version change requires a fresh preview.
-The preview currently covers direct uses across all versions, up to 1,000 uses;
-it does not claim transitive dependency coverage.
+The preview covers retained versions and known transitive versioned dependents,
+bounded to 1,000 versions and 1,000 uses; it cannot discover undeclared derivations.
 
 Compile with `cairn compile` (local binding only), or use `search` for the
 operator-selected hosted binding:

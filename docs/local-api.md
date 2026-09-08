@@ -50,6 +50,7 @@ a transport retry. The server has bounded request bodies and deadlines; an HTTP
 write failure does not roll back a committed mutation.
 
 Operations: `create`, `edit`, `delete`, `compile`, `get`, `evidence`, `usage`, `use-report`, `run-report`,
+local-profile-only `conflicts` and `conflict`,
 `assess-run`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `claim-run`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`. `compile` takes

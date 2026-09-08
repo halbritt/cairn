@@ -29,8 +29,10 @@ func TestAuthenticatedChannelOwnsIdentityAndScope(t *testing.T) {
 	}
 	token := "synthetic-agent-token"
 	digest := sha256.Sum256([]byte(token))
+	localToken := "synthetic-local-agent-token"
+	localDigest := sha256.Sum256([]byte(localToken))
 	repo := uuid.NewString()
-	server, err := New(ctx, dsn, []Identity{{TokenSHA256: hex.EncodeToString(digest[:]), Principal: "agent:api", Repo: repo, Role: "agent", Destination: "hosted"}})
+	server, err := New(ctx, dsn, []Identity{{TokenSHA256: hex.EncodeToString(digest[:]), Principal: "agent:api", Repo: repo, Role: "agent", Destination: "hosted"}, {TokenSHA256: hex.EncodeToString(localDigest[:]), Principal: "agent:api-local", Repo: repo, Role: "agent", Destination: "local"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +91,12 @@ func TestAuthenticatedChannelOwnsIdentityAndScope(t *testing.T) {
 	if status != 403 {
 		t.Fatal("hosted profile received protected run report")
 	}
+	for _, path := range []string{"/v1/conflict", "/v1/conflicts"} {
+		status, _ = call(path, token, map[string]any{})
+		if status != 403 {
+			t.Fatalf("hosted profile accessed %s", path)
+		}
+	}
 	status, _ = call("/v1/bootstrap", token, map[string]any{})
 	if status != 404 {
 		t.Fatal("operator path exposed")
@@ -139,5 +147,25 @@ func TestAuthenticatedChannelOwnsIdentityAndScope(t *testing.T) {
 	status, result = call("/v1/delete", token, deletion)
 	if status != 200 {
 		t.Fatalf("API deletion retry: %v", result)
+	}
+	other, err := admin.Create(ctx, core.CreateRequest{RequestID: uuid.NewString(), Draft: draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispute, err := admin.Dispute(ctx, core.DisputeRequest{RequestID: uuid.NewString(), RecordIDs: []string{record["record_id"].(string), other.RecordID}, Reason: "Inspect conflicting fixture positions through local API"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, result = call("/v1/conflict", localToken, map[string]any{"conflict_id": dispute.ID})
+	if status != 200 {
+		t.Fatal(result)
+	}
+	detail := result["data"].(map[string]any)
+	if detail["conflict_id"] != dispute.ID || len(detail["members"].([]any)) != 2 {
+		t.Fatalf("local conflict detail: %+v", detail)
+	}
+	status, result = call("/v1/conflicts", localToken, core.ConflictsRequest{Repo: repo, RecordID: other.RecordID, Limit: 100})
+	if status != 200 || len(result["data"].(map[string]any)["conflicts"].([]any)) != 1 {
+		t.Fatalf("local conflict list: %+v", result)
 	}
 }

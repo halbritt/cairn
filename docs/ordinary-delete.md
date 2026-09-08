@@ -29,7 +29,9 @@ This includes notes considered but not selected by a retained compilation.
 Former B/C records and service-generated failure-recovery observations also
 require the [audited forgetting workflow](deletion.md). The ordinary command
 returns `FORGET_REQUIRED`; it does not silently discard those references.
-An open conflict returns a retained `OPEN_CONFLICT` refusal.
+An open conflict returns a retained `OPEN_CONFLICT` refusal. Use
+`cairn conflicts --record RECORD_UUID REPO` and `cairn conflict CONFLICT_UUID`
+to [inspect its retained positions](conflict-inspection.md).
 
 Migration 020 adds the response-exclusion marker used by ordinary deletion.
 Deploy the updated binary before using the command. No Class D event, tombstone,

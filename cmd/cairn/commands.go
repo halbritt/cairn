@@ -22,6 +22,7 @@ Everyday commands:
   search [--repo PATH] [--purpose context] [--destination local] QUERY
   run [--repo PATH] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
+  conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
   list REPO | get UUID | use-report REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
@@ -115,6 +116,19 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return remember(ctx, store, args[1:])
 	case "search":
 		return search(ctx, store, args[1:])
+	case "conflicts":
+		f := flags("conflicts")
+		limit := f.Int("limit", 100, "maximum rows (1-200)")
+		offset := f.Int("offset", 0, "rows to skip")
+		record := f.String("record", "", "filter by a member record UUID")
+		resolved := f.Bool("include-resolved", false, "include resolved history")
+		if err := f.Parse(args[1:]); err != nil {
+			return nil, invalid(err.Error())
+		}
+		if f.NArg() != 1 {
+			return nil, invalid("conflicts requires one repository")
+		}
+		return store.Conflicts(ctx, core.ConflictsRequest{Repo: f.Arg(0), RecordID: *record, IncludeResolved: *resolved, Limit: *limit, Offset: *offset})
 	case "run-report":
 		f := flags("run-report")
 		limit := f.Int("limit", 100, "maximum rows (1-200)")
@@ -126,7 +140,7 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return nil, invalid("run-report requires one repository")
 		}
 		return store.RunReport(ctx, core.RunReportRequest{Repo: f.Arg(0), Limit: *limit, Offset: *offset})
-	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion":
+	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
 		}
@@ -147,6 +161,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return store.ReadEvidence(ctx, args[1])
 		case "assessments":
 			return store.Assessments(ctx, args[1])
+		case "conflict":
+			return store.Conflict(ctx, args[1])
 		case "use-report":
 			return store.UseReport(ctx, core.UseReportRequest{Repo: args[1], Limit: 100})
 		case "preview-retract":
