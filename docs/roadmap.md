@@ -84,6 +84,10 @@ and packing cost, with owner-authorized `explain` and fixed census buckets. Name
 policy refusals now return a durable caller-owned observation ID and a partial
 protected trace; full refusal explanations and the remaining policy paths are
 tracked by L2.
+[Body-pull reasons](verification/pull-reason-2026-09-08.md) now describe the
+current eligibility recheck instead of reporting a zero match count from a
+queryless pass. Original protected ranking and committed retry responses remain
+unchanged; this is a narrow R5 explanation repair.
 No legacy copies were purged and no real model usefulness claim is made.
 
 Baseline synthetic probes confirmed R1–R4 on `e3b47c7`; R5 is a source/schema
