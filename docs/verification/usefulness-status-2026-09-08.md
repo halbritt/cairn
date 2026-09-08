@@ -30,6 +30,12 @@ returns the matching excerpt and exact full-body pull. This fixes an observed
 retrieval presentation problem; fewer pulls or better agent outcomes have not
 been measured.
 
+[Ordinary MCP edits](mcp-edit-2026-09-08.md) now let a harness revise an existing
+A note using the same version and retry checks as the raw agent API. This session
+used the deployed tool to correct the saved procedure and retrieved that exact
+revision from a fresh session. The correction was selected by this session;
+independent model judgment and downstream task improvement remain unproved.
+
 The [native agent CLI trial](agent-search-2026-09-08.md) used search/pull directly
 on a different documentation question and linked the actual retrievals to the
 observed host run. All pulls succeeded. The answer's facts and citations matched

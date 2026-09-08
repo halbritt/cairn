@@ -1,0 +1,36 @@
+{
+  "schema": "cairn.mcp-edit-verification/1",
+  "code_commit": "d4bbbf6c330ebb3a607c5139a06198b5e03b1784",
+  "ci_run": 34284664298,
+  "ci_conclusion": "success",
+  "installed_binary_sha256": "12c3ac231bffa5dbf9631d0b6ca0462c903687834d2720e9e66fa88a58a4fff9",
+  "api_binary_sha256": "ce2f7dcd073ad58101eac735b56199aaafea9926c7ce97612bd0b813cf73c284",
+  "api_restarted": false,
+  "profiles_unchanged": true,
+  "checks": {
+    "exact_edit_retry": true,
+    "fresh_session_reads_correction": true,
+    "ordinary_testimony": true,
+    "scope_and_sensitivity_preserved": true,
+    "clean_eof": true,
+    "no_home_or_client_database": true
+  },
+  "tests": {
+    "disposable_postgres_integration": "passed",
+    "vet_format": "passed",
+    "python_unit_tests": 17
+  },
+  "limits": [
+    "Complete replacement draft remains caller responsibility.",
+    "No model or independent review in the operational correction.",
+    "No downstream task-benefit claim."
+  ],
+  "doctrine": {
+    "packet_id": "pkt-44b27af5aa9b729b",
+    "packet_content_sha256": "44b27af5aa9b729b5a7015194ca9129af9c8908c7954a4e816192518530efe5e",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "nonmaterial_obligations": 18
+}
