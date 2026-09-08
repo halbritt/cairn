@@ -17,6 +17,10 @@ The initial subset includes root installation, grants/revocations, instruction
 issuance/retraction, conflict resolution, and emitted redaction/forgetting events.
 Explicit scope authorizations are C events even when their subject stays A or B.
 Governed policy revisions and rollback decisions also enter this C subset.
+Recovery reapplication and explicit restore resume enter the subset as new
+operator decisions. Their member digests also commit the retained source/action
+mapping or session/policy/verification metadata, respectively. Earlier event
+hash encodings are unchanged.
 Ordinary A history and B promotion/correction/retraction/supersession are excluded.
 Record-body forgetting emits a D event regardless of the prior record class.
 Other D transitions remain unfinished.
@@ -55,6 +59,8 @@ unscoped operator channel; they are absent from the agent API.
 from restored candidate inputs and compares the original seal. It also rejects
 a newer checkpoint expectation absent from that older restore. Core tests cover
 altered and missing audit members, later commits outside the closed set,
-ordinary-memory exclusion and operator authorization. Projection rebuild,
-post-backup revocation/deletion reconciliation, and external-effects recovery
-remain separate roadmap work.
+ordinary-memory exclusion and operator authorization. The
+[restore-session workflow](restore-admission.md) combines this checkpoint
+expectation with known withdrawal reapplication, projection rebuilding, compiler
+fixtures and recoverable effects before explicit resume. It does not establish
+unknown newer history or independently verify external-source freshness.

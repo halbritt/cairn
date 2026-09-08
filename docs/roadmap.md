@@ -1,6 +1,6 @@
 # Cairn roadmap
 
-Updated 2026-09-07. Baseline: `e3b47c7` (local memory and task delivery loop).
+Updated 2026-09-08. Baseline: `e3b47c7` (local memory and task delivery loop).
 
 Cairn has a transactional PostgreSQL core and a manually fed process wrapper.
 The next product milestone is memory used in real Striatum/OpenCode builds, with
