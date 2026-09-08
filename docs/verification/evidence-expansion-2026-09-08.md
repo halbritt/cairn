@@ -42,8 +42,21 @@ to the [usefulness evidence](usefulness-status-2026-09-08.md). Real accepted-tas
 retrieval quality and transfer evidence take priority; further experimental
 recovery work is deferred unless an observed problem requires it.
 
-## Release state
+## Release verification
 
-Operational installation is pending; the existing service runs c370481 with
-schema028. No operational memory fixture or model experiment occurred in this
-implementation.
+Code `dd83bcee93c11c8c3bd03d7b8d836c1eefdac312` passed
+[exact-revision CI](https://github.com/halbritt/cairn/actions/runs/34250896792).
+The installed Go1.25.0 executable was built from a clean ordinary clone with
+`vcs.modified=false`. Installed and running API binaries match SHA256
+`b44cb694a2cedda33b0e887e57ff4cfd7af3f0be8fb7d3c478e169db12ac6ed4`.
+
+The existing pre-upgrade backup procedure verified its catalog, dump checksum
+and archive listing. The API was stopped for atomic executable replacement;
+schema028 is unchanged. After restart, the existing authenticated observer
+status read succeeded with an unusable client database address. Store and API
+are active. Existing record versions/proposals are unchanged; old and new
+recovery exports remain consistent. No operational memory fixture, evidence
+pull or model experiment was introduced to verify this deployment.
+
+This installs the tested retrieval capability. It adds no demonstrated task
+benefit beyond the results in the separate usefulness report.
