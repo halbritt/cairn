@@ -2,41 +2,61 @@ package main
 
 import (
 	"context"
+	"flag"
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/localapi"
 	"github.com/halbritt/cairn/mcpapi"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+type mcpOptions struct {
+	socket string
+	token  string
+	config mcpapi.Config
+	pins   core.ContextPins
+}
+
+func mcpFlags(f *flag.FlagSet) *mcpOptions {
+	o := &mcpOptions{}
+	f.StringVar(&o.socket, "socket", "", "Cairn Unix socket (required)")
+	f.StringVar(&o.token, "token-file", "", "owner-only ordinary agent token (required)")
+	f.StringVar(&o.config.Scope.Repo, "repo", "", "repository identity (required)")
+	f.StringVar(&o.config.Scope.TaskID, "task", "", "host task identity (required)")
+	f.StringVar(&o.config.Scope.RunID, "run", "", "host run identity (required)")
+	f.IntVar(&o.config.AvailableTokens, "tokens", 32000, "memory input room per tool result")
+	f.StringVar(&o.pins.Revision, "revision", "", "declared repository revision")
+	f.StringVar(&o.pins.WorkspaceSHA256, "workspace-sha256", "", "declared workspace digest")
+	f.StringVar(&o.pins.TaskClass, "task-class", "", "task category")
+	f.StringVar(&o.pins.BindingID, "binding", "", "binding identity")
+	f.StringVar(&o.pins.CapabilityID, "capability", "", "capability identity")
+	return o
+}
+
+func (o *mcpOptions) validate(positional int) error {
+	if positional != 0 || o.socket == "" || o.token == "" {
+		return invalid("MCP requires --socket and --token-file and accepts no positional arguments")
+	}
+	if o.pins != (core.ContextPins{}) {
+		o.config.Context = &o.pins
+	}
+	return o.config.Validate()
+}
+
 func serveMCP(ctx context.Context, args []string) error {
 	f := flags("mcp")
-	socket := f.String("socket", "", "Cairn Unix socket (required)")
-	token := f.String("token-file", "", "owner-only ordinary agent token (required)")
-	repo := f.String("repo", "", "repository identity (required)")
-	task := f.String("task", "", "host task identity (required)")
-	run := f.String("run", "", "host run identity (required)")
-	room := f.Int("tokens", 32000, "memory input room per tool result")
-	revision := f.String("revision", "", "declared repository revision")
-	workspace := f.String("workspace-sha256", "", "declared workspace digest")
-	taskClass := f.String("task-class", "", "task category")
-	binding := f.String("binding", "", "binding identity")
-	capability := f.String("capability", "", "capability identity")
+	o := mcpFlags(f)
 	if err := f.Parse(args); err != nil {
 		return err
 	}
-	if f.NArg() != 0 || *socket == "" || *token == "" {
-		return invalid("mcp requires --socket and --token-file and accepts no positional arguments")
+	if err := o.validate(f.NArg()); err != nil {
+		return err
 	}
-	client, err := localapi.NewClient(*socket, *token)
+	client, err := localapi.NewClient(o.socket, o.token)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
-	config := mcpapi.Config{Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, AvailableTokens: *room}
-	if *revision != "" || *workspace != "" || *taskClass != "" || *binding != "" || *capability != "" {
-		config.Context = &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability}
-	}
-	server, err := mcpapi.NewServer(client, config)
+	server, err := mcpapi.NewServer(client, o.config)
 	if err != nil {
 		return err
 	}

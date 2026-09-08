@@ -72,6 +72,32 @@ The facade does not expose operator actions, run observation or automatic captur
 
 ## OpenCode example
 
+Generate the server entry with the installed Cairn executable:
+
+```sh
+cairn opencode-config \
+  --socket "$HOME/.local/share/cairn/api.sock" \
+  --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
+  --repo "$HOME/git/cairn" --task actual-task-id --run actual-run-id \
+  > /tmp/cairn-opencode.json
+```
+
+The output is an OpenCode JSON configuration fragment, without a Cairn response
+envelope. It names the executable that generated it, resolves relative socket
+and token paths against the generating working directory, and preserves the
+repository/task/run identities literally. It accepts the same `--tokens` and
+context flags as `cairn mcp`. Generation does not read the token, contact the API,
+or require HOME or database access; connection and context validation still occur
+when the harness uses the configuration.
+
+By default the fragment contains only the `mcp.cairn` entry, preserving the host's
+choice of tool permissions when merged into its configuration. For a standalone
+task limited to memory search and body pulls, add `--memory-only`. That emits a
+top-level permission policy denying other tools. Do not assume that merging this
+policy removes explicit tool allowances from another configuration. Generation
+does not modify the host's files or launch a task. Regenerate with actual task/run
+IDs for each new task and keep the generated executable available.
+
 The following local-server form was verified with OpenCode 1.18.21. Substitute
 your absolute executable, socket and token paths, repository, and actual task/run
 IDs. Add the entry to the configuration owned by the launching host:

@@ -18,6 +18,12 @@ and produced a configuration that OpenCode connected successfully. This is a
 bounded correction-and-reuse observation. Native Striatum ingress and broader
 task benefit remain open.
 
+The configuration task now has a [deterministic setup command](mcp.md#opencode-example):
+`cairn opencode-config` emits the verified native shape and forwards the existing
+scope/context flags. Both output modes connected in OpenCode without a model
+call. This removes routine JSON assembly; host launch and outcome association
+remain explicit responsibilities.
+
 The [MCP context extension](verification/mcp-currentness-2026-09-08.md) lets hosts
 supply existing revision/workspace/task-class/binding/capability pins at startup.
 Public stdio checks verify matching retrieval and missing/mismatched withholding.

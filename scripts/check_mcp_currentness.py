@@ -33,7 +33,7 @@ def check(binary, root, environment, grant):
         assert not view['index'] and view['omitted']['CONTEXT_MISSING'] == 1, view
         assert 'context' not in view
 
-    with session(binary, root, environment, arguments(pins)) as tool:
+    with session(binary, root, environment, arguments(pins), generated=True) as tool:
         view = tool('cairn_search', dict(query=query))
         assert view['context'] == pins, view
         assert [entry['record_id'] for entry in view['index']] == [note['record_id']], view

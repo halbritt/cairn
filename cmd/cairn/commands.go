@@ -17,6 +17,7 @@ import (
 const help = `Cairn: local memory for agents
 
 Everyday commands:
+  opencode-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--memory-only]
   mcp --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N]
   agent [--token-file FILE] [--socket PATH] OPERATION < request.json
   agent [--token-file FILE] [--socket PATH] search --task TASK --run RUN [--repo REPO] QUERY

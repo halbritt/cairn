@@ -27,9 +27,19 @@ type response struct {
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if len(os.Args) > 1 && os.Args[1] == "mcp" {
-		if err := serveMCP(ctx, os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, "cairn mcp:", err)
+	if len(os.Args) > 1 && (os.Args[1] == "mcp" || os.Args[1] == "opencode-config") {
+		var err error
+		if os.Args[1] == "mcp" {
+			err = serveMCP(ctx, os.Args[2:])
+		} else {
+			var executable string
+			executable, err = os.Executable()
+			if err == nil {
+				err = writeOpenCodeConfig(os.Stdout, os.Args[2:], executable)
+			}
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cairn %s: %v\n", os.Args[1], err)
 			os.Exit(1)
 		}
 		return

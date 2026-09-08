@@ -21,6 +21,17 @@ type Config struct {
 	Context         *core.ContextPins
 }
 
+// Validate checks startup scope and room; the API validates pins on retrieval.
+func (c Config) Validate() error {
+	if strings.TrimSpace(c.Scope.Repo) == "" || strings.TrimSpace(c.Scope.TaskID) == "" || strings.TrimSpace(c.Scope.RunID) == "" || c.Scope.Repo == "*" || c.Scope.TaskID == "*" || c.Scope.RunID == "*" {
+		return fmt.Errorf("MCP requires an explicit repository, task and run")
+	}
+	if c.AvailableTokens < 256 || c.AvailableTokens > 1000000 {
+		return fmt.Errorf("MCP memory input room must be between 256 and 1000000")
+	}
+	return nil
+}
+
 type searchArgs struct {
 	Query     string `json:"query" jsonschema:"Words describing the memory needed. Refine a query if it misses."`
 	RequestID string `json:"request_id,omitempty" jsonschema:"Optional UUID for retrying the same search."`
@@ -54,11 +65,8 @@ type searchResult struct {
 // NewServer borrows client; its caller owns the connection and process lifetime.
 // The API profile controls writer identity, role, repository and destination.
 func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
-	if strings.TrimSpace(config.Scope.Repo) == "" || strings.TrimSpace(config.Scope.TaskID) == "" || strings.TrimSpace(config.Scope.RunID) == "" || config.Scope.Repo == "*" || config.Scope.TaskID == "*" || config.Scope.RunID == "*" {
-		return nil, fmt.Errorf("MCP requires an explicit repository, task and run")
-	}
-	if config.AvailableTokens < 256 || config.AvailableTokens > 1000000 {
-		return nil, fmt.Errorf("MCP memory input room must be between 256 and 1000000")
+	if err := config.Validate(); err != nil {
+		return nil, err
 	}
 	// Keep the host's startup declarations fixed even if it reuses its config.
 	if config.Context != nil {

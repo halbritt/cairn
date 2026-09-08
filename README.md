@@ -80,6 +80,10 @@ the [local MCP server](docs/mcp.md). An actual OpenCode model retrieved a note
 saved by another agent session and used it to answer the storage questions; the
 [verification report](docs/verification/mcp-2026-09-08.md) records that bounded result.
 
+`cairn opencode-config` generates the native server configuration with explicit
+connection and task scope. See the [OpenCode setup](docs/mcp.md#opencode-example)
+for the command, context flags and optional memory-only permission policy.
+
 For a remote model, explicitly allow a note to be delivered outside the local
 machine when you create it:
 
