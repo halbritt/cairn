@@ -145,11 +145,35 @@ read-only diagnostic records remain under `/tmp/cairn-native-input-` on the
 development host. No Cairn binary, API profile, Striatum source or live lane was
 changed in this assessment.
 
-The next contract work is the RFC 0004 observation/build amendment and the
-corresponding exact-input/rendering requirements under RFC 0007. Keep that work
-under the existing captured subject, rather than creating another opening request
-or repeating the prompt-asset inventory. The eventual closing observation must
-record the actual resulting change and evidence; it has not been issued yet.
+The owning proposed amendments now exist in Striatum commit
+`0d9245f2954c088a03661463ac52ec15254eddff`:
+
+- [RFC 0004: observation and build inputs](https://github.com/halbritt/striatum-next/blob/0d9245f2954c088a03661463ac52ec15254eddff/rfcs/0004-compiler-passes/cairn-context-amendment.md).
+- [RFC 0007: delivery and host correspondence](https://github.com/halbritt/striatum-next/blob/0d9245f2954c088a03661463ac52ec15254eddff/rfcs/0007-agent-runtimes-and-execution-backends/cairn-context-amendment.md).
+
+These are separate draft files under their owning RFCs. The accepted source
+files, generated decisions and runtime remain unchanged; Striatum's RFC lint
+and all accepted decision-source pin checks passed. The drafts settle the
+proposed execution-scope label without a future-manifest hash cycle, D0 replay
+from a retained authenticated capture, and use of the ordinary input rendering
+path. Static prompt-asset support is not a prerequisite.
+
+Two source constraints sharpen the implementation work. Pre-launch compilation
+must use the observing host's receipt identity: `BindRun` and `ClaimRun` enforce
+ownership, while `LinkRunRetrieval` only joins retrievals created during an
+already observed host run. Also, current `ClaimRun` checks restore generation,
+policy and payload availability but does not fully re-evaluate selected-record
+eligibility. Native acquisition can precede dispatch by a substantial interval,
+so complete fresh eligibility and staged consumption of the exact retained
+receipt are prerequisites. Calling the existing wrapper and silently using its
+new package would not preserve the ECR pin.
+
+Advance those prerequisites and the accepted contract path under the existing
+captured subject. Do not create another opening request, rewrite these drafts
+as accepted decisions, or repeat the prompt-asset inventory. The eventual
+closing observation must record actual resulting changes and evidence; it has
+not been issued yet. [Amendment metadata](verification/native-amendments-2026-09-08.json)
+records the draft-only verification boundary.
 
 Validated Pincite packet `pkt-7e9933beb3fab6e1` informed repository precedence,
 evidence before intervention and behavior preservation. The private decision

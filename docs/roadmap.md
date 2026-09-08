@@ -173,7 +173,11 @@ evidence by itself. The [native context direction](native-striatum-context.md)
 proposes a declared Cairn observation consumed as an exact packet/run input,
 with scope, delivery and host-outcome correspondence preserved. Its opening
 capture has an accepted intent head in Striatum's graph; the producer/consumer
-extension has no accepted runtime force yet. The
+extension has no accepted runtime force yet. Its owning RFC 0004/0007 amendments
+are now [concrete proposals](native-striatum-context.md#evidence-and-next-contract-work),
+with accepted Striatum source pins preserved. Pre-launch receipt ownership,
+complete fresh eligibility and staged exact-receipt consumption remain
+implementation prerequisites. The
 [OpenCode trial host](verification/opencode-host-observation-2026-09-08.md) now
 uses per-arm authenticated observers, exact package/attempt joins and pending
 spawn/terminal recovery. Its full real-harness fixture verification includes
