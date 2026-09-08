@@ -6,11 +6,12 @@ repository, the expected current revision, and a reason. Each revision and its
 authority event commit atomically. An ordinary file edit or agent request cannot
 change the effective policy.
 
-The `local-loop/2` engine currently governs optional-memory budgets. Rules may
+The `local-loop/2` engine governs optional-memory budgets. Rules may
 narrow the existing ceiling of 10% of available input room and 6,000 tokens.
 Either limit can be zero to exclude optional memory for a governed baseline.
 Mandatory instructions still have to fit and pass their enforcement checks.
-The conservative UTF-8 byte token bound remains unchanged.
+The conservative UTF-8 byte token bound remains unchanged. Policies that also
+contain [instruction category limits](instruction-limits.md) use `local-loop/3`.
 
 Inspect the current policy with `cairn policy REPO`. A repository without an
 explicit revision retains `local-loop/1` and the original budget; migration does
@@ -99,8 +100,8 @@ Their C events enter unsigned audit checkpoints; as with existing checkpoints,
 membership verifies audit metadata, not policy-rule payload commitments. Backup
 and restore retain policy revisions, rollback references and receipt joins.
 
-This is the versioning, rollback and affected-run portion of roadmap L3. C waivers,
-instruction-category caps and the full unenforceability decision table remain
+Versioning, rollback, affected-run queries and instruction-category caps implement
+part of roadmap L3. C waivers and the full unenforceability decision table remain
 open. This rule format cannot weaken authority, evidence, sensitivity, destination
 or mandatory runtime gates, authorize broader sharing, or introduce learned ranking.
 See [verification](verification/governed-policy-2026-09-08.md).

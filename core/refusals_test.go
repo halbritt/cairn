@@ -13,7 +13,7 @@ func TestPolicyRefusalIsDurableBoundedAndDoesNotRetainQuery(t *testing.T) {
 	repo := uuid.NewString()
 	d := projectNote(repo)
 	d.Kind = "instruction"
-	if _, err := op.Issue(ctx, IssueRequest{uuid.NewString(), d, root.ID, true, true, "runtime", "Require unsupported mediation for refusal fixture"}); err != nil {
+	if _, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: root.ID, Mandatory: true, RequiresRuntime: true, PolicyKey: "runtime", Reason: "Require unsupported mediation for refusal fixture"}); err != nil {
 		t.Fatal(err)
 	}
 	request := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "private-transient-refusal-canary", Purpose: "context", AvailableTokens: 64000}
@@ -72,7 +72,7 @@ func TestRefusalPersistenceFailureIsExplicit(t *testing.T) {
 	repo := uuid.NewString()
 	d := projectNote(repo)
 	d.Kind = "instruction"
-	if _, err := op.Issue(ctx, IssueRequest{uuid.NewString(), d, root.ID, true, true, "unrecorded", "Require refusal persistence fault fixture"}); err != nil {
+	if _, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: root.ID, Mandatory: true, RequiresRuntime: true, PolicyKey: "unrecorded", Reason: "Require refusal persistence fault fixture"}); err != nil {
 		t.Fatal(err)
 	}
 	_, err := op.pool.Exec(ctx, `CREATE FUNCTION cairn.test_refusal_write_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.caller='refusal-write-fault' THEN RAISE EXCEPTION 'synthetic refusal write failure'; END IF; RETURN NEW; END; $$;

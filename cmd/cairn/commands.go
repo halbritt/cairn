@@ -31,6 +31,7 @@ JSON commands (read one request from stdin):
   supersession RECORD_UUID
   authorize-scope | scope-authorization RECORD_UUID
   policy-revise | policy REPO | policy-revision REVISION_UUID
+  instruction-policy RECORD_UUID
   runs [--policy-rev REVISION_UUID|local-loop/1] [--limit N] [--offset N] REPO
   grants (no input)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
@@ -145,12 +146,15 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return nil, invalid("run-report requires one repository")
 		}
 		return store.RunReport(ctx, core.RunReportRequest{Repo: f.Arg(0), PolicyRevision: *policy, Limit: *limit, Offset: *offset})
-	case "policy", "policy-revision":
+	case "policy", "policy-revision", "instruction-policy":
 		if len(args) != 2 {
-			return nil, invalid("policy requires a repository; policy-revision requires a revision UUID")
+			return nil, invalid("policy requires a repository; policy-revision requires a revision UUID; instruction-policy requires a record UUID")
 		}
 		if args[0] == "policy" {
 			return store.Policy(ctx, args[1])
+		}
+		if args[0] == "instruction-policy" {
+			return store.InstructionPolicy(ctx, args[1])
 		}
 		return store.PolicyRevision(ctx, args[1])
 	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict", "supersession", "scope-authorization":

@@ -65,9 +65,9 @@ func (s *Store) Recompile(ctx context.Context, req RecompileRequest) (Package, e
 		if original.Semantic.PolicyRevision != nil {
 			return Package{}, failure("INTEGRITY_FAILURE", "legacy policy cannot carry an explicit revision")
 		}
-	case "local-loop/2":
+	case "local-loop/2", "local-loop/3":
 		pin := original.Semantic.PolicyRevision
-		if pin == nil || pin.Rules.validate() != nil || original.Semantic.OptionalLimit != min(original.Semantic.AvailableTokens*pin.Rules.OptionalPercent/100, pin.Rules.OptionalMaxTokens) {
+		if pin == nil || pin.Rules.validate() != nil || original.Semantic.Policy != pin.Rules.engine() || original.Semantic.OptionalLimit != min(original.Semantic.AvailableTokens*pin.Rules.OptionalPercent/100, pin.Rules.OptionalMaxTokens) {
 			return Package{}, failure("INTEGRITY_FAILURE", "historical policy revision or budget is invalid")
 		}
 	default:
@@ -132,7 +132,7 @@ func (s *Store) Recompile(ctx context.Context, req RecompileRequest) (Package, e
 		if score != e.LexicalMatches || specificity != e.ScopeSpecificity {
 			return Package{}, failure("INTEGRITY_FAILURE", "historical ranking features changed")
 		}
-		selection := Selection{Record: record, Evidence: e.Facts.Evidence, Authority: e.Facts.Authority, Mandatory: e.Mandatory, Reason: fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)}
+		selection := Selection{Category: e.Facts.Category, Record: record, Evidence: e.Facts.Evidence, Authority: e.Facts.Authority, Mandatory: e.Mandatory, Reason: fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)}
 		nonemptyQuery := len(terms) > 0
 		if p.Ranking == "lexical-scope-recency/2" {
 			nonemptyQuery = strings.TrimSpace(req.Query) != ""

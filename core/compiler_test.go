@@ -170,7 +170,7 @@ func TestMandatoryPolicyConflictAndUnenforceable(t *testing.T) {
 	draft := projectNote(repo)
 	draft.Kind = "instruction"
 	draft.Body = "Always preserve human-authored files."
-	policy, err := operator.Issue(ctx, IssueRequest{uuid.NewString(), draft, root.ID, true, false, "preserve", "Direct operator workflow instruction"})
+	policy, err := operator.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: root.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "preserve", Reason: "Direct operator workflow instruction"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestMandatoryPolicyConflictAndUnenforceable(t *testing.T) {
 	requireCode(t, err, "BUDGET_REFUSED")
 	other := draft
 	other.Body = "Overwrite all human-authored files."
-	_, err = operator.Issue(ctx, IssueRequest{uuid.NewString(), other, root.ID, true, false, "preserve", "Deliberately conflicting fixture instruction"})
+	_, err = operator.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: other, GrantID: root.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "preserve", Reason: "Deliberately conflicting fixture instruction"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestMandatoryPolicyConflictAndUnenforceable(t *testing.T) {
 	requireCode(t, err, "OPEN_CONFLICT")
 	repo2 := uuid.NewString()
 	draft.Scope.Repo = repo2
-	_, err = operator.Issue(ctx, IssueRequest{uuid.NewString(), draft, root.ID, true, true, "runtime", "A fixture requiring actual runtime mediation"})
+	_, err = operator.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: root.ID, Mandatory: true, RequiresRuntime: true, PolicyKey: "runtime", Reason: "A fixture requiring actual runtime mediation"})
 	if err != nil {
 		t.Fatal(err)
 	}

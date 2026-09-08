@@ -60,7 +60,7 @@ func (s *Store) AuthorizeScope(ctx context.Context, req AuthorizeScopeRequest) (
 		var qualification string
 		var policy IssueRequest
 		if old.Class != "A" {
-			if err = tx.QueryRow(ctx, `SELECT grant_id::text,mandatory,requires_runtime,policy_key FROM cairn.record_authority WHERE record_id=$1 AND version=$2`, old.RecordID, old.Version).Scan(&qualification, &policy.Mandatory, &policy.RequiresRuntime, &policy.PolicyKey); err != nil {
+			if err = tx.QueryRow(ctx, `SELECT grant_id::text,mandatory,requires_runtime,policy_key,category FROM cairn.record_authority WHERE record_id=$1 AND version=$2`, old.RecordID, old.Version).Scan(&qualification, &policy.Mandatory, &policy.RequiresRuntime, &policy.PolicyKey, &policy.Category); err != nil {
 				return ScopeAuthorization{}, err
 			}
 			if _, err = grantChain(ctx, tx, qualification, true); err != nil {
@@ -127,7 +127,7 @@ func (s *Store) AuthorizeScope(ctx context.Context, req AuthorizeScopeRequest) (
 			return ScopeAuthorization{}, err
 		}
 		if old.Class != "A" {
-			if _, err = tx.Exec(ctx, `INSERT INTO cairn.record_authority(record_id,version,event_id,grant_id,mandatory,requires_runtime,policy_key) VALUES($1,$2,$3,$4,$5,$6,$7)`, next.RecordID, next.Version, event, qualification, policy.Mandatory, policy.RequiresRuntime, policy.PolicyKey); err != nil {
+			if _, err = tx.Exec(ctx, `INSERT INTO cairn.record_authority(record_id,version,event_id,grant_id,mandatory,requires_runtime,policy_key,category) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, next.RecordID, next.Version, event, qualification, policy.Mandatory, policy.RequiresRuntime, policy.PolicyKey, policy.Category); err != nil {
 				return ScopeAuthorization{}, err
 			}
 		}

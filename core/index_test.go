@@ -125,7 +125,7 @@ func TestExpansionRechecksMandatoryBootstrapAndAuthority(t *testing.T) {
 	}
 	d := projectNote(repo)
 	d.Kind = "instruction"
-	if _, err = op.Issue(ctx, IssueRequest{uuid.NewString(), d, grant.ID, false, false, "optional", "Issue optional fixture guidance"}); err != nil {
+	if _, err = op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: grant.ID, Mandatory: false, RequiresRuntime: false, PolicyKey: "optional", Reason: "Issue optional fixture guidance"}); err != nil {
 		t.Fatal(err)
 	}
 	idx, err := op.Index(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
@@ -138,7 +138,7 @@ func TestExpansionRechecksMandatoryBootstrapAndAuthority(t *testing.T) {
 	}
 	d.Body = "New mandatory instruction"
 	d.Scope.TaskID = "task"
-	if _, err = op.Issue(ctx, IssueRequest{uuid.NewString(), d, root.ID, true, false, "new-mandatory", "Issue new mandatory bootstrap"}); err != nil {
+	if _, err = op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: root.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "new-mandatory", Reason: "Issue new mandatory bootstrap"}); err != nil {
 		t.Fatal(err)
 	}
 	_, err = op.Expand(ctx, pull, Destination{"local", true})

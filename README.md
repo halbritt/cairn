@@ -20,7 +20,8 @@ acceptance evidence.
 [Governed policy](docs/governed-policy.md) lets an authorized operator revise
 optional-memory budgets, restore earlier rules as a new revision and inspect runs
 by the policy they used. Existing repositories retain their original policy until
-an explicit revision is issued.
+an explicit revision is issued. [Instruction category limits](docs/instruction-limits.md)
+also bound mandatory and optional C instruction load when explicitly adopted.
 
 ## Get started
 

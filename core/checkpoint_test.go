@@ -14,7 +14,7 @@ func TestCheckpointVerifiesExpectedAuditSetAndExcludesOrdinaryMemory(t *testing.
 	repo := uuid.NewString()
 	d := projectNote(repo)
 	d.Kind = "instruction"
-	c, err := op.Issue(ctx, IssueRequest{uuid.NewString(), d, root.ID, false, false, "checkpoint", "Issue checkpoint fixture instruction"})
+	c, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: root.ID, Mandatory: false, RequiresRuntime: false, PolicyKey: "checkpoint", Reason: "Issue checkpoint fixture instruction"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestCheckpointClosedMembershipDoesNotAbsorbLaterEvents(t *testing.T) {
 	}
 	d := projectNote(uuid.NewString())
 	d.Kind = "instruction"
-	if _, err = op.Issue(ctx, IssueRequest{uuid.NewString(), d, root.ID, false, false, "later", "Issue after older checkpoint"}); err != nil {
+	if _, err = op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: root.ID, Mandatory: false, RequiresRuntime: false, PolicyKey: "later", Reason: "Issue after older checkpoint"}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := op.VerifyCheckpoint(ctx, VerifyCheckpointRequest{cp.ID, cp.Digest, cp.ExportID})

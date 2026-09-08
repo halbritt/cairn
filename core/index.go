@@ -17,6 +17,7 @@ import (
 )
 
 type IndexEntry struct {
+	Category   string `json:"category,omitempty" cbor:"category,omitempty"`
 	RecordID   string `json:"record_id"`
 	Version    int    `json:"version"`
 	Class      string `json:"class"`
@@ -46,10 +47,11 @@ func indexEntry(r Record) IndexEntry {
 		}
 	}
 	sum := sha256.Sum256([]byte(r.Body))
-	return IndexEntry{r.RecordID, r.Version, r.Class, r.Kind, summary, hex.EncodeToString(sum[:])}
+	return IndexEntry{RecordID: r.RecordID, Version: r.Version, Class: r.Class, Kind: r.Kind, Summary: summary, BodySHA256: hex.EncodeToString(sum[:])}
 }
 func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation) (SemanticPackage, error) {
 	sortCandidates(candidates)
+	instructions := newInstructionBudget(&p)
 	p.Index = []IndexEntry{}
 	p.Selected = []Selection{}
 	optionalCost := 0
@@ -58,6 +60,9 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 		e := evaluations[c.selection.Record.RecordID]
 		e.Rank = rank + 1
 		if c.selection.Mandatory {
+			if _, err := instructions.admit(c.selection, e, p.Omitted); err != nil {
+				return p, err
+			}
 			encoded, err := json.Marshal(c.selection)
 			if err != nil {
 				return p, err
@@ -69,6 +74,7 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 			continue
 		}
 		entry := indexEntry(c.selection.Record)
+		entry.Category = c.selection.Category
 		encoded, err := json.Marshal(entry)
 		if err != nil {
 			return p, err
@@ -85,6 +91,11 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 		if len(p.Index) >= 100 || optionalCost+cost > p.OptionalLimit {
 			e.Reason = "OPTIONAL_BUDGET"
 			p.Omitted["OPTIONAL_BUDGET"]++
+			continue
+		}
+		if admitted, err := instructions.admit(c.selection, e, p.Omitted); err != nil {
+			return p, err
+		} else if !admitted {
 			continue
 		}
 		p.Index = append(p.Index, entry)

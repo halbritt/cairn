@@ -242,7 +242,7 @@ func TestSupersessionRefusalsLeaveTheSourceActive(t *testing.T) {
 				d := projectNote(repo)
 				d.Kind = "instruction"
 				d.Relations = []RecordRelation{{old.RecordID, old.Version, "derived_from"}}
-				_, err = op.Issue(ctx, IssueRequest{uuid.NewString(), d, root.ID, true, false, "supersession-guard", "Issue an instruction depending on the source"})
+				_, err = op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: root.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "supersession-guard", Reason: "Issue an instruction depending on the source"})
 			case "self replacement":
 				req.Replacement.RecordID = old.RecordID
 				req.Replacement.Version = old.Version

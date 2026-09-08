@@ -269,3 +269,13 @@ lists and exact original positions with resolution history. Current record state
 is separate, and forgotten bodies are excluded. The installed CLI and local API
 return the same conflict inventory; position/history and deletion checks use
 disposable databases. Richer conflict qualification remains open.
+
+## Instruction category limits — 2026-09-08
+
+Explicit governed `local-loop/3` policy now bounds issued C instructions by
+security, workflow and preference count/body-token limits. Mandatory overflow
+refuses; optional index admission reserves full instruction bodies. Scope and
+retraction preserve category metadata, while old engine seals and request retries
+remain compatible. See [contract](instruction-limits.md) and
+[verification](verification/instruction-limits-2026-09-08.md). This advances L3;
+waivers and the full enforcement table remain open.

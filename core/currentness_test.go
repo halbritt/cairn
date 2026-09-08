@@ -64,7 +64,7 @@ func TestMandatoryApplicabilityCannotBeSkippedByOmittingPins(t *testing.T) {
 	draft := projectNote(repo)
 	draft.Kind = "instruction"
 	draft.Pins = &Applicability{Revision: strings.Repeat("a", 40)}
-	if _, err := op.Issue(ctx, IssueRequest{uuid.NewString(), draft, root.ID, true, false, "currentness-test", "Require explicit policy applicability"}); err != nil {
+	if _, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: root.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "currentness-test", Reason: "Require explicit policy applicability"}); err != nil {
 		t.Fatal(err)
 	}
 	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", AvailableTokens: 64000}
@@ -86,7 +86,7 @@ func TestHostedMandatoryPolicyRespectsApplicability(t *testing.T) {
 	draft.Kind = "instruction"
 	draft.Body = "PRIVATE-POLICY-CANARY: inspect the legacy compiler"
 	draft.Pins = &Applicability{Revision: strings.Repeat("a", 40)}
-	_, err := op.Issue(ctx, IssueRequest{uuid.NewString(), draft, root.ID, true, false, "private-currentness", "Apply this private requirement only to the old revision"})
+	_, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: root.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "private-currentness", Reason: "Apply this private requirement only to the old revision"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestHostedPolicyApplicabilityBoundaries(t *testing.T) {
 			draft.Kind = "instruction"
 			draft.Pins = tc.pins
 			draft.Body = "PRIVATE-POLICY-CANARY: inspect the legacy compiler"
-			private, err := op.Issue(ctx, IssueRequest{uuid.NewString(), draft, root.ID, true, true, "private-boundary", "Exercise private mandatory runtime policy applicability"})
+			private, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: root.ID, Mandatory: true, RequiresRuntime: true, PolicyKey: "private-boundary", Reason: "Exercise private mandatory runtime policy applicability"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -210,7 +210,7 @@ func TestNonoverlappingInstructionPinsDoNotCreatePolicyConflict(t *testing.T) {
 				} else {
 					d.Body = "Use the current workflow"
 				}
-				if _, err := op.Issue(ctx, IssueRequest{uuid.NewString(), d, root.ID, true, false, "workflow", "Issue distinct applicability fixture"}); err != nil {
+				if _, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: root.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "workflow", Reason: "Issue distinct applicability fixture"}); err != nil {
 					t.Fatal(err)
 				}
 			}

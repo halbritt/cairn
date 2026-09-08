@@ -24,6 +24,7 @@ type IssueRequest struct {
 	RequiresRuntime bool   `json:"requires_runtime"`
 	PolicyKey       string `json:"policy_key"`
 	Reason          string `json:"reason"`
+	Category        string `json:"category,omitempty"`
 }
 type CorrectRequest struct {
 	RequestID       string   `json:"request_id"`
@@ -91,6 +92,11 @@ func (s *Store) Promote(ctx context.Context, req PromoteRequest) (Record, error)
 }
 
 func (s *Store) Issue(ctx context.Context, req IssueRequest) (Record, error) {
+	switch req.Category {
+	case "", "security", "workflow", "preference":
+	default:
+		return Record{}, failure("INVALID_REQUEST", "unknown instruction category")
+	}
 	if err := reasonValid(req.Reason); err != nil {
 		return Record{}, err
 	}
@@ -302,11 +308,20 @@ func advanceRecord(ctx context.Context, tx pgx.Tx, old Record, draft Draft, clas
 }
 
 func recordAuthority(ctx context.Context, tx pgx.Tx, kind string, previous int, record Record, chain []Grant, reason string, policy IssueRequest) error {
+	category := policy.Category
+	if category == "" {
+		category = "workflow"
+		if record.Class == "C" && previous > 0 {
+			if err := tx.QueryRow(ctx, `SELECT category FROM cairn.record_authority WHERE record_id=$1 AND version=$2`, record.RecordID, previous).Scan(&category); err != nil {
+				return err
+			}
+		}
+	}
 	event, err := audit(ctx, tx, kind, record.RecordID, previous, record.Version, chain, reason)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO cairn.record_authority(record_id,version,event_id,grant_id,mandatory,requires_runtime,policy_key) VALUES($1,$2,$3,$4,$5,$6,$7)`, record.RecordID, record.Version, event, chain[len(chain)-1].ID, policy.Mandatory, policy.RequiresRuntime, policy.PolicyKey)
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.record_authority(record_id,version,event_id,grant_id,mandatory,requires_runtime,policy_key,category) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, record.RecordID, record.Version, event, chain[len(chain)-1].ID, policy.Mandatory, policy.RequiresRuntime, policy.PolicyKey, category)
 	if err != nil {
 		return err
 	}

@@ -328,7 +328,7 @@ func TestForgettingSourceRefusesMandatoryDependentInstruction(t *testing.T) {
 	draft := projectNote(repo)
 	draft.Kind = "instruction"
 	draft.Relations = []RecordRelation{{r.RecordID, r.Version, "derived_from"}}
-	instruction, err := s.Issue(ctx, IssueRequest{uuid.NewString(), draft, root.ID, true, false, "deletion-support", "Issue mandatory dependent fixture"})
+	instruction, err := s.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: root.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "deletion-support", Reason: "Issue mandatory dependent fixture"})
 	if err != nil {
 		t.Fatal(err)
 	}

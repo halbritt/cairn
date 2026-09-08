@@ -77,6 +77,22 @@ rollback_request=dict(request_id=str(uuid.uuid4()),repo=repo,expected_revision_i
 rollback=invoke('policy-revise',rollback_request)
 (root/'policy.json').write_text(json.dumps(dict(request=rollback_request,rollback=rollback,packages=packages)))
 PYPOLICY
+python3 - "$test_root" <<'PYCATEGORIES'
+import json, pathlib, subprocess, sys, uuid
+root=pathlib.Path(sys.argv[1]);grant=json.loads((root/'root.json').read_text())
+def invoke(command, request):
+    return json.loads(subprocess.check_output(['bin/cairn',command],input=json.dumps(request).encode()))['data']
+repo='fixture:category-restore'
+issue=dict(request_id=str(uuid.uuid4()),draft=dict(kind='instruction',body='Retain this security category through restore.',scope=dict(repo=repo,task_id='*',run_id='*'),claim_type='self'),grant_id=grant['grant_id'],mandatory=True,category='security',policy_key='category-restore',reason='Issue a categorized disposable restore instruction')
+record=invoke('issue',issue)
+limits=dict(security=dict(max_count=1,max_tokens=100),workflow=dict(max_count=0,max_tokens=0),preference=dict(max_count=0,max_tokens=0))
+request=dict(request_id=str(uuid.uuid4()),repo=repo,grant_id=grant['grant_id'],rules=dict(optional_percent=10,optional_max_tokens=6000,instruction_limits=limits),reason='Preserve explicit category limits through a backup')
+revision=invoke('policy-revise',request)
+packages=[]
+for mode in ['', 'index']:
+    packages.append(invoke('compile',dict(request_id=str(uuid.uuid4()),scope=dict(repo=repo,task_id='task',run_id='run'),purpose='context',available_tokens=64000,mode=mode)))
+(root/'categories.json').write_text(json.dumps(dict(issue=issue,record=record,request=request,revision=revision,packages=packages)))
+PYCATEGORIES
 backup="$(bash scripts/local-store.sh backup)"
 "$pg_bin/createdb" -h "$CAIRN_HOME/socket" cairn_restore
 "$pg_bin/pg_restore" -h "$CAIRN_HOME/socket" --no-owner --no-privileges -d cairn_restore "$backup"
@@ -126,6 +142,20 @@ assert len(fresh['semantic']['selected'])==1 and fresh['semantic']['policy_revis
 runs=json.loads(subprocess.check_output(['bin/cairn','runs','--policy-rev',policy['rollback']['revision_id'],'fixture:policy-restore'],env=env))['data']
 assert runs['rows']==[] and not runs['more']
 print('Restored policy rollback retains effective rules, idempotent retry, policy pins and historical body/index seals')
+categories=json.loads((root/'categories.json').read_text())
+assert invoke('issue',categories['issue'],env)==categories['record']
+assert invoke('policy-revise',categories['request'],env)==categories['revision']
+instruction=json.loads(subprocess.check_output(['bin/cairn','instruction-policy',categories['record']['record_id']],env=env))['data']
+assert instruction['category']=='security' and instruction['mandatory']
+effective=json.loads(subprocess.check_output(['bin/cairn','policy','fixture:category-restore'],env=env))['data']
+assert effective['engine']=='local-loop/3' and effective['rules']==categories['revision']['rules']
+for original in categories['packages']:
+    historical=invoke('recompile',dict(receipt_id=original['receipt_id']),env)['package']
+    replayed=json.loads(subprocess.check_output(['bin/cairn','replay',original['receipt_id']],env=env))['data']['package']
+    assert historical['seal']==original['seal']==replayed['seal']
+    fresh=invoke('compile',dict(request_id=str(uuid.uuid4()),scope=dict(repo='fixture:category-restore',task_id='task',run_id='fresh'),purpose='context',available_tokens=64000,mode=original['semantic'].get('mode','')),env)
+    assert len(fresh['semantic']['selected'])==1 and fresh['semantic']['selected'][0]['category']=='security'
+print('Restored instruction categories retain limits, issue and policy retries, and body/index history')
 verified=invoke('verify-checkpoint',catalog['checkpoint_expectation'],env)
 assert verified['valid'] and verified['uncovered_count']==0
 receipt=json.loads((root/'package.json').read_text())['data']

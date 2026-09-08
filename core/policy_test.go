@@ -104,7 +104,7 @@ func TestPolicyRefusalsLeaveEffectiveRevisionUnchanged(t *testing.T) {
 	ctx := context.Background()
 	op, root := testOperator(t)
 	repo := uuid.NewString()
-	initial, err := op.RevisePolicy(ctx, RevisePolicyRequest{RequestID: uuid.NewString(), Repo: repo, Rules: &PolicyRules{10, 6000}, GrantID: root.ID, Reason: "Establish a policy for refusal boundary tests"})
+	initial, err := op.RevisePolicy(ctx, RevisePolicyRequest{RequestID: uuid.NewString(), Repo: repo, Rules: &PolicyRules{OptionalPercent: 10, OptionalMaxTokens: 6000}, GrantID: root.ID, Reason: "Establish a policy for refusal boundary tests"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestPolicyRefusalsLeaveEffectiveRevisionUnchanged(t *testing.T) {
 		{"missing_reason", "INVALID_REQUEST", func(r *RevisePolicyRequest) { r.Reason = "" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := RevisePolicyRequest{RequestID: uuid.NewString(), Repo: repo, ExpectedRevisionID: initial.RevisionID, Rules: &PolicyRules{10, 6000}, GrantID: root.ID, Reason: "Refused changes must not replace effective policy"}
+			req := RevisePolicyRequest{RequestID: uuid.NewString(), Repo: repo, ExpectedRevisionID: initial.RevisionID, Rules: &PolicyRules{OptionalPercent: 10, OptionalMaxTokens: 6000}, GrantID: root.ID, Reason: "Refused changes must not replace effective policy"}
 			tc.edit(&req)
 			_, err := op.RevisePolicy(ctx, req)
 			requireCode(t, err, tc.code)
@@ -161,7 +161,7 @@ func TestPolicyBudgetCannotDropMandatoryOrWaiveRuntimeRequirement(t *testing.T) 
 		draft := projectNote(repo)
 		draft.Kind = "instruction"
 		draft.Sensitivity = "shareable"
-		instruction, err := op.Issue(ctx, IssueRequest{uuid.NewString(), draft, root.ID, true, runtime, "required", "Require the reviewed mandatory instruction"})
+		instruction, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: root.ID, Mandatory: true, RequiresRuntime: runtime, PolicyKey: "required", Reason: "Require the reviewed mandatory instruction"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -216,7 +216,7 @@ func TestPolicyRevocationBlocksFreshDeliveryAndAllowsExplicitReauthorization(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	change := RevisePolicyRequest{RequestID: uuid.NewString(), Repo: repo, Rules: &PolicyRules{10, 6000}, GrantID: grant.ID, Reason: "Authorize optional repository memory budget"}
+	change := RevisePolicyRequest{RequestID: uuid.NewString(), Repo: repo, Rules: &PolicyRules{OptionalPercent: 10, OptionalMaxTokens: 6000}, GrantID: grant.ID, Reason: "Authorize optional repository memory budget"}
 	policy, err := issuer.RevisePolicy(ctx, change)
 	if err != nil {
 		t.Fatal(err)
@@ -289,7 +289,7 @@ func TestPolicyConcurrentRevisionsHaveOneWinner(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := op.RevisePolicy(ctx, RevisePolicyRequest{RequestID: uuid.NewString(), Repo: repo, GrantID: root.ID, Rules: &PolicyRules{10, 6000}, Reason: "Competing first policy revisions must have one winner"})
+			_, err := op.RevisePolicy(ctx, RevisePolicyRequest{RequestID: uuid.NewString(), Repo: repo, GrantID: root.ID, Rules: &PolicyRules{OptionalPercent: 10, OptionalMaxTokens: 6000}, Reason: "Competing first policy revisions must have one winner"})
 			results <- err
 		}()
 	}
@@ -349,7 +349,7 @@ func TestPolicyRunQueryIncludesZeroMemoryRunsAndRetainsOldRevision(t *testing.T)
 			t.Fatal(err)
 		}
 	}
-	_, err = op.RevisePolicy(ctx, RevisePolicyRequest{RequestID: uuid.NewString(), Repo: repo, ExpectedRevisionID: policy.RevisionID, GrantID: root.ID, Rules: &PolicyRules{10, 6000}, Reason: "Restore optional retrieval after the baseline"})
+	_, err = op.RevisePolicy(ctx, RevisePolicyRequest{RequestID: uuid.NewString(), Repo: repo, ExpectedRevisionID: policy.RevisionID, GrantID: root.ID, Rules: &PolicyRules{OptionalPercent: 10, OptionalMaxTokens: 6000}, Reason: "Restore optional retrieval after the baseline"})
 	if err != nil {
 		t.Fatal(err)
 	}

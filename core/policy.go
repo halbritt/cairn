@@ -8,18 +8,26 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// PolicyRules can narrow the accepted optional-memory ceiling. Hard authority,
-// destination and mandatory-policy checks are not configurable through it.
+// PolicyRules can narrow the optional-memory ceiling and bound instruction load.
+// Hard authority, destination and runtime enforcement checks remain mandatory.
 type PolicyRules struct {
-	OptionalPercent   int `json:"optional_percent"`
-	OptionalMaxTokens int `json:"optional_max_tokens"`
+	OptionalPercent   int                `json:"optional_percent"`
+	OptionalMaxTokens int                `json:"optional_max_tokens"`
+	InstructionLimits *InstructionLimits `json:"instruction_limits,omitempty" cbor:"instruction_limits,omitempty"`
 }
 
 func (r PolicyRules) validate() error {
 	if r.OptionalPercent < 0 || r.OptionalPercent > 10 || r.OptionalMaxTokens < 0 || r.OptionalMaxTokens > 6000 {
 		return failure("INVALID_REQUEST", "optional policy budget must remain within 0-10 percent and 0-6000 tokens")
 	}
-	return nil
+	return r.InstructionLimits.validate()
+}
+
+func (r PolicyRules) engine() string {
+	if r.InstructionLimits != nil {
+		return "local-loop/3"
+	}
+	return "local-loop/2"
 }
 
 type RevisePolicyRequest struct {
@@ -114,7 +122,7 @@ func (s *Store) RevisePolicy(ctx context.Context, req RevisePolicyRequest) (Poli
 			if restored.Repo != req.Repo {
 				return PolicyRevision{}, failure("AUTHORITY_DENIED", "rollback cannot import policy from another repository")
 			}
-			if restored.Engine != "local-loop/2" {
+			if restored.Engine != restored.Rules.engine() || restored.Rules.validate() != nil {
 				return PolicyRevision{}, failure("POLICY_UNENFORCEABLE", "rollback policy engine is unsupported")
 			}
 			rules = restored.Rules
@@ -124,7 +132,7 @@ func (s *Store) RevisePolicy(ctx context.Context, req RevisePolicyRequest) (Poli
 		if err != nil {
 			return PolicyRevision{}, err
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO cairn.policy_revision(revision_id,repo,version,previous_revision_id,restores_revision_id,rules,grant_id,event_id) VALUES($1,$2,$3,NULLIF($4,'')::uuid,NULLIF($5,'')::uuid,$6,$7,$8)`, id, req.Repo, version, previousID, req.RestoreRevisionID, rules, req.GrantID, event)
+		_, err = tx.Exec(ctx, `INSERT INTO cairn.policy_revision(revision_id,repo,version,previous_revision_id,restores_revision_id,rules,grant_id,event_id,engine) VALUES($1,$2,$3,NULLIF($4,'')::uuid,NULLIF($5,'')::uuid,$6,$7,$8,$9)`, id, req.Repo, version, previousID, req.RestoreRevisionID, rules, req.GrantID, event, rules.engine())
 		if err != nil {
 			return PolicyRevision{}, err
 		}
@@ -175,7 +183,7 @@ func policySnapshot(ctx context.Context, tx pgx.Tx, repo string) (*PolicySnapsho
 	if err != nil || p == nil {
 		return nil, err
 	}
-	if p.Engine != "local-loop/2" || p.Rules.validate() != nil {
+	if p.Engine != p.Rules.engine() || p.Rules.validate() != nil {
 		return nil, failure("POLICY_UNENFORCEABLE", "effective policy engine or rules are unsupported")
 	}
 	chain, err := policyAuthority(ctx, tx, p, true)
@@ -186,7 +194,7 @@ func policySnapshot(ctx context.Context, tx pgx.Tx, repo string) (*PolicySnapsho
 }
 
 func (s *Store) Policy(ctx context.Context, repo string) (EffectivePolicy, error) {
-	result := EffectivePolicy{Engine: "local-loop/1", Rules: PolicyRules{10, 6000}}
+	result := EffectivePolicy{Engine: "local-loop/1", Rules: PolicyRules{OptionalPercent: 10, OptionalMaxTokens: 6000}}
 	if err := (Scope{repo, "*", "*"}).validate(); err != nil {
 		return result, err
 	}
@@ -208,7 +216,7 @@ func (s *Store) Policy(ctx context.Context, repo string) (EffectivePolicy, error
 			return result, err
 		}
 		p.AuthorityLive = err == nil
-		result = EffectivePolicy{Engine: "local-loop/2", Rules: p.Rules, Revision: p}
+		result = EffectivePolicy{Engine: p.Engine, Rules: p.Rules, Revision: p}
 	}
 	return result, tx.Commit(ctx)
 }

@@ -256,7 +256,7 @@ func TestScopeAuthorizationOrdinaryEditsAndHostedPolicyRevocation(t *testing.T) 
 				record, err = op.Create(ctx, CreateRequest{uuid.NewString(), d})
 			} else {
 				d.Kind = "instruction"
-				record, err = op.Issue(ctx, IssueRequest{uuid.NewString(), d, root.ID, true, false, "scope-policy", "Issue a narrow synthetic instruction"})
+				record, err = op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: root.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "scope-policy", Reason: "Issue a narrow synthetic instruction"})
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -325,7 +325,7 @@ func TestScopeAuthorizationDetectsNewInstructionOverlap(t *testing.T) {
 		d.Kind = "instruction"
 		d.Scope.TaskID = task
 		d.Body = "Distinct instruction for " + task
-		record, err := op.Issue(ctx, IssueRequest{uuid.NewString(), d, root.ID, true, false, "scope-overlap", "Issue initially disjoint fixture instructions"})
+		record, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: root.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "scope-overlap", Reason: "Issue initially disjoint fixture instructions"})
 		if err != nil {
 			t.Fatal(err)
 		}

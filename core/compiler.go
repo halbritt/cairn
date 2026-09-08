@@ -37,6 +37,7 @@ type Destination struct {
 	AllowLocal bool   `json:"allow_local"`
 }
 type Selection struct {
+	Category  string     `json:"category,omitempty" cbor:"category,omitempty"`
 	Record    Record     `json:"record"`
 	Evidence  []Evidence `json:"evidence"`
 	Authority []Grant    `json:"authority"`
@@ -211,7 +212,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		return p, nil, err
 	}
 	if policy != nil {
-		p.Policy = "local-loop/2"
+		p.Policy = policy.Rules.engine()
 		p.PolicyRevision = policy
 		p.OptionalLimit = min(req.AvailableTokens*policy.Rules.OptionalPercent/100, policy.Rules.OptionalMaxTokens)
 	}
@@ -314,9 +315,12 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			continue
 		}
 		if record.Class == "C" {
-			var key string
-			if err = tx.QueryRow(ctx, `SELECT policy_key FROM cairn.record_authority WHERE record_id=$1 AND version=$2`, id, record.Version).Scan(&key); err != nil {
+			var key, category string
+			if err = tx.QueryRow(ctx, `SELECT policy_key,category FROM cairn.record_authority WHERE record_id=$1 AND version=$2`, id, record.Version).Scan(&key, &category); err != nil {
 				return p, nil, err
+			}
+			if p.Policy == "local-loop/3" {
+				selection.Category = category
 			}
 			if previous, ok := policyKeys[key]; ok && previous != record.Body {
 				return p, nil, failure("OPEN_CONFLICT", "applicable instructions disagree on a policy key")
@@ -325,7 +329,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		}
 
 		digest := sha256.Sum256([]byte(record.Body))
-		evaluation.Facts = &CandidateFacts{BodySHA256: hex.EncodeToString(digest[:]), Sensitivity: record.Sensitivity, AttributionState: record.AttributionState, Evidence: selection.Evidence, Authority: selection.Authority}
+		evaluation.Facts = &CandidateFacts{Category: selection.Category, BodySHA256: hex.EncodeToString(digest[:]), Sensitivity: record.Sensitivity, AttributionState: record.AttributionState, Evidence: selection.Evidence, Authority: selection.Authority}
 		selection.Reason = fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)
 		if !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 {
 			evaluation.Reason = "NO_LEXICAL_MATCH"
@@ -339,6 +343,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 
 func packCandidates(p SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation) (SemanticPackage, error) {
 	sortCandidates(candidates)
+	instructions := newInstructionBudget(&p)
 	optionalCost := 0
 	seenBodies := map[string]bool{}
 	for rank, candidate := range candidates {
@@ -362,6 +367,11 @@ func packCandidates(p SemanticPackage, candidates []candidate, evaluations map[s
 			continue
 		}
 		evaluation.Reason = "SELECTED"
+		if admitted, err := instructions.admit(entry, evaluation, p.Omitted); err != nil {
+			return p, err
+		} else if !admitted {
+			continue
+		}
 		p.Selected = append(p.Selected, entry)
 		seenBodies[entry.Record.Body] = true
 		if !entry.Mandatory {

@@ -94,14 +94,14 @@ func TestGrantContainmentAndRevocation(t *testing.T) {
 	childActor := testStore(t, Channel{Principal: child.Principal, Repo: repo})
 	draft := projectNote(repo)
 	draft.Kind = "instruction"
-	issued, err := childActor.Issue(ctx, IssueRequest{uuid.NewString(), draft, child.ID, true, false, "workflow", "Issue a scoped workflow instruction"})
+	issued, err := childActor.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: child.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "workflow", Reason: "Issue a scoped workflow instruction"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err = operator.RevokeGrant(ctx, RevokeGrantRequest{uuid.NewString(), parent.ID, root.ID, 1, "Revoke the parent and its dependent authority"}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = childActor.Issue(ctx, IssueRequest{uuid.NewString(), draft, child.ID, true, false, "another", "Must refuse after parent revocation"})
+	_, err = childActor.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: child.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "another", Reason: "Must refuse after parent revocation"})
 	requireCode(t, err, "AUTHORITY_DENIED")
 	pkg, err := operator.Compile(ctx, CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "", "context", 32000}, Destination{"local", true})
 	if err != nil {
@@ -130,7 +130,7 @@ func TestRevocationRaceHasValidSerialOrder(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, issueErr = actor.Issue(ctx, IssueRequest{uuid.NewString(), draft, grant.ID, true, false, "race", "Attempt issuance concurrently with revocation"})
+		_, issueErr = actor.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: grant.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "race", Reason: "Attempt issuance concurrently with revocation"})
 	}()
 	go func() {
 		defer wg.Done()
@@ -143,7 +143,7 @@ func TestRevocationRaceHasValidSerialOrder(t *testing.T) {
 	if issueErr != nil && Code(issueErr) != "AUTHORITY_DENIED" {
 		t.Fatal(issueErr)
 	}
-	_, err = actor.Issue(ctx, IssueRequest{uuid.NewString(), draft, grant.ID, true, false, "after", "Attempt issuance strictly after revocation"})
+	_, err = actor.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: grant.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "after", Reason: "Attempt issuance strictly after revocation"})
 	requireCode(t, err, "AUTHORITY_DENIED")
 }
 

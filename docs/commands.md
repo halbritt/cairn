@@ -54,6 +54,7 @@ Issue a scoped instruction with `cairn issue`:
     "sensitivity": "local"
   },
   "mandatory": true,
+  "category": "security",
   "requires_runtime": false,
   "policy_key": "preserve-user-files",
   "reason": "Record the operator's explicit workflow instruction"
@@ -205,6 +206,9 @@ Policy administration uses `policy-revise` (JSON), `policy REPO` and
 for that revision, including zero-memory runs. Use `local-loop/1` for the original
 built-in policy. See [governed policy](governed-policy.md) for request examples,
 rollback, authority and fresh-delivery behavior.
+`instruction-policy RECORD_UUID` inspects issued C category and authority metadata.
+The optional issue `category` defaults to `workflow`. See [instruction limits](instruction-limits.md)
+for explicit governed category budgets and their body/index behavior.
 
 ## Record-body forgetting
 

@@ -69,7 +69,7 @@ func TestDemotionRefusesActiveInstructionDependenciesAndOpenConflict(t *testing.
 	d := projectNote(repo)
 	d.Kind = "instruction"
 	d.Relations = []RecordRelation{{derived.RecordID, derived.Version, "derived_from"}}
-	instruction, err := op.Issue(ctx, IssueRequest{uuid.NewString(), d, root.ID, true, false, "citation", "Issue instruction citing derived fixture"})
+	instruction, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: root.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "citation", Reason: "Issue instruction citing derived fixture"})
 	if err != nil {
 		t.Fatal(err)
 	}
