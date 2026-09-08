@@ -170,6 +170,12 @@ measured case without lowering other labelled answer ranks. Vocabulary mismatch,
 common-word noise and recency ties still cause misses or unrelated results.
 This is retrieval development evidence; E4 task benefit and transfer remain open.
 
+The [question-word comparison](verification/question-words-2026-09-08.md) removes
+an observed false match on “what” and reduces extra results on two answerable
+questions. It also records a storage-location rank regression and continuing
+vocabulary misses. Ranker v4 retains historical v1–v3 behavior for recompilation;
+these development results do not close E4.
+
 A subsequent [actual OpenCode tool experiment](verification/tool-retrieval-2026-09-08.md)
 recovered from the failed query and completed the source-answering task through
 index/pull. Pairing each result with a complete pull command removed three observed

@@ -94,7 +94,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if original.Semantic.Query != "sha256:"+hex.EncodeToString(digest[:]) {
 		return Package{}, failure("INVALID_REQUEST", "query does not match the historical intent digest")
 	}
-	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3") {
+	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4") {
 		return Package{}, failure("REPLAY_INCOMPLETE", "historical compiler version is not supported")
 	}
 	switch original.Semantic.Policy {
@@ -171,7 +171,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		}
 		selection := Selection{Category: e.Facts.Category, Record: record, Evidence: e.Facts.Evidence, Authority: e.Facts.Authority, Mandatory: e.Mandatory, Reason: fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)}
 		nonemptyQuery := len(terms) > 0
-		if p.Ranking == "lexical-scope-recency/2" || p.Ranking == "lexical-scope-recency/3" {
+		if p.Ranking == "lexical-scope-recency/2" || p.Ranking == "lexical-scope-recency/3" || p.Ranking == "lexical-scope-recency/4" {
 			nonemptyQuery = strings.TrimSpace(req.Query) != ""
 		}
 		if !selection.Mandatory && nonemptyQuery && score == 0 {

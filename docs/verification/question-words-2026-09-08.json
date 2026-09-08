@@ -1,0 +1,2082 @@
+{
+  "schema": "cairn.question-words-comparison/1",
+  "baseline_commit": "26b43d1",
+  "workload_sha256": "30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0",
+  "source_commit": "754d088468d89d2fad0c8d453ec8bd677a5c642f",
+  "available_tokens": 64000,
+  "comparisons": [
+    {
+      "query_id": "storage-topic",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": null,
+        "returned": [],
+        "rendered_bytes": 879
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [],
+        "rendered_bytes": 879
+      }
+    },
+    {
+      "query_id": "storage-topic",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": null,
+        "returned": [],
+        "rendered_bytes": 894
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [],
+        "rendered_bytes": 894
+      }
+    },
+    {
+      "query_id": "storage-location",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": null,
+        "returned": [
+          "runner",
+          "scope",
+          "evidence",
+          "demand",
+          "status"
+        ],
+        "rendered_bytes": 6732
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [
+          "runner",
+          "demand",
+          "evidence",
+          "scope",
+          "delete"
+        ],
+        "rendered_bytes": 6618
+      }
+    },
+    {
+      "query_id": "storage-location",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": 7,
+        "returned": [
+          "runner",
+          "scope",
+          "evidence",
+          "demand",
+          "status",
+          "pulls",
+          "storage",
+          "delete",
+          "conflict",
+          "supersession",
+          "outcomes"
+        ],
+        "rendered_bytes": 4692
+      },
+      "v4": {
+        "answer_rank": 11,
+        "returned": [
+          "runner",
+          "demand",
+          "evidence",
+          "scope",
+          "delete",
+          "conflict",
+          "supersession",
+          "status",
+          "outcomes",
+          "pulls",
+          "storage"
+        ],
+        "rendered_bytes": 4692
+      }
+    },
+    {
+      "query_id": "storage-env-exact",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "delete",
+          "demand",
+          "status",
+          "runner",
+          "outcomes"
+        ],
+        "rendered_bytes": 6852
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "delete",
+          "demand",
+          "status",
+          "runner",
+          "outcomes"
+        ],
+        "rendered_bytes": 6849
+      }
+    },
+    {
+      "query_id": "storage-env-exact",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "delete",
+          "demand",
+          "status",
+          "runner",
+          "outcomes",
+          "evidence",
+          "pulls"
+        ],
+        "rendered_bytes": 3652
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "delete",
+          "demand",
+          "status",
+          "runner",
+          "outcomes",
+          "evidence",
+          "pulls"
+        ],
+        "rendered_bytes": 3652
+      }
+    },
+    {
+      "query_id": "storage-env-words",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "delete",
+          "demand",
+          "status",
+          "runner",
+          "outcomes"
+        ],
+        "rendered_bytes": 6852
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "delete",
+          "demand",
+          "status",
+          "runner",
+          "outcomes"
+        ],
+        "rendered_bytes": 6849
+      }
+    },
+    {
+      "query_id": "storage-env-words",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "delete",
+          "demand",
+          "status",
+          "runner",
+          "outcomes",
+          "evidence",
+          "pulls"
+        ],
+        "rendered_bytes": 3652
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "delete",
+          "demand",
+          "status",
+          "runner",
+          "outcomes",
+          "evidence",
+          "pulls"
+        ],
+        "rendered_bytes": 3652
+      }
+    },
+    {
+      "query_id": "evidence-retry",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "pulls"
+      ],
+      "v3": {
+        "answer_rank": 2,
+        "returned": [
+          "evidence",
+          "pulls",
+          "scope",
+          "supersession",
+          "status"
+        ],
+        "rendered_bytes": 5960
+      },
+      "v4": {
+        "answer_rank": 2,
+        "returned": [
+          "evidence",
+          "pulls",
+          "scope",
+          "supersession",
+          "status"
+        ],
+        "rendered_bytes": 5959
+      }
+    },
+    {
+      "query_id": "evidence-retry",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "pulls"
+      ],
+      "v3": {
+        "answer_rank": 2,
+        "returned": [
+          "evidence",
+          "pulls",
+          "scope",
+          "supersession",
+          "status",
+          "currentness"
+        ],
+        "rendered_bytes": 2971
+      },
+      "v4": {
+        "answer_rank": 2,
+        "returned": [
+          "evidence",
+          "pulls",
+          "scope",
+          "supersession",
+          "status",
+          "currentness"
+        ],
+        "rendered_bytes": 2971
+      }
+    },
+    {
+      "query_id": "revision",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "currentness"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "currentness",
+          "supersession",
+          "status"
+        ],
+        "rendered_bytes": 4062
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "currentness",
+          "supersession",
+          "status"
+        ],
+        "rendered_bytes": 4062
+      }
+    },
+    {
+      "query_id": "revision",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "currentness"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "currentness",
+          "supersession",
+          "status"
+        ],
+        "rendered_bytes": 1926
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "currentness",
+          "supersession",
+          "status"
+        ],
+        "rendered_bytes": 1926
+      }
+    },
+    {
+      "query_id": "tampering",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "evidence"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "evidence",
+          "demand",
+          "supersession",
+          "status",
+          "pulls"
+        ],
+        "rendered_bytes": 6605
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "evidence",
+          "demand",
+          "supersession",
+          "status",
+          "pulls"
+        ],
+        "rendered_bytes": 6603
+      }
+    },
+    {
+      "query_id": "tampering",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "evidence"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "evidence",
+          "demand",
+          "supersession",
+          "status",
+          "currentness",
+          "pulls"
+        ],
+        "rendered_bytes": 2965
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "evidence",
+          "demand",
+          "supersession",
+          "status",
+          "currentness",
+          "pulls"
+        ],
+        "rendered_bytes": 2965
+      }
+    },
+    {
+      "query_id": "citation-count",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "outcomes"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "outcomes",
+          "demand",
+          "evidence",
+          "pulls"
+        ],
+        "rendered_bytes": 5778
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "outcomes",
+          "evidence"
+        ],
+        "rendered_bytes": 3144
+      }
+    },
+    {
+      "query_id": "citation-count",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "outcomes"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "outcomes",
+          "demand",
+          "evidence",
+          "pulls"
+        ],
+        "rendered_bytes": 2276
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "outcomes",
+          "evidence"
+        ],
+        "rendered_bytes": 1585
+      }
+    },
+    {
+      "query_id": "agent-launch",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "runner"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "runner",
+          "supersession",
+          "evidence",
+          "currentness",
+          "status"
+        ],
+        "rendered_bytes": 6555
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "runner",
+          "supersession",
+          "evidence",
+          "currentness",
+          "status"
+        ],
+        "rendered_bytes": 6555
+      }
+    },
+    {
+      "query_id": "agent-launch",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "runner"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "runner",
+          "supersession",
+          "evidence",
+          "currentness",
+          "status",
+          "outcomes"
+        ],
+        "rendered_bytes": 2968
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "runner",
+          "supersession",
+          "evidence",
+          "currentness",
+          "status",
+          "outcomes"
+        ],
+        "rendered_bytes": 2968
+      }
+    },
+    {
+      "query_id": "lost-reply",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "status"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "status",
+          "demand",
+          "outcomes",
+          "currentness",
+          "pulls"
+        ],
+        "rendered_bytes": 6654
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "status",
+          "demand",
+          "currentness"
+        ],
+        "rendered_bytes": 4710
+      }
+    },
+    {
+      "query_id": "lost-reply",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "status"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "status",
+          "demand",
+          "outcomes",
+          "currentness",
+          "pulls"
+        ],
+        "rendered_bytes": 2619
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "status",
+          "demand",
+          "currentness"
+        ],
+        "rendered_bytes": 1927
+      }
+    },
+    {
+      "query_id": "replacement",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "supersession"
+      ],
+      "v3": {
+        "answer_rank": 2,
+        "returned": [
+          "scope",
+          "supersession",
+          "outcomes",
+          "pulls",
+          "delete",
+          "conflict"
+        ],
+        "rendered_bytes": 6387
+      },
+      "v4": {
+        "answer_rank": 2,
+        "returned": [
+          "scope",
+          "supersession",
+          "delete",
+          "conflict",
+          "outcomes",
+          "evidence"
+        ],
+        "rendered_bytes": 6721
+      }
+    },
+    {
+      "query_id": "replacement",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "supersession"
+      ],
+      "v3": {
+        "answer_rank": 2,
+        "returned": [
+          "scope",
+          "supersession",
+          "outcomes",
+          "pulls",
+          "delete",
+          "demand",
+          "conflict",
+          "evidence",
+          "currentness"
+        ],
+        "rendered_bytes": 3993
+      },
+      "v4": {
+        "answer_rank": 2,
+        "returned": [
+          "scope",
+          "supersession",
+          "delete",
+          "conflict",
+          "outcomes",
+          "evidence",
+          "currentness",
+          "pulls"
+        ],
+        "rendered_bytes": 3647
+      }
+    },
+    {
+      "query_id": "original-conflict",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "conflict"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "conflict",
+          "status",
+          "evidence",
+          "currentness",
+          "supersession"
+        ],
+        "rendered_bytes": 6388
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "conflict",
+          "status",
+          "evidence",
+          "currentness",
+          "supersession"
+        ],
+        "rendered_bytes": 6388
+      }
+    },
+    {
+      "query_id": "original-conflict",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "conflict"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "conflict",
+          "status",
+          "evidence",
+          "currentness",
+          "supersession"
+        ],
+        "rendered_bytes": 2628
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "conflict",
+          "status",
+          "evidence",
+          "currentness",
+          "supersession"
+        ],
+        "rendered_bytes": 2628
+      }
+    },
+    {
+      "query_id": "failure-lessons",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "demand"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "demand"
+        ],
+        "rendered_bytes": 2486
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "demand"
+        ],
+        "rendered_bytes": 2485
+      }
+    },
+    {
+      "query_id": "failure-lessons",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "demand"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "demand"
+        ],
+        "rendered_bytes": 1240
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "demand"
+        ],
+        "rendered_bytes": 1240
+      }
+    },
+    {
+      "query_id": "remove-note",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "delete"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "delete",
+          "demand",
+          "currentness",
+          "conflict",
+          "supersession"
+        ],
+        "rendered_bytes": 6536
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "delete",
+          "demand",
+          "currentness",
+          "conflict",
+          "supersession"
+        ],
+        "rendered_bytes": 6535
+      }
+    },
+    {
+      "query_id": "remove-note",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "delete"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "delete",
+          "demand",
+          "currentness",
+          "conflict",
+          "supersession",
+          "status",
+          "runner",
+          "evidence"
+        ],
+        "rendered_bytes": 3647
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "delete",
+          "demand",
+          "currentness",
+          "conflict",
+          "supersession",
+          "status",
+          "runner",
+          "evidence"
+        ],
+        "rendered_bytes": 3647
+      }
+    },
+    {
+      "query_id": "broaden-scope",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [
+        "scope"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "scope",
+          "demand",
+          "supersession",
+          "status",
+          "outcomes"
+        ],
+        "rendered_bytes": 6139
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "scope",
+          "demand",
+          "supersession",
+          "outcomes",
+          "evidence"
+        ],
+        "rendered_bytes": 6698
+      }
+    },
+    {
+      "query_id": "broaden-scope",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [
+        "scope"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "scope",
+          "demand",
+          "supersession",
+          "status",
+          "outcomes",
+          "evidence",
+          "currentness"
+        ],
+        "rendered_bytes": 3316
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "scope",
+          "demand",
+          "supersession",
+          "outcomes",
+          "evidence",
+          "currentness"
+        ],
+        "rendered_bytes": 2969
+      }
+    },
+    {
+      "query_id": "absent-gpu",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [],
+      "v3": {
+        "answer_rank": null,
+        "returned": [
+          "status",
+          "runner",
+          "evidence",
+          "pulls",
+          "storage",
+          "delete"
+        ],
+        "rendered_bytes": 6665
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [
+          "delete",
+          "demand",
+          "status",
+          "runner",
+          "outcomes",
+          "storage"
+        ],
+        "rendered_bytes": 6842
+      }
+    },
+    {
+      "query_id": "absent-gpu",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [],
+      "v3": {
+        "answer_rank": null,
+        "returned": [
+          "status",
+          "runner",
+          "evidence",
+          "pulls",
+          "storage",
+          "scope",
+          "delete",
+          "demand",
+          "outcomes",
+          "currentness"
+        ],
+        "rendered_bytes": 4338
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [
+          "delete",
+          "demand",
+          "status",
+          "runner",
+          "outcomes",
+          "evidence",
+          "pulls",
+          "storage"
+        ],
+        "rendered_bytes": 3645
+      }
+    },
+    {
+      "query_id": "absent-price",
+      "insertion_order": "forward",
+      "mode": "body",
+      "relevant": [],
+      "v3": {
+        "answer_rank": null,
+        "returned": [
+          "status"
+        ],
+        "rendered_bytes": 1654
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [],
+        "rendered_bytes": 878
+      }
+    },
+    {
+      "query_id": "absent-price",
+      "insertion_order": "forward",
+      "mode": "index",
+      "relevant": [],
+      "v3": {
+        "answer_rank": null,
+        "returned": [
+          "status"
+        ],
+        "rendered_bytes": 1238
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [],
+        "rendered_bytes": 893
+      }
+    },
+    {
+      "query_id": "storage-topic",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": null,
+        "returned": [],
+        "rendered_bytes": 879
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [],
+        "rendered_bytes": 879
+      }
+    },
+    {
+      "query_id": "storage-topic",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": null,
+        "returned": [],
+        "rendered_bytes": 894
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [],
+        "rendered_bytes": 894
+      }
+    },
+    {
+      "query_id": "storage-location",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": 4,
+        "returned": [
+          "runner",
+          "evidence",
+          "scope",
+          "storage",
+          "pulls",
+          "delete"
+        ],
+        "rendered_bytes": 6849
+      },
+      "v4": {
+        "answer_rank": 4,
+        "returned": [
+          "runner",
+          "evidence",
+          "demand",
+          "storage",
+          "pulls"
+        ],
+        "rendered_bytes": 6824
+      }
+    },
+    {
+      "query_id": "storage-location",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": 4,
+        "returned": [
+          "runner",
+          "evidence",
+          "scope",
+          "storage",
+          "pulls",
+          "status",
+          "demand",
+          "currentness",
+          "outcomes",
+          "supersession",
+          "conflict"
+        ],
+        "rendered_bytes": 4705
+      },
+      "v4": {
+        "answer_rank": 4,
+        "returned": [
+          "runner",
+          "evidence",
+          "demand",
+          "storage",
+          "pulls",
+          "outcomes",
+          "status",
+          "supersession",
+          "conflict",
+          "delete",
+          "scope"
+        ],
+        "rendered_bytes": 4692
+      }
+    },
+    {
+      "query_id": "storage-env-exact",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "pulls",
+          "evidence",
+          "outcomes",
+          "runner",
+          "delete"
+        ],
+        "rendered_bytes": 6811
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "pulls",
+          "evidence",
+          "outcomes",
+          "runner",
+          "delete"
+        ],
+        "rendered_bytes": 6811
+      }
+    },
+    {
+      "query_id": "storage-env-exact",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "pulls",
+          "evidence",
+          "outcomes",
+          "runner",
+          "status",
+          "demand",
+          "delete"
+        ],
+        "rendered_bytes": 3652
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "pulls",
+          "evidence",
+          "outcomes",
+          "runner",
+          "status",
+          "demand",
+          "delete"
+        ],
+        "rendered_bytes": 3652
+      }
+    },
+    {
+      "query_id": "storage-env-words",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "pulls",
+          "evidence",
+          "outcomes",
+          "runner",
+          "delete"
+        ],
+        "rendered_bytes": 6811
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "pulls",
+          "evidence",
+          "outcomes",
+          "runner",
+          "delete"
+        ],
+        "rendered_bytes": 6811
+      }
+    },
+    {
+      "query_id": "storage-env-words",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "storage"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "pulls",
+          "evidence",
+          "outcomes",
+          "runner",
+          "status",
+          "demand",
+          "delete"
+        ],
+        "rendered_bytes": 3652
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "storage",
+          "pulls",
+          "evidence",
+          "outcomes",
+          "runner",
+          "status",
+          "demand",
+          "delete"
+        ],
+        "rendered_bytes": 3652
+      }
+    },
+    {
+      "query_id": "evidence-retry",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "pulls"
+      ],
+      "v3": {
+        "answer_rank": 2,
+        "returned": [
+          "evidence",
+          "pulls",
+          "currentness",
+          "status",
+          "supersession"
+        ],
+        "rendered_bytes": 6434
+      },
+      "v4": {
+        "answer_rank": 2,
+        "returned": [
+          "evidence",
+          "pulls",
+          "currentness",
+          "status",
+          "supersession"
+        ],
+        "rendered_bytes": 6434
+      }
+    },
+    {
+      "query_id": "evidence-retry",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "pulls"
+      ],
+      "v3": {
+        "answer_rank": 2,
+        "returned": [
+          "evidence",
+          "pulls",
+          "currentness",
+          "status",
+          "supersession",
+          "scope"
+        ],
+        "rendered_bytes": 2971
+      },
+      "v4": {
+        "answer_rank": 2,
+        "returned": [
+          "evidence",
+          "pulls",
+          "currentness",
+          "status",
+          "supersession",
+          "scope"
+        ],
+        "rendered_bytes": 2971
+      }
+    },
+    {
+      "query_id": "revision",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "currentness"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "currentness",
+          "status",
+          "supersession"
+        ],
+        "rendered_bytes": 4062
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "currentness",
+          "status",
+          "supersession"
+        ],
+        "rendered_bytes": 4062
+      }
+    },
+    {
+      "query_id": "revision",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "currentness"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "currentness",
+          "status",
+          "supersession"
+        ],
+        "rendered_bytes": 1926
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "currentness",
+          "status",
+          "supersession"
+        ],
+        "rendered_bytes": 1926
+      }
+    },
+    {
+      "query_id": "tampering",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "evidence"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "evidence",
+          "pulls",
+          "currentness",
+          "status",
+          "supersession"
+        ],
+        "rendered_bytes": 6429
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "evidence",
+          "pulls",
+          "currentness",
+          "status",
+          "supersession"
+        ],
+        "rendered_bytes": 6429
+      }
+    },
+    {
+      "query_id": "tampering",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "evidence"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "evidence",
+          "pulls",
+          "currentness",
+          "status",
+          "supersession",
+          "demand"
+        ],
+        "rendered_bytes": 2965
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "evidence",
+          "pulls",
+          "currentness",
+          "status",
+          "supersession",
+          "demand"
+        ],
+        "rendered_bytes": 2965
+      }
+    },
+    {
+      "query_id": "citation-count",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "outcomes"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "outcomes",
+          "pulls",
+          "evidence",
+          "demand"
+        ],
+        "rendered_bytes": 5778
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "outcomes",
+          "evidence"
+        ],
+        "rendered_bytes": 3146
+      }
+    },
+    {
+      "query_id": "citation-count",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "outcomes"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "outcomes",
+          "pulls",
+          "evidence",
+          "demand"
+        ],
+        "rendered_bytes": 2276
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "outcomes",
+          "evidence"
+        ],
+        "rendered_bytes": 1585
+      }
+    },
+    {
+      "query_id": "agent-launch",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "runner"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "runner",
+          "currentness",
+          "evidence",
+          "supersession",
+          "outcomes"
+        ],
+        "rendered_bytes": 6694
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "runner",
+          "currentness",
+          "evidence",
+          "supersession",
+          "outcomes"
+        ],
+        "rendered_bytes": 6694
+      }
+    },
+    {
+      "query_id": "agent-launch",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "runner"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "runner",
+          "currentness",
+          "evidence",
+          "supersession",
+          "outcomes",
+          "status"
+        ],
+        "rendered_bytes": 2968
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "runner",
+          "currentness",
+          "evidence",
+          "supersession",
+          "outcomes",
+          "status"
+        ],
+        "rendered_bytes": 2968
+      }
+    },
+    {
+      "query_id": "lost-reply",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "status"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "status",
+          "demand",
+          "pulls",
+          "currentness",
+          "outcomes"
+        ],
+        "rendered_bytes": 6654
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "status",
+          "currentness",
+          "demand"
+        ],
+        "rendered_bytes": 4711
+      }
+    },
+    {
+      "query_id": "lost-reply",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "status"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "status",
+          "demand",
+          "pulls",
+          "currentness",
+          "outcomes"
+        ],
+        "rendered_bytes": 2619
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "status",
+          "currentness",
+          "demand"
+        ],
+        "rendered_bytes": 1927
+      }
+    },
+    {
+      "query_id": "replacement",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "supersession"
+      ],
+      "v3": {
+        "answer_rank": 3,
+        "returned": [
+          "pulls",
+          "outcomes",
+          "supersession",
+          "scope",
+          "currentness",
+          "delete"
+        ],
+        "rendered_bytes": 6862
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "supersession",
+          "scope",
+          "pulls",
+          "currentness",
+          "evidence"
+        ],
+        "rendered_bytes": 6610
+      }
+    },
+    {
+      "query_id": "replacement",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "supersession"
+      ],
+      "v3": {
+        "answer_rank": 3,
+        "returned": [
+          "pulls",
+          "outcomes",
+          "supersession",
+          "scope",
+          "currentness",
+          "evidence",
+          "conflict",
+          "demand",
+          "delete"
+        ],
+        "rendered_bytes": 3993
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "supersession",
+          "scope",
+          "pulls",
+          "currentness",
+          "evidence",
+          "outcomes",
+          "conflict",
+          "delete"
+        ],
+        "rendered_bytes": 3647
+      }
+    },
+    {
+      "query_id": "original-conflict",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "conflict"
+      ],
+      "v3": {
+        "answer_rank": 3,
+        "returned": [
+          "evidence",
+          "status",
+          "conflict",
+          "currentness",
+          "supersession"
+        ],
+        "rendered_bytes": 6388
+      },
+      "v4": {
+        "answer_rank": 3,
+        "returned": [
+          "evidence",
+          "status",
+          "conflict",
+          "currentness",
+          "supersession"
+        ],
+        "rendered_bytes": 6388
+      }
+    },
+    {
+      "query_id": "original-conflict",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "conflict"
+      ],
+      "v3": {
+        "answer_rank": 3,
+        "returned": [
+          "evidence",
+          "status",
+          "conflict",
+          "currentness",
+          "supersession"
+        ],
+        "rendered_bytes": 2628
+      },
+      "v4": {
+        "answer_rank": 3,
+        "returned": [
+          "evidence",
+          "status",
+          "conflict",
+          "currentness",
+          "supersession"
+        ],
+        "rendered_bytes": 2628
+      }
+    },
+    {
+      "query_id": "failure-lessons",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "demand"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "demand"
+        ],
+        "rendered_bytes": 2486
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "demand"
+        ],
+        "rendered_bytes": 2486
+      }
+    },
+    {
+      "query_id": "failure-lessons",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "demand"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "demand"
+        ],
+        "rendered_bytes": 1240
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "demand"
+        ],
+        "rendered_bytes": 1240
+      }
+    },
+    {
+      "query_id": "remove-note",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "delete"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "delete",
+          "demand",
+          "currentness",
+          "evidence",
+          "status"
+        ],
+        "rendered_bytes": 6739
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "delete",
+          "demand",
+          "currentness",
+          "evidence",
+          "status"
+        ],
+        "rendered_bytes": 6739
+      }
+    },
+    {
+      "query_id": "remove-note",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "delete"
+      ],
+      "v3": {
+        "answer_rank": 1,
+        "returned": [
+          "delete",
+          "demand",
+          "currentness",
+          "evidence",
+          "runner",
+          "status",
+          "supersession",
+          "conflict"
+        ],
+        "rendered_bytes": 3647
+      },
+      "v4": {
+        "answer_rank": 1,
+        "returned": [
+          "delete",
+          "demand",
+          "currentness",
+          "evidence",
+          "runner",
+          "status",
+          "supersession",
+          "conflict"
+        ],
+        "rendered_bytes": 3647
+      }
+    },
+    {
+      "query_id": "broaden-scope",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [
+        "scope"
+      ],
+      "v3": {
+        "answer_rank": null,
+        "returned": [
+          "currentness",
+          "evidence",
+          "outcomes",
+          "status",
+          "supersession"
+        ],
+        "rendered_bytes": 6346
+      },
+      "v4": {
+        "answer_rank": 5,
+        "returned": [
+          "currentness",
+          "evidence",
+          "outcomes",
+          "supersession",
+          "scope"
+        ],
+        "rendered_bytes": 6525
+      }
+    },
+    {
+      "query_id": "broaden-scope",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [
+        "scope"
+      ],
+      "v3": {
+        "answer_rank": 7,
+        "returned": [
+          "currentness",
+          "evidence",
+          "outcomes",
+          "status",
+          "supersession",
+          "demand",
+          "scope"
+        ],
+        "rendered_bytes": 3316
+      },
+      "v4": {
+        "answer_rank": 6,
+        "returned": [
+          "currentness",
+          "evidence",
+          "outcomes",
+          "supersession",
+          "demand",
+          "scope"
+        ],
+        "rendered_bytes": 2969
+      }
+    },
+    {
+      "query_id": "absent-gpu",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [],
+      "v3": {
+        "answer_rank": null,
+        "returned": [
+          "storage",
+          "pulls",
+          "evidence",
+          "runner",
+          "status",
+          "delete"
+        ],
+        "rendered_bytes": 6665
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [
+          "storage",
+          "pulls",
+          "evidence",
+          "outcomes",
+          "runner",
+          "delete"
+        ],
+        "rendered_bytes": 6804
+      }
+    },
+    {
+      "query_id": "absent-gpu",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [],
+      "v3": {
+        "answer_rank": null,
+        "returned": [
+          "storage",
+          "pulls",
+          "evidence",
+          "runner",
+          "status",
+          "currentness",
+          "outcomes",
+          "demand",
+          "delete",
+          "scope"
+        ],
+        "rendered_bytes": 4338
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [
+          "storage",
+          "pulls",
+          "evidence",
+          "outcomes",
+          "runner",
+          "status",
+          "demand",
+          "delete"
+        ],
+        "rendered_bytes": 3645
+      }
+    },
+    {
+      "query_id": "absent-price",
+      "insertion_order": "reverse",
+      "mode": "body",
+      "relevant": [],
+      "v3": {
+        "answer_rank": null,
+        "returned": [
+          "status"
+        ],
+        "rendered_bytes": 1654
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [],
+        "rendered_bytes": 878
+      }
+    },
+    {
+      "query_id": "absent-price",
+      "insertion_order": "reverse",
+      "mode": "index",
+      "relevant": [],
+      "v3": {
+        "answer_rank": null,
+        "returned": [
+          "status"
+        ],
+        "rendered_bytes": 1238
+      },
+      "v4": {
+        "answer_rank": null,
+        "returned": [],
+        "rendered_bytes": 893
+      }
+    }
+  ],
+  "compatibility": {
+    "schema": "cairn.question-words-compatibility/1",
+    "old_ranking": "lexical-scope-recency/3",
+    "new_ranking": "lexical-scope-recency/4",
+    "checks": [
+      {
+        "mode": "body",
+        "query": "What is the monthly subscription price?",
+        "historical_package_identical": true,
+        "retry_status": "STALE_PACKAGE",
+        "new_result_count": 0
+      },
+      {
+        "mode": "body",
+        "query": "what?",
+        "historical_package_identical": true,
+        "retry_status": "STALE_PACKAGE",
+        "new_result_count": 0
+      },
+      {
+        "mode": "body",
+        "query": "CAIRN_HOME",
+        "historical_package_identical": true,
+        "retry_status": "STALE_PACKAGE",
+        "new_result_count": 1
+      },
+      {
+        "mode": "body",
+        "query": "cairn home",
+        "historical_package_identical": true,
+        "retry_status": "STALE_PACKAGE",
+        "new_result_count": 1
+      },
+      {
+        "mode": "body",
+        "query": "",
+        "historical_package_identical": true,
+        "retry_status": "STALE_PACKAGE",
+        "new_result_count": 1
+      },
+      {
+        "mode": "index",
+        "query": "What is the monthly subscription price?",
+        "historical_package_identical": true,
+        "retry_status": "STALE_PACKAGE",
+        "new_result_count": 0
+      },
+      {
+        "mode": "index",
+        "query": "what?",
+        "historical_package_identical": true,
+        "retry_status": "STALE_PACKAGE",
+        "new_result_count": 0
+      },
+      {
+        "mode": "index",
+        "query": "CAIRN_HOME",
+        "historical_package_identical": true,
+        "retry_status": "STALE_PACKAGE",
+        "new_result_count": 1
+      },
+      {
+        "mode": "index",
+        "query": "cairn home",
+        "historical_package_identical": true,
+        "retry_status": "STALE_PACKAGE",
+        "new_result_count": 1
+      },
+      {
+        "mode": "index",
+        "query": "",
+        "historical_package_identical": true,
+        "retry_status": "STALE_PACKAGE",
+        "new_result_count": 1
+      }
+    ]
+  },
+  "doctrine": {
+    "packet_id": "pkt-c518faadc5a0aa51",
+    "packet_content_sha256": "c518faadc5a0aa516519c42cac3cb1975f361914696b11779070301dd81a1a6d",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "limits": "Existing authored development workload, 12 passages, 15 answerable questions, 2 no-answer controls; two recency orders and two presentation modes are dependent variants. No model-task or generalization claim. One answer rank worsens; vocabulary misses and absent-GPU false positives persist."
+}

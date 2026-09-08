@@ -25,6 +25,12 @@ Semantic schema `cairn.semantic/3` seals these context pins. Optional JSON/CBOR
 fields preserve old v1/v2 decoding and seals. Legacy receipts remain historical;
 a current request after compiler-version changes needs a new request identity.
 
+New retrievals use `lexical-scope-recency/4`, which also filters fixed question
+framing words from lexical matches. Historical recompilation uses the ranking
+version retained in each receipt. The [retrieval comparison](verification/question-words-2026-09-08.md)
+records the measured improvements and regressions. Reusing a compile request ID
+across a ranking upgrade returns `STALE_PACKAGE`; use a new ID for current context.
+
 ## Recompile a retained read set
 
 `cairn recompile` accepts:
