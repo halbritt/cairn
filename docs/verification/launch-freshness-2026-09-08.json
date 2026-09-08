@@ -1,0 +1,46 @@
+{
+  "schema": "cairn.launch-freshness-verification/1",
+  "base_commit": "71abeeaf66eec3e96961ff45c8920acb5f9ee8bc",
+  "code_commit": "99b2d93b614ab3232c5b8c52693d1a17ada19068",
+  "initial_reproduction": {
+    "stale_launches_accepted": 4,
+    "changes": ["selected edit", "new mandatory context"],
+    "package_modes": ["body", "index"]
+  },
+  "verification": {
+    "make_test_integration": "passed",
+    "make_check": "passed",
+    "python_unit_tests": 17,
+    "child_not_started_on_stale_memory": ["stdin", "argv"],
+    "existing_execution_and_retrieval_races": "passed",
+    "historical_seal_preserved": true,
+    "new_optional_memory_does_not_rerank_package": true,
+    "code_ci_run": 34289644337,
+    "code_ci_result": "success"
+  },
+  "installed": {
+    "cli_and_api_sha256": "c8ed14d8f378167e04d1f1ad2443bf024e803330cc0a2693276264aab77b6fa2",
+    "api_pid": 113704,
+    "api_and_store": "active",
+    "hosted_agent_retrieval": "passed",
+    "schema_changed": false,
+    "profiles_changed": false
+  },
+  "selected_lesson": {
+    "class": "A",
+    "sensitivity": "shareable",
+    "fresh_cli_exact_pull": true,
+    "rank": 1,
+    "returned_entries": 2,
+    "downstream_model_task_benefit_measured": false
+  },
+  "native_striatum_delivery_implemented": false,
+  "doctrine": {
+    "packet_id": "pkt-f06355964cd40a17",
+    "packet_content_sha256": "f06355964cd40a171b5d9f472d3b9f0217b771caf85ed2f01bd9b1960c81b540",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "nonmaterial_unmatched_obligations": 31
+  }
+}

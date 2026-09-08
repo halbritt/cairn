@@ -42,3 +42,6 @@ use [run status](run-status.md) for inspection.
 This check supports delayed native input delivery, but does not itself implement
 Striatum's observation producer, staged receipt consumption or host correspondence.
 Those requirements remain in the [native context direction](native-striatum-context.md).
+
+[Verification](verification/launch-freshness-2026-09-08.md) records the reproduced
+failures, race-test correction, checked behavior and installed build.
