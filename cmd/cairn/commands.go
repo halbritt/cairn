@@ -28,7 +28,7 @@ Everyday commands:
   list REPO | get UUID | use-report REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
-  create edit delete compile index expand bootstrap grant revoke-grant capture-evidence check-evidence
+  create edit delete compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
   promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal
   supersession RECORD_UUID
   authorize-scope | scope-authorization RECORD_UUID
@@ -351,6 +351,10 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	case "expand":
 		return invoke(ctx, input, func(ctx context.Context, req core.ExpandRequest) (core.Expansion, error) {
 			return store.Expand(ctx, req, core.Destination{Name: "local", AllowLocal: true})
+		})
+	case "expand-evidence":
+		return invoke(ctx, input, func(ctx context.Context, req core.ExpandEvidenceRequest) (core.EvidenceExpansion, error) {
+			return store.ExpandEvidence(ctx, req, core.Destination{Name: "local", AllowLocal: true})
 		})
 	case "compile":
 		return invoke(ctx, input, func(ctx context.Context, req core.CompileRequest) (core.Package, error) {

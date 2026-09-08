@@ -189,7 +189,7 @@ func excludeDeletionPayloads(ctx context.Context, tx pgx.Tx, id, recordID string
 	if _, err := tx.Exec(ctx, `UPDATE cairn.retrieval_receipt r SET payload_deleted_by=COALESCE(payload_deleted_by,$1) WHERE EXISTS(SELECT 1 FROM cairn.record_use u WHERE u.receipt_id=r.receipt_id AND u.record_id=$2)`, id, recordID); err != nil {
 		return err
 	}
-	_, err := tx.Exec(ctx, `UPDATE cairn.mutation_request SET payload_deleted_by=COALESCE(payload_deleted_by,$1) WHERE operation IN ('create','edit','promote','demote','issue','correct','retract','expand') AND jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$2::text))`, id, recordID)
+	_, err := tx.Exec(ctx, `UPDATE cairn.mutation_request SET payload_deleted_by=COALESCE(payload_deleted_by,$1) WHERE operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence') AND jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$2::text))`, id, recordID)
 	return err
 }
 

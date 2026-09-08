@@ -130,10 +130,18 @@ func (s *Store) ReadEvidence(ctx context.Context, id string) (EvidenceDocument, 
 		return EvidenceDocument{}, err
 	}
 	defer tx.Rollback(ctx)
+	doc, err := s.readEvidenceTx(ctx, tx, id)
+	if err != nil {
+		return doc, err
+	}
+	return doc, tx.Commit(ctx)
+}
+
+func (s *Store) readEvidenceTx(ctx context.Context, tx pgx.Tx, id string) (EvidenceDocument, error) {
 	var doc EvidenceDocument
 	var body, digest []byte
 	doc.ID = id
-	err = tx.QueryRow(ctx, `SELECT repo,source,sensitivity,body,digest,witness,state,check_generation,checked_at FROM cairn.evidence WHERE evidence_id=$1`, id).Scan(&doc.Repo, &doc.Source, &doc.Sensitivity, &body, &digest, &doc.Witness, &doc.State, &doc.CheckGeneration, &doc.CheckedAt)
+	err := tx.QueryRow(ctx, `SELECT repo,source,sensitivity,body,digest,witness,state,check_generation,checked_at FROM cairn.evidence WHERE evidence_id=$1 FOR SHARE`, id).Scan(&doc.Repo, &doc.Source, &doc.Sensitivity, &body, &digest, &doc.Witness, &doc.State, &doc.CheckGeneration, &doc.CheckedAt)
 	if err == pgx.ErrNoRows {
 		return doc, failure("NOT_FOUND", "evidence not found")
 	}
@@ -154,5 +162,5 @@ func (s *Store) ReadEvidence(ctx context.Context, id string) (EvidenceDocument, 
 	if !bytes.Equal(digest, actual[:]) {
 		doc.State = "divergent"
 	}
-	return doc, tx.Commit(ctx)
+	return doc, nil
 }

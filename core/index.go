@@ -191,99 +191,111 @@ type Expansion struct {
 	BytesRemaining   int       `json:"bytes_remaining"`
 }
 
+type expansionState struct {
+	selection          Selection
+	credits, remaining int
+}
+
+// Both body and evidence pulls recheck this state before idempotency lookup.
+func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandRequest, dest Destination, state *expansionState) error {
+	var selection Selection
+	var credits, remaining int
+	if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
+		return err
+	}
+	if err := receiptDeliveryCurrent(ctx, tx, req.ReceiptID); err != nil {
+		return err
+	}
+	var expires, now time.Time
+	err := tx.QueryRow(ctx, `SELECT expires_at,credits,remaining_bytes,clock_timestamp() FROM cairn.index_session WHERE receipt_id=$1 FOR UPDATE`, req.ReceiptID).Scan(&expires, &credits, &remaining, &now)
+	if err == pgx.ErrNoRows {
+		return failure("STALE_HANDLE", "no expansion session for receipt")
+	}
+	if err != nil {
+		return err
+	}
+	if !expires.After(now) {
+		return failure("STALE_HANDLE", "index expired; retrieve a fresh index")
+	}
+	if err = receiptPayloadAvailable(ctx, tx, req.ReceiptID); err != nil {
+		return err
+	}
+	var body []byte
+	var original SemanticPackage
+	var storedSeal string
+	if err = tx.QueryRow(ctx, `SELECT semantic_body,seal FROM cairn.retrieval_receipt WHERE receipt_id=$1`, req.ReceiptID).Scan(&body, &storedSeal); err != nil {
+		return err
+	}
+	if err = cbor.Unmarshal(body, &original); err != nil {
+		return err
+	}
+	_, seal, err := sealPackage(original)
+	if err != nil {
+		return err
+	}
+	if seal != storedSeal {
+		return failure("INTEGRITY_FAILURE", "indexed semantic bytes do not reproduce their seal")
+	}
+	if original.Mode != "index" || original.Destination != dest {
+		return failure("AUTHORITY_DENIED", "expansion destination differs from indexed destination")
+	}
+	var id string
+	var version int
+	if err = tx.QueryRow(ctx, `SELECT record_id::text,version FROM cairn.index_handle WHERE receipt_id=$1 AND handle=$2`, req.ReceiptID, req.Handle).Scan(&id, &version); err == pgx.ErrNoRows {
+		return failure("STALE_HANDLE", "handle is not part of this index")
+	}
+	if err != nil {
+		return err
+	}
+	evaluations := map[string]*CandidateEvaluation{}
+	_, candidates, err := s.collectCandidates(ctx, tx, CompileRequest{Context: original.Context, Scope: original.Scope, Purpose: original.Purpose, AvailableTokens: original.AvailableTokens}, dest, evaluations)
+	if err != nil {
+		return err
+	}
+	currentMandatory := []Selection{}
+	found := false
+	for _, c := range candidates {
+		if c.selection.Mandatory {
+			currentMandatory = append(currentMandatory, c.selection)
+		}
+		if c.selection.Record.RecordID == id && c.selection.Record.Version == version {
+			selection = c.selection
+			found = true
+		}
+	}
+	if !found {
+		return failure("STALE_HANDLE", "record version or eligibility changed; retrieve a fresh index")
+	}
+	// Reasons include query ranking, so compare only the semantic authority and
+	// record facts when checking whether the mandatory bootstrap changed.
+	if !sameBootstrap(original.Selected, currentMandatory) {
+		return failure("STALE_HANDLE", "mandatory bootstrap changed; retrieve a fresh index")
+	}
+	indexed := false
+	for _, e := range original.Index {
+		if e.RecordID == id && e.Version == version {
+			indexed = indexEntry(selection.Record).BodySHA256 == e.BodySHA256
+		}
+	}
+	if !indexed {
+		return failure("INTEGRITY_FAILURE", "expanded body differs from indexed version")
+	}
+	*state = expansionState{selection, credits, remaining}
+	return nil
+}
+
 func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination) (Expansion, error) {
 	if err := validID(req.Handle); err != nil {
 		return Expansion{}, err
 	}
-	var selection Selection
-	var credits, remaining int
-	guard := func(tx pgx.Tx) error {
-		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
-			return err
-		}
-		if err := receiptDeliveryCurrent(ctx, tx, req.ReceiptID); err != nil {
-			return err
-		}
-		var expires, now time.Time
-		err := tx.QueryRow(ctx, `SELECT expires_at,credits,remaining_bytes,clock_timestamp() FROM cairn.index_session WHERE receipt_id=$1 FOR UPDATE`, req.ReceiptID).Scan(&expires, &credits, &remaining, &now)
-		if err == pgx.ErrNoRows {
-			return failure("STALE_HANDLE", "no expansion session for receipt")
-		}
-		if err != nil {
-			return err
-		}
-		if !expires.After(now) {
-			return failure("STALE_HANDLE", "index expired; retrieve a fresh index")
-		}
-		if err = receiptPayloadAvailable(ctx, tx, req.ReceiptID); err != nil {
-			return err
-		}
-		var body []byte
-		var original SemanticPackage
-		var storedSeal string
-		if err = tx.QueryRow(ctx, `SELECT semantic_body,seal FROM cairn.retrieval_receipt WHERE receipt_id=$1`, req.ReceiptID).Scan(&body, &storedSeal); err != nil {
-			return err
-		}
-		if err = cbor.Unmarshal(body, &original); err != nil {
-			return err
-		}
-		_, seal, err := sealPackage(original)
-		if err != nil {
-			return err
-		}
-		if seal != storedSeal {
-			return failure("INTEGRITY_FAILURE", "indexed semantic bytes do not reproduce their seal")
-		}
-		if original.Mode != "index" || original.Destination != dest {
-			return failure("AUTHORITY_DENIED", "expansion destination differs from indexed destination")
-		}
-		var id string
-		var version int
-		if err = tx.QueryRow(ctx, `SELECT record_id::text,version FROM cairn.index_handle WHERE receipt_id=$1 AND handle=$2`, req.ReceiptID, req.Handle).Scan(&id, &version); err == pgx.ErrNoRows {
-			return failure("STALE_HANDLE", "handle is not part of this index")
-		}
-		if err != nil {
-			return err
-		}
-		evaluations := map[string]*CandidateEvaluation{}
-		_, candidates, err := s.collectCandidates(ctx, tx, CompileRequest{Context: original.Context, Scope: original.Scope, Purpose: original.Purpose, AvailableTokens: original.AvailableTokens}, dest, evaluations)
-		if err != nil {
-			return err
-		}
-		currentMandatory := []Selection{}
-		found := false
-		for _, c := range candidates {
-			if c.selection.Mandatory {
-				currentMandatory = append(currentMandatory, c.selection)
-			}
-			if c.selection.Record.RecordID == id && c.selection.Record.Version == version {
-				selection = c.selection
-				found = true
-			}
-		}
-		if !found {
-			return failure("STALE_HANDLE", "record version or eligibility changed; retrieve a fresh index")
-		}
-		// Reasons include query ranking, so compare only the semantic authority and
-		// record facts when checking whether the mandatory bootstrap changed.
-		if !sameBootstrap(original.Selected, currentMandatory) {
-			return failure("STALE_HANDLE", "mandatory bootstrap changed; retrieve a fresh index")
-		}
-		indexed := false
-		for _, e := range original.Index {
-			if e.RecordID == id && e.Version == version {
-				indexed = indexEntry(selection.Record).BodySHA256 == e.BodySHA256
-			}
-		}
-		if !indexed {
-			return failure("INTEGRITY_FAILURE", "expanded body differs from indexed version")
-		}
-		return nil
-	}
+	var state expansionState
+	guard := func(tx pgx.Tx) error { return s.prepareExpansion(ctx, tx, req, dest, &state) }
 	return privileged(ctx, s, "expand", req.RequestID, struct {
 		Request     ExpandRequest
 		Destination Destination
 	}{req, dest}, func(tx pgx.Tx) (Expansion, error) {
+		selection := state.selection
+		credits, remaining := state.credits, state.remaining
 		encoded, err := json.Marshal(selection)
 		if err != nil {
 			return Expansion{}, err

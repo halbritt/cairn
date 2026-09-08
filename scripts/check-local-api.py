@@ -81,6 +81,40 @@ try:
                             input=json.dumps(dict(record_id=record['record_id'])),
                             env=env, capture_output=True, text=True, check=True)
     assert json.loads(result.stdout)['data']['record_id'] == record['record_id']
+    # Inspect exact supporting bytes through the real hosted agent CLI. Evidence
+    # sensitivity and budget come from the server/handle, not request assertions.
+    def evidence_call(args, payload, call_env=env):
+        response = subprocess.run([binary, *args], input=json.dumps(payload),
+                                  env=call_env, capture_output=True, text=True,
+                                  check=True, timeout=10)
+        return json.loads(response.stdout)['data']
+
+    grant = evidence_call(['bootstrap'], dict(request_id=str(uuid.uuid4()),
+                          reason='Bootstrap disposable evidence expansion fixture'))
+    support = evidence_call(['capture-evidence'], dict(request_id=str(uuid.uuid4()),
+                            repo='fixture:socket', body='explicit supporting socket evidence',
+                            source='synthetic socket evidence capture', sensitivity='shareable'))
+    claim = evidence_call(['agent', 'create'], dict(request_id=str(uuid.uuid4()), draft=dict(
+                          kind='note', body='Shareable socket evidence lesson', claim_type='self',
+                          sensitivity='shareable', scope=dict(repo='fixture:socket', task_id='*', run_id='*'))))
+    claim = evidence_call(['promote'], dict(request_id=str(uuid.uuid4()), record_id=claim['record_id'],
+                          expected_version=claim['version'], grant_id=grant['grant_id'],
+                          evidence_ids=[support['evidence_id']], reason='Support hosted evidence inspection fixture'))
+    hosted = ['agent', '--token-file', str(root / 'hosted.token')]
+    evidence_env = dict(env, CAIRN_DATABASE_URL='host=/nonexistent-evidence-client dbname=denied')
+    evidence_index = evidence_call([*hosted, 'index'], dict(index_request, request_id=str(uuid.uuid4())), evidence_env)
+    handle = next(h['handle'] for h in evidence_index['handles'] if h['record_id'] == claim['record_id'])
+    source_pull = dict(request_id=str(uuid.uuid4()), receipt_id=evidence_index['package']['receipt_id'], handle=handle)
+    source_body = evidence_call([*hosted, 'expand'], source_pull, evidence_env)
+    reference = next(e for e in source_body['selection']['evidence'] if e['evidence_id'] == support['evidence_id'])
+    evidence_pull = dict(source_pull, request_id=str(uuid.uuid4()), evidence_id=reference['evidence_id'], expected_sha256=reference['sha256'])
+    pulled = evidence_call([*hosted, 'expand-evidence'], evidence_pull, evidence_env)
+    assert pulled['record_id'] == claim['record_id'] and pulled['version'] == claim['version']
+    assert pulled['evidence']['body'] == 'explicit supporting socket evidence'
+    assert pulled['evidence']['actual_sha256'] == reference['sha256']
+    assert pulled['evidence']['witness'] == 'testimony' and pulled['credits_remaining'] == 2
+    assert evidence_call([*hosted, 'expand-evidence'], evidence_pull, evidence_env) == pulled
+    print('Hosted evidence pull preserves exact supporting bytes and testimony, shared credits and retry through Unix API without client DB access')
     # The process client must work with an unusable database address. Only the
     # server owns DB access; the child receives neither CAIRN settings nor tokens.
     client_env = dict(env, CAIRN_DATABASE_URL='host=/nonexistent-cairn-host-socket dbname=denied',

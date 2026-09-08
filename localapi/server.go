@@ -125,6 +125,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveJSON(w, r, func(ctx context.Context, req core.ExpandRequest) (core.Expansion, error) {
 			return c.store.Expand(ctx, req, c.destination)
 		})
+	case "/v1/expand-evidence":
+		serveJSON(w, r, func(ctx context.Context, req core.ExpandEvidenceRequest) (core.EvidenceExpansion, error) {
+			return c.store.ExpandEvidence(ctx, req, c.destination)
+		})
 	case "/v1/compile":
 		serveJSON(w, r, func(ctx context.Context, req core.CompileRequest) (core.Package, error) {
 			return c.store.Compile(ctx, req, c.destination)

@@ -7,6 +7,13 @@ The next product milestone is memory used in real Striatum/OpenCode builds, with
 record-specific observations showing whether it prevents recurring failures. Passing the
 current tests does not establish that result or full design acceptance.
 
+[Current usefulness evidence](verification/usefulness-status-2026-09-08.md) is
+one exploratory avoided-regression case and a real failure-to-lesson loop; no
+completed cross-task or cross-harness benefit is established. Prioritize a real
+accepted task, retrieval quality and transfer evidence. Further recovery
+engineering is deferred for this experimental stage unless an observed problem
+requires it; the existing implementation remains available.
+
 Status: **open**, **partial**, **implemented/tested**. Completion means the stated
 acceptance evidence exists; deployment and measured usefulness are separate.
 Items can be delivered in smaller commits without marking the whole item complete.
@@ -153,7 +160,10 @@ with full mandatory bootstrap and expiring caller/destination-bound handles.
 Pulls spend credits transactionally, recheck current authority and version even
 on retries, and record expansion without rewriting the original index exposure.
 Historical index recompilation works. H0 remains pre-launch body compilation;
-actual H1 routing, evidence-body expansion and overall host task budgets remain open.
+[Supporting-evidence pulls](index-and-pull.md) now return exact selected captured
+bytes with a digest pin, current authority/destination checks and shared expansion
+credits. The real Unix CLI/API probe verifies hosted disclosure without client DB
+access. Actual H1 model routing and overall host task budgets remain open.
 
 A [native-history coverage trial](verification/history-coverage-2026-09-07.md)
 now uses three committed accepted clauses and 12 native commit subjects in a
