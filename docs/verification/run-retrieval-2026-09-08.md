@@ -55,3 +55,17 @@ observations. Its failures and unknowns remain as originally reported.
 Validation logs for this development checkout are retained locally under
 `/tmp/cairn-run-retrieval-{boundaries,integration,check}.log`. The tests use only
 owned disposable PostgreSQL clusters. No operational memory is imported by them.
+
+All required integration/race checks and `make check` passed; the existing 12
+Python unit tests also passed. Code commit
+`321b3cb6e6c7e2ae6d7237b391e4ac12cf3c4d50` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34260176182) and is installed
+locally with `vcs.modified=false`. Binary SHA-256:
+`9b73a0290dfa041c3d794238a6f9d7b2ec77f78d00f55743ae3ef235e5d9bd40`.
+
+The local store was backed up before migration 029. The running API uses the
+same binary; existing observer status, run rows and the retained memory-version
+digest matched their pre-upgrade values. The new route refused an ordinary-agent
+request through the live Unix API. No operational memory, run or retrieval
+association was created for this verification. Deployment proof is retained in
+`/tmp/cairn-run-retrieval-install-verification.json`.
