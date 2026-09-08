@@ -46,6 +46,11 @@ assessments. It returns exactly one row for each run: zero exposures and rejecte
 task outcome for M, zero exposures and unknown task outcome for N, and one
 exposure and unknown task outcome for O. All retain assessment version 2.
 
+Clean commit `9c65d324c105d4bb4a0c4b4db53b6881300f1057` is installed locally after
+a backup and [passing CI](https://github.com/halbritt/cairn/actions/runs/34189273876).
+The installed CLI and authenticated API return identical reports. Operational
+record versions retain their previous digest; no migration beyond 020 is needed.
+
 ## Wrapper metadata
 
 `cairn run` records a SHA-256 digest of its command argv before launch. Raw argv is

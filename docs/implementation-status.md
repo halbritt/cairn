@@ -240,7 +240,13 @@ receipts, and full restore reconciliation and live Striatum wiring remain open.
 
 Migration 019 adds [standalone task-failure review](demand-review.md); migration
 020 adds [ordinary note deletion](ordinary-delete.md). The local installation
-runs clean commit `d61769decbc69fed875a6b668b20a6dc155a9b8a` after a backup and
+runs clean commit `9c65d324c105d4bb4a0c4b4db53b6881300f1057` after a backup and
 verified migration. CI, the disposable integration suite and the
 backup/restore lifecycle drill passed. The authenticated API runs that binary;
 retained operational record versions have the same digest before and after.
+
+The run report includes no-memory baselines and unfinished launch claims as
+distinct observations. The installed CLI and authenticated local API return
+identical results on the operational store; the reviewed M/N/O trial stores
+each return one row with their latest task assessment. No host acceptance or
+memory benefit is inferred from report membership.

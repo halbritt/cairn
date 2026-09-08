@@ -106,5 +106,25 @@
     }
   ],
   "original_trial_files_unchanged": true,
-  "stores_stopped": true
+  "stores_stopped": true,
+  "installation": {
+    "schema": "cairn.run-report-install/1",
+    "revision": "9c65d324c105d4bb4a0c4b4db53b6881300f1057",
+    "binary_sha256": "057ca7ba4a451a0b5a465d6f56f372d7413ed0683b3661adeba024ec17f09a11",
+    "api_pid": 1548155,
+    "api_running_same_binary": true,
+    "agent_get": {
+      "ok": true,
+      "record_id": "e6321836-e12d-49af-8a66-04d6d6c8abff",
+      "version": 1
+    },
+    "record_version_digest_unchanged": true,
+    "record_version_sha256": "1bd01848904e3739a3e748601d3ccce45ec009f8a451fc1b8f3937efd4279ce6",
+    "preupgrade_backup_pointer": "/tmp/cairn-pre-run-report-backup.txt",
+    "migration_version": 20,
+    "ci": "https://github.com/halbritt/cairn/actions/runs/34189273876",
+    "ci_status": "success",
+    "cli_api_run_report_equal": true,
+    "run_report_rows": 3
+  }
 }
