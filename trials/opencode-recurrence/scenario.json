@@ -1,16 +1,51 @@
 {
-  "schema": "cairn.recurrence-scenario/1",
-  "id": "striatum-lane-go-cache",
+  "schema": "cairn.recurrence-scenario/2",
+  "id": "striatum-lane-go-cache-reviewed-recurrence",
   "historical_fix": "56840cf694ecf451980abbd694fd3c8c01cbc7d7",
   "earlier_experience": "3a9550d0b27449bc2655c825dd1ab3af8c7cf946",
-  "arms": ["repo_only", "native_excerpt", "cairn_h0"],
-  "task": "Repair the Go build-cache lifecycle in this isolated historical Striatum snapshot. Agent runtimes launched by the LLM supervisor inherit an operator or harness cache that accumulates across lanes. Give each lane a cache directory inside its own workspace, created before launch, usable for incremental builds during the lane, and removed with workspace reclamation. Per-invocation environment overrides at the supervise.Spec seam must reach the confined runtime despite the init helper's stripped environment. Propagate preparation failures before launch. Preserve dispatch identity, semantic pins and other environment behavior. Change only internal/backend/llm/supervisor.go and internal/backend/supervise/supervise.go; you may add new focused _test.go files in those two packages, but must not alter existing tests. This is an isolated historical repair experiment, not a live graph or architectural pass. Do not run striatum, change backend declarations, access files outside the supplied workspace, use the network, or inspect later Git history. Implement the repair and run relevant available checks. If supplemental memory influenced your change, cite its record UUID in your final explanation; omit citations that did not help.",
+  "arms": [
+    "repo_only",
+    "native_excerpt",
+    "cairn_h0"
+  ],
+  "task": "Repair the Go build-cache lifecycle in this isolated historical Striatum snapshot. Agent runtimes launched by the LLM supervisor inherit an operator or harness cache that accumulates across lanes. Give each lane a cache directory inside its own workspace, created before launch, usable for incremental builds during the lane, and removed with workspace reclamation. Per-invocation environment overrides at the supervise.Spec seam must reach the confined runtime despite the init helper's stripped environment. Propagate preparation failures before launch. Preserve dispatch identity, semantic pins and other environment behavior. Change only internal/backend/llm/supervisor.go, internal/backend/supervise/supervise.go and internal/backend/supervise/init.go; you may add new focused _test.go files in those two packages, but must not alter existing tests. This is an isolated historical repair experiment, not a live graph or architectural pass. Do not run striatum, change backend declarations, access files outside the supplied workspace, use the network, or inspect later Git history. Implement the repair and run relevant available checks. If supplemental memory influenced your change, cite its record UUID in your final explanation; omit citations that did not help.",
   "query": "Go build cache lane workspace runtime lifecycle environment GOCACHE",
   "gate": "TestCairnRecurrenceRuntimeCacheLifetime",
   "limits": [
-    "Later recurrence experiment; memories are captured now from sources that predate the historical repair",
+    "Post-review recurrence: a lesson from calibration L is admitted now and tested on fresh historical snapshots; this is not historical-time availability or an unseen-task evaluation",
     "One task and one run per arm cannot establish general causal benefit",
     "Mechanical regression results are not Striatum graph acceptance",
-    "Future fix and held-out gate are excluded from model workspace"
-  ]
+    "Future fix and held-out gate are excluded from model workspace",
+    "Criteria v2 permits the init seam and any cache descendant of the dispatch workspace; original trials retain their original criteria and assessments"
+  ],
+  "availability": "post_review_recurrence",
+  "experiment_kind": "reviewed_recurrence",
+  "reviewed_lesson": {
+    "body": "A previous Go cache repair created a new STRIATUM_SUPERVISE_ENV_<index> transport and decoded its payloads in the init helper. Its cache lifecycle passed, but it changed ordinary inherited environment behavior: with no Spec.Env supplied, an inherited STRIATUM_SUPERVISE_ENV_0=KEY=metadata replaced the ordinary KEY value in the runtime. A delegated-cgroup reproduction passed on the original snapshot and failed on that candidate. Preserve helper-metadata stripping when forwarding per-invocation overrides; test both an explicit override and an inherited helper marker with no override. A skipped confinement test does not verify runtime behavior.",
+    "source": "cairn:c07f4587d907485e72b3537586afeaa30c861934:docs/verification/opencode-pro-calibration-2026-09-08.md#independent-checks-after-the-run",
+    "evidence": {
+      "observation": "Operator-reviewed post-run diagnostic, not model completion testimony",
+      "candidate_patch_sha256": "53eab2d4f5c13a9d01465388c7c854c4a02eae7d80605b402606b500a54d6ad2",
+      "diagnostic_source": "/tmp/cairn-inherited-env-test.go",
+      "results": {
+        "broken": {
+          "exit_code": 0,
+          "stdout_sha256": "b793b7d9bad34c61694b34dbeaf2fbfdb4e350f11eeddbf1e970085150a7c95d",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "actions": [
+            "pass"
+          ]
+        },
+        "repo_only": {
+          "exit_code": 1,
+          "stdout_sha256": "1373b773cff01cfba03e090d4689282e7fa72abf5399f11bfc34092509134a34",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "actions": [
+            "fail"
+          ]
+        }
+      },
+      "availability": "Observed after calibration L; never claimed available before the original historical repair."
+    }
+  }
 }

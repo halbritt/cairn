@@ -14,6 +14,10 @@ history cannot reveal the repair.
 The held-out check invokes the real LLM supervisor and its confined runtime. It
 observes whether the runtime gets an existing cache directory inside its lane
 workspace and whether that directory disappears when the workspace is reclaimed.
+Criteria v2 uses the dispatch workspace, which can contain a cache beside the
+runtime working directory. It also checks that inherited supervisor metadata
+does not override ordinary runtime environment values when no invocation
+override was supplied. This is the regression reproduced in calibration L.
 It allows any directory name and environment-passing implementation. Preflight
 requires the check to fail on the original broken snapshot and pass on the
 historical repaired snapshot. Missing confinement or a skipped check is not a
@@ -25,21 +29,31 @@ and time budget:
 | Arm | Supplemental input |
 | --- | --- |
 | `repo_only` | Empty Cairn scope; ordinary repository instructions and files remain available. |
-| `native_excerpt` | Earlier repository text supplied directly with source locators. |
-| `cairn_h0` | The same earlier text captured as evidence-backed B records, retrieved and rendered through Cairn. |
+| `native_excerpt` | The selected reviewed lesson supplied directly with its source locator. |
+| `cairn_h0` | The same lesson captured as an evidence-backed B record, retrieved and rendered through Cairn. |
 
-The supplied experience predates the repair: a paragraph in commit
+The original campaign supplied experience predating the repair: a paragraph in commit
 `3a9550d0b27449bc2655c825dd1ab3af8c7cf946` explains that Go's active cache growth
 was not an unreaped leak; D0013.C2 describes the supervisor's existing lifecycle
-ownership. Neither source contains the later implementation. Cairn captures these
-sources now, under explicit recurrence semantics and a pin to the trial's base
-revision. It does not pretend the new memory records existed during the incident.
+ownership. Neither source contained the later implementation. Those trials and
+their earlier criteria remain unchanged in their frozen artifacts and reports.
+
+The current scenario is explicitly `post_review_recurrence`. Its single lesson
+is an operator-reviewed finding from calibration L, with the candidate digest,
+diagnostic results and committed review locator pinned in `scenario.json`.
+It explains the environment regression and skipped-test limitation. Cairn admits
+this selected lesson through separate collector and operator promotion channels
+in a disposable store. It is applied to fresh historical snapshots as a recurrence
+experiment; it was not available at the historical repair date. The controller
+pins the lesson to that base revision and verifies exact selection. Comparing
+these fresh runs tests a known reviewed lesson on the same repair, not transfer
+to an unseen task. Operational memory is unchanged.
 
 The local model runs under an exact GPU fleet lease. The optional hosted
 calibration uses the separately bounded route described below. OpenCode has a fresh private
 home and configuration for each arm. A Bubblewrap filesystem excludes the real
 home, trial controller, database, and later repair. The model can change only its
-trial workspace and cache; the task further limits candidate changes to the two
+trial workspace and cache; the task further limits candidate changes to the three
 production files and new tests in their packages. The mount boundary is not a
 network sandbox. The task and OpenCode permissions prohibit network tools.
 
@@ -70,7 +84,7 @@ The compiler receives 32,000 units of available memory input room, leaving a
 65,536-token configured context; memory room is separate from the task, tool
 schemas, output and accumulating tool results. The controller checks all three
 selections before model launch, including the exact versions and body digests of
-both intended H0 records. It checks the actual launch receipt again afterward.
+every intended H0 record. It checks the actual launch receipt again afterward.
 These checks matter: the first completed attempt used only 12,000 units of room
 and silently omitted both notes. That attempt is invalid for memory comparison.
 
@@ -102,8 +116,9 @@ The commands create only a disposable PostgreSQL cluster and isolated trial
 workspaces. They refuse to reuse a trial store, so a retry requires a new trial
 and fresh run identities. Preserve failed attempts when interpreting a later run.
 
-For harness calibration, `--arm repo_only` runs just that arm and labels the
-report `harness_calibration`. It cannot produce a memory comparison. The optional
+`--arm` runs one arm. The reviewed recurrence scenario labels it as part of that
+experiment; a single arm cannot establish a memory comparison. Older scenarios
+without an explicit experiment kind default to `harness_calibration`. The optional
 `--disable-thinking` sends `chat_template_kwargs.enable_thinking=false` through
 the custom provider. This is a per-request model setting; the default leaves it
 unspecified. The installed OpenCode binary can be checked against a local fixture:

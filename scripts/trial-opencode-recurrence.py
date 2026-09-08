@@ -95,6 +95,10 @@ def invoke(binary, environment, command, request=None, arguments=()):
 
 
 def native_notes(source, state, scenario):
+    if 'reviewed_lesson' in scenario:
+        # This is an explicit later lesson, not evidence available at the
+        # historical repair date. Its bytes are pinned by the scenario hash.
+        return [scenario['reviewed_lesson']]
     raw = git(source, 'show', scenario['earlier_experience'], '--format=%B', '--no-patch').decode()
     start = raw.index('Correcting a claim I first wrote')
     end = raw.index('\n\n', start)
@@ -124,7 +128,8 @@ def sandbox(opencode, work, home, cache, config, goroot, gomod, route):
 def candidate_diff(work):
     names = set(git(work, 'diff', '--name-only').decode().splitlines())
     names.update(git(work, 'ls-files', '--others', '--exclude-standard').decode().splitlines())
-    allowed = {'internal/backend/llm/supervisor.go', 'internal/backend/supervise/supervise.go'}
+    allowed = {'internal/backend/llm/supervisor.go', 'internal/backend/supervise/supervise.go',
+               'internal/backend/supervise/init.go'}
     outside = []
     for name in sorted(names):
         new_test = name.endswith('_test.go') and str(Path(name).parent) in ('internal/backend/llm', 'internal/backend/supervise')
@@ -255,13 +260,13 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
     (store / 'socket').mkdir(mode=0o700)
     subprocess.run([str(pg_bin / 'initdb'), '-D', str(store / 'data'), '--auth-local=trust', '--auth-host=reject', '--no-locale', '-E', 'UTF8'], check=True, stdout=subprocess.DEVNULL)
     server = None
-    report = dict(schema='cairn.opencode-recurrence/1', scenario=scenario['id'], availability='later_recurrence',
+    report = dict(schema='cairn.opencode-recurrence/1', scenario=scenario['id'], availability=scenario.get('availability', 'later_recurrence'),
                   base=state['base'], fix=state['fix'], preflight=state['results'],
                   scenario_sha256=sha(SCENARIO.read_bytes()), gate_sha256=sha(GATE.read_bytes()),
                   model=route['model'], lease_id=route['lease_id'], binding=route['binding'],
                   opencode_sha256=sha(opencode.read_bytes()), cairn_sha256=sha(binary.read_bytes()),
                   controller_sha256=sha(Path(__file__).read_bytes()), arms=[], limits=scenario['limits'])
-    report['experiment_kind'] = 'harness_calibration' if arm is not None else 'memory_comparison'
+    report['experiment_kind'] = scenario.get('experiment_kind', 'harness_calibration' if arm is not None else 'memory_comparison')
     if route['provider'] == 'trial-openrouter':
         report['relay_sha256'] = sha((PROJECT / 'scripts/trial_openrouter.py').read_bytes())
     report['settings'] = dict(arms=scenario['arms'], disable_thinking=disable_thinking,
@@ -288,8 +293,8 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
             args = ['--token-file', store / 'collector.token', '--socket', store / 'api.sock']
             record = invoke(binary, environment, 'agent', dict(request_id=str(uuid.uuid4()), draft=dict(kind='lesson', body=note['body'], sensitivity='shareable',
                          scope=dict(repo='trial:cairn_h0', task_id='*', run_id='*'), claim_type='self', pins=dict(revision=state['base']))), [*args, 'create'])
-            evidence = invoke(binary, environment, 'agent', dict(request_id=str(uuid.uuid4()), repo='trial:cairn_h0', body=json.dumps(note), source='Explicit pre-repair historical source capture', sensitivity='shareable'), [*args, 'evidence'])
-            record = invoke(binary, environment, 'promote', dict(request_id=str(uuid.uuid4()), record_id=record['record_id'], expected_version=record['version'], grant_id=authority['grant_id'], evidence_ids=[evidence['evidence_id']], reason='Admit exact earlier source text for a bounded recurrence experiment'))
+            evidence = invoke(binary, environment, 'agent', dict(request_id=str(uuid.uuid4()), repo='trial:cairn_h0', body=json.dumps(note), source='Explicit selected recurrence evidence capture', sensitivity='shareable'), [*args, 'evidence'])
+            record = invoke(binary, environment, 'promote', dict(request_id=str(uuid.uuid4()), record_id=record['record_id'], expected_version=record['version'], grant_id=authority['grant_id'], evidence_ids=[evidence['evidence_id']], reason='Admit reviewed source-supported lesson for a bounded recurrence experiment'))
             records.append(dict(record_id=record['record_id'], version=record['version'], source=note['source'], body_sha256=sha(note['body'].encode())))
         report['records'] = records
         report['status'] = 'running'
@@ -331,7 +336,7 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
             child_env.update(CAIRN_HOME=str(store), CAIRN_DATABASE_URL=environment['CAIRN_DATABASE_URL'])
             prompt = scenario['task']
             if arm == 'native_excerpt':
-                prompt += '\n\nEarlier native repository context:\n' + '\n\n'.join(n['source']+'\n'+n['body'] for n in notes)
+                prompt += '\n\nSupplemental reviewed experience:\n' + '\n\n'.join(n['source']+'\n'+n['body'] for n in notes)
             command = [str(binary), 'run', '--repo', 'trial:'+arm, '--dir', str(work), '--destination', 'hosted', '--carrier', 'argv', '--tokens', str(MEMORY_ROOM), '--timeout', str(process_seconds) + 's',
                        '--task', scenario['id'], '--run', arm, '--task-class', 'historical-go-cache-repair', '--binding', route['binding'], '--capability', model,
                        '--revision', state['base'], '--query', scenario['query'], '--prompt', prompt, '--', *sandbox(opencode, work, home, cache, config, goroot, gomod, route)]
