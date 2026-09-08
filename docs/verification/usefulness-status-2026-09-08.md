@@ -22,6 +22,13 @@ answer first without depending on insertion order. Its frozen development worklo
 also exposes vocabulary misses and unrelated results. This is retrieval evidence,
 not an additional accepted-task result.
 
+The [native agent CLI trial](agent-search-2026-09-08.md) used search/pull directly
+on a different documentation question and linked the actual retrievals to the
+observed host run. All pulls succeeded. The answer's facts and citations matched
+the sources on retrospective inspection, but its prose-prefixed JSON failed the
+prospective parser and the task assessment remains rejected. This is further
+integration evidence, not an additional accepted-task or transfer result.
+
 The next priority is a completed real task with prospective acceptance criteria
 and an appropriate no-memory/direct-context comparison, followed by a transfer
 case using a previously learned lesson. Hold the task, binding and budget fixed;

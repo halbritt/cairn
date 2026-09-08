@@ -163,6 +163,11 @@ now brings complete pull commands into the shipped client, with explicit task/ru
 scope, mandatory-context preservation, quoted paths and ordinary API authentication.
 It replaces request-JSON construction for shell-capable agents. This packaging
 does not itself establish task benefit, global task budgets or native H1 admission.
+An [actual OpenCode invocation](verification/agent-search-2026-09-08.md) now uses
+these commands directly and joins four retrievals to one observed execution.
+Its source-supported answer failed the prospective JSON parser because of
+surrounding prose; the original rejected assessment remains. Broader task value
+and transfer remain open.
 
 | ID | Status | Work and acceptance evidence |
 | --- | --- | --- |
