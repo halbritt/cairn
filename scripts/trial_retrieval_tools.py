@@ -37,7 +37,19 @@ with open('/memory-calls/calls.jsonl','a+') as log:
  response=json.loads(result.stdout)
  log.write(json.dumps(dict(operation=operation,request=payload,response=response,exit_code=result.returncode))+'\\n')
  log.flush()
- print(result.stdout,end='')
+ if PAIRED_PULLS and operation=='search' and response['ok']:
+  data=response['data']
+  semantic=data['package']['semantic']
+  handles={(h['record_id'],h['version']):h['handle'] for h in data['handles']}
+  entries=[]
+  for entry in semantic.get('index',[]):
+   handle=handles[(entry['record_id'],entry['version'])]
+   entries.append(dict(entry,pull_command='/opt/memory pull '+data['package']['receipt_id']+' '+handle))
+  response=dict(response,data=dict(status=semantic['status'],mandatory=semantic.get('selected',[]),results=entries,
+                expires_at=data['expires_at'],credits_remaining=data['credits_remaining'],bytes_remaining=data['bytes_remaining']))
+  print(json.dumps(response))
+ else:
+  print(result.stdout,end='')
  raise SystemExit(result.returncode)
 '''
 
@@ -85,7 +97,7 @@ def final_answer(stdout):
     return answer if isinstance(answer, dict) else None
 
 
-def run(root, binary, opencode, preflight_only):
+def run(root, binary, opencode, preflight_only, paired_pulls=False, arm_only=None):
     scenario = json.loads(SCENARIO.read_text())
     workload_path = PROJECT / scenario['workload']
     workload_bytes = workload_path.read_bytes()
@@ -108,12 +120,12 @@ def run(root, binary, opencode, preflight_only):
     private_file(store / 'identities.json', json.dumps([dict(token_sha256=hashlib.sha256(token.encode()).hexdigest(),
                  principal='agent:storage-answering', repo='trial:storage-answering', role='agent', destination='hosted')]))
     helper = root / 'memory'
-    private_file(helper, MEMORY_TOOL)
+    private_file(helper, MEMORY_TOOL.replace('PAIRED_PULLS', str(paired_pulls)))
     helper.chmod(0o700)
     report = dict(schema='cairn.tool-retrieval-trial/1', scenario_sha256=hashlib.sha256(SCENARIO.read_bytes()).hexdigest(),
                   controller_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                   cairn_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
-                  opencode_sha256=hashlib.sha256(opencode.read_bytes()).hexdigest(), records=records, arms=[])
+                  opencode_sha256=hashlib.sha256(opencode.read_bytes()).hexdigest(), paired_pulls=paired_pulls, records=records, arms=[])
     with (root / 'api.log').open('wb') as log:
         api = subprocess.Popen([str(binary), 'serve'], env=env, stdout=log, stderr=log)
         try:
@@ -138,18 +150,25 @@ def run(root, binary, opencode, preflight_only):
                 result = subprocess.run(base + ['/opt/memory', *args], env=child_env, capture_output=True, text=True, check=True, timeout=20)
                 return json.loads(result.stdout)['data']
             empty = memory('search', 'storage')
-            assert empty['package']['semantic']['mode'] == 'index'
-            assert not empty['package']['semantic'].get('index')  # Empty index is omitted on the wire.
+            if paired_pulls:
+                assert empty['results'] == []
+            else:
+                assert empty['package']['semantic']['mode'] == 'index'
+                assert not empty['package']['semantic'].get('index')  # Empty index is omitted on the wire.
             found = memory('search', 'database')
-            handle = next(h for h in found['handles'] if h['record_id'] == storage_id)
-            pulled = memory('pull', found['package']['receipt_id'], handle['handle'])
+            if paired_pulls:
+                entry = next(e for e in found['results'] if e['record_id'] == storage_id)
+                pulled = memory(*entry['pull_command'].split()[1:])
+            else:
+                handle = next(h for h in found['handles'] if h['record_id'] == storage_id)
+                pulled = memory('pull', found['package']['receipt_id'], handle['handle'])
             assert pulled['selection']['record']['record_id'] == storage_id
             report['preflight'] = dict(empty_initial_query=True, refined_query_has_storage=True, pulled_storage=True, client_dsn_unusable=True)
             private_file(root / 'preflight.json', json.dumps(report['preflight'], indent=2) + '\n')
             if preflight_only:
                 return
             key = configured_key(scenario['model'])
-            for arm in scenario['arms']:
+            for arm in [arm_only] if arm_only else scenario['arms']:
                 arm_root = root / arm
                 arm_root.mkdir()
                 for name in ['work', 'home', 'calls']:
@@ -170,6 +189,8 @@ def run(root, binary, opencode, preflight_only):
                         prompt += '\n\nSupplied source notes:\n' + json.dumps(records)
                     elif tool:
                         prompt += '\n\n' + scenario['tool_instruction']
+                        if paired_pulls:
+                            prompt += '\nEach search result includes its complete pull_command. Use that command to inspect its body.'
                     command = sandbox(opencode, binary, arm_root / 'work', arm_root / 'home', config_path,
                                       store, arm_root / 'calls', helper, tool)
                     command += ['/opt/opencode', 'run', '--pure', '--format', 'json', '-m', route['provider'] + '/' + route['model'], prompt]
@@ -209,5 +230,8 @@ if __name__ == '__main__':
     parser.add_argument('--cairn', type=Path, required=True)
     parser.add_argument('--opencode', type=Path, required=True)
     parser.add_argument('--preflight-only', action='store_true')
+    parser.add_argument('--paired-pulls', action='store_true', help='show a complete pull command beside each index result')
+    parser.add_argument('--arm', choices=['no_memory', 'direct_context', 'tool_retrieval'])
     args = parser.parse_args()
-    run(args.output.absolute(), args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.preflight_only)
+    run(args.output.absolute(), args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.preflight_only,
+        args.paired_pulls, args.arm)
