@@ -52,7 +52,7 @@ write failure does not roll back a committed mutation.
 Operations: `create`, `edit`, `delete`, ordinary `supersede`, `compile`, `get`, `evidence`, `usage`, `use-report`, `run-report`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
-`claim-run`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
+`claim-run`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`. `compile` takes
 no destination field; the configured profile owns that decision. A hosted profile
 cannot use the protected `use-report` or `run-report` endpoints. The server checks repository scope
@@ -63,6 +63,10 @@ requests and removes the owned socket; a second listener cannot replace it.
 omits `grant_id`. B supersession uses the operator CLI. The preview and
 supersession inspection endpoints take `record_id`; a preview belongs to the
 authenticated caller that obtained it.
+
+An observer can use [the authenticated process runner](authenticated-runner.md)
+with `cairn agent --token-file OBSERVER_TOKEN run ...`, without opening the database.
+The server records observations; commands execute on the client host.
 
 An observer may reserve one launch with `claim-run` and a `receipt_id`. The
 receipt must belong to that observer. Repeated claims do not authorize another
@@ -99,8 +103,10 @@ recall entering knowledge promotion through existing foreign-head attestations
 and exogenous-change records. That is a relevant existing admission path to
 investigate before adding Cairn-specific artifact machinery. It does not declare
 Cairn a producer, make raw recall authoritative, or authorize ambient build inputs.
-The owning RFC 0015 lineage and current admission code still need reconciliation
-for a Cairn integration.
+The decision index still lists RFC 0015 as in flight, and the RFC index records
+its ladder as parked. Current driver dispatch also seals empty prompt assets.
+The owning RFC/decision and admission code therefore still need reconciliation;
+that target entry does not establish an available native Cairn route.
 
 ## User services
 

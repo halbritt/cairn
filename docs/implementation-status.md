@@ -282,3 +282,14 @@ retraction preserve category metadata, while old engine seals and request retrie
 remain compatible. See [contract](instruction-limits.md) and
 [verification](verification/instruction-limits-2026-09-08.md). This advances L3;
 waivers and the full enforcement table remain open.
+
+
+## Authenticated host execution — 2026-09-08
+
+The existing H0 process wrapper now operates through a scoped Unix observer
+profile with `cairn agent ... run`. Delivery, launch claims, context registration
+and outcomes retain the existing core gates without database credentials on the
+client. Lost claim responses preserve receipt metadata and never start a child;
+lost outcome responses retain an idempotent pending request. See
+[contract](authenticated-runner.md) and [verification](verification/authenticated-runner-2026-09-08.md).
+This advances host ingress but does not complete Striatum's sealed integration.

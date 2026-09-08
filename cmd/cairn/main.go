@@ -59,7 +59,8 @@ func main() {
 		}
 	}
 	output := os.Stdout
-	if len(os.Args) > 1 && os.Args[1] == "run" {
+	_, observedRun := data.(runner.Result)
+	if observedRun || (len(os.Args) > 1 && os.Args[1] == "run") {
 		output = os.Stderr
 		if err != nil {
 			fmt.Fprintln(output, "MEM-STATUS/"+envelope.Status)

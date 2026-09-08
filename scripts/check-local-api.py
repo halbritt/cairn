@@ -14,11 +14,16 @@ binary, home = sys.argv[1:]
 root = Path(home)
 root.mkdir(mode=0o700)
 token = secrets.token_urlsafe(32)
+observer_token = secrets.token_urlsafe(32)
+(root / 'observer.token').write_text(observer_token + '\n')
+(root / 'observer.token').chmod(0o600)
 (root / 'agent.token').write_text(token + '\n')
 (root / 'agent.token').chmod(0o600)
 (root / 'identities.json').write_text(json.dumps([dict(
     token_sha256=hashlib.sha256(token.encode()).hexdigest(), principal='agent:socket-fixture',
-    repo='fixture:socket', role='agent', destination='local')]))
+    repo='fixture:socket', role='agent', destination='local'), dict(
+    token_sha256=hashlib.sha256(observer_token.encode()).hexdigest(), principal='host:socket-fixture',
+    repo='fixture:socket', role='observer', destination='local')]))
 (root / 'identities.json').chmod(0o600)
 env = dict(os.environ, CAIRN_HOME=str(root))
 process = subprocess.Popen([binary, 'serve'], env=env, stdout=subprocess.PIPE,
@@ -69,6 +74,38 @@ try:
                             input=json.dumps(dict(record_id=record['record_id'])),
                             env=env, capture_output=True, text=True, check=True)
     assert json.loads(result.stdout)['data']['record_id'] == record['record_id']
+    # The process client must work with an unusable database address. Only the
+    # server owns DB access; the child receives neither CAIRN settings nor tokens.
+    client_env = dict(env, CAIRN_DATABASE_URL='host=/nonexistent-cairn-host-socket dbname=denied',
+                      CAIRN_HOST_SECRET='synthetic-host-secret')
+    host = [binary, 'agent', '--token-file', str(root / 'observer.token')]
+    request_id = str(uuid.uuid4())
+    child = ('import os,sys; body=sys.stdin.read(); '
+             'assert "Synthetic socket lesson" in body; '
+             'assert "SOCKET-HOST-PROMPT" in body; '
+             'assert not any(k.startswith("CAIRN_") for k in os.environ); '
+             'print("observed-host-ok")')
+    command = [*host, 'run', '--repo', 'fixture:socket', '--request-id', request_id,
+               '--run', 'socket-host-run', '--prompt', 'SOCKET-HOST-PROMPT',
+               '--query', 'socket', '--', sys.executable, '-c', child]
+    run = subprocess.run(command, env=client_env, capture_output=True, text=True, timeout=15)
+    assert run.returncode == 0 and run.stdout.strip() == 'observed-host-ok', (run.stdout, run.stderr)
+    observed = json.loads(run.stderr)['data']
+    assert observed['process_state'] == 'exited' and observed['outcome_id']
+    context_file = Path(observed['artifacts']) / 'context.txt'
+    assert 'SOCKET-HOST-PROMPT' not in context_file.read_text()
+    retry = subprocess.run(command, env=client_env, capture_output=True, text=True, timeout=15)
+    assert retry.returncode != 0 and not retry.stdout and 'RUN_ALREADY_STARTED' in retry.stderr
+    for args, code, state in [(['/bin/sh', '-c', 'exit 7'], 1, 'exited'),
+                              (['/bin/sleep', '10'], 124, 'timeout')]:
+        run = subprocess.run([*host, 'run', '--repo', 'fixture:socket', '--timeout', '100ms',
+                              '--', *args], env=client_env, capture_output=True, text=True, timeout=15)
+        assert run.returncode == code and json.loads(run.stderr)['data']['process_state'] == state
+    report = subprocess.run([*host, 'run-report'], input=json.dumps(dict(repo='fixture:socket', limit=10)),
+                            env=client_env, capture_output=True, text=True, check=True)
+    rows = json.loads(report.stdout)['data']['rows']
+    assert len(rows) == 3 and all(r['outcome_observed'] and r['task_outcome'] == 'unknown' for r in rows)
+    print('Authenticated host CLI records process outcomes without database access and preserves output/exit semantics')
 finally:
     process.send_signal(signal.SIGTERM)
     try:

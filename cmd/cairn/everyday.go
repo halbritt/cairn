@@ -65,7 +65,7 @@ func search(ctx context.Context, s *core.Store, args []string) (core.Package, er
 	}
 	return s.Compile(ctx, core.CompileRequest{Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability}, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: strings.Join(f.Args(), " "), Purpose: *purpose, AvailableTokens: *tokens}, core.Destination{Name: *dest, AllowLocal: *dest == "local"})
 }
-func runTask(ctx context.Context, s *core.Store, args []string) (runner.Result, error) {
+func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result, error) {
 	f := flags("run")
 	repo := f.String("repo", defaultRepo(), "repository identity")
 	directory := f.String("dir", defaultRepo(), "working directory")

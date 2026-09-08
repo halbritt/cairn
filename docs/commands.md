@@ -223,3 +223,12 @@ excluded. `PURGE_UNRECORDED` exits 7 when a failed purge cannot retain its failu
 observation. These commands are not exposed through the agent API.
 
 `ARTIFACT_CHANGED` and `ARTIFACT_UNSAFE` exit 4 when a registered directory or ownership marker no longer permits a safe slot purge. Resolve the recorded ownership failure before retrying; the command does not remove a replacement directory.
+
+
+## Authenticated process runs
+
+`cairn agent --token-file OBSERVER_TOKEN run ... -- COMMAND ARGS...` uses the
+same process/carrier flags as `cairn run` through a scoped observer API identity.
+It requires no direct database access. The configured destination must match the
+run declaration; an ordinary agent profile cannot launch. See
+[authenticated runner](authenticated-runner.md) for output and recovery behavior.

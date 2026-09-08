@@ -46,7 +46,18 @@ type Result struct {
 	Artifacts    string `json:"artifacts"`
 }
 
-func Run(ctx context.Context, store *core.Store, req Request, stdout, stderr io.Writer) (Result, error) {
+// Store is the persistence boundary used by a process observer. Both a local
+// store and an authenticated Unix client enforce the same core contracts.
+type Store interface {
+	artifacts.ContextRegistrar
+	Compile(context.Context, core.CompileRequest, core.Destination) (core.Package, error)
+	BindRun(context.Context, core.RunBindingRequest) (core.Observation, error)
+	ClaimRun(context.Context, string) error
+	RecordDelivery(context.Context, core.DeliveryRequest) (core.Observation, error)
+	RecordOutcome(context.Context, core.OutcomeRequest) (core.Observation, error)
+}
+
+func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer) (Result, error) {
 	if req.Compile.Mode != "" {
 		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "H0 requires body compilation; index pull needs a host tool route"}
 	}
@@ -72,19 +83,19 @@ func Run(ctx context.Context, store *core.Store, req Request, stdout, stderr io.
 	if err != nil {
 		return Result{}, err
 	}
+	result := Result{ReceiptID: pkg.ReceiptID, Seal: pkg.Seal, ProcessState: "unknown", Artifacts: filepath.Join(req.ArtifactDirectory, pkg.ReceiptID)}
 	encodedCommand, err := json.Marshal(req.Command)
 	if err != nil {
-		return Result{}, err
+		return result, err
 	}
 	commandDigest := sha256.Sum256(encodedCommand)
 	_, err = store.BindRun(ctx, core.RunBindingRequest{RequestID: req.Compile.RequestID, ReceiptID: pkg.ReceiptID, TaskClass: taskClass, BindingID: bindingID, CapabilityID: capabilityID, CommandSHA256: hex.EncodeToString(commandDigest[:]), Revision: req.Revision, WorkspaceSHA256: req.WorkspaceSHA256})
 	if err != nil {
-		return Result{}, err
+		return result, err
 	}
 	if err = store.ClaimRun(ctx, pkg.ReceiptID); err != nil {
-		return Result{}, err
+		return result, err
 	}
-	result := Result{ReceiptID: pkg.ReceiptID, Seal: pkg.Seal, ProcessState: "unknown", Artifacts: filepath.Join(req.ArtifactDirectory, pkg.ReceiptID)}
 	result.Artifacts, err = artifacts.WriteContext(ctx, store, pkg, req.ArtifactDirectory)
 	if err != nil {
 		return prelaunchFailure(store, result, err)
@@ -189,7 +200,7 @@ func Run(ctx context.Context, store *core.Store, req Request, stdout, stderr io.
 // Preparation failed before Start was called. Retain that known non-execution
 // even if the caller cancelled. The artifact path may have been refused, so this
 // path must not attempt an outcome-file write there. A DB failure remains explicit.
-func prelaunchFailure(store *core.Store, result Result, cause error) (Result, error) {
+func prelaunchFailure(store Store, result Result, cause error) (Result, error) {
 	result.ProcessState = "launch_failed"
 	empty := sha256.Sum256(nil)
 	digest := hex.EncodeToString(empty[:])

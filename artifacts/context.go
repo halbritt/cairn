@@ -25,6 +25,10 @@ type directory struct {
 	inode  string
 }
 
+type ContextRegistrar interface {
+	RegisterManagedContext(context.Context, core.ManagedContextRequest) (core.ManagedContext, error)
+}
+
 func (d *directory) close() error { return errors.Join(d.root.Close(), d.file.Close()) }
 
 func lockDirectory(ctx context.Context, path string) (*directory, error) {
@@ -82,7 +86,7 @@ func lockDirectory(ctx context.Context, path string) (*directory, error) {
 // WriteContext reserves a new private run directory. No context bytes are
 // written until registration commits. The directory remains as the stable lock
 // identity even after its context slot is purged.
-func WriteContext(ctx context.Context, store *core.Store, pkg core.Package, parent string) (path string, err error) {
+func WriteContext(ctx context.Context, store ContextRegistrar, pkg core.Package, parent string) (path string, err error) {
 	parsed, parseErr := uuid.Parse(pkg.ReceiptID)
 	if parseErr != nil || parsed.String() != pkg.ReceiptID {
 		return "", &core.Error{Code: "INVALID_REQUEST", Message: "context requires a canonical receipt UUID"}

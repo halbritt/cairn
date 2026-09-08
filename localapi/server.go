@@ -155,6 +155,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	case "/v1/bind-run":
 		serveJSON(w, r, c.store.BindRun)
+	case "/v1/register-context":
+		serveJSON(w, r, c.store.RegisterManagedContext)
 	case "/v1/delivery":
 		serveJSON(w, r, c.store.RecordDelivery)
 	case "/v1/outcome":

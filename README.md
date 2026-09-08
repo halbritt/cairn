@@ -23,6 +23,9 @@ by the policy they used. Existing repositories retain their original policy unti
 an explicit revision is issued. [Instruction category limits](docs/instruction-limits.md)
 also bound mandatory and optional C instruction load when explicitly adopted.
 
+[Authenticated host runs](docs/authenticated-runner.md) use `cairn agent ... run`
+with a scoped observer token instead of direct database access.
+
 ## Get started
 
 Requires Go 1.25+, PostgreSQL 16+ client/server binaries, Bash, Python 3, and

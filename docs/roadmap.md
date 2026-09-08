@@ -96,7 +96,10 @@ metadata are recorded by the wrapper with command digest. Service inference is
 labelled with its method and coverage; H0 remains unknown. Closed-task open
 delegates have their own docket finding. U4 still needs recurrence/resolution
 analysis and real-history evaluation. U1 now has an authenticated Unix API and
-agent client, with role/repository/destination enforcement; actual Striatum
+agent client, with role/repository/destination enforcement. The
+[authenticated process runner](authenticated-runner.md) now carries ordinary H0
+launches through an observer identity without database access, preserving managed
+context custody and ambiguous-response recovery. Actual Striatum
 integration must respect its sealed dispatch-input boundary, as described in
 [local API integration](local-api.md). No live Striatum lane is changed.
 
