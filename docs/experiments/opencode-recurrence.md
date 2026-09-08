@@ -79,6 +79,15 @@ They do not impersonate a Striatum acceptance service or prove causal influence.
 An evaluator that fails before executing the behavioral condition also leaves
 task outcome unknown; compilation or infrastructure errors need separate diagnosis.
 
+The reviewed recurrence also applies
+[`repair_contracts_test.go.txt`](../../trials/opencode-recurrence/repair_contracts_test.go.txt)
+after each model run, separately from the frozen necessary-condition gate. It
+checks cache writability during the invocation and explicit environment overrides
+while preserving an unrelated inherited value. Both pass on the historical fix
+under delegated cgroups. They do not cover cross-UID execution, every preparation
+failure or full task acceptance. These results are supplemental review evidence;
+they do not rewrite the controller's original receipt assessment.
+
 The compiler receives 32,000 units of available memory input room, leaving a
 3,200-unit optional allowance under the current 10% policy. The model has a
 65,536-token configured context; memory room is separate from the task, tool
