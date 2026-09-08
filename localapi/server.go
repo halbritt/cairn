@@ -94,6 +94,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveJSON(w, r, c.store.Edit)
 	case "/v1/delete":
 		serveJSON(w, r, c.store.Delete)
+	case "/v1/supersede":
+		serveJSON(w, r, func(ctx context.Context, req core.SupersedeRequest) (core.Supersession, error) {
+			if req.GrantID != "" {
+				return core.Supersession{}, &core.Error{Code: "AUTHORITY_DENIED", Message: "authority mutations require the operator CLI"}
+			}
+			return c.store.Supersede(ctx, req)
+		})
+	case "/v1/preview-retract":
+		if !c.destination.AllowLocal {
+			writeError(w, 403, "AUTHORITY_DENIED", "impact inspection requires a local profile")
+			return
+		}
+		serveJSON(w, r, func(ctx context.Context, req recordRequest) (core.RetractionPreview, error) {
+			return c.store.PreviewRetraction(ctx, req.RecordID)
+		})
+	case "/v1/supersession":
+		if !c.destination.AllowLocal {
+			writeError(w, 403, "AUTHORITY_DENIED", "supersession inspection requires a local profile")
+			return
+		}
+		serveJSON(w, r, func(ctx context.Context, req recordRequest) (core.Supersession, error) {
+			return c.store.Supersession(ctx, req.RecordID)
+		})
 	case "/v1/index":
 		serveJSON(w, r, func(ctx context.Context, req core.CompileRequest) (core.IndexResult, error) {
 			return c.store.Index(ctx, req, c.destination)

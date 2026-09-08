@@ -4,7 +4,8 @@ Drafts can carry up to 32 explicit `relations`. Each entry names `record_id`,
 `version`, and one of `derived_from`, `specializes`, or `contradicts`. These are
 retained version-to-version links, not instructions to change the target record.
 They grant no authority and are not substitutes for independently captured B
-evidence. Supersession and scope broadening still need separate governed paths.
+evidence. [Supersession](supersession.md) has its own atomic retirement path;
+scope broadening remains unavailable.
 
 A referencing version cannot broaden the target version's repository/task/run
 scope, declared applicability or current sensitivity. These checks use the stored
@@ -35,7 +36,7 @@ The standalone `impact` command remains a paginated direct-use inspection.
 `preview-retract` supplies the broader known-relation analysis required before a
 retraction. [Ordinary deletion](ordinary-delete.md) now removes unreferenced A
 notes; [D forgetting and purge effects](deletion.md) cover retained record bodies
-and known managed copies. Evidence object dependencies, explicit supersession
+and known managed copies. Evidence object dependencies
 and automatic dependent qualification remain unfinished. Retracting a source
 does not automatically revoke every dependent
 instruction; authority and affected consumers still require their own review.

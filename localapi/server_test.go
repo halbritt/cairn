@@ -168,4 +168,46 @@ func TestAuthenticatedChannelOwnsIdentityAndScope(t *testing.T) {
 	if status != 200 || len(result["data"].(map[string]any)["conflicts"].([]any)) != 1 {
 		t.Fatalf("local conflict list: %+v", result)
 	}
+	// Local agents can retire ordinary notes, but cannot submit a grant to
+	// expose privileged supersession through the ordinary endpoint.
+	draft.Scope.TaskID = "supersession-api"
+	old, err := admin.Create(ctx, core.CreateRequest{RequestID: uuid.NewString(), Draft: draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft.Body = "A replacement API note."
+	replacement, err := admin.Create(ctx, core.CreateRequest{RequestID: uuid.NewString(), Draft: draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, result = call("/v1/preview-retract", localToken, map[string]any{"record_id": old.RecordID})
+	if status != 200 {
+		t.Fatal(result)
+	}
+	previewID := result["data"].(map[string]any)["preview_id"].(string)
+	req := core.SupersedeRequest{RequestID: uuid.NewString(), RecordID: old.RecordID, ExpectedVersion: old.Version, Replacement: core.RecordVersionRef{RecordID: replacement.RecordID, Version: replacement.Version}, PreviewID: previewID, Reason: "Replace an ordinary API note after inspecting its impact"}
+	req.GrantID = uuid.NewString()
+	status, result = call("/v1/supersede", localToken, req)
+	if status != 403 {
+		t.Fatalf("API accepted grant-bearing supersession: %+v", result)
+	}
+	req.GrantID = ""
+	status, result = call("/v1/supersede", localToken, req)
+	if status != 200 {
+		t.Fatal(result)
+	}
+	status, result = call("/v1/supersession", localToken, map[string]any{"record_id": old.RecordID})
+	if status != 200 {
+		t.Fatal(result)
+	}
+	transition := result["data"].(map[string]any)
+	if transition["actor"] != "agent:api-local" || transition["replacement"].(map[string]any)["record_id"] != replacement.RecordID {
+		t.Fatalf("bad replacement metadata: %+v", transition)
+	}
+	for _, path := range []string{"/v1/supersession", "/v1/preview-retract"} {
+		status, _ = call(path, token, map[string]any{"record_id": old.RecordID})
+		if status != 403 {
+			t.Fatalf("hosted profile accessed %s", path)
+		}
+	}
 }

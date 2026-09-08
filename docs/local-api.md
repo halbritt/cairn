@@ -49,8 +49,8 @@ socket. The agent client never opens the database. Use the same request UUID for
 a transport retry. The server has bounded request bodies and deadlines; an HTTP
 write failure does not roll back a committed mutation.
 
-Operations: `create`, `edit`, `delete`, `compile`, `get`, `evidence`, `usage`, `use-report`, `run-report`,
-local-profile-only `conflicts` and `conflict`,
+Operations: `create`, `edit`, `delete`, ordinary `supersede`, `compile`, `get`, `evidence`, `usage`, `use-report`, `run-report`,
+local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `claim-run`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`. `compile` takes
@@ -58,6 +58,11 @@ no destination field; the configured profile owns that decision. A hosted profil
 cannot use the protected `use-report` or `run-report` endpoints. The server checks repository scope
 at the store boundary as well as endpoint authorization. SIGTERM shuts down
 requests and removes the owned socket; a second listener cannot replace it.
+
+[Supersession](supersession.md) on the agent endpoint requires an A source and
+omits `grant_id`. B supersession uses the operator CLI. The preview and
+supersession inspection endpoints take `record_id`; a preview belongs to the
+authenticated caller that obtained it.
 
 An observer may reserve one launch with `claim-run` and a `receipt_id`. The
 receipt must belong to that observer. Repeated claims do not authorize another

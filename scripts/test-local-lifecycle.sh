@@ -32,6 +32,19 @@ request=dict(request_id=str(uuid.uuid4()),scope=dict(repo='fixture:restore',task
 result=subprocess.check_output(['bin/cairn','index'],input=json.dumps(request).encode())
 (pathlib.Path(sys.argv[1])/'index.json').write_bytes(result)
 PYINDEX
+python3 - "$test_root" <<'PYSUPERSEDE'
+import json, pathlib, subprocess, sys, uuid
+def invoke(command, request):
+    return json.loads(subprocess.check_output(['bin/cairn', command], input=json.dumps(request).encode()))['data']
+draft = dict(kind='note', body='Obsolete disposable restore note.', scope=dict(repo='fixture:supersession', task_id='*', run_id='*'), claim_type='self')
+old = invoke('create', dict(request_id=str(uuid.uuid4()), draft=draft))
+draft['body'] = 'Replacement disposable restore note.'
+replacement = invoke('create', dict(request_id=str(uuid.uuid4()), draft=draft))
+preview = json.loads(subprocess.check_output(['bin/cairn', 'preview-retract', old['record_id']]))['data']
+request = dict(request_id=str(uuid.uuid4()), record_id=old['record_id'], expected_version=old['version'], replacement=dict(record_id=replacement['record_id'], version=replacement['version']), preview_id=preview['preview_id'], reason='Retire an ordinary fixture before the backup')
+transition = invoke('supersede', request)
+(pathlib.Path(sys.argv[1])/'supersession.json').write_text(json.dumps(dict(request=request, transition=transition)))
+PYSUPERSEDE
 backup="$(bash scripts/local-store.sh backup)"
 "$pg_bin/createdb" -h "$CAIRN_HOME/socket" cairn_restore
 "$pg_bin/pg_restore" -h "$CAIRN_HOME/socket" --no-owner --no-privileges -d cairn_restore "$backup"
@@ -55,6 +68,13 @@ with backup.open('rb') as stream:
 env=dict(os.environ,CAIRN_DATABASE_URL=f"host={root}/store/socket dbname=cairn_restore sslmode=disable")
 def invoke(command, request, environment=None):
     return json.loads(subprocess.check_output(['bin/cairn',command],input=json.dumps(request).encode(),env=environment))['data']
+supersession=json.loads((root/'supersession.json').read_text())
+assert invoke('supersede',supersession['request'],env)==supersession['transition']
+restored_transition=json.loads(subprocess.check_output(['bin/cairn','supersession',supersession['request']['record_id']],env=env))['data']
+assert restored_transition==supersession['transition']
+retired=json.loads(subprocess.check_output(['bin/cairn','get',supersession['request']['record_id']],env=env))['data']
+assert retired['lifecycle']=='superseded' and retired['version']==2
+print('Restored supersession preserves its pinned replacement and idempotent retry')
 verified=invoke('verify-checkpoint',catalog['checkpoint_expectation'],env)
 assert verified['valid'] and verified['uncovered_count']==0
 receipt=json.loads((root/'package.json').read_text())['data']

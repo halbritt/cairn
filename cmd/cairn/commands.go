@@ -27,7 +27,8 @@ Everyday commands:
 
 JSON commands (read one request from stdin):
   create edit delete compile index expand bootstrap grant revoke-grant capture-evidence check-evidence
-  promote demote issue correct retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal
+  promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal
+  supersession RECORD_UUID
   grants (no input)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
@@ -140,7 +141,7 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return nil, invalid("run-report requires one repository")
 		}
 		return store.RunReport(ctx, core.RunReportRequest{Repo: f.Arg(0), Limit: *limit, Offset: *offset})
-	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict":
+	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict", "supersession":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
 		}
@@ -167,6 +168,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return store.UseReport(ctx, core.UseReportRequest{Repo: args[1], Limit: 100})
 		case "preview-retract":
 			return store.PreviewRetraction(ctx, args[1])
+		case "supersession":
+			return store.Supersession(ctx, args[1])
 		case "explain":
 			return store.Explain(ctx, args[1])
 		case "docket":
@@ -231,6 +234,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.Issue)
 	case "correct":
 		return invoke(ctx, input, store.Correct)
+	case "supersede":
+		return invoke(ctx, input, store.Supersede)
 	case "forget":
 		return invoke(ctx, input, store.Forget)
 	case "retract":

@@ -8,13 +8,14 @@ import (
 )
 
 type DocketItem struct {
-	ProposalID string `json:"proposal_id,omitempty"`
-	AttemptID  string `json:"attempt_id,omitempty"`
-	Reason     string `json:"reason"`
-	RecordID   string `json:"record_id,omitempty"`
-	Version    int    `json:"version,omitempty"`
-	ReceiptID  string `json:"receipt_id,omitempty"`
-	Action     string `json:"suggested_action"`
+	SupersededRecordID string `json:"superseded_record_id,omitempty"`
+	ProposalID         string `json:"proposal_id,omitempty"`
+	AttemptID          string `json:"attempt_id,omitempty"`
+	Reason             string `json:"reason"`
+	RecordID           string `json:"record_id,omitempty"`
+	Version            int    `json:"version,omitempty"`
+	ReceiptID          string `json:"receipt_id,omitempty"`
+	Action             string `json:"suggested_action"`
 }
 type Docket struct {
 	Items     []DocketItem `json:"items"`
@@ -34,6 +35,34 @@ func (s *Store) Docket(ctx context.Context, repo string) (Docket, error) {
 	}
 	defer tx.Rollback(ctx)
 	docket := Docket{Items: []DocketItem{}}
+	// Supersession records the known impact set at retirement. Preserve exposed
+	// versions; show a dependent notice only while that exact version is active.
+	notices, err := tx.Query(ctx, `SELECT reason,record_id,version,receipt_id,superseded_id FROM (
+ SELECT 'SUPERSEDED_DEPENDENCY' AS reason,a.record_id::text,a.version,'' AS receipt_id,a.superseded_id::text
+ FROM cairn.supersession_affected a JOIN cairn.memory_record m ON m.record_id=a.record_id AND m.current_version=a.version
+ JOIN cairn.record_version v ON v.record_id=a.record_id AND v.version=a.version
+ WHERE v.repo=$1 AND m.lifecycle='active' AND a.record_id<>a.superseded_id
+ UNION ALL
+ SELECT 'SUPERSEDED_EXPOSURE',a.record_id::text,a.version,u.receipt_id::text,a.superseded_id::text
+ FROM cairn.supersession_affected a JOIN cairn.record_use u ON u.record_id=a.record_id AND u.version=a.version
+ JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE r.scope->>'repo'=$1
+ ) notices ORDER BY reason, superseded_id,record_id,version,receipt_id LIMIT 101`, repo)
+	if err != nil {
+		return docket, err
+	}
+	for notices.Next() {
+		item := DocketItem{Action: "Inspect the pinned replacement and review this dependent claim or prior exposure; supersession does not automatically correct it."}
+		if err = notices.Scan(&item.Reason, &item.RecordID, &item.Version, &item.ReceiptID, &item.SupersededRecordID); err != nil {
+			notices.Close()
+			return docket, err
+		}
+		docket.Items = append(docket.Items, item)
+	}
+	err = notices.Err()
+	notices.Close()
+	if err != nil {
+		return docket, err
+	}
 	openRows, err := tx.Query(ctx, `SELECT a.attempt_id::text FROM cairn.delegation_attempt a
  JOIN (SELECT DISTINCT ON(observer,repo,task_id) observer,repo,task_id,state FROM cairn.task_state WHERE repo=$1 ORDER BY observer,repo,task_id,version DESC) t ON t.observer=a.observed_by AND t.repo=a.repo AND t.task_id=a.task_id
  WHERE a.terminal_state IS NULL AND t.state IN ('completed','cancelled') ORDER BY a.spawned_at,a.attempt_id LIMIT 101`, repo)
@@ -182,7 +211,7 @@ func (s *Store) Docket(ctx context.Context, repo string) (Docket, error) {
 	if err != nil {
 		return docket, err
 	}
-	priority := map[string]int{"ATTRIBUTION_CONTRADICTED": 0, "OPEN_DELEGATE_AFTER_TASK": 1, "EVIDENCE_UNAVAILABLE": 2, "UNFINISHED_RUN": 3, "FAILURE_RECOVERY": 4, "TASK_FAILURE": 4, "ESCALATION_BLOCKED": 5}
+	priority := map[string]int{"ATTRIBUTION_CONTRADICTED": 0, "OPEN_DELEGATE_AFTER_TASK": 1, "EVIDENCE_UNAVAILABLE": 2, "SUPERSEDED_DEPENDENCY": 2, "SUPERSEDED_EXPOSURE": 2, "UNFINISHED_RUN": 3, "FAILURE_RECOVERY": 4, "TASK_FAILURE": 4, "ESCALATION_BLOCKED": 5}
 	slices.SortStableFunc(docket.Items, func(a, b DocketItem) int { return priority[a.Reason] - priority[b.Reason] })
 	if len(docket.Items) > 100 {
 		docket.Truncated = true

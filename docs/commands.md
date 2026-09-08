@@ -129,6 +129,12 @@ after one hour. A new exposure or version change requires a fresh preview.
 The preview covers retained versions and known transitive versioned dependents,
 bounded to 1,000 versions and 1,000 uses; it cannot discover undeclared derivations.
 
+To retire A or B in favor of another independently eligible record, use
+[`supersede`](supersession.md) with both version pins and the old record's impact
+preview. `supersession RECORD_UUID` inspects the retained replacement link.
+The review docket exposes known affected versions and prior exposures; the
+replacement does not inherit authority from the retired record.
+
 Compile with `cairn compile` (local binding only), or use `search` for the
 operator-selected hosted binding:
 
