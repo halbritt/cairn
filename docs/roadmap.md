@@ -188,7 +188,7 @@ Stage 1–2 acceptance or scaling sensitive/consequential retention.
 
 | ID | Status | Work and acceptance evidence |
 | --- | --- | --- |
-| L1 — class-proportional lifecycle | partial | Ordinary revisions and [unreferenced A deletion](ordinary-delete.md) work; deletion removes cached write bodies without allowing retry resurrection and refuses retained history. Cheap unaudited B→A preserves consumed history and refuses C/open-conflict citations. [Cross-record supersession](supersession.md) now pins independent replacements, preserves history and exposes known impact notices, with class, authority, preview and scope guards. Explicit scope broadening remains open. |
+| L1 — class-proportional lifecycle | implemented | Ordinary revisions, [unreferenced A deletion](ordinary-delete.md), cheap B→A and [cross-record supersession](supersession.md) preserve retained history and apply their class-specific guards. [Scope authorization](scope-authorization.md) now expands applicability within a repository through an audited C decision, retains independent B/C qualification and supports explicit scope reauthorization. Tests cover surviving history, known impact notices, authority/dependency/refusal boundaries, concurrent CAS and backup/restore. This does not close the separate governance, deletion, retention or restore-admission gates below. |
 | L2 — conflicts and refusal records | partial | [Conflict inspection](conflict-inspection.md) now exposes original versioned positions, participation and resolution history, with scope/destination checks and forgotten-body exclusion. Qualified positions, richer interested-party resolution and acted-under-open-conflict outcomes remain open. Durable policy refusals exist. Whole-group omission of optional disputed content remains allowed; closing a group preserves its original context. |
 | L3 — governed policy | open | Versioned effective policy, revise/rollback, policy-dependent run query, C waivers, discrete instruction category caps and unenforceability decision table. Current hard-coded `local-loop/1` and runtime-required refusal are a restricted implementation. Test rollback and impossible-enforcement outcomes. |
 | L4 — evidence lifecycle | partial | Evidence read/status, managed large artifacts, as-cited span/version relations, persisted check generations/history, freshness/refresh and dependent invalidation. Inline explicit capture and hash checks exist. Test changed/missing bytes, earlier-cutoff availability and invalidation propagation. |
@@ -206,7 +206,8 @@ refuses active C/open-conflict dependencies. Retraction previews include known
 transitive uses and reject changed dependency/exposure state. Ordinary deletion
 now preserves referenced and formerly privileged records by requiring the audited
 forgetting path. Supersession now preserves explicit pinned replacements and
-known impact notices. Scope-broadening operations remain open.
+known impact notices. Scope authorization expands applicability through a
+separate revocable C grant without renewing independent claim qualification.
 
 A [withdrawal regression](verification/withdrawal-after-forgetting-2026-09-08.md)
 is repaired: an authorized retraction can retire an instruction after a cited

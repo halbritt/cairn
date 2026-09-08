@@ -68,7 +68,7 @@ func auditMembers(ctx context.Context, tx pgx.Tx) ([]AuditMember, error) {
  'basis',e.basis,'transaction_id',e.transaction_id::text,
  'occurred_at_us',(extract(epoch from e.occurred_at)*1000000)::bigint)::text
  FROM cairn.authority_event e
- WHERE e.event_type IN ('bootstrap','grant','revoke_grant','issue','resolve','redact','forget')
+ WHERE e.event_type IN ('bootstrap','grant','revoke_grant','issue','authorize_scope','resolve','redact','forget')
  OR EXISTS(SELECT 1 FROM cairn.record_version v WHERE v.record_id=e.subject_id AND v.version=e.resulting_version AND v.version_class='C')
  ORDER BY e.event_id LIMIT 10001`)
 	if err != nil {

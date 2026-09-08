@@ -15,7 +15,9 @@ minimum expected audit set, not a claim that every dump transaction is covered.
 
 The initial subset includes root installation, grants/revocations, instruction
 issuance/retraction, conflict resolution, and emitted redaction/forgetting events.
-Ordinary A history and B promotion/correction/retraction are excluded. Record-body forgetting now emits a D event regardless of the prior record class.
+Explicit scope authorizations are C events even when their subject stays A or B.
+Ordinary A history and B promotion/correction/retraction/supersession are excluded.
+Record-body forgetting emits a D event regardless of the prior record class.
 Other D transitions remain unfinished.
 An explicit membership list avoids sequence gaps and late-committing transactions
 being silently skipped by a sequence watermark.

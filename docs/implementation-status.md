@@ -11,7 +11,9 @@ The [roadmap](roadmap.md) is the complete requirements and acceptance tracker.
 021, preserves exact replacement links and known impact notices while retiring
 obsolete A/B records. Its [verification](verification/supersession-2026-09-08.md)
 covers authority/scope refusals, concurrency, preserved history and an actual
-backup/restore. Scope broadening remains open.
+backup/restore. Migration 022 adds [scope authorization](scope-authorization.md):
+a separate C decision can expand applicability while preserving independent
+claim qualification and the original read history.
 
 ## Contract repairs — 2026-09-07
 

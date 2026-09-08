@@ -5,7 +5,9 @@ Drafts can carry up to 32 explicit `relations`. Each entry names `record_id`,
 retained version-to-version links, not instructions to change the target record.
 They grant no authority and are not substitutes for independently captured B
 evidence. [Supersession](supersession.md) has its own atomic retirement path;
-scope broadening remains unavailable.
+[scope authorization](scope-authorization.md) governs broader applicability.
+Broadening retains relation restrictions: a dependent cannot outgrow the exact
+source versions it continues to cite.
 
 A referencing version cannot broaden the target version's repository/task/run
 scope, declared applicability or current sensitivity. These checks use the stored

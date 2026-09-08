@@ -29,6 +29,7 @@ JSON commands (read one request from stdin):
   create edit delete compile index expand bootstrap grant revoke-grant capture-evidence check-evidence
   promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal
   supersession RECORD_UUID
+  authorize-scope | scope-authorization RECORD_UUID
   grants (no input)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
@@ -141,7 +142,7 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return nil, invalid("run-report requires one repository")
 		}
 		return store.RunReport(ctx, core.RunReportRequest{Repo: f.Arg(0), Limit: *limit, Offset: *offset})
-	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict", "supersession":
+	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict", "supersession", "scope-authorization":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
 		}
@@ -170,6 +171,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return store.PreviewRetraction(ctx, args[1])
 		case "supersession":
 			return store.Supersession(ctx, args[1])
+		case "scope-authorization":
+			return store.ScopeAuthorization(ctx, args[1])
 		case "explain":
 			return store.Explain(ctx, args[1])
 		case "docket":
@@ -236,6 +239,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.Correct)
 	case "supersede":
 		return invoke(ctx, input, store.Supersede)
+	case "authorize-scope":
+		return invoke(ctx, input, store.AuthorizeScope)
 	case "forget":
 		return invoke(ctx, input, store.Forget)
 	case "retract":

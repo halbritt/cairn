@@ -238,6 +238,13 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 					return p, nil, err
 				}
 				if mandatory {
+					_, scopeErr := scopeAuthority(ctx, tx, id)
+					if Code(scopeErr) == "AUTHORITY_DENIED" {
+						continue
+					}
+					if scopeErr != nil {
+						return p, nil, scopeErr
+					}
 					_, chainErr := grantChain(ctx, tx, grantID, false)
 					if Code(chainErr) == "AUTHORITY_DENIED" {
 						continue
@@ -373,6 +380,31 @@ func packCandidates(p SemanticPackage, candidates []candidate, evaluations map[s
 }
 
 func eligible(ctx context.Context, tx pgx.Tx, r Record, purpose string) (Selection, string, error) {
+	chain, err := scopeAuthority(ctx, tx, r.RecordID)
+	if Code(err) == "AUTHORITY_DENIED" {
+		return Selection{Record: r}, "SCOPE_AUTHORITY_INACTIVE", nil
+	}
+	if err != nil {
+		return Selection{}, "", err
+	}
+	entry, reason, err := eligibleWithoutScope(ctx, tx, r, purpose)
+	if err != nil || reason != "" {
+		return entry, reason, err
+	}
+	// Include each live prerequisite grant once in the retained candidate facts.
+	for _, grant := range chain {
+		found := false
+		for _, existing := range entry.Authority {
+			found = found || existing.ID == grant.ID
+		}
+		if !found {
+			entry.Authority = append(entry.Authority, grant)
+		}
+	}
+	return entry, "", nil
+}
+
+func eligibleWithoutScope(ctx context.Context, tx pgx.Tx, r Record, purpose string) (Selection, string, error) {
 	entry := Selection{Record: r, Evidence: []Evidence{}, Authority: []Grant{}}
 	if r.Class == "A" && purpose != "context" {
 		return entry, "CLASS_NOT_CONSEQUENTIAL", nil

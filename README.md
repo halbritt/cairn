@@ -170,7 +170,7 @@ Mutation retries return the original result; use `get` for current state.
 
 Ordinary edits retain previous versions and require `expected_version`. They
 cannot change scope or sensitivity. Corrections replace active B content with
-new evidence references and an audit link. C changes use retraction followed by
+new evidence references and an audit link. C content changes use retraction followed by
 new issuance. Retraction requires a caller-owned `preview-retract` token, valid
 for one hour and invalidated by content/version changes or new exposure. The
 preview covers retained versions, known versioned dependents and their runs
@@ -182,6 +182,12 @@ eligible pinned replacement. It preserves earlier exposures, emits known impact
 notices for review, and does not widen scope or transfer authority. A retirement
 is unaudited; B requires live correction authority. `supersession RECORD_UUID`
 inspects the retained replacement link.
+
+[`authorize-scope`](docs/scope-authorization.md) uses live `issue` authority and
+an impact preview to expand applicability within the same repository. The record
+keeps its class and independent qualification. Revoking its separate scope grant
+excludes fresh use; the original scopes and grants remain visible in historical
+packages. `scope-authorization RECORD_UUID` inspects the latest scope decision.
 
 ## Verify changes
 

@@ -101,6 +101,10 @@ func TestAuthenticatedChannelOwnsIdentityAndScope(t *testing.T) {
 	if status != 404 {
 		t.Fatal("operator path exposed")
 	}
+	status, _ = call("/v1/authorize-scope", localToken, map[string]any{})
+	if status != 404 {
+		t.Fatal("scope authority path exposed through agent API")
+	}
 	status, _ = call("/v1/compile", token, map[string]any{"principal": "operator", "request_id": uuid.NewString()})
 	if status != 400 {
 		t.Fatal("unknown caller field accepted")

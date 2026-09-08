@@ -66,6 +66,7 @@ These choices preserve the existing authority and historical-read contracts;
 they do not introduce a general event ledger.
 
 This implements the class-proportional replacement path in the accepted design
-§8.5. It does not implement scope broadening, automatic dependent qualification,
+§8.5. [Scope authorization](scope-authorization.md) is a separate governed path.
+Supersession does not implement automatic dependent qualification,
 notice acknowledgement, or fresh-restore reapplication. The external recovery
 record continues to cover governance/C/D withdrawals, not A/B retirement history.

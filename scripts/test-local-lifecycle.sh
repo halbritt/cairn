@@ -45,6 +45,19 @@ request = dict(request_id=str(uuid.uuid4()), record_id=old['record_id'], expecte
 transition = invoke('supersede', request)
 (pathlib.Path(sys.argv[1])/'supersession.json').write_text(json.dumps(dict(request=request, transition=transition)))
 PYSUPERSEDE
+python3 - "$test_root" <<'PYSCOPE'
+import json, pathlib, subprocess, sys, uuid
+root=pathlib.Path(sys.argv[1])
+def invoke(command, request):
+    return json.loads(subprocess.check_output(['bin/cairn',command],input=json.dumps(request).encode()))['data']
+grant=json.loads((root/'root.json').read_text())
+draft=dict(kind='note',body='Scope authorization restore fixture.',scope=dict(repo='fixture:scope-restore',task_id='original',run_id='*'),claim_type='self')
+record=invoke('create',dict(request_id=str(uuid.uuid4()),draft=draft))
+preview=json.loads(subprocess.check_output(['bin/cairn','preview-retract',record['record_id']]))['data']
+request=dict(request_id=str(uuid.uuid4()),record_id=record['record_id'],expected_version=record['version'],scope=dict(repo='fixture:scope-restore',task_id='*',run_id='*'),pins={},grant_id=grant['grant_id'],preview_id=preview['preview_id'],reason='Authorize broader applicability before the disposable backup')
+authorization=invoke('authorize-scope',request)
+(root/'scope-authorization.json').write_text(json.dumps(dict(request=request,authorization=authorization)))
+PYSCOPE
 backup="$(bash scripts/local-store.sh backup)"
 "$pg_bin/createdb" -h "$CAIRN_HOME/socket" cairn_restore
 "$pg_bin/pg_restore" -h "$CAIRN_HOME/socket" --no-owner --no-privileges -d cairn_restore "$backup"
@@ -75,6 +88,13 @@ assert restored_transition==supersession['transition']
 retired=json.loads(subprocess.check_output(['bin/cairn','get',supersession['request']['record_id']],env=env))['data']
 assert retired['lifecycle']=='superseded' and retired['version']==2
 print('Restored supersession preserves its pinned replacement and idempotent retry')
+scope=json.loads((root/'scope-authorization.json').read_text())
+assert invoke('authorize-scope',scope['request'],env)==scope['authorization']
+authorization=json.loads(subprocess.check_output(['bin/cairn','scope-authorization',scope['request']['record_id']],env=env))['data']
+assert authorization==scope['authorization'] and authorization['scope_grant_live']
+compiled=invoke('compile',dict(request_id=str(uuid.uuid4()),scope=dict(repo='fixture:scope-restore',task_id='other',run_id='run'),purpose='context',available_tokens=64000),env)
+assert len(compiled['semantic']['selected'])==1
+print('Restored scope authorization retains its live grant, wider applicability and idempotent retry')
 verified=invoke('verify-checkpoint',catalog['checkpoint_expectation'],env)
 assert verified['valid'] and verified['uncovered_count']==0
 receipt=json.loads((root/'package.json').read_text())['data']

@@ -135,6 +135,11 @@ preview. `supersession RECORD_UUID` inspects the retained replacement link.
 The review docket exposes known affected versions and prior exposures; the
 replacement does not inherit authority from the retired record.
 
+[`authorize-scope`](scope-authorization.md) separately expands applicability
+under live `issue` authority. It requires explicit target scope and pins, retains
+the claim's independent qualification, and uses the same source-impact preview.
+`scope-authorization RECORD_UUID` shows the latest decision and scope-grant state.
+
 Compile with `cairn compile` (local binding only), or use `search` for the
 operator-selected hosted binding:
 

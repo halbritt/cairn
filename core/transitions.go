@@ -170,6 +170,12 @@ func openPolicyConflicts(ctx context.Context, tx pgx.Tx, record Record, key stri
 		if !applicabilityOverlaps(record.Pins, other.Pins) {
 			continue
 		}
+		if _, err = scopeAuthority(ctx, tx, m.ID); Code(err) == "AUTHORITY_DENIED" {
+			continue
+		}
+		if err != nil {
+			return err
+		}
 		if _, err = grantChain(ctx, tx, m.GrantID, false); Code(err) == "AUTHORITY_DENIED" {
 			continue
 		}
