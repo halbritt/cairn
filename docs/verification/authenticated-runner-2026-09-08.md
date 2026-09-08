@@ -56,3 +56,22 @@ The local typed receipt retains source and test evidence, the selected
 consumer-owned interface and authority boundaries, and nonmaterial missing
 obligations. Two evidence passes were completed; no native host acceptance or
 model-performance conclusion follows from this review.
+
+
+## Installed host execution
+
+Commit `6538462f6a4f0c40c4fe3b3475d6dfc691c2ed21` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34219047361) and was built from
+a clean local clone with Go 1.25.0. The installed binary and running API have
+SHA-256 `ecc2306e56662ab74a51321b86b0786f9b848f7dc2ea7844f4a2c52fec419940`.
+Schema remains 024. Both services are active; an authenticated existing-record
+read passed and the record-version digest was unchanged.
+
+A real Cairn `make check` invocation then ran through the existing scoped observer
+profile. The client had an unusable database address. Its child received and
+parsed the context containing all four scoped records, completed the existing
+verification command, and returned exit zero. The observer run report retained
+its exact revision, binding and one process outcome, with task acceptance still
+unknown. Record versions again remained unchanged. No model was invoked, policy
+adopted or fixture instruction created. The context copy and observation are
+retained as ordinary host-run evidence; no private memory bodies are in this report.

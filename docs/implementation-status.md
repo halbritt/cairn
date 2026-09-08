@@ -194,10 +194,10 @@ remain open.
 ## Current local installation
 
 The current installed executable is clean revision
-`35543dd6136d10766d097f78677d62e31902ef45`, with migrations 001–024 in Cairn's
+`6538462f6a4f0c40c4fe3b3475d6dfc691c2ed21`, with migrations 001–024 in Cairn's
 dedicated PostgreSQL 17 store. A private dump preceded migration. The running API
 matches the installed binary; an authenticated read and unchanged record-version
-digest were verified. See [installation evidence](verification/instruction-limits-2026-09-08.md#local-installation).
+digest were verified. See [installation evidence](verification/authenticated-runner-2026-09-08.md#installed-host-execution).
 No explicit policy was adopted in the operational Cairn repository.
 
 The `cairn-api.service` user service is enabled and requires
