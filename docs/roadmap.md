@@ -93,6 +93,12 @@ accepted usefulness milestone, before historical evaluation and generated demand
 The [observation join](use-outcome-loop.md) now associates each exposure with
 reduced delivery/usage streams, process outcome and versioned task assessments;
 repeated observations do not multiply rows. The
+[explicit dynamic-retrieval association](use-outcome-loop.md#retrieval-during-an-observed-run)
+now lets the observing host connect agent-owned retrieval receipts to its run's
+outcome and latest assessment, while preserving the source exposure and citation
+testimony. Store and real-child Unix API tests cover the join and one-execution
+population; this is integration evidence, not an additional model-benefit result.
+The
 [run report](use-outcome-loop.md#inspect-runs-including-no-memory-baselines)
 also includes zero-memory baselines and claims without outcomes, with separate
 claim/process/assessment fields and bounded pagination. The

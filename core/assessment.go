@@ -61,6 +61,9 @@ func (s *Store) BindRun(ctx context.Context, req RunBindingRequest) (Observation
 		if launched {
 			return Observation{}, failure("RUN_ALREADY_STARTED", "bind run identity before claiming launch")
 		}
+		if err := requireExecutionReceipt(ctx, tx, req.ReceiptID); err != nil {
+			return Observation{}, err
+		}
 		tag, err := tx.Exec(ctx, `INSERT INTO cairn.run_binding(receipt_id,task_class,binding_id,capability_id,command_sha256,revision,workspace_sha256,attempt_id) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::uuid) ON CONFLICT DO NOTHING`, req.ReceiptID, req.TaskClass, req.BindingID, req.CapabilityID, strings.ToLower(req.CommandSHA256), req.Revision, strings.ToLower(req.WorkspaceSHA256), req.AttemptID)
 		if err != nil {
 			return Observation{}, err

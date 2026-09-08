@@ -56,6 +56,9 @@ func (s *Store) ClaimRun(ctx context.Context, id string) error {
 	if _, err = tx.Exec(ctx, `SELECT receipt_id FROM cairn.retrieval_receipt WHERE receipt_id=$1 FOR UPDATE`, id); err != nil {
 		return err
 	}
+	if err = requireExecutionReceipt(ctx, tx, id); err != nil {
+		return err
+	}
 	if err = s.boundAttemptCurrent(ctx, tx, id); err != nil {
 		return err
 	}
@@ -133,6 +136,12 @@ func (s *Store) RecordOutcome(ctx context.Context, req OutcomeRequest) (Observat
 	}
 	return mutate(ctx, s, "outcome", req.RequestID, req, func(tx pgx.Tx) (Observation, error) {
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
+			return Observation{}, err
+		}
+		if _, err := tx.Exec(ctx, `SELECT receipt_id FROM cairn.retrieval_receipt WHERE receipt_id=$1 FOR UPDATE`, req.ReceiptID); err != nil {
+			return Observation{}, err
+		}
+		if err := requireExecutionReceipt(ctx, tx, req.ReceiptID); err != nil {
 			return Observation{}, err
 		}
 		taskOutcome := "unknown"

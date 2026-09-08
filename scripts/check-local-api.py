@@ -11,6 +11,7 @@ import time
 import uuid
 
 from trial_host import TrialHost
+from check_run_retrieval import check as check_run_retrieval
 
 binary, home = sys.argv[1:]
 root = Path(home)
@@ -207,6 +208,7 @@ try:
     print('Host-issued attempt ID survives authenticated wrapper invocation and run reporting')
     print('Owner-only run status works without client database access and does not grant observer authority')
     print('Authenticated host CLI records process outcomes without database access and preserves output/exit semantics')
+    check_run_retrieval(binary, root, client_env, record)
 finally:
     process.send_signal(signal.SIGTERM)
     try:

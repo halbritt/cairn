@@ -87,6 +87,11 @@ func TestAuthenticatedChannelOwnsIdentityAndScope(t *testing.T) {
 	if status != 403 {
 		t.Fatal("agent claimed host launch authority")
 	}
+	status, _ = call("/v1/link-run-retrieval", token, core.RunRetrievalRequest{RequestID: uuid.NewString(),
+		RunReceiptID: uuid.NewString(), RetrievalReceiptID: uuid.NewString(), ExpectedReader: "agent:api", Method: "spoof"})
+	if status != 403 {
+		t.Fatal("agent asserted a host retrieval association")
+	}
 	status, _ = call("/v1/run-report", token, core.RunReportRequest{Repo: repo, Limit: 100})
 	if status != 403 {
 		t.Fatal("hosted profile received protected run report")

@@ -30,6 +30,7 @@ type RunRow struct {
 	WorkspaceSHA256   string    `json:"workspace_sha256"`
 	CommandSHA256     string    `json:"command_sha256"`
 	ExposureRows      int       `json:"exposure_rows"`
+	LinkedRetrievals  int       `json:"linked_retrievals"`
 	ProcessState      string    `json:"process_state"`
 	ExitCode          *int      `json:"exit_code"`
 	DurationMS        *int64    `json:"duration_ms"`
@@ -68,9 +69,11 @@ func (s *Store) RunReport(ctx context.Context, req RunReportRequest) (RunReport,
 	defer tx.Rollback(ctx)
 	rows, err := tx.Query(ctx, `SELECT r.receipt_id::text,COALESCE(p.revision_id::text,'local-loop/1'),r.scope,r.created_at,r.launch_claimed,b.receipt_id IS NOT NULL,o.receipt_id IS NOT NULL,
  COALESCE(b.task_class,'unknown'),COALESCE(b.binding_id,'unknown'),COALESCE(b.capability_id,'unknown'),COALESCE(b.revision,''),COALESCE(b.workspace_sha256,''),COALESCE(b.command_sha256,''),
- (SELECT count(*) FROM cairn.record_use WHERE receipt_id=r.receipt_id),
+ (SELECT count(*) FROM cairn.record_use u WHERE u.receipt_id=r.receipt_id
+ OR u.receipt_id IN (SELECT retrieval_receipt_id FROM cairn.run_retrieval WHERE run_receipt_id=r.receipt_id)),
  COALESCE(o.process_state,'unknown'),o.exit_code,o.duration_ms,COALESCE(a.task_outcome,o.task_outcome,'unknown'),
- COALESCE(a.version,0),COALESCE(a.witness,'unknown'),COALESCE(a.detail->>'method',''),COALESCE(a.failure_domain,'unknown'),COALESCE(a.failure_kind,''),COALESCE(a.detail->>'error_signature_sha256',''),COALESCE(b.attempt_id::text,'')
+ COALESCE(a.version,0),COALESCE(a.witness,'unknown'),COALESCE(a.detail->>'method',''),COALESCE(a.failure_domain,'unknown'),COALESCE(a.failure_kind,''),COALESCE(a.detail->>'error_signature_sha256',''),COALESCE(b.attempt_id::text,''),
+ (SELECT count(*) FROM cairn.run_retrieval WHERE run_receipt_id=r.receipt_id)
  FROM cairn.retrieval_receipt r LEFT JOIN cairn.run_outcome o USING(receipt_id)
  LEFT JOIN cairn.retrieval_policy p USING(receipt_id)
  LEFT JOIN cairn.run_binding b USING(receipt_id)
@@ -81,10 +84,10 @@ func (s *Store) RunReport(ctx context.Context, req RunReportRequest) (RunReport,
 	if err != nil {
 		return RunReport{}, err
 	}
-	report := RunReport{Rows: []RunRow{}, Interpretation: "One row per receipt with a launch claim or observed process outcome, including zero-memory runs. A launch claim reserves execution; it does not prove a process started. Latest assessments override process-derived task outcomes. Exposure rows include index pointers and do not prove delivery or benefit. Pure retrieval and binding/assessment-only receipts are outside this population. Associations do not establish causal benefit."}
+	report := RunReport{Rows: []RunRow{}, Interpretation: "One row per receipt with a launch claim or observed process outcome, including zero-memory runs. A launch claim reserves execution; it does not prove a process started. Latest assessments override process-derived task outcomes. Exposure rows include explicitly host-linked dynamic retrievals and index pointers and do not prove delivery or benefit. Pure retrieval and binding/assessment-only receipts are outside this population. Associations do not establish causal benefit."}
 	for rows.Next() {
 		var row RunRow
-		if err = rows.Scan(&row.ReceiptID, &row.PolicyRevision, &row.Scope, &row.CompiledAt, &row.LaunchClaimed, &row.BindingObserved, &row.OutcomeObserved, &row.TaskClass, &row.BindingID, &row.CapabilityID, &row.Revision, &row.WorkspaceSHA256, &row.CommandSHA256, &row.ExposureRows, &row.ProcessState, &row.ExitCode, &row.DurationMS, &row.TaskOutcome, &row.AssessmentVersion, &row.AssessmentWitness, &row.AssessmentMethod, &row.FailureDomain, &row.FailureKind, &row.ErrorSignature, &row.AttemptID); err != nil {
+		if err = rows.Scan(&row.ReceiptID, &row.PolicyRevision, &row.Scope, &row.CompiledAt, &row.LaunchClaimed, &row.BindingObserved, &row.OutcomeObserved, &row.TaskClass, &row.BindingID, &row.CapabilityID, &row.Revision, &row.WorkspaceSHA256, &row.CommandSHA256, &row.ExposureRows, &row.ProcessState, &row.ExitCode, &row.DurationMS, &row.TaskOutcome, &row.AssessmentVersion, &row.AssessmentWitness, &row.AssessmentMethod, &row.FailureDomain, &row.FailureKind, &row.ErrorSignature, &row.AttemptID, &row.LinkedRetrievals); err != nil {
 			rows.Close()
 			return report, err
 		}

@@ -119,6 +119,10 @@ func (c *Client) BindRun(ctx context.Context, req core.RunBindingRequest) (resul
 	err = c.Call(ctx, "bind-run", req, &result)
 	return
 }
+func (c *Client) LinkRunRetrieval(ctx context.Context, req core.RunRetrievalRequest) (result core.RunRetrieval, err error) {
+	err = c.Call(ctx, "link-run-retrieval", req, &result)
+	return
+}
 func (c *Client) ClaimRun(ctx context.Context, id string) error {
 	var result struct{}
 	return c.Call(ctx, "claim-run", struct {

@@ -52,7 +52,7 @@ write failure does not roll back a committed mutation.
 Operations: `create`, `edit`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
-`claim-run`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
+`claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`. The [expansion contract](index-and-pull.md) binds
 body/evidence pulls to an indexed version and one shared session budget. `compile` takes
 no destination field; the configured profile owns that decision. A hosted profile

@@ -18,6 +18,49 @@ leave coverage unknown. There is no automatic behavior-inference engine.
 The report includes pagination metadata. It is an observational join, not a causal
 benefit score or a completed recurrence evaluation. Exposures never increase rank.
 
+## Retrieval during an observed run
+
+An agent can fetch memory under its own identity while a separate host observes
+the execution. The host explicitly associates each retrieval with its run:
+
+```sh
+cairn agent --token-file OBSERVER_TOKEN link-run-retrieval < association.json
+```
+
+The JSON request contains `request_id`, `run_receipt_id`,
+`retrieval_receipt_id`, `expected_reader` (the authenticated agent principal),
+and `method` (a bounded description/version of the host's observation method).
+The library entry point is `Store.LinkRunRetrieval`; the Unix API exposes
+`POST /v1/link-run-retrieval` and `Client.LinkRunRetrieval`.
+
+The host must own the run receipt and its bound, independently observed attempt.
+The run needs a launch claim or process outcome. The retrieval must belong to
+the expected reader, match the exact repository/task/run and destination, and
+have been created after the host receipt and attempt spawn and before any
+recorded terminal or process outcome. These checks constrain a host observation;
+matching scope and timestamps alone never create an association. The host must
+obtain the exact receipt from its observed tool route. An ordinary agent cannot
+assert this observation or acquire access to the host receipt through it.
+
+A host can record the association after the process finishes if the retrieval
+was created during that interval. Retry the exact request after an ambiguous
+response. One source retrieval can belong to one host run; a new request cannot
+move it. Association corrections and unlinking are not implemented. Receipts
+that have an execution binding, claim or outcome cannot be linked as retrievals;
+a linked retrieval cannot later become another execution.
+
+`use-report` retains the source `receipt_id`, exposure, delivery and usage. Its
+optional `run_receipt_id`, `run_link_observer` and `run_link_method` identify the
+explicit association. Process outcome, binding and latest assessment come from
+that host run. An agent's assessment of its own retrieval does not replace the
+host assessment. `run-report` still counts one execution: `linked_retrievals`
+counts associated receipts, including empty retrievals, and `exposure_rows`
+includes their record/version exposures. Repeated citations do not multiply
+exposures. There is no inferred causal benefit or automatic lesson promotion.
+
+The [verification record](verification/run-retrieval-2026-09-08.md) covers the
+store boundaries and an observed child making authenticated index/pull calls.
+
 ## Inspect runs, including no-memory baselines
 
 `cairn run-report [--limit N] [--offset N] REPO` returns one row per receipt with
