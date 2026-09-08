@@ -42,3 +42,19 @@ These checks establish the implemented scope transition and its declared
 boundaries, not broader task usefulness or complete restore admission. They do
 not establish that a human's generalization is substantively correct. No
 operational claim was broadened during verification.
+
+## Local installation
+
+Commit `a8623d6b48793463d0bb6bd7dd01d2db23917ad9` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34209678488) and was built
+from a clean clone with Go 1.25.0. An isolated restore of the pre-upgrade backup
+advanced from schema 021 to 022, retained the record-version digest and passed a
+repeated migration before the operational upgrade.
+
+The local store now uses schema 022. The installed executable and running API
+both have SHA-256
+`3d1def84be487f549cfd2ced42e7a2410ae15a254f710faba6f49d46c03194a8`.
+An authenticated read of an existing record passed after restart. The
+record-version digest remained unchanged. No operational claim was modified to
+exercise the new transition. This verifies installation, separately from the
+behavioral evidence above.
