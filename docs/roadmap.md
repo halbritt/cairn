@@ -121,6 +121,15 @@ spawn/terminal recovery. Its full real-harness fixture verification includes
 exit-zero with no returned candidate; further real-model usefulness and native
 Striatum ingress remain open.
 
+A [real-model observed failure](verification/observed-model-failure-2026-09-08.md)
+now exercises that host's timeout finalization, exact attempt/receipt/result
+correspondence, instrumented rejection and citation testimony. The candidate
+failed the cache and explicit-override checks despite citing the selected lesson.
+Independent review isolated an environment-order defect and converted its
+generated failure proposal to a local, unpromoted A lesson in the disposable
+trial store. This adds real host and review-loop evidence; it does not close
+native ingress, full task acceptance or general usefulness.
+
 ### 3. Make retrieval current and evaluate real history
 
 | ID | Status | Work and acceptance evidence |

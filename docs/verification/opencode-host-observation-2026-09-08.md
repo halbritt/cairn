@@ -66,3 +66,8 @@ death. A pending observation retries only its exact API payload and never
 releases another process. A later model trial must report the new observer
 attribution and protocol alongside prior results; this fixture does not add
 another successful repair to the usefulness evidence.
+
+A subsequent [real-model trial](observed-model-failure-2026-09-08.md) now verifies
+timeout finalization and independent review of a failed candidate through this
+host. Its model and repair results remain separate from this synthetic-provider
+fixture.

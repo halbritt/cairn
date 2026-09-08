@@ -75,8 +75,11 @@ and attaches a task assessment to the actual run receipt. A failed necessary
 condition means the bounded repair task failed. Passing that one condition leaves
 full task acceptance unknown. No observed model activity leaves task outcome
 unknown and is classified as a binding problem. Assessments and optional UUID
-citations enter through the operator CLI as testimony, with stable retry IDs.
-They do not impersonate a Striatum acceptance service or prove causal influence.
+citations enter through the receipt-owning observer with stable retry IDs.
+Assessments carry an instrumented witness for the host's bounded gate method;
+model-authored UUID citations remain testimony. Earlier trials used operator
+testimony, as recorded in their frozen reports. Neither path supplies a Striatum
+acceptance verdict or proves causal influence.
 An evaluator that fails before executing the behavioral condition also leaves
 task outcome unknown; compilation or infrastructure errors need separate diagnosis.
 
@@ -164,6 +167,11 @@ was killed before observing termination, inspect the original process and receip
 first: intent or a saved PID alone does not establish termination or authorize
 killing a possibly reused PID. This is retained recovery evidence, not an
 automatic recovery daemon.
+
+The [observed model failure review](../verification/observed-model-failure-2026-09-08.md)
+exercises this path with a real model timeout, an independently reproduced
+candidate defect, and a generated failure proposal converted to an unpromoted
+local lesson. Its reviewer diagnostic does not replace the model candidate.
 
 The [host-controller verification](../verification/opencode-host-observation-2026-09-08.md)
 includes real OpenCode against a synthetic local endpoint. It establishes the
