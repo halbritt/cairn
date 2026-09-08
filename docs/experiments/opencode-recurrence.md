@@ -43,7 +43,8 @@ is an operator-reviewed finding from calibration L, with the candidate digest,
 diagnostic results and committed review locator pinned in `scenario.json`.
 It explains the environment regression and skipped-test limitation. Cairn admits
 this selected lesson through separate collector and operator promotion channels
-in a disposable store. It is applied to fresh historical snapshots as a recurrence
+in a disposable store. Codex performs these reviews and promotions under the
+user's delegated operator authority. It is applied to fresh historical snapshots as a recurrence
 experiment; it was not available at the historical repair date. The controller
 pins the lesson to that base revision and verifies exact selection. Comparing
 these fresh runs tests a known reviewed lesson on the same repair, not transfer

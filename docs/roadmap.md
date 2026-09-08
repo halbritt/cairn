@@ -152,6 +152,14 @@ criteria before another run. This supplies a real failure for a later-recurrence
 lesson; avoided failure remains unobserved. Full native/search baselines,
 relevance judgments and memory-benefit evidence remain open.
 
+A [reviewed-lesson recurrence](verification/reviewed-recurrence-2026-09-08.md)
+now has a positive bounded observation: the no-lesson candidate repeated an
+inherited-environment failure, while both lesson candidates avoided it. H0
+selected the exact reviewed B version, the model cited it, and the run finished
+within 900 seconds. The direct-lesson run timed out. All original gate results
+and later reviews remain separate; overall acceptance is unknown for the lesson
+runs. This is one known-case comparison, not general or causal benefit evidence.
+
 ### 4. Turn observed demand into next-run improvement
 
 Depends on U4/U5 and E3/E4. R4's early protected event does not satisfy this stage.
@@ -159,7 +167,7 @@ Depends on U4/U5 and E3/E4. R4's early protected event does not satisfy this sta
 | ID | Status | Work and acceptance evidence |
 | --- | --- | --- |
 | D1 — evidence-attached demand docket | partial | Extend attribution/evidence/unfinished-run hints with failure→recovery pairing, novel failures, blocked promotion, conflicts and source-attached proposal groups. Add explicit review dispositions and bounded duplicate grouping. Measure review burden, not just generated item count. |
-| D2 — adaptation acceptance | open | Approve a justified correction/promotion through existing authority, then replay or run a recurrence and observe next-run selection/outcome. Preserve negative results. Exposure alone must not amplify ranking. Demonstrate one avoided recurring failure within budget before claiming useful adaptation. |
+| D2 — adaptation acceptance | partial | A reviewed, evidence-backed lesson was promoted, selected and cited in a real H0 run that avoided the baseline's environment regression within budget. Preserve the bounded [recurrence result](verification/reviewed-recurrence-2026-09-08.md), negative results and unknown overall acceptance. Broader task/host acceptance and transfer remain open. Exposure alone must not amplify ranking. |
 
 The [demand review path](demand-review.md) now generates bounded, source-attached
 failure/recovery proposals from assessed task outcomes. It excludes binding

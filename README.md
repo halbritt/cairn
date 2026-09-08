@@ -9,7 +9,10 @@ context compilation, process wrapping, historical recompilation, authenticated
 local access, bounded index/pull, evidence-attached review, and outcome joins work.
 A [real OpenCode repair trial](docs/verification/opencode-recurrence-2026-09-07.md)
 compared three context conditions; none produced a repair within its budget.
-Runtime mediation and measured memory benefit remain unestablished.
+A later [reviewed-lesson recurrence](docs/verification/reviewed-recurrence-2026-09-08.md)
+found that H0 selected and cited a lesson while avoiding the baseline's environment
+regression within budget. Full task acceptance, runtime mediation and general
+memory benefit remain unestablished.
 
 The [roadmap](docs/roadmap.md) tracks accepted requirements, remaining gaps and
 acceptance evidence.

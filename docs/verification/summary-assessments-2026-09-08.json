@@ -70,5 +70,15 @@
     "/tmp/cairn-summary-integration.log": "afac52d4a7e87d9529e39aa19e968298a9d30e772c84191ca4cd745c9466707e",
     "/tmp/cairn-summary-repro.py": "638df5e65619e5a9bbb5d339536eaed08ce0208b286d99139914ac8180f25e0d",
     "/tmp/cairn-summary-test.sh": "e415444352e2013f84c881d472da5f61bfbf0763df547e3ceb604621a298099e"
+  },
+  "installed": {
+    "revision": "cae34107ba1f84af96ec45502543853116ce7e8d",
+    "binary_sha256": "1015df7eceeae7c01a005e9e00a49c9fc27d0b23943aa0557746f6f437ae1eef",
+    "api_running_same_binary": true,
+    "record_version_digest_unchanged": true,
+    "migrations_unchanged": true,
+    "ci": "https://github.com/halbritt/cairn/actions/runs/34185911741",
+    "ci_status": "success",
+    "authenticated_agent_read": true
   }
 }

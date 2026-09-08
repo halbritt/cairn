@@ -26,3 +26,11 @@ and CLI integration suite plus static checks passed.
 and after counters, assessment versions, binary and source identities, and test
 log digests. This verifies summary consistency; it does not establish memory
 benefit or change any task assessment.
+
+Commit `cae34107ba1f84af96ec45502543853116ce7e8d` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34185911741) and was built from
+a clean clone. After a backup, the local CLI and API were upgraded to that
+binary. The running API binary matched its digest, an authenticated agent read
+succeeded, and the operational record-version digest was unchanged. No migration
+changed. Private install evidence is retained at
+`/tmp/cairn-summary-install-verification.json`.

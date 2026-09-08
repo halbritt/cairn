@@ -1,0 +1,1028 @@
+{
+  "schema": "cairn.reviewed-recurrence-verification/1",
+  "availability": "post_review_recurrence",
+  "interpretation": "One fresh run per condition on a known repair; descriptive outcomes and costs, not causal attribution, unseen-task transfer, or Striatum acceptance.",
+  "trials": [
+    {
+      "trial": "M2",
+      "private_artifacts": "/tmp/cairn-opencode-reviewed-20260908-m2",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "settings": {
+        "arms": [
+          "repo_only"
+        ],
+        "disable_thinking": false,
+        "context_tokens": 131072,
+        "output_limit": 32768,
+        "process_seconds": 900,
+        "steps": 60,
+        "work_budget": "extended",
+        "retain_final": false
+      },
+      "preflight": {
+        "broken": {
+          "exit_code": 1,
+          "actions": [
+            "fail"
+          ],
+          "passed": false,
+          "stdout_sha256": "8bd4478226953bb2aac4ed07635b8157722bde4c53b2964900888630b6719f33",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "reference": {
+          "exit_code": 0,
+          "actions": [
+            "pass"
+          ],
+          "passed": true,
+          "stdout_sha256": "dae5922b4bb1d7b7983d2ae7c284fadb3457ac82ddb8b5210d11f27b01e5fbb8",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "result": {
+        "arm": "repo_only",
+        "process_exit": 0,
+        "duration_seconds": 695.951,
+        "receipt": {
+          "receipt_id": "3e9761d6-b75c-4a93-89e0-b6f511b5206b",
+          "seal": "blake3:932f5a530c0caebe083c8271c25d9e479bd8b21840d6db65caecd8e5c1489caf",
+          "process_state": "exited",
+          "exit_code": 0,
+          "outcome_id": "579012a3-b3fd-4cb6-8171-63a61e956204",
+          "artifacts": "/tmp/cairn-opencode-reviewed-20260908-m2/store/runs/3e9761d6-b75c-4a93-89e0-b6f511b5206b"
+        },
+        "gate": {
+          "exit_code": 0,
+          "actions": [
+            "pass"
+          ],
+          "passed": true,
+          "stdout_sha256": "4c9950dfc6dcfcd133ea5e334612a8567c5fbd90144e87c46d0a6f0987c06042",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "changed_paths": [
+          "internal/backend/llm/supervisor.go",
+          "internal/backend/llm/supervisor_cache_internal_test.go",
+          "internal/backend/supervise/env_override_test.go",
+          "internal/backend/supervise/init.go",
+          "internal/backend/supervise/supervise.go"
+        ],
+        "outside_scope": [],
+        "patch_sha256": "5f429acb0553739186eefc1b43b5336014099fd13747dc3c811cb02d15340373",
+        "model_stdout_sha256": "40a2c5296fc098127896d2e736ab79d3092183792c98867ed8c14eff14ae1ac7",
+        "model_stderr_sha256": "7c81bf6ec488c9a6ac92529643091869b0695984e58bb7a02cd59f718d7c54be",
+        "runtime_observed": true,
+        "launch_diagnostics": [],
+        "trace_events": 163,
+        "trace_types": [
+          "step_finish",
+          "step_start",
+          "text",
+          "tool_use"
+        ],
+        "trace_summary": {
+          "tool_events": {
+            "bash:error": 6,
+            "bash:completed": 11,
+            "read:completed": 25,
+            "grep:completed": 9,
+            "glob:completed": 1,
+            "edit:completed": 8,
+            "write:completed": 2
+          },
+          "finish_reasons": {
+            "tool-calls": 45,
+            "stop": 2
+          },
+          "reported_tokens": {
+            "input": 204236,
+            "output": 9635,
+            "reasoning": 31126
+          },
+          "cited_record_ids": [],
+          "citation_method": "exact selected UUID in OpenCode text event; testimony only"
+        },
+        "config_sha256": "90115a6b650094b5c66def7f9744054af8d151e19532fc57721d1e8c8d56866a",
+        "selected_records": [],
+        "assessment_join": {
+          "assessment": {
+            "receipt_id": "3e9761d6-b75c-4a93-89e0-b6f511b5206b",
+            "version": 1,
+            "task_outcome": "unknown",
+            "failure_domain": "unknown",
+            "failure_kind": "",
+            "method": "cairn.historical-cache-gate/1; operator testimony",
+            "evidence_ids": [
+              "71347c80-fe14-406d-8c41-6821ce7e2ff8"
+            ],
+            "reason": "The cache-lifetime condition passed; full task correctness and Striatum acceptance remain unverified.",
+            "witness": "testimony",
+            "observer": "local-uid:1000",
+            "observed_at": "2026-09-07T18:46:29.443301-07:00"
+          },
+          "citation_observations": [],
+          "run_use_rows": [],
+          "excluded_preflight_rows": 0,
+          "interpretation": "One row per exposed record/version/receipt. Repeated observations do not multiply rows. Exit zero is not acceptance; citations are testimony, inferred use is not citation, and missing telemetry is unknown. Associations do not establish causal benefit."
+        }
+      },
+      "lesson_records": [
+        {
+          "record_id": "cb1530b8-e916-4e5a-bd7d-fe8d7e84824f",
+          "version": 2,
+          "source": "cairn:c07f4587d907485e72b3537586afeaa30c861934:docs/verification/opencode-pro-calibration-2026-09-08.md#independent-checks-after-the-run",
+          "body_sha256": "9e53a27a5ef4ef6568605aeb31b966f51a2322982a62ec08a9696cadfd8d87d1"
+        }
+      ],
+      "selection_preflight": {
+        "repo_only": {
+          "receipt_id": "d0509ec7-3f8c-4a33-8c58-476795243409",
+          "seal": "blake3:932f5a530c0caebe083c8271c25d9e479bd8b21840d6db65caecd8e5c1489caf",
+          "selected_records": [],
+          "available_tokens": 32000,
+          "optional_limit": 3200
+        }
+      },
+      "executed_files": {
+        "executed-controller.py": "fac9d26f0fa17859494860b35c6b02b3810da30f166c25df1d81b3b579b01644",
+        "executed-relay.py": "6eb38d165448bacced6f67924c4aed871b1b167a6fe2e842579a5052cfeaba0a",
+        "scenario.json": "9dc4ccd91bc896aeb30839afc32e1cdade95361e48a0640ec76296284944835d",
+        "gate.go": "042f64b28dafcabac4db78e092521d93b1bc647226a194b73e7cccd56672fd07",
+        "executed-postreview.py": "d4a2da6e15a6af760bc2506775f432364aa62f4f33e862f35c16e2dd9c8b8d2c",
+        "executed-metadata-review.py": "9cbeb987b15830496aa44382f9a9a038cc0ae58b3c3c581188ff92028383e95d",
+        "executed-assessment.py": "742219b2ad113e67a9b2d5e55f67d993c95f79c12a5f778406e9ee7d3aa67336"
+      },
+      "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+      "cairn_sha256": "a4c6cbb6f06ba90a7dd8b0abec84213c34c189aa010789e86e3fecfb2da0af96",
+      "supplemental_review": {
+        "schema": "cairn.reviewed-recurrence-postrun/1",
+        "patch_sha256": "5f429acb0553739186eefc1b43b5336014099fd13747dc3c811cb02d15340373",
+        "base": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af",
+        "gate_sha256": "042f64b28dafcabac4db78e092521d93b1bc647226a194b73e7cccd56672fd07",
+        "contracts_sha256": "87c754c11b61bf04dbf3a63116353b5af02a3de6c52291f0d73a0321604748b8",
+        "reviewer_source_sha256": "d4a2da6e15a6af760bc2506775f432364aa62f4f33e862f35c16e2dd9c8b8d2c",
+        "exit_code": 1,
+        "stdout_sha256": "08ee2e963d1a1e732eb19e11ac86e7ea8b75ab67f35d772565632064e6c257a8",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "focused_results": [
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestCairnRecurrenceRuntimeCacheLifetime",
+            "action": "pass"
+          },
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestCairnReviewedRepairContracts/cache-is-writable-during-invocation",
+            "action": "pass"
+          },
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestCairnReviewedRepairContracts/explicit-override-preserves-other-inherited-values",
+            "action": "pass"
+          },
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestCairnReviewedRepairContracts",
+            "action": "pass"
+          }
+        ],
+        "other_failures": [
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestRelaunchPinsOrderedAttemptClosures",
+            "action": "fail"
+          },
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": null,
+            "action": "fail"
+          }
+        ],
+        "skips": [],
+        "interpretation": "Supplemental checks on a reconstruction of the exact retained patch; original assessment unchanged. Cross-UID and all preparation failures remain unverified; no Striatum acceptance."
+      },
+      "inherited_metadata_review": {
+        "schema": "cairn.inherited-metadata-review/1",
+        "patch_sha256": "5f429acb0553739186eefc1b43b5336014099fd13747dc3c811cb02d15340373",
+        "test_source_sha256": "bd49478246814aa01b7e39463c3cc84453b2795af84e8a95f1d48a0bdfdf3386",
+        "reviewer_source_sha256": "9cbeb987b15830496aa44382f9a9a038cc0ae58b3c3c581188ff92028383e95d",
+        "exit_code": 1,
+        "stdout_sha256": "2d82aeb6c6c88c9e79dbdb1bd73809d619ee9ec16ad0f3434eee9e8b9bb3bfe9",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "actions": [
+          "fail"
+        ],
+        "interpretation": "Exploratory supplemental check derived from baseline M after its original gate passed; same check applied across comparison candidates. Does not rewrite original assessments."
+      },
+      "reviewed_assessment": {
+        "assessment": {
+          "receipt_id": "3e9761d6-b75c-4a93-89e0-b6f511b5206b",
+          "version": 2,
+          "task_outcome": "rejected",
+          "failure_domain": "task",
+          "failure_kind": "inherited_environment_override",
+          "method": "cairn.reviewed-recurrence/1; operator testimony",
+          "evidence_ids": [
+            "1b6c39ba-5e90-46fe-91cd-1f95dbc16337"
+          ],
+          "reason": "The exact candidate lets inherited supervisor count/value markers replace an ordinary runtime environment value. The reference passes this check. Earlier gate-pass assessment remains in history. This is operator testimony for the isolated repair, not Striatum acceptance or capability qualification.",
+          "witness": "testimony",
+          "observer": "local-uid:1000",
+          "observed_at": "2026-09-07T20:47:35.946916-07:00"
+        },
+        "assessment_history": [
+          {
+            "receipt_id": "3e9761d6-b75c-4a93-89e0-b6f511b5206b",
+            "version": 1,
+            "task_outcome": "unknown",
+            "failure_domain": "unknown",
+            "failure_kind": "",
+            "method": "cairn.historical-cache-gate/1; operator testimony",
+            "evidence_ids": [
+              "71347c80-fe14-406d-8c41-6821ce7e2ff8"
+            ],
+            "reason": "The cache-lifetime condition passed; full task correctness and Striatum acceptance remain unverified.",
+            "witness": "testimony",
+            "observer": "local-uid:1000",
+            "observed_at": "2026-09-07T18:46:29.443301-07:00"
+          },
+          {
+            "receipt_id": "3e9761d6-b75c-4a93-89e0-b6f511b5206b",
+            "version": 2,
+            "task_outcome": "rejected",
+            "failure_domain": "task",
+            "failure_kind": "inherited_environment_override",
+            "method": "cairn.reviewed-recurrence/1; operator testimony",
+            "evidence_ids": [
+              "1b6c39ba-5e90-46fe-91cd-1f95dbc16337"
+            ],
+            "reason": "The exact candidate lets inherited supervisor count/value markers replace an ordinary runtime environment value. The reference passes this check. Earlier gate-pass assessment remains in history. This is operator testimony for the isolated repair, not Striatum acceptance or capability qualification.",
+            "witness": "testimony",
+            "observer": "local-uid:1000",
+            "observed_at": "2026-09-07T20:47:35.946916-07:00"
+          }
+        ],
+        "run_use_rows": [],
+        "interpretation": "One row per exposed record/version/receipt. Repeated observations do not multiply rows. Exit zero is not acceptance; citations are testimony, inferred use is not citation, and missing telemetry is unknown. Associations do not establish causal benefit.",
+        "original_report_sha256": "09179fc4b5c90dcec5e3b4464c7f32d8c9782c36e10be70ca0827b89e6cecd4c"
+      },
+      "relay": {
+        "sha256": "f8a4db7aff8636606d420f036743bbd084001fbe93d9a5ad22d6d7fb5e523026",
+        "limits": {
+          "requests": 64,
+          "request_bytes": 1048576,
+          "response_bytes": 33554432,
+          "output_tokens": 32768,
+          "response_seconds": 600,
+          "socket_seconds": 45,
+          "provider": {
+            "max_price": {
+              "prompt": 1.5,
+              "completion": 4.0,
+              "request": 0
+            },
+            "data_collection": "deny",
+            "require_parameters": true
+          }
+        },
+        "requests": 48,
+        "rejections": 0,
+        "statuses": {
+          "completed": 48
+        },
+        "http_status_counts": {
+          "200": 48
+        },
+        "providers": {
+          "Ionstream": 1,
+          "StreamLake": 46,
+          "Baidu": 1
+        },
+        "reported_cost": 0.43479337304,
+        "per_request_finish_reasons": {
+          "stop": 3,
+          "tool_calls": 45
+        }
+      },
+      "cleanup": {
+        "postgres_stopped": true,
+        "relay_closed": true,
+        "native_home_and_cache_removed": true,
+        "derived_go_cache_removed": true
+      }
+    },
+    {
+      "trial": "N",
+      "private_artifacts": "/tmp/cairn-opencode-reviewed-20260908-n",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "settings": {
+        "arms": [
+          "native_excerpt"
+        ],
+        "disable_thinking": false,
+        "context_tokens": 131072,
+        "output_limit": 32768,
+        "process_seconds": 900,
+        "steps": 60,
+        "work_budget": "extended",
+        "retain_final": false
+      },
+      "preflight": {
+        "broken": {
+          "exit_code": 1,
+          "actions": [
+            "fail"
+          ],
+          "passed": false,
+          "stdout_sha256": "c087556141884eaa757d14941f323b505df3a20c3fc8067bcf34da0b03c39dee",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "reference": {
+          "exit_code": 0,
+          "actions": [
+            "pass"
+          ],
+          "passed": true,
+          "stdout_sha256": "ff7bc932fb444fc9612c3ccd3630db87fd1a8dfa7d0cac6228c98a4dfd072cc5",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "result": {
+        "arm": "native_excerpt",
+        "process_exit": 124,
+        "duration_seconds": 900.096,
+        "receipt": {
+          "receipt_id": "2f3720ee-8cf4-44a1-b1bb-a73813f7dcd7",
+          "seal": "blake3:351a6bed884700508d720e7794b44890bff676be17d342a952236fcb9d079737",
+          "process_state": "timeout",
+          "outcome_id": "237a888c-b5bb-4b25-b54d-4087ceba09c0",
+          "artifacts": "/tmp/cairn-opencode-reviewed-20260908-n/store/runs/2f3720ee-8cf4-44a1-b1bb-a73813f7dcd7"
+        },
+        "gate": {
+          "exit_code": 0,
+          "actions": [
+            "pass"
+          ],
+          "passed": true,
+          "stdout_sha256": "5fba11961b4b93addf16e3b06f4dca592c58fc22b9bad3b9b37da8f5cb33fe20",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "changed_paths": [
+          "internal/backend/llm/cache_ext_test.go",
+          "internal/backend/llm/cache_internal_test.go",
+          "internal/backend/llm/supervisor.go",
+          "internal/backend/supervise/env_override_test.go",
+          "internal/backend/supervise/init.go",
+          "internal/backend/supervise/supervise.go"
+        ],
+        "outside_scope": [],
+        "patch_sha256": "4194f46b748342ecbcaf840ac939e94a9b640f98024dcbf3ff26a161b3c1a610",
+        "model_stdout_sha256": "78f890590258bcadce4077429284a1953e72c64f08da9edfd3bd4150605a1a8f",
+        "model_stderr_sha256": "f5cb490a06fc6d032f0f716a40a0024710897e31e40adaa95e3f1faeec329a44",
+        "runtime_observed": true,
+        "launch_diagnostics": [],
+        "trace_events": 167,
+        "trace_types": [
+          "step_finish",
+          "step_start",
+          "text",
+          "tool_use"
+        ],
+        "trace_summary": {
+          "tool_events": {
+            "bash:error": 3,
+            "read:completed": 28,
+            "glob:completed": 2,
+            "bash:completed": 7,
+            "grep:completed": 7,
+            "edit:completed": 12,
+            "write:completed": 3
+          },
+          "finish_reasons": {
+            "tool-calls": 49,
+            "stop": 1
+          },
+          "reported_tokens": {
+            "input": 194187,
+            "output": 11794,
+            "reasoning": 41136
+          },
+          "cited_record_ids": [],
+          "citation_method": "exact selected UUID in OpenCode text event; testimony only"
+        },
+        "config_sha256": "ac8a274ca9cb2697280d2a78d2f7e7b1b8835b91a2538cc67aff926c7d2ba9d6",
+        "selected_records": [],
+        "assessment_join": {
+          "assessment": {
+            "receipt_id": "2f3720ee-8cf4-44a1-b1bb-a73813f7dcd7",
+            "version": 1,
+            "task_outcome": "unknown",
+            "failure_domain": "unknown",
+            "failure_kind": "",
+            "method": "cairn.historical-cache-gate/1; operator testimony",
+            "evidence_ids": [
+              "470b705b-2f15-46fa-8b4f-2ad0c776a2c9"
+            ],
+            "reason": "The cache-lifetime condition passed; full task correctness and Striatum acceptance remain unverified.",
+            "witness": "testimony",
+            "observer": "local-uid:1000",
+            "observed_at": "2026-09-07T20:57:42.654942-07:00"
+          },
+          "citation_observations": [],
+          "run_use_rows": [],
+          "excluded_preflight_rows": 0,
+          "interpretation": "One row per exposed record/version/receipt. Repeated observations do not multiply rows. Exit zero is not acceptance; citations are testimony, inferred use is not citation, and missing telemetry is unknown. Associations do not establish causal benefit."
+        }
+      },
+      "lesson_records": [
+        {
+          "record_id": "be185e3b-1357-4629-ab89-329d44641a41",
+          "version": 2,
+          "source": "cairn:c07f4587d907485e72b3537586afeaa30c861934:docs/verification/opencode-pro-calibration-2026-09-08.md#independent-checks-after-the-run",
+          "body_sha256": "9e53a27a5ef4ef6568605aeb31b966f51a2322982a62ec08a9696cadfd8d87d1"
+        }
+      ],
+      "selection_preflight": {
+        "native_excerpt": {
+          "receipt_id": "f5b86a60-3122-40cc-bf56-7a342ed1ef7a",
+          "seal": "blake3:351a6bed884700508d720e7794b44890bff676be17d342a952236fcb9d079737",
+          "selected_records": [],
+          "available_tokens": 32000,
+          "optional_limit": 3200
+        }
+      },
+      "executed_files": {
+        "executed-controller.py": "fac9d26f0fa17859494860b35c6b02b3810da30f166c25df1d81b3b579b01644",
+        "executed-relay.py": "6eb38d165448bacced6f67924c4aed871b1b167a6fe2e842579a5052cfeaba0a",
+        "scenario.json": "9dc4ccd91bc896aeb30839afc32e1cdade95361e48a0640ec76296284944835d",
+        "gate.go": "042f64b28dafcabac4db78e092521d93b1bc647226a194b73e7cccd56672fd07",
+        "executed-postreview.py": "d4a2da6e15a6af760bc2506775f432364aa62f4f33e862f35c16e2dd9c8b8d2c",
+        "executed-metadata-review.py": "9cbeb987b15830496aa44382f9a9a038cc0ae58b3c3c581188ff92028383e95d",
+        "executed-assessment.py": "f00d1ed1b185b27855be35b2a1924d9d271c099ad4d7005c12a0f4be5b1efe85"
+      },
+      "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+      "cairn_sha256": "a4c6cbb6f06ba90a7dd8b0abec84213c34c189aa010789e86e3fecfb2da0af96",
+      "supplemental_review": {
+        "schema": "cairn.reviewed-recurrence-postrun/1",
+        "patch_sha256": "4194f46b748342ecbcaf840ac939e94a9b640f98024dcbf3ff26a161b3c1a610",
+        "base": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af",
+        "gate_sha256": "042f64b28dafcabac4db78e092521d93b1bc647226a194b73e7cccd56672fd07",
+        "contracts_sha256": "87c754c11b61bf04dbf3a63116353b5af02a3de6c52291f0d73a0321604748b8",
+        "reviewer_source_sha256": "d4a2da6e15a6af760bc2506775f432364aa62f4f33e862f35c16e2dd9c8b8d2c",
+        "exit_code": 1,
+        "stdout_sha256": "e3e802a3585520578c652bac6a9fcc41400b18cae62c288280b85b110a13b202",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "focused_results": [
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestCairnRecurrenceRuntimeCacheLifetime",
+            "action": "pass"
+          },
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestCairnReviewedRepairContracts/cache-is-writable-during-invocation",
+            "action": "pass"
+          },
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestCairnReviewedRepairContracts/explicit-override-preserves-other-inherited-values",
+            "action": "pass"
+          },
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestCairnReviewedRepairContracts",
+            "action": "pass"
+          }
+        ],
+        "other_failures": [
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestRelaunchPinsOrderedAttemptClosures",
+            "action": "fail"
+          },
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": null,
+            "action": "fail"
+          }
+        ],
+        "skips": [],
+        "interpretation": "Supplemental checks on a reconstruction of the exact retained patch; original assessment unchanged. Cross-UID and all preparation failures remain unverified; no Striatum acceptance."
+      },
+      "inherited_metadata_review": {
+        "schema": "cairn.inherited-metadata-review/1",
+        "patch_sha256": "4194f46b748342ecbcaf840ac939e94a9b640f98024dcbf3ff26a161b3c1a610",
+        "test_source_sha256": "bd49478246814aa01b7e39463c3cc84453b2795af84e8a95f1d48a0bdfdf3386",
+        "reviewer_source_sha256": "9cbeb987b15830496aa44382f9a9a038cc0ae58b3c3c581188ff92028383e95d",
+        "exit_code": 0,
+        "stdout_sha256": "30f3a2effd971b5e3ad8dac8f8378f61e680e07a644a42d7dbe6c07ffa9ea0b0",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "actions": [
+          "pass"
+        ],
+        "interpretation": "Exploratory supplemental check derived from baseline M after its original gate passed; same check applied across comparison candidates. Does not rewrite original assessments."
+      },
+      "reviewed_assessment": {
+        "assessment": {
+          "receipt_id": "2f3720ee-8cf4-44a1-b1bb-a73813f7dcd7",
+          "version": 2,
+          "task_outcome": "unknown",
+          "failure_domain": "unknown",
+          "failure_kind": "",
+          "method": "cairn.reviewed-recurrence/1; operator testimony",
+          "evidence_ids": [
+            "31b03b9e-e7c1-4c78-a3c3-9412d4c0bf21"
+          ],
+          "reason": "The independently reviewed cache and inherited-environment checks passed. Full repair correctness, cross-UID behavior and all preparation-failure paths remain unverified; no Striatum acceptance or causal benefit is asserted.",
+          "witness": "testimony",
+          "observer": "local-uid:1000",
+          "observed_at": "2026-09-07T20:59:59.538591-07:00"
+        },
+        "assessment_history": [
+          {
+            "receipt_id": "2f3720ee-8cf4-44a1-b1bb-a73813f7dcd7",
+            "version": 1,
+            "task_outcome": "unknown",
+            "failure_domain": "unknown",
+            "failure_kind": "",
+            "method": "cairn.historical-cache-gate/1; operator testimony",
+            "evidence_ids": [
+              "470b705b-2f15-46fa-8b4f-2ad0c776a2c9"
+            ],
+            "reason": "The cache-lifetime condition passed; full task correctness and Striatum acceptance remain unverified.",
+            "witness": "testimony",
+            "observer": "local-uid:1000",
+            "observed_at": "2026-09-07T20:57:42.654942-07:00"
+          },
+          {
+            "receipt_id": "2f3720ee-8cf4-44a1-b1bb-a73813f7dcd7",
+            "version": 2,
+            "task_outcome": "unknown",
+            "failure_domain": "unknown",
+            "failure_kind": "",
+            "method": "cairn.reviewed-recurrence/1; operator testimony",
+            "evidence_ids": [
+              "31b03b9e-e7c1-4c78-a3c3-9412d4c0bf21"
+            ],
+            "reason": "The independently reviewed cache and inherited-environment checks passed. Full repair correctness, cross-UID behavior and all preparation-failure paths remain unverified; no Striatum acceptance or causal benefit is asserted.",
+            "witness": "testimony",
+            "observer": "local-uid:1000",
+            "observed_at": "2026-09-07T20:59:59.538591-07:00"
+          }
+        ],
+        "run_use_rows": [],
+        "interpretation": "One row per exposed record/version/receipt. Repeated observations do not multiply rows. Exit zero is not acceptance; citations are testimony, inferred use is not citation, and missing telemetry is unknown. Associations do not establish causal benefit.",
+        "original_report_sha256": "08817ae0c497558bda52c550af11091beaf885cf54c3039c6023f548b7bba0fe"
+      },
+      "relay": {
+        "sha256": "324a0e70f1343dfa803cb50735853df804511c4957cfbb68274168751368ff43",
+        "limits": {
+          "requests": 64,
+          "request_bytes": 1048576,
+          "response_bytes": 33554432,
+          "output_tokens": 32768,
+          "response_seconds": 600,
+          "socket_seconds": 45,
+          "provider": {
+            "max_price": {
+              "prompt": 1.5,
+              "completion": 4.0,
+              "request": 0
+            },
+            "data_collection": "deny",
+            "require_parameters": true
+          }
+        },
+        "requests": 53,
+        "rejections": 0,
+        "statuses": {
+          "completed": 51,
+          "failed": 2
+        },
+        "http_status_counts": {
+          "200": 52,
+          "None": 1
+        },
+        "providers": {
+          "BaseTen": 1,
+          "StreamLake": 50,
+          "SiliconFlow": 1,
+          "unknown": 1
+        },
+        "reported_cost": 0.47983364748,
+        "per_request_finish_reasons": {
+          "stop": 2,
+          "tool_calls": 49
+        }
+      },
+      "cleanup": {
+        "postgres_stopped": true,
+        "relay_closed": true,
+        "native_home_and_cache_removed": true,
+        "derived_go_cache_removed": true
+      }
+    },
+    {
+      "trial": "O",
+      "private_artifacts": "/tmp/cairn-opencode-reviewed-20260908-o",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "settings": {
+        "arms": [
+          "cairn_h0"
+        ],
+        "disable_thinking": false,
+        "context_tokens": 131072,
+        "output_limit": 32768,
+        "process_seconds": 900,
+        "steps": 60,
+        "work_budget": "extended",
+        "retain_final": false
+      },
+      "preflight": {
+        "broken": {
+          "exit_code": 1,
+          "actions": [
+            "fail"
+          ],
+          "passed": false,
+          "stdout_sha256": "080d3bacbbe7c090bade59a79332658094e83e4ecfbc3735ee260ad63e047dc2",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "reference": {
+          "exit_code": 0,
+          "actions": [
+            "pass"
+          ],
+          "passed": true,
+          "stdout_sha256": "78ca6d560c7791c786b6b1b77123bddfcd136f5001b60a9973f9b8851f7de907",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "result": {
+        "arm": "cairn_h0",
+        "process_exit": 0,
+        "duration_seconds": 891.151,
+        "receipt": {
+          "receipt_id": "66c85151-6577-4d81-bb6e-115a2c3af465",
+          "seal": "blake3:4f831208d77a8799196c8e5dc0ded84e48390504d79b5f9cd1a71bc6f7081f0b",
+          "process_state": "exited",
+          "exit_code": 0,
+          "outcome_id": "f7c00017-d4d8-4b54-9333-25be0a0bd0d6",
+          "artifacts": "/tmp/cairn-opencode-reviewed-20260908-o/store/runs/66c85151-6577-4d81-bb6e-115a2c3af465"
+        },
+        "gate": {
+          "exit_code": 0,
+          "actions": [
+            "pass"
+          ],
+          "passed": true,
+          "stdout_sha256": "130d155a1eae8aba16eb5fcc7a4fabe02c8c20d89096f9f6f85503df4011fab4",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "changed_paths": [
+          "internal/backend/llm/supervisor.go",
+          "internal/backend/llm/supervisor_gocache_internal_test.go",
+          "internal/backend/llm/supervisor_gocache_test.go",
+          "internal/backend/supervise/env_test.go",
+          "internal/backend/supervise/init.go",
+          "internal/backend/supervise/supervise.go"
+        ],
+        "outside_scope": [],
+        "patch_sha256": "f10c3805a5c5495893ab9b5274b5a3429694c9f4f35f92d5e07bba7a1eebc873",
+        "model_stdout_sha256": "3c7cf5a673c2c3a4e7757dd8014dbf22914081f25192d2895571dbcceeeafcca",
+        "model_stderr_sha256": "30a2a963599b61255a689b152cf8ae588014f004bea832a4bbf6779b5fbf476b",
+        "runtime_observed": true,
+        "launch_diagnostics": [],
+        "trace_events": 206,
+        "trace_types": [
+          "step_finish",
+          "step_start",
+          "text",
+          "tool_use"
+        ],
+        "trace_summary": {
+          "tool_events": {
+            "bash:error": 6,
+            "bash:completed": 12,
+            "read:completed": 34,
+            "grep:completed": 10,
+            "edit:completed": 12,
+            "write:completed": 3
+          },
+          "finish_reasons": {
+            "tool-calls": 57,
+            "stop": 3
+          },
+          "reported_tokens": {
+            "input": 285696,
+            "output": 15332,
+            "reasoning": 36946
+          },
+          "cited_record_ids": [
+            "6abc3ee2-1c95-4ad7-90df-505dd6049ee9"
+          ],
+          "citation_method": "exact selected UUID in OpenCode text event; testimony only"
+        },
+        "config_sha256": "91b5327d5f51c92aa3be73bf56f5e26eb1d86fbaaf6f2c2d9e8f4188d55ba78e",
+        "selected_records": [
+          "6abc3ee2-1c95-4ad7-90df-505dd6049ee9"
+        ],
+        "assessment_join": {
+          "assessment": {
+            "receipt_id": "66c85151-6577-4d81-bb6e-115a2c3af465",
+            "version": 1,
+            "task_outcome": "unknown",
+            "failure_domain": "unknown",
+            "failure_kind": "",
+            "method": "cairn.historical-cache-gate/1; operator testimony",
+            "evidence_ids": [
+              "87f7473f-d59e-46ee-a2a7-f215baa8fba6"
+            ],
+            "reason": "The cache-lifetime condition passed; full task correctness and Striatum acceptance remain unverified.",
+            "witness": "testimony",
+            "observer": "local-uid:1000",
+            "observed_at": "2026-09-07T21:13:41.802338-07:00"
+          },
+          "citation_observations": [
+            {
+              "observation_id": "49d88b73-71e8-46ca-bcd9-95351b115a35"
+            }
+          ],
+          "run_use_rows": [
+            {
+              "exposure_kind": "body",
+              "usage_witness": "testimony",
+              "usage_method": "cairn.opencode-text-uuid/1; model-authored UUID is testimony, not causal influence",
+              "usage_coverage": "unknown",
+              "task_class": "historical-go-cache-repair",
+              "binding_id": "opencode-openrouter",
+              "capability_id": "deepseek/deepseek-v4-pro-0813",
+              "assessment_version": 1,
+              "assessment_witness": "testimony",
+              "failure_domain": "unknown",
+              "failure_kind": "",
+              "error_signature_sha256": "",
+              "receipt_id": "66c85151-6577-4d81-bb6e-115a2c3af465",
+              "record_id": "6abc3ee2-1c95-4ad7-90df-505dd6049ee9",
+              "version": 2,
+              "scope": {
+                "repo": "trial:cairn_h0",
+                "task_id": "striatum-lane-go-cache-reviewed-recurrence",
+                "run_id": "cairn_h0"
+              },
+              "purpose": "context",
+              "used_at": "2026-09-07T20:58:49.969622-07:00",
+              "best_observed_delivery": "available",
+              "usage": "cited",
+              "process_state": "exited",
+              "exit_code": 0,
+              "duration_ms": 891095,
+              "task_outcome": "unknown",
+              "current_version": 2,
+              "current_lifecycle": "active"
+            }
+          ],
+          "excluded_preflight_rows": 1,
+          "interpretation": "One row per exposed record/version/receipt. Repeated observations do not multiply rows. Exit zero is not acceptance; citations are testimony, inferred use is not citation, and missing telemetry is unknown. Associations do not establish causal benefit."
+        }
+      },
+      "lesson_records": [
+        {
+          "record_id": "6abc3ee2-1c95-4ad7-90df-505dd6049ee9",
+          "version": 2,
+          "source": "cairn:c07f4587d907485e72b3537586afeaa30c861934:docs/verification/opencode-pro-calibration-2026-09-08.md#independent-checks-after-the-run",
+          "body_sha256": "9e53a27a5ef4ef6568605aeb31b966f51a2322982a62ec08a9696cadfd8d87d1"
+        }
+      ],
+      "selection_preflight": {
+        "cairn_h0": {
+          "receipt_id": "ad344f05-c5a1-4cf7-a086-8ab9e2fb7fc2",
+          "seal": "blake3:4f831208d77a8799196c8e5dc0ded84e48390504d79b5f9cd1a71bc6f7081f0b",
+          "selected_records": [
+            "6abc3ee2-1c95-4ad7-90df-505dd6049ee9"
+          ],
+          "available_tokens": 32000,
+          "optional_limit": 3200
+        }
+      },
+      "executed_files": {
+        "executed-controller.py": "fac9d26f0fa17859494860b35c6b02b3810da30f166c25df1d81b3b579b01644",
+        "executed-relay.py": "6eb38d165448bacced6f67924c4aed871b1b167a6fe2e842579a5052cfeaba0a",
+        "scenario.json": "9dc4ccd91bc896aeb30839afc32e1cdade95361e48a0640ec76296284944835d",
+        "gate.go": "042f64b28dafcabac4db78e092521d93b1bc647226a194b73e7cccd56672fd07",
+        "executed-postreview.py": "d4a2da6e15a6af760bc2506775f432364aa62f4f33e862f35c16e2dd9c8b8d2c",
+        "executed-metadata-review.py": "9cbeb987b15830496aa44382f9a9a038cc0ae58b3c3c581188ff92028383e95d",
+        "executed-assessment.py": "f00d1ed1b185b27855be35b2a1924d9d271c099ad4d7005c12a0f4be5b1efe85"
+      },
+      "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+      "cairn_sha256": "a4c6cbb6f06ba90a7dd8b0abec84213c34c189aa010789e86e3fecfb2da0af96",
+      "supplemental_review": {
+        "schema": "cairn.reviewed-recurrence-postrun/1",
+        "patch_sha256": "f10c3805a5c5495893ab9b5274b5a3429694c9f4f35f92d5e07bba7a1eebc873",
+        "base": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af",
+        "gate_sha256": "042f64b28dafcabac4db78e092521d93b1bc647226a194b73e7cccd56672fd07",
+        "contracts_sha256": "87c754c11b61bf04dbf3a63116353b5af02a3de6c52291f0d73a0321604748b8",
+        "reviewer_source_sha256": "d4a2da6e15a6af760bc2506775f432364aa62f4f33e862f35c16e2dd9c8b8d2c",
+        "exit_code": 1,
+        "stdout_sha256": "cd908366d787048b94c9e4905fd990ebc8e795d5ee149e184b9045564af5901c",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "focused_results": [
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestCairnRecurrenceRuntimeCacheLifetime",
+            "action": "pass"
+          },
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestCairnReviewedRepairContracts/cache-is-writable-during-invocation",
+            "action": "pass"
+          },
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestCairnReviewedRepairContracts/explicit-override-preserves-other-inherited-values",
+            "action": "pass"
+          },
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestCairnReviewedRepairContracts",
+            "action": "pass"
+          }
+        ],
+        "other_failures": [
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": "TestRelaunchPinsOrderedAttemptClosures",
+            "action": "fail"
+          },
+          {
+            "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+            "test": null,
+            "action": "fail"
+          }
+        ],
+        "skips": [],
+        "interpretation": "Supplemental checks on a reconstruction of the exact retained patch; original assessment unchanged. Cross-UID and all preparation failures remain unverified; no Striatum acceptance."
+      },
+      "inherited_metadata_review": {
+        "schema": "cairn.inherited-metadata-review/1",
+        "patch_sha256": "f10c3805a5c5495893ab9b5274b5a3429694c9f4f35f92d5e07bba7a1eebc873",
+        "test_source_sha256": "bd49478246814aa01b7e39463c3cc84453b2795af84e8a95f1d48a0bdfdf3386",
+        "reviewer_source_sha256": "9cbeb987b15830496aa44382f9a9a038cc0ae58b3c3c581188ff92028383e95d",
+        "exit_code": 0,
+        "stdout_sha256": "f14c5b2b08e210eba6df4300bc298919848df5eedddea955a218f625dd34c6d0",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "actions": [
+          "pass"
+        ],
+        "interpretation": "Exploratory supplemental check derived from baseline M after its original gate passed; same check applied across comparison candidates. Does not rewrite original assessments."
+      },
+      "reviewed_assessment": {
+        "assessment": {
+          "receipt_id": "66c85151-6577-4d81-bb6e-115a2c3af465",
+          "version": 2,
+          "task_outcome": "unknown",
+          "failure_domain": "unknown",
+          "failure_kind": "",
+          "method": "cairn.reviewed-recurrence/1; operator testimony",
+          "evidence_ids": [
+            "56f29a28-e1ec-46ef-811a-7737d94535cb"
+          ],
+          "reason": "The independently reviewed cache and inherited-environment checks passed. Full repair correctness, cross-UID behavior and all preparation-failure paths remain unverified; no Striatum acceptance or causal benefit is asserted.",
+          "witness": "testimony",
+          "observer": "local-uid:1000",
+          "observed_at": "2026-09-07T21:16:29.149398-07:00"
+        },
+        "assessment_history": [
+          {
+            "receipt_id": "66c85151-6577-4d81-bb6e-115a2c3af465",
+            "version": 1,
+            "task_outcome": "unknown",
+            "failure_domain": "unknown",
+            "failure_kind": "",
+            "method": "cairn.historical-cache-gate/1; operator testimony",
+            "evidence_ids": [
+              "87f7473f-d59e-46ee-a2a7-f215baa8fba6"
+            ],
+            "reason": "The cache-lifetime condition passed; full task correctness and Striatum acceptance remain unverified.",
+            "witness": "testimony",
+            "observer": "local-uid:1000",
+            "observed_at": "2026-09-07T21:13:41.802338-07:00"
+          },
+          {
+            "receipt_id": "66c85151-6577-4d81-bb6e-115a2c3af465",
+            "version": 2,
+            "task_outcome": "unknown",
+            "failure_domain": "unknown",
+            "failure_kind": "",
+            "method": "cairn.reviewed-recurrence/1; operator testimony",
+            "evidence_ids": [
+              "56f29a28-e1ec-46ef-811a-7737d94535cb"
+            ],
+            "reason": "The independently reviewed cache and inherited-environment checks passed. Full repair correctness, cross-UID behavior and all preparation-failure paths remain unverified; no Striatum acceptance or causal benefit is asserted.",
+            "witness": "testimony",
+            "observer": "local-uid:1000",
+            "observed_at": "2026-09-07T21:16:29.149398-07:00"
+          }
+        ],
+        "run_use_rows": [
+          {
+            "exposure_kind": "body",
+            "usage_witness": "testimony",
+            "usage_method": "cairn.opencode-text-uuid/1; model-authored UUID is testimony, not causal influence",
+            "usage_coverage": "unknown",
+            "task_class": "historical-go-cache-repair",
+            "binding_id": "opencode-openrouter",
+            "capability_id": "deepseek/deepseek-v4-pro-0813",
+            "assessment_version": 2,
+            "assessment_witness": "testimony",
+            "failure_domain": "unknown",
+            "failure_kind": "",
+            "error_signature_sha256": "",
+            "receipt_id": "66c85151-6577-4d81-bb6e-115a2c3af465",
+            "record_id": "6abc3ee2-1c95-4ad7-90df-505dd6049ee9",
+            "version": 2,
+            "scope": {
+              "repo": "trial:cairn_h0",
+              "task_id": "striatum-lane-go-cache-reviewed-recurrence",
+              "run_id": "cairn_h0"
+            },
+            "purpose": "context",
+            "used_at": "2026-09-07T20:58:49.969622-07:00",
+            "best_observed_delivery": "available",
+            "usage": "cited",
+            "process_state": "exited",
+            "exit_code": 0,
+            "duration_ms": 891095,
+            "task_outcome": "unknown",
+            "current_version": 2,
+            "current_lifecycle": "active"
+          }
+        ],
+        "interpretation": "One row per exposed record/version/receipt. Repeated observations do not multiply rows. Exit zero is not acceptance; citations are testimony, inferred use is not citation, and missing telemetry is unknown. Associations do not establish causal benefit.",
+        "original_report_sha256": "69b04536aaa660686ff1b0367e7fd437e77166df9abf35e6a82b2cdd36fb6aa7"
+      },
+      "relay": {
+        "sha256": "00b31a922ed15de9e1c11d7784a38518477118b57c6d0693aef5571a6737fc62",
+        "limits": {
+          "requests": 64,
+          "request_bytes": 1048576,
+          "response_bytes": 33554432,
+          "output_tokens": 32768,
+          "response_seconds": 600,
+          "socket_seconds": 45,
+          "provider": {
+            "max_price": {
+              "prompt": 1.5,
+              "completion": 4.0,
+              "request": 0
+            },
+            "data_collection": "deny",
+            "require_parameters": true
+          }
+        },
+        "requests": 61,
+        "rejections": 0,
+        "statuses": {
+          "completed": 61
+        },
+        "http_status_counts": {
+          "200": 61
+        },
+        "providers": {
+          "Novita": 2,
+          "StreamLake": 58,
+          "Together": 1
+        },
+        "reported_cost": 0.57925053384,
+        "per_request_finish_reasons": {
+          "stop": 4,
+          "tool_calls": 57
+        }
+      },
+      "cleanup": {
+        "postgres_stopped": true,
+        "relay_closed": true,
+        "native_home_and_cache_removed": true,
+        "derived_go_cache_removed": true
+      }
+    }
+  ],
+  "reference_count_review": {
+    "result": {
+      "exit_code": 0,
+      "stdout_sha256": "09265a68bfcd90728741ec6b7a8fad5a7ee2397198c4f01efff904a6e22cef7f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "actions": [
+        "pass"
+      ]
+    },
+    "source": "/tmp/cairn-inherited-count-env-test.go",
+    "source_sha256": "9d535c7fd21510a5eaaedca8a24f49e38432b6ce64c4df47cdde411b12e576af",
+    "interpretation": "The subsequently published fixture differs only by gofmt formatting."
+  },
+  "review_limits": [
+    "Overall task acceptance remains unknown for both lesson conditions.",
+    "O contains a vacuous prefix-length assertion in its own test; independent runtime checks support the reported property.",
+    "The count-marker variant was derived after observing M; no causal attribution or unseen-task transfer claim."
+  ]
+}
