@@ -58,3 +58,10 @@ cluster and removes it afterward; a private dump and reports remain in the outpu
 directory. Selected candidate patches and raw model diagnostics remain private,
 never committed as trial output. The controller pins binary hashes and refuses
 changed inputs. Updating the task, gate or lesson defines a new experiment.
+
+The first execution and its limits are recorded in the
+[verification report](../../docs/verification/agent-env-2026-09-08.md). Its original
+controller at `0e7d8cc` called every incomplete run a task rejection. Assessment
+method v2 now keeps known local request-cap exhaustion as binding quota with
+unknown task outcome; other nonzero exits remain unknown. Candidate gate results
+remain independent, and the original experiment was not rerun after this correction.

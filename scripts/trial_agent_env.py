@@ -22,6 +22,7 @@ import uuid
 from trial_agent_search import tool_observations
 from trial_host import TrialHost
 from trial_openrouter import configured_key, relay
+from trial_repair_assessment import repair_assessment
 from trial_retrieval_tools import cli, private_file, sandbox
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -63,8 +64,11 @@ def candidate(work, originals):
             outside.append(name)
             continue
         changes[name] = after
-        patches.extend(difflib.unified_diff((before or b'').decode().splitlines(True), after.decode().splitlines(True),
-                                           fromfile='a/' + name if before is not None else '/dev/null', tofile='b/' + name))
+        for line in difflib.unified_diff((before or b'').decode().splitlines(True), after.decode().splitlines(True),
+                                         fromfile='a/' + name if before is not None else '/dev/null', tofile='b/' + name):
+            patches.append(line)
+            if not line.endswith('\n'):
+                patches.append('\n\\ No newline at end of file\n')
     return changes, outside, ''.join(patches)
 
 
@@ -200,15 +204,21 @@ def run_arm(scenario, root, binary, opencode, arm, preflight):
                 links = [host.call('link-run-retrieval', dict(request_id=str(uuid.uuid4()), run_receipt_id=outcome['receipt_id'],
                          retrieval_receipt_id=receipt, expected_reader='agent:agent-env:' + arm, method='opencode-native-cli-tool-result/1')) for receipt in searches]
                 gate = evaluate(scenario, arm_root, binary, opencode, store, config, changes, outside)
-                accepted = gate['passed'] and process.returncode == 0
+                relay_report = json.loads((arm_root / 'relay.json').read_text())
+                assessment_fields = repair_assessment(process.returncode, gate, events, relay_report)
+                accepted = assessment_fields['task_outcome'] == 'accepted'
                 evidence = host.call('evidence', dict(request_id=str(uuid.uuid4()), repo=scope['repo'], sensitivity='local',
                     source='Frozen agent connection repair gate and preserved existing tests',
                     body=json.dumps(dict(gate=gate, outside_scope=outside, patch_sha256=sha(patch.encode()),
-                                         process_exit=process.returncode, scenario_sha256=sha(SCENARIO.read_bytes())))))
+                                         process_exit=process.returncode, scenario_sha256=sha(SCENARIO.read_bytes()),
+                                         assessment_fields=assessment_fields, stdout_sha256=sha(process.stdout),
+                                         relay_report_sha256=sha((arm_root / 'relay.json').read_bytes()),
+                                         requests=len(relay_report['requests']), request_limit=relay_report['limits']['requests'],
+                                         relay_rejection_codes=relay_report['rejection_codes'],
+                                         api_error_statuses=[e['error'].get('data', {}).get('statusCode') for e in events
+                                             if e.get('type') == 'error' and e.get('error', {}).get('name') == 'APIError']))))
                 assessment = host.call('assess-run', dict(request_id=str(uuid.uuid4()), receipt_id=outcome['receipt_id'], expected_version=0,
-                    task_outcome='accepted' if accepted else 'rejected', failure_domain='none' if accepted else 'task',
-                    method='agent-connection-artifact-gate/1', evidence_ids=[evidence['evidence_id']],
-                    reason='Frozen code repair checks; no final prose gate, general benefit claim or production acceptance.'))
+                    method='agent-connection-artifact-gate/2', evidence_ids=[evidence['evidence_id']], **assessment_fields))
                 report = dict(arm=arm, duration_seconds=elapsed, process_exit=process.returncode, gate=gate,
                     changed_paths=sorted(changes), outside_scope=outside, patch_sha256=sha(patch.encode()),
                     record=record, outcome=outcome, assessment=assessment, searches=len(searches), pulls=len(pulls), tool_failures=failures,

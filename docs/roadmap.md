@@ -14,6 +14,13 @@ accepted task, retrieval quality and transfer evidence. Further recovery
 engineering is deferred for this experimental stage unless an observed problem
 requires it; the existing implementation remains available.
 
+The [explicit connection repair](verification/agent-env-2026-09-08.md) is installed
+and integration-tested. Its matched model experiment exhausted the request
+allowance in every condition; retrieval was never exercised. This adds a usable
+CLI fix, with corrected unknown/binding-quota assessments, but no transfer or
+completed model-task result. Use task-relevant memory in the next real build
+and verify actual tool contact before drawing a benefit conclusion.
+
 Status: **open**, **partial**, **implemented/tested**. Completion means the stated
 acceptance evidence exists; deployment and measured usefulness are separate.
 Items can be delivered in smaller commits without marking the whole item complete.

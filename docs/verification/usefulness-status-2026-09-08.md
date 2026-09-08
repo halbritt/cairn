@@ -36,3 +36,13 @@ retain failures and unknowns. Measure task acceptance, repeat failures, context
 and review cost, elapsed time and reported model cost. A citation alone is not
 the outcome. Further platform work should address a concrete barrier observed
 in that exercise while the remaining accepted roadmap stays open.
+
+A [current CLI repair comparison](agent-env-2026-09-08.md) produced three
+candidates that passed the behavioral gate, but every run exhausted its local
+request allowance. The retrieval condition never searched or pulled, so transfer
+was not tested. Reviewed baseline code supplied the installed explicit-connection
+fix. Corrected assessments retain task outcome unknown and binding quota, with
+the original results preserved. This is a shipped usability repair, not an
+accepted model-task or memory-benefit result. Avoid repeating this weakly related
+lesson trial; the next real build needs relevant memory, a complete usable
+workspace and observed tool contact.
