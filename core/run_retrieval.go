@@ -100,7 +100,9 @@ func (s *Store) LinkRunRetrieval(ctx context.Context, req RunRetrievalRequest) (
 		}
 		return nil
 	}
-	return mutate(ctx, s, "link-run-retrieval", req.RequestID, req, func(tx pgx.Tx) (RunRetrieval, error) {
+	// All execution/retrieval role writers serialize this predicate. A row
+	// lock alone cannot refresh another transaction's eligibility snapshot.
+	return privileged(ctx, s, "link-run-retrieval", req.RequestID, req, func(tx pgx.Tx) (RunRetrieval, error) {
 		result := RunRetrieval{RunReceiptID: req.RunReceiptID, RetrievalReceiptID: req.RetrievalReceiptID, Method: req.Method}
 		err := tx.QueryRow(ctx, `INSERT INTO cairn.run_retrieval(retrieval_receipt_id,run_receipt_id,reader,method)
  SELECT receipt_id,$2,caller,$3 FROM cairn.retrieval_receipt WHERE receipt_id=$1

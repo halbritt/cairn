@@ -163,10 +163,11 @@ must use the observing host's receipt identity: `BindRun` and `ClaimRun` enforce
 ownership, while `LinkRunRetrieval` only joins retrievals created during an
 already observed host run. Also, current `ClaimRun` checks restore generation,
 policy and payload availability but does not fully re-evaluate selected-record
-eligibility. Native acquisition can precede dispatch by a substantial interval,
-so complete fresh eligibility and staged consumption of the exact retained
-receipt are prerequisites. Calling the existing wrapper and silently using its
-new package would not preserve the ECR pin.
+eligibility at the inspected base. The subsequent [launch freshness check](launch-freshness.md)
+now reuses compiler eligibility in a serializable snapshot while preserving the
+exact package and single-launch rules. Staged consumption of the exact retained
+receipt remains an implementation prerequisite. Calling the existing wrapper
+and silently using its new package would not preserve the ECR pin.
 
 Advance those prerequisites and the accepted contract path under the existing
 captured subject. Do not create another opening request, rewrite these drafts

@@ -43,6 +43,11 @@ and trial reports for the tested OpenCode versions and their limitations.
 
 ## Custody and failures
 
+Before claiming a launch, Cairn [rechecks the retained memory](launch-freshness.md)
+against current eligibility and required context. A stale package refuses before
+the child starts; obtain a fresh package with a new request ID. Newly optional
+notes do not rerank or change the retained package.
+
 The host registers its locked, owned context directory through observer-only
 `register-context` before writing `context.txt`. The existing core gates require
 an owned, claimed, current receipt and available payload. Normal operator purge

@@ -175,9 +175,10 @@ with scope, delivery and host-outcome correspondence preserved. Its opening
 capture has an accepted intent head in Striatum's graph; the producer/consumer
 extension has no accepted runtime force yet. Its owning RFC 0004/0007 amendments
 are now [concrete proposals](native-striatum-context.md#evidence-and-next-contract-work),
-with accepted Striatum source pins preserved. Pre-launch receipt ownership,
-complete fresh eligibility and staged exact-receipt consumption remain
-implementation prerequisites. The
+with accepted Striatum source pins preserved. The [launch freshness check](launch-freshness.md)
+now refuses changed selected memory and required context before a launch claim,
+using the existing compiler eligibility rules. Staged exact-receipt consumption
+and native host correspondence remain implementation prerequisites. The
 [OpenCode trial host](verification/opencode-host-observation-2026-09-08.md) now
 uses per-arm authenticated observers, exact package/attempt joins and pending
 spawn/terminal recovery. Its full real-harness fixture verification includes

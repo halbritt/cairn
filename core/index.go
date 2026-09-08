@@ -271,7 +271,7 @@ func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandReque
 	}
 	// Reasons include query ranking, so compare only the semantic authority and
 	// record facts when checking whether the mandatory bootstrap changed.
-	if !sameBootstrap(original.Selected, currentMandatory) {
+	if !sameSelectionFacts(original.Selected, currentMandatory) {
 		return failure("STALE_HANDLE", "mandatory bootstrap changed; retrieve a fresh index")
 	}
 	indexed := false
@@ -319,7 +319,7 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 		return Expansion{selection, credits - 1, remaining - cost}, nil
 	}, guard)
 }
-func sameBootstrap(a, b []Selection) bool {
+func sameSelectionFacts(a, b []Selection) bool {
 	normalize := func(input []Selection) []Selection {
 		out := append([]Selection{}, input...)
 		for i := range out {

@@ -50,7 +50,7 @@ func (s *Store) BindRun(ctx context.Context, req RunBindingRequest) (Observation
 		}
 		return nil
 	}
-	return mutate(ctx, s, "bind-run", req.RequestID, req, func(tx pgx.Tx) (Observation, error) {
+	return privileged(ctx, s, "bind-run", req.RequestID, req, func(tx pgx.Tx) (Observation, error) {
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
 			return Observation{}, err
 		}

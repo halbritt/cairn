@@ -3,10 +3,13 @@ package core
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type DeliveryRequest struct {
@@ -42,7 +45,27 @@ func (s *Store) ClaimRun(ctx context.Context, id string) error {
 	if !s.channel.Instrumented {
 		return failure("AUTHORITY_DENIED", "launch requires a service channel")
 	}
-	tx, err := s.begin(ctx)
+	for attempt := 0; attempt < 4; attempt++ {
+		err := s.claimRunOnce(ctx, id)
+		var pgErr *pgconn.PgError
+		// Retry only transactions PostgreSQL explicitly aborted. A lost commit
+		// response remains ambiguous and cannot authorize a second execution.
+		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && pgErr.Code != "40P01") {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt+1) * 5 * time.Millisecond):
+		}
+	}
+	return failure("VERSION_CONFLICT", "launch claim retry limit reached; inspect run status before retrying")
+}
+
+func (s *Store) claimRunOnce(ctx context.Context, id string) error {
+	// One snapshot covers memory eligibility. Serializable also protects the
+	// cross-receipt host reservation and execution/retrieval role predicates.
+	tx, err := s.beginLevel(ctx, pgx.Serializable)
 	if err != nil {
 		return err
 	}
@@ -63,6 +86,9 @@ func (s *Store) ClaimRun(ctx context.Context, id string) error {
 		return err
 	}
 	if err = receiptPayloadAvailable(ctx, tx, id); err != nil {
+		return err
+	}
+	if err = s.receiptSelectionCurrent(ctx, tx, id); err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx, `UPDATE cairn.retrieval_receipt SET launch_claimed=true WHERE receipt_id=$1 AND NOT launch_claimed`, id)
@@ -134,7 +160,7 @@ func (s *Store) RecordOutcome(ctx context.Context, req OutcomeRequest) (Observat
 	if req.ProcessState == "exited" && req.ExitCode == nil {
 		return Observation{}, failure("INVALID_REQUEST", "exited process requires an observed exit code")
 	}
-	return mutate(ctx, s, "outcome", req.RequestID, req, func(tx pgx.Tx) (Observation, error) {
+	return privileged(ctx, s, "outcome", req.RequestID, req, func(tx pgx.Tx) (Observation, error) {
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
 			return Observation{}, err
 		}
