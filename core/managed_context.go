@@ -41,14 +41,8 @@ func (s *Store) RegisterManagedContext(ctx context.Context, req ManagedContextRe
 	if err := validID(req.ReceiptID); err != nil {
 		return ManagedContext{}, err
 	}
-	if !filepath.IsAbs(req.Directory) || filepath.Clean(req.Directory) != req.Directory || filepath.Base(req.Directory) != req.ReceiptID || len(req.Directory) > 4096 {
-		return ManagedContext{}, failure("INVALID_REQUEST", "context directory must be an absolute canonical path ending in its receipt UUID")
-	}
-	for _, id := range []string{req.DirectoryDevice, req.DirectoryInode} {
-		n, err := strconv.ParseUint(id, 10, 64)
-		if err != nil || strconv.FormatUint(n, 10) != id {
-			return ManagedContext{}, failure("INVALID_REQUEST", "directory identity must be observed unsigned decimal device and inode")
-		}
+	if err := validateContextLocation(ManagedContext{ReceiptID: req.ReceiptID, Directory: req.Directory, DirectoryDevice: req.DirectoryDevice, DirectoryInode: req.DirectoryInode}); err != nil {
+		return ManagedContext{}, err
 	}
 	guard := func(tx pgx.Tx) error {
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
@@ -125,7 +119,11 @@ func (s *Store) ContextPurgeTarget(ctx context.Context, deletionID, receiptID st
 		return ContextPurgeTarget{}, err
 	}
 	var result ContextPurgeTarget
-	err = tx.QueryRow(ctx, `SELECT c.receipt_id::text,c.directory,c.directory_device,c.directory_inode,c.body_sha256,c.ownership_id::text,e.status FROM cairn.managed_context c JOIN cairn.deletion_effect e ON e.target_id=c.receipt_id::text AND e.target_type='managed_context' WHERE e.deletion_id=$1 AND c.receipt_id=$2`, deletionID, receiptID).Scan(&result.ReceiptID, &result.Directory, &result.DirectoryDevice, &result.DirectoryInode, &result.BodySHA256, &result.OwnershipID, &result.Status)
+	err = tx.QueryRow(ctx, `SELECT c.receipt_id::text,c.directory,c.directory_device,c.directory_inode,c.body_sha256,c.ownership_id::text,e.status FROM (
+ SELECT receipt_id,directory,directory_device,directory_inode,body_sha256,ownership_id FROM cairn.managed_context WHERE receipt_id=$2
+ UNION
+ SELECT receipt_id,directory,directory_device,directory_inode,body_sha256,ownership_id FROM cairn.recovery_context WHERE deletion_id=$1 AND receipt_id=$2
+ ) c JOIN cairn.deletion_effect e ON e.target_id=c.receipt_id::text AND e.target_type='managed_context' WHERE e.deletion_id=$1 AND c.receipt_id=$2`, deletionID, receiptID).Scan(&result.ReceiptID, &result.Directory, &result.DirectoryDevice, &result.DirectoryInode, &result.BodySHA256, &result.OwnershipID, &result.Status)
 	if err == pgx.ErrNoRows {
 		return result, failure("NOT_FOUND", "no authorized managed context effect")
 	}
@@ -180,4 +178,17 @@ func (s *Store) RecordContextPurge(ctx context.Context, req ContextPurgeResult) 
 		}
 		return readDeletion(ctx, tx, req.DeletionID)
 	}, func(tx pgx.Tx) error { return s.deletionAccess(ctx, tx, req.DeletionID) })
+}
+
+func validateContextLocation(c ManagedContext) error {
+	if !filepath.IsAbs(c.Directory) || filepath.Clean(c.Directory) != c.Directory || filepath.Base(c.Directory) != c.ReceiptID || len(c.Directory) > 4096 {
+		return failure("INVALID_REQUEST", "context directory must be an absolute canonical path ending in its receipt UUID")
+	}
+	for _, id := range []string{c.DirectoryDevice, c.DirectoryInode} {
+		n, err := strconv.ParseUint(id, 10, 64)
+		if err != nil || strconv.FormatUint(n, 10) != id {
+			return failure("INVALID_REQUEST", "directory identity must be observed unsigned decimal device and inode")
+		}
+	}
+	return nil
 }

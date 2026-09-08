@@ -40,6 +40,7 @@ JSON commands (read one request from stdin):
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
 Administration: recovery-export FILE | recovery-inspect FILE
+  recovery-reapply --request-id UUID --expected-sha256 DIGEST --reason TEXT FILE
   migrate | fence-restore < request.json | invalidate-handles < request.json | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH]
 Default store: ~/.local/share/cairn/socket, database cairn.
 Override with CAIRN_DATABASE_URL. Initialize with scripts/local-store.sh start.
@@ -115,6 +116,25 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return exportRecovery(ctx, store, args[1])
 		}
 		return inspectRecovery(ctx, store, args[1])
+	case "recovery-reapply":
+		f := flags("recovery-reapply")
+		requestID := f.String("request-id", "", "stable UUID for retrying this application")
+		expected := f.String("expected-sha256", "", "trusted recovery record content digest")
+		reason := f.String("reason", "", "reason for reapplying these restrictions")
+		if err := f.Parse(args[1:]); err != nil {
+			return nil, invalid(err.Error())
+		}
+		if f.NArg() != 1 || *requestID == "" || *expected == "" || *reason == "" {
+			return nil, invalid("recovery-reapply requires request-id, expected-sha256, reason and one file")
+		}
+		record, err := readRecoveryFile(f.Arg(0))
+		if err != nil {
+			return nil, err
+		}
+		if record.SHA256 != *expected {
+			return nil, &core.Error{Code: "INTEGRITY_FAILURE", Message: "recovery record differs from the expected content digest"}
+		}
+		return store.ReapplyRecovery(ctx, core.RecoveryReapplyRequest{RequestID: *requestID, Record: record, Reason: *reason})
 	case "recover-run":
 		if len(args) != 2 {
 			return nil, invalid("recover-run requires a receipt UUID")

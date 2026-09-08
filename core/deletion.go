@@ -64,74 +64,7 @@ func (s *Store) Forget(ctx context.Context, req ForgetRequest) (Deletion, error)
 			return Deletion{}, err
 		}
 		scope = current.Scope
-		chain, err := s.authorize(ctx, tx, req.GrantID, "redact", scope.Repo)
-		if err != nil {
-			return Deletion{}, err
-		}
-		current, err = lockRecord(ctx, tx, req.RecordID, req.ExpectedVersion)
-		if err != nil {
-			return Deletion{}, err
-		}
-		if current.Lifecycle == "tombstoned" {
-			return Deletion{}, failure("VERSION_CONFLICT", "record is already forgotten")
-		}
-		targets, err := s.checkDeletionPreview(ctx, tx, req)
-		if err != nil {
-			return Deletion{}, err
-		}
-		draft := current.Draft
-		draft.Body = "[forgotten]"
-		draft.Relations = nil
-		draft.AttributedProducer = ""
-		draft.AttemptID = ""
-		draft.ResultRef = ""
-		draft.ClaimType = "self"
-		next, err := advanceRecord(ctx, tx, current, draft, current.Class, "tombstoned")
-		if err != nil {
-			return Deletion{}, err
-		}
-		if err = recordAuthority(ctx, tx, "forget", current.Version, next, chain, "Forget retained record payloads after impact preview", IssueRequest{}); err != nil {
-			return Deletion{}, err
-		}
-		id := uuid.NewString()
-		if _, err = tx.Exec(ctx, `INSERT INTO cairn.deletion_request(deletion_id,record_id,event_id,repo) SELECT $1,$2,event_id,$3 FROM cairn.record_authority WHERE record_id=$2 AND version=$4`, id, req.RecordID, scope.Repo, next.Version); err != nil {
-			return Deletion{}, err
-		}
-		for _, target := range targets {
-			if _, err = tx.Exec(ctx, `INSERT INTO cairn.deletion_effect(deletion_id,target_type,target_id,status,residual) VALUES($1,$2,$3,$4,$5)`, id, target.TargetType, target.TargetID, target.Status, target.Residual); err != nil {
-				return Deletion{}, err
-			}
-		}
-		refs, err := dependentVersions(ctx, tx, req.RecordID)
-		if err != nil {
-			return Deletion{}, err
-		}
-		// Relation writers lock and advance their direct target. Touch every
-		// affected target so concurrent new descendants either precede this
-		// closure or observe its exclusions; old snapshots must retry.
-		ids := map[string]bool{}
-		for _, ref := range refs {
-			if ref.RecordID != req.RecordID {
-				ids[ref.RecordID] = true
-			}
-		}
-		ordered := make([]string, 0, len(ids))
-		for id := range ids {
-			ordered = append(ordered, id)
-		}
-		sort.Strings(ordered)
-		for _, id := range ordered {
-			if _, err = tx.Exec(ctx, `UPDATE cairn.memory_record SET use_generation=use_generation+1 WHERE record_id=$1`, id); err != nil {
-				return Deletion{}, err
-			}
-		}
-		if _, err = tx.Exec(ctx, `INSERT INTO cairn.deletion_dependency(record_id,version,deletion_id) SELECT record_id,version,$1 FROM jsonb_to_recordset($2) AS d(record_id uuid,version integer) WHERE record_id<>$3::uuid`, id, refs, req.RecordID); err != nil {
-			return Deletion{}, err
-		}
-		if err = excludeDeletionPayloads(ctx, tx, id, req.RecordID); err != nil {
-			return Deletion{}, err
-		}
-		return readDeletion(ctx, tx, id)
+		return s.forgetRecord(ctx, tx, req, current)
 	})
 	if durablePolicyRefusal(err) {
 		err = s.retainRefusal(ctx, req, Refusal{RequestID: req.RequestID, Operation: "forget", Scope: scope, Considered: []RecordVersionRef{{req.RecordID, req.ExpectedVersion}}, TraceComplete: false}, err)
@@ -418,4 +351,76 @@ func (s *Store) recordPurgeFailure(ctx context.Context, id string, effect Deleti
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// forgetRecord runs inside the caller's privileged transaction.
+func (s *Store) forgetRecord(ctx context.Context, tx pgx.Tx, req ForgetRequest, current Record) (Deletion, error) {
+	chain, err := s.authorize(ctx, tx, req.GrantID, "redact", current.Scope.Repo)
+	if err != nil {
+		return Deletion{}, err
+	}
+	current, err = lockRecord(ctx, tx, req.RecordID, req.ExpectedVersion)
+	if err != nil {
+		return Deletion{}, err
+	}
+	if current.Lifecycle == "tombstoned" {
+		return Deletion{}, failure("VERSION_CONFLICT", "record is already forgotten")
+	}
+	targets, err := s.checkDeletionPreview(ctx, tx, req)
+	if err != nil {
+		return Deletion{}, err
+	}
+	draft := current.Draft
+	draft.Body = "[forgotten]"
+	draft.Relations = nil
+	draft.AttributedProducer = ""
+	draft.AttemptID = ""
+	draft.ResultRef = ""
+	draft.ClaimType = "self"
+	next, err := advanceRecord(ctx, tx, current, draft, current.Class, "tombstoned")
+	if err != nil {
+		return Deletion{}, err
+	}
+	if err = recordAuthority(ctx, tx, "forget", current.Version, next, chain, "Forget retained record payloads after impact preview", IssueRequest{}); err != nil {
+		return Deletion{}, err
+	}
+	id := uuid.NewString()
+	if _, err = tx.Exec(ctx, `INSERT INTO cairn.deletion_request(deletion_id,record_id,event_id,repo) SELECT $1,$2,event_id,$3 FROM cairn.record_authority WHERE record_id=$2 AND version=$4`, id, req.RecordID, current.Scope.Repo, next.Version); err != nil {
+		return Deletion{}, err
+	}
+	for _, target := range targets {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.deletion_effect(deletion_id,target_type,target_id,status,residual) VALUES($1,$2,$3,$4,$5)`, id, target.TargetType, target.TargetID, target.Status, target.Residual); err != nil {
+			return Deletion{}, err
+		}
+	}
+	refs, err := dependentVersions(ctx, tx, req.RecordID)
+	if err != nil {
+		return Deletion{}, err
+	}
+	// Relation writers lock and advance their direct target. Touch every
+	// affected target so concurrent new descendants either precede this
+	// closure or observe its exclusions; old snapshots must retry.
+	ids := map[string]bool{}
+	for _, ref := range refs {
+		if ref.RecordID != req.RecordID {
+			ids[ref.RecordID] = true
+		}
+	}
+	ordered := make([]string, 0, len(ids))
+	for id := range ids {
+		ordered = append(ordered, id)
+	}
+	sort.Strings(ordered)
+	for _, id := range ordered {
+		if _, err = tx.Exec(ctx, `UPDATE cairn.memory_record SET use_generation=use_generation+1 WHERE record_id=$1`, id); err != nil {
+			return Deletion{}, err
+		}
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO cairn.deletion_dependency(record_id,version,deletion_id) SELECT record_id,version,$1 FROM jsonb_to_recordset($2) AS d(record_id uuid,version integer) WHERE record_id<>$3::uuid`, id, refs, req.RecordID); err != nil {
+		return Deletion{}, err
+	}
+	if err = excludeDeletionPayloads(ctx, tx, id, req.RecordID); err != nil {
+		return Deletion{}, err
+	}
+	return readDeletion(ctx, tx, id)
 }

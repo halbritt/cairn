@@ -195,42 +195,7 @@ func (s *Store) RevokeGrant(ctx context.Context, req RevokeGrantRequest) (Grant,
 		return Grant{}, err
 	}
 	return privileged(ctx, s, "revoke-grant", req.RequestID, req, func(tx pgx.Tx) (Grant, error) {
-		var repo string
-		if err := tx.QueryRow(ctx, `SELECT repo FROM cairn.authority_grant WHERE grant_id=$1`, req.GrantID).Scan(&repo); err != nil {
-			return Grant{}, err
-		}
-		chain, err := s.authorize(ctx, tx, req.AuthorityID, "revoke", repo)
-		if err != nil {
-			return Grant{}, err
-		}
-		targetChain, err := grantChain(ctx, tx, req.GrantID, true)
-		if err != nil {
-			return Grant{}, err
-		}
-		target := targetChain[len(targetChain)-1]
-		if target.Version != req.ExpectedVersion {
-			return Grant{}, failure("VERSION_CONFLICT", "grant version changed")
-		}
-		if target.ParentID == "" {
-			return Grant{}, failure("AUTHORITY_DENIED", "root revocation requires a separate recovery procedure")
-		}
-		allowed := false
-		for _, ancestor := range targetChain[:len(targetChain)-1] {
-			if ancestor.ID == req.AuthorityID {
-				allowed = true
-			}
-		}
-		if !allowed {
-			return Grant{}, failure("AUTHORITY_DENIED", "revocation authority must be an ancestor")
-		}
-		event, err := audit(ctx, tx, "revoke_grant", req.GrantID, target.Version, target.Version+1, chain, req.Reason)
-		if err != nil {
-			return Grant{}, err
-		}
-		_, err = tx.Exec(ctx, `UPDATE cairn.authority_grant SET revoked=true,version=version+1,event_id=$2 WHERE grant_id=$1`, req.GrantID, event)
-		target.Live = false
-		target.Version++
-		return target, err
+		return s.revokeGrant(ctx, tx, req)
 	})
 }
 
@@ -281,4 +246,43 @@ func lockRecord(ctx context.Context, tx pgx.Tx, id string, expected int) (Record
 		return Record{}, failure("VERSION_CONFLICT", "record version changed")
 	}
 	return readRecord(ctx, tx, id)
+}
+
+func (s *Store) revokeGrant(ctx context.Context, tx pgx.Tx, req RevokeGrantRequest) (Grant, error) {
+	var repo string
+	if err := tx.QueryRow(ctx, `SELECT repo FROM cairn.authority_grant WHERE grant_id=$1`, req.GrantID).Scan(&repo); err != nil {
+		return Grant{}, err
+	}
+	chain, err := s.authorize(ctx, tx, req.AuthorityID, "revoke", repo)
+	if err != nil {
+		return Grant{}, err
+	}
+	targetChain, err := grantChain(ctx, tx, req.GrantID, true)
+	if err != nil {
+		return Grant{}, err
+	}
+	target := targetChain[len(targetChain)-1]
+	if target.Version != req.ExpectedVersion {
+		return Grant{}, failure("VERSION_CONFLICT", "grant version changed")
+	}
+	if target.ParentID == "" {
+		return Grant{}, failure("AUTHORITY_DENIED", "root revocation requires a separate recovery procedure")
+	}
+	allowed := false
+	for _, ancestor := range targetChain[:len(targetChain)-1] {
+		if ancestor.ID == req.AuthorityID {
+			allowed = true
+		}
+	}
+	if !allowed {
+		return Grant{}, failure("AUTHORITY_DENIED", "revocation authority must be an ancestor")
+	}
+	event, err := audit(ctx, tx, "revoke_grant", req.GrantID, target.Version, target.Version+1, chain, req.Reason)
+	if err != nil {
+		return Grant{}, err
+	}
+	_, err = tx.Exec(ctx, `UPDATE cairn.authority_grant SET revoked=true,version=version+1,event_id=$2 WHERE grant_id=$1`, req.GrantID, event)
+	target.Live = false
+	target.Version++
+	return target, err
 }

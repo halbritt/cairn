@@ -259,39 +259,7 @@ func (s *Store) Retract(ctx context.Context, req RetractRequest) (Record, error)
 			return Record{}, err
 		}
 		scope = current.Scope
-		chain, err := s.authorize(ctx, tx, req.GrantID, "retract", current.Scope.Repo)
-		if err != nil {
-			return Record{}, err
-		}
-		current, err = lockRecord(ctx, tx, req.RecordID, req.ExpectedVersion)
-		if err != nil {
-			return Record{}, err
-		}
-		if current.Lifecycle != "active" {
-			return Record{}, failure("VERSION_CONFLICT", "record is already inactive")
-		}
-		var conflicted bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.conflict_member m JOIN cairn.conflict_group g USING(conflict_id) WHERE m.record_id=$1 AND g.resolved_event IS NULL)`, req.RecordID).Scan(&conflicted); err != nil {
-			return Record{}, err
-		}
-		if conflicted {
-			return Record{}, failure("OPEN_CONFLICT", "resolve the conflict before retracting")
-		}
-		if err = s.checkRetractionPreview(ctx, tx, req); err != nil {
-			return Record{}, err
-		}
-		// Retraction creates an inactive version, not a fresh claim about its
-		// dependencies. Earlier versions retain their original links for impact.
-		draft := current.Draft
-		draft.Relations = nil
-		next, err := advanceRecord(ctx, tx, current, draft, current.Class, "retracted")
-		if err != nil {
-			return Record{}, err
-		}
-		if err = recordAuthority(ctx, tx, "retract", current.Version, next, chain, req.Reason, IssueRequest{}); err != nil {
-			return Record{}, err
-		}
-		return next, nil
+		return s.retractRecord(ctx, tx, req, current)
 	})
 	if durablePolicyRefusal(err) {
 		err = s.retainRefusal(ctx, req, Refusal{RequestID: req.RequestID, Operation: "retract", Scope: scope, Considered: []RecordVersionRef{{req.RecordID, req.ExpectedVersion}}, TraceComplete: false}, err)
@@ -329,4 +297,41 @@ func recordAuthority(ctx context.Context, tx pgx.Tx, kind string, previous int, 
 		_, err = tx.Exec(ctx, `INSERT INTO cairn.record_correction(record_id,old_version,new_version,event_id) VALUES($1,$2,$3,$4)`, record.RecordID, previous, record.Version, event)
 	}
 	return err
+}
+
+// retractRecord runs inside the caller's privileged transaction.
+func (s *Store) retractRecord(ctx context.Context, tx pgx.Tx, req RetractRequest, current Record) (Record, error) {
+	chain, err := s.authorize(ctx, tx, req.GrantID, "retract", current.Scope.Repo)
+	if err != nil {
+		return Record{}, err
+	}
+	current, err = lockRecord(ctx, tx, req.RecordID, req.ExpectedVersion)
+	if err != nil {
+		return Record{}, err
+	}
+	if current.Lifecycle != "active" {
+		return Record{}, failure("VERSION_CONFLICT", "record is already inactive")
+	}
+	var conflicted bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.conflict_member m JOIN cairn.conflict_group g USING(conflict_id) WHERE m.record_id=$1 AND g.resolved_event IS NULL)`, req.RecordID).Scan(&conflicted); err != nil {
+		return Record{}, err
+	}
+	if conflicted {
+		return Record{}, failure("OPEN_CONFLICT", "resolve the conflict before retracting")
+	}
+	if err = s.checkRetractionPreview(ctx, tx, req); err != nil {
+		return Record{}, err
+	}
+	// Retraction creates an inactive version, not a fresh claim about its
+	// dependencies. Earlier versions retain their original links for impact.
+	draft := current.Draft
+	draft.Relations = nil
+	next, err := advanceRecord(ctx, tx, current, draft, current.Class, "retracted")
+	if err != nil {
+		return Record{}, err
+	}
+	if err = recordAuthority(ctx, tx, "retract", current.Version, next, chain, req.Reason, IssueRequest{}); err != nil {
+		return Record{}, err
+	}
+	return next, nil
 }

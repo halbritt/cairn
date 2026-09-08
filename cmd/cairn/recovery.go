@@ -13,7 +13,7 @@ import (
 	"github.com/halbritt/cairn/core"
 )
 
-const maxRecoveryBytes = 16 * 1024 * 1024
+const maxRecoveryBytes = core.MaxRecoveryBytes
 
 func exportRecovery(ctx context.Context, store *core.Store, path string) (any, error) {
 	record, err := store.CaptureRecovery(ctx)

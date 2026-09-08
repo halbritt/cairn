@@ -38,6 +38,61 @@ func (s *Store) previewRetraction(ctx context.Context, recordID string, deletion
 		return RetractionPreview{}, err
 	}
 	defer tx.Rollback(ctx)
+	result, err := s.previewRetractionTx(ctx, tx, recordID, deletion)
+	if err != nil {
+		return result, err
+	}
+	return result, tx.Commit(ctx)
+}
+
+// Called after locking the record in the privileged transaction. Concurrent
+// exposure updates its generation and forces either stale-token refusal or a
+// serialization retry against fresh state.
+func (s *Store) checkRetractionPreview(ctx context.Context, tx pgx.Tx, req RetractRequest) error {
+	if req.PreviewID == "" {
+		return failure("IMPACT_PREVIEW_REQUIRED", "obtain a retraction preview before committing")
+	}
+	if err := validID(req.PreviewID); err != nil {
+		return err
+	}
+	var current bool
+	var expectedDigest []byte
+	err := tx.QueryRow(ctx, `SELECT p.version=m.current_version AND p.use_generation=m.use_generation AND p.expires_at>clock_timestamp(),p.dependency_digest
+ FROM cairn.retraction_preview p JOIN cairn.memory_record m USING(record_id)
+ WHERE p.preview_id=$1 AND p.record_id=$2 AND p.caller=$3`, req.PreviewID, req.RecordID, s.channel.Principal).Scan(&current, &expectedDigest)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return failure("IMPACT_PREVIEW_REQUIRED", "no matching caller-owned retraction preview")
+	}
+	if err != nil {
+		return err
+	}
+	refs, err := dependentVersions(ctx, tx, req.RecordID)
+	if err != nil {
+		return err
+	}
+	actualDigest, err := dependencyStateDigest(ctx, tx, refs)
+	if err != nil {
+		return err
+	}
+	current = current && bytes.Equal(actualDigest, expectedDigest)
+	if !current {
+		return failure("STALE_PREVIEW", "record or exposure state changed, or preview expired; obtain a new preview")
+	}
+	return nil
+}
+
+func dependencyStateDigest(ctx context.Context, tx pgx.Tx, refs []RecordVersionRef) ([]byte, error) {
+	var state []byte
+	err := tx.QueryRow(ctx, `SELECT jsonb_agg(jsonb_build_array(d.record_id,d.version,m.current_version,m.lifecycle,m.use_generation) ORDER BY d.record_id,d.version)::text
+ FROM jsonb_to_recordset($1) AS d(record_id uuid,version integer) JOIN cairn.memory_record m ON m.record_id=d.record_id`, refs).Scan(&state)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(state)
+	return sum[:], nil
+}
+
+func (s *Store) previewRetractionTx(ctx context.Context, tx pgx.Tx, recordID string, deletion bool) (RetractionPreview, error) {
 	record, err := readRecord(ctx, tx, recordID)
 	if err != nil {
 		return RetractionPreview{}, err
@@ -98,52 +153,5 @@ func (s *Store) previewRetraction(ctx context.Context, recordID string, deletion
 	if err != nil {
 		return result, err
 	}
-	return result, tx.Commit(ctx)
-}
-
-// Called after locking the record in the privileged transaction. Concurrent
-// exposure updates its generation and forces either stale-token refusal or a
-// serialization retry against fresh state.
-func (s *Store) checkRetractionPreview(ctx context.Context, tx pgx.Tx, req RetractRequest) error {
-	if req.PreviewID == "" {
-		return failure("IMPACT_PREVIEW_REQUIRED", "obtain a retraction preview before committing")
-	}
-	if err := validID(req.PreviewID); err != nil {
-		return err
-	}
-	var current bool
-	var expectedDigest []byte
-	err := tx.QueryRow(ctx, `SELECT p.version=m.current_version AND p.use_generation=m.use_generation AND p.expires_at>clock_timestamp(),p.dependency_digest
- FROM cairn.retraction_preview p JOIN cairn.memory_record m USING(record_id)
- WHERE p.preview_id=$1 AND p.record_id=$2 AND p.caller=$3`, req.PreviewID, req.RecordID, s.channel.Principal).Scan(&current, &expectedDigest)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return failure("IMPACT_PREVIEW_REQUIRED", "no matching caller-owned retraction preview")
-	}
-	if err != nil {
-		return err
-	}
-	refs, err := dependentVersions(ctx, tx, req.RecordID)
-	if err != nil {
-		return err
-	}
-	actualDigest, err := dependencyStateDigest(ctx, tx, refs)
-	if err != nil {
-		return err
-	}
-	current = current && bytes.Equal(actualDigest, expectedDigest)
-	if !current {
-		return failure("STALE_PREVIEW", "record or exposure state changed, or preview expired; obtain a new preview")
-	}
-	return nil
-}
-
-func dependencyStateDigest(ctx context.Context, tx pgx.Tx, refs []RecordVersionRef) ([]byte, error) {
-	var state []byte
-	err := tx.QueryRow(ctx, `SELECT jsonb_agg(jsonb_build_array(d.record_id,d.version,m.current_version,m.lifecycle,m.use_generation) ORDER BY d.record_id,d.version)::text
- FROM jsonb_to_recordset($1) AS d(record_id uuid,version integer) JOIN cairn.memory_record m ON m.record_id=d.record_id`, refs).Scan(&state)
-	if err != nil {
-		return nil, err
-	}
-	sum := sha256.Sum256(state)
-	return sum[:], nil
+	return result, nil
 }

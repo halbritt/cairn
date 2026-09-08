@@ -12,6 +12,20 @@ import (
 
 const recoverySchema = "cairn.recovery-record/1"
 
+// MaxRecoveryBytes bounds the canonical exported JSON, including its newline.
+const MaxRecoveryBytes = 16 * 1024 * 1024
+
+func recoverySizeValid(record RecoveryRecord) error {
+	body, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		return err
+	}
+	if len(body)+1 > MaxRecoveryBytes {
+		return failure("BUDGET_REFUSED", "recovery record exceeds 16 MiB of exported JSON")
+	}
+	return nil
+}
+
 type RecoveryWithdrawal struct {
 	Kind      string `json:"kind"`
 	SubjectID string `json:"subject_id"`
@@ -56,61 +70,7 @@ func (s *Store) CaptureRecovery(ctx context.Context) (RecoveryRecord, error) {
 		return RecoveryRecord{}, err
 	}
 	defer tx.Rollback(ctx)
-	record := RecoveryRecord{Schema: recoverySchema, Withdrawals: []RecoveryWithdrawal{}, Contexts: []RecoveryContext{}}
-	if err = tx.QueryRow(ctx, `SELECT grant_id::text,transaction_timestamp() FROM cairn.authority_grant WHERE parent_id IS NULL`).Scan(&record.RootGrantID, &record.CapturedAt); err == pgx.ErrNoRows {
-		return record, failure("RECOVERY_UNINITIALIZED", "install the operator root before capturing a recovery record")
-	} else if err != nil {
-		return record, err
-	}
-	record.CapturedAt = record.CapturedAt.UTC()
-	record.Audit, err = auditMembers(ctx, tx)
-	if err != nil {
-		return record, err
-	}
-	// Derive withdrawals from retained authority events, not the mutable state
-	// being checked. A corrupt revived flag must not erase its own expectation.
-	rows, err := tx.Query(ctx, `SELECT e.event_type,e.subject_id::text,COALESCE(g.repo,v.repo),e.event_id::text FROM cairn.authority_event e
- LEFT JOIN cairn.authority_grant g ON e.event_type='revoke_grant' AND g.grant_id=e.subject_id
- LEFT JOIN cairn.record_version v ON e.event_type IN ('forget','retract') AND v.record_id=e.subject_id AND v.version=e.resulting_version
- WHERE e.event_type IN ('revoke_grant','forget') OR (e.event_type='retract' AND v.version_class='C') ORDER BY e.event_id LIMIT 10001`)
-	if err != nil {
-		return record, err
-	}
-	for rows.Next() {
-		var w RecoveryWithdrawal
-		if err = rows.Scan(&w.Kind, &w.SubjectID, &w.Repo, &w.EventID); err != nil {
-			rows.Close()
-			return record, err
-		}
-		record.Withdrawals = append(record.Withdrawals, w)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return record, err
-	}
-	rows, err = tx.Query(ctx, `SELECT DISTINCT d.record_id::text,c.ownership_id::text,c.receipt_id::text,c.directory,c.directory_device,c.directory_inode,c.body_sha256
- FROM cairn.deletion_request d JOIN cairn.deletion_effect e USING(deletion_id) JOIN cairn.managed_context c ON e.target_type='managed_context' AND e.target_id=c.receipt_id::text ORDER BY d.record_id::text,c.receipt_id::text LIMIT 10001`)
-	if err != nil {
-		return record, err
-	}
-	for rows.Next() {
-		var c RecoveryContext
-		if err = rows.Scan(&c.RecordID, &c.OwnershipID, &c.ReceiptID, &c.Directory, &c.DirectoryDevice, &c.DirectoryInode, &c.BodySHA256); err != nil {
-			rows.Close()
-			return record, err
-		}
-		record.Contexts = append(record.Contexts, c)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return record, err
-	}
-	if len(record.Withdrawals) > 10000 || len(record.Contexts) > 10000 {
-		return record, failure("BUDGET_REFUSED", "recovery record exceeds 10000 withdrawals or context references; no partial record exported")
-	}
-	record.SHA256, err = recoveryDigest(record)
+	record, err := captureRecoveryTx(ctx, tx)
 	if err != nil {
 		return record, err
 	}
@@ -126,6 +86,9 @@ func recoveryDigest(record RecoveryRecord) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 func (r RecoveryRecord) validate() error {
+	if err := recoverySizeValid(r); err != nil {
+		return err
+	}
 	if r.Schema != recoverySchema || r.CapturedAt.IsZero() || len(r.Audit) > 10000 || len(r.Withdrawals) > 10000 || len(r.Contexts) > 10000 {
 		return failure("INVALID_REQUEST", "unsupported or oversized recovery record")
 	}
@@ -219,8 +182,28 @@ func (s *Store) InspectRecovery(ctx context.Context, record RecoveryRecord) (Rec
 			report.Gaps = append(report.Gaps, RecoveryGap{Kind: "audit", EventID: m.EventID, Reason: "AUDIT_CHANGED"})
 		}
 	}
+	expectedDigests := map[string]string{}
+	for _, m := range record.Audit {
+		expectedDigests[m.EventID] = m.Digest
+	}
 	for _, w := range record.Withdrawals {
-		reason, err := inspectWithdrawal(ctx, tx, w)
+		local := w
+		if w.Kind == "forget" {
+			var mapped string
+			err := tx.QueryRow(ctx, `SELECT d.event_id::text FROM cairn.recovery_application a
+ CROSS JOIN LATERAL jsonb_array_elements(a.actions) action
+ JOIN cairn.deletion_request d ON d.deletion_id::text=action->>'deletion_id'
+ WHERE a.source_root=$1 AND action->>'event_id'=$2 AND action->>'source_digest'=$3
+ AND action->>'subject_id'=$4 AND action->>'repo'=$5 AND action->>'kind'='forget'
+ AND d.record_id=$4::uuid AND d.event_id::text=action->>'current_event_id' LIMIT 1`, record.RootGrantID, w.EventID, expectedDigests[w.EventID], w.SubjectID, w.Repo).Scan(&mapped)
+			if err != nil && err != pgx.ErrNoRows {
+				return report, err
+			}
+			if err == nil {
+				local.EventID = mapped
+			}
+		}
+		reason, err := inspectWithdrawal(ctx, tx, local)
 		if err != nil {
 			return report, err
 		}
@@ -233,6 +216,15 @@ func (s *Store) InspectRecovery(ctx context.Context, record RecoveryRecord) (Rec
 		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.managed_context c JOIN cairn.record_use u USING(receipt_id) JOIN cairn.deletion_request d USING(record_id) JOIN cairn.deletion_effect e ON e.deletion_id=d.deletion_id AND e.target_type='managed_context' AND e.target_id=c.receipt_id::text WHERE c.receipt_id=$1 AND u.record_id=$7 AND directory=$2 AND directory_device=$3 AND directory_inode=$4 AND ownership_id=$5 AND body_sha256=$6)`, c.ReceiptID, c.Directory, c.DirectoryDevice, c.DirectoryInode, c.OwnershipID, c.BodySHA256, c.RecordID).Scan(&found)
 		if err != nil {
 			return report, err
+		}
+		if !found {
+			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.recovery_context c
+ JOIN cairn.deletion_request d USING(deletion_id)
+ JOIN cairn.deletion_effect e ON e.deletion_id=c.deletion_id AND e.target_type='managed_context' AND e.target_id=c.receipt_id::text
+ WHERE c.receipt_id=$1 AND d.record_id=$7 AND c.directory=$2 AND c.directory_device=$3 AND c.directory_inode=$4 AND c.ownership_id=$5 AND c.body_sha256=$6)`, c.ReceiptID, c.Directory, c.DirectoryDevice, c.DirectoryInode, c.OwnershipID, c.BodySHA256, c.RecordID).Scan(&found)
+			if err != nil {
+				return report, err
+			}
 		}
 		if !found {
 			report.Gaps = append(report.Gaps, RecoveryGap{Kind: "managed_context", SubjectID: c.ReceiptID, Reason: "CONTEXT_CUSTODY_MISSING"})
@@ -312,4 +304,86 @@ func inspectWithdrawal(ctx context.Context, tx pgx.Tx, w RecoveryWithdrawal) (st
 		return "DEPENDENCY_EXCLUSION_MISSING", nil
 	}
 	return "", nil
+}
+
+func captureRecoveryTx(ctx context.Context, tx pgx.Tx) (RecoveryRecord, error) {
+	var err error
+	record := RecoveryRecord{Schema: recoverySchema, Withdrawals: []RecoveryWithdrawal{}, Contexts: []RecoveryContext{}}
+	if err = tx.QueryRow(ctx, `SELECT grant_id::text,transaction_timestamp() FROM cairn.authority_grant WHERE parent_id IS NULL`).Scan(&record.RootGrantID, &record.CapturedAt); err == pgx.ErrNoRows {
+		return record, failure("RECOVERY_UNINITIALIZED", "install the operator root before capturing a recovery record")
+	} else if err != nil {
+		return record, err
+	}
+	record.CapturedAt = record.CapturedAt.UTC()
+	record.Audit, err = auditMembers(ctx, tx)
+	if err != nil {
+		return record, err
+	}
+	// Derive withdrawals from retained authority events, not the mutable state
+	// being checked. A corrupt revived flag must not erase its own expectation.
+	rows, err := tx.Query(ctx, `SELECT e.event_type,e.subject_id::text,COALESCE(g.repo,v.repo),e.event_id::text FROM cairn.authority_event e
+ LEFT JOIN cairn.authority_grant g ON e.event_type='revoke_grant' AND g.grant_id=e.subject_id
+ LEFT JOIN cairn.record_version v ON e.event_type IN ('forget','retract') AND v.record_id=e.subject_id AND v.version=e.resulting_version
+ WHERE e.event_type IN ('revoke_grant','forget') OR (e.event_type='retract' AND v.version_class='C') ORDER BY e.event_id LIMIT 10001`)
+	if err != nil {
+		return record, err
+	}
+	for rows.Next() {
+		var w RecoveryWithdrawal
+		if err = rows.Scan(&w.Kind, &w.SubjectID, &w.Repo, &w.EventID); err != nil {
+			rows.Close()
+			return record, err
+		}
+		record.Withdrawals = append(record.Withdrawals, w)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return record, err
+	}
+	rows, err = tx.Query(ctx, `SELECT DISTINCT d.record_id::text,c.ownership_id::text,c.receipt_id::text,c.directory,c.directory_device,c.directory_inode,c.body_sha256
+ FROM cairn.deletion_request d JOIN cairn.deletion_effect e USING(deletion_id) JOIN cairn.managed_context c ON e.target_type='managed_context' AND e.target_id=c.receipt_id::text ORDER BY d.record_id::text,c.receipt_id::text LIMIT 10001`)
+	if err != nil {
+		return record, err
+	}
+	for rows.Next() {
+		var c RecoveryContext
+		if err = rows.Scan(&c.RecordID, &c.OwnershipID, &c.ReceiptID, &c.Directory, &c.DirectoryDevice, &c.DirectoryInode, &c.BodySHA256); err != nil {
+			rows.Close()
+			return record, err
+		}
+		record.Contexts = append(record.Contexts, c)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return record, err
+	}
+	if len(record.Withdrawals) > 10000 || len(record.Contexts) > 10000 {
+		return record, failure("BUDGET_REFUSED", "recovery record exceeds 10000 withdrawals or context references; no partial record exported")
+	}
+	rows, err = tx.Query(ctx, `SELECT source_record FROM cairn.recovery_application ORDER BY application_id LIMIT 10001`)
+	if err != nil {
+		return record, err
+	}
+	sources, err := pgx.CollectRows(rows, pgx.RowTo[RecoveryRecord])
+	if err != nil {
+		return record, err
+	}
+	if len(sources) > 10000 {
+		return record, failure("BUDGET_REFUSED", "recovery application inventory exceeds 10000")
+	}
+	for _, source := range sources {
+		if err = source.validate(); err != nil {
+			return record, err
+		}
+		if err = mergeRecovery(&record, source); err != nil {
+			return record, err
+		}
+	}
+	record.SHA256, err = recoveryDigest(record)
+	if err != nil {
+		return record, err
+	}
+	return record, recoverySizeValid(record)
 }

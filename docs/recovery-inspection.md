@@ -43,7 +43,7 @@ overflow instead of certifying a partial set. A grant's revocation flag is check
 original audit event is still present. Forgotten records must retain the
 logical exclusions on versions, selected receipts and cached mutation responses.
 Missing records and scopes that differ from the expectation also produce gaps.
-Known file custody must match its retained descriptor, exposure and purge effect.
+Known file custody must match its retained descriptor and purge effect, with either an original exposure or explicit imported recovery custody.
 
 `consistent: true` means only that these checks match the supplied snapshot.
 The report separately counts outstanding effects and explicit residuals; pending
@@ -51,8 +51,9 @@ purges can coexist with consistent logical exclusion. It does not inspect files,
 prove media erasure, verify all projections or establish the latest security state.
 The command changes neither the database nor external files.
 
-Restore admission remains unfinished. Missing restrictions must still be reapplied
-with auditable provenance, newer file custody reconciled, projections rebuilt,
+Restore admission remains unfinished. [Recovery reapplication](recovery-reapplication.md)
+can now apply missing restrictions and retain newer file custody with auditable
+provenance. Original missing audit events remain gaps. Projections must still be verified,
 [old delivery capabilities fenced](restore-fencing.md) and fresh packages compiled
 before service resumes.
 Inspection success alone does not authorize that resume. The ordinary API has no
@@ -62,6 +63,9 @@ recovery endpoints, and this change adds no automatic service-start guard.
 a process afterward to create new context custody, exports the later evidence,
 and inspects the restored old dump. It detects all four missing-state categories
 and confirms inspection itself leaves the revived payload and file unchanged.
+It then reapplies revocation, instruction retraction and forgetting, retains the
+original audit gaps across a new export, and purges the post-backup file through
+imported custody without fabricating a receipt.
 Unit/integration tests also cover a revived mutable flag with an intact audit,
 missing cached-payload and transitive-dependency exclusions, wrong root, damaged
 checksum and caller scope. [Migration 026](verification/deletion-dependencies-2026-09-08.md)

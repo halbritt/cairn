@@ -17,7 +17,9 @@ root_grant = json.loads((root / 'root.json').read_text())['grant_id']
 def invoke(command, request=None, env=None, expected='OK'):
     args = [binary, command]
     payload = None
-    if isinstance(request, (str, Path)):
+    if isinstance(request, list):
+        args.extend(request)
+    elif isinstance(request, (str, Path)):
         args.append(str(request))
     elif request is not None:
         payload = json.dumps(request).encode()
@@ -32,6 +34,7 @@ repo = 'fixture:recovery:' + uid()
 canary = 'recovery_payload_must_not_export_' + uid()
 record = invoke('create', dict(request_id=uid(), draft=dict(kind='note', body=canary, scope=dict(repo=repo, task_id='*', run_id='*'), claim_type='self')))
 grant = invoke('grant', dict(request_id=uid(), parent_id=root_grant, principal='recovery-fixture', repo=repo, capabilities=['issue'], reason='Install later-revoked recovery fixture grant'))
+instruction = invoke('issue', dict(request_id=uid(), draft=dict(kind='instruction', body='Synthetic recovery instruction', scope=dict(repo=repo, task_id='*', run_id='*'), claim_type='self'), grant_id=root_grant, policy_key='recovery-instruction', reason='Install later-retracted instruction'))
 backup = root / 'before-withdrawals.dump'
 subprocess.run([str(pg_bin / 'pg_dump'), '--format=custom', '--file', str(backup), os.environ['CAIRN_DATABASE_URL']], check=True)
 
@@ -41,6 +44,8 @@ run = json.loads(process.stderr.splitlines()[-1])['data']
 context = Path(run['artifacts']) / 'context.txt'
 assert context.is_file() and canary in context.read_text()
 invoke('revoke-grant', dict(request_id=uid(), grant_id=grant['grant_id'], authority_id=root_grant, expected_version=grant['version'], reason='Withdraw grant after the recovery fixture backup'))
+instruction_preview = invoke('preview-retract', instruction['record_id'])
+invoke('retract', dict(request_id=uid(), record_id=instruction['record_id'], expected_version=instruction['version'], grant_id=root_grant, preview_id=instruction_preview['preview_id'], reason='Withdraw instruction after the backup'))
 preview = invoke('preview-delete', record['record_id'])
 deletion = invoke('forget', dict(request_id=uid(), record_id=record['record_id'], expected_version=record['version'], grant_id=root_grant, preview_id=preview['preview_id']))
 external = root / 'withdrawals-after-backup.json'
@@ -68,7 +73,35 @@ assert any(g['reason'] == 'CONTEXT_CUSTODY_MISSING' for g in report['gaps'])
 # Inspection itself must not mutate the restored DB or purge external files.
 assert invoke('get', record['record_id'], env=env)['body'] == canary
 assert context.is_file()
+# Reapplication commits new restrictions and imported custody, without claiming
+# that the lost source events or launch receipt have been reconstructed.
+apply_args = ['--request-id', uid(), '--expected-sha256', exported['sha256'],
+              '--reason', 'Reapply independently retained fixture withdrawals', str(external)]
+application = invoke('recovery-reapply', apply_args, env=env)
+assert invoke('recovery-reapply', apply_args, env=env) == application
+by_subject = {a['subject_id']: a for a in application['actions']}
+for subject in (grant['grant_id'], instruction['record_id'], record['record_id']):
+    action = by_subject[subject]
+    assert action['outcome'] == 'reapplied' and action['current_event_id'] != action['event_id']
+reconciled = invoke('recovery-inspect', external, env=env, expected='INTEGRITY_FAILURE')
+assert {g['reason'] for g in reconciled['gaps']} == {'AUDIT_MISSING'}
+assert reconciled['outstanding_effects'] > 0 and context.is_file()
+new_export = root / 'reapplied-restore-expectations.json'
+invoke('recovery-export', new_export, env=env)
+assert canary not in new_export.read_text()
+new_report = invoke('recovery-inspect', new_export, env=env, expected='INTEGRITY_FAILURE')
+assert {g['reason'] for g in new_report['gaps']} == {'AUDIT_MISSING'}
+assert {g['event_id'] for g in new_report['gaps']} == {g['event_id'] for g in reconciled['gaps']}
+# Each CLI call opens a fresh connection. The durable outbox survives the
+# application process exit; it purges a post-backup file without a fake receipt.
+query = "SELECT count(*) FROM cairn.retrieval_receipt WHERE receipt_id='" + run['receipt_id'] + "'"
+receipt_count = subprocess.run([str(pg_bin / 'psql'), env['CAIRN_DATABASE_URL'], '-Atc', query], capture_output=True, text=True, check=True).stdout.strip()
+assert receipt_count == '0'
+recovered_deletion = by_subject[record['record_id']]['deletion_id']
+purged = invoke('purge-deletion', recovered_deletion, env=env)
+assert purged['state'] == 'limited' and not context.exists()
+assert invoke('purge-deletion', recovered_deletion, env=env) == purged
 assert invoke('purge-deletion', deletion['deletion_id'])['state'] == 'limited'
 current = invoke('recovery-inspect', external)
 assert current['consistent'] and not context.exists() and current['residual_effects'] > 0
-print('An actual pre-withdrawal restore is rejected against later external evidence: revived grant and record, missing audit and post-backup context custody; inspection is read-only')
+print('Actual older restore: grant, instruction and deletion restrictions reapplied atomically; original audit gaps retained in subsequent exports; post-backup file purged through durable imported custody without recreating its receipt')
