@@ -1,0 +1,152 @@
+{
+  "packet_id": "pkt-5a14331099aa73dc",
+  "packet_content_sha256": "5a14331099aa73dc27873c468290080695202477172c5ca2afc533042f2af984",
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "schema": "cairn.mcp-currentness-verification/1",
+  "baseline": "af8caafa2bed3d0647d8ea546c4a7778839f6e41",
+  "verification": {
+    "old_binary_rejected_context_launch": true,
+    "make_test_integration": "passed",
+    "make_check": "passed",
+    "python_tests": 17
+  },
+  "unmet_obligations": [
+    {
+      "requirement": "crossing contract including failure and temporal semantics",
+      "required_by": "architecture-boundary-strength",
+      "classification": "nonmaterial",
+      "rationale": "No new boundary, crossing, deployment topology or store contract is proposed; the existing authenticated index operation remains authoritative."
+    },
+    {
+      "requirement": "crossing semantics",
+      "required_by": "architecture-boundary-strength",
+      "classification": "nonmaterial",
+      "rationale": "No new boundary, crossing, deployment topology or store contract is proposed; the existing authenticated index operation remains authoritative."
+    },
+    {
+      "requirement": "data ownership and transaction needs",
+      "required_by": "architecture-boundary-strength",
+      "classification": "nonmaterial",
+      "rationale": "No new boundary, crossing, deployment topology or store contract is proposed; the existing authenticated index operation remains authoritative."
+    },
+    {
+      "requirement": "operational capability",
+      "required_by": "architecture-boundary-strength",
+      "classification": "nonmaterial",
+      "rationale": "No new boundary, crossing, deployment topology or store contract is proposed; the existing authenticated index operation remains authoritative."
+    },
+    {
+      "requirement": "release and deployment requirements",
+      "required_by": "architecture-boundary-strength",
+      "classification": "nonmaterial",
+      "rationale": "No new boundary, crossing, deployment topology or store contract is proposed; the existing authenticated index operation remains authoritative."
+    },
+    {
+      "requirement": "required independence dimension",
+      "required_by": "architecture-boundary-strength",
+      "classification": "nonmaterial",
+      "rationale": "No new boundary, crossing, deployment topology or store contract is proposed; the existing authenticated index operation remains authoritative."
+    },
+    {
+      "requirement": "candidate contract and consumers",
+      "required_by": "architecture-earned-boundary",
+      "classification": "nonmaterial",
+      "rationale": "No new abstraction or independence boundary is introduced. This adds fields to the already accepted concrete facade."
+    },
+    {
+      "requirement": "cohesive invariant and data ownership",
+      "required_by": "architecture-earned-boundary",
+      "classification": "nonmaterial",
+      "rationale": "No new abstraction or independence boundary is introduced. This adds fields to the already accepted concrete facade."
+    },
+    {
+      "requirement": "cost comparison with direct collaboration",
+      "required_by": "architecture-earned-boundary",
+      "classification": "nonmaterial",
+      "rationale": "No new abstraction or independence boundary is introduced. This adds fields to the already accepted concrete facade."
+    },
+    {
+      "requirement": "independent change, policy, semantic, ownership, release, trust, or quality force",
+      "required_by": "architecture-earned-boundary",
+      "classification": "nonmaterial",
+      "rationale": "No new abstraction or independence boundary is introduced. This adds fields to the already accepted concrete facade."
+    },
+    {
+      "requirement": "representative change or quality force",
+      "required_by": "architecture-earned-boundary",
+      "classification": "nonmaterial",
+      "rationale": "No new abstraction or independence boundary is introduced. This adds fields to the already accepted concrete facade."
+    },
+    {
+      "requirement": "Go method-set and import-direction compatibility",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "rationale": "No Go interface or substitute implementation is introduced; existing concrete API and SDK types remain."
+    },
+    {
+      "requirement": "current consumer call sets and ownership",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "rationale": "No Go interface or substitute implementation is introduced; existing concrete API and SDK types remain."
+    },
+    {
+      "requirement": "current consumer inventory",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "rationale": "No Go interface or substitute implementation is introduced; existing concrete API and SDK types remain."
+    },
+    {
+      "requirement": "observed substitution, volatility, or cross-boundary pressure",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "rationale": "No Go interface or substitute implementation is introduced; existing concrete API and SDK types remain."
+    },
+    {
+      "requirement": "recurring change evidence when available",
+      "required_by": "implementation-placement-by-ownership",
+      "classification": "nonmaterial",
+      "rationale": "No recurring change or maintainability benefit is claimed; this addresses the observed missing context route."
+    },
+    {
+      "requirement": "telemetry where available",
+      "required_by": "refactoring-compatibility-migration",
+      "classification": "nonmaterial",
+      "rationale": "No new telemetry or historical store migration is needed for optional client flags; test results establish only the named behavior."
+    },
+    {
+      "requirement": "actual current cost/risk or absence within a stated interval",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial",
+      "rationale": "No broad optimization or cost-benefit claim is made. The narrow CLI gap is observed and tested; longer-term task benefit remains open."
+    },
+    {
+      "requirement": "expected future change from accepted plans",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial",
+      "rationale": "No broad optimization or cost-benefit claim is made. The narrow CLI gap is observed and tested; longer-term task benefit remains open."
+    },
+    {
+      "requirement": "intervention cost and uncertainty",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial",
+      "rationale": "No broad optimization or cost-benefit claim is made. The narrow CLI gap is observed and tested; longer-term task benefit remains open."
+    },
+    {
+      "requirement": "latent security, safety, data, durability, and compatibility check",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial",
+      "rationale": "No broad optimization or cost-benefit claim is made. The narrow CLI gap is observed and tested; longer-term task benefit remains open."
+    },
+    {
+      "requirement": "proc-decide-leave-code-alone",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial",
+      "rationale": "No broad optimization or cost-benefit claim is made. The narrow CLI gap is observed and tested; longer-term task benefit remains open."
+    }
+  ],
+  "limits": [
+    "Synthetic applicability fixtures; no new model trial or measured task improvement."
+  ]
+}

@@ -15,6 +15,7 @@ from check_run_retrieval import check as check_run_retrieval
 from check_agent_search import check as check_agent_search
 from check_agent_remember import check as check_agent_remember
 from check_mcp import check as check_mcp
+from check_mcp_currentness import check as check_mcp_currentness
 
 binary, home = sys.argv[1:]
 root = Path(home)
@@ -220,6 +221,7 @@ try:
     check_agent_search(binary, root, env, grant, claim, support)
     check_agent_remember(binary, root, env)
     check_mcp(binary, root, env)
+    check_mcp_currentness(binary, root, env, grant)
 finally:
     process.send_signal(signal.SIGTERM)
     try:

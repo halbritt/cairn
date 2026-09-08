@@ -23,6 +23,20 @@ repository with task/run `*`. Pulls retain the API's caller/destination/handle
 checks. Start a new server with the host's actual task/run IDs for a new task;
 reusing an example's IDs combines observations under that declared scope.
 
+For memories restricted to a particular build or task context, the host can also
+supply `--revision` (immutable Git object ID), `--workspace-sha256`, `--task-class`,
+`--binding`, and `--capability`. These optional declarations stay fixed for the
+server's lifetime and accompany every search. For example, append
+`--revision "$(git rev-parse HEAD)" --task-class repair` when launching from the
+intended checkout. They declare applicability; Cairn does not attest that the
+physical checkout matches them. Restart with updated declarations when the
+context changes. Invalid values produce the API's `INVALID_REQUEST` on search.
+
+A missing or mismatched required pin withholds an optional memory. A mandatory
+instruction requiring unavailable context can refuse the search with
+`POLICY_UNENFORCEABLE`. Model tool arguments cannot override these declarations.
+Leaving all five flags empty preserves searches without a context object.
+
 ## Tools
 
 | Tool | Inputs and behavior |
@@ -54,9 +68,7 @@ Transport failures are errors, not empty search results. `STALE_HANDLE` requires
 a new search; an unknown receipt returns `NOT_FOUND`. Startup diagnostics use
 stderr, and normal EOF emits no extra Cairn response envelope on stdout.
 
-This first facade does not expose context-pin configuration, operator actions,
-run observation or automatic capture. Existing eligibility rules still apply;
-missing required context pins may refuse retrieval.
+The facade does not expose operator actions, run observation or automatic capture.
 
 ## OpenCode example
 

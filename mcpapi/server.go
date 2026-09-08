@@ -18,6 +18,7 @@ import (
 type Config struct {
 	Scope           core.Scope
 	AvailableTokens int
+	Context         *core.ContextPins
 }
 
 type searchArgs struct {
@@ -59,6 +60,11 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	if config.AvailableTokens < 256 || config.AvailableTokens > 1000000 {
 		return nil, fmt.Errorf("MCP memory input room must be between 256 and 1000000")
 	}
+	// Keep the host's startup declarations fixed even if it reuses its config.
+	if config.Context != nil {
+		pins := *config.Context
+		config.Context = &pins
+	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: "1"}, nil)
 	tools := memoryTools{client: client, config: config}
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_search", Description: "Search scoped memory. Read mandatory context in selected and inspect relevant index entries with cairn_pull using their complete pull_arguments. A notes are fallible; verify before relying on them. Search records exposure, not proven use."}, tools.search)
@@ -81,7 +87,7 @@ func (t memoryTools) search(ctx context.Context, _ *mcp.CallToolRequest, args se
 		args.RequestID = uuid.NewString()
 	}
 	var index core.IndexResult
-	err := t.client.Call(ctx, "index", core.CompileRequest{RequestID: args.RequestID, Scope: t.config.Scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens}, &index)
+	err := t.client.Call(ctx, "index", core.CompileRequest{RequestID: args.RequestID, Scope: t.config.Scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: t.config.Context}, &index)
 	if err != nil {
 		return toolResult(nil, err, t.config.AvailableTokens)
 	}

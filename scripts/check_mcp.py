@@ -1,17 +1,19 @@
 """Exercise the shipped stdio facade with an independent JSON-RPC client."""
+from contextlib import contextmanager
 import json
 import select
 import subprocess
 import uuid
 
 
-def check(binary, root, environment):
+@contextmanager
+def session(binary, root, environment, extra_args=()):
     env = dict(environment, CAIRN_DATABASE_URL='host=/absent-mcp-client dbname=denied')
     for key in ('HOME', 'CAIRN_HOME'):
         env.pop(key, None)
     command = [binary, 'mcp', '--socket', str(root / 'api.sock'), '--token-file',
                str(root / 'hosted-agent.token'), '--repo', 'fixture:socket',
-               '--task', 'mcp-integration', '--run', 'stdio', '--tokens', '64000']
+               '--task', 'mcp-integration', '--run', 'stdio', '--tokens', '64000', *extra_args]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True, env=env)
     request_number = 0
@@ -45,6 +47,21 @@ def check(binary, root, environment):
         send(dict(method='notifications/initialized', params={}))
         names = {t['name'] for t in request('tools/list', {})['tools']}
         assert names == {'cairn_search', 'cairn_pull', 'cairn_pull_evidence', 'cairn_remember'}, names
+        yield tool
+    finally:
+        process.stdin.close()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+    trailing = process.stdout.read()
+    errors = process.stderr.read()
+    assert process.returncode == 0 and trailing == '', (process.returncode, trailing, errors)
+
+
+def check(binary, root, environment):
+    with session(binary, root, environment) as tool:
         query = 'mcpstdio' + uuid.uuid4().hex
         args = dict(request_id=str(uuid.uuid4()), body=query + ': selected stdio lesson', shareable=True)
         saved = tool('cairn_remember', args)
@@ -53,6 +70,7 @@ def check(binary, root, environment):
         local = tool('cairn_remember', dict(request_id=str(uuid.uuid4()), body=query + ' private note'))
         view = tool('cairn_search', dict(query=query))
         assert view['schema'] == 'cairn.mcp-search/1'
+        assert 'context' not in view
         assert view['scope'] == dict(repo='fixture:socket', task_id='mcp-integration', run_id='stdio')
         assert [i['record_id'] for i in view['index']] == [saved['record_id']]
         assert local['record_id'] not in json.dumps(view)
@@ -64,17 +82,7 @@ def check(binary, root, environment):
         missing = tool('cairn_pull', dict(view['index'][0]['pull_arguments'],
                        receipt_id=str(uuid.uuid4())), error=True)
         assert missing.startswith('NOT_FOUND:'), missing
-    finally:
-        process.stdin.close()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=5)
-    trailing = process.stdout.read()
-    errors = process.stderr.read()
-    assert process.returncode == 0 and trailing == '', (process.returncode, trailing, errors)
     # Startup failures must not put a Cairn response envelope on the MCP stream.
-    failed = subprocess.run([binary, 'mcp'], capture_output=True, text=True, env=env, timeout=5)
+    failed = subprocess.run([binary, 'mcp'], capture_output=True, text=True, env=environment, timeout=5)
     assert failed.returncode != 0 and failed.stdout == '' and failed.stderr
     print('MCP stdio discovery, scoped capture/search/pull, retry, hosted filtering and clean EOF pass without HOME or client DB access')

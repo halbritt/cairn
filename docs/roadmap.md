@@ -14,6 +14,11 @@ storage questions with its source. This adds native tool contact and one useful
 operational transfer; host-run association, native Striatum ingress and broader
 task benefit remain open.
 
+The [MCP context extension](verification/mcp-currentness-2026-09-08.md) lets hosts
+supply existing revision/workspace/task-class/binding/capability pins at startup.
+Public stdio checks verify matching retrieval and missing/mismatched withholding.
+This closes a facade capability gap; it adds no model-task benefit evidence.
+
 [Current usefulness evidence](verification/usefulness-status-2026-09-08.md) is
 one exploratory avoided-regression case, a real failure-to-lesson loop and an
 operational note transfer. No baseline advantage or durable task improvement

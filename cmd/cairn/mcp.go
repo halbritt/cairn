@@ -16,6 +16,11 @@ func serveMCP(ctx context.Context, args []string) error {
 	task := f.String("task", "", "host task identity (required)")
 	run := f.String("run", "", "host run identity (required)")
 	room := f.Int("tokens", 32000, "memory input room per tool result")
+	revision := f.String("revision", "", "declared repository revision")
+	workspace := f.String("workspace-sha256", "", "declared workspace digest")
+	taskClass := f.String("task-class", "", "task category")
+	binding := f.String("binding", "", "binding identity")
+	capability := f.String("capability", "", "capability identity")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -27,7 +32,11 @@ func serveMCP(ctx context.Context, args []string) error {
 		return err
 	}
 	defer client.Close()
-	server, err := mcpapi.NewServer(client, mcpapi.Config{Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, AvailableTokens: *room})
+	config := mcpapi.Config{Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, AvailableTokens: *room}
+	if *revision != "" || *workspace != "" || *taskClass != "" || *binding != "" || *capability != "" {
+		config.Context = &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability}
+	}
+	server, err := mcpapi.NewServer(client, config)
 	if err != nil {
 		return err
 	}
