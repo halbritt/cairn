@@ -40,5 +40,27 @@ disposable PostgreSQL. Logs are retained locally at
 These checks establish owner-scoped recovery inspection and preserved launch
 boundaries. They do not prove model usefulness, task acceptance, native Striatum
 integration, hostile same-UID isolation, or recovery of observations absent from
-a restored backup. Installation and read-only operational verification are
-pending separately from these source tests.
+a restored backup.
+
+## Installed verification
+
+Commit `b1eeb42444a2908f0530536f64b0d3dfa11999f6` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34221236150) and was built from
+a clean clone with Go 1.25.0. Installed and running API binary SHA-256 is
+`ef89bdb43ab28bd0ac02003af8f206b37c0e4353fd32d336c223913257a5cb82`.
+Both local services are active; schema stays 024 and the record-version digest
+is unchanged. A cataloged backup was taken with the prior installed executable.
+
+The installed client inspected the existing authenticated repository-validation
+receipt through its observer profile with an unusable client database address.
+It returned the recorded binding and launch claim, original outcome ID, exited0,
+and the fixed metadata-only shape. No new operational run or test fixture was
+created. Task acceptance remains unknown. Private local proof is retained at
+`/tmp/cairn-run-status-install-verification.json`.
+
+The engineering review used validated Pincite release
+`d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f`, corpus
+`corpus-2026-07-12-a11702cc9217`, final packet `pkt-0582d4659633e23d`.
+Two evidence passes closed material ownership, identity, gate and consumer
+obligations. The typed local decision receipt retains the evidence and
+nonmaterial omissions; doctrine does not establish model or host acceptance.
