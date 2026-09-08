@@ -88,3 +88,28 @@ Already delivered bytes and historical receipts are not recalled by this change.
 The existing operational requirement to isolate restored stores and fence old
 delivery capabilities remains. Full projection verification and recovery
 admission need their own evidence.
+
+## Local release
+
+Implementation `521e759f88ce0ab66d00594d28f180d259822f7e` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34238390942). A clean ordinary
+clone produced the installed Go 1.25.0 binary with `vcs.modified=false` and
+SHA-256 `cb7fe871d5e56e1b0903da1d49e495e746f438d8b72c661471e48f0bebc02fe5`.
+
+After a catalog/hash-verified backup using the prior installed binary, the API
+was stopped, migration 026 applied, and the new binary installed. The restarted
+API executable matched the build hash. Existing observer status remained
+readable with an unusable client database address. A fresh recovery export and
+inspection were consistent with the upgraded store.
+
+Record-version and proposal digests were unchanged. The operational dependency
+table had zero rows before and after; the populated backfill evidence comes
+from the disposable old-binary upgrade drill. Schema is now 026. Both services
+were active, and no new operational task or memory fixture was created. The
+backup added checkpoint metadata, so this is not a whole-database-unchanged claim.
+
+Private installation proof:
+`/tmp/cairn-recovery-dependencies-install-verification.json`. Backup pointer:
+`/tmp/cairn-pre-deletion-dependencies-backup.txt`. Keep old writers stopped when
+upgrading other stores; restoring an older executable is not a complete data
+rollback or a safe way to continue relation writes after this repair.
