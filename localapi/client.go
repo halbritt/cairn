@@ -137,3 +137,10 @@ func (c *Client) RecordOutcome(ctx context.Context, req core.OutcomeRequest) (re
 	err = c.Call(ctx, "outcome", req, &result)
 	return
 }
+
+func (c *Client) RunStatus(ctx context.Context, id string) (result core.RunStatus, err error) {
+	err = c.Call(ctx, "run-status", struct {
+		ReceiptID string `json:"receipt_id"`
+	}{id}, &result)
+	return
+}

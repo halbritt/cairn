@@ -46,12 +46,19 @@ try:
     fence = invoke('fence-restore', fence_request)
     invoke('claim-run', dict(receipt_id=old['receipt_id']), agent=True, expected='STALE_PACKAGE')
     invoke('bind-run', bind, agent=True, expected='STALE_PACKAGE')
+    status = invoke('run-status', dict(receipt_id=old['receipt_id']), agent=True)
+    assert status['binding_observed'] and not status['launch_claimed'] and status['outcome'] is None
+    # An observable false claim on a restored receipt is never permission to run.
+    invoke('claim-run', dict(receipt_id=old['receipt_id']), agent=True, expected='STALE_PACKAGE')
+    direct = json.loads(subprocess.check_output([binary, 'run-status', old['receipt_id']], env=env))['data']
+    assert {k: v for k, v in direct.items() if k != 'observed_at'} == {k: v for k, v in status.items() if k != 'observed_at'}
     replay = json.loads(subprocess.check_output([binary, 'replay', old['receipt_id']], env=env))['data']['package']
     assert replay['seal'] == old['seal'] and replay['semantic'] == old['semantic']
     fresh = invoke('compile', dict(request_id=uid(), scope=dict(repo='fixture:restore', task_id='restore', run_id='fresh'), query='Restore fixture', purpose='context', available_tokens=64000), agent=True)
     assert invoke('fence-restore', fence_request) == fence
     invoke('claim-run', dict(receipt_id=fresh['receipt_id']), agent=True)
     invoke('claim-run', dict(receipt_id=fresh['receipt_id']), agent=True, expected='RUN_ALREADY_STARTED')
+    print('Restored receipt status stays readable through API and direct CLI without authorizing launch')
     print('Authenticated host cannot launch or rebind a restored receipt after fencing; history survives, fresh compile claims once, and fence retry preserves it')
 finally:
     server.terminate()

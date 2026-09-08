@@ -35,6 +35,7 @@ JSON commands (read one request from stdin):
   instruction-policy RECORD_UUID
   runs [--policy-rev REVISION_UUID|local-loop/1] [--limit N] [--offset N] REPO
   grants (no input)
+  run-status RECEIPT_UUID (owner-only process observation; never launch permission)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
 Administration: recovery-export FILE | recovery-inspect FILE
@@ -147,6 +148,11 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return nil, invalid("run-report requires one repository")
 		}
 		return store.RunReport(ctx, core.RunReportRequest{Repo: f.Arg(0), PolicyRevision: *policy, Limit: *limit, Offset: *offset})
+	case "run-status":
+		if len(args) != 2 {
+			return nil, invalid("run-status requires a receipt UUID")
+		}
+		return store.RunStatus(ctx, args[1])
 	case "policy", "policy-revision", "instruction-policy":
 		if len(args) != 2 {
 			return nil, invalid("policy requires a repository; policy-revision requires a revision UUID; instruction-policy requires a record UUID")

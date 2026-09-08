@@ -51,9 +51,10 @@ must still avoid placing its own credentials in command arguments or task text.
 
 The client never automatically retries an API request. If the launch-claim
 response is lost, it returns the known receipt/seal without launching a child.
-The same run request cannot authorize a second process. Inspect a local-profile or operator run report
-before deciding what happened (hosted profiles cannot read the protected report); creating a fresh request ID is a new launch, not
-transport recovery. After a process finishes, an unconfirmed outcome remains in
+The same run request cannot authorize a second process. Inspect the receipt with
+[owner-only run status](run-status.md), available to both local and hosted profiles.
+A status read is historical evidence, never permission to launch; creating a fresh
+request ID is a new launch, not transport recovery. After a process finishes, an unconfirmed outcome remains in
 `outcome.pending.json`. Retry that exact JSON under the same observer profile:
 
 ```sh

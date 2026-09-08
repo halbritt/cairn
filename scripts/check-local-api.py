@@ -92,6 +92,23 @@ try:
     assert run.returncode == 0 and run.stdout.strip() == 'observed-host-ok', (run.stdout, run.stderr)
     observed = json.loads(run.stderr)['data']
     assert observed['process_state'] == 'exited' and observed['outcome_id']
+    status_request = json.dumps(dict(receipt_id=observed['receipt_id']))
+    inspected = subprocess.run([*host, 'run-status'], input=status_request,
+                               env=client_env, capture_output=True, text=True, check=True)
+    status = json.loads(inspected.stdout)['data']
+    assert status['launch_claimed'] and status['binding_observed']
+    assert status['outcome']['observation_id'] == observed['outcome_id']
+    assert status['outcome']['process_state'] == 'exited' and status['outcome']['exit_code'] == 0
+    denied = subprocess.run([binary, 'agent', 'run-status'], input=status_request,
+                            env=client_env, capture_output=True, text=True)
+    assert denied.returncode != 0 and json.loads(denied.stdout)['status'] == 'AUTHORITY_DENIED'
+    # Ordinary agents can inspect their own compile receipt, without acquiring
+    # an observer role or a launch capability.
+    own = subprocess.run([binary, 'agent', 'run-status'],
+                         input=json.dumps(dict(receipt_id=index['package']['receipt_id'])),
+                         env=client_env, capture_output=True, text=True, check=True)
+    own_status = json.loads(own.stdout)['data']
+    assert not own_status['launch_claimed'] and own_status['outcome'] is None
     context_file = Path(observed['artifacts']) / 'context.txt'
     assert 'SOCKET-HOST-PROMPT' not in context_file.read_text()
     retry = subprocess.run(command, env=client_env, capture_output=True, text=True, timeout=15)
@@ -105,6 +122,7 @@ try:
                             env=client_env, capture_output=True, text=True, check=True)
     rows = json.loads(report.stdout)['data']['rows']
     assert len(rows) == 3 and all(r['outcome_observed'] and r['task_outcome'] == 'unknown' for r in rows)
+    print('Owner-only run status works without client database access and does not grant observer authority')
     print('Authenticated host CLI records process outcomes without database access and preserves output/exit semantics')
 finally:
     process.send_signal(signal.SIGTERM)

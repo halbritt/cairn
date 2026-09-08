@@ -204,8 +204,12 @@ func TestAuthenticatedRunnerDoesNotRetryAmbiguousCommit(t *testing.T) {
 			if err == nil || requests.Load() != 1 {
 				t.Fatalf("ambiguous commit was hidden or retried: count=%d err=%v", requests.Load(), err)
 			}
+			status, statusErr := client.RunStatus(context.Background(), result.ReceiptID)
+			if statusErr != nil || !status.LaunchClaimed {
+				t.Fatalf("ambiguous commit cannot be inspected: %+v %v", status, statusErr)
+			}
 			if operation == "claim-run" {
-				if result.ReceiptID == "" || result.Seal == "" {
+				if result.ReceiptID == "" || result.Seal == "" || status.Outcome != nil {
 					t.Fatal("ambiguous claim lost its receipt for host inspection")
 				}
 				if _, err = os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
@@ -224,12 +228,15 @@ func TestAuthenticatedRunnerDoesNotRetryAmbiguousCommit(t *testing.T) {
 				if err = json.Unmarshal(pending, &request); err != nil {
 					t.Fatal(err)
 				}
+				if status.Outcome == nil {
+					t.Fatal("committed outcome hidden after lost response")
+				}
 				first, err := client.RecordOutcome(context.Background(), request)
 				if err != nil {
 					t.Fatal(err)
 				}
 				retry, err := client.RecordOutcome(context.Background(), request)
-				if err != nil || first.ID != retry.ID {
+				if err != nil || first.ID != retry.ID || first.ID != status.Outcome.ObservationID {
 					t.Fatalf("outcome recovery lost idempotence: %v", err)
 				}
 				var report core.RunReport

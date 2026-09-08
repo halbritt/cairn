@@ -147,6 +147,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveJSON(w, r, c.store.RecordTerminal)
 	case "/v1/task-state":
 		serveJSON(w, r, c.store.ObserveTask)
+	case "/v1/run-status":
+		serveJSON(w, r, func(ctx context.Context, req struct {
+			ReceiptID string `json:"receipt_id"`
+		}) (core.RunStatus, error) {
+			return c.store.RunStatus(ctx, req.ReceiptID)
+		})
 	case "/v1/claim-run":
 		serveJSON(w, r, func(ctx context.Context, req struct {
 			ReceiptID string `json:"receipt_id"`

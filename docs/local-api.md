@@ -49,7 +49,7 @@ socket. The agent client never opens the database. Use the same request UUID for
 a transport retry. The server has bounded request bodies and deadlines; an HTTP
 write failure does not roll back a committed mutation.
 
-Operations: `create`, `edit`, `delete`, ordinary `supersede`, `compile`, `get`, `evidence`, `usage`, `use-report`, `run-report`,
+Operations: `create`, `edit`, `delete`, ordinary `supersede`, `compile`, `get`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `claim-run`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
@@ -70,7 +70,8 @@ The server records observations; commands execute on the client host.
 
 An observer may reserve one launch with `claim-run` and a `receipt_id`. The
 receipt must belong to that observer. Repeated claims do not authorize another
-execution; ambiguous responses require run inspection. [Restore fences](restore-fencing.md)
+execution; ambiguous responses require [owner-only run status](run-status.md)
+using the same profile and receipt ID. The read grants no launch permission. [Restore fences](restore-fencing.md)
 make old receipts unusable for new claims without changing historical outcomes.
 
 ## Striatum boundary
