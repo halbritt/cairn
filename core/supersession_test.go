@@ -9,6 +9,16 @@ import (
 	"github.com/google/uuid"
 )
 
+// PostgreSQL and cached JSON may represent the same instant with different
+// Go Location pointers. Compare the timestamp instant and all other metadata.
+func sameSupersession(a, b Supersession) bool {
+	if !a.CreatedAt.Equal(b.CreatedAt) {
+		return false
+	}
+	a.CreatedAt = b.CreatedAt
+	return a == b
+}
+
 func TestSupersessionPreservesHistoryAndIndependentReplacement(t *testing.T) {
 	ctx := context.Background()
 	op, root := testOperator(t)
@@ -55,7 +65,7 @@ func TestSupersessionPreservesHistoryAndIndependentReplacement(t *testing.T) {
 		t.Fatalf("bad transition: %+v", result)
 	}
 	retry, err := op.Supersede(ctx, req)
-	if err != nil || retry != result {
+	if err != nil || !sameSupersession(retry, result) {
 		t.Fatalf("retry: %+v %v", retry, err)
 	}
 	current, err := writer.Get(ctx, old.RecordID)
@@ -63,7 +73,7 @@ func TestSupersessionPreservesHistoryAndIndependentReplacement(t *testing.T) {
 		t.Fatalf("current: %+v %v", current, err)
 	}
 	inspected, err := writer.Supersession(ctx, old.RecordID)
-	if err != nil || inspected != result {
+	if err != nil || !sameSupersession(inspected, result) {
 		t.Fatalf("inspection: %+v %v", inspected, err)
 	}
 	query.RequestID = uuid.NewString()
@@ -101,7 +111,7 @@ func TestSupersessionPreservesHistoryAndIndependentReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	inspected, err = writer.Supersession(ctx, old.RecordID)
-	if err != nil || inspected != result {
+	if err != nil || !sameSupersession(inspected, result) {
 		t.Fatalf("replacement link drifted: %+v %v", inspected, err)
 	}
 	d.Relations = nil
@@ -135,7 +145,7 @@ func TestSupersessionPreservesHistoryAndIndependentReplacement(t *testing.T) {
 		t.Fatalf("replacement incorrectly depends on old body: %+v %v", fresh, err)
 	}
 	inspected, err = writer.Supersession(ctx, old.RecordID)
-	if err != nil || inspected != result {
+	if err != nil || !sameSupersession(inspected, result) {
 		t.Fatalf("forgotten history metadata: %+v %v", inspected, err)
 	}
 }

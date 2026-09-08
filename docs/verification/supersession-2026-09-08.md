@@ -36,6 +36,12 @@ did not exist. An extended fixture later missed lexical selection after its
 body revision dropped the query term; correcting that fixture restored the
 intended history/deletion check without changing selection behavior.
 
+The first CI run exposed a timezone-sensitive test comparison. It reproduced
+locally with `TZ=UTC`: PostgreSQL decoding and cached JSON represented the same
+instant with different Go `Location` pointers. The assertion now compares the
+timestamp instant and every other metadata field, without changing production
+timestamp behavior. UTC integration checks verify this correction.
+
 No operational claim was superseded for these checks. This establishes the
 implemented lifecycle behavior, not broad memory usefulness or full lifecycle
 acceptance. Scope broadening, notice acknowledgement, future discovery of
