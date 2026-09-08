@@ -167,13 +167,13 @@ func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID strin
 	}
 	var previousDigest, response []byte
 	var responseDeleted bool
-	err = tx.QueryRow(ctx, `SELECT request_digest,response,payload_deleted_by IS NOT NULL FROM cairn.mutation_request WHERE caller=$1 AND operation=$2 AND request_id=$3`, s.channel.Principal, operation, requestID).Scan(&previousDigest, &response, &responseDeleted)
+	err = tx.QueryRow(ctx, `SELECT request_digest,response,payload_deleted_by IS NOT NULL OR ordinary_deleted FROM cairn.mutation_request WHERE caller=$1 AND operation=$2 AND request_id=$3`, s.channel.Principal, operation, requestID).Scan(&previousDigest, &response, &responseDeleted)
 	if err == nil {
 		if !bytes.Equal(previousDigest, digest[:]) {
 			return zero, failure("IDEMPOTENCY_CONFLICT", "request UUID already used with different content")
 		}
 		if responseDeleted {
-			return zero, failure("PAYLOAD_UNAVAILABLE", "the original response payload was excluded by a deletion request; the mutation remains committed")
+			return zero, failure("PAYLOAD_UNAVAILABLE", "the original response payload was excluded by deletion; the mutation remains committed")
 		}
 		var original T
 		if err = json.Unmarshal(response, &original); err != nil {

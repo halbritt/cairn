@@ -30,7 +30,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	}
 	operation := f.Arg(0)
 	switch operation {
-	case "check-evidence", "refusal", "index", "expand", "create", "edit", "compile", "get", "usage", "usage-coverage", "evidence", "spawn", "terminal", "task-state", "bind-run", "claim-run", "delivery", "outcome", "assess-run", "use-report":
+	case "check-evidence", "refusal", "index", "expand", "create", "edit", "delete", "compile", "get", "usage", "usage-coverage", "evidence", "spawn", "terminal", "task-state", "bind-run", "claim-run", "delivery", "outcome", "assess-run", "use-report":
 	default:
 		return nil, invalid("unknown agent operation")
 	}

@@ -161,7 +161,9 @@ capability and a policy key.
 
 JSON request commands include `create`, `edit`, `compile`, `capture-evidence`,
 `grant`, `revoke-grant`, `promote`, `issue`, `correct`, `retract`, `dispute`,
-`resolve`, `forget`, and `usage`. See [request examples](docs/commands.md).
+`resolve`, `delete`, `forget`, and `usage`. Use [ordinary deletion](docs/ordinary-delete.md)
+for unreferenced A notes; retained history requires the audited forgetting path.
+See [request examples](docs/commands.md).
 Use new request UUIDs for new intent and reuse them for transport retries.
 Mutation retries return the original result; use `get` for current state.
 

@@ -112,4 +112,28 @@ func TestAuthenticatedChannelOwnsIdentityAndScope(t *testing.T) {
 	if bytes.Contains(encoded, []byte("API lesson")) {
 		t.Fatal("hosted profile leaked local content")
 	}
+	// Ordinary deletion uses the authenticated profile and returns metadata only.
+	draft.Scope.Repo = repo
+	draft.Scope.TaskID = "isolated-delete"
+	status, fresh := call("/v1/create", token, core.CreateRequest{RequestID: uuid.NewString(), Draft: draft})
+	if status != 200 {
+		t.Fatal(fresh)
+	}
+	id := fresh["data"].(map[string]any)["record_id"].(string)
+	deletion := core.DeleteRequest{RequestID: uuid.NewString(), RecordID: id, ExpectedVersion: 1}
+	status, _ = call("/v1/delete", "wrong", deletion)
+	if status != 401 {
+		t.Fatal("unauthenticated deletion")
+	}
+	status, result = call("/v1/delete", token, deletion)
+	if status != 200 {
+		t.Fatal(result)
+	}
+	if _, err = admin.Get(ctx, id); core.Code(err) != "NOT_FOUND" {
+		t.Fatalf("API deletion not applied: %v", err)
+	}
+	status, result = call("/v1/delete", token, deletion)
+	if status != 200 {
+		t.Fatalf("API deletion retry: %v", result)
+	}
 }

@@ -184,6 +184,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.Create)
 	case "edit":
 		return invoke(ctx, input, store.Edit)
+	case "delete":
+		return invoke(ctx, input, store.Delete)
 	case "bootstrap":
 		return invoke(ctx, input, store.Bootstrap)
 	case "grant":

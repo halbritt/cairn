@@ -49,7 +49,7 @@ socket. The agent client never opens the database. Use the same request UUID for
 a transport retry. The server has bounded request bodies and deadlines; an HTTP
 write failure does not roll back a committed mutation.
 
-Operations: `create`, `edit`, `compile`, `get`, `evidence`, `usage`, `use-report`,
+Operations: `create`, `edit`, `delete`, `compile`, `get`, `evidence`, `usage`, `use-report`,
 `assess-run`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `claim-run`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`. `compile` takes

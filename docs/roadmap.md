@@ -185,7 +185,7 @@ Stage 1–2 acceptance or scaling sensitive/consequential retention.
 
 | ID | Status | Work and acceptance evidence |
 | --- | --- | --- |
-| L1 — class-proportional lifecycle | partial | Ordinary revisions/delete; cheap unaudited B→A for future eligibility while preserving consumed history and refusing C/open-conflict citations; explicit cross-record supersession, scope broadening and typed relations. Existing B correction/retraction is narrower. Test surviving history, notices and refusal boundaries. |
+| L1 — class-proportional lifecycle | partial | Ordinary revisions and [unreferenced A deletion](ordinary-delete.md) work; deletion removes cached write bodies without allowing retry resurrection and refuses retained history. Cheap unaudited B→A preserves consumed history and refuses C/open-conflict citations. Explicit cross-record supersession and scope broadening remain open; typed relations exist. Test surviving history, notices and refusal boundaries. |
 | L2 — conflicts and refusal records | partial | Add conflict inspection, qualified positions, interested-party resolution, acted-under-open-conflict outcomes and durable refusals. Whole-group omission of optional disputed content remains allowed. Test mandatory refusal, qualification and downstream notice; closing a group must not erase interested-party context. |
 | L3 — governed policy | open | Versioned effective policy, revise/rollback, policy-dependent run query, C waivers, discrete instruction category caps and unenforceability decision table. Current hard-coded `local-loop/1` and runtime-required refusal are a restricted implementation. Test rollback and impossible-enforcement outcomes. |
 | L4 — evidence lifecycle | partial | Evidence read/status, managed large artifacts, as-cited span/version relations, persisted check generations/history, freshness/refresh and dependent invalidation. Inline explicit capture and hash checks exist. Test changed/missing bytes, earlier-cutoff availability and invalidation propagation. |
@@ -200,8 +200,9 @@ Stage 1–2 acceptance or scaling sensitive/consequential retention.
 bounded derived/specializing/contradicting links with inherited scope, currentness
 and sensitivity restrictions. B→A is unaudited, preserves consumed history and
 refuses active C/open-conflict dependencies. Retraction previews include known
-transitive uses and reject changed dependency/exposure state. Ordinary delete,
-explicit supersession and scope-broadening operations remain open.
+transitive uses and reject changed dependency/exposure state. Ordinary deletion
+now preserves referenced and formerly privileged records by requiring the audited
+forgetting path. Explicit supersession and scope-broadening operations remain open.
 
 [Durable refusals](refusals.md) now preserve bounded metadata for compile policy
 failures and blocked demotion/retraction, without raw queries or record bodies.
