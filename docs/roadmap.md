@@ -109,7 +109,12 @@ while leaving host terminal and task acceptance observations independent. A
 spawn coordination, receipt/attempt correspondence and host result finalization
 through the deployed API. Actual Striatum
 integration must respect its sealed dispatch-input boundary, as described in
-[local API integration](local-api.md). No live Striatum lane is changed.
+[local API integration](local-api.md). No live Striatum lane is changed. The
+[native admission assessment](verification/native-admission-assessment-2026-09-08.md)
+reconciles the existing knowledge-promotion source with the historical fixture
+proof and records the remaining contract, provenance, sealed-input and real-host
+evidence needed to close U1. A recorded Verified target does not supply that
+evidence by itself.
 
 ### 3. Make retrieval current and evaluate real history
 

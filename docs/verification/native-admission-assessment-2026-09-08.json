@@ -1,0 +1,72 @@
+{
+  "schema_version": "cairn-native-admission-assessment/1",
+  "observed_on": "2026-09-08",
+  "striatum_revision": "a6b1ae71d95cdf99200c10d8c6ce855d9da70a69",
+  "cairn_revision_before_assessment": "409df41e91d40b2455c0ff7b89c211780987c487",
+  "assessment": "native_cairn_admission_not_established",
+  "recorded_recall_request": {
+    "seq": 10055,
+    "phase": "satisfied",
+    "claim_level": "Verified",
+    "retained_audit_artifact_seq": 42451,
+    "retained_audit_content_hash": "484e2e2cae486e8fc53f1b83b3b3c04be7cda19e9c88e8b0ddeefa5710f2017c",
+    "audit_proof_mode": "fixture",
+    "audit_live_delivery": "deferred"
+  },
+  "fleet_knowledge": {
+    "repo_id": "019f3b99-1107-714a-beac-2dd19c25b910",
+    "product_admission_count": 1,
+    "product_seq": 230,
+    "product_sha256": "27aba2ea4450e56926795272aa5640eab9f15590241e1d3d98fbfa5d902f8cda",
+    "accepted_head_record_seq": 234,
+    "request_seq": 1,
+    "current_request_phase": "migration_required",
+    "initial_verification_runs": [
+      237,
+      240
+    ],
+    "initial_verification_outcomes": [
+      "abandoned",
+      "abandoned"
+    ]
+  },
+  "current_checker_probe": {
+    "binary_sha256": "a3195953449452892d895f5bb5009d001d649b7905b8e011fb69d9815814ed2d",
+    "source_revision": "a6b1ae71d95cdf99200c10d8c6ce855d9da70a69",
+    "results": [
+      {
+        "case": "admitted-product-230",
+        "exit_code": 1,
+        "stdout": "",
+        "stderr": "knowledge-bindings-independent: no knowledge elements found \u2014 a knowledge Product must carry at least one element\n",
+        "input_sha256": "27aba2ea4450e56926795272aa5640eab9f15590241e1d3d98fbfa5d902f8cda"
+      },
+      {
+        "case": "fabricated-citations",
+        "exit_code": 0,
+        "stdout": "OK example: 2 attestations across 2 independent sources\n",
+        "stderr": "",
+        "input_sha256": "ea28c3fa6368eb19dd8781542675f3cc374f82ede41fe734e2bf4d1eb515ebf8"
+      }
+    ]
+  },
+  "source_files_absent_at_revision": [
+    "internal/store/recall_source.go",
+    "docs/reference/recall-compiles-to-knowledge.md",
+    "tests/e2e/recall_compiles_to_knowledge_test.go"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-2670e9cc3288ff3d",
+    "packet_content_sha256": "2670e9cc3288ff3ddae9fee7e3074d3f2b2af02eb7c2e5833a7db4755bc2548f",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "limitations": [
+    "No native Cairn lane was dispatched.",
+    "No Striatum source, graph, target, or deployed runtime was changed.",
+    "Current-source checker probes do not assert deployed gate behavior or counterfeit knowledge admission.",
+    "Historical accepted ChangeSets and fixture audit do not establish their presence in the current checkout.",
+    "The cause of the source/artifact discrepancy and live recall dependency status remain unverified."
+  ]
+}

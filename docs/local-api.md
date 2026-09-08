@@ -107,7 +107,12 @@ Cairn a producer, make raw recall authoritative, or authorize ambient build inpu
 The decision index still lists RFC 0015 as in flight, and the RFC index records
 its ladder as parked. Current driver dispatch also seals empty prompt assets.
 The owning RFC/decision and admission code therefore still need reconciliation;
-that target entry does not establish an available native Cairn route.
+that target entry does not establish an available native Cairn route. The subsequent
+[native admission assessment](verification/native-admission-assessment-2026-09-08.md)
+found the accepted promotion contract and implementation, traced the historical
+Verified request to a fixture-labelled audit, and reproduced limitations in the
+current knowledge checker. It preserves the distinction between recorded
+artifact acceptance, current source, live knowledge, and native Cairn delivery.
 
 ## User services
 
