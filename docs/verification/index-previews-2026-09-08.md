@@ -46,3 +46,23 @@ This establishes a working preview capability and compatibility, not reduced
 agent pulls, faster tasks, improved task acceptance or broad memory benefit.
 The retained private compatibility output and test logs use the prefix
 `/tmp/cairn-search-preview-` on the development host.
+
+## Installed result
+
+Commit `b511f267b02ea79f151d63f4912351e2ae0fae96` passed
+[CI run 34283302285](https://github.com/halbritt/cairn/actions/runs/34283302285).
+The installed CLI and restarted API use the same clean build. Through the
+ordinary hosted MCP profile, the previously hidden `opencode-config` command
+now appears in the operational procedure's preview. The exact prior procedure
+still pulls unchanged; retry credits and clean EOF also passed without a client
+database connection or HOME. Both services are active and profiles are unchanged.
+No model was called. [Machine-readable evidence](index-previews-2026-09-08.json)
+records the build identity and verification scope.
+
+The decision used validated Pincite packet `pkt-20e3297d3d29a442` for repository
+precedence, evidence before intervention, historical behavior preservation and
+bounded presentation. Sixteen remaining obligations concern unchanged identity,
+ingest, UI, configuration and interface mechanisms or generic procedures; their
+individual nonmaterial classifications are retained in the private decision.
+The deployment-parity obligation was subsequently satisfied by the installed
+MCP and process checks. The packet did not establish general memory benefit.

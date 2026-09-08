@@ -24,6 +24,12 @@ answer first without depending on insertion order. Its frozen development worklo
 also exposes vocabulary misses and unrelated results. This is retrieval evidence,
 not an additional accepted-task result.
 
+[Matching search previews](index-previews-2026-09-08.md) now expose a command
+that was hidden later in an operational procedure. The installed MCP path
+returns the matching excerpt and exact full-body pull. This fixes an observed
+retrieval presentation problem; fewer pulls or better agent outcomes have not
+been measured.
+
 The [native agent CLI trial](agent-search-2026-09-08.md) used search/pull directly
 on a different documentation question and linked the actual retrievals to the
 observed host run. All pulls succeeded. The answer's facts and citations matched
