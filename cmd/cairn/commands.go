@@ -22,10 +22,10 @@ Everyday commands:
   search [--repo PATH] [--purpose context] [--destination local] QUERY
   run [--repo PATH] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
-  list REPO | get UUID | use-report REPO | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
+  list REPO | get UUID | use-report REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
-  create edit compile index expand bootstrap grant revoke-grant capture-evidence check-evidence
+  create edit delete compile index expand bootstrap grant revoke-grant capture-evidence check-evidence
   promote demote issue correct retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal
   grants (no input)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
@@ -115,6 +115,17 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return remember(ctx, store, args[1:])
 	case "search":
 		return search(ctx, store, args[1:])
+	case "run-report":
+		f := flags("run-report")
+		limit := f.Int("limit", 100, "maximum rows (1-200)")
+		offset := f.Int("offset", 0, "rows to skip")
+		if err := f.Parse(args[1:]); err != nil {
+			return nil, invalid(err.Error())
+		}
+		if f.NArg() != 1 {
+			return nil, invalid("run-report requires one repository")
+		}
+		return store.RunReport(ctx, core.RunReportRequest{Repo: f.Arg(0), Limit: *limit, Offset: *offset})
 	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")

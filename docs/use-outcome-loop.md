@@ -18,6 +18,34 @@ leave coverage unknown. There is no automatic behavior-inference engine.
 The report includes pagination metadata. It is an observational join, not a causal
 benefit score or a completed recurrence evaluation. Exposures never increase rank.
 
+## Inspect runs, including no-memory baselines
+
+`cairn run-report [--limit N] [--offset N] REPO` returns one row per receipt with
+a launch claim or an observed process outcome. A run needs no memory exposure to
+appear. Pure retrievals and binding/assessment-only receipts are outside this
+population. This differs from `report`'s process-outcome denominator and
+`use-report`'s record-exposure rows.
+
+Rows include scope, compilation time, binding/capability/currentness pins,
+command digest, process state/duration/exit and the latest task assessment's
+version, witness, method and failure labels. `launch_claimed` reserves execution;
+it does not prove a process started. `outcome_observed` distinguishes a missing
+outcome from an explicitly observed unknown outcome. Missing duration and exit
+are null, not zero. `exposure_rows` counts retained record/version exposures,
+including index pointers; it does not establish delivery, use or benefit.
+
+The default page holds 100 rows; limits are 1–200. Follow `more` and
+`next_offset` for additional pages. Each page has its own database snapshot;
+concurrent new receipts can change later offset pages. `core.RunReport` and the
+local-profile-only `run-report` agent endpoint accept `repo`, `limit`, `offset`.
+No raw command, task, query, output or evidence body is added to this report.
+
+The [reviewed recurrence report check](verification/run-report-2026-09-08.json)
+reads the original M/N/O trial stores without changing their reports or
+assessments. It returns exactly one row for each run: zero exposures and rejected
+task outcome for M, zero exposures and unknown task outcome for N, and one
+exposure and unknown task outcome for O. All retain assessment version 2.
+
 ## Wrapper metadata
 
 `cairn run` records a SHA-256 digest of its command argv before launch. Raw argv is

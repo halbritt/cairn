@@ -154,6 +154,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		serveJSON(w, r, c.store.UseReport)
+	case "/v1/run-report":
+		if !c.destination.AllowLocal {
+			writeError(w, 403, "AUTHORITY_DENIED", "protected reports require a local profile")
+			return
+		}
+		serveJSON(w, r, c.store.RunReport)
 	case "/v1/get":
 		serveJSON(w, r, func(ctx context.Context, req recordRequest) (core.Record, error) {
 			record, err := c.store.Get(ctx, req.RecordID)

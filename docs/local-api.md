@@ -49,12 +49,12 @@ socket. The agent client never opens the database. Use the same request UUID for
 a transport retry. The server has bounded request bodies and deadlines; an HTTP
 write failure does not roll back a committed mutation.
 
-Operations: `create`, `edit`, `delete`, `compile`, `get`, `evidence`, `usage`, `use-report`,
+Operations: `create`, `edit`, `delete`, `compile`, `get`, `evidence`, `usage`, `use-report`, `run-report`,
 `assess-run`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `claim-run`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`. `compile` takes
 no destination field; the configured profile owns that decision. A hosted profile
-cannot use the protected `use-report` endpoint. The server checks repository scope
+cannot use the protected `use-report` or `run-report` endpoints. The server checks repository scope
 at the store boundary as well as endpoint authorization. SIGTERM shuts down
 requests and removes the owned socket; a second listener cannot replace it.
 
@@ -76,6 +76,16 @@ include it as a permitted dispatch input, retain the Cairn receipt ID beside the
 host attempt identity, and forward host terminal/task-state observations. Task
 acceptance must come from the host's actual gate evidence; a backend process exit
 cannot set it. No live Striatum lane was altered by this implementation.
+
+The inspected Striatum commit `a6b1ae71d95cdf99200c10d8c6ce855d9da70a69`
+declares only work graphs and optional diagnostic review ledgers as inputs to
+build contract v3 (`catalog/passes/build.yaml`). Its driver sources ordinary
+dispatch inputs from accepted artifact heads, with admitted evidence handled
+separately (`internal/driver/session_dispatch.go`). An arbitrary Cairn export
+file therefore cannot enter a real build as an extra input under that contract.
+Native integration must establish the permitted input and provenance path in
+the owning compiler contract before enabling delivery; an adapter probe cannot
+establish that contract change.
 
 ## User services
 

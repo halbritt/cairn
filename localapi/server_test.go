@@ -85,6 +85,10 @@ func TestAuthenticatedChannelOwnsIdentityAndScope(t *testing.T) {
 	if status != 403 {
 		t.Fatal("agent claimed host launch authority")
 	}
+	status, _ = call("/v1/run-report", token, core.RunReportRequest{Repo: repo, Limit: 100})
+	if status != 403 {
+		t.Fatal("hosted profile received protected run report")
+	}
 	status, _ = call("/v1/bootstrap", token, map[string]any{})
 	if status != 404 {
 		t.Fatal("operator path exposed")

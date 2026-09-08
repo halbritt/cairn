@@ -86,6 +86,9 @@ accepted usefulness milestone, before historical evaluation and generated demand
 The [observation join](use-outcome-loop.md) now associates each exposure with
 reduced delivery/usage streams, process outcome and versioned task assessments;
 repeated observations do not multiply rows. The
+[run report](use-outcome-loop.md#inspect-runs-including-no-memory-baselines)
+also includes zero-memory baselines and claims without outcomes, with separate
+claim/process/assessment fields and bounded pagination. The
 [summary counter](verification/summary-assessments-2026-09-08.md) now also honors
 the latest task assessment, including corrections on runs with no memory exposure.
 Task class and binding/capability

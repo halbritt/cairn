@@ -31,6 +31,7 @@ bin/cairn search 'changing storage'
 bin/cairn run --prompt 'Inspect the supplied note' -- /bin/cat
 bin/cairn report "$PWD"
 bin/cairn use-report "$PWD"
+bin/cairn run-report "$PWD"
 ```
 
 The example wraps `cat`, so you can inspect the exact input without a model or
