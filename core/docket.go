@@ -8,6 +8,10 @@ import (
 )
 
 type DocketItem struct {
+	ProposalGroupKey   string `json:"proposal_group_key,omitempty"`
+	ProposalCount      int    `json:"proposal_count,omitempty"`
+	FailureCount       int    `json:"failure_count,omitempty"`
+	TaskCount          int    `json:"task_count,omitempty"`
 	SupersededRecordID string `json:"superseded_record_id,omitempty"`
 	ProposalID         string `json:"proposal_id,omitempty"`
 	AttemptID          string `json:"attempt_id,omitempty"`
@@ -180,38 +184,26 @@ func (s *Store) Docket(ctx context.Context, repo string) (Docket, error) {
 			docket.Items = append(docket.Items, DocketItem{Reason: "EVIDENCE_UNAVAILABLE", RecordID: ref.ID, Version: ref.Version, Action: "Re-establish supporting evidence or retract the claim."})
 		}
 	}
-	proposalRows, err := tx.Query(ctx, `SELECT p.proposal_id::text,p.recovery_receipt IS NULL FROM cairn.lesson_proposal p WHERE p.repo=$1 AND (p.disposition='open' OR (p.disposition='deferred' AND p.due_at<=clock_timestamp()))
-	 AND p.failure_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=p.failure_receipt)
-	 AND (p.recovery_receipt IS NULL OR p.recovery_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=p.recovery_receipt))
-	 AND (p.recovery_receipt IS NOT NULL OR NOT EXISTS (
-	  SELECT 1 FROM cairn.lesson_proposal paired
-	  WHERE paired.failure_receipt=p.failure_receipt AND paired.failure_version=p.failure_version
-	  AND paired.recovery_receipt IS NOT NULL
-	  AND paired.recovery_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=paired.recovery_receipt)
-	 ))
- ORDER BY p.created_at,p.proposal_id LIMIT 101`, repo)
+	groups, err := dueProposalGroups(ctx, tx, repo, "", 101)
 	if err != nil {
 		return docket, err
 	}
-	for proposalRows.Next() {
-		item := DocketItem{Reason: "FAILURE_RECOVERY", Action: "Review the attached failure/recovery evidence before proposing a reusable lesson; no causal benefit is established."}
-		var standalone bool
-		if err = proposalRows.Scan(&item.ProposalID, &standalone); err != nil {
-			proposalRows.Close()
-			return docket, err
-		}
-		if standalone {
+	for _, group := range groups {
+		item := DocketItem{ProposalID: group.singletonID, ProposalGroupKey: group.Key, ProposalCount: group.ProposalCount,
+			FailureCount: group.FailureCount, TaskCount: group.TaskCount,
+			Reason: "FAILURE_RECOVERY", Action: "Review the attached failure/recovery evidence before proposing a reusable lesson; no causal benefit is established."}
+		if group.StandaloneCount == 1 {
 			item.Reason = "TASK_FAILURE"
 			item.Action = "Review the attached task-failure evidence; no matching accepted recovery is attached."
 		}
+		if group.ProposalCount > 1 {
+			item.ProposalID = ""
+			item.Reason = "FAILURE_CLUSTER"
+			item.Action = "Inspect the exact-signature group and review its source proposals; repetition is not corroboration."
+		}
 		docket.Items = append(docket.Items, item)
 	}
-	err = proposalRows.Err()
-	proposalRows.Close()
-	if err != nil {
-		return docket, err
-	}
-	priority := map[string]int{"ATTRIBUTION_CONTRADICTED": 0, "OPEN_DELEGATE_AFTER_TASK": 1, "EVIDENCE_UNAVAILABLE": 2, "SUPERSEDED_DEPENDENCY": 2, "SUPERSEDED_EXPOSURE": 2, "UNFINISHED_RUN": 3, "FAILURE_RECOVERY": 4, "TASK_FAILURE": 4, "ESCALATION_BLOCKED": 5}
+	priority := map[string]int{"ATTRIBUTION_CONTRADICTED": 0, "OPEN_DELEGATE_AFTER_TASK": 1, "EVIDENCE_UNAVAILABLE": 2, "SUPERSEDED_DEPENDENCY": 2, "SUPERSEDED_EXPOSURE": 2, "UNFINISHED_RUN": 3, "FAILURE_RECOVERY": 4, "TASK_FAILURE": 4, "FAILURE_CLUSTER": 4, "ESCALATION_BLOCKED": 5}
 	slices.SortStableFunc(docket.Items, func(a, b DocketItem) int { return priority[a.Reason] - priority[b.Reason] })
 	if len(docket.Items) > 100 {
 		docket.Truncated = true

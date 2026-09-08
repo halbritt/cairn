@@ -24,6 +24,7 @@ Everyday commands:
   run [--repo PATH] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
+  proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST
   list REPO | get UUID | use-report REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
@@ -123,6 +124,17 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return remember(ctx, store, args[1:])
 	case "search":
 		return search(ctx, store, args[1:])
+	case "proposal-group":
+		f := flags("proposal-group")
+		limit := f.Int("limit", 100, "maximum source proposals (1-200)")
+		offset := f.Int("offset", 0, "source proposals to skip")
+		if err := f.Parse(args[1:]); err != nil {
+			return nil, invalid(err.Error())
+		}
+		if f.NArg() != 2 {
+			return nil, invalid("proposal-group requires repository and group digest")
+		}
+		return store.ProposalGroup(ctx, core.ProposalGroupRequest{Repo: f.Arg(0), Key: f.Arg(1), Limit: *limit, Offset: *offset})
 	case "conflicts":
 		f := flags("conflicts")
 		limit := f.Int("limit", 100, "maximum rows (1-200)")

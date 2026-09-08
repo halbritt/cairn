@@ -141,6 +141,11 @@ The docket surfaces attribution contradictions, evidence-unavailable B records,
 launches lacking outcomes, and matching A notes blocked from consequential use. An unfinished run may still be executing. A
 manual inspection is required before declaring it abandoned.
 
+Due failure proposals with the same comparison fields and error-signature digest
+share a [review group](docs/demand-review.md#review-matching-failures-together).
+Use `proposal-group REPO GROUP_DIGEST` to inspect its paginated source proposals;
+group size does not establish corroboration or authorize admission.
+
 The [use/outcome loop](docs/use-outcome-loop.md) documents joined observations,
 versioned task assessments and completed-task delegate findings.
 [Authenticated local access](docs/local-api.md) gives agents and host observers
