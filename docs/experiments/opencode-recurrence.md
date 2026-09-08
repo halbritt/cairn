@@ -134,6 +134,9 @@ tool policy creates a new experimental condition; preserve the prior result.
 
 `--openrouter --arm repo_only --context-tokens 131072` selects the existing
 OpenRouter `deepseek/deepseek-v4-flash-0731` binding for one calibration arm.
+`--openrouter-model deepseek/deepseek-v4-pro-0813` selects the other explicitly
+allowlisted binding. The selected model must already exist in the operator
+configuration; a relay for one model refuses requests for the other.
 It requires that model and the exact HTTPS API base in the operator's existing
 OpenCode configuration, with an available environment-backed API key. The
 controller reads the key; the sandbox receives only a disposable local relay
@@ -146,14 +149,16 @@ limit; a pending socket operation may finish after that elapsed limit. The
 300-second process budget and 20-step setting still apply. These are request
 and transport bounds, not a verified account billing cap.
 
-Every request forces provider prices at most $0.20 per million input tokens,
-$0.50 per million output tokens, no per-request charge, and `data_collection=deny`.
+Flash requests force provider prices at most $0.20 per million input tokens and
+$0.50 per million output tokens. Pro requests allow at most $1.50 and $4.00,
+respectively. Both refuse per-request charges and require `data_collection=deny`.
 These fields use OpenRouter's documented
 [provider routing controls](https://openrouter.ai/docs/guides/routing/provider-selection).
 Unavailable routing fails without relaxing those settings. The relay makes no
 retries; any harness retry consumes another request slot. Different providers
 may serve different calls. Reports retain their declared identities, HTTP status,
-usage/cost when reported, counts and digests. They retain no prompt or completion
+usage/cost when reported, known tool names, counts and digests. Unrecognized tool
+names become `other`; argument schemas and tool descriptions are not retained. They retain no prompt or completion
 content. Reported usage can be missing after interruption and is not an invoice.
 
 The local test exercises real HTTP streaming, routing refusal, request exhaustion,
@@ -174,3 +179,26 @@ still apply.
 byte limits, provider controls, task and gate remain unchanged. The standard
 profile remains the default. This changes the aggregate work budget as a group;
 it does not isolate which individual limit caused an earlier failure.
+
+
+For targeted diagnosis, `--retain-final` explicitly retains up to 8 KiB of the
+last model text event in a private `ARM-last-explanation.txt` file. It excludes
+reasoning and tool-output events. This is selected diagnostic evidence; it is
+not automatically added to Cairn memory or committed. The report keeps its path,
+size, digest and truncation flag. The last text event may precede a timeout and
+is not necessarily a terminal answer or proof of completion. Default capture
+remains disabled. Treat the explanation as local/private regardless of what the
+model says about sharing. The operator owns its retention: remove it after the
+diagnostic review and retain only the necessary metadata or a reviewed finding.
+The controller does not automatically expire an opted-in explanation. Native
+session homes are still removed at completion.
+
+
+`--output-tokens 32768` is a separate hosted calibration condition for a model
+that exhausts the default 8,192-token response allowance. Reasoning shares that
+allowance. It permits 32 MiB of streamed response bytes and a checked 600-second
+response duration while keeping the selected aggregate process budget. The
+socket timeout remains 45 seconds. OpenCode can request less than the configured
+allowance; the relay records the actual `requested_output_tokens` on every call.
+The tested OpenCode requested 32,000 under this setting. Retain earlier outcomes
+when changing response capacity; this setting is not evidence of a better repair.

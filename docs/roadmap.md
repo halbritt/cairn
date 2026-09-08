@@ -139,9 +139,15 @@ An [extended-budget calibration](verification/opencode-extended-calibration-2026
 then completed normally within its 900-second/60-step allowance, with no relay
 refusals and still no patch. One output-length finish remains in the trace.
 The unchanged binding/task condition is not a useful next experiment.
-Further comparison needs a binding/task combination that completes a real
-repair or new evidence explaining the failure. Full native/search baselines,
-relevance judgments and avoided-failure evidence remain open.
+Three [Pro calibrations](verification/opencode-pro-calibration-2026-09-08.md)
+then separated a routing refusal from response exhaustion. The larger-response
+run produced a cache repair, but violated the declared file scope and introduced
+a reproduced inherited-environment regression. Post-run checks also exposed an
+overly narrow cache-location gate: dispatch workspace and runtime working
+directory are distinct. Preserve the original result and declare corrected
+criteria before another run. This supplies a real failure for a later-recurrence
+lesson; avoided failure remains unobserved. Full native/search baselines,
+relevance judgments and memory-benefit evidence remain open.
 
 ### 4. Turn observed demand into next-run improvement
 

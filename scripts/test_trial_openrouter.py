@@ -8,7 +8,7 @@ import tempfile
 import threading
 import unittest
 
-from trial_openrouter import MAX_BODY, MAX_OUTPUT, MAX_REQUESTS, MODEL, PROVIDER, relay
+from trial_openrouter import MAX_BODY, MAX_OUTPUT, MAX_REQUESTS, MODEL, PRO_MODEL, PROVIDER, relay
 
 
 @contextmanager
@@ -102,6 +102,30 @@ class RelayTest(unittest.TestCase):
                 self.assertEqual(send(route)[0], 503)
             self.assertEqual(len(received), 1)
             self.assertEqual(json.loads(path.read_text())['requests'][0]['http_status'], 503)
+
+    def test_pro_binding_has_its_own_fixed_model_and_price_boundary(self):
+        with tempfile.TemporaryDirectory() as directory, fixture() as (received, connect):
+            path = Path(directory) / 'report.json'
+            with relay('secret', path, connect, model=PRO_MODEL, max_output_tokens=32768, response_seconds=600) as route:
+                self.assertEqual(route['model'], PRO_MODEL)
+                self.assertEqual(send(route)[0], 400)  # Default Flash cannot use this relay.
+                status, _ = send(route, {'model': PRO_MODEL, 'stream': True, 'max_tokens': 32768,
+                                        'messages': [{'role': 'user', 'content': 'fixture'}],
+                                        'tools': [{'type': 'function', 'function': {'name': 'edit'}},
+                                                  {'type': 'function', 'function': {'name': 'private-tool-name'}}]})
+                self.assertEqual(status, 200)
+                self.assertEqual(send(route, {'model': PRO_MODEL, 'max_tokens': 32769})[0], 400)
+                self.assertEqual(send(route, {'model': PRO_MODEL, 'tools': [None]})[0], 400)
+            self.assertEqual(len(received), 1)
+            policy = received[0][2]['provider']
+            self.assertEqual(policy['max_price'], {'prompt': 1.5, 'completion': 4.0, 'request': 0})
+            self.assertEqual(policy['data_collection'], 'deny')
+            report = json.loads(path.read_text())
+            self.assertEqual(report['requests'][0]['tool_names'], ['edit', 'other'])
+            self.assertEqual(received[0][2]['max_tokens'], 32768)
+            self.assertEqual(report['requests'][0]['requested_output_tokens'], 32768)
+            self.assertEqual(report['limits']['response_bytes'], 32 * 1024 * 1024)
+            self.assertNotIn('private-tool-name', path.read_text())
 
     def test_large_tool_history_fits_and_transport_failure_remains_visible(self):
         with tempfile.TemporaryDirectory() as directory, fixture() as (received, connect):

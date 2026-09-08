@@ -175,6 +175,20 @@ def trace_summary(trace, selected_ids):
                 cited_record_ids=sorted(citations), citation_method='exact selected UUID in OpenCode text event; testimony only')
 
 
+def retain_last_explanation(root, arm, trace):
+    """Explicit selected diagnostic evidence; excludes reasoning and tool output."""
+    texts = [e.get('part', {}).get('text', '') for e in trace if e.get('type') == 'text']
+    if not texts:
+        return None
+    raw = texts[-1].encode()
+    selected = raw[:8192].decode(errors='ignore')  # Drop only a partial trailing UTF-8 character.
+    path = root / (arm + '-last-explanation.txt')
+    private_file(path, selected)
+    return dict(path=str(path), sha256=sha(selected.encode()), bytes=len(selected.encode()),
+                truncated=len(raw) > 8192,
+                interpretation='Last model text event, not proof of task completion or necessarily a terminal answer')
+
+
 def assess_arm(binary, environment, result, records):
     receipt_id = result['receipt'].get('receipt_id')
     if not receipt_id:
@@ -218,7 +232,7 @@ def assess_arm(binary, environment, result, records):
                 excluded_preflight_rows=len(joined['rows']) - len(rows), interpretation=joined['interpretation'])
 
 
-def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_tokens=65536, route=None, extended_budget=False):
+def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_tokens=65536, route=None, extended_budget=False, retain_final=False, output_tokens=8192):
     for key in ('GPU_FLEET_LEASE_ID', 'GPU_FLEET_ENDPOINT_URL', 'GPU_FLEET_SERVED_MODEL'):
         if route is None and not os.environ.get(key):
             raise RuntimeError('run requires an active gpu-fleet-run environment')
@@ -251,8 +265,8 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
     if route['provider'] == 'trial-openrouter':
         report['relay_sha256'] = sha((PROJECT / 'scripts/trial_openrouter.py').read_bytes())
     report['settings'] = dict(arms=scenario['arms'], disable_thinking=disable_thinking,
-                              context_tokens=context_tokens, output_limit=8192, process_seconds=process_seconds, steps=steps,
-                              work_budget='extended' if extended_budget else 'standard')
+                              context_tokens=context_tokens, output_limit=output_tokens, process_seconds=process_seconds, steps=steps,
+                              work_budget='extended' if extended_budget else 'standard', retain_final=retain_final)
     try:
         subprocess.run([str(pg_bin / 'pg_ctl'), '-D', str(store / 'data'), '-l', str(store / 'postgres.log'), '-o', f"-k {store}/socket -c listen_addresses=''", '-w', 'start'], check=True, stdout=subprocess.DEVNULL)
         subprocess.run([str(pg_bin / 'createdb'), '-h', str(store / 'socket'), 'cairn_trial'], check=True)
@@ -305,7 +319,7 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
             model = route['model']
             private_file(config, json.dumps(dict(autoupdate=False, share='disabled', enabled_providers=[route['provider']],
                 provider={route['provider']:dict(npm='@ai-sdk/openai-compatible', name=route['binding'], options=dict(baseURL=route['endpoint'], apiKey=route['api_key']),
-                     models={model:dict(name=model, limit=dict(context=context_tokens, output=8192),
+                     models={model:dict(name=model, limit=dict(context=context_tokens, output=output_tokens),
                          options={'chat_template_kwargs': {'enable_thinking': False}} if disable_thinking else {})})},
                 agent=dict(build=dict(temperature=0, steps=steps)),
                 permission=dict(external_directory='deny', webfetch='deny', websearch='deny', task='deny', skill='deny', edit='allow', read='allow', bash={'*':'deny','go test*':'allow','go version*':'allow','gofmt*':'allow','git diff*':'allow','git status*':'allow','rg *':'allow','ls*':'allow','pwd':'allow'}))))
@@ -350,6 +364,10 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
                               trace_summary=trace_summary(trace, [r['record_id'] for r in records]),
                               config_sha256=sha(config.read_bytes()),
                               selected_records=[s['record']['record_id'] for s in replay['semantic']['selected']] if replay else [])
+            if retain_final:
+                explanation = retain_last_explanation(root, arm, trace)
+                if explanation is not None:
+                    arm_result['last_explanation'] = explanation
             arm_result['assessment_join'] = assess_arm(binary, environment, arm_result, records)
             report['arms'].append(arm_result)
             (root / 'report.json').write_text(json.dumps(report, indent=2))
@@ -396,11 +414,19 @@ def main():
     p.add_argument('--disable-thinking', action='store_true', help='request chat_template_kwargs.enable_thinking=false from the local model')
     p.add_argument('--context-tokens', type=int, choices=[65536, 131072], default=65536,
                    help='verified model context; acquire a fleet lease supporting at least this value')
+    from trial_openrouter import MODEL, MODEL_PRICES
+    p.add_argument('--openrouter-model', choices=list(MODEL_PRICES), default=MODEL, help='one of the existing configured hosted model bindings')
     p.add_argument('--openrouter', action='store_true', help='one-arm calibration through the bounded hosted credential relay')
+    p.add_argument('--output-tokens', type=int, choices=[8192, 32768], default=8192, help='hosted model output allowance; reasoning shares this budget')
+    p.add_argument('--retain-final', action='store_true', help='explicitly retain at most 8 KiB of the last model text event as private diagnostic evidence')
     p.add_argument('--extended-budget', action='store_true', help='hosted one-arm calibration: 900 seconds, 60 steps, 64 requests and 300 seconds per response')
     args = parser.parse_args()
     if args.operation == 'prepare':
         prepare(args.source.resolve(strict=True), args.output.resolve())
+    elif args.output_tokens != 8192 and not args.openrouter:
+        parser.error('--output-tokens currently requires --openrouter')
+    elif args.openrouter_model != MODEL and not args.openrouter:
+        parser.error('--openrouter-model requires --openrouter')
     elif args.extended_budget and not args.openrouter:
         parser.error('--extended-budget currently requires --openrouter')
     elif args.openrouter:
@@ -408,12 +434,13 @@ def main():
             parser.error('--openrouter requires one --arm and does not support --disable-thinking')
         from trial_openrouter import configured_key, relay
         root = args.trial.resolve(strict=True)
-        with relay(configured_key(), root / 'hosted-relay.json',
+        with relay(configured_key(args.openrouter_model), root / 'hosted-relay.json', model=args.openrouter_model,
                    max_requests=64 if args.extended_budget else 24,
-                   response_seconds=300 if args.extended_budget else 120) as route:
-            run_trial(root, args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, False, args.context_tokens, route, args.extended_budget)
+                   response_seconds=600 if args.output_tokens == 32768 else (300 if args.extended_budget else 120),
+                   max_output_tokens=args.output_tokens) as route:
+            run_trial(root, args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, False, args.context_tokens, route, args.extended_budget, args.retain_final, args.output_tokens)
     else:
-        run_trial(args.trial.resolve(strict=True), args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, args.disable_thinking, args.context_tokens)
+        run_trial(args.trial.resolve(strict=True), args.cairn.resolve(strict=True), args.opencode.resolve(strict=True), args.arm, args.disable_thinking, args.context_tokens, retain_final=args.retain_final)
 
 
 if __name__ == '__main__':

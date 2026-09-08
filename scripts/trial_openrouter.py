@@ -16,6 +16,9 @@ import threading
 import time
 
 MODEL = 'deepseek/deepseek-v4-flash-0731'
+PRO_MODEL = 'deepseek/deepseek-v4-pro-0813'
+MODEL_PRICES = {MODEL: {'prompt': 0.2, 'completion': 0.5, 'request': 0},
+                PRO_MODEL: {'prompt': 1.5, 'completion': 4.0, 'request': 0}}
 MAX_REQUESTS = 24
 MAX_BODY = 1024 * 1024
 MAX_RESPONSE = 8 * 1024 * 1024
@@ -24,10 +27,12 @@ PROVIDER = {'max_price': {'prompt': 0.2, 'completion': 0.5, 'request': 0},
             'data_collection': 'deny', 'require_parameters': True}
 
 
-def configured_key():
+def configured_key(model=MODEL):
+    if model not in MODEL_PRICES:
+        raise ValueError('unsupported trial model')
     config = json.loads((Path.home() / '.config/opencode/opencode.json').read_text())
     provider = config['provider']['openrouter']
-    if provider['options']['baseURL'] != 'https://openrouter.ai/api/v1' or MODEL not in provider['models']:
+    if provider['options']['baseURL'] != 'https://openrouter.ai/api/v1' or model not in provider['models']:
         raise RuntimeError('expected existing OpenRouter route is not configured')
     reference = provider['options']['apiKey']
     if not reference.startswith('{env:') or not reference.endswith('}'):
@@ -39,17 +44,19 @@ def configured_key():
 
 
 @contextmanager
-def relay(key, report_path, connection_factory=None, *, max_requests=MAX_REQUESTS, response_seconds=120):
+def relay(key, report_path, connection_factory=None, *, max_requests=MAX_REQUESTS, response_seconds=120, model=MODEL, max_output_tokens=MAX_OUTPUT):
     # The optional transport is solely for the local fixture test. CLI callers
     # cannot choose a different upstream or forward arbitrary request headers.
     connect = connection_factory or (lambda: http.client.HTTPSConnection('openrouter.ai', timeout=45))
+    provider_policy = dict(PROVIDER, max_price=MODEL_PRICES[model])
+    max_response_bytes = MAX_RESPONSE * max_output_tokens // MAX_OUTPUT
     token = secrets.token_urlsafe(32)
     lock = threading.Lock()
-    report = {'schema': 'cairn.hosted-relay/1', 'model': MODEL,
+    report = {'schema': 'cairn.hosted-relay/1', 'model': model,
               'limits': {'requests': max_requests, 'request_bytes': MAX_BODY,
-                         'response_bytes': MAX_RESPONSE, 'output_tokens': MAX_OUTPUT,
+                         'response_bytes': max_response_bytes, 'output_tokens': max_output_tokens,
                          'response_seconds': response_seconds, 'socket_seconds': 45,
-                         'provider': PROVIDER}, 'requests': [], 'rejections': 0, 'rejection_codes': {}}
+                         'provider': provider_policy}, 'requests': [], 'rejections': 0, 'rejection_codes': {}}
 
     def save():
         # Called under lock; publish whole metadata snapshots atomically.
@@ -82,7 +89,7 @@ def relay(key, report_path, connection_factory=None, *, max_requests=MAX_REQUEST
                     return self.reject(413)
                 raw = self.rfile.read(size)
                 body = json.loads(raw)
-                if len(raw) != size or not isinstance(body, dict) or body.get('model') != MODEL:
+                if len(raw) != size or not isinstance(body, dict) or body.get('model') != model:
                     return self.reject(400)
                 # Permit only fields this trial needs. Routing, fallbacks,
                 # plugins and model-controlled provider options cannot escape.
@@ -91,13 +98,23 @@ def relay(key, report_path, connection_factory=None, *, max_requests=MAX_REQUEST
                            'frequency_penalty', 'presence_penalty', 'parallel_tool_calls', 'seed'}
                 if set(body) - allowed:
                     return self.reject(400)
-                requested = body.pop('max_completion_tokens', body.get('max_tokens', MAX_OUTPUT))
-                if type(requested) is not int or not 0 < requested <= MAX_OUTPUT:
+                requested = body.pop('max_completion_tokens', body.get('max_tokens', max_output_tokens))
+                if type(requested) is not int or not 0 < requested <= max_output_tokens:
                     return self.reject(400)
                 body['max_tokens'] = requested
-                body['provider'] = PROVIDER
+                body['provider'] = provider_policy
                 if body.get('stream'):
                     body['stream_options'] = {'include_usage': True}
+                advertised = body.get('tools', [])
+                if not isinstance(advertised, list) or any(
+                        not isinstance(t, dict) or not isinstance(t.get('function', {}), dict)
+                        for t in advertised):
+                    return self.reject(400)
+                known_tools = ('bash', 'read', 'edit', 'write', 'apply_patch', 'glob', 'grep',
+                               'task', 'webfetch', 'websearch', 'skill', 'todowrite')
+                tool_names = sorted({t.get('function', {}).get('name')
+                                     if t.get('function', {}).get('name') in known_tools else 'other'
+                                     for t in advertised})
                 outgoing = json.dumps(body).encode()
             except (ValueError, UnicodeError, TimeoutError, OSError):
                 return self.reject(400)
@@ -107,7 +124,8 @@ def relay(key, report_path, connection_factory=None, *, max_requests=MAX_REQUEST
                 else:
                     exhausted = False
                     observation = {'request_bytes': len(raw), 'request_sha256': hashlib.sha256(raw).hexdigest(),
-                                   'status': 'started', 'usage': [], 'finish_reasons': []}
+                                   'status': 'started', 'usage': [], 'finish_reasons': [],
+                                   'tool_names': tool_names, 'requested_output_tokens': requested}
                     index = len(report['requests'])
                     # Publish snapshots only. Other request threads may save the
                     # report while this handler accumulates streaming metadata.
@@ -158,7 +176,7 @@ def relay(key, report_path, connection_factory=None, *, max_requests=MAX_REQUEST
                     if not chunk:
                         break
                     total += len(chunk)
-                    if total > MAX_RESPONSE or time.monotonic() - started > response_seconds:
+                    if total > max_response_bytes or time.monotonic() - started > response_seconds:
                         raise TimeoutError('relay response bound exceeded')
                     digest.update(chunk)
                     self.wfile.write(chunk)
@@ -204,7 +222,7 @@ def relay(key, report_path, connection_factory=None, *, max_requests=MAX_REQUEST
     try:
         with lock:
             save()
-        yield {'provider': 'trial-openrouter', 'model': MODEL, 'binding': 'opencode-openrouter',
+        yield {'provider': 'trial-openrouter', 'model': model, 'binding': 'opencode-openrouter',
                'endpoint': f'http://127.0.0.1:{server.server_port}/v1', 'api_key': token, 'lease_id': None}
     finally:
         server.shutdown()
