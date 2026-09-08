@@ -94,6 +94,14 @@ See [ownership and remaining limits](managed-context.md).
 
 ## Working paths
 
+Known context-preparation and launch-intent failures now retain a pre-launch
+outcome when the database remains available. Regression tests reproduce a parent
+that is a file and a pre-existing run-directory symlink: no process starts, no
+write crosses the refused path, `not_attempted` appears in the use report, and
+the claimed receipt cannot launch again. This fixes a known failure previously
+left indistinguishable from an unfinished run; process-death and unavailable-store
+ambiguity remain. See [verification](verification/prelaunch-failure-2026-09-08.md).
+
 - A records have retained versions, stamped writers/witnesses, retry identity,
   scoped reads, and compare-and-swap edits. An explicit task/run wildcard lets
   project notes survive a run boundary.

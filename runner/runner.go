@@ -87,11 +87,11 @@ func Run(ctx context.Context, store *core.Store, req Request, stdout, stderr io.
 	result := Result{ReceiptID: pkg.ReceiptID, Seal: pkg.Seal, ProcessState: "unknown", Artifacts: filepath.Join(req.ArtifactDirectory, pkg.ReceiptID)}
 	result.Artifacts, err = artifacts.WriteContext(ctx, store, pkg, req.ArtifactDirectory)
 	if err != nil {
-		return result, err
+		return prelaunchFailure(store, result, err)
 	}
 	rendered, err := pkg.Render()
 	if err != nil {
-		return result, err
+		return prelaunchFailure(store, result, err)
 	}
 	input := rendered + "\nTASK\n" + req.Prompt
 	digest := sha256.Sum256([]byte(input))
@@ -99,7 +99,7 @@ func Run(ctx context.Context, store *core.Store, req Request, stdout, stderr io.
 	// Persist launch intent before any process can execute. A crash afterward is
 	// visible as an unfinished run, not a manufactured successful outcome.
 	if _, err = store.RecordDelivery(ctx, delivery); err != nil {
-		return result, err
+		return prelaunchFailure(store, result, err)
 	}
 	runCtx, cancel := context.WithTimeout(ctx, req.Timeout)
 	defer cancel()
@@ -184,6 +184,23 @@ func Run(ctx context.Context, store *core.Store, req Request, stdout, stderr io.
 		}
 	}
 	return result, nil
+}
+
+// Preparation failed before Start was called. Retain that known non-execution
+// even if the caller cancelled. The artifact path may have been refused, so this
+// path must not attempt an outcome-file write there. A DB failure remains explicit.
+func prelaunchFailure(store *core.Store, result Result, cause error) (Result, error) {
+	result.ProcessState = "launch_failed"
+	empty := sha256.Sum256(nil)
+	digest := hex.EncodeToString(empty[:])
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	observation, err := store.RecordOutcome(ctx, core.OutcomeRequest{RequestID: uuid.NewString(), ReceiptID: result.ReceiptID, ProcessState: result.ProcessState, StdoutSHA256: digest, StderrSHA256: digest})
+	if err != nil {
+		return result, errors.Join(cause, fmt.Errorf("pre-launch outcome not committed: %w", err))
+	}
+	result.OutcomeID = observation.ID
+	return result, cause
 }
 
 func childEnvironment() []string {

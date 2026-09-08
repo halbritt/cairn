@@ -86,6 +86,12 @@ run directory named in the receipt. New context files are [registered for contro
 `outcome.pending.json` for `cairn recover-run RECEIPT_UUID` recovery. Do not retry a
 process blindly: the same compile request UUID cannot launch twice.
 
+If context preparation fails after the launch claim, `run` retains a
+`launch_failed` outcome with task outcome `not_attempted`, when the store is
+available. It preserves the preparation error and does not write an outcome file
+into a refused artifact path. If that database write also fails, the error remains
+explicit and no local recovery file is promised for the unsafe path.
+
 The wrapper records supplied context as `available`. The separate OpenCode probe
 established model-request contact for its tested fixture. Neither observation
 proves obedience, internal tool coverage, compaction behavior, or task acceptance.

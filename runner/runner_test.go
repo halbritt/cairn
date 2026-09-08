@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,6 +140,65 @@ func TestLaunchFailureAndTimeout(t *testing.T) {
 			result, err := Run(context.Background(), s, req, &out, &out)
 			if result.ProcessState != scenario.state || result.OutcomeID == "" {
 				t.Fatalf("%+v %v", result, err)
+			}
+		})
+	}
+}
+
+func TestPreparationFailureRetainsUnattemptedOutcome(t *testing.T) {
+	for _, name := range []string{"parent-is-file", "run-directory-symlink"} {
+		t.Run(name, func(t *testing.T) {
+			s := runStore(t)
+			ctx := context.Background()
+			repo, root := uuid.NewString(), t.TempDir()
+			_, err := s.Create(ctx, core.CreateRequest{RequestID: uuid.NewString(), Draft: core.Draft{Kind: "note", Body: "preparation failure fixture", Scope: core.Scope{Repo: repo, TaskID: "*", RunID: "*"}, ClaimType: "self"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(root, "process-started")
+			parent := filepath.Join(root, "artifacts")
+			req := Request{Compile: core.CompileRequest{RequestID: uuid.NewString(), Scope: core.Scope{Repo: repo, TaskID: "task", RunID: "run"}, Purpose: "context", AvailableTokens: 32000}, Destination: core.Destination{Name: "local", AllowLocal: true}, Command: []string{"/bin/sh", "-c", `printf started > "$1"`, "sh", marker}, Carrier: "stdin", Timeout: time.Second, ArtifactDirectory: parent, TaskClass: "repair", BindingID: "fixture", CapabilityID: "shell"}
+			outside := t.TempDir()
+			if name == "parent-is-file" {
+				if err = os.WriteFile(parent, []byte("keep"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				req.Compile.Context = &core.ContextPins{TaskClass: req.TaskClass, BindingID: req.BindingID, CapabilityID: req.CapabilityID}
+				pkg, compileErr := s.Compile(ctx, req.Compile, req.Destination)
+				if compileErr != nil {
+					t.Fatal(compileErr)
+				}
+				if err = os.Mkdir(parent, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err = os.Symlink(outside, filepath.Join(parent, pkg.ReceiptID)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var output bytes.Buffer
+			result, err := Run(ctx, s, req, &output, &output)
+			var pathErr *os.PathError
+			if !errors.As(err, &pathErr) || result.ProcessState != "launch_failed" || result.OutcomeID == "" || result.ExitCode != nil {
+				t.Fatalf("preparation failure was not retained: %+v %v", result, err)
+			}
+			if _, err = os.Stat(marker); !errors.Is(err, os.ErrNotExist) || output.Len() != 0 {
+				t.Fatalf("process started despite failed preparation: %v", err)
+			}
+			entries, err := os.ReadDir(outside)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("failure handling wrote through refused path: %v %v", entries, err)
+			}
+			uses, err := s.UseReport(ctx, core.UseReportRequest{Repo: repo, Limit: 10})
+			if err != nil || len(uses.Rows) != 1 {
+				t.Fatalf("use report: %+v %v", uses, err)
+			}
+			row := uses.Rows[0]
+			if row.ProcessState != "launch_failed" || row.TaskOutcome != "not_attempted" || row.Delivery != "unknown" || row.ExitCode != nil {
+				t.Fatalf("invented execution or lost known failure: %+v", row)
+			}
+			if _, err = Run(ctx, s, req, &output, &output); core.Code(err) != "RUN_ALREADY_STARTED" {
+				t.Fatalf("failed preparation reopened launch claim: %v", err)
 			}
 		})
 	}
