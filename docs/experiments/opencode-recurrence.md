@@ -88,6 +88,15 @@ under delegated cgroups. They do not cover cross-UID execution, every preparatio
 failure or full task acceptance. These results are supplemental review evidence;
 they do not rewrite the controller's original receipt assessment.
 
+Review of the first v2 baseline found a count-marker variant of the earlier
+environment bug. The additional
+[`inherited_metadata_test.go.txt`](../../trials/opencode-recurrence/inherited_metadata_test.go.txt)
+supplies both inherited count and value markers with no invocation override.
+The baseline fails and the historical fix passes. This is an exploratory
+post-run check, derived after seeing the baseline; apply it unchanged to every
+comparison candidate and keep it separate from the original gate. The lesson,
+model inputs and original assessments remain unchanged during the comparison.
+
 The compiler receives 32,000 units of available memory input room, leaving a
 3,200-unit optional allowance under the current 10% policy. The model has a
 65,536-token configured context; memory room is separate from the task, tool
