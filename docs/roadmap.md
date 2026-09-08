@@ -101,7 +101,10 @@ agent client, with role/repository/destination enforcement. The
 launches through an observer identity without database access, preserving managed
 context custody and ambiguous-response recovery. [Owner-only run status](run-status.md)
 lets hosted observers inspect a possibly committed claim or outcome without
-reading protected memory reports or authorizing another launch. Actual Striatum
+reading protected memory reports or authorizing another launch. Optional
+[host attempt linkage](host-attempt-link.md) now validates an already observed
+attempt and reserves at most one wrapped execution across prepared receipts,
+while leaving host terminal and task acceptance observations independent. Actual Striatum
 integration must respect its sealed dispatch-input boundary, as described in
 [local API integration](local-api.md). No live Striatum lane is changed.
 

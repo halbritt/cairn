@@ -56,6 +56,9 @@ func (s *Store) ClaimRun(ctx context.Context, id string) error {
 	if _, err = tx.Exec(ctx, `SELECT receipt_id FROM cairn.retrieval_receipt WHERE receipt_id=$1 FOR UPDATE`, id); err != nil {
 		return err
 	}
+	if err = s.boundAttemptCurrent(ctx, tx, id); err != nil {
+		return err
+	}
 	if err = receiptPayloadAvailable(ctx, tx, id); err != nil {
 		return err
 	}

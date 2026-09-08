@@ -80,18 +80,24 @@ try:
                       CAIRN_HOST_SECRET='synthetic-host-secret')
     host = [binary, 'agent', '--token-file', str(root / 'observer.token')]
     request_id = str(uuid.uuid4())
+    attempt_id = str(uuid.uuid4())
+    # Synthetic host observation fixture; only the observing host can bind it.
+    subprocess.run([*host, 'spawn'], input=json.dumps(dict(request_id=str(uuid.uuid4()),
+                   attempt_id=attempt_id, dispatcher='fixture:dispatcher', delegate='fixture:delegate',
+                   scope=dict(repo='fixture:socket', task_id='interactive', run_id='socket-host-run'))),
+                   env=client_env, capture_output=True, text=True, check=True)
     child = ('import os,sys; body=sys.stdin.read(); '
              'assert "Synthetic socket lesson" in body; '
              'assert "SOCKET-HOST-PROMPT" in body; '
              'assert not any(k.startswith("CAIRN_") for k in os.environ); '
              'print("observed-host-ok")')
     command = [*host, 'run', '--repo', 'fixture:socket', '--request-id', request_id,
-               '--run', 'socket-host-run', '--prompt', 'SOCKET-HOST-PROMPT',
+               '--run', 'socket-host-run', '--attempt-id', attempt_id, '--prompt', 'SOCKET-HOST-PROMPT',
                '--query', 'socket', '--', sys.executable, '-c', child]
     run = subprocess.run(command, env=client_env, capture_output=True, text=True, timeout=15)
     assert run.returncode == 0 and run.stdout.strip() == 'observed-host-ok', (run.stdout, run.stderr)
     observed = json.loads(run.stderr)['data']
-    assert observed['process_state'] == 'exited' and observed['outcome_id']
+    assert observed['process_state'] == 'exited' and observed['outcome_id'] and observed['attempt_id'] == attempt_id
     status_request = json.dumps(dict(receipt_id=observed['receipt_id']))
     inspected = subprocess.run([*host, 'run-status'], input=status_request,
                                env=client_env, capture_output=True, text=True, check=True)
@@ -122,6 +128,8 @@ try:
                             env=client_env, capture_output=True, text=True, check=True)
     rows = json.loads(report.stdout)['data']['rows']
     assert len(rows) == 3 and all(r['outcome_observed'] and r['task_outcome'] == 'unknown' for r in rows)
+    assert [r['attempt_id'] for r in rows if 'attempt_id' in r] == [attempt_id]
+    print('Host-issued attempt ID survives authenticated wrapper invocation and run reporting')
     print('Owner-only run status works without client database access and does not grant observer authority')
     print('Authenticated host CLI records process outcomes without database access and preserves output/exit semantics')
 finally:

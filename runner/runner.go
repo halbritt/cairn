@@ -23,6 +23,7 @@ import (
 )
 
 type Request struct {
+	AttemptID         string
 	Compile           core.CompileRequest
 	Destination       core.Destination
 	Command           []string
@@ -38,6 +39,7 @@ type Request struct {
 	ArtifactDirectory string
 }
 type Result struct {
+	AttemptID    string `json:"attempt_id,omitempty"`
 	ReceiptID    string `json:"receipt_id"`
 	Seal         string `json:"seal"`
 	ProcessState string `json:"process_state"`
@@ -83,13 +85,13 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	if err != nil {
 		return Result{}, err
 	}
-	result := Result{ReceiptID: pkg.ReceiptID, Seal: pkg.Seal, ProcessState: "unknown", Artifacts: filepath.Join(req.ArtifactDirectory, pkg.ReceiptID)}
+	result := Result{AttemptID: req.AttemptID, ReceiptID: pkg.ReceiptID, Seal: pkg.Seal, ProcessState: "unknown", Artifacts: filepath.Join(req.ArtifactDirectory, pkg.ReceiptID)}
 	encodedCommand, err := json.Marshal(req.Command)
 	if err != nil {
 		return result, err
 	}
 	commandDigest := sha256.Sum256(encodedCommand)
-	_, err = store.BindRun(ctx, core.RunBindingRequest{RequestID: req.Compile.RequestID, ReceiptID: pkg.ReceiptID, TaskClass: taskClass, BindingID: bindingID, CapabilityID: capabilityID, CommandSHA256: hex.EncodeToString(commandDigest[:]), Revision: req.Revision, WorkspaceSHA256: req.WorkspaceSHA256})
+	_, err = store.BindRun(ctx, core.RunBindingRequest{AttemptID: req.AttemptID, RequestID: req.Compile.RequestID, ReceiptID: pkg.ReceiptID, TaskClass: taskClass, BindingID: bindingID, CapabilityID: capabilityID, CommandSHA256: hex.EncodeToString(commandDigest[:]), Revision: req.Revision, WorkspaceSHA256: req.WorkspaceSHA256})
 	if err != nil {
 		return result, err
 	}

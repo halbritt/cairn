@@ -96,12 +96,17 @@ func TestAuthenticatedRunnerOwnsProcessAndContextWithoutOperator(t *testing.T) {
 	ctx := context.Background()
 	dsn := os.Getenv("CAIRN_TEST_DATABASE_URL")
 	req := runner.Request{Compile: core.CompileRequest{RequestID: uuid.NewString(), Scope: core.Scope{Repo: repo, TaskID: "task", RunID: "run"}, Purpose: "context", AvailableTokens: 32000}, Destination: core.Destination{Name: "local", AllowLocal: true}, Command: []string{"/bin/cat"}, Carrier: "stdin", Prompt: "HOST-PROMPT-CANARY", Timeout: time.Second, ArtifactDirectory: filepath.Join(home, "runs")}
+	req.AttemptID = uuid.NewString()
+	var attempt core.Attempt
+	if err := client.Call(ctx, "spawn", core.SpawnRequest{RequestID: uuid.NewString(), AttemptID: req.AttemptID, Dispatcher: "fixture:dispatcher", Delegate: "fixture:delegate", Scope: req.Compile.Scope}, &attempt); err != nil {
+		t.Fatal(err)
+	}
 	var output, stderr bytes.Buffer
 	result, err := runner.Run(ctx, client, req, &output, &stderr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ExitCode == nil || *result.ExitCode != 0 || result.OutcomeID == "" || !strings.Contains(output.String(), "AUTHENTICATED-HOST-CONTEXT") || !strings.Contains(output.String(), req.Prompt) {
+	if result.AttemptID != req.AttemptID || result.ExitCode == nil || *result.ExitCode != 0 || result.OutcomeID == "" || !strings.Contains(output.String(), "AUTHENTICATED-HOST-CONTEXT") || !strings.Contains(output.String(), req.Prompt) {
 		t.Fatalf("missing observed delivery/outcome: %+v", result)
 	}
 	observer, err := core.Open(ctx, dsn, core.Channel{Principal: "host:test", Repo: repo, Instrumented: true})
@@ -125,13 +130,43 @@ func TestAuthenticatedRunnerOwnsProcessAndContextWithoutOperator(t *testing.T) {
 		t.Fatal(err)
 	}
 	encoded, _ := json.Marshal(report)
-	if strings.Contains(string(encoded), req.Prompt) || len(report.Rows) != 1 {
+	if strings.Contains(string(encoded), req.Prompt) || len(report.Rows) != 1 || report.Rows[0].AttemptID != req.AttemptID {
 		t.Fatalf("run report changed population or retained prompt: %s", encoded)
 	}
 	_, err = runner.Run(ctx, client, req, &output, &stderr)
 	if core.Code(err) != "RUN_ALREADY_STARTED" {
 		t.Fatalf("duplicate launch permitted: %v", err)
 	}
+	var task core.TaskState
+	if err = client.Call(ctx, "task-state", core.TaskStateRequest{RequestID: uuid.NewString(), Scope: req.Compile.Scope, State: "completed", Method: "fixture:host-task-observer/1"}, &task); err != nil {
+		t.Fatal(err)
+	}
+	docket, err := observer.Docket(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := false
+	for _, item := range docket.Items {
+		if item.Reason == "OPEN_DELEGATE_AFTER_TASK" && item.AttemptID == req.AttemptID {
+			open = true
+		}
+	}
+	if !open {
+		t.Fatal("process exit hid the unfinalized host attempt")
+	}
+	if err = client.Call(ctx, "terminal", core.TerminalRequest{RequestID: uuid.NewString(), AttemptID: req.AttemptID, State: "completed", ResultRef: "fixture:host-result"}, &attempt); err != nil {
+		t.Fatal(err)
+	}
+	docket, err = observer.Docket(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range docket.Items {
+		if item.Reason == "OPEN_DELEGATE_AFTER_TASK" {
+			t.Fatal("host finalization did not close attempt")
+		}
+	}
+
 }
 
 func TestAuthenticatedRunnerRejectsAgentAndDestinationMismatch(t *testing.T) {

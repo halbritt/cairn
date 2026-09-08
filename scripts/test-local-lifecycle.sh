@@ -93,6 +93,7 @@ for mode in ['', 'index']:
     packages.append(invoke('compile',dict(request_id=str(uuid.uuid4()),scope=dict(repo=repo,task_id='task',run_id='run'),purpose='context',available_tokens=64000,mode=mode)))
 (root/'categories.json').write_text(json.dumps(dict(issue=issue,record=record,request=request,revision=revision,packages=packages)))
 PYCATEGORIES
+python3 scripts/check-restore-fence.py "$test_root" seed
 backup="$(bash scripts/local-store.sh backup)"
 "$pg_bin/createdb" -h "$CAIRN_HOME/socket" cairn_restore
 "$pg_bin/pg_restore" -h "$CAIRN_HOME/socket" --no-owner --no-privileges -d cairn_restore "$backup"

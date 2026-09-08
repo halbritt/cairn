@@ -11,6 +11,7 @@ import (
 )
 
 type RunBindingRequest struct {
+	AttemptID       string `json:"attempt_id,omitempty"`
 	RequestID       string `json:"request_id"`
 	ReceiptID       string `json:"receipt_id"`
 	TaskClass       string `json:"task_class"`
@@ -37,7 +38,17 @@ func (s *Store) BindRun(ctx context.Context, req RunBindingRequest) (Observation
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
 			return err
 		}
-		return receiptDeliveryCurrent(ctx, tx, req.ReceiptID)
+		if err := receiptDeliveryCurrent(ctx, tx, req.ReceiptID); err != nil {
+			return err
+		}
+		if req.AttemptID != "" {
+			var scope Scope
+			if err := tx.QueryRow(ctx, `SELECT scope FROM cairn.retrieval_receipt WHERE receipt_id=$1 FOR UPDATE`, req.ReceiptID).Scan(&scope); err != nil {
+				return err
+			}
+			return s.requireOpenAttempt(ctx, tx, req.AttemptID, scope)
+		}
+		return nil
 	}
 	return mutate(ctx, s, "bind-run", req.RequestID, req, func(tx pgx.Tx) (Observation, error) {
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
@@ -50,7 +61,7 @@ func (s *Store) BindRun(ctx context.Context, req RunBindingRequest) (Observation
 		if launched {
 			return Observation{}, failure("RUN_ALREADY_STARTED", "bind run identity before claiming launch")
 		}
-		tag, err := tx.Exec(ctx, `INSERT INTO cairn.run_binding(receipt_id,task_class,binding_id,capability_id,command_sha256,revision,workspace_sha256) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`, req.ReceiptID, req.TaskClass, req.BindingID, req.CapabilityID, strings.ToLower(req.CommandSHA256), req.Revision, strings.ToLower(req.WorkspaceSHA256))
+		tag, err := tx.Exec(ctx, `INSERT INTO cairn.run_binding(receipt_id,task_class,binding_id,capability_id,command_sha256,revision,workspace_sha256,attempt_id) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::uuid) ON CONFLICT DO NOTHING`, req.ReceiptID, req.TaskClass, req.BindingID, req.CapabilityID, strings.ToLower(req.CommandSHA256), req.Revision, strings.ToLower(req.WorkspaceSHA256), req.AttemptID)
 		if err != nil {
 			return Observation{}, err
 		}

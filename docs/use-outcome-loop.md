@@ -59,6 +59,9 @@ not retained. `--task-class`, `--binding`, `--capability`, `--revision` and
 are distinct; unknown capability stays `unknown`. The same declared tuple is supplied to the compiler for
 [currentness matching](currentness-and-replay.md).
 Run metadata is bound before launch and cannot be replaced under a new request.
+Optional [host attempt linkage](host-attempt-link.md) validates the exact observed
+attempt and carries its ID into run reports. It does not infer host completion
+from a process result.
 
 ## Task assessments and corrections
 

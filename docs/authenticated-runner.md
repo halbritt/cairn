@@ -23,7 +23,8 @@ carrier behavior match `cairn run`. Process output stays on stdout/stderr; the
 final receipt envelope goes to stderr. A nonzero child exit returns CLI exit 1,
 a timeout 124 and cancellation 130. These are process observations, not task
 acceptance. Use stable task/run IDs from the host and retain the receipt beside
-its own attempt identity.
+its own attempt identity. If the host has already recorded that exact attempt,
+use [host attempt linkage](host-attempt-link.md) with `--attempt-id ATTEMPT_UUID`.
 
 OpenCode still requires `--destination hosted`, even when its current provider
 is local. The API profile must also be configured `hosted`. The wrapper compares
