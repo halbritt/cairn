@@ -45,9 +45,13 @@ cairn agent compile < compile-request.json
 ```
 
 `--token-file FILE` and `--socket PATH` select another provisioned profile or
-socket. The agent client never opens the database. Use the same request UUID for
-a transport retry. The server has bounded request bodies and deadlines; an HTTP
-write failure does not roll back a committed mutation.
+socket. Each omitted flag uses its default under `CAIRN_HOME`, or under
+`$HOME/.local/share/cairn` when `CAIRN_HOME` is unset. Supplying both paths
+avoids home-directory lookup, so an agent with neither environment variable can
+still connect. An explicitly empty path returns `INVALID_REQUEST`; an invalid
+explicit token path is not replaced with the default token. The agent client
+never opens the database. Use the same request UUID for a transport retry. The
+server has bounded request bodies and deadlines; an HTTP write failure does not roll back a committed mutation.
 
 Operations: `create`, `edit`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,

@@ -1,0 +1,133 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/halbritt/cairn/core"
+)
+
+func TestAgentConnectionDefaults(t *testing.T) {
+	for _, scenario := range []string{
+		"explicit_without_home", "explicit_with_unusable_defaults", "home_defaults", "cairn_home_defaults",
+		"only_token_explicit", "only_socket_explicit", "empty_token", "empty_socket",
+		"invalid_flag_without_home", "missing_default_without_home", "bad_explicit_token",
+	} {
+		t.Run(scenario, func(t *testing.T) {
+			root, err := os.MkdirTemp("/tmp", "cairn-connection-gate-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := os.RemoveAll(root); err != nil {
+					t.Error(err)
+				}
+			})
+			home := filepath.Join(root, "home")
+			defaults := filepath.Join(home, ".local", "share", "cairn")
+			if err = os.MkdirAll(defaults, 0700); err != nil {
+				t.Fatal(err)
+			}
+			explicitToken, explicitSocket := filepath.Join(root, "explicit.token"), filepath.Join(root, "explicit.sock")
+			defaultToken, defaultSocket := filepath.Join(defaults, "agent.token"), filepath.Join(defaults, "api.sock")
+			for name, token := range map[string]string{explicitToken: "explicit-connection-token", defaultToken: "default-connection-token"} {
+				if err = os.WriteFile(name, []byte(token), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			args := []string{"--socket", explicitSocket, "--token-file", explicitToken}
+			listenAt := explicitSocket
+			wantCode := ""
+			t.Setenv("HOME", "")
+			t.Setenv("CAIRN_HOME", "")
+			t.Setenv("CAIRN_DATABASE_URL", "host=/absent-connection-gate dbname=denied")
+			switch scenario {
+			case "explicit_without_home":
+			case "explicit_with_unusable_defaults":
+				t.Setenv("CAIRN_HOME", filepath.Join(root, "unavailable-defaults"))
+			case "home_defaults":
+				t.Setenv("HOME", home)
+				args, listenAt = nil, defaultSocket
+			case "cairn_home_defaults":
+				t.Setenv("CAIRN_HOME", defaults)
+				args, listenAt = nil, defaultSocket
+			case "only_token_explicit":
+				t.Setenv("CAIRN_HOME", defaults)
+				args, listenAt = []string{"--token-file", explicitToken}, defaultSocket
+			case "only_socket_explicit":
+				t.Setenv("CAIRN_HOME", defaults)
+				args = []string{"--socket", explicitSocket}
+			case "empty_token":
+				t.Setenv("CAIRN_HOME", defaults)
+				args, wantCode = []string{"--token-file=", "--socket", explicitSocket}, "INVALID_REQUEST"
+			case "empty_socket":
+				t.Setenv("CAIRN_HOME", defaults)
+				args, wantCode = []string{"--socket=", "--token-file", explicitToken}, "INVALID_REQUEST"
+			case "invalid_flag_without_home":
+				args, wantCode = []string{"--no-such-agent-option"}, "INVALID_REQUEST"
+			case "missing_default_without_home":
+				args, wantCode = []string{"--token-file", explicitToken}, "any-error"
+			case "bad_explicit_token":
+				t.Setenv("CAIRN_HOME", defaults)
+				args, wantCode = []string{"--socket", explicitSocket, "--token-file", filepath.Join(root, "missing.token")}, "any-error"
+			}
+			listener, err := net.Listen("unix", listenAt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantToken := "explicit-connection-token"
+			if scenario == "home_defaults" || scenario == "cairn_home_defaults" || scenario == "only_socket_explicit" {
+				wantToken = "default-connection-token"
+			}
+			marker := uuid.NewString()
+			var calls atomic.Int32
+			server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.URL.Path != "/v1/get" || r.Header.Get("Authorization") != "Bearer "+wantToken {
+					t.Error("wrong endpoint or authenticated token")
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+				if err := json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "status": "OK", "data": map[string]string{"marker": marker}}); err != nil {
+					t.Error(err)
+				}
+			})}
+			go func() {
+				if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+					t.Error(err)
+				}
+			}()
+			t.Cleanup(func() {
+				if err := server.Close(); err != nil {
+					t.Error(err)
+				}
+			})
+			before := []string{os.Getenv("HOME"), os.Getenv("CAIRN_HOME"), os.Getenv("CAIRN_DATABASE_URL")}
+			result, err := run(context.Background(), append(append([]string{"agent"}, args...), "get"), strings.NewReader(`{"record_id":"`+uuid.NewString()+`"}`))
+			if wantCode == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				encoded, encodeErr := json.Marshal(result)
+				if encodeErr != nil || !strings.Contains(string(encoded), marker) || calls.Load() != 1 {
+					t.Fatalf("did not reach chosen API: %s %v calls=%d", encoded, encodeErr, calls.Load())
+				}
+			} else if err == nil || calls.Load() != 0 || (wantCode != "any-error" && core.Code(err) != wantCode) {
+				t.Fatalf("invalid configuration fell back or had wrong error: %v calls=%d want=%s", err, calls.Load(), wantCode)
+			}
+			for i, key := range []string{"HOME", "CAIRN_HOME", "CAIRN_DATABASE_URL"} {
+				if os.Getenv(key) != before[i] {
+					t.Errorf("agent request changed %s", key)
+				}
+			}
+		})
+	}
+}
