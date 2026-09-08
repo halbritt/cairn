@@ -45,3 +45,11 @@ refusal, and forgotten-body exclusion while preserving the surviving position.
 Authenticated API tests cover local inspection and hosted-profile refusal.
 Qualified conflict positions, acted-under-conflict outcomes and richer resolution
 semantics remain roadmap work.
+
+Clean commit `e2648a4ca3019993113465cbf311bd418bca0a49` is installed locally after
+a backup and [passing CI](https://github.com/halbritt/cairn/actions/runs/34190228633).
+The installed CLI and authenticated API return the same conflict inventory.
+Retained operational record versions have the same digest before and after;
+no operational conflict was created or resolved for verification. No migration
+beyond 020 is required. The [installation result](verification/conflict-inspection-2026-09-08.json)
+records the checked binary and service identity.

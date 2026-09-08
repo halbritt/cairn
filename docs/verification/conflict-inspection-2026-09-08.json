@@ -1,0 +1,29 @@
+{
+  "schema": "cairn.conflict-inspection-install/1",
+  "revision": "e2648a4ca3019993113465cbf311bd418bca0a49",
+  "binary_sha256": "80eb593c10483fabd912c21038e528f59509776678e3de36eb7cdbc4553aca83",
+  "api_pid": 1569270,
+  "api_running_same_binary": true,
+  "agent_get": {
+    "ok": true,
+    "record_id": "e6321836-e12d-49af-8a66-04d6d6c8abff",
+    "version": 1
+  },
+  "record_version_digest_unchanged": true,
+  "record_version_sha256": "1bd01848904e3739a3e748601d3ccce45ec009f8a451fc1b8f3937efd4279ce6",
+  "preupgrade_backup_pointer": "/tmp/cairn-pre-conflict-inspection-backup.txt",
+  "migration_version": 20,
+  "ci": "https://github.com/halbritt/cairn/actions/runs/34190228633",
+  "ci_status": "success",
+  "cli_api_conflicts_equal": true,
+  "conflicts": 0,
+  "checks": [
+    "Disposable PostgreSQL integration with race detector passed",
+    "go vet and formatting passed",
+    "Original positions survive later edits",
+    "Open/resolved/member-filtered pagination passed",
+    "Resolution preserves original participants",
+    "Forgotten body is null; other position survives",
+    "Local API inspection and hosted refusal passed"
+  ]
+}
