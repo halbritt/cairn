@@ -34,10 +34,21 @@ func TestIndexPullIsBoundedScopedAndChecksCurrentVersion(t *testing.T) {
 	if err != nil || replay.Seal != index.Package.Seal {
 		t.Fatalf("index historical recompile: %v", err)
 	}
+	explanation, err := op.Explain(ctx, index.Package.ReceiptID)
+	if err != nil || len(explanation.Candidates) != 1 || explanation.Candidates[0].LexicalMatches != 1 {
+		t.Fatalf("original index ranking missing: %+v %v", explanation, err)
+	}
 	pull := ExpandRequest{RequestID: uuid.NewString(), ReceiptID: index.Package.ReceiptID, Handle: index.Handles[0].Handle}
 	expanded, err := op.Expand(ctx, pull, Destination{"local", true})
 	if err != nil || expanded.Selection.Record.Body != d.Body {
 		t.Fatalf("pull: %+v %v", expanded, err)
+	}
+	if expanded.Selection.Reason != "indexed record; current eligibility revalidated" {
+		t.Fatalf("pull reported queryless ranking instead of its recheck: %q", expanded.Selection.Reason)
+	}
+	after, err := op.Explain(ctx, index.Package.ReceiptID)
+	if err != nil || len(after.Candidates) != 1 || after.Candidates[0].LexicalMatches != explanation.Candidates[0].LexicalMatches || after.Candidates[0].Rank != explanation.Candidates[0].Rank {
+		t.Fatalf("pull changed original ranking: %+v %v", after, err)
 	}
 	again, err := op.Expand(ctx, pull, Destination{"local", true})
 	if err != nil || again.CreditsRemaining != expanded.CreditsRemaining {

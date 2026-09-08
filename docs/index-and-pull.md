@@ -104,6 +104,12 @@ without another spend while repeating live authorization and availability checks
 `cairn expand-evidence` is the local operator form. The existing `cairn evidence ID`
 remains separate local inspection and does not consume this retrieval budget.
 
+New body-pull responses describe their reason as
+`indexed record; current eligibility revalidated`. The recheck does not have the
+original query, so it does not report a new lexical match count. Original ranking
+features remain in the protected retrieval explanation. Previously committed
+pull responses retain their original text when returned for the same request UUID.
+
 Every pull rechecks current version, body digest, eligibility, scope pins and
 mandatory bootstrap before returning bytes. New mandatory instructions, revoked
 authority, expired sessions and changed records require a fresh index. Transport

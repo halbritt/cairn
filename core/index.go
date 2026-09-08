@@ -280,6 +280,8 @@ func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandReque
 	if !indexed {
 		return failure("INTEGRITY_FAILURE", "expanded body differs from indexed version")
 	}
+	// The queryless recheck establishes eligibility, not the original ranking.
+	selection.Reason = "indexed record; current eligibility revalidated"
 	*state = expansionState{selection, credits, remaining}
 	return nil
 }
