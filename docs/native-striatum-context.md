@@ -171,6 +171,18 @@ receipt and expected seal, verifies run declarations and executes without
 recompiling. Native acquisition, admitted ECR resolution and adapter/host
 correspondence still need implementation under accepted Striatum contracts.
 
+The retained runner is useful for hosts that need Cairn to own their child
+process. Striatum already owns that process in
+`internal/backend/llm/supervisor.go:Supervisor.execute` and renders declared
+inputs in `prompt.go:renderPrompt`. Its adapter should call the authenticated
+`RunPackage`, binding, claim, delivery and outcome operations at that existing
+boundary. Wrapping the supervisor with `cairn run` would append another context
+copy outside Striatum's recorded input rendering and add a second process
+supervisor. Preserve the ordinary ECR input rendering, and perform the final
+Cairn check before the actual confined provider invocation. This requires no
+second runner or recovery subsystem. The Cairn interface is now
+[checked and installed](verification/retained-execution-2026-09-08.md).
+
 Advance those prerequisites and the accepted contract path under the existing
 captured subject. Do not create another opening request, rewrite these drafts
 as accepted decisions, or repeat the prompt-asset inventory. The eventual
