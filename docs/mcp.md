@@ -45,11 +45,30 @@ Leaving all five flags empty preserves searches without a context object.
 | `cairn_pull` | Pass an entry's `pull_arguments` unchanged to receive its full body. Reuse those arguments for retries. |
 | `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its `expected_sha256`, and a retry `request_id`. Shares the body's expansion credits and bytes. |
 | `cairn_remember` | `body` and a stable UUID `request_id`; optional `kind` and `shareable`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |
+| `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and the complete replacement `draft`. Revises an active A note through the existing ordinary edit API. Returns identifiers without echoing the body. |
 
 With an ordinary agent profile, capture is A testimony. Select reusable knowledge
 with source/verification context; exclude raw sessions, private Council material
 and credentials. `shareable: true` explicitly permits hosted delivery. Default
 local notes do not appear in hosted searches. Capture does not promote authority.
+
+To correct a saved note, search and pull its current body first. For `cairn_edit`,
+copy `kind`, `body`, `scope`, `claim_type` and any `sensitivity`, `pins`,
+`relations`, `attributed_producer`, `attempt_id` and `result_ref` fields from
+the returned record into `draft`. Change the intended content and use the pulled
+record's ID and version. Keep source and verification context in the correction.
+Do not copy output fields such as `class`, `observed_writer` or `written_at` into
+the draft; the store owns these. Editing records the authenticated writer and
+retains the earlier version.
+
+Retry with the exact same request ID and arguments. A new request using an old
+version returns `VERSION_CONFLICT`: search and pull again, reconcile the other
+edit, then submit a new request. Edits cannot change scope, sensitivity or pins,
+nor revise B/C records. The tool rejects a draft outside the server's configured
+repository. It is marked as destructive because it revises existing content;
+the generated `--memory-only` host policy continues to allow only search and body
+pull. [Verification](verification/mcp-edit-2026-09-08.md) covers the ordinary
+edit path and its limits.
 
 Search's `cairn.mcp-search/1` is a presentation of the source package, with its
 `source_schema` and `source_seal` retained. The augmented view is not itself sealed.

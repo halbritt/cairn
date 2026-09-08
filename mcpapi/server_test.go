@@ -91,7 +91,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	if !reflect.DeepEqual(names, []string{"cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_search"}) {
+	if !reflect.DeepEqual(names, []string{"cairn_edit", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_search"}) {
 		t.Fatal(names)
 	}
 	invoke := func(name string, args any, wantError string) json.RawMessage {
@@ -155,9 +155,38 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	}
 	edited := record.Draft
 	edited.Body += " newer"
-	var editedRecord core.Record
-	if err = client.Call(ctx, "edit", core.EditRequest{RequestID: uuid.NewString(), RecordID: record.RecordID, ExpectedVersion: record.Version, Draft: edited}, &editedRecord); err != nil {
-		t.Fatal(err)
+	edit := core.EditRequest{RequestID: uuid.NewString(), RecordID: record.RecordID, ExpectedVersion: record.Version, Draft: edited}
+	changed := invoke("cairn_edit", edit, "")
+	if string(invoke("cairn_edit", edit, "")) != string(changed) {
+		t.Fatal("edit retry changed")
+	}
+	var change recordWriteResult
+	if err = json.Unmarshal(changed, &change); err != nil || change.RecordID != record.RecordID || change.Version != 2 || change.RequestID != edit.RequestID || strings.Contains(string(changed), "body") {
+		t.Fatalf("edit response: %s, %v", changed, err)
+	}
+	editedRecord, err := op.Get(ctx, record.RecordID)
+	if err != nil || editedRecord.Body != edited.Body || editedRecord.Version != 2 || editedRecord.ObservedWriter != "agent:mcp-test" || editedRecord.Class != "A" || editedRecord.Witness != "testimony" {
+		t.Fatalf("edit stored wrong version or writer: %+v, %v", editedRecord, err)
+	}
+	edit.Draft.Body += " changed retry"
+	invoke("cairn_edit", edit, "IDEMPOTENCY_CONFLICT")
+	edit.RequestID = uuid.NewString()
+	invoke("cairn_edit", edit, "VERSION_CONFLICT")
+	edit.ExpectedVersion = 2
+	for _, field := range []string{"repo", "scope", "sensitivity", "pins"} {
+		refused := edit
+		refused.RequestID = uuid.NewString()
+		switch field {
+		case "repo":
+			refused.Draft.Scope.Repo = "outside"
+		case "scope":
+			refused.Draft.Scope.TaskID = "different-task"
+		case "sensitivity":
+			refused.Draft.Sensitivity = "local"
+		case "pins":
+			refused.Draft.Pins = &core.Applicability{TaskClass: "different-class"}
+		}
+		invoke("cairn_edit", refused, "AUTHORITY_DENIED")
 	}
 	invoke("cairn_pull", view.Index[0].PullArguments, "STALE_HANDLE")
 	evidence, err := op.CaptureEvidence(ctx, core.EvidenceRequest{RequestID: uuid.NewString(), Repo: repo, Body: "selected supporting bytes", Source: "MCP integration fixture", Sensitivity: "shareable"})
@@ -167,6 +196,12 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	if _, err = op.Promote(ctx, core.PromoteRequest{RequestID: uuid.NewString(), RecordID: record.RecordID, ExpectedVersion: 2, GrantID: root.ID, EvidenceIDs: []string{evidence.ID}, Reason: "Independently supported fixture"}); err != nil {
 		t.Fatal(err)
 	}
+	edit.RequestID = uuid.NewString()
+	edit.ExpectedVersion = 3
+	invoke("cairn_edit", edit, "AUTHORITY_DENIED")
+	privileged := core.EditRequest{RequestID: uuid.NewString(), RecordID: mandatory.RecordID, ExpectedVersion: mandatory.Version, Draft: mandatory.Draft}
+	privileged.Draft.Kind = "note"
+	invoke("cairn_edit", privileged, "AUTHORITY_DENIED")
 	if err = json.Unmarshal(invoke("cairn_search", searchArgs{Query: "socketguide"}, ""), &view); err != nil {
 		t.Fatal(err)
 	}

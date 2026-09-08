@@ -206,6 +206,11 @@ note. Bounded source excerpts make that match visible while preserving full-body
 pulls and old index recompilation. Ranking and vocabulary misses remain; reduced
 pull cost and downstream task benefit have not been measured.
 
+[Ordinary MCP edits](verification/mcp-edit-2026-09-08.md) let a harness revise a
+pulled A note through the existing authenticated edit contract. This closes the
+MCP correction-interface gap exposed by the configuration procedure revision;
+independent agent review and automatic learning remain open.
+
 A subsequent [actual OpenCode tool experiment](verification/tool-retrieval-2026-09-08.md)
 recovered from the failed query and completed the source-answering task through
 index/pull. Pairing each result with a complete pull command removed three observed

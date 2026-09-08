@@ -52,7 +52,7 @@ def session(binary, root, environment, extra_args=(), generated=False):
         assert initialized['serverInfo']['name'] == 'cairn'
         send(dict(method='notifications/initialized', params={}))
         names = {t['name'] for t in request('tools/list', {})['tools']}
-        assert names == {'cairn_search', 'cairn_pull', 'cairn_pull_evidence', 'cairn_remember'}, names
+        assert names == {'cairn_search', 'cairn_pull', 'cairn_pull_evidence', 'cairn_remember', 'cairn_edit'}, names
         yield tool
     finally:
         process.stdin.close()
@@ -88,11 +88,25 @@ def check(binary, root, environment):
         missing = tool('cairn_pull', dict(view['index'][0]['pull_arguments'],
                        receipt_id=str(uuid.uuid4())), error=True)
         assert missing.startswith('NOT_FOUND:'), missing
+        record = pulled['selection']['record']
+        draft = {key: record[key] for key in ('kind', 'body', 'scope', 'claim_type',
+                 'sensitivity', 'pins', 'relations', 'attributed_producer', 'attempt_id', 'result_ref')
+                 if key in record}
+        draft['body'] = query + ': corrected stdio lesson with verification context'
+        edit = dict(request_id=str(uuid.uuid4()), record_id=record['record_id'],
+                    expected_version=record['version'], draft=draft)
+        revised = tool('cairn_edit', edit)
+        assert revised == dict(record_id=record['record_id'], version=2, request_id=edit['request_id'])
+        assert revised == tool('cairn_edit', edit) and 'body' not in revised
+        assert 'VERSION_CONFLICT' in tool('cairn_edit', dict(edit, request_id=str(uuid.uuid4())), error=True)
+        assert 'STALE_HANDLE' in tool('cairn_pull', view['index'][0]['pull_arguments'], error=True)
     with session(binary, root, environment, generated=True) as tool:
         view = tool('cairn_search', dict(query=query))
         assert 'context' not in view
         assert [entry['record_id'] for entry in view['index']] == [saved['record_id']]
+        corrected = tool('cairn_pull', view['index'][0]['pull_arguments'])['selection']['record']
+        assert corrected['version'] == 2 and corrected['body'] == draft['body']
     # Startup failures must not put a Cairn response envelope on the MCP stream.
     failed = subprocess.run([binary, 'mcp'], capture_output=True, text=True, env=environment, timeout=5)
     assert failed.returncode != 0 and failed.stdout == '' and failed.stderr
-    print('MCP stdio discovery, scoped capture/search/pull, retry, hosted filtering and clean EOF pass without HOME or client DB access')
+    print('MCP stdio capture/search/pull/edit, exact retries, stale-version refusal, fresh-session correction and hosted filtering pass without HOME or client DB access')
