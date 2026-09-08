@@ -53,5 +53,38 @@ receipt. This was a test construction correction, not a claimed production bug.
 
 These checks cover the provided host linkage and lifecycle contracts. They do
 not establish a native Striatum sealed-input route, actual model usefulness,
-host result correctness or task acceptance. Installation and a real linked host
-invocation remain pending separately.
+host result correctness or task acceptance.
+
+## Installed and actual host verification
+
+Code `b976ae7ae75d156bfb127decfba882e8babab3f7` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34223190908) and was built from
+a clean clone with Go1.25.0. The installed executable and running API share
+SHA-256 `8dab57688eaf612c803478d338c1a32f73387dcba7bca26018d27e3cef6467c4`.
+A cataloged backup preceded migration to025. Both services are active, and the
+existing observer receipt remains inspectable with an unusable client DSN.
+
+An actual Cairn `make build` then ran through the deployed observer wrapper. The
+host started a real wrapper process behind a startup pipe, recorded its spawn,
+and only then released it to prepare and launch the build. The wrapper retained
+attempt `10f74049-45b1-4b40-9d9f-1f9c792f518a`, receipt
+`8446d37b-f15e-4f16-960b-62da91e958ce`, and outcome
+`bbbbee94-2722-405f-a7b1-4e2355d2870d`. Its process exited0.
+
+The host checked the produced Go executable's clean source revision and recorded
+its digest as the corresponding terminal result. The API run report retained the
+exact attempt link and unknown task assessment. No model was invoked or native
+Striatum contract changed. Operational record-version digest remained unchanged;
+real host, receipt, context and outcome metadata were added. No synthetic
+operational memory fixture was created.
+
+Private local evidence: `/tmp/cairn-attempt-link-install-verification.json` and
+`/tmp/cairn-attempt-link-operational-verification.json`. The completed host script
+refuses a repeat when its intent exists; retained exact observation JSON supports
+recovery without starting another build.
+
+The design review used validated Pincite release
+`d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f`, corpus
+`corpus-2026-07-12-a11702cc9217`, final packet `pkt-8f278f9a19da479c`.
+Two evidence passes closed material identity, gate, preservation and consumer
+obligations; the typed local receipt retains nonmaterial omissions separately.

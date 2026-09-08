@@ -104,7 +104,10 @@ lets hosted observers inspect a possibly committed claim or outcome without
 reading protected memory reports or authorizing another launch. Optional
 [host attempt linkage](host-attempt-link.md) now validates an already observed
 attempt and reserves at most one wrapped execution across prepared receipts,
-while leaving host terminal and task acceptance observations independent. Actual Striatum
+while leaving host terminal and task acceptance observations independent. A
+[real linked Cairn build](verification/host-attempt-link-2026-09-08.md) now verifies
+spawn coordination, receipt/attempt correspondence and host result finalization
+through the deployed API. Actual Striatum
 integration must respect its sealed dispatch-input boundary, as described in
 [local API integration](local-api.md). No live Striatum lane is changed.
 
