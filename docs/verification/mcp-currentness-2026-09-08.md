@@ -36,3 +36,17 @@ and residual obligations. Repository precedence, existing behavior preservation
 and evidence before intervention informed this additive change. Remaining
 obligations concern broader boundary, interface and cost claims outside this
 change; the local decision record classifies each one.
+
+## Installed CLI
+
+Code commit `cda676257538b9f5b6ca415ea7caacd57ae5e243` passed
+[CI run 34277793158](https://github.com/halbritt/cairn/actions/runs/34277793158).
+Its clean build is installed at `~/.local/bin/cairn`, SHA-256
+`e2b67b2b7061db1991f2d25ebe58e5b61ab57d80f26137f4d6be3da7ed4ab3e9`.
+
+Against the running API, an independent stdio client verified the declared
+revision and task class in the returned context, retrieved the exact existing
+MCP procedure and checked an identical pull retry. It ran without HOME or a
+usable client database address and finished with clean EOF. The API remains on
+its earlier `3491974` build; no service restart, identity-profile change or
+database migration was needed. Both services remained active.

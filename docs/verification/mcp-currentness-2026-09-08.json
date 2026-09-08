@@ -148,5 +148,21 @@
   ],
   "limits": [
     "Synthetic applicability fixtures; no new model trial or measured task improvement."
-  ]
+  ],
+  "installation": {
+    "revision": "cda676257538b9f5b6ca415ea7caacd57ae5e243",
+    "ci_run": 34277793158,
+    "binary_sha256": "e2b67b2b7061db1991f2d25ebe58e5b61ab57d80f26137f4d6be3da7ed4ab3e9",
+    "api_pid": 3769161,
+    "api_binary_sha256": "b497f29194ebb42d4839ceffa0a58bff5a0ae33a68583913f4b41aca38d246e8",
+    "api_restarted": false,
+    "profiles_unchanged": true,
+    "checks": {
+      "context_forwarded": true,
+      "prior_procedure_exact": true,
+      "pull_retry_identical": true,
+      "clean_eof": true,
+      "without_home_or_client_database": true
+    }
+  }
 }
