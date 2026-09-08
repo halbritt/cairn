@@ -77,3 +77,24 @@ The implementation groups declared digests. Counts establish neither independent
 observations nor corroboration, cause, admission eligibility or ranking value.
 Membership can change between page requests. Large-store aggregation cost,
 general semantic similarity and actual weekly review burden remain unmeasured.
+
+## Local release
+
+Code commit `c34f2db9e0c2582223ce8238bb0d4adae66e43e4` passed
+[CI](https://github.com/halbritt/cairn/actions/runs/34235415720). A clean ordinary
+clone produced the installed Go 1.25.0 binary with `vcs.modified=false` and
+SHA-256 `4d79a3b788a66c9cf3527abc3fee9c9a0fee01c671026a1f756b0bd3fc5e8fec`.
+
+The dedicated store was backed up with the previously installed binary; dump
+catalog/hash checks passed. After installation and API restart, the running API
+executable matched the new binary. Existing observer status was readable with
+an unusable client database address, and operator docket/group reads worked.
+An absent group returned `NOT_FOUND`. The operational proposal table was empty,
+so this live check does not duplicate the populated disposable-store evidence.
+
+Schema remains 025. Record-version and proposal digests were unchanged; the
+backup added checkpoint metadata. No new operational task or memory fixture
+was created. Both services were active. Private release details and the backup
+pointer are retained in
+`/tmp/cairn-proposal-groups-install-verification.json` and
+`/tmp/cairn-pre-proposal-groups-backup.txt`.
