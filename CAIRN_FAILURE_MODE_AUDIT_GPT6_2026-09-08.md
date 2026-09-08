@@ -8,7 +8,7 @@ adjacent deletion dependencies. This is a bounded failure audit, not full design
 acceptance. The user delegated Cairn roadmap implementation and routine decisions.
 The audit itself traced source. Separate implementation work subsequently added
 regression probes in disposable PostgreSQL; no operational corruption or restore
-was performed. The full roadmap objective remains unchanged. This report describes the baseline; subsequent FMA-001 repair and verification are recorded in [the implementation result](docs/verification/deletion-dependencies-2026-09-08.md).
+was performed. The full roadmap objective remains unchanged. This report describes the baseline; subsequent FMA-001 repair and verification are recorded in [the implementation result](docs/verification/deletion-dependencies-2026-09-08.md). New authorized withdrawal reapplication and imported custody for FMA-002 are now covered by [the recovery implementation](docs/verification/recovery-reapplication-2026-09-08.md). It preserves missing original history rather than reconstructing events from hashes. FMA-003 restore admission remains open.
 
 Sources: `core/recovery.go`, `core/checkpoint.go`, `core/deletion.go`,
 `core/relations.go`, `core/retraction_preview.go`, `core/compiler.go`,

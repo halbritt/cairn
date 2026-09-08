@@ -72,3 +72,24 @@ schema-valid private decision receipt and five valid concept citations. The
 receipt retains 23 nonmaterial generic UI/ranking/interface/configuration,
 pre-release serving-parity and named-procedure obligations explicitly. Release
 verification is separate from this implementation receipt.
+
+## Installed release
+
+Code revision `0835e0c7a19ef94fbc0158dde6ab2d684443f330` passed
+[exact-commit CI](https://github.com/halbritt/cairn/actions/runs/34242253012).
+A clean ordinary clone produced the Go1.25.0 binary installed at
+`~/.local/bin/cairn`, SHA256
+`999bd3591273010319186a5f15f02fe45d03ed2c3221718ee49942c8607b6ef4`.
+The API was stopped for migration027 and restarted with that exact executable.
+Both local services are active.
+
+The previous binary first made a recovery export and a catalog/hash-verified
+backup. The upgraded store accepts that previous export and a fresh export with
+no audit or state gaps. Existing authenticated observer status works with an
+unusable client database address. Record-version and proposal fingerprints are
+unchanged; the new recovery application and imported custody tables are empty.
+No operational restriction reapplication, purge or new agent run was performed.
+The backup adds checkpoint metadata, so this is not a whole-database-unchanged
+claim. Private installation evidence is
+`/tmp/cairn-reapplication-install-verification.json`; the preupgrade backup pointer
+is `/tmp/cairn-pre-reapplication-backup.txt`.
