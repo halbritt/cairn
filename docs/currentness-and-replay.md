@@ -3,8 +3,9 @@
 An ordinary record may include `draft.pins`: `revision` (immutable Git object ID),
 `workspace_sha256`, `task_class`, `binding_id`, `capability_id`, `valid_from` and
 `valid_until`. Unspecified constraints are unpinned. Ordinary edits and B
-corrections cannot remove or change these constraints; scope broadening remains
-an unimplemented authority transition. A validity interval is half-open.
+corrections cannot remove or change these constraints; explicit
+[scope authorization](scope-authorization.md) can expand applicability through a
+separate C decision. A validity interval is half-open.
 
 Compile requests supply matching `context` labels. Missing context, mismatch and
 outside-validity omissions have fixed census buckets. A mandatory applicable C
@@ -12,6 +13,13 @@ instruction cannot be skipped by omitting required context. These are declared
 constraints; matching them does not certify physical workspace state. `search`
 and `run` accept revision/workspace/task-class/binding/capability flags. The wrapper
 uses one consistent tuple for compilation and run metadata.
+
+Hosted compilation checks applicability before refusing delivery of a private
+mandatory instruction. An expired, not-yet-effective or context-mismatched
+instruction does not block that run. Matching, unconstrained or unknown
+applicability still refuses when the destination cannot receive the instruction.
+Private candidates remain absent from hosted packages, omission counts and
+candidate explanations. See the [regression verification](verification/private-policy-applicability-2026-09-08.md).
 
 Semantic schema `cairn.semantic/3` seals these context pins. Optional JSON/CBOR
 fields preserve old v1/v2 decoding and seals. Legacy receipts remain historical;

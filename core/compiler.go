@@ -231,6 +231,10 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		// Private records are outside a hosted visibility domain: no hidden IDs,
 		// omission counts, or secret-bearing rejection explanations leave it.
 		if !dest.AllowLocal && record.Sensitivity == "local" {
+			switch applicabilityReason(record.Pins, req.Context, now) {
+			case "OUTSIDE_VALIDITY", "CURRENTNESS_MISMATCH":
+				continue
+			}
 			if record.Class == "C" {
 				var mandatory bool
 				var grantID string

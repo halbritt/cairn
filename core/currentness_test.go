@@ -78,6 +78,116 @@ func TestMandatoryApplicabilityCannotBeSkippedByOmittingPins(t *testing.T) {
 	}
 }
 
+func TestHostedMandatoryPolicyRespectsApplicability(t *testing.T) {
+	ctx := context.Background()
+	op, root := testOperator(t)
+	repo := uuid.NewString()
+	draft := projectNote(repo)
+	draft.Kind = "instruction"
+	draft.Body = "PRIVATE-POLICY-CANARY: inspect the legacy compiler"
+	draft.Pins = &Applicability{Revision: strings.Repeat("a", 40)}
+	_, err := op.Issue(ctx, IssueRequest{uuid.NewString(), draft, root.ID, true, false, "private-currentness", "Apply this private requirement only to the old revision"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Context: &ContextPins{Revision: strings.Repeat("b", 40)}, Purpose: "context", AvailableTokens: 64000}
+	p, err := op.Compile(ctx, req, Destination{"hosted", false})
+	if err != nil {
+		t.Fatalf("inapplicable private instruction blocked hosted compilation: %v", err)
+	}
+	if len(p.Semantic.Selected) != 0 {
+		t.Fatal("private instruction escaped to hosted context")
+	}
+	for _, count := range p.Semantic.Omitted {
+		if count != 0 {
+			t.Fatal("private policy omission census leaked")
+		}
+	}
+	explanation, err := op.Explain(ctx, p.ReceiptID)
+	if err != nil || len(explanation.Candidates) != 0 {
+		t.Fatalf("private policy candidate metadata leaked: %+v %v", explanation, err)
+	}
+	historical, err := op.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID})
+	if err != nil || historical.Seal != p.Seal {
+		t.Fatalf("private applicability replay: %v", err)
+	}
+	for _, pins := range []*ContextPins{nil, {Revision: draft.Pins.Revision}} {
+		req.RequestID = uuid.NewString()
+		req.Context = pins
+		_, err = op.Compile(ctx, req, Destination{"hosted", false})
+		requireCode(t, err, "POLICY_UNENFORCEABLE")
+	}
+}
+
+func TestHostedPolicyApplicabilityBoundaries(t *testing.T) {
+	ctx := context.Background()
+	op, root := testOperator(t)
+	past, future := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
+	for _, tc := range []struct {
+		name    string
+		pins    *Applicability
+		context *ContextPins
+		blocked bool
+	}{
+		{"expired", &Applicability{ValidUntil: &past}, nil, false},
+		{"not_yet_effective", &Applicability{ValidFrom: &future}, nil, false},
+		{"expired_missing_context", &Applicability{ValidUntil: &past, TaskClass: "build"}, nil, false},
+		{"workspace_mismatch", &Applicability{WorkspaceSHA256: strings.Repeat("a", 64)}, &ContextPins{WorkspaceSHA256: strings.Repeat("b", 64)}, false},
+		{"task_mismatch", &Applicability{TaskClass: "build"}, &ContextPins{TaskClass: "review"}, false},
+		{"binding_mismatch", &Applicability{BindingID: "old"}, &ContextPins{BindingID: "new"}, false},
+		{"capability_mismatch", &Applicability{CapabilityID: "old"}, &ContextPins{CapabilityID: "new"}, false},
+		{"task_missing", &Applicability{TaskClass: "build"}, &ContextPins{}, true},
+		{"task_match", &Applicability{TaskClass: "build"}, &ContextPins{TaskClass: "build"}, true},
+		{"unconstrained", nil, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := uuid.NewString()
+			draft := projectNote(repo)
+			draft.Kind = "instruction"
+			draft.Pins = tc.pins
+			draft.Body = "PRIVATE-POLICY-CANARY: inspect the legacy compiler"
+			private, err := op.Issue(ctx, IssueRequest{uuid.NewString(), draft, root.ID, true, true, "private-boundary", "Exercise private mandatory runtime policy applicability"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			publicDraft := projectNote(repo)
+			publicDraft.Sensitivity = "shareable"
+			public, err := op.Create(ctx, CreateRequest{uuid.NewString(), publicDraft})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, mode := range []string{"", "index"} {
+				req := CompileRequest{Mode: mode, RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Context: tc.context, Purpose: "context", AvailableTokens: 64000}
+				p, err := op.Compile(ctx, req, Destination{"hosted", false})
+				if tc.blocked {
+					requireCode(t, err, "POLICY_UNENFORCEABLE")
+					continue
+				}
+				if err != nil {
+					t.Fatalf("inapplicable private policy blocked mode %q: %v", mode, err)
+				}
+				rendered, err := p.Render()
+				if err != nil || strings.Contains(rendered, private.RecordID) || strings.Contains(rendered, "PRIVATE-POLICY-CANARY") || !strings.Contains(rendered, public.RecordID) {
+					t.Fatalf("hosted context privacy or public retrieval failed: %v", err)
+				}
+				for _, count := range p.Semantic.Omitted {
+					if count != 0 {
+						t.Fatal("private policy omission census leaked")
+					}
+				}
+				explanation, err := op.Explain(ctx, p.ReceiptID)
+				if err != nil || len(explanation.Candidates) != 1 || explanation.Candidates[0].RecordID != public.RecordID {
+					t.Fatalf("private candidate metadata leaked or public candidate missing: %+v %v", explanation, err)
+				}
+				historical, err := op.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID})
+				if err != nil || historical.Seal != p.Seal {
+					t.Fatalf("hosted mode %q replay: %v", mode, err)
+				}
+			}
+		})
+	}
+}
+
 func TestNonoverlappingInstructionPinsDoNotCreatePolicyConflict(t *testing.T) {
 	ctx := context.Background()
 	op, root := testOperator(t)

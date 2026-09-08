@@ -213,6 +213,11 @@ A [withdrawal regression](verification/withdrawal-after-forgetting-2026-09-08.md
 is repaired: an authorized retraction can retire an instruction after a cited
 source is forgotten, without creating a new citation or erasing the old link.
 
+A [hosted-policy regression](verification/private-policy-applicability-2026-09-08.md)
+is repaired: expired or context-mismatched private instructions no longer refuse
+unrelated hosted compilation. Applicable or unknown mandatory requirements still
+refuse; private candidates remain outside the hosted explanation and census.
+
 [Durable refusals](refusals.md) now preserve bounded metadata for compile policy
 failures and blocked demotion/retraction, without raw queries or record bodies.
 Transport repeats group by exact intent and status; failed observation writes
