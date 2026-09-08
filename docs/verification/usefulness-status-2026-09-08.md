@@ -15,6 +15,12 @@ their named behavior. They do not add a task-usefulness result to this table.
 Native Striatum ingress, broader harness contact, recurrence reduction, review
 burden reduction and general task benefit remain unestablished.
 
+The [documentation retrieval experiment](retrieval-quality-2026-09-08.md) measures
+one narrower improvement: an identifier expressed as separate words retrieves its
+answer first without depending on insertion order. Its frozen development workload
+also exposes vocabulary misses and unrelated results. This is retrieval evidence,
+not an additional accepted-task result.
+
 The next priority is a completed real task with prospective acceptance criteria
 and an appropriate no-memory/direct-context comparison, followed by a transfer
 case using a previously learned lesson. Hold the task, binding and budget fixed;

@@ -206,7 +206,7 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 
 func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation) (SemanticPackage, []candidate, error) {
 	queryDigest := sha256.Sum256([]byte(req.Query))
-	p := SemanticPackage{Context: req.Context, Schema: "cairn.semantic/3", Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/2", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
+	p := SemanticPackage{Context: req.Context, Schema: "cairn.semantic/3", Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/3", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
 	policy, err := policySnapshot(ctx, tx, req.Scope.Repo)
 	if err != nil {
 		return p, nil, err
@@ -578,11 +578,21 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 	return Package{id, nonce, seal, semantic}, nil
 }
 
-// Version 1 remains available for historical receipts. Version 2 excludes a
-// fixed English function-word set; domain tokens and negation remain meaningful.
+// Historical versions retain their token sets. Version 2 excludes fixed English
+// function words; version 3 also indexes words within underscore identifiers,
+// retaining the whole identifier for exact matches. Negation remains meaningful.
 func rankingTerms(text, version string) map[string]bool {
 	terms := lexical(text)
-	if version == "lexical-scope-recency/2" {
+	if version == "lexical-scope-recency/3" {
+		for word := range terms {
+			for _, part := range strings.Split(word, "_") {
+				if part != "" {
+					terms[part] = true
+				}
+			}
+		}
+	}
+	if version == "lexical-scope-recency/2" || version == "lexical-scope-recency/3" {
 		for _, word := range strings.Fields("a an and are as at be by for from in is it of on or that the this to was were with") {
 			delete(terms, word)
 		}

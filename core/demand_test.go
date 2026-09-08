@@ -75,7 +75,7 @@ func TestProtectedDemandExplanationAndRelevance(t *testing.T) {
 		}
 		if c.EscalationBlocked {
 			blocked++
-			if c.RecordID != matching.RecordID || c.LexicalMatches != 1 || c.Reason != "CLASS_NOT_CONSEQUENTIAL" {
+			if c.RecordID != matching.RecordID || c.LexicalMatches != 3 || c.Reason != "CLASS_NOT_CONSEQUENTIAL" {
 				t.Fatalf("wrong demand: %+v", c)
 			}
 		}

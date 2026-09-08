@@ -157,20 +157,20 @@ func TestRetractionPreviewIncludesTransitiveUsesAndInvalidatesOnTheirExposure(t 
 		t.Fatal(err)
 	}
 	middle := projectNote(repo)
-	middle.Body = "middle_dependency"
+	middle.Body = "middlemarker"
 	middle.Relations = []RecordRelation{{source.RecordID, 1, "derived_from"}}
 	mid, err := op.Create(ctx, CreateRequest{uuid.NewString(), middle})
 	if err != nil {
 		t.Fatal(err)
 	}
 	leaf := projectNote(repo)
-	leaf.Body = "leaf_dependency"
+	leaf.Body = "leafmarker"
 	leaf.Relations = []RecordRelation{{mid.RecordID, 1, "derived_from"}}
 	end, err := op.Create(ctx, CreateRequest{uuid.NewString(), leaf})
 	if err != nil {
 		t.Fatal(err)
 	}
-	query := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "leaf_dependency", Purpose: "context", AvailableTokens: 64000}
+	query := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "leafmarker", Purpose: "context", AvailableTokens: 64000}
 	if _, err = op.Compile(ctx, query, Destination{"local", true}); err != nil {
 		t.Fatal(err)
 	}

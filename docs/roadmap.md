@@ -139,6 +139,13 @@ native ingress, full task acceptance or general usefulness.
 
 ### 3. Make retrieval current and evaluate real history
 
+The [documentation retrieval experiment](verification/retrieval-quality-2026-09-08.md)
+freezes fifteen answerable questions and two no-answer controls before changing
+the ranker. Recognizing underscore-separated identifier words improves one
+measured case without lowering other labelled answer ranks. Vocabulary mismatch,
+common-word noise and recency ties still cause misses or unrelated results.
+This is retrieval development evidence; E4 task benefit and transfer remain open.
+
 | ID | Status | Work and acceptance evidence |
 | --- | --- | --- |
 | E1 — currentness and intent | partial | Add repository revision/dirty-workspace identity, validity, task type/phase, entities/files/error signatures and capability/binding pins. Define ordinary declared pin matching first; executable currentness predicates are an optional later experiment. Test obsolete guidance across code revisions and mismatched scopes. |

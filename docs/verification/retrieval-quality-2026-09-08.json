@@ -1,0 +1,2972 @@
+{
+  "schema": "cairn.retrieval-comparison/1",
+  "workload": "core/testdata/retrieval-quality.json",
+  "workload_sha256": "30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0",
+  "baseline_evaluator_commit": "aba227dddabf5f2c7c317e235c83bc6c36b33cf6",
+  "candidate_source_sha256": {
+    "core/compiler.go": "b8de3bf3d4fa726f2c64e9abd697a98c17c407714446946d6eb818ea0094785b",
+    "core/recompile.go": "724f1962895ac9b186b9b9affd552321c64368d15a4a705f59b18617c351ceb8"
+  },
+  "arms": [
+    {
+      "name": "baseline",
+      "ranking": "lexical-scope-recency/2",
+      "raw_report_sha256": "a58e6201bd6b355fd6358aa89ce709b9a5902bbe70e21dec76024a249f710452",
+      "results": [
+        {
+          "query_id": "storage-topic",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [],
+          "answer_rank": null,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 0,
+              "lexical_matches": 0,
+              "reason": "NO_LEXICAL_MATCH"
+            }
+          ],
+          "rendered_bytes": 879
+        },
+        {
+          "query_id": "storage-topic",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [],
+          "answer_rank": null,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 0,
+              "lexical_matches": 0,
+              "reason": "NO_LEXICAL_MATCH"
+            }
+          ],
+          "rendered_bytes": 894
+        },
+        {
+          "query_id": "storage-location",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "runner",
+            "scope",
+            "evidence",
+            "demand",
+            "status"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 7,
+              "lexical_matches": 2,
+              "reason": "OPTIONAL_BUDGET"
+            }
+          ],
+          "rendered_bytes": 6732
+        },
+        {
+          "query_id": "storage-location",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "runner",
+            "scope",
+            "evidence",
+            "demand",
+            "status",
+            "pulls",
+            "storage",
+            "delete",
+            "conflict",
+            "supersession",
+            "outcomes"
+          ],
+          "answer_rank": 7,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 7,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 4692
+        },
+        {
+          "query_id": "storage-env-exact",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "storage"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 1703
+        },
+        {
+          "query_id": "storage-env-exact",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "storage"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 1243
+        },
+        {
+          "query_id": "storage-env-words",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "delete",
+            "demand",
+            "status",
+            "runner",
+            "outcomes",
+            "storage"
+          ],
+          "answer_rank": 6,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 8,
+              "lexical_matches": 1,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6851
+        },
+        {
+          "query_id": "storage-env-words",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "delete",
+            "demand",
+            "status",
+            "runner",
+            "outcomes",
+            "evidence",
+            "pulls",
+            "storage"
+          ],
+          "answer_rank": 8,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 8,
+              "lexical_matches": 1,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3652
+        },
+        {
+          "query_id": "evidence-retry",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "evidence",
+            "pulls",
+            "scope",
+            "supersession",
+            "status"
+          ],
+          "answer_rank": 2,
+          "answer_evaluations": [
+            {
+              "id": "pulls",
+              "eligible_rank": 2,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 5960
+        },
+        {
+          "query_id": "evidence-retry",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "evidence",
+            "pulls",
+            "scope",
+            "supersession",
+            "status",
+            "currentness"
+          ],
+          "answer_rank": 2,
+          "answer_evaluations": [
+            {
+              "id": "pulls",
+              "eligible_rank": 2,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2971
+        },
+        {
+          "query_id": "revision",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "currentness",
+            "supersession",
+            "status"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "currentness",
+              "eligible_rank": 1,
+              "lexical_matches": 2,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 4062
+        },
+        {
+          "query_id": "revision",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "currentness",
+            "supersession",
+            "status"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "currentness",
+              "eligible_rank": 1,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 1926
+        },
+        {
+          "query_id": "tampering",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "evidence",
+            "demand",
+            "supersession",
+            "status",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "evidence",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6605
+        },
+        {
+          "query_id": "tampering",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "evidence",
+            "demand",
+            "supersession",
+            "status",
+            "currentness",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "evidence",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2965
+        },
+        {
+          "query_id": "citation-count",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "outcomes",
+            "demand",
+            "evidence",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "outcomes",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 5778
+        },
+        {
+          "query_id": "citation-count",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "outcomes",
+            "demand",
+            "evidence",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "outcomes",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2276
+        },
+        {
+          "query_id": "agent-launch",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "runner",
+            "supersession",
+            "evidence",
+            "currentness",
+            "status"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "runner",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6555
+        },
+        {
+          "query_id": "agent-launch",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "runner",
+            "supersession",
+            "evidence",
+            "currentness",
+            "status",
+            "outcomes"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "runner",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2968
+        },
+        {
+          "query_id": "lost-reply",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "status",
+            "demand",
+            "outcomes",
+            "currentness",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "status",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6654
+        },
+        {
+          "query_id": "lost-reply",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "status",
+            "demand",
+            "outcomes",
+            "currentness",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "status",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2619
+        },
+        {
+          "query_id": "replacement",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "scope",
+            "supersession",
+            "outcomes",
+            "pulls",
+            "delete",
+            "conflict"
+          ],
+          "answer_rank": 2,
+          "answer_evaluations": [
+            {
+              "id": "supersession",
+              "eligible_rank": 2,
+              "lexical_matches": 2,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6387
+        },
+        {
+          "query_id": "replacement",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "scope",
+            "supersession",
+            "outcomes",
+            "pulls",
+            "delete",
+            "demand",
+            "conflict",
+            "evidence",
+            "currentness"
+          ],
+          "answer_rank": 2,
+          "answer_evaluations": [
+            {
+              "id": "supersession",
+              "eligible_rank": 2,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3993
+        },
+        {
+          "query_id": "original-conflict",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "conflict",
+            "status",
+            "evidence",
+            "currentness",
+            "supersession"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "conflict",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6388
+        },
+        {
+          "query_id": "original-conflict",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "conflict",
+            "status",
+            "evidence",
+            "currentness",
+            "supersession"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "conflict",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2628
+        },
+        {
+          "query_id": "failure-lessons",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "demand",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 2486
+        },
+        {
+          "query_id": "failure-lessons",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "demand",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 1240
+        },
+        {
+          "query_id": "remove-note",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "delete",
+            "demand",
+            "currentness",
+            "conflict",
+            "supersession"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "delete",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6536
+        },
+        {
+          "query_id": "remove-note",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "delete",
+            "demand",
+            "currentness",
+            "conflict",
+            "supersession",
+            "status",
+            "runner",
+            "evidence"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "delete",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3647
+        },
+        {
+          "query_id": "broaden-scope",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "scope",
+            "demand",
+            "supersession",
+            "status",
+            "outcomes"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "scope",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6139
+        },
+        {
+          "query_id": "broaden-scope",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "scope",
+            "demand",
+            "supersession",
+            "status",
+            "outcomes",
+            "evidence",
+            "currentness"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "scope",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3316
+        },
+        {
+          "query_id": "absent-gpu",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "status",
+            "runner",
+            "evidence",
+            "pulls",
+            "storage",
+            "delete"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 6664
+        },
+        {
+          "query_id": "absent-gpu",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "status",
+            "runner",
+            "evidence",
+            "pulls",
+            "storage",
+            "scope",
+            "delete",
+            "demand",
+            "outcomes",
+            "currentness"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 4338
+        },
+        {
+          "query_id": "absent-price",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "status"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 1654
+        },
+        {
+          "query_id": "absent-price",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "status"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 1238
+        },
+        {
+          "query_id": "storage-topic",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [],
+          "answer_rank": null,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 0,
+              "lexical_matches": 0,
+              "reason": "NO_LEXICAL_MATCH"
+            }
+          ],
+          "rendered_bytes": 879
+        },
+        {
+          "query_id": "storage-topic",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [],
+          "answer_rank": null,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 0,
+              "lexical_matches": 0,
+              "reason": "NO_LEXICAL_MATCH"
+            }
+          ],
+          "rendered_bytes": 894
+        },
+        {
+          "query_id": "storage-location",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "runner",
+            "evidence",
+            "scope",
+            "storage",
+            "pulls",
+            "delete"
+          ],
+          "answer_rank": 4,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 4,
+              "lexical_matches": 2,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6849
+        },
+        {
+          "query_id": "storage-location",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "runner",
+            "evidence",
+            "scope",
+            "storage",
+            "pulls",
+            "status",
+            "demand",
+            "currentness",
+            "outcomes",
+            "supersession",
+            "conflict"
+          ],
+          "answer_rank": 4,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 4,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 4705
+        },
+        {
+          "query_id": "storage-env-exact",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "storage"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 1704
+        },
+        {
+          "query_id": "storage-env-exact",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "storage"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 1243
+        },
+        {
+          "query_id": "storage-env-words",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "storage",
+            "pulls",
+            "evidence",
+            "outcomes",
+            "runner",
+            "delete"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6811
+        },
+        {
+          "query_id": "storage-env-words",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "storage",
+            "pulls",
+            "evidence",
+            "outcomes",
+            "runner",
+            "status",
+            "demand",
+            "delete"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3652
+        },
+        {
+          "query_id": "evidence-retry",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "evidence",
+            "pulls",
+            "currentness",
+            "status",
+            "supersession"
+          ],
+          "answer_rank": 2,
+          "answer_evaluations": [
+            {
+              "id": "pulls",
+              "eligible_rank": 2,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6433
+        },
+        {
+          "query_id": "evidence-retry",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "evidence",
+            "pulls",
+            "currentness",
+            "status",
+            "supersession",
+            "scope"
+          ],
+          "answer_rank": 2,
+          "answer_evaluations": [
+            {
+              "id": "pulls",
+              "eligible_rank": 2,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2971
+        },
+        {
+          "query_id": "revision",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "currentness",
+            "status",
+            "supersession"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "currentness",
+              "eligible_rank": 1,
+              "lexical_matches": 2,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 4061
+        },
+        {
+          "query_id": "revision",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "currentness",
+            "status",
+            "supersession"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "currentness",
+              "eligible_rank": 1,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 1926
+        },
+        {
+          "query_id": "tampering",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "evidence",
+            "pulls",
+            "currentness",
+            "status",
+            "supersession"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "evidence",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6428
+        },
+        {
+          "query_id": "tampering",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "evidence",
+            "pulls",
+            "currentness",
+            "status",
+            "supersession",
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "evidence",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2965
+        },
+        {
+          "query_id": "citation-count",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "outcomes",
+            "pulls",
+            "evidence",
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "outcomes",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 5776
+        },
+        {
+          "query_id": "citation-count",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "outcomes",
+            "pulls",
+            "evidence",
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "outcomes",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2276
+        },
+        {
+          "query_id": "agent-launch",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "runner",
+            "currentness",
+            "evidence",
+            "supersession",
+            "outcomes"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "runner",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6693
+        },
+        {
+          "query_id": "agent-launch",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "runner",
+            "currentness",
+            "evidence",
+            "supersession",
+            "outcomes",
+            "status"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "runner",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2968
+        },
+        {
+          "query_id": "lost-reply",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "status",
+            "demand",
+            "pulls",
+            "currentness",
+            "outcomes"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "status",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6652
+        },
+        {
+          "query_id": "lost-reply",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "status",
+            "demand",
+            "pulls",
+            "currentness",
+            "outcomes"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "status",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2619
+        },
+        {
+          "query_id": "replacement",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "pulls",
+            "outcomes",
+            "supersession",
+            "scope",
+            "currentness",
+            "delete"
+          ],
+          "answer_rank": 3,
+          "answer_evaluations": [
+            {
+              "id": "supersession",
+              "eligible_rank": 3,
+              "lexical_matches": 2,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6861
+        },
+        {
+          "query_id": "replacement",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "pulls",
+            "outcomes",
+            "supersession",
+            "scope",
+            "currentness",
+            "evidence",
+            "conflict",
+            "demand",
+            "delete"
+          ],
+          "answer_rank": 3,
+          "answer_evaluations": [
+            {
+              "id": "supersession",
+              "eligible_rank": 3,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3993
+        },
+        {
+          "query_id": "original-conflict",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "evidence",
+            "status",
+            "conflict",
+            "currentness",
+            "supersession"
+          ],
+          "answer_rank": 3,
+          "answer_evaluations": [
+            {
+              "id": "conflict",
+              "eligible_rank": 3,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6387
+        },
+        {
+          "query_id": "original-conflict",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "evidence",
+            "status",
+            "conflict",
+            "currentness",
+            "supersession"
+          ],
+          "answer_rank": 3,
+          "answer_evaluations": [
+            {
+              "id": "conflict",
+              "eligible_rank": 3,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2628
+        },
+        {
+          "query_id": "failure-lessons",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "demand",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 2484
+        },
+        {
+          "query_id": "failure-lessons",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "demand",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 1240
+        },
+        {
+          "query_id": "remove-note",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "delete",
+            "demand",
+            "currentness",
+            "evidence",
+            "status"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "delete",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6737
+        },
+        {
+          "query_id": "remove-note",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "delete",
+            "demand",
+            "currentness",
+            "evidence",
+            "runner",
+            "status",
+            "supersession",
+            "conflict"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "delete",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3647
+        },
+        {
+          "query_id": "broaden-scope",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "currentness",
+            "evidence",
+            "outcomes",
+            "status",
+            "supersession"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [
+            {
+              "id": "scope",
+              "eligible_rank": 7,
+              "lexical_matches": 1,
+              "reason": "OPTIONAL_BUDGET"
+            }
+          ],
+          "rendered_bytes": 6345
+        },
+        {
+          "query_id": "broaden-scope",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "currentness",
+            "evidence",
+            "outcomes",
+            "status",
+            "supersession",
+            "demand",
+            "scope"
+          ],
+          "answer_rank": 7,
+          "answer_evaluations": [
+            {
+              "id": "scope",
+              "eligible_rank": 7,
+              "lexical_matches": 1,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3316
+        },
+        {
+          "query_id": "absent-gpu",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "storage",
+            "pulls",
+            "evidence",
+            "runner",
+            "status",
+            "delete"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 6665
+        },
+        {
+          "query_id": "absent-gpu",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "storage",
+            "pulls",
+            "evidence",
+            "runner",
+            "status",
+            "currentness",
+            "outcomes",
+            "demand",
+            "delete",
+            "scope"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 4338
+        },
+        {
+          "query_id": "absent-price",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "status"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 1654
+        },
+        {
+          "query_id": "absent-price",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "status"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 1238
+        }
+      ],
+      "summary": [
+        {
+          "insertion_order": "forward",
+          "mode": "body",
+          "answerable_questions": 15,
+          "answer_at_1": 10,
+          "answer_in_top_3": 12,
+          "answer_returned": 13,
+          "mean_reciprocal_rank": 0.7444444444444444,
+          "no_answer_controls": 2,
+          "no_answer_controls_returning_notes": 2
+        },
+        {
+          "insertion_order": "forward",
+          "mode": "index",
+          "answerable_questions": 15,
+          "answer_at_1": 10,
+          "answer_in_top_3": 12,
+          "answer_returned": 14,
+          "mean_reciprocal_rank": 0.7511904761904762,
+          "no_answer_controls": 2,
+          "no_answer_controls_returning_notes": 2
+        },
+        {
+          "insertion_order": "reverse",
+          "mode": "body",
+          "answerable_questions": 15,
+          "answer_at_1": 9,
+          "answer_in_top_3": 12,
+          "answer_returned": 13,
+          "mean_reciprocal_rank": 0.6944444444444444,
+          "no_answer_controls": 2,
+          "no_answer_controls_returning_notes": 2
+        },
+        {
+          "insertion_order": "reverse",
+          "mode": "index",
+          "answerable_questions": 15,
+          "answer_at_1": 9,
+          "answer_in_top_3": 12,
+          "answer_returned": 14,
+          "mean_reciprocal_rank": 0.703968253968254,
+          "no_answer_controls": 2,
+          "no_answer_controls_returning_notes": 2
+        }
+      ]
+    },
+    {
+      "name": "identifier-components",
+      "ranking": "lexical-scope-recency/3",
+      "raw_report_sha256": "6da25b7d76109f770ff28e531214473fe057b20ef9710c8b941dcdc48231aa8c",
+      "results": [
+        {
+          "query_id": "storage-topic",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [],
+          "answer_rank": null,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 0,
+              "lexical_matches": 0,
+              "reason": "NO_LEXICAL_MATCH"
+            }
+          ],
+          "rendered_bytes": 879
+        },
+        {
+          "query_id": "storage-topic",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [],
+          "answer_rank": null,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 0,
+              "lexical_matches": 0,
+              "reason": "NO_LEXICAL_MATCH"
+            }
+          ],
+          "rendered_bytes": 894
+        },
+        {
+          "query_id": "storage-location",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "runner",
+            "scope",
+            "evidence",
+            "demand",
+            "status"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 7,
+              "lexical_matches": 2,
+              "reason": "OPTIONAL_BUDGET"
+            }
+          ],
+          "rendered_bytes": 6732
+        },
+        {
+          "query_id": "storage-location",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "runner",
+            "scope",
+            "evidence",
+            "demand",
+            "status",
+            "pulls",
+            "storage",
+            "delete",
+            "conflict",
+            "supersession",
+            "outcomes"
+          ],
+          "answer_rank": 7,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 7,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 4692
+        },
+        {
+          "query_id": "storage-env-exact",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "storage",
+            "delete",
+            "demand",
+            "status",
+            "runner",
+            "outcomes"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6852
+        },
+        {
+          "query_id": "storage-env-exact",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "storage",
+            "delete",
+            "demand",
+            "status",
+            "runner",
+            "outcomes",
+            "evidence",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3652
+        },
+        {
+          "query_id": "storage-env-words",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "storage",
+            "delete",
+            "demand",
+            "status",
+            "runner",
+            "outcomes"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 2,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6852
+        },
+        {
+          "query_id": "storage-env-words",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "storage",
+            "delete",
+            "demand",
+            "status",
+            "runner",
+            "outcomes",
+            "evidence",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3652
+        },
+        {
+          "query_id": "evidence-retry",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "evidence",
+            "pulls",
+            "scope",
+            "supersession",
+            "status"
+          ],
+          "answer_rank": 2,
+          "answer_evaluations": [
+            {
+              "id": "pulls",
+              "eligible_rank": 2,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 5960
+        },
+        {
+          "query_id": "evidence-retry",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "evidence",
+            "pulls",
+            "scope",
+            "supersession",
+            "status",
+            "currentness"
+          ],
+          "answer_rank": 2,
+          "answer_evaluations": [
+            {
+              "id": "pulls",
+              "eligible_rank": 2,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2971
+        },
+        {
+          "query_id": "revision",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "currentness",
+            "supersession",
+            "status"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "currentness",
+              "eligible_rank": 1,
+              "lexical_matches": 2,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 4062
+        },
+        {
+          "query_id": "revision",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "currentness",
+            "supersession",
+            "status"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "currentness",
+              "eligible_rank": 1,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 1926
+        },
+        {
+          "query_id": "tampering",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "evidence",
+            "demand",
+            "supersession",
+            "status",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "evidence",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6605
+        },
+        {
+          "query_id": "tampering",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "evidence",
+            "demand",
+            "supersession",
+            "status",
+            "currentness",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "evidence",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2965
+        },
+        {
+          "query_id": "citation-count",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "outcomes",
+            "demand",
+            "evidence",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "outcomes",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 5778
+        },
+        {
+          "query_id": "citation-count",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "outcomes",
+            "demand",
+            "evidence",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "outcomes",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2276
+        },
+        {
+          "query_id": "agent-launch",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "runner",
+            "supersession",
+            "evidence",
+            "currentness",
+            "status"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "runner",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6555
+        },
+        {
+          "query_id": "agent-launch",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "runner",
+            "supersession",
+            "evidence",
+            "currentness",
+            "status",
+            "outcomes"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "runner",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2968
+        },
+        {
+          "query_id": "lost-reply",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "status",
+            "demand",
+            "outcomes",
+            "currentness",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "status",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6654
+        },
+        {
+          "query_id": "lost-reply",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "status",
+            "demand",
+            "outcomes",
+            "currentness",
+            "pulls"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "status",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2619
+        },
+        {
+          "query_id": "replacement",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "scope",
+            "supersession",
+            "outcomes",
+            "pulls",
+            "delete",
+            "conflict"
+          ],
+          "answer_rank": 2,
+          "answer_evaluations": [
+            {
+              "id": "supersession",
+              "eligible_rank": 2,
+              "lexical_matches": 2,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6387
+        },
+        {
+          "query_id": "replacement",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "scope",
+            "supersession",
+            "outcomes",
+            "pulls",
+            "delete",
+            "demand",
+            "conflict",
+            "evidence",
+            "currentness"
+          ],
+          "answer_rank": 2,
+          "answer_evaluations": [
+            {
+              "id": "supersession",
+              "eligible_rank": 2,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3993
+        },
+        {
+          "query_id": "original-conflict",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "conflict",
+            "status",
+            "evidence",
+            "currentness",
+            "supersession"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "conflict",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6388
+        },
+        {
+          "query_id": "original-conflict",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "conflict",
+            "status",
+            "evidence",
+            "currentness",
+            "supersession"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "conflict",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2628
+        },
+        {
+          "query_id": "failure-lessons",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "demand",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 2486
+        },
+        {
+          "query_id": "failure-lessons",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "demand",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 1240
+        },
+        {
+          "query_id": "remove-note",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "delete",
+            "demand",
+            "currentness",
+            "conflict",
+            "supersession"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "delete",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6536
+        },
+        {
+          "query_id": "remove-note",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "delete",
+            "demand",
+            "currentness",
+            "conflict",
+            "supersession",
+            "status",
+            "runner",
+            "evidence"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "delete",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3647
+        },
+        {
+          "query_id": "broaden-scope",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "scope",
+            "demand",
+            "supersession",
+            "status",
+            "outcomes"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "scope",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6139
+        },
+        {
+          "query_id": "broaden-scope",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "scope",
+            "demand",
+            "supersession",
+            "status",
+            "outcomes",
+            "evidence",
+            "currentness"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "scope",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3316
+        },
+        {
+          "query_id": "absent-gpu",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "status",
+            "runner",
+            "evidence",
+            "pulls",
+            "storage",
+            "delete"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 6665
+        },
+        {
+          "query_id": "absent-gpu",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "status",
+            "runner",
+            "evidence",
+            "pulls",
+            "storage",
+            "scope",
+            "delete",
+            "demand",
+            "outcomes",
+            "currentness"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 4338
+        },
+        {
+          "query_id": "absent-price",
+          "insertion_order": "forward",
+          "mode": "body",
+          "returned": [
+            "status"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 1654
+        },
+        {
+          "query_id": "absent-price",
+          "insertion_order": "forward",
+          "mode": "index",
+          "returned": [
+            "status"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 1238
+        },
+        {
+          "query_id": "storage-topic",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [],
+          "answer_rank": null,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 0,
+              "lexical_matches": 0,
+              "reason": "NO_LEXICAL_MATCH"
+            }
+          ],
+          "rendered_bytes": 879
+        },
+        {
+          "query_id": "storage-topic",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [],
+          "answer_rank": null,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 0,
+              "lexical_matches": 0,
+              "reason": "NO_LEXICAL_MATCH"
+            }
+          ],
+          "rendered_bytes": 894
+        },
+        {
+          "query_id": "storage-location",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "runner",
+            "evidence",
+            "scope",
+            "storage",
+            "pulls",
+            "delete"
+          ],
+          "answer_rank": 4,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 4,
+              "lexical_matches": 2,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6850
+        },
+        {
+          "query_id": "storage-location",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "runner",
+            "evidence",
+            "scope",
+            "storage",
+            "pulls",
+            "status",
+            "demand",
+            "currentness",
+            "outcomes",
+            "supersession",
+            "conflict"
+          ],
+          "answer_rank": 4,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 4,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 4705
+        },
+        {
+          "query_id": "storage-env-exact",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "storage",
+            "pulls",
+            "evidence",
+            "outcomes",
+            "runner",
+            "delete"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6811
+        },
+        {
+          "query_id": "storage-env-exact",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "storage",
+            "pulls",
+            "evidence",
+            "outcomes",
+            "runner",
+            "status",
+            "demand",
+            "delete"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3652
+        },
+        {
+          "query_id": "storage-env-words",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "storage",
+            "pulls",
+            "evidence",
+            "outcomes",
+            "runner",
+            "delete"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 2,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6811
+        },
+        {
+          "query_id": "storage-env-words",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "storage",
+            "pulls",
+            "evidence",
+            "outcomes",
+            "runner",
+            "status",
+            "demand",
+            "delete"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "storage",
+              "eligible_rank": 1,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3652
+        },
+        {
+          "query_id": "evidence-retry",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "evidence",
+            "pulls",
+            "currentness",
+            "status",
+            "supersession"
+          ],
+          "answer_rank": 2,
+          "answer_evaluations": [
+            {
+              "id": "pulls",
+              "eligible_rank": 2,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6433
+        },
+        {
+          "query_id": "evidence-retry",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "evidence",
+            "pulls",
+            "currentness",
+            "status",
+            "supersession",
+            "scope"
+          ],
+          "answer_rank": 2,
+          "answer_evaluations": [
+            {
+              "id": "pulls",
+              "eligible_rank": 2,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2971
+        },
+        {
+          "query_id": "revision",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "currentness",
+            "status",
+            "supersession"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "currentness",
+              "eligible_rank": 1,
+              "lexical_matches": 2,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 4061
+        },
+        {
+          "query_id": "revision",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "currentness",
+            "status",
+            "supersession"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "currentness",
+              "eligible_rank": 1,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 1926
+        },
+        {
+          "query_id": "tampering",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "evidence",
+            "pulls",
+            "currentness",
+            "status",
+            "supersession"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "evidence",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6428
+        },
+        {
+          "query_id": "tampering",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "evidence",
+            "pulls",
+            "currentness",
+            "status",
+            "supersession",
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "evidence",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2965
+        },
+        {
+          "query_id": "citation-count",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "outcomes",
+            "pulls",
+            "evidence",
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "outcomes",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 5778
+        },
+        {
+          "query_id": "citation-count",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "outcomes",
+            "pulls",
+            "evidence",
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "outcomes",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2276
+        },
+        {
+          "query_id": "agent-launch",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "runner",
+            "currentness",
+            "evidence",
+            "supersession",
+            "outcomes"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "runner",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6693
+        },
+        {
+          "query_id": "agent-launch",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "runner",
+            "currentness",
+            "evidence",
+            "supersession",
+            "outcomes",
+            "status"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "runner",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2968
+        },
+        {
+          "query_id": "lost-reply",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "status",
+            "demand",
+            "pulls",
+            "currentness",
+            "outcomes"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "status",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6653
+        },
+        {
+          "query_id": "lost-reply",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "status",
+            "demand",
+            "pulls",
+            "currentness",
+            "outcomes"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "status",
+              "eligible_rank": 1,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2619
+        },
+        {
+          "query_id": "replacement",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "pulls",
+            "outcomes",
+            "supersession",
+            "scope",
+            "currentness",
+            "delete"
+          ],
+          "answer_rank": 3,
+          "answer_evaluations": [
+            {
+              "id": "supersession",
+              "eligible_rank": 3,
+              "lexical_matches": 2,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6862
+        },
+        {
+          "query_id": "replacement",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "pulls",
+            "outcomes",
+            "supersession",
+            "scope",
+            "currentness",
+            "evidence",
+            "conflict",
+            "demand",
+            "delete"
+          ],
+          "answer_rank": 3,
+          "answer_evaluations": [
+            {
+              "id": "supersession",
+              "eligible_rank": 3,
+              "lexical_matches": 2,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3993
+        },
+        {
+          "query_id": "original-conflict",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "evidence",
+            "status",
+            "conflict",
+            "currentness",
+            "supersession"
+          ],
+          "answer_rank": 3,
+          "answer_evaluations": [
+            {
+              "id": "conflict",
+              "eligible_rank": 3,
+              "lexical_matches": 3,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6387
+        },
+        {
+          "query_id": "original-conflict",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "evidence",
+            "status",
+            "conflict",
+            "currentness",
+            "supersession"
+          ],
+          "answer_rank": 3,
+          "answer_evaluations": [
+            {
+              "id": "conflict",
+              "eligible_rank": 3,
+              "lexical_matches": 3,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 2628
+        },
+        {
+          "query_id": "failure-lessons",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "demand",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 2486
+        },
+        {
+          "query_id": "failure-lessons",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "demand"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "demand",
+              "eligible_rank": 1,
+              "lexical_matches": 1,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 1240
+        },
+        {
+          "query_id": "remove-note",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "delete",
+            "demand",
+            "currentness",
+            "evidence",
+            "status"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "delete",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "SELECTED"
+            }
+          ],
+          "rendered_bytes": 6738
+        },
+        {
+          "query_id": "remove-note",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "delete",
+            "demand",
+            "currentness",
+            "evidence",
+            "runner",
+            "status",
+            "supersession",
+            "conflict"
+          ],
+          "answer_rank": 1,
+          "answer_evaluations": [
+            {
+              "id": "delete",
+              "eligible_rank": 1,
+              "lexical_matches": 4,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3647
+        },
+        {
+          "query_id": "broaden-scope",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "currentness",
+            "evidence",
+            "outcomes",
+            "status",
+            "supersession"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [
+            {
+              "id": "scope",
+              "eligible_rank": 7,
+              "lexical_matches": 1,
+              "reason": "OPTIONAL_BUDGET"
+            }
+          ],
+          "rendered_bytes": 6345
+        },
+        {
+          "query_id": "broaden-scope",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "currentness",
+            "evidence",
+            "outcomes",
+            "status",
+            "supersession",
+            "demand",
+            "scope"
+          ],
+          "answer_rank": 7,
+          "answer_evaluations": [
+            {
+              "id": "scope",
+              "eligible_rank": 7,
+              "lexical_matches": 1,
+              "reason": "INDEXED"
+            }
+          ],
+          "rendered_bytes": 3316
+        },
+        {
+          "query_id": "absent-gpu",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "storage",
+            "pulls",
+            "evidence",
+            "runner",
+            "status",
+            "delete"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 6665
+        },
+        {
+          "query_id": "absent-gpu",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "storage",
+            "pulls",
+            "evidence",
+            "runner",
+            "status",
+            "currentness",
+            "outcomes",
+            "demand",
+            "delete",
+            "scope"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 4338
+        },
+        {
+          "query_id": "absent-price",
+          "insertion_order": "reverse",
+          "mode": "body",
+          "returned": [
+            "status"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 1654
+        },
+        {
+          "query_id": "absent-price",
+          "insertion_order": "reverse",
+          "mode": "index",
+          "returned": [
+            "status"
+          ],
+          "answer_rank": null,
+          "answer_evaluations": [],
+          "rendered_bytes": 1238
+        }
+      ],
+      "summary": [
+        {
+          "insertion_order": "forward",
+          "mode": "body",
+          "answerable_questions": 15,
+          "answer_at_1": 11,
+          "answer_in_top_3": 13,
+          "answer_returned": 13,
+          "mean_reciprocal_rank": 0.8,
+          "no_answer_controls": 2,
+          "no_answer_controls_returning_notes": 2
+        },
+        {
+          "insertion_order": "forward",
+          "mode": "index",
+          "answerable_questions": 15,
+          "answer_at_1": 11,
+          "answer_in_top_3": 13,
+          "answer_returned": 14,
+          "mean_reciprocal_rank": 0.8095238095238095,
+          "no_answer_controls": 2,
+          "no_answer_controls_returning_notes": 2
+        },
+        {
+          "insertion_order": "reverse",
+          "mode": "body",
+          "answerable_questions": 15,
+          "answer_at_1": 9,
+          "answer_in_top_3": 12,
+          "answer_returned": 13,
+          "mean_reciprocal_rank": 0.6944444444444444,
+          "no_answer_controls": 2,
+          "no_answer_controls_returning_notes": 2
+        },
+        {
+          "insertion_order": "reverse",
+          "mode": "index",
+          "answerable_questions": 15,
+          "answer_at_1": 9,
+          "answer_in_top_3": 12,
+          "answer_returned": 14,
+          "mean_reciprocal_rank": 0.703968253968254,
+          "no_answer_controls": 2,
+          "no_answer_controls_returning_notes": 2
+        }
+      ]
+    }
+  ]
+}

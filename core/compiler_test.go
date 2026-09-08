@@ -30,7 +30,7 @@ func TestReusableScopeSealsAndBudgets(t *testing.T) {
 		t.Fatalf("explanation: %+v %v", explanation, err)
 	}
 	chosen := explanation.Candidates[0]
-	if chosen.Reason != "SELECTED" || chosen.Rank != 1 || chosen.Cost <= 0 || chosen.LexicalMatches != 1 || chosen.RecordID != r.RecordID {
+	if chosen.Reason != "SELECTED" || chosen.Rank != 1 || chosen.Cost <= 0 || chosen.LexicalMatches != 3 || chosen.RecordID != r.RecordID {
 		t.Fatalf("selection features: %+v", chosen)
 	}
 	request.RequestID = uuid.NewString()
@@ -302,6 +302,10 @@ func TestCommonWordsDoNotCreateRelevanceOrBlockedDemand(t *testing.T) {
 	p, err := s.Compile(ctx, req, Destination{"local", true})
 	if err != nil || len(p.Semantic.Selected) != 0 {
 		t.Fatalf("common words created relevance: %+v %v", p, err)
+	}
+	replayed, err := s.Recompile(ctx, RecompileRequest{p.ReceiptID, req.Query})
+	if err != nil || replayed.Seal != p.Seal {
+		t.Fatalf("common-word omission did not recompile: %v", err)
 	}
 	req.RequestID = uuid.NewString()
 	req.Purpose = "planning"

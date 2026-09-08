@@ -56,4 +56,12 @@ separately distinguish original-time availability from later recurrence scenario
 Lexical ranker v2 removes a fixed set of English function words. Domain tokens
 and negation are preserved. A nonempty query containing only those function words
 selects no optional advice and generates no blocked promotion demand. An explicitly
-empty query remains an unfiltered scoped browse. Ranker v1 is retained for history.
+empty query remains an unfiltered scoped browse.
+
+New retrievals use ranker v3. It also recognizes nonempty words separated by
+underscores: `CAIRN_HOME` matches `cairn home` or `home`, while retaining the whole
+identifier as an additional exact-match term. Partial identifier matches can
+return more notes. Versions 1 and 2 retain their original behavior for historical
+recompilation. This does not add synonyms, stemming or semantic search; the
+[documentation retrieval experiment](verification/retrieval-quality-2026-09-08.md)
+records the measured improvement and remaining misses.
