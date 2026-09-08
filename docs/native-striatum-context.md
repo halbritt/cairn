@@ -165,9 +165,11 @@ already observed host run. Also, current `ClaimRun` checks restore generation,
 policy and payload availability but does not fully re-evaluate selected-record
 eligibility at the inspected base. The subsequent [launch freshness check](launch-freshness.md)
 now reuses compiler eligibility in a serializable snapshot while preserving the
-exact package and single-launch rules. Staged consumption of the exact retained
-receipt remains an implementation prerequisite. Calling the existing wrapper
-and silently using its new package would not preserve the ECR pin.
+exact package and single-launch rules. [Retained execution](retained-execution.md)
+now supplies the Cairn-side staged consumption path: it loads the observer-owned
+receipt and expected seal, verifies run declarations and executes without
+recompiling. Native acquisition, admitted ECR resolution and adapter/host
+correspondence still need implementation under accepted Striatum contracts.
 
 Advance those prerequisites and the accepted contract path under the existing
 captured subject. Do not create another opening request, rewrite these drafts

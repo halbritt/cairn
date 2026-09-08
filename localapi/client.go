@@ -119,6 +119,17 @@ func (c *Client) BindRun(ctx context.Context, req core.RunBindingRequest) (resul
 	err = c.Call(ctx, "bind-run", req, &result)
 	return
 }
+
+func (c *Client) RunPackage(ctx context.Context, req core.RunPackageRequest, dest core.Destination) (core.Package, error) {
+	var result core.Package
+	if err := c.Call(ctx, "run-package", req, &result); err != nil {
+		return core.Package{}, err
+	}
+	if result.Semantic.Destination != dest {
+		return core.Package{}, &core.Error{Code: "AUTHORITY_DENIED", Message: "run destination differs from the authenticated API profile"}
+	}
+	return result, nil
+}
 func (c *Client) LinkRunRetrieval(ctx context.Context, req core.RunRetrievalRequest) (result core.RunRetrieval, err error) {
 	err = c.Call(ctx, "link-run-retrieval", req, &result)
 	return

@@ -90,7 +90,9 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 	repo := f.String("repo", defaultRepo(), "repository identity")
 	directory := f.String("dir", defaultRepo(), "working directory")
 	prompt := f.String("prompt", "", "task prompt")
-	query := f.String("query", "", "retrieval query (default prompt)")
+	query := f.String("query", "", "retrieval query (default prompt for fresh compilation)")
+	receipt := f.String("receipt-id", "", "execute this retained receipt instead of compiling")
+	seal := f.String("seal", "", "expected seal of the retained receipt")
 	carrier := f.String("carrier", "stdin", "input carrier")
 	dest := f.String("destination", "local", "destination")
 	tokens := f.Int("tokens", 32000, "available input room reserved for memory")
@@ -109,7 +111,16 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 	if f.NArg() == 0 {
 		return runner.Result{}, invalid("run requires -- COMMAND ARGS...")
 	}
-	if *query == "" {
+	retainedRequested := false
+	f.Visit(func(fl *flag.Flag) {
+		if fl.Name == "receipt-id" || fl.Name == "seal" {
+			retainedRequested = true
+		}
+	})
+	if retainedRequested && (*receipt == "" || *seal == "") {
+		return runner.Result{}, invalid("retained execution requires both --receipt-id and --seal")
+	}
+	if *query == "" && !retainedRequested {
 		*query = *prompt
 	}
 	command := f.Args()
@@ -121,6 +132,9 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 		return runner.Result{}, err
 	}
 	req := runner.Request{AttemptID: *attempt, Compile: core.CompileRequest{RequestID: *request, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: *query, Purpose: "context", AvailableTokens: *tokens}, Destination: core.Destination{Name: *dest, AllowLocal: *dest == "local"}, Command: command, Directory: *directory, Carrier: *carrier, Prompt: *prompt, Timeout: *timeout, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability, Revision: *revision, WorkspaceSHA256: *workspace, ArtifactDirectory: filepath.Join(artifacts, "runs")}
+	if retainedRequested {
+		req.Retained = &core.RunPackageRequest{ReceiptID: *receipt, Seal: *seal}
+	}
 	result, err := runner.Run(ctx, s, req, os.Stdout, os.Stderr)
 	if err != nil && core.Code(err) == "STORE_ERROR" && result.ReceiptID != "" {
 		err = &core.Error{Code: "RUN_FAILED", Message: "wrapped task failed; inspect process_state and the run artifact directory", Cause: err}

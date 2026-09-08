@@ -133,6 +133,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveJSON(w, r, func(ctx context.Context, req core.CompileRequest) (core.Package, error) {
 			return c.store.Compile(ctx, req, c.destination)
 		})
+	case "/v1/run-package":
+		serveJSON(w, r, func(ctx context.Context, req core.RunPackageRequest) (core.Package, error) {
+			return c.store.RunPackage(ctx, req, c.destination)
+		})
 	case "/v1/usage":
 		serveJSON(w, r, c.store.RecordUsage)
 	case "/v1/usage-coverage":

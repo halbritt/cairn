@@ -25,6 +25,7 @@ import (
 type Request struct {
 	AttemptID         string
 	Compile           core.CompileRequest
+	Retained          *core.RunPackageRequest
 	Destination       core.Destination
 	Command           []string
 	Directory         string
@@ -53,6 +54,7 @@ type Result struct {
 type Store interface {
 	artifacts.ContextRegistrar
 	Compile(context.Context, core.CompileRequest, core.Destination) (core.Package, error)
+	RunPackage(context.Context, core.RunPackageRequest, core.Destination) (core.Package, error)
 	BindRun(context.Context, core.RunBindingRequest) (core.Observation, error)
 	ClaimRun(context.Context, string) error
 	RecordDelivery(context.Context, core.DeliveryRequest) (core.Observation, error)
@@ -81,11 +83,30 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "compile context must match declared run metadata"}
 	}
 	req.Compile.Context = &pins
-	pkg, err := store.Compile(ctx, req.Compile, req.Destination)
+	var pkg core.Package
+	var err error
+	if req.Retained == nil {
+		pkg, err = store.Compile(ctx, req.Compile, req.Destination)
+	} else {
+		pkg, err = store.RunPackage(ctx, *req.Retained, req.Destination)
+	}
 	if err != nil {
 		return Result{}, err
 	}
 	result := Result{AttemptID: req.AttemptID, ReceiptID: pkg.ReceiptID, Seal: pkg.Seal, ProcessState: "unknown", Artifacts: filepath.Join(req.ArtifactDirectory, pkg.ReceiptID)}
+	if req.Retained != nil {
+		query := req.Compile.Query
+		if pkg.Semantic.Schema != "cairn.semantic/1" {
+			digest := sha256.Sum256([]byte(query))
+			query = "sha256:" + hex.EncodeToString(digest[:])
+		}
+		if pkg.ReceiptID != req.Retained.ReceiptID || pkg.Seal != req.Retained.Seal || pkg.Semantic.Mode != "" ||
+			pkg.Semantic.Destination != req.Destination || pkg.Semantic.Scope != req.Compile.Scope ||
+			pkg.Semantic.Context == nil || *pkg.Semantic.Context != pins || pkg.Semantic.Query != query ||
+			pkg.Semantic.Purpose != req.Compile.Purpose || pkg.Semantic.AvailableTokens != req.Compile.AvailableTokens {
+			return result, &core.Error{Code: "INVALID_REQUEST", Message: "retained package must match the receipt, seal, scope, query, context, purpose and memory budget of this run"}
+		}
+	}
 	encodedCommand, err := json.Marshal(req.Command)
 	if err != nil {
 		return result, err

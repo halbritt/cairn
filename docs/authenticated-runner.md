@@ -34,6 +34,10 @@ acceptance. Use stable task/run IDs from the host and retain the receipt beside
 its own attempt identity. If the host has already recorded that exact attempt,
 use [host attempt linkage](host-attempt-link.md) with `--attempt-id ATTEMPT_UUID`.
 
+For memory captured before dispatch, use [retained execution](retained-execution.md)
+with `--receipt-id` and `--seal`. It consumes the exact owned package without
+recompiling, while preserving the same launch and outcome checks.
+
 OpenCode still requires `--destination hosted`, even when its current provider
 is local. The API profile must also be configured `hosted`. The wrapper compares
 the compiled destination against the declared run destination before launch;
