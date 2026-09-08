@@ -27,10 +27,12 @@ specific task/run identity:
 
 ```sh
 cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" search \
-  --repo "$PWD" --task TASK_ID --run RUN_ID 'relevant task terms'
+  --repo "$HOME/git/cairn" --task TASK_ID --run RUN_ID 'relevant task terms'
 ```
 
-Choose actual task/run identifiers and reuse them for that work. Inspect relevant
+This profile is bound to the canonical `$HOME/git/cairn` repository identity;
+keep that `--repo` value when working in another worktree. Choose actual task/run
+identifiers and reuse them for that work. Inspect relevant
 bodies with the returned `pull_command`; A records are fallible notes, so verify
 current source before applying them. A missing profile or unavailable service
 does not block work. Never substitute a local-destination profile when its result

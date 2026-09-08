@@ -46,3 +46,11 @@ the original results preserved. This is a shipped usability repair, not an
 accepted model-task or memory-benefit result. Avoid repeating this weakly related
 lesson trial; the next real build needs relevant memory, a complete usable
 workspace and observed tool contact.
+
+[Authenticated remember](agent-remember-2026-09-08.md) adds a usable save/retrieve
+path for ordinary agents without create-request JSON or operator database access.
+It is installed with a scoped hosted profile. This Codex session saved selected,
+shareable A notes and read them through the operational API; retries, exact stdin
+text, cross-writer retrieval and local-content exclusion also passed real API/DB
+checks. These are actual manual operations and deployed capability, not proof of
+independent cross-model help or causal memory benefit.

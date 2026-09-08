@@ -21,6 +21,13 @@ CLI fix, with corrected unknown/binding-quota assessments, but no transfer or
 completed model-task result. Use task-relevant memory in the next real build
 and verify actual tool contact before drawing a benefit conclusion.
 
+[Authenticated note capture](verification/agent-remember-2026-09-08.md) is now
+installed: `agent remember` and explicit stdin use the existing create API, with
+shared operator parsing. A scoped hosted-agent profile and repository guidance
+support everyday use. This coding session saved and retrieved selected A notes
+through the operational service; that is manual use, not demonstrated automatic
+learning, independent cross-model benefit or native Striatum ingress.
+
 Status: **open**, **partial**, **implemented/tested**. Completion means the stated
 acceptance evidence exists; deployment and measured usefulness are separate.
 Items can be delivered in smaller commits without marking the whole item complete.
