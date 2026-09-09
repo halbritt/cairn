@@ -1,0 +1,86 @@
+{
+  "schema": "cairn.preview-locations-verification/1",
+  "date": "2026-09-09",
+  "baseline_source_bytes": 61636,
+  "source_schema": "cairn.semantic/8",
+  "previous_binary_revision": "9fb278b025e1a0897e0efcc8282831e5f738d68a",
+  "previous_binary_sha256": "c912496c4fd12b75f9996367bfdd7fb8e7ca8701877c6a6711d137e62ec9b66b",
+  "checks": {
+    "long_note_location_to_pull": true,
+    "stale_cached_pull_refused": true,
+    "instruction_location_omitted": true,
+    "historical_recompile_exact": true,
+    "old_body_compile_retry_exact": true,
+    "old_index_compile_retry": "STALE_PACKAGE",
+    "old_semantic_ready_recompile_exact": true,
+    "old_cached_pull_retry_exact": true,
+    "cli_mcp_native_opencode": true,
+    "full_postgres_race": true,
+    "go_python_vet": true,
+    "fuzz_executions": 472772
+  },
+  "doctrine": {
+    "packet_id": "pkt-43c2751e7849208c",
+    "packet_content_sha256": "43c2751e7849208c74cf711f35f2bd9deb39cc39a054f4418e9918b5575dffed",
+    "nonmaterial_residuals": 7
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-preview-location-baseline.log",
+      "sha256": "eb75f53dc53e7d910186aff96ac9ee8727967b0db8cb13eb6a3b5166028a4d7a"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-operational-before.json",
+      "sha256": "d90d735716785f6c8b81c6fa62c6e75e9c1cc2f784b6572426261b5327546eb6"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-operational-body.json",
+      "sha256": "0678c3373d8a55b34fc303e84db2327e0ad74346ade16479298eff42267e66dc"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-focused.log",
+      "sha256": "e24fd82190bf92fe39d9441f27386b6e16a83d8f3035ed43834470a2b4b7d0a7"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-integration.log",
+      "sha256": "6c20eb9ca103871f50b5afd2aed1f537f6d35b475a5457e91dcf43ff237a6a47"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-tests.log",
+      "sha256": "a7e5ada7950626622038235a07656455e0e99f68ce102552e720107965df816c"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-final-check.log",
+      "sha256": "7e9bbc361fc3c1f98d20aec476936b4cd2eaecb7adec63bdd38519d225c274a0"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-final-interface.log",
+      "sha256": "f5a1def157bd1bd983349fa4dac1078a97c5fc49ce4ee38859988829a8320739"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-fuzz.log",
+      "sha256": "f625b0ca93a0f6ea88279fc032242332fe425fd1833a37871b831313d249b867"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-compatibility.json",
+      "sha256": "0e22e928f65e40586ed1e71511a92f9f68730197d2638a6f6d27875e29fa952f"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-decision.json",
+      "sha256": "6d762b29ae4faca2bca2a6b6c59fda351e30fed13b00ec6e02910f9a624ee3bc"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-final.json",
+      "sha256": "ea2ec5cf1b5244506dc92852f16c85fba52c92edacccc9c56702c3d39f663844"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-residuals.json",
+      "sha256": "44475821b544927a865c74860494807ff2674e3af56e6c152b4a5b83dbc706f6"
+    }
+  ],
+  "limits": [
+    "No independent model-task benefit or total-context savings measured.",
+    "Metadata increases index cost; source range does not establish relevance.",
+    "No native model calls or operational fixture capture."
+  ]
+}

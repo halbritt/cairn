@@ -219,13 +219,11 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	if req.Mode == "index" {
 		p.Mode = "index"
-		p.Schema = "cairn.semantic/5"
+		p.Schema = "cairn.semantic/8"
 		if req.BrowseOffset != nil {
-			p.Schema = "cairn.semantic/6"
 			p.Browse = &BrowsePage{Offset: *req.BrowseOffset}
 		}
 		if req.Semantic {
-			p.Schema = "cairn.semantic/7"
 			candidates, err = s.rankSemantic(ctx, req.Query, &p, candidates, evaluations)
 			if err != nil {
 				return p, err

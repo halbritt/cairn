@@ -44,7 +44,7 @@ def check(binary, root, environment, opencode, claim, support):
         return json.loads(json.loads(result.stdout)['result']['output'])
 
     marker = 'nativeopencode' + uuid.uuid4().hex
-    capture = dict(request_id=str(uuid.uuid4()), body=marker + ': selected lesson $(literal)',
+    capture = dict(request_id=str(uuid.uuid4()), body='Earlier setup context. ' * 30 + marker + ': selected lesson $(literal)',
                    kind='lesson', shareable=True)
     saved = invoke('remember', capture)
     assert set(saved) == {'record_id', 'version', 'request_id'} and saved['version'] == 1
@@ -94,11 +94,14 @@ def check(binary, root, environment, opencode, claim, support):
     record = expanded['selection']['record']
     assert record['body'] == capture['body'] and record['class'] == 'A'
     assert record['witness'] == 'testimony' and record['observed_writer'] == 'agent:hosted-capture'
-    partial_args = dict(pull, request_id=str(uuid.uuid4()), span=dict(offset=0, length=8))
+    location = first['index'][0]['summary_span']
+    assert location['offset'] > 160
+    partial_args = dict(pull, request_id=str(uuid.uuid4()), span=location)
     for bad in ({'offset': '0', 'length': 8}, {'offset': 0, 'length': 0}, {'offset': 0, 'length': 8, 'unknown': True}):
         invoke('pull', dict(partial_args, span=bad), 'INVALID_REQUEST')
     partial = invoke('pull', partial_args)
-    assert partial['span']['body'] == capture['body'][:8] and partial['selection']['record']['body'] == ''
+    assert partial['span']['body'] == capture['body'][location['offset']:location['offset']+location['length']]
+    assert marker in partial['span']['body'] and partial['selection']['record']['body'] == ''
     assert partial['span']['total_bytes'] == len(capture['body'].encode()) and partial['credits_remaining'] == 2
     assert invoke('pull', partial_args) == partial
     invoke('pull', dict(partial_args, span=dict(offset=1, length=8)), 'IDEMPOTENCY_CONFLICT')

@@ -160,7 +160,9 @@ remaining limits. Remove the installed tool file to undo this integration; keep
 ordinary memory records and the existing MCP/CLI alternatives.
 
 `cairn_pull` also accepts `span: {offset: 0, length: 4096}` for a partial A/B
-note. Its text, byte range and full/selected hashes appear in `span`, while
+note. An index entry's `summary_span` can be copied into `span` to read the
+exact preview source bytes, excluding synthetic omission markers. Its text,
+byte range and full/selected hashes appear in `span`, while
 `selection.record.body` is empty. Instructions require a whole pull. Use a new
 request UUID for each range and read the full note before replacing its body.
 The [note excerpt contract](index-and-pull.md#index-and-expansion-contract)

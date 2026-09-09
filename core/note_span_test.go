@@ -142,6 +142,9 @@ func TestNoteSpanBoundariesAndInstructionRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(idx.Package.Semantic.Index) != 1 || idx.Package.Semantic.Index[0].SummarySpan != nil {
+		t.Fatalf("instruction preview offers an unsupported partial pull: %+v", idx.Package.Semantic.Index)
+	}
 	req = ExpandRequest{RequestID: uuid.NewString(), ReceiptID: idx.Package.ReceiptID, Handle: idx.Handles[0].Handle, Span: &ByteSpanRequest{Offset: 0, Length: 8}}
 	_, err = op.Expand(ctx, req, dest)
 	requireCode(t, err, "INVALID_REQUEST")

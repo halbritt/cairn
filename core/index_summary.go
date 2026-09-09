@@ -8,11 +8,17 @@ import (
 // indexSummary extracts source bytes, never a generated paraphrase. Prefer a
 // passage containing more distinct query terms than the ordinary body prefix.
 func indexSummary(body, query, ranking string) string {
+	summary, _ := indexPreview(body, query, ranking)
+	return summary
+}
+
+func indexPreview(body, query, ranking string) (string, ByteSpanRequest) {
 	const limit = 160
 	prefix := body[:utf8Prefix(body, limit)]
+	span := ByteSpanRequest{Length: len(prefix)}
 	terms := rankingTerms(query, ranking)
 	if len(body) <= limit || len(terms) == 0 {
-		return prefix
+		return prefix, span
 	}
 	type match struct {
 		start, end int
@@ -93,12 +99,13 @@ func indexSummary(body, query, ranking string) string {
 		}
 		if value := score(start, end); value > bestScore {
 			best, bestScore = "..."+body[start:end], value
+			span = ByteSpanRequest{Offset: start, Length: end - start}
 			if end < len(body) {
 				best += "..."
 			}
 		}
 	}
-	return best
+	return best, span
 }
 
 func utf8Prefix(text string, limit int) int {

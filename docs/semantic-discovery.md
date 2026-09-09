@@ -81,7 +81,9 @@ with labelled lexical fallback. Empty eligible optional sets need no model and
 record `not_needed`. Successful semantic discovery records `ready`. No partial
 model ordering is used after a failed validation.
 
-Semantic requests use `cairn.semantic/7`. Successful scoring uses
+New index requests, including semantic discovery, use `cairn.semantic/8` with
+[preview source positions](index-and-pull.md#index-and-expansion-contract).
+Historical semantic requests retain `cairn.semantic/7`. Successful scoring uses
 `semantic-scope-recency/1`; fallback retains lexical v4. The sealed package pins
 the model fingerprint, scoring algorithm and digest of all optional candidate
 scores. Protected candidate facts retain those scores. Historical recompilation

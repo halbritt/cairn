@@ -27,7 +27,7 @@ the current summary; do not replace the historical record.
 | Area | Implemented behavior | Details |
 | --- | --- | --- |
 | Ordinary memory | Authenticated capture of selected notes, retained versions and attribution, repository/task/run scope, compare-and-swap edits, body-only corrections that preserve metadata, and authenticated retained-version inspection. | [Capture and use](../README.md), [ordinary revision](mcp.md#tools), [record history](record-history.md) |
-| Retrieval | Lexical search, matching source previews, bounded browsing with continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
+| Retrieval | Lexical search, matching previews with source byte positions, bounded browsing with continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
 | Semantic discovery | Optional local CPU scoring for vocabulary mismatches, after eligibility checks; bounded work and labelled lexical fallback. Historical recompilation uses retained scores. | [Semantic discovery](semantic-discovery.md) |
 | Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, citation-time digests and optional byte passages on qualified claim versions, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [precise citations](evidence-citations.md), [span verification](verification/evidence-spans-2026-09-09.md) |
 | Harness access | Five ordinary tools for search, body/evidence pulls, capture and edit through MCP; Codex conversation scope and native OpenCode session scope. OpenCode configuration generation and a bundled native-tool installer are shipped. | [MCP](mcp.md), [OpenCode tools](opencode-tools.md) |
@@ -961,3 +961,20 @@ Raw operational material remains in `/tmp/cairn-procedure-review/`. This is an
 actual correction assisted by retained guidance, with no observed downstream
 failure, independent comprehension comparison or measured net benefit. No code,
 runtime, host configuration or prior outcome assessment changed.
+
+### 2026-09-09 — preview positions connect search to bounded reads
+
+New A/B search previews include the source byte range accepted by the existing
+excerpt tool. A long-note baseline found the command but could not locate its
+passage; it now reads those exact bytes from the returned position. The CLI/API,
+MCP and native OpenCode checks exercise that path. Instructions remain whole,
+and currentness, destination, integrity and expansion budgets stay unchanged.
+
+New index packages use schema 8 and count the added metadata in packing. Actual
+previous-binary schema-3/5/6/7 fixtures preserve historical recompilation, including
+frozen semantic scores and a cached pull. A fixture's wrong-owner read was refused
+and corrected without changing access policy. Full disposable integration/race,
+Go, 30 Python tests and vet/format checks passed. See the
+[verification](verification/preview-locations-2026-09-09.md) and
+[manifest](verification/preview-locations-2026-09-09.json). Task benefit and net
+context savings remain unmeasured. Deployment is recorded separately.

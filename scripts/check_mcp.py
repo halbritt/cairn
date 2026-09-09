@@ -69,7 +69,7 @@ def session(binary, root, environment, extra_args=(), generated=False):
 def check(binary, root, environment, claim, support):
     with session(binary, root, environment) as tool:
         query = 'mcpstdio' + uuid.uuid4().hex
-        args = dict(request_id=str(uuid.uuid4()), body=query + ': selected stdio lesson', shareable=True)
+        args = dict(request_id=str(uuid.uuid4()), body='Earlier setup context. ' * 30 + query + ': selected stdio lesson', shareable=True)
         saved = tool('cairn_remember', args)
         assert saved == tool('cairn_remember', args) and 'body' not in saved
         assert 'IDEMPOTENCY_CONFLICT' in tool('cairn_remember', dict(args, body='changed'), error=True)
@@ -85,9 +85,12 @@ def check(binary, root, environment, claim, support):
         assert pulled['selection']['record']['body'] == args['body']
         assert pulled['selection']['record']['observed_writer'] == 'agent:hosted-capture'
         assert pulled['credits_remaining'] == view['credits_remaining'] - 1
-        partial_args = dict(view['index'][0]['pull_arguments'], request_id=str(uuid.uuid4()), span=dict(offset=0, length=8))
+        location = view['index'][0]['summary_span']
+        assert location['offset'] > 160
+        partial_args = dict(view['index'][0]['pull_arguments'], request_id=str(uuid.uuid4()), span=location)
         partial = tool('cairn_pull', partial_args)
-        assert partial['span']['body'] == args['body'][:8] and partial['selection']['record']['body'] == ''
+        assert partial['span']['body'] == args['body'][location['offset']:location['offset']+location['length']]
+        assert query in partial['span']['body'] and partial['selection']['record']['body'] == ''
         assert partial['span']['total_bytes'] == len(args['body'].encode()) and partial['credits_remaining'] == 2
         assert partial == tool('cairn_pull', partial_args)
         assert 'IDEMPOTENCY_CONFLICT' in tool('cairn_pull', dict(partial_args, span=dict(offset=1, length=8)), error=True)

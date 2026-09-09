@@ -71,7 +71,7 @@ func TestSemanticDiscoveryUsesEligibleNotesAndFrozenScores(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := index.Package
-	if calls != 1 || p.Semantic.Schema != "cairn.semantic/7" || p.Semantic.Discovery.State != "ready" || len(p.Semantic.Index) != 2 || p.Semantic.Index[0].RecordID != want.RecordID || len(p.Semantic.Selected) != 1 || p.Semantic.Selected[0].Record.RecordID != mandatory.RecordID {
+	if calls != 1 || p.Semantic.Schema != "cairn.semantic/8" || p.Semantic.Discovery.State != "ready" || len(p.Semantic.Index) != 2 || p.Semantic.Index[0].RecordID != want.RecordID || len(p.Semantic.Selected) != 1 || p.Semantic.Selected[0].Record.RecordID != mandatory.RecordID {
 		t.Fatalf("unexpected package: %+v", p)
 	}
 	s.semanticRanker = func(context.Context, SemanticRankRequest) (SemanticRankResult, error) {

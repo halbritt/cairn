@@ -24,6 +24,8 @@ type IndexEntry struct {
 	Kind       string `json:"kind"`
 	Summary    string `json:"summary"`
 	BodySHA256 string `json:"body_sha256"`
+	// SummarySpan excludes the summary's synthetic omission markers.
+	SummarySpan *ByteSpanRequest `json:"summary_span,omitempty" cbor:"summary_span,omitempty"`
 }
 
 // BrowsePage addresses eligible optional candidates in this call's ordering.
@@ -102,7 +104,13 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 			}
 		}
 		entry := indexEntry(c.selection.Record)
-		if p.Schema == "cairn.semantic/5" || p.Schema == "cairn.semantic/6" || p.Schema == "cairn.semantic/7" {
+		if p.Schema == "cairn.semantic/8" {
+			var span ByteSpanRequest
+			entry.Summary, span = indexPreview(c.selection.Record.Body, query, p.Ranking)
+			if c.selection.Record.Class != "C" && span.Length > 0 {
+				entry.SummarySpan = &span
+			}
+		} else if p.Schema == "cairn.semantic/5" || p.Schema == "cairn.semantic/6" || p.Schema == "cairn.semantic/7" {
 			entry.Summary = indexSummary(c.selection.Record.Body, query, p.Ranking)
 		}
 		entry.Category = c.selection.Category

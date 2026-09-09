@@ -127,18 +127,22 @@ def check(binary, root, environment, grant, claim, support):
     assert result['span']['sha256'] == hashlib.sha256(tail.encode()).hexdigest()
     assert result['evidence']['body'] == '' and result['evidence']['sha256'] == large['sha256']
     note_marker = 'longnote' + uuid.uuid4().hex
-    note_tail = 'Keep the complete implementation history.'
-    long_body = note_marker + '\n' + 'retained selected procedure\n' * 2000 + note_tail
+    note_tail = note_marker + ': Keep the complete implementation history.'
+    long_body = 'retained selected procedure\n' * 2000 + note_tail
     note = call([*agent, 'remember', '--repo', scope['repo'], '--request-id', str(uuid.uuid4()), '--', long_body])['data']
     note_index = call([*agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'], '--run', scope['run_id'], '--tokens', '1000000', note_marker])['data']
     note_entry = next(e for e in note_index['index'] if e['record_id'] == note['record_id'])
     note_pull = note_entry['pull_arguments']
     assert call([*agent, 'expand'], note_pull, check=False)['status'] == 'BUDGET_REFUSED'
-    tail_args = [*agent, 'pull', '--request-id', note_pull['request_id'], '--offset', str(len(long_body.encode())-len(note_tail)), '--length', '256', note_pull['receipt_id'], note_pull['handle']]
+    location = note_entry['summary_span']
+    assert location['offset'] > 24000
+    tail_args = [*agent, 'pull', '--request-id', str(uuid.uuid4()), '--offset', str(location['offset']), '--length', str(location['length']), note_pull['receipt_id'], note_pull['handle']]
     selected = call(tail_args)['data']
-    assert selected['span']['body'] == note_tail and selected['selection']['record']['body'] == ''
+    expected = long_body.encode()[location['offset']:location['offset']+location['length']]
+    assert selected['span']['body'].encode() == expected and note_tail in selected['span']['body']
+    assert selected['selection']['record']['body'] == ''
     assert selected['span']['source_sha256'] == hashlib.sha256(long_body.encode()).hexdigest()
-    assert selected['span']['sha256'] == hashlib.sha256(note_tail.encode()).hexdigest()
+    assert selected['span']['sha256'] == hashlib.sha256(expected).hexdigest()
     assert selected['span']['total_bytes'] == len(long_body.encode()) and selected['credits_remaining'] == 3
     assert call(tail_args)['data'] == selected
     for flags in [['--offset', '0'], ['--length', '0'], ['--offset', '-1', '--length', '2']]:

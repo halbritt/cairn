@@ -77,13 +77,31 @@ func TestIndexMatchingPreviewKeepsExactPullAndHistoricalVersion(t *testing.T) {
 func FuzzIndexSummarySourceBounds(f *testing.F) {
 	f.Add(strings.Repeat("前文。 ", 40)+"Use CAIRN_HOME for storage.", "cairn home")
 	f.Add(strings.Repeat("setup ", 100)+"target instruction", "target")
+	f.Add("...literal omission markers...", "literal")
 	f.Fuzz(func(t *testing.T, body, query string) {
 		if !utf8.ValidString(body) || !utf8.ValidString(query) || len(body) > 65536 || len(query) > 4096 {
 			t.Skip()
 		}
-		got := indexSummary(body, query, "lexical-scope-recency/4")
+		got, span := indexPreview(body, query, "lexical-scope-recency/4")
 		if len(got) > 160 || !utf8.ValidString(got) || !strings.Contains(body, strings.TrimSuffix(strings.TrimPrefix(got, "..."), "...")) {
 			t.Fatalf("invalid source excerpt: %q", got)
+		}
+		if span.Offset < 0 || span.Length < 0 || span.Offset+span.Length > len(body) {
+			t.Fatalf("invalid source range: %+v", span)
+		}
+		source := body[span.Offset : span.Offset+span.Length]
+		if !utf8.ValidString(source) {
+			t.Fatalf("range splits UTF-8: %+v", span)
+		}
+		want := source
+		if span.Offset > 0 {
+			want = "..." + want
+			if span.Offset+span.Length < len(body) {
+				want += "..."
+			}
+		}
+		if got != want {
+			t.Fatalf("preview text and source range disagree: %q, %+v", got, span)
 		}
 	})
 }

@@ -47,7 +47,7 @@ func TestBrowsePagesReachOlderNotesWithoutSkippingMandatoryContext(t *testing.T)
 			t.Fatal(err)
 		}
 		p := index.Package.Semantic
-		if p.Schema != "cairn.semantic/6" || p.Browse == nil || p.Browse.Offset != offset || len(p.Selected) != 1 || p.Selected[0].Record.RecordID != required.RecordID || !p.Selected[0].Mandatory {
+		if p.Schema != "cairn.semantic/8" || p.Browse == nil || p.Browse.Offset != offset || len(p.Selected) != 1 || p.Selected[0].Record.RecordID != required.RecordID || !p.Selected[0].Mandatory {
 			t.Fatalf("page lost its offset or required instruction: %+v", p)
 		}
 		if len(p.Index) == 0 || p.AvailableTokens != 10000 || p.OptionalLimit != 1000 {

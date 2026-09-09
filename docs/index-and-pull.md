@@ -51,8 +51,8 @@ retrieval with its own credits and budget. Hosts must still account for the
 combined context from multiple pages and pulls.
 
 Raw `index` requests can opt in with `"browse_offset": 0` and an empty query;
-later requests use the returned `browse.next_offset`. Paged indexes use semantic
-format v6. Unpaged indexes keep v5, and older retained receipts remain replayable.
+later requests use the returned `browse.next_offset`. New paged and unpaged
+indexes use semantic format v8; retained v5/v6 receipts remain replayable.
 Update the Cairn API service as well as clients before using paged browsing.
 
 The `cairn.agent-search/1` view retains the index order and metadata, full
@@ -97,7 +97,7 @@ An index contains mandatory instructions in full, plus optional pointers with
 record/version, class, kind, a summary of at most 160 UTF-8 bytes and a body digest.
 It uses the same currentness, authority, conflict, evidence and destination gates
 as ordinary compilation. It fits at most 100 pointers into the existing optional
-budget and reserves room for the handle envelope. Semantic format v5 seals the
+budget and reserves room for the handle envelope. Semantic format v8 seals the
 index and bootstrap; opaque delivery handles stay outside that seal. Historical
 recompilation reproduces the index without issuing new handles, including the
 prefix previews in older v4 packages.
@@ -110,6 +110,22 @@ The 160-byte limit includes omission markers. A preview can cut an explanation
 short: pull the body before applying its advice. The
 [verification report](verification/index-previews-2026-09-08.md) records the
 observed problem and compatibility checks.
+
+New A/B previews include `summary_span: {"offset": N, "length": N}` identifying
+their source bytes, excluding synthetic `...` markers. Offsets and lengths count
+UTF-8 bytes, not characters. Copy `summary_span` into a pull's `span` field with
+a new request UUID and the original receipt/handle; the ordinary full-body
+`pull_arguments` remain unchanged. This locates a buried passage even when the
+whole note exceeds the pull budget. To read surrounding context, choose a wider
+range under the existing span limits. A preview alone may omit qualifications;
+read sufficient context before applying it and the complete note before editing.
+Class C pointers omit `summary_span` because instructions require whole pulls.
+
+The location is sealed with the record version and full-body digest and counts
+toward index packing cost; fewer entries can fit a page. It grants no extra access
+or credits. Historical v4–v7 indexes retain their original shape and seals; a new
+index request after the format upgrade needs a new request UUID if retrying the
+old one returns `STALE_PACKAGE`. See the [source-position verification](verification/preview-locations-2026-09-09.md).
 
 The result supplies `package`, `handles`, `expires_at`, `credits_remaining` and
 `bytes_remaining`. Each handle is bound to one authenticated caller, receipt,
