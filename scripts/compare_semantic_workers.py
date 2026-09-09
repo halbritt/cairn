@@ -108,7 +108,7 @@ plan = dict(
         "exact identity-bound integer score equality",
     ],
     target="Report paired latency and exact scores; no universal performance or task-benefit claim",
-    constraints="Same two CPU threads, model, query and passages; no cache or persistent process; public synthetic inputs only",
+    constraints="Same prepared model, query and passages; worker settings are defined by the hashed input scripts; public synthetic inputs only",
 )
 (root / "plan.json").write_text(json.dumps(plan, indent=2) + "\n")
 rows = []

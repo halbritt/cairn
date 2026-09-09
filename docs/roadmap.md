@@ -316,6 +316,9 @@ route, and the installed API now enables the prepared worker. Fresh Codex and
 OpenCode clients both found and pulled the exact updated storage note through
 that route. Larger-scale behavior, independent source use and task benefit remain open;
 this does not close E4.
+A [one-thread comparison](verification/semantic-threads-2026-09-09.md) preserved
+all twenty-one score sets but missed its latency target. The installed two-thread
+worker remains; reduced CPU cost alone did not justify the proposed latency change.
 
 [Explicit browsing](verification/browse-2026-09-09.md) now exposes the existing
 empty-query index through the agent CLI, MCP and native OpenCode. It provides
