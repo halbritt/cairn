@@ -53,8 +53,34 @@ Thirteen residual obligations are classified nonmaterial in the retained receipt
 This establishes retrieval behavior, not model-selected use or net task benefit.
 Unfiltered search is still useful when labels are incomplete or mistaken. Existing
 clients and the API must be upgraded together; old binaries cannot reconstruct
-filtered v9 receipts. Ordinary operational verification follows installation.
+filtered v9 receipts. The local installation check below exercises the ordinary hosted profile.
 
 [Verification metadata](kind-filter-2026-09-09.json) retains hashes of the baseline,
 failed and passing checks, decision evidence and source observations. Private
 operational note bodies and raw native traffic are not committed.
+
+## Local installation
+
+Clean source `2d6718112551095caa4fa1c65048702de70d450c` is installed as CLI and API. The
+running API executable matches SHA-256
+`7dd724bbf6878bb011d753167eba1447c5ab0e6812ff3bfa7c56e0b6906c3173`.
+The bundled native OpenCode adapter is updated. Codex/OpenCode connection settings,
+semantic service configuration and the two-thread worker are unchanged. The store
+process stayed running; PostgreSQL still has migrations 001–030. Both user services
+are healthy. The previous binary and adapter are retained outside the repository.
+
+At the same 32,000-token input allowance as the baseline, one ordinary hosted
+browse with `--kind decision --kind preference` returned all three existing
+project-direction notes. Before filtering, those notes were on the second browse
+page. Each full body matched its indexed checksum; exact retries preserved the
+responses, leaving one of four expansion credits after three distinct pulls.
+A fresh MCP session returned the same versions and checksums. An actual filtered
+query through the installed CPU semantic worker returned discovery state `ready`.
+No new notes or task assessments were created.
+
+This is a verified reduction in preview-page navigation for this lookup. It does
+not establish general task improvement, model-selected retrieval or net benefit.
+
+[CI for the installed source](https://github.com/halbritt/cairn/actions/runs/34405630245)
+passed PostgreSQL/race, Python, vet and build. Native OpenCode and operational
+profile checks were performed locally and are retained separately.

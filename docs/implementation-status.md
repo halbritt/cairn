@@ -46,6 +46,11 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Saved direction can be found by kind.** Filtered browsing returns the three
+  existing priority, value and history notes on one page; previously they were
+  on page two. Full pulls and fresh MCP/semantic searches work through the
+  installed system. Required context, privacy and budgets remain.
+  [Report](verification/kind-filter-2026-09-09.md).
 - **Full ordinary note bodies cross JSON transport.** Capture, full-draft edits
   and body-only revisions now allow enough encoded space for maximum 64 KiB
   bodies with sixfold escaping. Decoded limits, other operation caps and retry
@@ -106,16 +111,11 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI: clean `cee290ea5dc36febd7250230994571a38664117e`, with SHA-256
-  `92f896699367d4e7238980b590dfff995df5ff83417a33b8d555ff3bdfdee6d8`. It includes
-  `claude-config`; a per-task configuration was generated without registering
-  it in the owner's Claude settings. This command needed no API restart.
-- Running API: clean `6dbca8b6a2a2b57c2197a9d00dc8f8a9362da7c7`,
-  with SHA-256 `b77490a86e70b64af63e21edec3986b3d301f334a14f3ffbb679e76320078174`.
-  Ordinary capture and edits accept 512 KiB JSON envelopes for the existing
-  64 KiB note bodies. Preview positions and their OpenCode tool guidance remain
-  installed. The API restarted without a migration; host settings and the
-  two-thread semantic worker are preserved. Earlier capabilities remain installed.
+- Installed CLI and running API: clean `2d6718112551095caa4fa1c65048702de70d450c`, with
+  SHA-256 `7dd724bbf6878bb011d753167eba1447c5ab0e6812ff3bfa7c56e0b6906c3173`.
+  Kind selection is available through the existing search interfaces. The API
+  restarted and the native OpenCode adapter was updated together, with no schema
+  migration. Earlier capture, span and configuration capabilities remain installed.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -127,43 +127,38 @@ Live checks on 2026-09-09 found:
   Agent and observer roles remain separate. The trusted project's Codex MCP
   configuration exposes all five ordinary tools with conversation scope and
   optional startup. The installed native OpenCode adapter matches the current
-  span-capable source and retains its existing connection settings.
+  kind-filter-capable source and retains its existing connection settings.
 - Optional semantic discovery uses the prepared local CPU worker, batch size
   one and two ONNX threads. The installed script matches the retained baseline
   SHA-256 `d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954`.
   It adds no persistent embedding cache or model service.
 
-The [Claude CLI installation report](verification/claude-config-2026-09-09.md#local-installation)
-records the installed generator and preserved host settings.
-The [note-transport deployment report](verification/note-transport-2026-09-09.md#local-deployment)
-records the running API executable, preserved adapter/configuration identities and
-fresh retrieval of the corrected capture procedure. Installation
+The [kind-filter installation report](verification/kind-filter-2026-09-09.md#local-installation)
+records the current binaries, adapter, preserved configuration and ordinary lookup.
+Earlier [Claude setup](verification/claude-config-2026-09-09.md#local-installation) and
+[note-transport](verification/note-transport-2026-09-09.md#local-deployment)
+reports retain their deployment history. Installation
 paths and credentials stay outside Git. No automatic backup rotation, pruning
 or grooming timer is installed. Use the user services for the managed store's
 lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
 
-The installed note-transport implementation passed disposable PostgreSQL
-integration with Go's race detector, all Go package tests, 30 Python tests, vet,
-formatting and build. Its optional checks exercised the CLI/Unix API, trusted
-operator commands, independent MCP stdio client and a normal native OpenCode
-session with scripted completions. Mutations committed by the prior binary
-retained exact retry responses. The [feature report](verification/note-transport-2026-09-09.md)
-preserves the failing baseline, initial native debug-output failure and corrected
-integration result. No model inference was used for these checks.
+The installed kind-filter source passed disposable PostgreSQL integration with
+Go's race detector, CLI/API, independent MCP and scripted native OpenCode checks.
+All Go package tests, 30 Python tests, vet and formatting pass. Unfiltered packages
+created by the previous binary retry and reconstruct exactly. The
+[feature report](verification/kind-filter-2026-09-09.md) retains the failing
+baseline, corrected test mistakes and final result. Its operational check finds
+and pulls saved direction through the ordinary hosted profile and exercises the
+installed semantic worker. These checks do not use model inference.
 
-[CI for installed CLI source `cee290e`](https://github.com/halbritt/cairn/actions/runs/34400988285)
-passed PostgreSQL/race, Python tests, vet and build. Native Claude configuration
-and actual tool execution passed separately in the local disposable integration,
-including [two-session correction/reuse and refusal checks](verification/claude-native-tools-2026-09-09.md).
-
-[CI for running API source `6dbca8b`](https://github.com/halbritt/cairn/actions/runs/34399146044)
-passed PostgreSQL integration with the race detector, Python tests, vet and build.
-The earlier thread experiment ran twenty-one complete paired worker cases
-and retained raw measurements outside the repository; it did not change store or
-runtime behavior. No production database was used for those tests. Today's
-installation checks read service/build information and database schema metadata.
+[CI for installed source `2d67181`](https://github.com/halbritt/cairn/actions/runs/34405630245)
+passed PostgreSQL/race, Python tests, vet and build. Earlier
+[native Claude checks](verification/claude-native-tools-2026-09-09.md) retain
+separate two-session correction/reuse and refusal evidence. No production
+database was used for tests; operational installation checks read existing
+notes, service/build information and database schema metadata.
 
 ## Remaining work and priorities
 
@@ -1178,3 +1173,25 @@ citation closure are retained, with 13 nonmaterial residuals. This verifies
 retrieval capability; model-selected use and incremental task benefit remain
 open. The local installation snapshot above remains the prior deployment until
 the separately recorded installation check completes.
+
+### 2026-09-09 — install and exercise kind selection on saved direction
+
+Clean `2d67181` is installed as CLI/API, with the bundled OpenCode
+adapter updated. Both services are healthy, the store process is unchanged, and
+migrations remain 001–030. Host connection settings and semantic worker hashes
+are preserved; the previous executable and adapter remain available locally.
+
+One filtered browse at the ordinary 32,000-token allowance found all three
+existing direction notes that had required the second unfiltered page. Three
+full pulls verified their source checksums and exact retries, leaving one credit.
+A fresh MCP session returned the same note versions, and an actual filtered
+semantic query reported `ready`. No new notes, model tasks or task assessments
+were created. This establishes the lookup behavior and a shorter preview path
+for this case; broader task benefit remains open. The current installation
+snapshot above now reflects this deployment, superseding the preceding source-only
+entry's pending-installation statement.
+
+Exact installed-source CI run [34405630245](https://github.com/halbritt/cairn/actions/runs/34405630245)
+completed successfully. The feature's local native and operational checks remain
+separate evidence from CI. The complete preceding implementation history is
+preserved.
