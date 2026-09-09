@@ -86,8 +86,8 @@ specific boundaries checked. The first legacy probe compared the CLI's historica
 wrapper to its contained package; the corrected probe compares the actual
 packages. Original failed logs remain retained.
 
-The local backend has been prepared with `scripts/install-semantic.sh`.
-Preparation alone does not enable it in the running API.
+The local backend was prepared with `scripts/install-semantic.sh`.
+Preparation alone did not enable it in the running API.
 
 The reusable `scripts/check_semantic_api.py` check was then run through
 `make test-integration` with the prepared worker and native OpenCode enabled.
@@ -104,6 +104,23 @@ The implementation decision used validated doctrine packet
 obligations; the explicit behavior boundary, alternatives and consumer checks
 are recorded directly. This supports the bounded implementation decision, not
 full roadmap acceptance.
+
+## Local deployment
+
+Source commit `ecbcc54c5ae0c177ea83bab660b083f5ba8f29ab` was built from a clean
+checkout and installed with the matching OpenCode adapter. A drop-in adds the
+prepared worker argument to the existing API service. PostgreSQL remained
+running; the API restarted successfully after a database backup.
+
+The ordinary hosted profile returned the existing storage note first for
+`storage?` with semantic discovery ready. Its obsolete lexical-only sentence was
+corrected through a body-only revision. Fresh native Codex and OpenCode clients
+then independently searched and pulled the exact version 2 body, both at rank 1
+with their actual conversation/session scope. Codex used direct native tool calls
+without starting a model turn; OpenCode used scripted loopback completions in a
+normal run, with no model inference. Default lexical `CAIRN_HOME` search and an
+exact version 2 pull also passed. This verifies deployed cross-harness access;
+it does not establish autonomous tool choice or improved model task outcomes.
 
 [Metadata](semantic-discovery-2026-09-09.json) retains source/binary hashes,
 per-query ranks, timing, model identity and local evidence pointers. Raw fixture

@@ -78,6 +78,13 @@ context. Every page repeats required instructions, and each page/pull consumes
 context in addition to prior calls. Pages read current state; edits and captures
 may shift positions. Update both the API service and CLI for paged browsing.
 
+For vocabulary mismatches, use `{"query":"storage?","semantic":true}` with
+the [optional local semantic backend](semantic-discovery.md). Inspect
+`discovery.state`; unavailable scoring produces labelled lexical fallback.
+Similarity does not prove the note answers the question. Pull and verify the
+source. Semantic search cannot accompany browsing, and ordinary queries remain
+lexical. Update the API, CLI and adapter together to use this argument.
+
 Capture saves selected reusable knowledge as repository-wide A testimony.
 `kind` defaults to `note`; omitted `shareable` keeps the note local. Writes return
 only IDs, version and retry ID. For a text-only correction, edit accepts `body`, the pulled record ID and

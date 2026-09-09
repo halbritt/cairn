@@ -1676,5 +1676,74 @@
         "rationale": "The generic named procedure is not executed as a separate ceremony. The bounded feature records the no-change/default alternatives, explicit allowed delta and actual old/new consumer checks; it makes no broad refactoring or equivalence claim."
       }
     ]
+  },
+  "deployment": {
+    "source_commit": "ecbcc54c5ae0c177ea83bab660b083f5ba8f29ab",
+    "binary_sha256": "d3bebe8f7535e8b68f54f7ba3efb6d1cdbc7c85f0fc9c5f4ef28888f74fc8bb7",
+    "vcs_modified": false,
+    "worker_sha256": "68638c7bdcbd1868e7507987b949fb4cabfe67994cd3993cddef281184a69163",
+    "adapter_sha256": "e7888f9ce4f4eac83fbcbcdffd05956f44da090c0e2e1ce7f8e20a6fb169e274",
+    "api_pid": 2055296,
+    "postgres_pid": 163669,
+    "postgres_restarted": false,
+    "backup_dump": "/home/halbritt/.local/share/cairn/backups/cairn-20260909T095737-2053996.dump",
+    "codex": {
+      "thread_id": "01a0859a-ff51-71c3-a5af-369b3bcf229a",
+      "record_id": "dee7b299-8c17-4a32-8a9b-09ee77850f15",
+      "version": 2,
+      "exact_saved_body": true,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "71f45d9445495ca4c72f9901cb6ae6e4895e0f6e6f3dadc73afe3e098482c021"
+      },
+      "storage_rank": 1,
+      "model_turns_started": 0
+    },
+    "opencode": {
+      "route": "normal opencode run with scripted loopback completions",
+      "record_id": "dee7b299-8c17-4a32-8a9b-09ee77850f15",
+      "version": 2,
+      "exact_saved_body": true,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "71f45d9445495ca4c72f9901cb6ae6e4895e0f6e6f3dadc73afe3e098482c021"
+      },
+      "scope": {
+        "repo": "/home/halbritt/git/cairn",
+        "task_id": "opencode/ses_f7a648f31ffeAwx0rF0efwONB1",
+        "run_id": "ses_f7a648f31ffeAwx0rF0efwONB1"
+      },
+      "storage_rank": 1,
+      "model_inference_calls": 0,
+      "exit_code": 0,
+      "adapter_sha256": "e7888f9ce4f4eac83fbcbcdffd05956f44da090c0e2e1ce7f8e20a6fb169e274"
+    },
+    "default_lexical_and_exact_pull": true,
+    "artifacts": [
+      {
+        "path": "/tmp/cairn-semantic-deployment/plan.json",
+        "sha256": "93f4d74261d62bf6a0710863cdcf577185c7843665a90ea415d82e411fa3409c"
+      },
+      {
+        "path": "/tmp/cairn-semantic-deployment/before-services.txt",
+        "sha256": "f05d9fcfd66b5a83535b52741fb765f5316e74d7baa986eac64f2ba976116dd2"
+      },
+      {
+        "path": "/tmp/cairn-semantic-deployment/after-services.txt",
+        "sha256": "f63f7facbd27c593453cd56f4785b41e86f5e86d4fbff3c1b1775abdb96e9cce"
+      },
+      {
+        "path": "/tmp/cairn-codex-semantic-verify/report.json",
+        "sha256": "80ff5f7e2f980ae301b29a3c68d8ecc109650b5ba3ea9f2a3d0296706789d971"
+      },
+      {
+        "path": "/tmp/cairn-opencode-semantic-verify/report.json",
+        "sha256": "4aa632ce3bed8776e6116749e81c422ac04543e5d6e2d40ac77d6ab43acb046e"
+      }
+    ]
   }
 }
