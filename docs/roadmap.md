@@ -179,8 +179,8 @@ with accepted Striatum source pins preserved. The [launch freshness check](launc
 now refuses changed selected memory and required context before a launch claim,
 using the existing compiler eligibility rules. [Retained execution](retained-execution.md)
 now consumes an exact observer-owned receipt without recompiling; the native
-observation producer, admitted ECR resolution and host correspondence remain
-implementation prerequisites. The [installed interface and verification](verification/retained-execution-2026-09-08.md)
+observation producer, admitted ECR resolution and host correspondence are
+implemented in the later branch checkpoints below, pending owning contract acceptance. The [installed interface and verification](verification/retained-execution-2026-09-08.md)
 also identify Striatum's existing supervisor as the owner of native execution:
 use authenticated Cairn operations there without adding a second process wrapper
 or another memory copy outside the declared input. The
@@ -194,8 +194,11 @@ also passes a Driver request-to-admission fixture and public CLI acquisition
 against a real disposable Cairn service. Both branch checkpoints passed full
 Striatum checks. The [native build-input checkpoint](verification/native-build-input-2026-09-08.md)
 now resolves packet-named evidence, pins and renders the complete context, and
-checks its presence in retained launch bytes. Accepted native contracts, actual
-host correspondence and real-build usefulness remain open. The
+checks its presence in retained launch bytes. The
+[native host checkpoint](verification/native-host-2026-09-08.md) now binds that
+receipt at the existing supervisor, claims once, observes a real confined child,
+and retains delivery/outcome correspondence. A changed selected note refuses
+launch. Accepted native contracts and real-build usefulness remain open. The
 [OpenCode trial host](verification/opencode-host-observation-2026-09-08.md) now
 uses per-arm authenticated observers, exact package/attempt joins and pending
 spawn/terminal recovery. Its full real-harness fixture verification includes

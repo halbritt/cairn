@@ -64,7 +64,15 @@ precedence, ownership, preservation and contextual errors informed the change.
 Nine residual generic obligations remain outside the bounded verification claim;
 no broader design or deployment recommendation is inferred from the checks.
 
-## Remaining work
+## Later host checkpoint
+
+The [native host implementation](native-host-2026-09-08.md) now connects the
+existing supervisor to binding, claim, delivery and outcome operations and
+checks retained host correspondence. Its service fixture is separate from a
+real build trial. The following list records what remained at this earlier
+source checkpoint.
+
+## Remaining work at this checkpoint
 
 The existing supervisor must consume the retained observer-owned receipt, check
 actual binding/destination/workspace correspondence, claim current eligibility,

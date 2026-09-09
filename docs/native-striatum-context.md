@@ -13,7 +13,11 @@ The desired outcome is a real Striatum build that receives useful Cairn context
 through a declared, sealed input, with its retrieval receipt linked to the actual
 host execution and separately assessed task outcome. The
 [admission assessment](verification/native-admission-assessment-2026-09-08.md)
-remains the historical evidence baseline.
+remains the historical evidence baseline. The latest
+[host checkpoint](verification/native-host-2026-09-08.md) implements binding,
+claim and outcome correspondence on the integration branch. Earlier checkpoints
+below retain their original scope; accepted native contracts and real-build
+benefit remain open.
 
 ## Choose the input according to its lifetime
 
@@ -219,3 +223,18 @@ Validated Pincite packet `pkt-7e9933beb3fab6e1` informed repository precedence,
 evidence before intervention and behavior preservation. The private decision
 classifies 15 obligations as nonmaterial to this proposal; the implementation
 and real-task obligations above remain open.
+
+## Native host implementation checkpoint
+
+The [host verification](verification/native-host-2026-09-08.md) extends the
+[build input checkpoint](verification/native-build-input-2026-09-08.md) through
+Striatum's existing confined supervisor. It binds the exact retained receipt to
+the selected backend/runtime and staged context, claims once, records delivery
+and process outcomes, and checks retained host correspondence at admission.
+The real-service fixture demonstrates one confined shell invocation and refusal
+after a selected note changes; it does not demonstrate an accepted model build.
+
+The integration branch includes proposed host configuration and observation
+schemas. The accepted catalog, generated Decisions and installed runtime remain
+unchanged. The next work is owning contract acceptance and the complete native
+build trial, including separate task acceptance and memory-benefit evidence.
