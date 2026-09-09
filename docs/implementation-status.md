@@ -143,8 +143,9 @@ installation checks read service/build information and database schema metadata.
    relevant memory and independent outcome checks. Broader native Striatum
    ingress, task/host acceptance and cross-harness transfer remain partial
    (U1, U4/U5, E4, D2). Do not rerun retired cohorts unchanged or infer benefit
-   from delivery alone. Add ordinary native interfaces for Agy and Claude Code
-   under U7/U8, with host-specific scope checks and observed cross-harness use.
+   from delivery alone. Codex and OpenCode are sufficient for cross-harness task
+   benefit evidence; Agy and Claude Code interfaces (U7/U8) are lower priority
+   than increasing task value in those existing harnesses.
 2. **Finish practical retrieval and evidence lifecycle.** Managed artifacts above
    the inline limit, persisted as-cited span/version relations, richer dependent
    invalidation and source freshness remain open (L4). Byte-span reads do not
@@ -679,3 +680,13 @@ verified literal values and control-character escaping. Go tests, 30 Python test
 vet, formatting and build passed. No model turn or new task-benefit result was
 claimed. [Verification](verification/codex-config-2026-09-09.md) and
 [manifest](verification/codex-config-2026-09-09.json).
+
+### 2026-09-09 — task value takes priority over adapter breadth
+
+After requesting Agy and Claude interfaces, the owner clarified that the two
+existing harnesses are sufficient to demonstrate cross-harness task benefit. This
+supersedes the earlier placement of additional adapters in the active sequence:
+U7/U8 remain requested, open and lower priority than useful task progress with
+Codex/OpenCode. Further adapter work needs either that progress or a concrete task
+that requires the missing harness. The verified Codex setup command is being
+completed; it is setup capability, not a new task-benefit result.

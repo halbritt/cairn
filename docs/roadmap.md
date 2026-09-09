@@ -98,9 +98,12 @@ acceptance evidence exists; deployment and measured usefulness are separate.
 Items can be delivered in smaller commits without marking the whole item complete.
 
 The owner requested ordinary **Agy and Claude Code interfaces** on 2026-09-09.
-U7/U8 put those interfaces in the active delivery sequence alongside Codex and
-OpenCode. Their initial usefulness does not depend on completing advanced H1
-mediation or native resume/compaction interlocks. The
+The owner subsequently clarified that **Codex and OpenCode are sufficient to
+demonstrate cross-harness task benefit**. Increasing task value in those existing
+harnesses takes priority over adding adapters. U7/U8 retain the requested scope at
+lower priority; implement them after useful task progress, or when a concrete
+task requires a missing harness. Their initial functionality does not depend on
+advanced H1 mediation or native resume/compaction interlocks. The
 [implementation status and history](implementation-status.md) must retain dated
 changes, superseded approaches, negative results and corrections as work proceeds.
 
@@ -186,6 +189,11 @@ than the accepted usefulness features with those names.
 
 Depends on capture repair and protected receipt boundaries. This is the first
 accepted usefulness milestone, before historical evaluation and generated demand.
+
+Within this section, prioritize U1–U5's useful task outcomes in the existing Codex
+and OpenCode interfaces. U7/U8 are lower-priority breadth work, not prerequisites
+for proving transfer or reducing recurring task failures. Adapter count is not
+an acceptance measure for task value.
 
 | ID | Status | Work and acceptance evidence |
 | --- | --- | --- |
@@ -567,8 +575,8 @@ restore outside that procedure and complete reconstruction remain open.
 
 | ID | Status | Entry condition and work |
 | --- | --- | --- |
-| X1 — advanced H1 integration | open | After useful ordinary ingress: richer query/expansion/candidate tools, expiring handles and driver conformance profiles. Ordinary Agy integration moved to active U7 by the 2026-09-09 owner request; it no longer waits on this extension. |
-| X2 — native interlocks | open | Claude/Codex observed resume/compaction handling, reinjection, per-run attestation and privilege forfeiture on failed refresh. Require adapter-specific evidence. Ordinary Claude Code access is tracked separately under active U8. |
+| X1 — advanced H1 integration | open | After useful ordinary ingress: richer query/expansion/candidate tools, expiring handles and driver conformance profiles. Ordinary Agy integration is tracked separately under lower-priority U7; it does not require this extension. |
+| X2 — native interlocks | open | Claude/Codex observed resume/compaction handling, reinjection, per-run attestation and privilege forfeiture on failed refresh. Require adapter-specific evidence. Ordinary Claude Code access is tracked separately under lower-priority U8. |
 | X3 — groomer | open | Only after join → replay → demand docket: bounded offline proposals from instrumented session-close/idle extraction and nightly consolidation, with review and no automatic authority gain. |
 | X4 — ranking experiments | optional | Learned ranking/decay only after measurable outcomes and explicit policy. Counterfactual experiments opt-in and never during incidents. Deterministic lexical ranking is the baseline. |
 | X5 — selective H3 and sharing | open | Runtime mediation for selected high-stakes paths, then broader sharing with enforced destinations. Hermes remains interactive outside initial build adapters. |
