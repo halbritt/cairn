@@ -25,6 +25,18 @@ def check(binary, root, environment, grant, claim, support):
     token.write_bytes((root / 'agent.token').read_bytes())
     token.chmod(0o600)
     agent = ['agent', '--socket', str(root / 'api.sock'), '--token-file', str(token)]
+    # The encoded CLI/API envelope must fit the existing decoded evidence limit.
+    escaped_source = '\x00' * 1048576
+    capture = dict(request_id=str(uuid.uuid4()), repo=scope['repo'], body=escaped_source,
+                   source='selected escaped source fixture', sensitivity='shareable')
+    captured = []
+    for _ in range(2):
+        result = subprocess.run([binary, *agent, 'evidence'], input=json.dumps(capture),
+                                env=client_env, capture_output=True, text=True, check=True, timeout=15)
+        captured.append(json.loads(result.stdout)['data'])
+    assert captured[0] == captured[1]
+    assert captured[0]['sha256'] == hashlib.sha256(escaped_source.encode()).hexdigest()
+    print('Authenticated agent CLI captures an exact escaped 1 MiB source and preserves retry identity without database access')
     request_id = str(uuid.uuid4())
     p = subprocess.run([binary, *agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'],
                         '--run', scope['run_id'], '--request-id', request_id, 'socket'], env=client_env,

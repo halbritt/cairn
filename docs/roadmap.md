@@ -370,6 +370,12 @@ native ingress, full task acceptance or general usefulness.
 
 ### 3. Make retrieval current and evaluate real history
 
+The [evidence capture transport repair](verification/evidence-limit-2026-09-09.md)
+allows authenticated clients to use the store's existing 1 MiB inline source limit,
+including heavily escaped JSON. Evidence alone has an 8 MiB encoded request cap;
+other requests, decoded storage limits and pull budgets are unchanged. This closes
+a capture-access mismatch, not managed large artifacts or source freshness under L4.
+
 The [documentation retrieval experiment](verification/retrieval-quality-2026-09-08.md)
 freezes fifteen answerable questions and two no-answer controls before changing
 the ranker. Recognizing underscore-separated identifier words improves one

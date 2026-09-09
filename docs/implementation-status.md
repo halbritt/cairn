@@ -819,3 +819,19 @@ procedure describing the new read and its limits was saved and pulled exactly
 from a fresh task scope. [Deployment details](verification/assessment-history-2026-09-09.md#local-deployment)
 include the checks and retained metadata. No operational assessment was written;
 no task-value claim is added by this deployment.
+
+### 2026-09-09 — evidence transport reaches the existing inline limit
+
+A source-maintenance review found that core evidence capture permits 1 MiB of
+decoded source while the agent CLI, client and server each limited the entire
+JSON request to 128 KiB. A disposable API reproduction failed on a valid full-size
+source requiring JSON escaping. Evidence capture alone now allows an 8 MiB encoded
+envelope through one shared transport limit. Other requests retain 128 KiB; decoded
+source and pull budgets are unchanged.
+
+Exact full-size source and SHA-256, retry identity, decoded/envelope refusals before
+mutation, direct HTTP boundaries and real CLI capture passed. The full disposable
+PostgreSQL/race integration, Go tests, 30 Python tests, vet and build passed.
+This completes the existing capture range, without adding managed artifacts,
+source freshness or task-value evidence. [Verification](verification/evidence-limit-2026-09-09.md)
+and [manifest](verification/evidence-limit-2026-09-09.json) retain the findings.

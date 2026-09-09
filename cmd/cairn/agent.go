@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"path/filepath"
 
@@ -78,12 +79,13 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	if operation == "pull" || operation == "pull-evidence" {
 		return agentPull(ctx, client, operation, f.Args()[1:])
 	}
-	body, err := io.ReadAll(io.LimitReader(input, 128*1024+1))
+	limit := localapi.RequestBodyLimit(operation)
+	body, err := io.ReadAll(io.LimitReader(input, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(body) > 128*1024 {
-		return nil, invalid("request exceeds 128 KiB")
+	if int64(len(body)) > limit {
+		return nil, invalid(fmt.Sprintf("request exceeds %d KiB", limit/1024))
 	}
 	if !json.Valid(body) {
 		return nil, invalid("expected a JSON request")

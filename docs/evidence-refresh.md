@@ -1,5 +1,20 @@
 # Evidence refresh and inspection
 
+Explicit evidence capture accepts up to 1 MiB of decoded source bytes.
+`cairn agent evidence` reads an `EvidenceRequest` JSON object from stdin with
+`request_id`, `repo`, `body`, `source` and optional `sensitivity` (default `local`).
+Use an existing provisioned profile and choose the source deliberately. The
+`source` field is a label or locator; capture does not fetch it.
+
+The authenticated CLI/client/API allow an 8 MiB encoded envelope for this operation,
+so a full-size source can fit even when each source byte requires six bytes of
+JSON escaping. The decoded 1 MiB limit remains enforced. Oversized sources or
+envelopes return `INVALID_REQUEST`; neither truncates data or reserves a capture
+request ID. Repeat a successful capture with the same ID and content to retain
+its original identity. Other API operations keep their 128 KiB envelopes.
+The [transport verification](verification/evidence-limit-2026-09-09.md) covers
+exact bytes, retries, limits and the actual agent CLI.
+
 `cairn check-evidence` accepts JSON `request_id` and `evidence_id`. It checks the
 retained inline bytes against their captured SHA-256 and persists a generation,
 method, timestamp, expected/actual digests, requester and affected-record count.

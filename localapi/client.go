@@ -62,8 +62,8 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 	if err != nil {
 		return err
 	}
-	if len(body) > 128*1024 {
-		return &core.Error{Code: "INVALID_REQUEST", Message: "request exceeds 128 KiB"}
+	if limit := RequestBodyLimit(operation); int64(len(body)) > limit {
+		return &core.Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("request exceeds %d KiB", limit/1024)}
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://cairn/v1/"+operation, bytes.NewReader(body))
 	if err != nil {

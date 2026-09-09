@@ -269,7 +269,8 @@ func writeError(w http.ResponseWriter, status int, code, message string, refusal
 	_ = json.NewEncoder(w).Encode(response{Schema: "cairn.response/1", Status: code, Message: message, RefusalID: id})
 }
 func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(context.Context, Q) (R, error)) {
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128*1024))
+	limit := RequestBodyLimit(strings.TrimPrefix(r.URL.Path, "/v1/"))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	decoder.DisallowUnknownFields()
 	var req Q
 	if err := decoder.Decode(&req); err != nil {
