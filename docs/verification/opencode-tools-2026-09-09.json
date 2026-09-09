@@ -43,6 +43,22 @@
     {
       "path": "/tmp/cairn-opencode-tools-installed/report.json",
       "sha256": "aba2295979585f41c1ce3a60cef57daed24f9cb4ba4853e053aba86e5210aaf1"
+    },
+    {
+      "path": "/tmp/cairn-opencode-tools-maintenance/request.json",
+      "sha256": "307dde97006fb203c00cb4a574583070fc81951a3a93752b3310421f79f2271d"
+    },
+    {
+      "path": "/tmp/cairn-opencode-tools-maintenance/report.json",
+      "sha256": "8f1d9a6f36df04c91d0a7cb6e23c790d2453a6cfdd939151a5aca6afaa5ed4e0"
+    },
+    {
+      "path": "/tmp/cairn-codex-opencode-revision.py",
+      "sha256": "d872a3c4a29ac3f16aedebf4e16520487b4b65d07bd4fad3e64a443228c356a6"
+    },
+    {
+      "path": "/tmp/cairn-codex-opencode-revision/report.json",
+      "sha256": "88bd74d0b5df45bbff51a02c1e01518bcf382ce8ee9f88f7c99e2b30f4d557ce"
     }
   ],
   "limits": [
@@ -113,6 +129,18 @@
         "classification": "nonmaterial",
         "rationale": "Existing native session identity is used only as declared search scope; no new domain identity/lifecycle model or Go interface is introduced. Long-term model investment, expert model validation and resume/compaction claims are outside this adapter verification."
       }
-    ]
+    ],
+    "citation_classification": "/tmp/cairn-opencode-tools-citation-result.json"
+  },
+  "shared_revision_followup": {
+    "implementation_commit": "3285367",
+    "native_opencode_edit": true,
+    "previous_version": 4,
+    "current_version": 5,
+    "fresh_opencode_exact_pull": true,
+    "fresh_codex_conversations": 2,
+    "exact_codex_pulls": 4,
+    "model_calls": 0,
+    "ordinary_class": "A"
   }
 }

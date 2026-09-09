@@ -63,6 +63,17 @@ This is direct native tool execution, not delegated problem solving. The
 [manifest](opencode-tools-2026-09-09.json) retains source, binary, log and private
 operational evidence hashes.
 
+## Shared revision follow-up
+
+After implementation `3285367`, the existing ordinary OpenCode setup procedure
+was revised from version 4 to version 5 through the installed native edit tool.
+The full draft was preserved except for a selected source-checked paragraph about
+the new adapter. A fresh native OpenCode session retrieved the exact new body.
+Two fresh Codex conversations, using their existing project MCP configuration,
+each searched and pulled that same exact revision twice. No model turn was
+started and no authority promotion occurred. This establishes working maintenance
+and retrieval of shared knowledge through both installed harness interfaces.
+
 ## Limits
 
 The installed adapter makes current shared memory available through native
