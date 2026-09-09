@@ -27,7 +27,7 @@ type response struct {
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if len(os.Args) > 1 && (os.Args[1] == "mcp" || os.Args[1] == "opencode-config" || os.Args[1] == "codex-config") {
+	if len(os.Args) > 1 && (os.Args[1] == "mcp" || os.Args[1] == "opencode-config" || os.Args[1] == "codex-config" || os.Args[1] == "claude-config") {
 		var err error
 		if os.Args[1] == "mcp" {
 			err = serveMCP(ctx, os.Args[2:])
@@ -37,6 +37,8 @@ func main() {
 			if err == nil {
 				if os.Args[1] == "codex-config" {
 					err = writeCodexConfig(os.Stdout, os.Args[2:], executable)
+				} else if os.Args[1] == "claude-config" {
+					err = writeClaudeConfig(os.Stdout, os.Args[2:], executable)
 				} else {
 					err = writeOpenCodeConfig(os.Stdout, os.Args[2:], executable)
 				}

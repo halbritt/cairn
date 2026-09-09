@@ -121,6 +121,12 @@ stderr, and normal EOF emits no extra Cairn response envelope on stdout.
 
 The facade does not expose operator actions, run observation or automatic capture.
 
+## Claude Code
+
+Use `cairn claude-config` with explicit task/run scope to generate Claude Code's
+MCP JSON. The [Claude setup guide](claude-code.md) covers invocation, native
+connection verification and remaining session/task-use limits.
+
 ## Codex example
 
 Codex can launch the stdio server with conversation scope derived from its native

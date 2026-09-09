@@ -20,6 +20,10 @@ after an earlier run produced an unusable one. Both tasks have retrievals linked
 to observed host runs and separate task assessments. This is one accepted
 configuration task, with broader memory benefit still unproved.
 
+[Claude Code setup](docs/claude-code.md) can generate the same ordinary MCP
+interface with explicit task/run scope. Native connection is verified; a completed
+Claude task using memory remains unverified.
+
 The [roadmap](docs/roadmap.md) tracks accepted requirements, remaining gaps and
 acceptance evidence.
 

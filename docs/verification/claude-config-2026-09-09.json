@@ -1,0 +1,67 @@
+{
+  "schema": "cairn.claude-config-verification/1",
+  "date": "2026-09-09",
+  "claude_version": "2.1.265",
+  "checks": {
+    "argument_fidelity": true,
+    "no_output_refusals": true,
+    "writer_failure_propagation": true,
+    "generated_command_search_exact_pull": true,
+    "native_registration_and_connection": true,
+    "postgres_race": true,
+    "go_python_vet_build": true
+  },
+  "doctrine": {
+    "packet_id": "pkt-e955701fa38db8bc",
+    "packet_content_sha256": "e955701fa38db8bc4cea9d2c574b3e8134376d609aa606309e547787e925e544",
+    "nonmaterial_residuals": 9
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-claude-config-plan.md",
+      "sha256": "752a49e64ade03729ded2e2cab767ac86fe9b9b84042836cce8008c86706cf14"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-native-help.txt",
+      "sha256": "1e7fbf669ea9097e150ddfb0904ccb98326e27b927c77cf8343bad787b0a49b5"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-baseline.log",
+      "sha256": "39ec2e6df64445273ea9c043929541f8bc0c63e946a8157ca7ef2fe5afa38969"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-integration.log",
+      "sha256": "2e3ea647483617ec42383a4fe9cb796a3624aef250a35d93f54c42c51bd8abab"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-check.log",
+      "sha256": "cf907dc31e9867ea5d22daaea8ac7e8c7bae4e2076a43630324caeddbf067935"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-final-check.log",
+      "sha256": "7e9bbc361fc3c1f98d20aec476936b4cd2eaecb7adec63bdd38519d225c274a0"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-final.json",
+      "sha256": "0eabddb457c05bba0e047f53833f6d852dabb33daedeb2598688656bf9041e9f"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-residuals.json",
+      "sha256": "0d05fa1463a16110dedb40e12a83b10480359cc36bd61353195e9e38ac63b50b"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-decision.json",
+      "sha256": "6422589a06d52c3030fa8851fd78c52d05a505bbf68d0188709f7a0bd6655d97"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-citation-closure.json",
+      "sha256": "dffb87a346fe1921a34e6b40d8511732e928f167429626abd1949169eccc1527"
+    }
+  ],
+  "limits": [
+    "Native Claude-selected tool use and useful Claude task remain unverified.",
+    "No reliable native session scope is claimed.",
+    "Explicit scope must change for distinct executions.",
+    "No operational Claude settings changed by this slice."
+  ]
+}

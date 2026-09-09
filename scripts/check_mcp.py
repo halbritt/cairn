@@ -17,11 +17,17 @@ def session(binary, root, environment, extra_args=(), generated=False):
                str(root / 'hosted-agent.token'), '--repo', 'fixture:socket',
                '--task', 'mcp-integration', '--run', 'stdio', '--tokens', '64000', *extra_args]
     if generated:
-        rendered = subprocess.run([binary, 'opencode-config', *command[2:], '--memory-only'],
+        generator_args = ['claude-config', *command[2:]] if generated == 'claude' else ['opencode-config', *command[2:], '--memory-only']
+        rendered = subprocess.run([binary, *generator_args],
                                   capture_output=True, text=True, check=True, env=env, timeout=5)
         config = json.loads(rendered.stdout)
-        assert config['permission'] == {'*': 'deny', 'cairn_cairn_search': 'allow', 'cairn_cairn_pull': 'allow'}
-        command = config['mcp']['cairn']['command']
+        if generated == 'claude':
+            server = config['mcpServers']['cairn']
+            assert server['type'] == 'stdio'
+            command = [server['command'], *server['args']]
+        else:
+            assert config['permission'] == {'*': 'deny', 'cairn_cairn_search': 'allow', 'cairn_cairn_pull': 'allow'}
+            command = config['mcp']['cairn']['command']
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True, env=env)
     request_number = 0
@@ -131,6 +137,13 @@ def check(binary, root, environment, claim, support):
         assert [entry['record_id'] for entry in view['index']] == [saved['record_id']]
         corrected = tool('cairn_pull', view['index'][0]['pull_arguments'])['selection']['record']
         assert corrected['version'] == 2 and corrected['body'] == draft['body']
+    with session(binary, root, environment, generated='claude') as tool:
+        view = tool('cairn_search', dict(query=query))
+        entry = next(e for e in view['index'] if e['record_id'] == saved['record_id'])
+        assert tool('cairn_pull', entry['pull_arguments'])['selection']['record']['body'] == draft['body']
+    if environment.get('CAIRN_CLAUDE_BINARY'):
+        from check_claude_config import check as check_claude
+        check_claude(environment['CAIRN_CLAUDE_BINARY'], binary, root)
     # Startup failures must not put a Cairn response envelope on the MCP stream.
     failed = subprocess.run([binary, 'mcp'], capture_output=True, text=True, env=environment, timeout=5)
     assert failed.returncode != 0 and failed.stdout == '' and failed.stderr

@@ -1073,3 +1073,20 @@ appear in the summary; each earlier report retains its original coverage.
 This corrects a documentation mismatch introduced by appending deployment history
 without refreshing its current snapshot. All earlier history remains intact.
 No runtime, operational note, code or task assessment changed in this correction.
+
+### 2026-09-09 — Claude Code configuration generator
+
+`claude-config` now emits the existing five-tool MCP interface in Claude Code's
+JSON format with explicit task/run scope. It reuses shared path/context assembly,
+refuses invalid literal arguments and unsupported Codex metadata scope, and
+leaves credentials, host settings and permissions untouched. The
+[setup guide](claude-code.md), [report](verification/claude-config-2026-09-09.md)
+and [metadata](verification/claude-config-2026-09-09.json) record the boundary.
+
+Installed Claude Code 2.1.265 accepted and connected to the generated entry in
+an isolated home. The generated launch also searched and retrieved exact revised
+content through an independent MCP client. Full disposable integration/race,
+Go tests, 30 Python tests, vet and build passed. No model inference or operational
+fixtures were used. U8 advances to partial setup support; native Claude-selected
+use, session attribution and a useful Claude task remain open. This requested
+lower-priority adapter work adds no new task-value evidence or outcome correction.
