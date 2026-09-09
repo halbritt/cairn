@@ -1517,3 +1517,15 @@ were preserved. The [installation report](verification/compact-start-2026-09-09.
 and metadata retain both CLI installations, CI outcomes and source hashes.
 This verifies availability and transport; cumulative memory contribution remains
 an open task-value question. All prior history is preserved.
+
+### 2026-09-09 — accept a saved task specification at startup
+
+Added `agent start --prompt-file` as an alternative to inline `--prompt`. A bounded
+regular-file read preserves UTF-8 text, CRLF and trailing newlines; empty/invalid,
+oversized and non-regular sources refuse before retrieval. Both input carriers
+retain their existing behavior and budget. No task file is deleted or persisted
+by Cairn. The [verification](verification/start-task-file-2026-09-09.md) records
+the old unsupported flag, observed shell newline loss, exact real CLI/API delivery,
+Go/Python and static checks. Native model use and memory task benefit remain
+unclaimed. Saved owner priorities informed selection; current source prevented
+duplicating already-implemented retraction previews. All prior history is retained.

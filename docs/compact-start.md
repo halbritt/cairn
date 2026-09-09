@@ -57,6 +57,16 @@ also accepted. They describe context; they do not inspect the workspace themselv
 
 ## Budget and lifecycle
 
+For a saved task specification, replace `--prompt ...` with
+`--prompt-file ./task.md`. Exactly one task source is required. The file is read
+as UTF-8 without trimming, newline conversion or shell expansion, so trailing
+blank lines and literal quotation marks are preserved. The file must be regular;
+symlinks to regular files work. Paths are resolved from the launch directory.
+File input leaves the original stdin available in argv mode; stdin mode still
+supplies the combined memory and task to the harness. Neither the task file's
+path nor its body is sent to the Cairn API. Its body is sent to the harness as
+requested. Cairn leaves the source file in place.
+
 `--tokens` defaults to 32,000 and bounds the combined initial guidance, serialized
 memory and task input using Cairn's UTF-8 byte upper bound. Startup reserves room
 for the task before compiling memory and checks the final presentation. The
@@ -64,6 +74,10 @@ accepted range is 256–131,071 bytes, with the upper bound keeping one argument
 within Linux's conservative per-argument limit. A nonempty UTF-8 task without NUL
 bytes is required. Very small budgets can refuse even when the optional index is
 empty because required context and metadata still need room.
+File reads are capped at this limit plus one byte to detect overflow; an
+oversized file refuses rather than truncating the task. Missing/unreadable files,
+directories, pipes, empty text, invalid UTF-8 and NUL bytes prevent retrieval and
+launch. Correct the task source and start again; errors do not echo its contents.
 
 The index retains its existing expiration, expansion credits and byte budget.
 A long source may need an explicit span through the normal pull tool. Startup

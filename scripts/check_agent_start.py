@@ -45,7 +45,7 @@ def check(binary, root, environment, grant):
     start = [*agent, 'start', '--repo', scope['repo'], '--task', scope['task_id'], '--run', scope['run_id'],
              '--query', marker, '--prompt', prompt, '--tokens', '8192', '--pull-tool', 'cairn_pull',
              '--search-tool', 'cairn_search']
-    inspect = "import os,sys,json; print(json.dumps(dict(pid=os.getpid(),args=sys.argv[1:],stdin=sys.stdin.read(),env={k:v for k,v in os.environ.items() if k.startswith('CAIRN_') or k in ('PGPASSWORD','PGPASSFILE','PGSERVICEFILE')})))"
+    inspect = "import os,sys,json; print(json.dumps(dict(pid=os.getpid(),args=sys.argv[1:],stdin=sys.stdin.buffer.read().decode('utf-8'),env={k:v for k,v in os.environ.items() if k.startswith('CAIRN_') or k in ('PGPASSWORD','PGPASSFILE','PGSERVICEFILE')})))"
     literal = 'one argument with spaces; $(not-executed)'
     child = subprocess.Popen([*start, '--', sys.executable, '-c', inspect, literal], env=env,
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -77,6 +77,29 @@ def check(binary, root, environment, grant):
     assert piped_prompt == prompt and piped_result['args'] == [literal] and piped_result['env'] == {}
     assert [e['record_id'] for e in piped_view['index']] == [saved['record_id']]
     assert len(piped_result['stdin'].encode()) <= 8192
+    # Reading a selected task file must preserve bytes that shell command
+    # substitution would strip, including trailing newlines and CRLF.
+    task_path = root / 'selected task.txt'
+    task_text = prompt + '\r\nTrailing line.\n\n'
+    task_path.write_bytes(task_text.encode())
+    from_file = list(start)
+    prompt_position = from_file.index('--prompt')
+    from_file[prompt_position:prompt_position + 2] = ['--prompt-file', str(task_path)]
+    for carrier in ('stdin', 'argv'):
+        launched = subprocess.run([*from_file, '--carrier', carrier, '--', sys.executable, '-c', inspect],
+                                  input='original stdin', env=env, capture_output=True, text=True, timeout=20)
+        assert launched.returncode == 0, launched.stderr
+        inspected = json.loads(launched.stdout)
+        delivered = inspected['stdin'] if carrier == 'stdin' else inspected['args'][-1]
+        file_view, file_prompt = memory_input(delivered)
+        assert file_prompt == task_text
+        assert len(delivered.encode()) <= 8192 and str(task_path) not in delivered
+        assert [e['record_id'] for e in file_view['index']] == [saved['record_id']]
+        assert any(s['record']['record_id'] == required['record_id'] for s in file_view['selected'])
+        assert inspected['env'] == {}
+        if carrier == 'argv':
+            assert inspected['stdin'] == 'original stdin'
+    assert task_path.read_bytes() == task_text.encode()
     # A caller may have closed stdin; the prepared descriptor must survive exec
     # even when the anonymous file is allocated as descriptor zero.
     closed = subprocess.run(['/bin/sh', '-c', 'exec 0<&-; exec "$@"', 'closed-stdin',

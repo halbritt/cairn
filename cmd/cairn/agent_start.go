@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -87,7 +88,8 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 	query := f.String("query", "", "memory search query; use --browse instead for eligible previews")
 	browse := f.Bool("browse", false, "browse eligible previews without a query")
 	semantic := f.Bool("semantic", false, "optional semantic search with labelled lexical fallback")
-	prompt := f.String("prompt", "", "task text for the harness (required)")
+	prompt := f.String("prompt", "", "task text for the harness (or use --prompt-file)")
+	promptFile := f.String("prompt-file", "", "read task text from a regular UTF-8 file instead of --prompt")
 	carrier := f.String("carrier", "argv", "initial input route: argv or stdin (stdin recommended for OpenCode)")
 	pullTool := f.String("pull-tool", "", "configured native body-pull tool name (required)")
 	searchTool := f.String("search-tool", "", "configured native search tool name (required)")
@@ -109,9 +111,6 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 	if *carrier != "argv" && *carrier != "stdin" {
 		return agentStartPlan{}, invalid("startup carrier must be argv or stdin")
 	}
-	if strings.TrimSpace(*prompt) == "" || !utf8.ValidString(*prompt) || strings.ContainsRune(*prompt, 0) {
-		return agentStartPlan{}, invalid("start requires a nonempty UTF-8 --prompt without NUL bytes")
-	}
 	if !nativeToolName.MatchString(*pullTool) || !nativeToolName.MatchString(*searchTool) || *pullTool == *searchTool {
 		return agentStartPlan{}, invalid("start requires distinct configured --pull-tool and --search-tool names")
 	}
@@ -122,6 +121,24 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 	// 128 KiB. Refuse before retrieval rather than losing the task at exec.
 	if *tokens < 256 || *tokens > 131071 {
 		return agentStartPlan{}, invalid("startup input room must be between 256 and 131071 bytes")
+	}
+	var hasPrompt, hasFile bool
+	f.Visit(func(value *flag.Flag) {
+		hasPrompt = hasPrompt || value.Name == "prompt"
+		hasFile = hasFile || value.Name == "prompt-file"
+	})
+	if hasPrompt == hasFile {
+		return agentStartPlan{}, invalid("start requires exactly one of --prompt or --prompt-file")
+	}
+	if hasFile {
+		text, err := readStartupTask(*promptFile, *tokens)
+		if err != nil {
+			return agentStartPlan{}, err
+		}
+		*prompt = text
+	}
+	if strings.TrimSpace(*prompt) == "" || !utf8.ValidString(*prompt) || strings.ContainsRune(*prompt, 0) {
+		return agentStartPlan{}, invalid("startup task must be nonempty UTF-8 without NUL bytes")
 	}
 	command := append([]string{}, f.Args()...)
 	for _, arg := range command {
@@ -171,4 +188,28 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 		plan.argv = append(plan.argv, input)
 	}
 	return plan, nil
+}
+
+func readStartupTask(path string, limit int) (string, error) {
+	// Nonblocking open lets us reject a FIFO without waiting for a writer.
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return "", fmt.Errorf("open startup task: %w", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("inspect startup task: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", invalid("--prompt-file requires a regular file")
+	}
+	body, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
+	if err != nil {
+		return "", fmt.Errorf("read startup task: %w", err)
+	}
+	if len(body) > limit {
+		return "", &core.Error{Code: "BUDGET_REFUSED", Message: "task file exceeds startup input room"}
+	}
+	return string(body), nil
 }
