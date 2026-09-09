@@ -1388,3 +1388,34 @@ Exact installed-source CI [34412010428](https://github.com/halbritt/cairn/action
 completed successfully. The optional real CPU/API comparison remains separate
 local evidence. This deployment closes the bounded worker-reuse checkpoint;
 general task value, larger-scale retrieval and broader roadmap work remain open.
+
+### 2026-09-09 — reconcile U2 against existing run evidence
+
+Source inspection found that U2's “add command/argv digest” wording described an
+already implemented path: runner JSON-hashes its supplied argument vector,
+BindRun retains it through an observer-only channel, and run-report exposes it.
+Rendered-input/output digests, optional error-signature digests, retry identities
+and versioned evidence-linked task assessments also already exist. The roadmap
+now distinguishes these capabilities from selected task-output artifact/diff
+observations and remaining native-task evidence.
+
+The [digest guide](use-outcome-loop.md#command-and-delivery-digests) documents the
+pre-carrier boundary and interpretation limits. A [disposable check](verification/run-evidence-audit-2026-09-09.json)
+ran four real processes: prompt/carrier changes retained the base command digest,
+argument splitting changed it, delivery hashes matched combined input, all task
+outcomes stayed unknown, and raw argument/prompt canaries were absent from the
+database dump and context files. This confirms existing behavior, not a new
+capability or memory-benefit result. No production report or database was used
+for the check; the operational installation is unchanged.
+
+The existing assessment-history lesson was read after finding the implemented
+command digest. It reinforced the distinction between aggregate fields and the
+narrative/evidence behind a judgment. No new evidence-collection subsystem was
+added merely to satisfy a stale roadmap phrase. All prior implementation history
+is preserved; U2 remains partial under its narrower, explicit remaining scope.
+
+Doctrine packet pkt-827528bed4950d6e has one typed evidence pass, a validated
+decision receipt and citation closure. Twenty generic implementation obligations
+are nonmaterial to this documentation-only audit; no broader runtime or failure
+qualification is claimed. The existing JSON encoding also normalizes invalid
+UTF-8, so the guide does not claim byte-exact identity for arbitrary Unix argv.

@@ -136,6 +136,48 @@ Optional [host attempt linkage](host-attempt-link.md) validates the exact observ
 attempt and carries its ID into run reports. It does not infer host completion
 from a process result.
 
+## Command and delivery digests
+
+`run-report` already includes `command_sha256` from the service-observed run
+binding. The generic runner computes SHA-256 over Go's JSON encoding of the
+supplied command argument vector, before attaching memory/task input. It is not
+a hash of a shell-joined command string. Argument boundaries matter: one argument
+`"two words"` differs from two arguments `"two", "words"`. Reproducing the digest
+requires the same JSON encoding, including its escaping behavior.
+Go's JSON encoder replaces invalid UTF-8 bytes with the Unicode replacement rune,
+so this is not a byte-exact fingerprint of arbitrary Unix argument bytes.
+
+The related observations identify different parts of a run:
+
+| Observation | Meaning |
+| --- | --- |
+| `command_sha256` in the binding/report | JSON representation of the supplied argument vector, before carrier input is attached. |
+| Delivery `carrier` and `rendered_sha256` | How the combined rendered memory and transient task text were supplied, and that combined input's byte digest. With `argv`, the runner appends this input as the last argument after computing the command digest. |
+| Outcome `stdout_sha256` / `stderr_sha256` | Digests of the observed output streams; their raw bytes are not automatically stored in the database. |
+| Assessment `error_signature_sha256`, method, reason and evidence IDs | Explicitly supplied assessment evidence, separate from process observations and retained across corrections. |
+
+Equal command digests can accompany different prompts, memory or carriers. They
+do not establish an identical working directory, environment, executable contents
+or model behavior. A binding is written before the launch claim, so its presence
+alone does not prove that a process started. Use the process/delivery observations
+and the task context needed for the comparison; do not treat a digest or exit zero
+as task acceptance. A qualitative value judgment need not reduce to these fields.
+
+A [bounded check](verification/run-evidence-audit-2026-09-09.json) ran four
+`/bin/true` processes in a disposable store. Changing the prompt or carrier left
+the command digest unchanged; splitting an argument changed it. Delivery digests
+matched the actual combined input, and all four task outcomes remained unknown.
+Argument/prompt canaries were absent from the database dump and saved context
+files. This verifies those inputs and paths, not every capture route or physical
+erasure. Existing [historical run rows](verification/run-report-2026-09-08.json)
+already included command digests before this audit.
+
+The generic runner does not automatically fingerprint selected output files or
+diffs. Deliberate evidence capture and assessment links are available separately;
+they do not become an automatic observation of a produced artifact. That remaining
+capture contract stays in U2/L7. No new runtime fields or storage were needed to
+correct the earlier roadmap wording.
+
 ## Task assessments and corrections
 
 `cairn assess-run` accepts JSON with `request_id`, `receipt_id`,

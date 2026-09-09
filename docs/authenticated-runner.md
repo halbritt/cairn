@@ -45,6 +45,10 @@ it cannot turn a local-profile package into hosted input. Use `--carrier argv`
 when invoking OpenCode's positional prompt route. See the existing harness probe
 and trial reports for the tested OpenCode versions and their limitations.
 
+The existing [command and delivery digests](use-outcome-loop.md#command-and-delivery-digests)
+identify different parts of the invocation. The command digest excludes the
+combined memory/task input added by the selected carrier.
+
 ## Custody and failures
 
 Before claiming a launch, Cairn [rechecks the retained memory](launch-freshness.md)

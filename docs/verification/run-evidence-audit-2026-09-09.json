@@ -1,0 +1,110 @@
+{
+  "schema": "cairn.run-evidence-audit/1",
+  "binary_sha256": "a58d8258296382e6a81b100574ecf65685c62cf88a42682fc23e9afc7c9c7026",
+  "source_commit": "f5d07b0bcc3652022ad0368c43569416e805e60d",
+  "bindings": [
+    {
+      "name": "stdin-a",
+      "command_sha256": "3bab1a2958d7c82279502dead897f6ae4472e5ca6e8fe83cb1921412b3c55973",
+      "delivery": {
+        "carrier": "stdin",
+        "rendered_sha256": "f0c8aaf2a411f5fbe8da0d32e5911ab96466b7670c69e29b1e6f586aae63ceb0",
+        "assurance": "available"
+      },
+      "process_state": "exited",
+      "task_outcome": "unknown"
+    },
+    {
+      "name": "stdin-b",
+      "command_sha256": "3bab1a2958d7c82279502dead897f6ae4472e5ca6e8fe83cb1921412b3c55973",
+      "delivery": {
+        "carrier": "stdin",
+        "rendered_sha256": "d6ea7a9c749e82620eafb46360b9a8816cc45a102ddac2ab39b23f09d5b08a5c",
+        "assurance": "available"
+      },
+      "process_state": "exited",
+      "task_outcome": "unknown"
+    },
+    {
+      "name": "argv-b",
+      "command_sha256": "3bab1a2958d7c82279502dead897f6ae4472e5ca6e8fe83cb1921412b3c55973",
+      "delivery": {
+        "carrier": "argv",
+        "rendered_sha256": "fdf5a6c21961199f024f713157acfa6a02602393474f0d537354810e0dfd4bad",
+        "assurance": "available"
+      },
+      "process_state": "exited",
+      "task_outcome": "unknown"
+    },
+    {
+      "name": "split-arg",
+      "command_sha256": "d5019076cb0ac0a4d85cc75414b4234b521d7012fdf97c5b59415d98da2ea6f7",
+      "delivery": {
+        "carrier": "stdin",
+        "rendered_sha256": "9d8f4853b2f7fda6c0a03d325ef142cd305826301fdfbda3d9a9cdfb05a69826",
+        "assurance": "available"
+      },
+      "process_state": "exited",
+      "task_outcome": "unknown"
+    }
+  ],
+  "raw_argv_and_prompt_absent_from_database": true,
+  "raw_argv_and_prompt_absent_from_context": true,
+  "source": "Four disposable /bin/true runs; no memory-value claim",
+  "installed_implementation": "cf66e1c3cc26b65d4f143f59f0f1070f7b56ec3b",
+  "runtime_changed": false,
+  "source_hashes": {
+    "runner/runner.go": "f6648020d77a4291120af749201cbd1d3506942c3b42b26e8c49e0c070cbbf8b",
+    "core/assessment.go": "57af6456483ff8a45b4be5d6fc96cfdcb774e398e083d20b1dc241d06e190c26",
+    "core/observations.go": "5799b0e2df2ddee29c3f25b44de2a4440014ba1756fb332370c5da413d4a8db4",
+    "core/run_report.go": "f53fe2c8bcdd621ccd865900b96e7a8c1248892b5ac0aeb0eac6b3e7f590281e",
+    "core/schema/006_run_assessment.sql": "f58f5015a6e8d8fd1a119bfaf32875c57eb9b67c7ccef4bc892f1968b5d4d09a"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-run-evidence-probe.py",
+      "sha256": "760ac14e719ac279afb9cf52c326da3b0203870ba031c64ca12f28fff13aa21e"
+    },
+    {
+      "path": "/tmp/cairn-run-evidence-probe.log",
+      "sha256": "9336c0d23ba2f3d42e83ad37f9777c1fd7b7078f8ab0679cd3c0457493441fdc"
+    },
+    {
+      "path": "/tmp/cairn-run-evidence-json-marshal.txt",
+      "sha256": "f84cdd8ef231c4cc82e4dda1950b1d42ab5d7c89b18d4fd4d64aed8a265c0a54"
+    },
+    {
+      "path": "/tmp/cairn-run-evidence-decision.json",
+      "sha256": "e68fd837fb828d783bc55003b1b06c4a5eabea5753d98073eedced8ac207ac4e"
+    },
+    {
+      "path": "/tmp/cairn-run-evidence-packet-final.json",
+      "sha256": "e0cfb1583f967c83465585f6ba88c17905ee47d2d8056344c24f569543eb24c6"
+    },
+    {
+      "path": "/tmp/cairn-run-evidence-citation-result.json",
+      "sha256": "01c36a22b10340a3b034212be5dd25828636642e9bd9264505b34ea8995c346e"
+    },
+    {
+      "path": "/tmp/cairn-run-evidence-audit/report.json",
+      "sha256": "9336c0d23ba2f3d42e83ad37f9777c1fd7b7078f8ab0679cd3c0457493441fdc"
+    },
+    {
+      "path": "/tmp/cairn-run-evidence-audit/run-report.json",
+      "sha256": "c3538cd01db668fdc1aea6f1c4d1e6b7e63af28e52a392228733795ca313882b"
+    },
+    {
+      "path": "/tmp/cairn-run-evidence-audit/data.sql",
+      "sha256": "038bc327c4b3874230f26c925630fabda02d330a65acaee72d0b5be950463fee"
+    }
+  ],
+  "doctrine": {
+    "packet_id": "pkt-827528bed4950d6e",
+    "packet_content_sha256": "827528bed4950d6e80b4050df67e69ad64e4c543e5c4b9a82527c0a72ff13afa",
+    "typed_passes": 1,
+    "nonmaterial_obligations": 20,
+    "decision_receipt_valid": true,
+    "citation_closure_valid": true
+  },
+  "interpretation": "Existing evidence semantics; U2 remains partial. No new runtime capability or memory-benefit claim."
+}
