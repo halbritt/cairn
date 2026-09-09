@@ -46,6 +46,10 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Retained runs check kind intent.** The previous filter feature omitted this
+  comparison. The installed runner now refuses changed or missing filters before
+  launch and supports repeated `--kind` in fresh and retained run commands.
+  [Repair and E2 audit](verification/retained-kinds-2026-09-09.md).
 - **Saved direction can be found by kind.** Filtered browsing returns the three
   existing priority, value and history notes on one page; previously they were
   on page two. Full pulls and fresh MCP/semantic searches work through the
@@ -111,11 +115,12 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and running API: clean `2d6718112551095caa4fa1c65048702de70d450c`, with
-  SHA-256 `7dd724bbf6878bb011d753167eba1447c5ab0e6812ff3bfa7c56e0b6906c3173`.
-  Kind selection is available through the existing search interfaces. The API
-  restarted and the native OpenCode adapter was updated together, with no schema
-  migration. Earlier capture, span and configuration capabilities remain installed.
+- Installed CLI: clean `32560239817cfcaa02bfc1d5bb36c19a77a7bc95`, with SHA-256
+  `1174696e318ee957179d205e9445fb71c32107f8aeb11b86c53f1a64e8e0c0a7`. It adds run kind flags and
+  checks equivalent retained filter intent before binding or launch.
+- Running API: clean `2d6718112551095caa4fa1c65048702de70d450c`, with SHA-256
+  `7dd724bbf6878bb011d753167eba1447c5ab0e6812ff3bfa7c56e0b6906c3173`. It retains kind-filtered search.
+  The CLI-only runner repair needed no API restart or schema migration.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -133,8 +138,9 @@ Live checks on 2026-09-09 found:
   SHA-256 `d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954`.
   It adds no persistent embedding cache or model service.
 
-The [kind-filter installation report](verification/kind-filter-2026-09-09.md#local-installation)
-records the current binaries, adapter, preserved configuration and ordinary lookup.
+The [retained-kind CLI repair](verification/retained-kinds-2026-09-09.md#cli-installation-and-retained-guidance)
+records the current CLI and preserved runtime. The [kind-filter installation report](verification/kind-filter-2026-09-09.md#local-installation)
+records the running API, adapter, preserved configuration and ordinary lookup.
 Earlier [Claude setup](verification/claude-config-2026-09-09.md#local-installation) and
 [note-transport](verification/note-transport-2026-09-09.md#local-deployment)
 reports retain their deployment history. Installation
@@ -143,6 +149,13 @@ or grooming timer is installed. Use the user services for the managed store's
 lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
+
+The installed retained-kind CLI repair passed real PostgreSQL/child-process and
+CLI/Unix API checks, all Go packages, 30 Python tests, vet and formatting.
+[Exact CLI-source CI `3256023`](https://github.com/halbritt/cairn/actions/runs/34406955835)
+passed PostgreSQL/race, Python, vet and build. The
+[repair report](verification/retained-kinds-2026-09-09.md) retains both the failed
+baseline and completed checks.
 
 The installed kind-filter source passed disposable PostgreSQL integration with
 Go's race detector, CLI/API, independent MCP and scripted native OpenCode checks.
@@ -153,7 +166,7 @@ baseline, corrected test mistakes and final result. Its operational check finds
 and pulls saved direction through the ordinary hosted profile and exercises the
 installed semantic worker. These checks do not use model inference.
 
-[CI for installed source `2d67181`](https://github.com/halbritt/cairn/actions/runs/34405630245)
+[CI for running API source `2d67181`](https://github.com/halbritt/cairn/actions/runs/34405630245)
 passed PostgreSQL/race, Python tests, vet and build. Earlier
 [native Claude checks](verification/claude-native-tools-2026-09-09.md) retain
 separate two-session correction/reuse and refusal evidence. No production
@@ -1217,3 +1230,22 @@ index packages, and native tools do not establish automatic compact startup or
 aggregate task budgeting. The roadmap now records those exact gaps. Source
 changes are verified; the current installation snapshot remains the preceding
 deployment until the separate CLI installation check.
+
+### 2026-09-09 — install retained-kind repair and preserve the correction
+
+Clean `3256023` is installed as the CLI; the API stays on `2d67181`.
+No service restart, schema, host configuration or adapter change was needed.
+The installed CLI recognizes the new flag and refuses invalid kind intent;
+valid fresh/retained behavior is covered by the disposable real-process checks.
+
+The ordinary retained-context lesson advanced v2→v3, preserving its complete old
+body as a prefix and all metadata. Its appended correction names the missed
+intent check, shared normalization and run flags, and explicitly says the old
+lesson was read after discovery. Exact mutation retry and a fresh full pull
+verified the saved version. This is useful guidance retained for future work;
+it does not establish that memory discovered the defect or produced net savings.
+The current installation snapshot now reflects the CLI-only deployment.
+
+Exact installed-CLI-source CI [34406955835](https://github.com/halbritt/cairn/actions/runs/34406955835)
+completed successfully. The API remains on its separately verified source. Full
+prior implementation history and the earlier note versions remain preserved.

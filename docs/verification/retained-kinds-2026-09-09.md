@@ -56,3 +56,25 @@ receipt validates and citation consumption is closed. Five generic interface/
 recurrence obligations remain explicitly nonmaterial. Test and documentation
 guards checked the changed behaviors and claims. [Metadata](retained-kinds-2026-09-09.json)
 retains hashes of the reproduction, completed checks and decision evidence.
+
+## CLI installation and retained guidance
+
+Clean `32560239817cfcaa02bfc1d5bb36c19a77a7bc95` is installed as the CLI, SHA-256
+`1174696e318ee957179d205e9445fb71c32107f8aeb11b86c53f1a64e8e0c0a7`. The running API remains on `2d67181`;
+the repair affects the host runner, while compile/index behavior and the API
+protocol are unchanged. Both services remain active with the same process IDs.
+The OpenCode adapter, host settings and semantic worker hashes are preserved.
+The installed CLI recognizes `--kind` and refuses an unsupported label. Valid
+execution was verified in the disposable integration, not on operational tasks.
+
+The existing retained-context lesson was revised v2→v3 through ordinary hosted
+access, appending the specific kind-intent correction. Its earlier body remains
+an exact prefix, and scope, kind, sensitivity, claims, pins and relations are
+preserved. The same mutation retries exactly; a fresh search/full pull verifies
+the new version and body digest. It records that memory was read after discovery,
+preserving the limit on any claimed contribution. This is selected guidance for
+future work, not a new acceptance or promotion.
+
+[CI on the exact installed CLI source](https://github.com/halbritt/cairn/actions/runs/34406955835)
+passed PostgreSQL/race, Python, vet and build. These checks validate the repair;
+no new model-selected task or acceptance is claimed.
