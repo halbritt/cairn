@@ -32,4 +32,9 @@ jobs:
       - run: make check build
       - run: CAIRN_DATABASE_URL="$CAIRN_TEST_DATABASE_URL" python3 scripts/check_use_report.py bin/cairn
       - name: Check authenticated CLI and compact startup
-        run: CAIRN_DATABASE_URL="$CAIRN_TEST_DATABASE_URL" python3 scripts/check-local-api.py "$PWD/bin/cairn" "$RUNNER_TEMP/cairn-api-check"
+        env:
+          CAIRN_DATABASE_URL: postgres://cairn:fixture-only@localhost:5432/cairn_cli_test?sslmode=disable
+        run: |
+          docker exec "${{ job.services.postgres.id }}" createdb --maintenance-db "$CAIRN_TEST_DATABASE_URL" cairn_cli_test
+          bin/cairn migrate
+          python3 scripts/check-local-api.py "$PWD/bin/cairn" "$RUNNER_TEMP/cairn-api-check"
