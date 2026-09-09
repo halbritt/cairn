@@ -2,8 +2,9 @@
 
 `cairn claude-config` generates the Claude Code MCP configuration for Cairn's
 existing five ordinary tools: search, body/evidence pull, capture and edit.
-Claude Code 2.1.265 has accepted the generated entry and connected to its stdio
-server. Native model-selected tool use and task benefit remain unverified.
+Claude Code 2.1.265 has accepted the generated entry and executed all five tools
+in scripted native sessions. Native model-selected tool use and task benefit
+remain unverified.
 
 Generate a configuration for the intended task and execution:
 
@@ -58,15 +59,19 @@ so per-invocation configuration is appropriate when execution scopes change.
 
 [Ordinary tool behavior](mcp.md#tools) retains the authenticated API's repository,
 destination, version and stale-handle checks. A connection does not establish
-that Claude retrieved or applied a note. The current verification checks actual
-Claude configuration registration and connection in an isolated home, plus
-search and exact revised-note retrieval through the generated launch command
-with an independent MCP client. No inference, owner configuration changes or
-operational test records are involved. Run it with:
+that Claude retrieved or applied a note. [Native verification](verification/claude-native-tools-2026-09-09.md) checks actual
+Claude capture, correction, search, body/evidence pulls, retries, stale refusals,
+hosted filtering and a denied edit across two isolated native sessions. Scripted
+local responses drive the calls; no inference, owner configuration changes or
+operational test records are involved. Direct MCP rejects non-boolean sharing
+flags. Claude's native path accepted textual `"false"` as a local note in this
+version, while refusing unrecognized boolean text. Supply actual booleans and
+do not rely on client coercion. Run it with:
 
 ```sh
 CAIRN_CLAUDE_BINARY="$(command -v claude)" make test-integration
 ```
 
 The required CLI version and remaining U8 work are recorded in the
-[verification report](verification/claude-config-2026-09-09.md).
+[setup report](verification/claude-config-2026-09-09.md) and
+[native tool report](verification/claude-native-tools-2026-09-09.md).

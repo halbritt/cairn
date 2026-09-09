@@ -301,6 +301,11 @@ and connected in an isolated native check; an independent MCP client retrieved
 exact revised content through that generated launch. Native model-selected use,
 reliable native session scope and a useful Claude task remain open under U8.
 This is the requested lower-priority setup work, not a new task-value result.
+A [native execution check](verification/claude-native-tools-2026-09-09.md) now
+verifies all five tools and correction/reuse across two scripted Claude sessions,
+including destination and permission/refusal behavior. It retains a corrected
+assumption about boolean-string coercion; no production fix was needed. A useful
+Claude task and model-selected use remain unverified.
 
 The [observation join](use-outcome-loop.md) now associates each exposure with
 reduced delivery/usage streams, process outcome and versioned task assessments;

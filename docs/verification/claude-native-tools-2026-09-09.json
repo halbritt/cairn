@@ -1,0 +1,206 @@
+{
+  "schema": "cairn.claude-native-verification/1",
+  "date": "2026-09-09",
+  "native": {
+    "schema": "cairn.claude-native-tools/1",
+    "claude_version": "2.1.265 (Claude Code)",
+    "completed_scripted_cases": 18,
+    "exact_capture_edit_pull": true,
+    "exact_evidence_span": true,
+    "retries": true,
+    "textual_false_stays_local": true,
+    "malformed_capture_refused": true,
+    "stale_refusals": true,
+    "hosted_filtering": true,
+    "fresh_session": true,
+    "denied_edit_has_no_effect": true,
+    "model_inference": false,
+    "operational_store_access": false
+  },
+  "sessions": [
+    {
+      "session_id": "084a7384-f7c5-49f3-9d72-79907a8f994c",
+      "mcp_servers": [
+        {
+          "name": "cairn",
+          "status": "connected"
+        }
+      ]
+    },
+    {
+      "session_id": "c5fbebe9-c5c2-4e6b-8505-fa2b46aae01e",
+      "mcp_servers": [
+        {
+          "name": "cairn",
+          "status": "connected"
+        }
+      ]
+    }
+  ],
+  "production_code_changed": false,
+  "doctrine": {
+    "packet_id": "pkt-e69d4b75b4b4bde0",
+    "packet_content_sha256": "e69d4b75b4b4bde05f1f18d21776ef223812997a0f64ffe0a8d3a28e2ae7878b",
+    "nonmaterial_residuals": 6
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-claude-native-plan.md",
+      "sha256": "8466cbf4b030caca10798733f8f97eddef921a9aa29b2b9c9301c2cca43c83c5"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-guidance.json",
+      "sha256": "3b184ef7d12533fa9123910e062754fff37a07cb2ce748992635369a862eabb4"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-integration-a.log",
+      "sha256": "b7a73889bcd9b47661488ee390fc14d24f4a95aba4deaf12d5363b59fb45ff62"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-integration-b.log",
+      "sha256": "083716a8ae8e25f8976ddecd1946321354f3465ed113234d99a3dd16f6f51ac8"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-integration-c.log",
+      "sha256": "c37c9a696989223d2956093b24d09c5139df4e4b4fb823fc01bc6f7cea205680"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check.log",
+      "sha256": "19d646186836df1b17714d379d3caeb2d5123a8d6113f11144529299091313f5"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-sessions.json",
+      "sha256": "43f643fbb8e0b568214b47b1a7ec3f78aa2529b868aa48e3c57915e07ae430c4"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-final.json",
+      "sha256": "50d9990603bd756358beb8f6516f145fe71be08e5783eedefb10e58cbba81b51"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-residuals.json",
+      "sha256": "52a43d2268b00ae8e70a22ecfe12893a5f88d50e4e72546cd22c759870f998ba"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-decision.json",
+      "sha256": "9f119cc8a6d1f96c9a2b5f9a62dcf8d4800a766a2b4f9edb90874b59806d6976"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-citation-closure.json",
+      "sha256": "2700dbba3b968c5f95e10e6ae371e0acd31c8d68a7969430a7b002c2f1d9aa71"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-a/report.json",
+      "sha256": "cc939e32190b9373268d63d36f14f8820ef7e15fb5caa618c9f78b25838d12ed"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-a/first/results.json",
+      "sha256": "3e839b976a7a769c942d2d288bf79329ece68165ba44c41e6864ab786cc66f85"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-a/first/requests.json",
+      "sha256": "560684b9cc6e5adb4dbc5acd6530c2dce3d9b3cc2f8e59a5360346b1827abf38"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-a/first/stdout.jsonl",
+      "sha256": "ef283bc7344a7f263dfb8820fd90f27e64883b903a2018706a50e9cee0bbe61b"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-a/first/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-a/second/results.json",
+      "sha256": "43f54071bbdfac920331f1181eec31ebd67d324d98ab0a36ef2af3f406f8394e"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-a/second/requests.json",
+      "sha256": "e15fcf652827d3e05c3894c330f52ddbf9f3c97128998d0c6c2bd7e704806824"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-a/second/stdout.jsonl",
+      "sha256": "f7b35bcd9d746064d03cd139105e16f7e3655394e775bb7a2790e45f42cf9005"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-a/second/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-b/first/results.json",
+      "sha256": "2bab60e145eab9a2ef2f89d53f49b66d402dbf976e612bd551d2c055bda2ea4d"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-b/first/requests.json",
+      "sha256": "0a22f4a2d05bff5eb9ef47e9717cd1a641017f33c531ffdeed7332e863111ab1"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-b/first/stdout.jsonl",
+      "sha256": "8420e88afd5b812726c923fa68cd1e20bbd1113779a118d7aa739404addee770"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-b/first/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-c/report.json",
+      "sha256": "be784911b6babe326233885c49b9250d2b04969b17e8b0b6148877e4907915fa"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-c/first/results.json",
+      "sha256": "3ae1ed86f23fdaff12c7877d36f97cc8d7324ddac708afdfc7807d43a669c0c4"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-c/first/requests.json",
+      "sha256": "174b9459811b5ff7798ba68fb9c98980fd54506e6fd0609002e9e27998677f5c"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-c/first/stdout.jsonl",
+      "sha256": "eec3873c428fda032d47e7928c7707a7c15a31e118c363e2f536273a74b2325e"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-c/first/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-c/second/results.json",
+      "sha256": "4525b761ce2252553b0e3fc0f9462fff1e3ee0dd1d71fd9306e8d1ef48ad913c"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-c/second/requests.json",
+      "sha256": "dc37337ad66c576fe8ceba9c9d3740aa429de00e7131aa76cb9adb3ddf86bb9c"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-c/second/stdout.jsonl",
+      "sha256": "b3c22a95980f075479a22852148626613063f4f87b4f42c736fe04760d0f59aa"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-check-c/second/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "scripts/check_claude_tools.py",
+      "sha256": "f64540507826fd587eab2b00377966f6d21bd0c14ba7c8e8d01f996e33f43284"
+    },
+    {
+      "path": "scripts/check_mcp.py",
+      "sha256": "45ab6ce5246c203a4d9f625ca21c239294748b53a57784419b6b752d30b35306"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-input-adjustment.json",
+      "sha256": "4bdab91294c78b72f370eafbaaa1905848dcedc9a5f2fee0ed4e4a65e5025c1f"
+    }
+  ],
+  "limits": [
+    "No inference, model-selected use, useful Claude task or automatic native session attribution.",
+    "Textual false adjustment observed at native path; exact MCP wire normalization not captured.",
+    "Interactive trust and exhaustive character-set conformance not covered."
+  ],
+  "input_adjustment": {
+    "scripted_source_type": "string",
+    "scripted_source_value": "false",
+    "native_conversation_type": "boolean",
+    "native_conversation_value": false,
+    "native_stored_sensitivity": "local",
+    "direct_mcp_refused": true,
+    "exact_mcp_wire_captured": false
+  }
+}

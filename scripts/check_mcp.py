@@ -76,6 +76,8 @@ def session(binary, root, environment, extra_args=(), generated=False):
 
 def check(binary, root, environment, claim, support):
     with session(binary, root, environment) as tool:
+        invalid = tool('cairn_remember', dict(request_id=str(uuid.uuid4()), body='Invalid direct MCP boolean', shareable='false'), error=True)
+        assert 'validating' in invalid and 'boolean' in invalid, invalid
         query = 'mcpstdio' + uuid.uuid4().hex
         args = dict(request_id=str(uuid.uuid4()), body='Earlier setup context. ' * 30 + query + ': selected stdio lesson', shareable=True)
         saved = tool('cairn_remember', args)
@@ -144,6 +146,8 @@ def check(binary, root, environment, claim, support):
     if environment.get('CAIRN_CLAUDE_BINARY'):
         from check_claude_config import check as check_claude
         check_claude(environment['CAIRN_CLAUDE_BINARY'], binary, root)
+        from check_claude_tools import check as check_claude_tools
+        check_claude_tools(environment['CAIRN_CLAUDE_BINARY'], binary, root, environment, claim, support)
     # Startup failures must not put a Cairn response envelope on the MCP stream.
     failed = subprocess.run([binary, 'mcp'], capture_output=True, text=True, env=environment, timeout=5)
     assert failed.returncode != 0 and failed.stdout == '' and failed.stderr

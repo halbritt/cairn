@@ -32,7 +32,7 @@ the current summary; do not replace the historical record.
 | Retrieval | Lexical search, matching previews with source byte positions, bounded browsing with continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
 | Semantic discovery | Optional local CPU scoring for vocabulary mismatches, after eligibility checks; bounded work and labelled lexical fallback. Historical recompilation uses retained scores. | [Semantic discovery](semantic-discovery.md) |
 | Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, citation-time digests and optional byte passages on qualified claim versions, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [precise citations](evidence-citations.md), [span verification](verification/evidence-spans-2026-09-09.md) |
-| Harness access | Five ordinary tools for search, body/evidence pulls, capture and edit through MCP; Codex conversation scope and native OpenCode session scope. OpenCode configuration generation and a bundled native-tool installer are shipped; Claude configuration generation has native connection verification with explicit scope. | [MCP](mcp.md), [OpenCode tools](opencode-tools.md) |
+| Harness access | Five ordinary tools for search, body/evidence pulls, capture and edit through MCP; Codex conversation scope and native OpenCode session scope. OpenCode configuration generation and a bundled native-tool installer are shipped; Claude configuration and all five tools have scripted native-session verification with explicit scope. | [MCP](mcp.md), [OpenCode tools](opencode-tools.md) |
 | Host execution | Authenticated observer access, compiled or exact retained-package execution, freshness checks before launch, process observations and separately versioned task assessments. Hosts can associate agent retrievals with observed runs. | [Authenticated runner](authenticated-runner.md), [retained execution](retained-execution.md), [use/outcome join](use-outcome-loop.md) |
 | Inspection and review | Historical replay/recompilation, record and evidence impact, versioned relation paths, use/run reports, conflict inspection, bounded refusal diagnostics and evidence-attached failure review groups. | [Evidence impact](evidence-impact.md), [refusals](refusals.md), [demand review](demand-review.md) |
 | Authority and lifecycle | Operator grants/revocation, independent B promotion and correction, C instructions, guarded retraction, B→A demotion, supersession, scope authorization, governed policy revisions and instruction category limits. | [Relations and demotion](relations-and-demotion.md), [supersession](supersession.md), [scope authorization](scope-authorization.md), [policy](governed-policy.md) |
@@ -155,7 +155,8 @@ integration result. No model inference was used for these checks.
 
 [CI for installed CLI source `cee290e`](https://github.com/halbritt/cairn/actions/runs/34400988285)
 passed PostgreSQL/race, Python tests, vet and build. Native Claude configuration
-registration and connection passed separately in the local disposable integration.
+and actual tool execution passed separately in the local disposable integration,
+including [two-session correction/reuse and refusal checks](verification/claude-native-tools-2026-09-09.md).
 
 [CI for running API source `6dbca8b`](https://github.com/halbritt/cairn/actions/runs/34399146044)
 passed PostgreSQL integration with the race detector, Python tests, vet and build.
@@ -1120,3 +1121,21 @@ establish continuity support, not independent downstream benefit.
 
 [Exact CLI source CI](https://github.com/halbritt/cairn/actions/runs/34400988285)
 passed PostgreSQL/race, Python tests, vet and build.
+
+### 2026-09-09 — native Claude tool execution and input-boundary finding
+
+The [native tool check](verification/claude-native-tools-2026-09-09.md) and
+[metadata](verification/claude-native-tools-2026-09-09.json) now cover actual
+Claude execution of all five ordinary tools across two distinct native sessions.
+Exact capture/edit/pull/evidence results, retries, stale/version refusals, hosted
+filtering and a permission-denied edit with no stored effect passed. Responses
+were scripted locally; no inference or model-selected task result is claimed.
+
+A second run failed an assumed refusal for textual `shareable: "false"`. The
+completed comparison showed direct MCP rejection, native acceptance as a local
+note, and refusal of unrecognized boolean text. The test now checks the actual
+storage/disclosure boundary and retains the failed assumption. No production
+validation fix was warranted. The final 18-case native check and full disposable
+integration/race passed; Go tests, 30 Python tests and vet/format also passed.
+Installed binaries, service processes and schema are unchanged. U8 remains
+partial pending useful native task evidence; historical assessments are untouched.
