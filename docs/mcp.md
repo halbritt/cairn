@@ -89,6 +89,39 @@ stderr, and normal EOF emits no extra Cairn response envelope on stdout.
 
 The facade does not expose operator actions, run observation or automatic capture.
 
+## Codex example
+
+Codex can launch the existing stdio server. Replace the absolute paths and the
+example task/run IDs for the task you are starting:
+
+```toml
+[mcp_servers.cairn]
+command = "/absolute/path/to/cairn"
+args = [
+  "mcp",
+  "--socket", "/absolute/path/to/cairn/api.sock",
+  "--token-file", "/absolute/path/to/cairn/hosted-agent.token",
+  "--repo", "/absolute/path/to/repository",
+  "--task", "investigate-storage",
+  "--run", "attempt-1",
+]
+enabled_tools = ["cairn_search", "cairn_pull", "cairn_pull_evidence"]
+required = true
+startup_timeout_sec = 15
+```
+
+Use a provisioned profile authorized for that repository and hosted delivery.
+This example exposes retrieval tools only. A static configuration retains the
+same declared scope across launches: update the task/run arguments and start a
+fresh server for the next task. Supply the optional context flags described
+above when memory eligibility depends on revision, workspace or binding.
+
+Codex's [configuration instructions](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+cover user/project placement and command-line overrides. `codex mcp get cairn --json` inspects the resolved configuration; it does not prove the server connected.
+An [actual Codex client check](verification/codex-mcp-2026-09-08.md) connected,
+listed the permitted tools, searched and pulled the exact saved lesson without
+starting a model turn. Model-selected use and task benefit remain unverified.
+
 ## OpenCode example
 
 Generate the server entry with the installed Cairn executable:

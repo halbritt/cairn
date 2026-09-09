@@ -1,5 +1,11 @@
 # Native repair recurrence
 
+The [original](../../docs/verification/native-permissions-2026-09-08.md) and
+[corrected](../../docs/verification/native-corrected-recurrence-2026-09-08.md)
+comparisons both completed without an admitted repair. They are retained
+evidence; repeating this unchanged task/binding is retired from the active
+usefulness sequence. The commands below remain available for explicit experiments.
+
 This is a new prospective comparison using the previously repaired explicit
 agent-connection defect. It tests reuse of a lesson about the same problem;
 it does not test transfer to an unfamiliar problem. The earlier experiment in

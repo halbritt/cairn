@@ -24,6 +24,12 @@ scope/context flags. Both output modes connected in OpenCode without a model
 call. This removes routine JSON assembly; host launch and outcome association
 remain explicit responsibilities.
 
+The [native Codex MCP check](verification/codex-mcp-2026-09-08.md) now exercises
+search and exact lesson pull through Codex's actual client with no model turn.
+The [setup example](mcp.md#codex-example) uses the existing Cairn server and
+per-task scope. This adds harness compatibility; it does not close X2's native
+resume/compaction interlocks or establish model-selected use.
+
 The [MCP context extension](verification/mcp-currentness-2026-09-08.md) lets hosts
 supply existing revision/workspace/task-class/binding/capability pins at startup.
 Public stdio checks verify matching retrieval and missing/mismatched withholding.
@@ -212,7 +218,10 @@ usable source, exact prompt receipt and independent repair rejection. The
 three invocation timeouts with no admitted repair. Native model contact and
 exact delivery are observed; successful repair and memory benefit remain open.
 An actual OpenCode scratch-permission defect is reproduced and corrected with
-a scripted harness check added to calibration. Accepted native contracts and
+a scripted harness check added to calibration. The [corrected comparison](verification/native-corrected-recurrence-2026-09-08.md)
+also produced no admitted repair. This unchanged task/binding comparison is
+retired from the active sequence; further usefulness work needs completed real
+tasks and practical cross-harness retrieval. Accepted native contracts and
 real-build usefulness remain open. The
 [OpenCode trial host](verification/opencode-host-observation-2026-09-08.md) now
 uses per-arm authenticated observers, exact package/attempt joins and pending

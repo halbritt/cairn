@@ -1,0 +1,208 @@
+{
+  "schema": "cairn.native-corrected-recurrence-verification/1",
+  "source_commit": "409bbbc",
+  "private_root": "/tmp/cairn-native-recurrence-model-b",
+  "report_sha256": "445885c01f942a9498da5645881c86485b5b625618ceda22cf512365b7755993",
+  "scenario_sha256": "20d8fcc3081aadf3f0e8b88d7a07b44d2fa834c5ab69326cbe150bee14d3c797",
+  "execution_pins": {
+    "driver_binary_sha256": "cee6184e65ca24029e028633701434dddc3bcea6ba75f8745db4ed2055aa0a73",
+    "go_paths": [
+      "/home/halbritt/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64",
+      "/home/halbritt/go/pkg/mod"
+    ],
+    "go_binary_sha256": "b93cdfdbc72f1afc3f21498c80bf3d155a44a9b95e2d690c940511051574bc25",
+    "striatum_head": "ee8a463c9978833bc53d2726eef63eb9417fcb91",
+    "striatum_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cairn_scripts": {
+      "trial_native_executor.py": "c7ac4c013d7d22959b00d0edabe1db48dde73de8a6d841719a7425308d24c85b",
+      "trial_native_runtime.py": "73272ee235619a3e07de1ee0cb3e9dd87b7bb281c2cf2d90426fc17693990659",
+      "trial_native_permissions.py": "2beb981357ab7b93fd12aa26ae9ba16a81742f988f6130389e8e2fc22e9475a4",
+      "trial_native_recurrence.py": "3fb75e379d799e4143c7e98c58742d5f1b4f595c284bb2dc5e87e1eb575cc40c",
+      "trial_agent_env.py": "99aa09abf6ecf0efaf74de2e0241ff2208f150514f54e8f7ecdbcfdc9931480a",
+      "trial_repair_assessment.py": "99442405923d0209cccfa94dac4c9b4ddc44e2cd2f40f9492cf986531f0f85a2",
+      "trial_openrouter.py": "6eb38d165448bacced6f67924c4aed871b1b167a6fe2e842579a5052cfeaba0a",
+      "trial_retrieval_tools.py": "1ce9cdb4dbbc53d290cca7036ee414c9033702de2300e5b68e9527c789606fff"
+    },
+    "fixture_source_sha256": "6878e07235f36146f7f78706af9148b0a328691b2800663baf993906a09a86b1"
+  },
+  "fixture_report": "/tmp/cairn-native-executor-fixture-m/report.json",
+  "arms": [
+    {
+      "mode": "no_memory",
+      "invocations": 1,
+      "provider_requests": 32,
+      "process_exit": null,
+      "change_set_admitted": false,
+      "change_set_checked": false,
+      "assessment": {
+        "task_outcome": "unknown",
+        "failure_domain": "binding",
+        "failure_kind": "quota",
+        "reason": "Observed local trial request allowance exhausted; candidate checks remain separate."
+      },
+      "gate": {
+        "passed": false,
+        "reason": "no_candidate"
+      },
+      "prompt_sha256": "8d0925c9048cbb90ed0b56afa670934f3516c4ffc55b3c4e7459558501b962f1",
+      "transcript_sha256": "2270f44903cb2e762295e1c430610fe69330713586cd11747d423bf85226036c",
+      "exact_prompt_received": true,
+      "lesson_occurrences": 0,
+      "runtime_error": "exit status 1",
+      "tool_counts": {
+        "bash": 21,
+        "read": 20,
+        "grep": 10
+      },
+      "permission_denials": 0,
+      "relay": {
+        "report_sha256": "6d3848d306eb556753ad16893fcba19f75340aa022d2b9061a0a28024d7b6a79",
+        "rejections": 6,
+        "rejection_codes": {
+          "429": 6
+        },
+        "request_statuses": {
+          "completed": 32
+        },
+        "failures": [],
+        "requests_with_usage": 32,
+        "requests_without_usage": 0,
+        "reported_prompt_tokens": 1866378,
+        "reported_completion_tokens": 21614,
+        "reported_cost_field_sum": "0.038212450"
+      }
+    },
+    {
+      "mode": "direct_context",
+      "invocations": 1,
+      "provider_requests": 29,
+      "process_exit": null,
+      "change_set_admitted": false,
+      "change_set_checked": false,
+      "assessment": {
+        "task_outcome": "unknown",
+        "failure_domain": "unknown",
+        "failure_kind": "",
+        "reason": "Run exited nonzero without a classified binding cause; candidate checks remain separate."
+      },
+      "gate": {
+        "passed": false,
+        "reason": "no_candidate"
+      },
+      "prompt_sha256": "7326a657e7cb92a0ae08b874328f7452c3eb090cc0afe99bcdcef17ac8b7c793",
+      "transcript_sha256": "8326df3c1645a0eca2a1782f908dd5e920bae1f85e3fe06065a5e95e802066f8",
+      "exact_prompt_received": true,
+      "lesson_occurrences": 2,
+      "runtime_error": "wall-clock invocation limit exceeded",
+      "tool_counts": {
+        "bash": 21,
+        "read": 13,
+        "grep": 2,
+        "write": 3
+      },
+      "permission_denials": 0,
+      "relay": {
+        "report_sha256": "55ade192bfad41daa2965e5aec05726057b8aa469fb642cd9a11cfc8348ddc8f",
+        "rejections": 0,
+        "rejection_codes": {},
+        "request_statuses": {
+          "completed": 26,
+          "failed": 3
+        },
+        "failures": [
+          {
+            "failure_type": "TimeoutError",
+            "duration_seconds": "90.052",
+            "provider": "Relace"
+          },
+          {
+            "failure_type": "TimeoutError",
+            "duration_seconds": "90.004",
+            "provider": "Relace"
+          },
+          {
+            "failure_type": "BrokenPipeError",
+            "duration_seconds": "38.76",
+            "provider": "Relace"
+          }
+        ],
+        "requests_with_usage": 26,
+        "requests_without_usage": 3,
+        "reported_prompt_tokens": 1180147,
+        "reported_completion_tokens": 12989,
+        "reported_cost_field_sum": "0.032835479"
+      }
+    },
+    {
+      "mode": "native_context",
+      "invocations": 1,
+      "provider_requests": 24,
+      "process_exit": null,
+      "change_set_admitted": false,
+      "change_set_checked": false,
+      "assessment": {
+        "task_outcome": "unknown",
+        "failure_domain": "unknown",
+        "failure_kind": "",
+        "reason": "Run exited nonzero without a classified binding cause; candidate checks remain separate."
+      },
+      "gate": {
+        "passed": false,
+        "reason": "no_candidate"
+      },
+      "prompt_sha256": "0d0527914d66bbd9e5faf843a1362f6c387291aeeffbdbef934adf265142dab3",
+      "transcript_sha256": "ca8b12bcbc878c34d39b9b37658bfc4e7d92f502c7b767fa30f758e453fdd24a",
+      "exact_prompt_received": true,
+      "lesson_occurrences": 1,
+      "runtime_error": "wall-clock invocation limit exceeded\nexit status 143",
+      "tool_counts": {
+        "bash": 23,
+        "read": 9,
+        "grep": 3
+      },
+      "permission_denials": 1,
+      "relay": {
+        "report_sha256": "b341d76125f0855073afdc7d33e63a1fbf43423d51cf6c3e23fd3b2aa6777ddb",
+        "rejections": 0,
+        "rejection_codes": {},
+        "request_statuses": {
+          "completed": 22,
+          "failed": 2
+        },
+        "failures": [
+          {
+            "failure_type": "TimeoutError",
+            "duration_seconds": "90.237",
+            "provider": "Relace"
+          },
+          {
+            "failure_type": "BrokenPipeError",
+            "duration_seconds": "65.457",
+            "provider": "Relace"
+          }
+        ],
+        "requests_with_usage": 22,
+        "requests_without_usage": 2,
+        "reported_prompt_tokens": 869174,
+        "reported_completion_tokens": 9823,
+        "reported_cost_field_sum": "0.036700856"
+      },
+      "host_observation": {
+        "claim_confirmed": true,
+        "invocation_started": true,
+        "delivery_observation_id": "c12107f8-91f6-4b57-983b-b81fd4091538",
+        "outcome_observation_id": "f05048ec-f79a-489e-bc6a-a63c115e8663",
+        "outcome": {
+          "exit_code": null,
+          "duration_ms": 600160,
+          "process_state": "timeout",
+          "stdout_sha256": "ca8b12bcbc878c34d39b9b37658bfc4e7d92f502c7b767fa30f758e453fdd24a",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "admitted_input_matches": true
+    }
+  ],
+  "usage_boundary": "Last reported usage object per request; missing usage excluded, not zero; reported cost field is not complete billing reconciliation.",
+  "conclusion": "No admitted repair in any condition; native delivery verified; no memory benefit established; do not repeat this unchanged task/binding comparison."
+}

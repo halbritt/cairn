@@ -1,5 +1,8 @@
 # Native model recurrence and scratch permission correction
 
+Follow-up: the [corrected comparison](native-corrected-recurrence-2026-09-08.md)
+also completed without an admitted repair.
+
 The first native model comparison did not establish a memory benefit. All
 three conditions exhausted the 600-second invocation limit without a
 Driver-admitted repair. The independent repair oracle therefore had no candidate
