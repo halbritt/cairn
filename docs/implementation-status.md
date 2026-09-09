@@ -46,6 +46,11 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Full ordinary note bodies cross JSON transport.** Capture, full-draft edits
+  and body-only revisions now allow enough encoded space for maximum 64 KiB
+  bodies with sixfold escaping. Decoded limits, other operation caps and retry
+  identity remain. The fix is installed and its saved procedure was corrected.
+  [Report](verification/note-transport-2026-09-09.md).
 - **Evidence spans are deployed.** A 63,044-byte captured source refused a whole
   pull under the ordinary context budget; the CLI/API then retrieved its exact
   31-byte tail with three credits remaining. Selected bytes have their own
@@ -101,11 +106,12 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and running API: clean `fe59de9fcb0f3ee285f68b522274d36dfcef62c4`,
-  with SHA-256 `de5f606095f8195dac8293f292c93ea344553cc7d58e442e46b7d555acd297f4`.
-  Preview positions are installed with the matching OpenCode tool guidance.
-  The API restarted without a migration; host settings and the two-thread
-  semantic worker are preserved. Earlier capabilities remain installed.
+- Installed CLI and running API: clean `6dbca8b6a2a2b57c2197a9d00dc8f8a9362da7c7`,
+  with SHA-256 `b77490a86e70b64af63e21edec3986b3d301f334a14f3ffbb679e76320078174`.
+  Ordinary capture and edits accept 512 KiB JSON envelopes for the existing
+  64 KiB note bodies. Preview positions and their OpenCode tool guidance remain
+  installed. The API restarted without a migration; host settings and the
+  two-thread semantic worker are preserved. Earlier capabilities remain installed.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -123,21 +129,25 @@ Live checks on 2026-09-09 found:
   SHA-256 `d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954`.
   It adds no persistent embedding cache or model service.
 
-The [preview-position deployment report](verification/preview-locations-2026-09-09.md#local-deployment)
-records the executable/adapter checks and hosted source inspection. Installation
+The [note-transport deployment report](verification/note-transport-2026-09-09.md#local-deployment)
+records the current executable, preserved adapter/configuration identities and
+fresh retrieval of the corrected capture procedure. Installation
 paths and credentials stay outside Git. No automatic backup rotation, pruning
 or grooming timer is installed. Use the user services for the managed store's
 lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
 
-The evidence-span implementation passed disposable PostgreSQL integration with
-Go's race detector, all Go package tests, 26 Python tests, vet and formatting.
-Its optional checks exercised the actual CLI/Unix API, independent MCP stdio
-client, native OpenCode tools and cached-response compatibility with the previous
-binary. The linked feature reports identify their fixtures and limits.
+The installed note-transport implementation passed disposable PostgreSQL
+integration with Go's race detector, all Go package tests, 30 Python tests, vet,
+formatting and build. Its optional checks exercised the CLI/Unix API, trusted
+operator commands, independent MCP stdio client and a normal native OpenCode
+session with scripted completions. Mutations committed by the prior binary
+retained exact retry responses. The [feature report](verification/note-transport-2026-09-09.md)
+preserves the failing baseline, initial native debug-output failure and corrected
+integration result. No model inference was used for these checks.
 
-[CI for installed source `fe59de9`](https://github.com/halbritt/cairn/actions/runs/34395712027)
+[CI for installed source `6dbca8b`](https://github.com/halbritt/cairn/actions/runs/34399146044)
 passed PostgreSQL integration with the race detector, Python tests, vet and build.
 The earlier thread experiment ran twenty-one complete paired worker cases
 and retained raw measurements outside the repository; it did not change store or
@@ -1049,3 +1059,17 @@ transport repair; it adds no independent model-task benefit claim.
 
 [Exact implementation CI](https://github.com/halbritt/cairn/actions/runs/34399146044)
 passed PostgreSQL/race, Python tests, vet and build.
+
+### 2026-09-09 — reconciled current installation snapshot
+
+The previous deployment entry correctly recorded `6dbca8b`, but the current
+installation and verification summaries still named `fe59de9` and its CI run.
+Those summaries now match the installed CLI and running API. Fresh checks of
+both executable hashes, clean build revision, service state, PostgreSQL version
+and migrations, adapter identity and exact implementation CI confirmed the
+current state. The latest ordinary-note verification and 30 Python tests now
+appear in the summary; each earlier report retains its original coverage.
+
+This corrects a documentation mismatch introduced by appending deployment history
+without refreshing its current snapshot. All earlier history remains intact.
+No runtime, operational note, code or task assessment changed in this correction.
