@@ -1,6 +1,6 @@
 # Cairn roadmap
 
-Updated 2026-09-08. Baseline: `e3b47c7` (local memory and task delivery loop).
+Updated 2026-09-09. Baseline: `e3b47c7` (local memory and task delivery loop).
 
 Cairn has a transactional PostgreSQL core and a manually fed process wrapper.
 The next product milestone is memory used in real Striatum/OpenCode builds, with
@@ -90,6 +90,13 @@ learning, independent cross-model benefit or native Striatum ingress.
 Status: **open**, **partial**, **implemented/tested**. Completion means the stated
 acceptance evidence exists; deployment and measured usefulness are separate.
 Items can be delivered in smaller commits without marking the whole item complete.
+
+The owner requested ordinary **Agy and Claude Code interfaces** on 2026-09-09.
+U7/U8 put those interfaces in the active delivery sequence alongside Codex and
+OpenCode. Their initial usefulness does not depend on completing advanced H1
+mediation or native resume/compaction interlocks. The
+[implementation status and history](implementation-status.md) must retain dated
+changes, superseded approaches, negative results and corrections as work proceeds.
 
 ## Governing requirements
 
@@ -182,6 +189,8 @@ accepted usefulness milestone, before historical evaluation and generated demand
 | U4 — record-specific outcome join | partial | Join exposure, delivery, citations/expansions, outcomes and corrections by record/version and comparable task class/scope. Report coverage, unknowns, recurrence, resolution cost and uncertainty without multiplying rows across observations. Current independent counters are only operational telemetry. Verify multi-record/multi-observation fixtures and missing observations. |
 | U5 — usage ladder | partial | Preserve cited > expanded > behaviorally implicated > delivered-only, with inference method/version and observation coverage. Connect actual citation/expansion ingress; manual testimony does not prove use. Do not infer unknown H0 tool actions or benefit from delivery. Test coverage-aware reporting. |
 | U6 — completed tasks with open delegates | implemented/tested | Add task completion observations and detect still-open service-observed attempts at completion. Existing exact-attempt attribution/failure recovery stays intact. `UNFINISHED_RUN` is a separate wrapper-recovery hint. Test late terminal recovery and completed-task open attempts. |
+| U7 — Agy interface | open | Inspect the actual Agy driver/tool/configuration contract and ship ordinary search, record/evidence pulls, selected capture and compare-and-swap edit through its supported native interface. Reuse Cairn's authenticated API and existing core gates. Provide repeatable setup and repository/task/run scope from observed host context, with explicit scope when native context is unavailable. Verify the installed Agy client can discover tools, retrieve exact saved versions across sessions, revise selected notes, and honor destination, stale-handle and version-conflict refusals. Then complete a real Agy task using relevant memory saved in another harness and retain its observed use and independently checked outcome. Record client version and unsupported lifecycle hooks; generic MCP compatibility or a scripted protocol test alone does not close the item. Owner request, 2026-09-09. |
+| U8 — Claude Code interface | open | Inspect the installed Claude Code MCP/configuration and permission contract; provide repeatable project setup for Cairn's five ordinary tools. Preserve existing host settings and keep credentials outside the checkout. Use verified native session scope where supported, otherwise require explicit task/run scope. Verify actual discovery, search, exact record/evidence pulls, selected capture/edit, fresh-session reuse, destination refusal and stale-version/handle behavior. Then complete a real Claude task using memory from another harness and retain observed use with an independently checked outcome. Keep attempt attribution distinct from session grouping. Resume/compaction mediation remains X2; an MCP stanza or successful connection alone does not close U8. Owner request, 2026-09-09. |
 
 The [observation join](use-outcome-loop.md) now associates each exposure with
 reduced delivery/usage streams, process outcome and versioned task assessments;
@@ -552,8 +561,8 @@ restore outside that procedure and complete reconstruction remain open.
 
 | ID | Status | Entry condition and work |
 | --- | --- | --- |
-| X1 — H1/agy | open | After useful H0: query/expansion/candidate tools, expiring handles, agy driver integration and richer conformance profiles. |
-| X2 — native interlocks | open | Claude/Codex observed resume/compaction handling, reinjection, per-run attestation and privilege forfeiture on failed refresh. Require adapter-specific evidence. |
+| X1 — advanced H1 integration | open | After useful ordinary ingress: richer query/expansion/candidate tools, expiring handles and driver conformance profiles. Ordinary Agy integration moved to active U7 by the 2026-09-09 owner request; it no longer waits on this extension. |
+| X2 — native interlocks | open | Claude/Codex observed resume/compaction handling, reinjection, per-run attestation and privilege forfeiture on failed refresh. Require adapter-specific evidence. Ordinary Claude Code access is tracked separately under active U8. |
 | X3 — groomer | open | Only after join → replay → demand docket: bounded offline proposals from instrumented session-close/idle extraction and nightly consolidation, with review and no automatic authority gain. |
 | X4 — ranking experiments | optional | Learned ranking/decay only after measurable outcomes and explicit policy. Counterfactual experiments opt-in and never during incidents. Deterministic lexical ranking is the baseline. |
 | X5 — selective H3 and sharing | open | Runtime mediation for selected high-stakes paths, then broader sharing with enforced destinations. Hermes remains interactive outside initial build adapters. |
@@ -576,3 +585,6 @@ applied migration checksums and advance schema with new migrations. Do not test
 against the local operational store. Make accepted source references, tests,
 remaining limits and status updates part of each completed slice. Real model
 usefulness needs E4/D2 evidence beyond these checks.
+Append each completed slice to `implementation-status.md`'s history, including
+deployment and negative evidence. Refresh its current summary without deleting
+prior entries; add dated corrections when earlier claims become obsolete or wrong.
