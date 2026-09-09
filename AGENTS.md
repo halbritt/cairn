@@ -26,6 +26,11 @@ At the start of a substantive task, search for relevant prior lessons.
 
 When the native Cairn MCP tools are available, use `cairn_search` and inspect
 relevant results with `cairn_pull`, passing their complete `pull_arguments`.
+If lexical wording misses a likely topic, try `semantic: true` with the nonempty
+query (CLI `--semantic`). Inspect `discovery.state`: unavailable semantic workers
+return labelled lexical fallback. Similarity does not establish that a source
+answers the question; pull and verify it. Keep ordinary lexical search for precise
+identifiers and use semantic discovery selectively because it adds CPU latency.
 If the saved vocabulary is unknown, use `cairn_search` with `{"browse": true}`
 and no query to inspect eligible previews, or add `--browse` to the CLI search
 below. Follow `browse.next_offset` with `offset: N` (CLI `--offset N`) to reach

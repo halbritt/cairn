@@ -146,6 +146,14 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		invoke("cairn_search", invalid, "nonempty query or browse=true")
 	}
 	var browsed searchResult
+	var fallback searchResult
+	if err = json.Unmarshal(invoke("cairn_search", searchArgs{Query: "socketguide", Semantic: true}, ""), &fallback); err != nil {
+		t.Fatal(err)
+	}
+	if fallback.Discovery == nil || fallback.Discovery.State != "unavailable" || fallback.Status != "DEGRADED_NO_EMBEDDINGS" || fallback.Scope != view.Scope || len(fallback.Index) != len(view.Index) {
+		t.Fatalf("semantic fallback lost context: %+v", fallback)
+	}
+	invoke("cairn_search", searchArgs{Browse: true, Semantic: true}, "cannot be combined")
 	if err = json.Unmarshal(invoke("cairn_search", searchArgs{Browse: true}, ""), &browsed); err != nil {
 		t.Fatal(err)
 	}

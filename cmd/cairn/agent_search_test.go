@@ -120,6 +120,13 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 	}
 	base := []string{"agent", "--socket", socket, "--token-file", tokenFile,
 		"search", "--repo", scope.Repo, "--task", scope.TaskID, "--run", scope.RunID}
+	_, err = run(context.Background(), append(append([]string{}, base...), "--semantic", "query"), strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req := <-requests; !req.Semantic || req.Query != "query" || req.Scope != scope {
+		t.Fatalf("semantic request lost scope: %+v", req)
+	}
 	_, err = run(context.Background(), append(append([]string{}, base...), "--browse"), strings.NewReader(""))
 	if err != nil {
 		t.Fatal(err)
@@ -134,7 +141,7 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 	if req := <-requests; req.BrowseOffset == nil || *req.BrowseOffset != 6 {
 		t.Fatalf("browse continuation offset lost: %+v", req)
 	}
-	for _, tail := range [][]string{{}, {" "}, {"--browse", "unexpected query"}, {"--browse=false"}, {"--offset", "1", "query"}, {"--browse", "--offset", "-1"}, {"--browse", "--offset", "10001"}} {
+	for _, tail := range [][]string{{"--semantic", "--browse"}, {}, {" "}, {"--browse", "unexpected query"}, {"--browse=false"}, {"--offset", "1", "query"}, {"--browse", "--offset", "-1"}, {"--browse", "--offset", "10001"}} {
 		_, err := run(context.Background(), append(append([]string{}, base...), tail...), strings.NewReader(""))
 		if core.Code(err) != "INVALID_REQUEST" {
 			t.Fatalf("invalid query/browse combination %q: %v", tail, err)

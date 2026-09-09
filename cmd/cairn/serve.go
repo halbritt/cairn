@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/localapi"
+	"github.com/halbritt/cairn/semantic"
 	"io"
 	"net"
 	"net/http"
@@ -22,6 +24,7 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	f := flags("serve")
 	config := f.String("identities", filepath.Join(directory, "identities.json"), "owner-only identity configuration")
 	socket := f.String("socket", filepath.Join(directory, "api.sock"), "private Unix socket")
+	semanticCommand := f.String("semantic-command", "", "optional absolute local CPU scoring executable")
 	if err = f.Parse(args); err != nil {
 		return invalid(err.Error())
 	}
@@ -51,7 +54,14 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	if err = decoder.Decode(&extra); err != io.EOF {
 		return invalid("expected one identity array")
 	}
-	handler, err := localapi.New(ctx, dsn, identities)
+	var ranker core.SemanticRanker
+	if *semanticCommand != "" {
+		ranker, err = semantic.Command(*semanticCommand)
+		if err != nil {
+			return err
+		}
+	}
+	handler, err := localapi.NewWithSemanticRanker(ctx, dsn, identities, ranker)
 	if err != nil {
 		return err
 	}

@@ -21,6 +21,7 @@ import (
 )
 
 type CompileRequest struct {
+	Semantic        bool         `json:"semantic,omitempty"`
 	BrowseOffset    *int         `json:"browse_offset,omitempty"`
 	Mode            string       `json:"mode,omitempty"`
 	Context         *ContextPins `json:"context,omitempty"`
@@ -46,24 +47,25 @@ type Selection struct {
 	Reason    string     `json:"reason"`
 }
 type SemanticPackage struct {
-	Browse          *BrowsePage     `json:"browse,omitempty" cbor:"browse,omitempty"`
-	Mode            string          `json:"mode,omitempty"`
-	Index           []IndexEntry    `json:"index,omitempty"`
-	Context         *ContextPins    `json:"context,omitempty"`
-	Schema          string          `json:"schema"`
-	Status          string          `json:"status"`
-	Scope           Scope           `json:"scope"`
-	Query           string          `json:"query"` // v1: legacy text; v2: SHA-256 digest only.
-	Purpose         string          `json:"purpose"`
-	Destination     Destination     `json:"destination"`
-	Policy          string          `json:"policy"`
-	PolicyRevision  *PolicySnapshot `json:"policy_revision,omitempty" cbor:"policy_revision,omitempty"`
-	Ranking         string          `json:"ranking"`
-	Tokenizer       string          `json:"tokenizer"`
-	AvailableTokens int             `json:"available_tokens"`
-	OptionalLimit   int             `json:"optional_limit"`
-	Selected        []Selection     `json:"selected"`
-	Omitted         map[string]int  `json:"omitted"`
+	Discovery       *DiscoveryRanking `json:"discovery,omitempty" cbor:"discovery,omitempty"`
+	Browse          *BrowsePage       `json:"browse,omitempty" cbor:"browse,omitempty"`
+	Mode            string            `json:"mode,omitempty"`
+	Index           []IndexEntry      `json:"index,omitempty"`
+	Context         *ContextPins      `json:"context,omitempty"`
+	Schema          string            `json:"schema"`
+	Status          string            `json:"status"`
+	Scope           Scope             `json:"scope"`
+	Query           string            `json:"query"` // v1: legacy text; v2: SHA-256 digest only.
+	Purpose         string            `json:"purpose"`
+	Destination     Destination       `json:"destination"`
+	Policy          string            `json:"policy"`
+	PolicyRevision  *PolicySnapshot   `json:"policy_revision,omitempty" cbor:"policy_revision,omitempty"`
+	Ranking         string            `json:"ranking"`
+	Tokenizer       string            `json:"tokenizer"`
+	AvailableTokens int               `json:"available_tokens"`
+	OptionalLimit   int               `json:"optional_limit"`
+	Selected        []Selection       `json:"selected"`
+	Omitted         map[string]int    `json:"omitted"`
 }
 type Package struct {
 	ReceiptID string          `json:"receipt_id"`
@@ -82,6 +84,9 @@ func (p Package) Render() (string, error) {
 	return "MEM-STATUS/" + p.Semantic.Status + "\nCairn context (A is advisory; only C is an authorized instruction):\n" + string(body) + "\n", nil
 }
 func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Destination) (Package, error) {
+	if req.Semantic && (req.Mode != "index" || req.Purpose != "context" || strings.TrimSpace(req.Query) == "" || req.BrowseOffset != nil) {
+		return Package{}, failure("INVALID_REQUEST", "semantic discovery requires a nonempty context index query without browsing")
+	}
 	if req.Mode != "" && req.Mode != "index" {
 		return Package{}, failure("INVALID_REQUEST", "unknown compile mode")
 	}
@@ -208,7 +213,15 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 			p.Schema = "cairn.semantic/6"
 			p.Browse = &BrowsePage{Offset: *req.BrowseOffset}
 		}
-		return packIndex(p, candidates, evaluations, req.Query)
+		if req.Semantic {
+			p.Schema = "cairn.semantic/7"
+			candidates, err = s.rankSemantic(ctx, req.Query, &p, candidates, evaluations)
+			if err != nil {
+				return p, err
+			}
+		}
+		p, err = packIndex(p, candidates, evaluations, req.Query)
+		return p, err
 	}
 	return packCandidates(p, candidates, evaluations)
 }
@@ -340,7 +353,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		digest := sha256.Sum256([]byte(record.Body))
 		evaluation.Facts = &CandidateFacts{Category: selection.Category, BodySHA256: hex.EncodeToString(digest[:]), Sensitivity: record.Sensitivity, AttributionState: record.AttributionState, Evidence: selection.Evidence, Authority: selection.Authority}
 		selection.Reason = fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)
-		if !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 {
+		if !req.Semantic && !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 {
 			evaluation.Reason = "NO_LEXICAL_MATCH"
 			p.Omitted["NO_LEXICAL_MATCH"]++
 			continue
@@ -592,6 +605,9 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 // retaining the whole identifier for exact matches. Version 4 also excludes
 // question framing words. Negation and obligation words remain meaningful.
 func rankingTerms(text, version string) map[string]bool {
+	if version == "semantic-scope-recency/1" {
+		version = "lexical-scope-recency/4"
+	}
 	terms := lexical(text)
 	if version == "lexical-scope-recency/3" || version == "lexical-scope-recency/4" {
 		for word := range terms {

@@ -102,7 +102,7 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 			}
 		}
 		entry := indexEntry(c.selection.Record)
-		if p.Schema == "cairn.semantic/5" || p.Schema == "cairn.semantic/6" {
+		if p.Schema == "cairn.semantic/5" || p.Schema == "cairn.semantic/6" || p.Schema == "cairn.semantic/7" {
 			entry.Summary = indexSummary(c.selection.Record.Body, query, p.Ranking)
 		}
 		entry.Category = c.selection.Category
@@ -143,6 +143,7 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 		if len(p.Index) == 0 && len(p.Selected) == 0 {
 			p.Status = "SCOPE_EMPTY"
 		}
+		p = discoveryStatus(p)
 		rendered, err := (Package{Semantic: p}).Render()
 		if err != nil {
 			return p, err

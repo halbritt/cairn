@@ -1,0 +1,1680 @@
+{
+  "schema": "cairn.semantic-discovery-verification/1",
+  "baseline_commit": "81fc30802ffb7df74739221d989ca7c0ada0356b",
+  "initial": {
+    "report": {
+      "rows": [
+        {
+          "query_id": "storage-topic",
+          "condition": "lexical",
+          "rank": null,
+          "returned": [],
+          "status": "SCOPE_EMPTY",
+          "discovery": null,
+          "elapsed_seconds": 0.014406729955226183,
+          "receipt_id": "f8ad8135-94d0-42d1-bfcd-df9e5d810a78"
+        },
+        {
+          "query_id": "storage-topic",
+          "condition": "semantic",
+          "rank": 2,
+          "returned": [
+            "pulls",
+            "storage",
+            "evidence",
+            "currentness",
+            "outcomes",
+            "supersession",
+            "conflict",
+            "scope",
+            "status",
+            "demand",
+            "delete"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "79694b7b6396a36d634e365995e5a92dbb6d211077bf8682cd09cb4146eaa1ff"
+          },
+          "elapsed_seconds": 4.733184447046369,
+          "receipt_id": "8a286c6a-e22b-4c0d-98f6-d14c2813510a"
+        },
+        {
+          "query_id": "storage-location",
+          "condition": "lexical",
+          "rank": 11,
+          "returned": [
+            "runner",
+            "demand",
+            "evidence",
+            "scope",
+            "delete",
+            "conflict",
+            "supersession",
+            "status",
+            "outcomes",
+            "pulls",
+            "storage"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.020224669948220253,
+          "receipt_id": "ab2ed579-b486-461a-b7f2-ec15df115ce9"
+        },
+        {
+          "query_id": "storage-location",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "storage",
+            "outcomes",
+            "status",
+            "evidence",
+            "pulls",
+            "runner",
+            "delete",
+            "demand",
+            "currentness",
+            "conflict",
+            "scope"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "0b08e08955cc0054e493003e5b6f79ef6a55c2d2589e5adcd6b48cd958fc6293"
+          },
+          "elapsed_seconds": 4.479751470033079,
+          "receipt_id": "40dee87d-c860-44a6-812a-8b7ca61d2f9d"
+        },
+        {
+          "query_id": "storage-env-exact",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "storage",
+            "delete",
+            "demand",
+            "status",
+            "runner",
+            "outcomes",
+            "evidence",
+            "pulls"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.009341764030978084,
+          "receipt_id": "225035e9-1bb8-4677-a5ce-b1297b10ecf6"
+        },
+        {
+          "query_id": "storage-env-exact",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "storage",
+            "status",
+            "runner",
+            "delete",
+            "outcomes",
+            "pulls",
+            "demand",
+            "evidence",
+            "currentness",
+            "scope",
+            "conflict"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "84b1674eb14e0e2d6e530cc3b57900e5852dd9e7866b157ecd3eeb3852ba6461"
+          },
+          "elapsed_seconds": 4.432023274945095,
+          "receipt_id": "e1835008-2edf-431b-bb92-8ceb3a97e28b"
+        },
+        {
+          "query_id": "storage-env-words",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "storage",
+            "delete",
+            "demand",
+            "status",
+            "runner",
+            "outcomes",
+            "evidence",
+            "pulls"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.009931406937539577,
+          "receipt_id": "246d5d00-6bc1-4390-a96f-c524ae209bb2"
+        },
+        {
+          "query_id": "storage-env-words",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "storage",
+            "status",
+            "runner",
+            "pulls",
+            "delete",
+            "outcomes",
+            "evidence",
+            "demand",
+            "currentness",
+            "conflict",
+            "scope"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "7f8e90daa89efbc30e9cefec59bbe03c0c1fe748f35a536c17660678ca81be1a"
+          },
+          "elapsed_seconds": 4.480445683002472,
+          "receipt_id": "39dd5035-0137-443a-a035-2ce82051c527"
+        },
+        {
+          "query_id": "evidence-retry",
+          "condition": "lexical",
+          "rank": 2,
+          "returned": [
+            "evidence",
+            "pulls",
+            "scope",
+            "supersession",
+            "status",
+            "currentness"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.02911873091943562,
+          "receipt_id": "56f4c2e5-f005-4b1e-9836-e7c4e25445a9"
+        },
+        {
+          "query_id": "evidence-retry",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "pulls",
+            "evidence",
+            "status",
+            "demand",
+            "currentness",
+            "outcomes",
+            "storage",
+            "supersession",
+            "delete",
+            "conflict",
+            "runner"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "3429d4ac11b35e8342304980c938c8d55c4fc353532cc13df990ee2acc3d24aa"
+          },
+          "elapsed_seconds": 4.261983947828412,
+          "receipt_id": "7a0a71fd-a47c-4138-ab68-8654cd894626"
+        },
+        {
+          "query_id": "revision",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "currentness",
+            "supersession",
+            "status"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.008169858017936349,
+          "receipt_id": "1d559e55-424e-4220-979e-7a761f6f30ae"
+        },
+        {
+          "query_id": "revision",
+          "condition": "semantic",
+          "rank": 2,
+          "returned": [
+            "supersession",
+            "currentness",
+            "conflict",
+            "pulls",
+            "delete",
+            "demand",
+            "scope",
+            "evidence",
+            "outcomes",
+            "status",
+            "storage"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "8eebe42dde1af254e235eb95ebe003b144c813b177bad14addf4306089bf7c5c"
+          },
+          "elapsed_seconds": 4.586779253091663,
+          "receipt_id": "0e494d6e-c805-405d-bcc5-3d19f2bfa618"
+        },
+        {
+          "query_id": "tampering",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "evidence",
+            "demand",
+            "supersession",
+            "status",
+            "currentness",
+            "pulls"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.016950306948274374,
+          "receipt_id": "c8dd2e96-c3c4-457a-828d-34786f16a439"
+        },
+        {
+          "query_id": "tampering",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "evidence",
+            "pulls",
+            "conflict",
+            "status",
+            "currentness",
+            "scope",
+            "outcomes",
+            "supersession",
+            "demand",
+            "delete",
+            "runner"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "b37155879ac79ef64b546c10d56144f68b4a3b16077cf5500baf2412546f63ee"
+          },
+          "elapsed_seconds": 4.375996790127829,
+          "receipt_id": "6b7cf84f-7d06-43b3-9c03-e26e93ea5e2a"
+        },
+        {
+          "query_id": "citation-count",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "outcomes",
+            "evidence"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.00774092017672956,
+          "receipt_id": "d378faea-77f0-421e-b553-efc6d1c0c14f"
+        },
+        {
+          "query_id": "citation-count",
+          "condition": "semantic",
+          "rank": 3,
+          "returned": [
+            "demand",
+            "conflict",
+            "outcomes",
+            "currentness",
+            "pulls",
+            "supersession",
+            "status",
+            "evidence",
+            "scope",
+            "delete",
+            "runner"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "3b5a84bfa218301d7719d7cc7a6b8748930d8580fcaa5f2ed0bcb55e85f985c0"
+          },
+          "elapsed_seconds": 4.262591173872352,
+          "receipt_id": "669bbc3e-e734-449b-9bef-75ddec76e474"
+        },
+        {
+          "query_id": "agent-launch",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "runner",
+            "supersession",
+            "evidence",
+            "currentness",
+            "status",
+            "outcomes"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.008583809016272426,
+          "receipt_id": "b5ac6974-fd0f-49f0-b53f-104e1669ecd5"
+        },
+        {
+          "query_id": "agent-launch",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "runner",
+            "currentness",
+            "demand",
+            "evidence",
+            "scope",
+            "supersession",
+            "conflict",
+            "pulls",
+            "status",
+            "storage",
+            "delete"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "1b0436bab3792aeb4d87233628a9f5ad400bc90292c29aefd85887dee8954a13"
+          },
+          "elapsed_seconds": 4.585207408992574,
+          "receipt_id": "6d9a3863-071d-4cba-93dd-6eacb1640dd4"
+        },
+        {
+          "query_id": "lost-reply",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "status",
+            "demand",
+            "currentness"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.0076041920110583305,
+          "receipt_id": "c407b079-06be-4b78-bc87-50cba8e4f645"
+        },
+        {
+          "query_id": "lost-reply",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "status",
+            "conflict",
+            "evidence",
+            "demand",
+            "pulls",
+            "outcomes",
+            "currentness",
+            "supersession",
+            "runner",
+            "delete",
+            "scope"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "ff0a37ae10d5c3a5f0a21636d64cf33552d99553726c5f9ecce258c903aa41d8"
+          },
+          "elapsed_seconds": 4.5935648928862065,
+          "receipt_id": "a87ac96e-dcbe-4e39-a16e-bb49b90d3a86"
+        },
+        {
+          "query_id": "replacement",
+          "condition": "lexical",
+          "rank": 2,
+          "returned": [
+            "scope",
+            "supersession",
+            "delete",
+            "conflict",
+            "outcomes",
+            "evidence",
+            "currentness",
+            "pulls"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.022148333955556154,
+          "receipt_id": "a946cd75-0cce-490e-88c9-d716a9e54f77"
+        },
+        {
+          "query_id": "replacement",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "supersession",
+            "delete",
+            "conflict",
+            "currentness",
+            "outcomes",
+            "demand",
+            "evidence",
+            "scope",
+            "pulls",
+            "status",
+            "storage"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "c7232d20b3274cddc84d45ef7e3060af80b4b09e3504f7a9f999de4665234729"
+          },
+          "elapsed_seconds": 4.260219321819022,
+          "receipt_id": "3826a6df-6e7d-42e3-98ba-70efdf9bcfe6"
+        },
+        {
+          "query_id": "original-conflict",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "conflict",
+            "status",
+            "evidence",
+            "currentness",
+            "supersession"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.008434455841779709,
+          "receipt_id": "971f061e-015e-4cde-96b9-e8d52346e290"
+        },
+        {
+          "query_id": "original-conflict",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "conflict",
+            "status",
+            "currentness",
+            "evidence",
+            "pulls",
+            "supersession",
+            "demand",
+            "delete",
+            "outcomes",
+            "scope",
+            "runner"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "07d26b30d52dd39fff4fbae3a60a716864cd7221a4341bce9157d74be8678581"
+          },
+          "elapsed_seconds": 4.3379743178375065,
+          "receipt_id": "174279b9-57e5-4d2a-ac23-0754c348baa9"
+        },
+        {
+          "query_id": "failure-lessons",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "demand"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.01626688102260232,
+          "receipt_id": "8c3d9609-377d-4ba6-93ba-ce18f36ec58d"
+        },
+        {
+          "query_id": "failure-lessons",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "demand",
+            "conflict",
+            "currentness",
+            "outcomes",
+            "supersession",
+            "scope",
+            "pulls",
+            "delete",
+            "status",
+            "evidence",
+            "runner"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "08d51014bd355664205bcf4aa31f7e4d783b2896fbab046c25e310f41d1f8eea"
+          },
+          "elapsed_seconds": 4.6391217049676925,
+          "receipt_id": "ecffee89-8c24-49dc-8f0f-884b1cb8f549"
+        },
+        {
+          "query_id": "remove-note",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "delete",
+            "demand",
+            "currentness",
+            "conflict",
+            "supersession",
+            "status",
+            "runner",
+            "evidence"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.008617979008704424,
+          "receipt_id": "3bf43378-257c-4cff-8082-852ad5f02041"
+        },
+        {
+          "query_id": "remove-note",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "delete",
+            "conflict",
+            "supersession",
+            "currentness",
+            "status",
+            "evidence",
+            "pulls",
+            "outcomes",
+            "demand",
+            "scope",
+            "storage"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "d87e4cef339b1c348ecf9ac188ba66a05e0aea4dfd1712c51ff964a4ab141dd1"
+          },
+          "elapsed_seconds": 4.317589961923659,
+          "receipt_id": "59d3daa4-6f0c-4435-9c3e-68af725044ab"
+        },
+        {
+          "query_id": "broaden-scope",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "scope",
+            "demand",
+            "supersession",
+            "outcomes",
+            "evidence",
+            "currentness"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.008738529868423939,
+          "receipt_id": "33e6c8e9-7a03-4f3f-8d08-20fffc5a5c7a"
+        },
+        {
+          "query_id": "broaden-scope",
+          "condition": "semantic",
+          "rank": 2,
+          "returned": [
+            "currentness",
+            "scope",
+            "outcomes",
+            "supersession",
+            "pulls",
+            "conflict",
+            "demand",
+            "evidence",
+            "status",
+            "runner",
+            "delete"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "cd70c21d41abd88e6b5337290830364b50df5d87c70b687d58b8cb0d063358f8"
+          },
+          "elapsed_seconds": 4.714198047993705,
+          "receipt_id": "f0d1ec9c-2071-44cc-9965-621bd8a148aa"
+        },
+        {
+          "query_id": "absent-gpu",
+          "condition": "lexical",
+          "rank": null,
+          "returned": [
+            "delete",
+            "demand",
+            "status",
+            "runner",
+            "outcomes",
+            "evidence",
+            "pulls",
+            "storage"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.008957220008596778,
+          "receipt_id": "e8d7d355-1468-4ec8-bc3e-40fb9827b8fb"
+        },
+        {
+          "query_id": "absent-gpu",
+          "condition": "semantic",
+          "rank": null,
+          "returned": [
+            "outcomes",
+            "storage",
+            "pulls",
+            "demand",
+            "runner",
+            "evidence",
+            "status",
+            "delete",
+            "currentness",
+            "scope",
+            "conflict"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "30ff716d6ee152397330bcedef3155dd002df752438cf91c7c8794b3c21a767b"
+          },
+          "elapsed_seconds": 4.5573870008811355,
+          "receipt_id": "b63ece5f-eed3-4af1-ab22-34dab97ac19c"
+        },
+        {
+          "query_id": "absent-price",
+          "condition": "lexical",
+          "rank": null,
+          "returned": [],
+          "status": "SCOPE_EMPTY",
+          "discovery": null,
+          "elapsed_seconds": 0.012048355070874095,
+          "receipt_id": "3157f646-7e69-4413-a0f8-9d3191dd8fb0"
+        },
+        {
+          "query_id": "absent-price",
+          "condition": "semantic",
+          "rank": null,
+          "returned": [
+            "outcomes",
+            "runner",
+            "supersession",
+            "storage",
+            "evidence",
+            "currentness",
+            "scope",
+            "conflict",
+            "demand",
+            "pulls",
+            "status"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "af51aba2a4c8aa577569b9cc86744d9ca07d476a2788fd0cbd676c26c6f56f29"
+          },
+          "elapsed_seconds": 6.044005806092173,
+          "receipt_id": "5e548463-d3b7-4add-8fea-f370ab1fcde2"
+        }
+      ],
+      "exact_storage_pull": true,
+      "long_note_bytes": 14708,
+      "long_note_first": true,
+      "exact_long_pull": true,
+      "unavailable_fallback": true
+    },
+    "summary": {
+      "lexical": {
+        "first": 11,
+        "top_three": 13,
+        "answerable": 15,
+        "total_seconds": 0.1962785676587373,
+        "max_seconds": 0.02911873091943562
+      },
+      "semantic": {
+        "first": 11,
+        "top_three": 15,
+        "answerable": 15,
+        "total_seconds": 67.06063169636764,
+        "max_seconds": 4.733184447046369
+      }
+    },
+    "plan": {
+      "workload_sha256": "30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0",
+      "queries": [
+        "storage-topic",
+        "storage-location",
+        "storage-env-exact",
+        "storage-env-words",
+        "evidence-retry",
+        "revision",
+        "tampering",
+        "citation-count",
+        "agent-launch",
+        "lost-reply",
+        "replacement",
+        "original-conflict",
+        "failure-lessons",
+        "remove-note",
+        "broaden-scope",
+        "absent-gpu",
+        "absent-price"
+      ],
+      "conditions": [
+        "lexical",
+        "semantic"
+      ],
+      "available_tokens": 64000,
+      "source": "same fixture store and original public passages",
+      "checks": [
+        "ranking and actual budgeted index",
+        "exact body pull",
+        "recompilation without model",
+        "long-note source coverage",
+        "missing worker fallback"
+      ],
+      "no_task_benefit_claim": true
+    }
+  },
+  "shipped_check": {
+    "report": {
+      "repos": {
+        "corpus": "trial:semantic-corpus-f87f71cfca424faf8dcbacf423f20c2f",
+        "long": "trial:semantic-long-f87f71cfca424faf8dcbacf423f20c2f"
+      },
+      "binary_sha256": "a7e94d6d8b45ae546d86d0ab79924ed2be264d43549a616cd9b27018778c5b1d",
+      "rows": [
+        {
+          "query_id": "storage-topic",
+          "condition": "lexical",
+          "rank": null,
+          "returned": [],
+          "status": "SCOPE_EMPTY",
+          "discovery": null,
+          "elapsed_seconds": 0.017006011912599206,
+          "receipt_id": "267d69cc-9018-48e8-971c-9ff2fc04b827"
+        },
+        {
+          "query_id": "storage-topic",
+          "condition": "semantic",
+          "rank": 2,
+          "returned": [
+            "pulls",
+            "storage",
+            "evidence",
+            "currentness",
+            "outcomes",
+            "supersession",
+            "conflict",
+            "scope",
+            "status",
+            "demand",
+            "delete"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "e9741063b9b7fa7fe653fe686b9eb26634512d77e8d517be09fe04767241a251"
+          },
+          "elapsed_seconds": 4.135882721981034,
+          "receipt_id": "676bd0e0-515c-4fe1-a378-83d071074bc9"
+        },
+        {
+          "query_id": "storage-location",
+          "condition": "lexical",
+          "rank": 11,
+          "returned": [
+            "runner",
+            "demand",
+            "evidence",
+            "scope",
+            "delete",
+            "conflict",
+            "supersession",
+            "status",
+            "outcomes",
+            "pulls",
+            "storage"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.010786559898406267,
+          "receipt_id": "09dcc58c-ef86-4f63-9a8c-907662c30cf3"
+        },
+        {
+          "query_id": "storage-location",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "storage",
+            "outcomes",
+            "status",
+            "evidence",
+            "pulls",
+            "runner",
+            "delete",
+            "demand",
+            "currentness",
+            "conflict",
+            "scope"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "1d377a0876d24169ae06e724855f380fd5dc7af7eb3b3dcf8491ff4f8edb0019"
+          },
+          "elapsed_seconds": 4.579526051180437,
+          "receipt_id": "e10ebd72-87cc-4d5a-808e-d3a058893528"
+        },
+        {
+          "query_id": "storage-env-exact",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "storage",
+            "delete",
+            "demand",
+            "status",
+            "runner",
+            "outcomes",
+            "evidence",
+            "pulls"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.02252740110270679,
+          "receipt_id": "52de341d-0ba3-482a-9d8e-ef562870aadf"
+        },
+        {
+          "query_id": "storage-env-exact",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "storage",
+            "status",
+            "runner",
+            "delete",
+            "outcomes",
+            "pulls",
+            "demand",
+            "evidence",
+            "currentness",
+            "scope",
+            "conflict"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "f255160d51a83cb81e45a8f731e3fc9bb5448f5a331ad77ce5333ceae5601055"
+          },
+          "elapsed_seconds": 4.240386018995196,
+          "receipt_id": "0ef7daeb-208c-496d-8068-681a4f310fca"
+        },
+        {
+          "query_id": "storage-env-words",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "storage",
+            "delete",
+            "demand",
+            "status",
+            "runner",
+            "outcomes",
+            "evidence",
+            "pulls"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.00805491185747087,
+          "receipt_id": "1eec6312-bce3-421b-b729-83997f10e747"
+        },
+        {
+          "query_id": "storage-env-words",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "storage",
+            "status",
+            "runner",
+            "pulls",
+            "delete",
+            "outcomes",
+            "evidence",
+            "demand",
+            "currentness",
+            "conflict",
+            "scope"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "9eb74f43a9d96b6f440f9c66bac46bd2e595b765f233fad2f077ed782c3972df"
+          },
+          "elapsed_seconds": 4.473843056941405,
+          "receipt_id": "d295b928-09d9-4299-ab41-4385c616dc81"
+        },
+        {
+          "query_id": "evidence-retry",
+          "condition": "lexical",
+          "rank": 2,
+          "returned": [
+            "evidence",
+            "pulls",
+            "scope",
+            "supersession",
+            "status",
+            "currentness"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.008485550992190838,
+          "receipt_id": "ca3d1c16-ad98-4112-99a6-d13dbba23053"
+        },
+        {
+          "query_id": "evidence-retry",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "pulls",
+            "evidence",
+            "status",
+            "demand",
+            "currentness",
+            "outcomes",
+            "storage",
+            "supersession",
+            "delete",
+            "conflict",
+            "runner"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "1ac0f61019994d8d0a4ac8061b137942cca2415124c980a38d0839dbef71d5b4"
+          },
+          "elapsed_seconds": 4.472194328904152,
+          "receipt_id": "b600b9ac-642b-4f77-9640-61e7c00db788"
+        },
+        {
+          "query_id": "revision",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "currentness",
+            "supersession",
+            "status"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.021057728910818696,
+          "receipt_id": "f1604c2a-c887-432a-bcae-0681ec144f40"
+        },
+        {
+          "query_id": "revision",
+          "condition": "semantic",
+          "rank": 2,
+          "returned": [
+            "supersession",
+            "currentness",
+            "conflict",
+            "pulls",
+            "delete",
+            "demand",
+            "scope",
+            "evidence",
+            "outcomes",
+            "status",
+            "storage"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "a1add7b46bd4122b6c558fb230c8ecc52a5e691ece526f010cea6184719f3cdb"
+          },
+          "elapsed_seconds": 4.374194666976109,
+          "receipt_id": "7da5abbc-fbcb-44db-9b23-c8b4932e5622"
+        },
+        {
+          "query_id": "tampering",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "evidence",
+            "demand",
+            "supersession",
+            "status",
+            "currentness",
+            "pulls"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.02310720505192876,
+          "receipt_id": "62c9fa36-74d0-42f7-8de9-966503d93760"
+        },
+        {
+          "query_id": "tampering",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "evidence",
+            "pulls",
+            "conflict",
+            "status",
+            "currentness",
+            "scope",
+            "outcomes",
+            "supersession",
+            "demand",
+            "delete",
+            "runner"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "eef9b76675acd6816c448c39d2e49c8e6ec5d5828f99ea126f6f15958b85c670"
+          },
+          "elapsed_seconds": 4.648115842137486,
+          "receipt_id": "2e94e6ed-4ff8-45e1-9522-e1df793a9c11"
+        },
+        {
+          "query_id": "citation-count",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "outcomes",
+            "evidence"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.01508172694593668,
+          "receipt_id": "a79ef963-d7fb-4127-9486-93d8f396a0b6"
+        },
+        {
+          "query_id": "citation-count",
+          "condition": "semantic",
+          "rank": 3,
+          "returned": [
+            "demand",
+            "conflict",
+            "outcomes",
+            "currentness",
+            "pulls",
+            "supersession",
+            "status",
+            "evidence",
+            "scope",
+            "delete",
+            "runner"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "16fa9e8ee950b5870d278ec3ba709903d10610223adaba63ede266da4601d676"
+          },
+          "elapsed_seconds": 4.500454958062619,
+          "receipt_id": "27705081-68b3-4576-8fe3-ef4a2a1e0a15"
+        },
+        {
+          "query_id": "agent-launch",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "runner",
+            "supersession",
+            "evidence",
+            "currentness",
+            "status",
+            "outcomes"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.009009246015921235,
+          "receipt_id": "1dee6950-8836-4ff7-8f93-2e23e2029db2"
+        },
+        {
+          "query_id": "agent-launch",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "runner",
+            "currentness",
+            "demand",
+            "evidence",
+            "scope",
+            "supersession",
+            "conflict",
+            "pulls",
+            "status",
+            "storage",
+            "delete"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "f4e1333d6344328fdc89fccece00ecf8ea18a57087f8291ebd0ae213f133c1da"
+          },
+          "elapsed_seconds": 4.677467747125775,
+          "receipt_id": "71532d90-0722-4d17-9c17-229ea5d0da56"
+        },
+        {
+          "query_id": "lost-reply",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "status",
+            "demand",
+            "currentness"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.007657455047592521,
+          "receipt_id": "facd2182-2d92-41c3-a378-923603e97886"
+        },
+        {
+          "query_id": "lost-reply",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "status",
+            "conflict",
+            "evidence",
+            "demand",
+            "pulls",
+            "outcomes",
+            "currentness",
+            "supersession",
+            "runner",
+            "delete",
+            "scope"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "f76fd68eea335320f2b24645c5fb59759250b22a22001eb864772b80578f20ba"
+          },
+          "elapsed_seconds": 4.638668227009475,
+          "receipt_id": "7a58f90d-b60d-4942-841d-6b4457e061a3"
+        },
+        {
+          "query_id": "replacement",
+          "condition": "lexical",
+          "rank": 2,
+          "returned": [
+            "scope",
+            "supersession",
+            "delete",
+            "conflict",
+            "outcomes",
+            "evidence",
+            "currentness",
+            "pulls"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.020844029961153865,
+          "receipt_id": "194dff2b-6035-4afb-8b97-8a6b866c2847"
+        },
+        {
+          "query_id": "replacement",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "supersession",
+            "delete",
+            "conflict",
+            "currentness",
+            "outcomes",
+            "demand",
+            "evidence",
+            "scope",
+            "pulls",
+            "status",
+            "storage"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "38665c573c8ca8882f07041220d6f85a3f49f505b55462c736d0d414ae0fdf73"
+          },
+          "elapsed_seconds": 5.280342182144523,
+          "receipt_id": "0c3471c9-79cf-40f9-adca-3b0a9eed9c20"
+        },
+        {
+          "query_id": "original-conflict",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "conflict",
+            "status",
+            "evidence",
+            "currentness",
+            "supersession"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.010765875922515988,
+          "receipt_id": "236fd47d-8e6b-4c79-a8b4-00d6a6adf871"
+        },
+        {
+          "query_id": "original-conflict",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "conflict",
+            "status",
+            "currentness",
+            "evidence",
+            "pulls",
+            "supersession",
+            "demand",
+            "delete",
+            "outcomes",
+            "scope",
+            "runner"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "6ff5af0175bd98ab32420ca8ad8dc383300d396673fc56da463e7dd0c3a3887a"
+          },
+          "elapsed_seconds": 5.282139197923243,
+          "receipt_id": "7f7bd50b-c927-4c9a-9208-8af28a3c632b"
+        },
+        {
+          "query_id": "failure-lessons",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "demand"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.011225222842767835,
+          "receipt_id": "57547480-01bc-49f7-bf7b-1f7a03ce56ec"
+        },
+        {
+          "query_id": "failure-lessons",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "demand",
+            "conflict",
+            "currentness",
+            "outcomes",
+            "supersession",
+            "scope",
+            "pulls",
+            "delete",
+            "status",
+            "evidence",
+            "runner"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "a1d0a07fd96343f22e8fccea10a07fc9d356c6e9ec27c948b10355d07aeab7c5"
+          },
+          "elapsed_seconds": 5.2926755510270596,
+          "receipt_id": "6ae79e91-6f81-465c-bc7f-c4aedce79da4"
+        },
+        {
+          "query_id": "remove-note",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "delete",
+            "demand",
+            "currentness",
+            "conflict",
+            "supersession",
+            "status",
+            "runner",
+            "evidence"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.012724299915134907,
+          "receipt_id": "75d589bd-6dc8-4905-9bd6-69c5ccedfdca"
+        },
+        {
+          "query_id": "remove-note",
+          "condition": "semantic",
+          "rank": 1,
+          "returned": [
+            "delete",
+            "conflict",
+            "supersession",
+            "currentness",
+            "status",
+            "evidence",
+            "pulls",
+            "outcomes",
+            "demand",
+            "scope",
+            "storage"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "2a0cd24075bd9e0d597e9ea1003b79867a47e1151055a02f9bc4f1c81031c7f8"
+          },
+          "elapsed_seconds": 5.495327818905935,
+          "receipt_id": "d06ffeb8-4782-43ef-80b7-af7ab618c9ac"
+        },
+        {
+          "query_id": "broaden-scope",
+          "condition": "lexical",
+          "rank": 1,
+          "returned": [
+            "scope",
+            "demand",
+            "supersession",
+            "outcomes",
+            "evidence",
+            "currentness"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.016437230864539742,
+          "receipt_id": "3369aaf8-73dc-4729-8b02-47060d48a0a8"
+        },
+        {
+          "query_id": "broaden-scope",
+          "condition": "semantic",
+          "rank": 2,
+          "returned": [
+            "currentness",
+            "scope",
+            "outcomes",
+            "supersession",
+            "pulls",
+            "conflict",
+            "demand",
+            "evidence",
+            "status",
+            "runner",
+            "delete"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "7409e0a2b218da9b236a12d6ca1ad771b2f34c32df7ad71064f9f363a16b90d9"
+          },
+          "elapsed_seconds": 5.705245157005265,
+          "receipt_id": "3bf9d5fb-a16b-4ea7-ab00-fcf2eacaea5f"
+        },
+        {
+          "query_id": "absent-gpu",
+          "condition": "lexical",
+          "rank": null,
+          "returned": [
+            "delete",
+            "demand",
+            "status",
+            "runner",
+            "outcomes",
+            "evidence",
+            "pulls",
+            "storage"
+          ],
+          "status": "READY",
+          "discovery": null,
+          "elapsed_seconds": 0.021582134068012238,
+          "receipt_id": "d5a1de75-bfcb-4c41-aea5-699497e395c9"
+        },
+        {
+          "query_id": "absent-gpu",
+          "condition": "semantic",
+          "rank": null,
+          "returned": [
+            "outcomes",
+            "storage",
+            "pulls",
+            "demand",
+            "runner",
+            "evidence",
+            "status",
+            "delete",
+            "currentness",
+            "scope",
+            "conflict"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "49e37dcbdecb25e63817dad61bae4cfaaff957062cd834d43145c586f61db72e"
+          },
+          "elapsed_seconds": 5.6245743739418685,
+          "receipt_id": "5f35d03b-51a2-4bc5-851c-33d420bb7ad8"
+        },
+        {
+          "query_id": "absent-price",
+          "condition": "lexical",
+          "rank": null,
+          "returned": [],
+          "status": "SCOPE_EMPTY",
+          "discovery": null,
+          "elapsed_seconds": 0.013237352948635817,
+          "receipt_id": "de590b02-0f48-460a-8852-2eec797968f0"
+        },
+        {
+          "query_id": "absent-price",
+          "condition": "semantic",
+          "rank": null,
+          "returned": [
+            "outcomes",
+            "runner",
+            "supersession",
+            "storage",
+            "evidence",
+            "currentness",
+            "scope",
+            "conflict",
+            "demand",
+            "pulls",
+            "status"
+          ],
+          "status": "READY",
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "6c05c7b516d47df93126de8c128768bf1fa3cdfdfb10303469dcdd50009d3372"
+          },
+          "elapsed_seconds": 5.419193184003234,
+          "receipt_id": "df8a5750-72d7-4252-832a-47e954268828"
+        }
+      ],
+      "exact_storage_pull": true,
+      "long_note_bytes": 14708,
+      "long_note_first": true,
+      "exact_long_pull": true,
+      "unavailable_fallback": true
+    },
+    "summary": {
+      "lexical": {
+        "first": 11,
+        "top_three": 13,
+        "answerable": 15,
+        "total_seconds": 0.2147704572416842,
+        "max_seconds": 0.02310720505192876
+      },
+      "semantic": {
+        "first": 11,
+        "top_three": 15,
+        "answerable": 15,
+        "total_seconds": 71.79646352631971,
+        "max_seconds": 5.705245157005265
+      }
+    },
+    "plan": {
+      "binary_sha256": "a7e94d6d8b45ae546d86d0ab79924ed2be264d43549a616cd9b27018778c5b1d",
+      "workload_sha256": "30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0",
+      "queries": [
+        "storage-topic",
+        "storage-location",
+        "storage-env-exact",
+        "storage-env-words",
+        "evidence-retry",
+        "revision",
+        "tampering",
+        "citation-count",
+        "agent-launch",
+        "lost-reply",
+        "replacement",
+        "original-conflict",
+        "failure-lessons",
+        "remove-note",
+        "broaden-scope",
+        "absent-gpu",
+        "absent-price"
+      ],
+      "conditions": [
+        "lexical",
+        "semantic"
+      ],
+      "available_tokens": 64000,
+      "source": "same fixture store and original public passages",
+      "checks": [
+        "ranking and actual budgeted index",
+        "exact body pull",
+        "long-note source coverage",
+        "unconfigured worker fallback"
+      ],
+      "no_task_benefit_claim": true
+    }
+  },
+  "source_hashes": {
+    "core/semantic_ranking.go": "1842f24277a1421f0e83674b905de30dcac419c20f5261388f3f1a85b5bcbb97",
+    "semantic/command.go": "8dcd16421669056e85e49e6e4fddb06f3b3475ba9a57cebc4b997741fa936f0a",
+    "scripts/semantic_rank.py": "68638c7bdcbd1868e7507987b949fb4cabfe67994cd3993cddef281184a69163",
+    "scripts/check_semantic_api.py": "ebae1cbf7bc97d897f35b46e94e17b2d338b8fecb6ee1e4b946038adb9c51559"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-semantic-api-a/report.json",
+      "sha256": "e4fe9f45b2bf9b542298e6b4752b11e43e459ca169920a8ef282fc06ea630bf5"
+    },
+    {
+      "path": "/tmp/cairn-semantic-api-shipped/report.json",
+      "sha256": "f14c7ac2c2650b153f61aa5116e561588538f13a0218c6f9f58ae39101495794"
+    },
+    {
+      "path": "/tmp/cairn-semantic-api-shipped/plan.json",
+      "sha256": "1cac8dd05232dfe500c7a92c2268886e1dee42a98bce32a9d4f6424b96308fe2"
+    },
+    {
+      "path": "/tmp/cairn-semantic-api-shipped/trial.dump",
+      "sha256": "660afde899be8d6e6920f13dea4c017d1f64e56366b82b7a1c27727b9b0c38c1"
+    },
+    {
+      "path": "/tmp/cairn-semantic-legacy-b/report.json",
+      "sha256": "97f86dc7ec5600eb3ae900a91c2f7cfd12dbac27f68dbcc23e76228434b3e1c5"
+    },
+    {
+      "path": "/tmp/cairn-semantic-recompile.log",
+      "sha256": "11268e559b3ad715889b651c7631caff9358611bd52c2a1729f2cd840a81d386"
+    },
+    {
+      "path": "/tmp/cairn-semantic-unicode.json",
+      "sha256": "d0d2ca4c1a917ed1b15371712a39716e7b431fad5b02138d582c5b8b00b54b37"
+    },
+    {
+      "path": "/tmp/cairn-semantic-integration-shipped.log",
+      "sha256": "b918d09a1b2b9ba7e69bf4fbff3569e1e8ca600b09924edb58b86cb5af48ffb0"
+    },
+    {
+      "path": "/tmp/cairn-semantic-check-ready.log",
+      "sha256": "390f77d474205e067ea1a9ed84c11a0a0f84fa94f28fe5317eb5adbefc14241a"
+    }
+  ],
+  "limits": [
+    "Authored development workload reused from offline comparison",
+    "No independent answering-model task benefit",
+    "Operational backend prepared but not yet enabled at implementation checkpoint",
+    "Semantic neighbours do not establish answer availability",
+    "No broader language, scale or throughput claim"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-29933b0eb78e3aef",
+    "packet_content_sha256": "29933b0eb78e3aefe35c7b96215e3fe9932dde2fdcb79f4cd90dd8b4dbcb370f",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_path": "/tmp/cairn-semantic-integration-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "The generic named procedure is not executed as a separate ceremony. The bounded feature records the no-change/default alternatives, explicit allowed delta and actual old/new consumer checks; it makes no broad refactoring or equivalence claim."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "The generic named procedure is not executed as a separate ceremony. The bounded feature records the no-change/default alternatives, explicit allowed delta and actual old/new consumer checks; it makes no broad refactoring or equivalence claim."
+      }
+    ]
+  }
+}

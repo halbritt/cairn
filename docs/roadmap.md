@@ -285,6 +285,15 @@ discovery experiment that preserves lexical search, structured eligibility,
 mandatory selection and budgets. Actual store integration, long-note handling
 and downstream benefit remain open; the installed ranker is unchanged.
 
+[Optional semantic discovery](semantic-discovery.md) now connects the CPU worker
+to actual structured eligibility and budgeted index packing. The integrated
+development corpus retains all fifteen labelled answers within three results;
+a 14 KB note's final guidance is found and pulled intact. Mandatory selection,
+hosted filtering, stale handles, frozen-score recompilation, bounded workers and
+labelled lexical fallback are checked. Native search tools expose the opt-in
+route. Larger-scale behavior, independent source use and task benefit remain open;
+this does not close E4.
+
 [Explicit browsing](verification/browse-2026-09-09.md) now exposes the existing
 empty-query index through the agent CLI, MCP and native OpenCode. It provides
 bounded topic previews when the saved vocabulary is unknown, with normal scope,

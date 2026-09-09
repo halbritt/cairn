@@ -36,6 +36,11 @@ go build -o "$test_root/cairn" ./cmd/cairn
 python3 scripts/check-capture.py "$test_root/cairn" "$test_root/capture-home"
 python3 scripts/check-proposal-groups.py "$test_root/cairn" "$test_root/proposal-groups-home"
 python3 scripts/check-local-api.py "$test_root/cairn" "$test_root/api-home"
+if [[ -n "${CAIRN_SEMANTIC_WORKER:-}" ]]; then
+    python3 scripts/check_semantic_api.py --binary "$test_root/cairn" \
+        --worker "$CAIRN_SEMANTIC_WORKER" \
+        --output "${CAIRN_SEMANTIC_REPORT:-$test_root/semantic-api}"
+fi
 if [[ -n "${CAIRN_OPENCODE_BINARY:-}" ]]; then
     python3 scripts/probe-opencode.py "$CAIRN_OPENCODE_BINARY" --cairn-binary "$test_root/cairn" --check-edit --disable-thinking --output "${CAIRN_PROBE_OUTPUT:-$test_root/opencode-probe.json}"
 fi

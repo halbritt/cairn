@@ -59,6 +59,12 @@ The default database and run artifacts live under `~/.local/share/cairn`.
 **dedicated Cairn database** for the CLI; it does not redirect the local-store
 script. Use `CAIRN_PG_BIN` to select PostgreSQL binaries when necessary.
 
+[Optional semantic discovery](docs/semantic-discovery.md) adds `--semantic` to
+authenticated agent search and `semantic: true` to native search tools. It can
+find notes using different vocabulary; the separately prepared local CPU worker
+preserves scope checks and budgets. Lexical search remains the default, with
+labelled fallback when the optional backend is unavailable.
+
 ```sh
 bash scripts/local-store.sh status
 bash scripts/local-store.sh backup

@@ -63,6 +63,12 @@ def check(binary, root, environment, opencode, claim, support):
     assert local_record['kind'] == 'note' and local_record['sensitivity'] == 'local'
     first = invoke('search', dict(query=marker))
     second = invoke('search', dict(query=marker))
+
+    fallback = invoke('search', dict(query=marker, semantic=True))
+    assert fallback['status'] == 'DEGRADED_NO_EMBEDDINGS'
+    assert fallback['discovery']['state'] == 'unavailable'
+    assert [e['record_id'] for e in fallback['index']] == [saved['record_id']]
+    invoke('search', dict(browse=True, semantic=True), 'cannot be combined')
     assert first['schema'] == 'cairn.opencode-search/1'
     for view in (first, second):
         assert view['scope']['repo'] == settings['repo']

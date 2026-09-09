@@ -30,6 +30,10 @@ type client struct {
 type Server struct{ clients map[[32]byte]client }
 
 func New(ctx context.Context, dsn string, identities []Identity) (*Server, error) {
+	return NewWithSemanticRanker(ctx, dsn, identities, nil)
+}
+
+func NewWithSemanticRanker(ctx context.Context, dsn string, identities []Identity, ranker core.SemanticRanker) (*Server, error) {
 	s := &Server{clients: map[[32]byte]client{}}
 	fail := func(err error) (*Server, error) { s.Close(); return nil, err }
 	invalid := func() (*Server, error) {
@@ -54,7 +58,7 @@ func New(ctx context.Context, dsn string, identities []Identity) (*Server, error
 		if _, exists := s.clients[key]; exists {
 			return invalid()
 		}
-		store, err := core.Open(ctx, dsn, core.Channel{Principal: identity.Principal, Repo: identity.Repo, Instrumented: identity.Role == "observer"})
+		store, err := core.OpenWithSemanticRanker(ctx, dsn, core.Channel{Principal: identity.Principal, Repo: identity.Repo, Instrumented: identity.Role == "observer"}, ranker)
 		if err != nil {
 			return fail(err)
 		}

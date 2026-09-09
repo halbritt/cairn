@@ -42,6 +42,7 @@ func (c Config) Validate() error {
 }
 
 type searchArgs struct {
+	Semantic  bool   `json:"semantic,omitempty" jsonschema:"Optional semantic discovery for vocabulary mismatches. Requires a query, cannot browse. Similarity is not answer confidence; an unavailable backend returns labelled lexical fallback."`
 	Query     string `json:"query,omitempty" jsonschema:"Words describing the memory needed. Omit only when browse is true."`
 	Browse    bool   `json:"browse,omitempty" jsonschema:"Browse eligible memory without a query when its vocabulary is unknown. Results are bounded, ordered by scope and recency, and may omit older notes."`
 	Offset    int    `json:"offset,omitempty" jsonschema:"For browsing, pass the preceding result's browse.next_offset to continue with the same scope and budget. Default 0. Pages read current state; restart if notes change."`
@@ -115,6 +116,9 @@ type memoryTools struct {
 }
 
 func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {
+	if args.Semantic && args.Browse {
+		return nil, nil, fmt.Errorf("semantic discovery cannot be combined with browsing")
+	}
 	if (args.Browse && args.Query != "") || (!args.Browse && strings.TrimSpace(args.Query) == "") {
 		return nil, nil, errors.New("search requires a nonempty query or browse=true without a query")
 	}
@@ -138,7 +142,7 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 		args.RequestID = uuid.NewString()
 	}
 	var index core.IndexResult
-	err := t.client.Call(ctx, "index", core.CompileRequest{RequestID: args.RequestID, BrowseOffset: browseOffset, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: t.config.Context}, &index)
+	err := t.client.Call(ctx, "index", core.CompileRequest{RequestID: args.RequestID, BrowseOffset: browseOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: t.config.Context}, &index)
 	if err != nil {
 		return toolResult(nil, err, t.config.AvailableTokens)
 	}

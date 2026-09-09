@@ -95,6 +95,13 @@ edit path and its limits.
 
 Search's `cairn.mcp-search/1` is a presentation of the source package, with its
 `source_schema` and `source_seal` retained. The augmented view is not itself sealed.
+
+For vocabulary mismatches, add `semantic: true` to a nonempty search query.
+[Semantic discovery](semantic-discovery.md) requires an optional local CPU backend
+and preserves the configured scope, mandatory context and pull budgets. It cannot
+be combined with browsing. Inspect `discovery.state` and the status banner;
+unavailable backends return labelled lexical fallback. Similarity is not evidence
+that a note answers the question.
 The `selected` field retains full mandatory bootstrap; index summaries are not
 substitutes for inspecting relevant bodies. Memory content remains fallible data.
 

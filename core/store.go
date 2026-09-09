@@ -21,8 +21,9 @@ import (
 var schemas embed.FS
 
 type Store struct {
-	pool    *pgxpool.Pool
-	channel Channel
+	pool           *pgxpool.Pool
+	channel        Channel
+	semanticRanker SemanticRanker
 }
 
 // Open must be called by trusted host code. Agents must never receive the DSN
@@ -42,7 +43,17 @@ func Open(ctx context.Context, dsn string, channel Channel) (*Store, error) {
 		pool.Close()
 		return nil, &Error{Code: "STORE_UNREACHABLE", Message: "cannot connect to the configured Cairn database", Cause: err}
 	}
-	return &Store{pool, channel}, nil
+	return &Store{pool: pool, channel: channel}, nil
+}
+
+// OpenWithSemanticRanker enables an optional host-owned scorer before the store
+// is shared. The ordinary Open path remains independent of an embedding model.
+func OpenWithSemanticRanker(ctx context.Context, dsn string, channel Channel, ranker SemanticRanker) (*Store, error) {
+	s, err := Open(ctx, dsn, channel)
+	if err == nil {
+		s.semanticRanker = ranker
+	}
+	return s, err
 }
 func (s *Store) Close() { s.pool.Close() }
 

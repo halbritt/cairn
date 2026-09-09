@@ -41,6 +41,7 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	request := f.String("request-id", uuid.NewString(), "index retry identity")
 	tokens := f.Int("tokens", 32000, "available memory input room")
 	browse := f.Bool("browse", false, "browse eligible memory without a query (bounded by the memory budget)")
+	semantic := f.Bool("semantic", false, "optional semantic discovery; labelled lexical fallback if unavailable")
 	offset := f.Int("offset", 0, "next browse offset returned by the previous page")
 	revision := f.String("revision", "", "declared repository revision")
 	workspace := f.String("workspace-sha256", "", "workspace digest")
@@ -51,6 +52,9 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 		return agentSearchView{}, invalid(err.Error())
 	}
 	query := strings.Join(f.Args(), " ")
+	if *semantic && *browse {
+		return agentSearchView{}, invalid("semantic discovery cannot be combined with browsing")
+	}
 	if strings.TrimSpace(*task) == "" || strings.TrimSpace(*run) == "" || *task == "*" || *run == "*" {
 		return agentSearchView{}, invalid("agent search requires explicit --task and --run")
 	}
@@ -77,7 +81,7 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 		return agentSearchView{}, err
 	}
 	var result core.IndexResult
-	if err = client.Call(ctx, "index", core.CompileRequest{RequestID: *request, BrowseOffset: browseOffset,
+	if err = client.Call(ctx, "index", core.CompileRequest{RequestID: *request, BrowseOffset: browseOffset, Semantic: *semantic,
 		Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: query, Purpose: "context", AvailableTokens: *tokens,
 		Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability}}, &result); err != nil {
 		return agentSearchView{}, err
