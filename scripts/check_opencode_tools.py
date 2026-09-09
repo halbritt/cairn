@@ -1,22 +1,20 @@
 """Opt-in native custom-tool checks; no model calls, only a disposable Cairn API."""
 import json
 from pathlib import Path
-import shutil
 import subprocess
 import uuid
 
 
 def check(binary, root, environment, opencode, claim, support):
     work = root / 'opencode-tools'
-    tool_dir = work / '.opencode/tools'
-    tool_dir.mkdir(parents=True)
-    source = Path(__file__).resolve().parents[1] / 'integrations/opencode/cairn.ts'
-    shutil.copyfile(source, tool_dir / 'cairn.ts')
-    settings = dict(executable=str(Path(binary).resolve()), socket=str(root / 'api.sock'),
-                    token_file=str(root / 'hosted-agent.token'), repo='fixture:socket', tokens=64000)
+    work.mkdir()
+    installed = subprocess.run([binary, 'opencode-install', '--project', str(work),
+        '--socket', str(root / 'api.sock'), '--token-file', str(root / 'hosted-agent.token'),
+        '--repo', 'fixture:socket', '--tokens', '64000'], env=environment, capture_output=True,
+        text=True, check=True, timeout=15)
+    assert json.loads(installed.stdout)['ok'] is True
     settings_path = work / '.opencode/cairn.json'
-    settings_path.write_text(json.dumps(settings))
-    settings_path.chmod(0o600)
+    settings = json.loads(settings_path.read_text())
     # Native tool debugging needs a model catalog entry, but never invokes it.
     config = dict(model='fixture/probe', provider={'fixture': {
         'npm': '@ai-sdk/openai-compatible', 'name': 'No-model fixture',

@@ -86,6 +86,11 @@ the [local MCP server](docs/mcp.md). An actual OpenCode model retrieved a note
 saved by another agent session and used it to answer the storage questions; the
 [verification report](docs/verification/mcp-2026-09-08.md) records that bounded result.
 
+For OpenCode custom tools with automatic session scope, `cairn opencode-install`
+installs the adapter bundled with the binary and explicit connection settings.
+It requires no source checkout and leaves host tool permissions unchanged. See
+the [native tools setup](docs/opencode-tools.md#install-in-a-project).
+
 `cairn opencode-config` generates the native server configuration with explicit
 connection and task scope. See the [OpenCode setup](docs/mcp.md#opencode-example)
 for the command, context flags and optional memory-only permission policy.

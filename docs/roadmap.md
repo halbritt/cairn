@@ -31,6 +31,11 @@ commands. [Native verification](verification/opencode-tools-2026-09-09.md) cover
 default local capture, exact body/evidence pulls, edits and refusals without a
 model call. The adapter is installed locally; its session grouping adds no
 observed-run authority or model-task benefit claim.
+The [bundled installer](verification/opencode-install-2026-09-09.md) now writes
+the matching native adapter and explicit connection settings directly from the
+CLI binary, preserving host permissions. Native integration checks consume its
+output. This removes source-checkout copying from setup; automatic host adoption
+and task benefit remain open.
 The [argument-validation repair](verification/opencode-validation-2026-09-09.md)
 also closes an observed malformed-sharing-flag defect: the adapter now validates
 its own schemas before calling Cairn. A normal session with scripted completions

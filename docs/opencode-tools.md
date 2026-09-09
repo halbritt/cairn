@@ -14,15 +14,44 @@ with OpenCode or substitute a process ID for a session ID.
 
 ## Install in a project
 
-Build/install the current Cairn CLI and provision an ordinary API profile for the
-intended repository and destination. From the target project, copy the adapter:
+Install the current Cairn CLI at a stable path and provision an ordinary API
+profile for the intended repository and destination. From an existing target
+project, run:
 
 ```sh
-mkdir -p .opencode/tools
-cp /absolute/path/to/cairn/integrations/opencode/cairn.ts .opencode/tools/cairn.ts
+cairn opencode-install --project "$PWD" \
+  --socket /absolute/path/to/api.sock \
+  --token-file /absolute/path/to/hosted-agent.token \
+  --repo /absolute/path/to/canonical/repository
 ```
 
-Create `.opencode/cairn.json` with installation-specific absolute paths:
+The binary embeds its matching adapter. The command writes
+`.opencode/tools/cairn.ts` and `.opencode/cairn.json`, both owner-only, without
+requiring a source checkout. Connection paths are made absolute relative to the
+invoking directory, and the executable path names the binary running the command.
+The repository identity stays exactly as supplied. No token bytes are read and
+no API, database, model or package service is contacted during installation.
+
+Identical reruns leave files untouched. If either file's contents differ, the command
+refuses before writing either file; inspect the differences and repeat the full
+command with `--replace` for an intentional upgrade or reconfiguration. That
+replaces differing Cairn files and tightens their permissions to `0600`. Symlink
+destinations are refused. Each file replacement is atomic, but the pair is not a
+filesystem transaction: after an I/O failure, rerun the same command to finish.
+Successful output lists both paths, content hashes and written/unchanged states.
+An `INSTALL_FAILED` response identifies a filesystem failure and exits 7.
+
+The installer does not edit `opencode.json`/`opencode.jsonc` or tool permissions, add
+credentials, edit Git exclusions, or start a harness. Keep the connection file
+out of Git and start a fresh OpenCode session to load the installed tools. Upgrade
+the API separately when a new tool feature requires it.
+
+Use `--tokens` to set memory room (default 32,000). Optional `--revision`,
+`--workspace-sha256`, `--task-class`, `--binding` and `--capability` flags populate
+the existing declared context settings; the API validates them on retrieval.
+There are no task/run flags because native OpenCode supplies session scope.
+
+The installed connection file has this shape and can also be maintained manually:
 
 ```json
 {

@@ -1,0 +1,106 @@
+{
+  "schema": "cairn.opencode-install-verification/1",
+  "baseline_commit": "7beaaab53980c4b5326c81e9e9e35ce432842b97",
+  "offline": {
+    "binary_sha256": "17059e987dfec3103e9f4bb72de7f62e018b68c74af0cfd74f1f124d83b3a7c2",
+    "no_home_or_database": true,
+    "missing_credentials_not_opened": true,
+    "literal_paths": true,
+    "initial_install": true,
+    "identical_repeat_unchanged": true,
+    "filesystem_failure_status": "INSTALL_FAILED",
+    "filesystem_failure_exit": 7
+  },
+  "native_opencode_version": "1.18.21",
+  "native_all_five_tools": true,
+  "model_inference_calls": 0,
+  "source_hashes": {
+    "cmd/cairn/opencode_install.go": "2233b92b50258c3ff503d720c1cc7281d35248e0814e4ca7f10fb017a1df45f5",
+    "cmd/cairn/opencode_install_test.go": "f1bbf76a57984231449425a5bc0bf09907dfc12815a233a1d6da81a7f9c5407d",
+    "integrations/opencode/embed.go": "988d973e9d6ed8d094902f920e7c8bffc7ca720cf7e165d7f83b74a47b57881c",
+    "integrations/opencode/cairn.ts": "e7888f9ce4f4eac83fbcbcdffd05956f44da090c0e2e1ce7f8e20a6fb169e274",
+    "scripts/check_opencode_tools.py": "197a72b29bc8644117a4a9d149a2c0acd828baadd96388346a6eacdcc04dd8f2"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-native-install-unit.log",
+      "sha256": "f4667c5257b20deff7d263112972a3a2a86ae310cabcf504492e43f506ed6338"
+    },
+    {
+      "path": "/tmp/cairn-native-install-tests.log",
+      "sha256": "24276b0386c5c407e3025d64881df16ab87b81541acf0c72081a5eeb891a6fad"
+    },
+    {
+      "path": "/tmp/cairn-native-install-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-native-install-integration.log",
+      "sha256": "31a60c521509e2146fd2db870dba8a38cd5a08ed616fb61db3b819d22e670bdc"
+    },
+    {
+      "path": "/tmp/cairn-native-install-offline/report.json",
+      "sha256": "525fdc4318be4f95c9163a6ea42aea2975c96a555230db392dd664154e8b63a4"
+    },
+    {
+      "path": "/tmp/cairn-native-install-offline/results.json",
+      "sha256": "6f4fdbc467a8fc14f7f3a49ef8b15df51ecf393b2a87c4ef3b59c270c152050f"
+    },
+    {
+      "path": "/tmp/cairn-native-install-offline/failure.json",
+      "sha256": "28d16cb75defb097ee0846f5968c9bc7e9021224cd869186d2d35ffcba569449"
+    }
+  ],
+  "limits": [
+    "Explicit operator installation does not establish automatic adoption or model task benefit",
+    "Each file replacement is atomic; pair is not transactional",
+    "Concurrent installation/editing not qualified",
+    "API capability remains independently deployed"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-7cf60a527d7b142a",
+    "packet_content_sha256": "7cf60a527d7b142a577a0461584d5a5b41df90a2be3259ed830df9b3ed6378a6",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_path": "/tmp/cairn-native-install-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-55947e2c9b11e87a",
+        "required_by": "architecture-policy-mechanism-separation",
+        "requirement": "independently meaningful policy",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new policy-mechanism split or replaceable provider is proposed. The direct installer packages an existing adapter; host policy remains outside it."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-5a26c08d16c0b0f7",
+        "required_by": "architecture-policy-mechanism-separation",
+        "requirement": "volatile or replaceable mechanism",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new policy-mechanism split or replaceable provider is proposed. The direct installer packages an existing adapter; host policy remains outside it."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "The generic named procedure is not a separate ceremony here. Allowed file effects, no-change alternative and existing consumer checks are recorded directly; no broad refactoring claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "The generic named procedure is not a separate ceremony here. Allowed file effects, no-change alternative and existing consumer checks are recorded directly; no broad refactoring claim is made."
+      }
+    ]
+  }
+}

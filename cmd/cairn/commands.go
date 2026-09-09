@@ -17,6 +17,7 @@ import (
 const help = `Cairn: local memory for agents
 
 Everyday commands:
+  opencode-install --project DIRECTORY --socket PATH --token-file FILE --repo REPO [--replace]
   opencode-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--memory-only]
   mcp --socket PATH --token-file FILE --repo REPO (--task TASK --run RUN | --codex-thread) [--tokens N]
   agent [--token-file FILE] [--socket PATH] OPERATION < request.json
@@ -92,6 +93,13 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	}
 	if args[0] == "agent" {
 		return agentRequest(ctx, args[1:], input)
+	}
+	if args[0] == "opencode-install" {
+		executable, err := os.Executable()
+		if err != nil {
+			return nil, installationError("Cairn executable", err)
+		}
+		return installOpenCode(args[1:], executable)
 	}
 	channel := core.Channel{Principal: "local-uid:" + strconv.Itoa(os.Geteuid()), Operator: true}
 	if args[0] == "run" || args[0] == "recover-run" || args[0] == "purge-deletion" {
