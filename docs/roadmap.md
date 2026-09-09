@@ -277,6 +277,14 @@ questions. It also records a storage-location rank regression and continuing
 vocabulary misses. Ranker v4 retains historical v1–v3 behavior for recompilation;
 these development results do not close E4.
 
+The [local semantic comparison](verification/semantic-retrieval-2026-09-09.md)
+recovers every labelled documentation answer within three results, including the
+lexical vocabulary misses. It also worsens some first-place answers and retrieves
+unrelated neighbours for no-answer controls. This supports an optional semantic
+discovery experiment that preserves lexical search, structured eligibility,
+mandatory selection and budgets. Actual store integration, long-note handling
+and downstream benefit remain open; the installed ranker is unchanged.
+
 [Explicit browsing](verification/browse-2026-09-09.md) now exposes the existing
 empty-query index through the agent CLI, MCP and native OpenCode. It provides
 bounded topic previews when the saved vocabulary is unknown, with normal scope,

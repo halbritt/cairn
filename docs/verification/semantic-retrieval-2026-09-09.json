@@ -1,0 +1,1015 @@
+{
+  "schema": "cairn.semantic-retrieval-comparison/1",
+  "baseline_commit": "86509025c131054a62216d2235021f48067a33cf",
+  "plan": {
+    "schema": "cairn.semantic-retrieval-plan/1",
+    "workload_sha256": "30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0",
+    "script_sha256": "3973c77ca080cdec4c93db7e27b6afc49711f785390baedd9e8d15c4426e38ae",
+    "model": "BAAI/bge-small-en-v1.5",
+    "query_prefix": "Represent this sentence for searching relevant passages: ",
+    "provider": "CPUExecutionProvider",
+    "threads": 2,
+    "batch_size": 16,
+    "methods": [
+      "lexical-v4",
+      "inverse-document-frequency",
+      "cosine"
+    ],
+    "metrics": [
+      "answer rank",
+      "top one",
+      "top three",
+      "no-answer top score"
+    ],
+    "ties": "lexical uses forward/reverse insertion recency; cosine uses note ID",
+    "scope": "Ranking only; no store, eligibility, packing or answer generation",
+    "constraints": [
+      "One model; no parameter or threshold tuning after results",
+      "No truncation; refuse inputs above 512 tokens",
+      "No-answer controls have no calibrated refusal threshold",
+      "Development workload; no generalization or task-benefit claim"
+    ],
+    "python": "3.11.15",
+    "packages": {
+      "fastembed": "0.8.0",
+      "onnxruntime": "1.29.0",
+      "numpy": "2.4.6",
+      "tokenizers": "0.23.2",
+      "huggingface-hub": "1.30.0"
+    }
+  },
+  "model": {
+    "artifacts": [
+      {
+        "path": "config.json",
+        "sha256": "13582bcf2effc85b7bf3d3f5532e686bc1c9ce86bb009d10f0ec33cbe92299dd",
+        "bytes": 706
+      },
+      {
+        "path": "model_optimized.onnx",
+        "sha256": "51f1bd0addd6e859e42c2c8021a5e5461385bb676a649f4b269aa445449f2431",
+        "bytes": 66465124
+      },
+      {
+        "path": "special_tokens_map.json",
+        "sha256": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+        "bytes": 695
+      },
+      {
+        "path": "tokenizer.json",
+        "sha256": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+        "bytes": 711396
+      },
+      {
+        "path": "tokenizer_config.json",
+        "sha256": "0b29c7bfc889e53b36d9dd3e686dd4300f6525110eaa98c76a5dafceb2029f53",
+        "bytes": 1242
+      }
+    ],
+    "input_tokens": [
+      90,
+      87,
+      213,
+      183,
+      81,
+      128,
+      54,
+      98,
+      77,
+      222,
+      36,
+      89,
+      12,
+      18,
+      14,
+      13,
+      21,
+      20,
+      19,
+      19,
+      19,
+      25,
+      21,
+      23,
+      18,
+      22,
+      19,
+      25,
+      17
+    ],
+    "max_input_tokens": 222,
+    "load_seconds": 2.461695967009291
+  },
+  "embed_seconds": 6.436475192895159,
+  "summary": [
+    {
+      "method": "lexical-v4",
+      "order": "forward",
+      "answerable": 15,
+      "first": 11,
+      "top_three": 13
+    },
+    {
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answerable": 15,
+      "first": 10,
+      "top_three": 12
+    },
+    {
+      "method": "inverse-document-frequency",
+      "order": "forward",
+      "answerable": 15,
+      "first": 10,
+      "top_three": 13
+    },
+    {
+      "method": "inverse-document-frequency",
+      "order": "reverse",
+      "answerable": 15,
+      "first": 10,
+      "top_three": 12
+    },
+    {
+      "method": "cosine",
+      "order": "stable-id",
+      "answerable": 15,
+      "first": 11,
+      "top_three": 15
+    }
+  ],
+  "queries": [
+    {
+      "query_id": "storage-topic",
+      "relevant": [
+        "storage"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": null
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": null
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": null
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": null
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 2,
+          "top_three": [
+            {
+              "id": "pulls",
+              "score": 0.5757978558540344
+            },
+            {
+              "id": "storage",
+              "score": 0.5474728941917419
+            },
+            {
+              "id": "evidence",
+              "score": 0.5451269745826721
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "storage-location",
+      "relevant": [
+        "storage"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 11
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 4
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 11
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 7
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 1,
+          "top_three": [
+            {
+              "id": "storage",
+              "score": 0.7447109818458557
+            },
+            {
+              "id": "outcomes",
+              "score": 0.7113627195358276
+            },
+            {
+              "id": "status",
+              "score": 0.7080358266830444
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "storage-env-exact",
+      "relevant": [
+        "storage"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 1,
+          "top_three": [
+            {
+              "id": "storage",
+              "score": 0.711646556854248
+            },
+            {
+              "id": "status",
+              "score": 0.6422750949859619
+            },
+            {
+              "id": "runner",
+              "score": 0.6385743618011475
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "storage-env-words",
+      "relevant": [
+        "storage"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 1,
+          "top_three": [
+            {
+              "id": "storage",
+              "score": 0.6693884134292603
+            },
+            {
+              "id": "status",
+              "score": 0.6187997460365295
+            },
+            {
+              "id": "runner",
+              "score": 0.6030963659286499
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "evidence-retry",
+      "relevant": [
+        "pulls"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 2
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 2
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 2
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 2
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 1,
+          "top_three": [
+            {
+              "id": "pulls",
+              "score": 0.6749584674835205
+            },
+            {
+              "id": "evidence",
+              "score": 0.655852198600769
+            },
+            {
+              "id": "status",
+              "score": 0.6066557168960571
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "revision",
+      "relevant": [
+        "currentness"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 2,
+          "top_three": [
+            {
+              "id": "supersession",
+              "score": 0.6563655138015747
+            },
+            {
+              "id": "currentness",
+              "score": 0.6424801349639893
+            },
+            {
+              "id": "conflict",
+              "score": 0.6044847369194031
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "tampering",
+      "relevant": [
+        "evidence"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 1,
+          "top_three": [
+            {
+              "id": "evidence",
+              "score": 0.694294810295105
+            },
+            {
+              "id": "pulls",
+              "score": 0.6873795986175537
+            },
+            {
+              "id": "conflict",
+              "score": 0.656140923500061
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "citation-count",
+      "relevant": [
+        "outcomes"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 3,
+          "top_three": [
+            {
+              "id": "demand",
+              "score": 0.6200981140136719
+            },
+            {
+              "id": "conflict",
+              "score": 0.6182039976119995
+            },
+            {
+              "id": "outcomes",
+              "score": 0.6174802780151367
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "agent-launch",
+      "relevant": [
+        "runner"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 1,
+          "top_three": [
+            {
+              "id": "runner",
+              "score": 0.6873685717582703
+            },
+            {
+              "id": "currentness",
+              "score": 0.583556056022644
+            },
+            {
+              "id": "demand",
+              "score": 0.5471378564834595
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "lost-reply",
+      "relevant": [
+        "status"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 1,
+          "top_three": [
+            {
+              "id": "status",
+              "score": 0.7353240847587585
+            },
+            {
+              "id": "conflict",
+              "score": 0.6280856728553772
+            },
+            {
+              "id": "evidence",
+              "score": 0.6279156804084778
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "replacement",
+      "relevant": [
+        "supersession"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 2
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 2
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 2
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 1,
+          "top_three": [
+            {
+              "id": "supersession",
+              "score": 0.6737525463104248
+            },
+            {
+              "id": "delete",
+              "score": 0.6398530006408691
+            },
+            {
+              "id": "conflict",
+              "score": 0.6337511539459229
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "original-conflict",
+      "relevant": [
+        "conflict"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 3
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 1,
+          "top_three": [
+            {
+              "id": "conflict",
+              "score": 0.7374565601348877
+            },
+            {
+              "id": "status",
+              "score": 0.6679917573928833
+            },
+            {
+              "id": "currentness",
+              "score": 0.6395954489707947
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "failure-lessons",
+      "relevant": [
+        "demand"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 1,
+          "top_three": [
+            {
+              "id": "demand",
+              "score": 0.6768784523010254
+            },
+            {
+              "id": "conflict",
+              "score": 0.5455111861228943
+            },
+            {
+              "id": "currentness",
+              "score": 0.5078181624412537
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "remove-note",
+      "relevant": [
+        "delete"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 1
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 1,
+          "top_three": [
+            {
+              "id": "delete",
+              "score": 0.7461574673652649
+            },
+            {
+              "id": "conflict",
+              "score": 0.5727331638336182
+            },
+            {
+              "id": "supersession",
+              "score": 0.5610988140106201
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "broaden-scope",
+      "relevant": [
+        "scope"
+      ],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": 1
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": 6
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": 2
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": 6
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": 2,
+          "top_three": [
+            {
+              "id": "currentness",
+              "score": 0.6558645963668823
+            },
+            {
+              "id": "scope",
+              "score": 0.6431260108947754
+            },
+            {
+              "id": "outcomes",
+              "score": 0.626818835735321
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "absent-gpu",
+      "relevant": [],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": null
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": null
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": null
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": null
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": null,
+          "top_three": [
+            {
+              "id": "outcomes",
+              "score": 0.6703920364379883
+            },
+            {
+              "id": "storage",
+              "score": 0.6583962440490723
+            },
+            {
+              "id": "pulls",
+              "score": 0.6452829837799072
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "query_id": "absent-price",
+      "relevant": [],
+      "results": [
+        {
+          "method": "lexical-v4",
+          "order": "forward",
+          "answer_rank": null
+        },
+        {
+          "method": "lexical-v4",
+          "order": "reverse",
+          "answer_rank": null
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "forward",
+          "answer_rank": null
+        },
+        {
+          "method": "inverse-document-frequency",
+          "order": "reverse",
+          "answer_rank": null
+        },
+        {
+          "method": "cosine",
+          "order": "stable-id",
+          "answer_rank": null,
+          "top_three": [
+            {
+              "id": "outcomes",
+              "score": 0.4795336425304413
+            },
+            {
+              "id": "runner",
+              "score": 0.4498683214187622
+            },
+            {
+              "id": "supersession",
+              "score": 0.42913806438446045
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-semantic-ranking-a/report.json",
+      "sha256": "58e2a19c9ae583f08368df09e527131fe6f2473c86cebbb3b34aef00f1487a48"
+    },
+    {
+      "path": "/tmp/cairn-semantic-ranking-a/plan.json",
+      "sha256": "1661026f6a90e082ab92ed309b5fe5400065d208cc9bddcac61d3df01892e310"
+    },
+    {
+      "path": "/tmp/cairn-semantic-ranking-a/model.json",
+      "sha256": "afbb0af2fb231b457cb2fdae76844df0145bc5e16eb089a1bcb26cdc5b229aa6"
+    },
+    {
+      "path": "/tmp/cairn-semantic-ranking-a/vectors.npz",
+      "sha256": "4a56ec1a0aa9bdbba264f72bb59878e31fc70f747119ebdb18eb644ddfe3bf07"
+    },
+    {
+      "path": "/tmp/cairn-semantic-packages.txt",
+      "sha256": "217f3e5b182afa191e402dd66b816787442ab84c769ad58e23b301cab307e8e4"
+    },
+    {
+      "path": "/tmp/cairn-semantic-verification.json",
+      "sha256": "f086828a22487a3ae4b5d4492f330b15cab0b9b7e64d6288ebf493bf4e24a47a"
+    },
+    {
+      "path": "/tmp/cairn-semantic-report-inspected.md",
+      "sha256": "045a16737900d36d42d7a6fce1e491a6746c8813d168e49f846b24fe9b6ddfa5"
+    }
+  ],
+  "dependencies": [
+    "anyio==4.15.1",
+    "certifi==2026.7.22",
+    "charset-normalizer==3.5.1",
+    "click==8.5.0",
+    "fastembed==0.8.0",
+    "filelock==3.32.6",
+    "flatbuffers==25.12.19",
+    "fsspec==2026.7.0",
+    "h11==0.16.0",
+    "hf-xet==1.6.0",
+    "httpcore==1.0.9",
+    "httpx==0.28.1",
+    "huggingface-hub==1.30.0",
+    "idna==3.19",
+    "loguru==0.7.3",
+    "mmh3==5.3.0",
+    "numpy==2.4.6",
+    "onnxruntime==1.29.0",
+    "packaging==26.3",
+    "pillow==12.3.0",
+    "protobuf==7.36.1",
+    "py-rust-stemmers==0.1.8",
+    "pyyaml==6.0.3",
+    "requests==2.34.2",
+    "tokenizers==0.23.2",
+    "tqdm==4.70.0",
+    "typing-extensions==4.16.0",
+    "urllib3==2.7.0"
+  ],
+  "limits": [
+    "Authored development workload; no generalization or task benefit",
+    "Ranking stage only; no store or packing integration",
+    "One local CPU run; no latency or concurrency generalization",
+    "No refusal threshold calibrated; semantic no-answer controls return neighbours"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-592d89c0775c8bbc",
+    "packet_sha256": "48703249959e363eafb29acb1dd106e6a26a5ab2e7cb3118ac1751efebc8ea07",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "receipt": "/tmp/cairn-semantic-decision.json",
+    "receipt_sha256": "f957443801add7511a19fbd70880e40962a04bb266344070542f42b18df20d6b",
+    "residuals": "/tmp/cairn-semantic-residuals.json",
+    "residuals_sha256": "bef0769961f4f5657fb90060eb5e758601e587aaecf48736bb5aae9271cbeaf0",
+    "citation_result_sha256": "73226f1eaebea627d7119a3125ca0e35505d7ccf3d9b113cfec4c39b5dc4205a"
+  }
+}
