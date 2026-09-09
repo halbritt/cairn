@@ -21,7 +21,7 @@ func TestCouncilAuditRetractionRequiresPreview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := op.Compile(ctx, CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "planning", 64000}, Destination{"local", true})
+	p, err := op.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "fixture_error", Purpose: "planning", AvailableTokens: 64000}, Destination{"local", true})
 	if err != nil || len(p.Semantic.Selected) != 1 {
 		t.Fatalf("fixture compile: %+v %v", p, err)
 	}
@@ -45,7 +45,7 @@ func TestRetractionPreviewInvalidationAndRetry(t *testing.T) {
 	if len(preview.Uses) != 0 {
 		t.Fatal("unexpected initial impact")
 	}
-	compile := CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "context", 64000}
+	compile := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "fixture_error", Purpose: "context", AvailableTokens: 64000}
 	p, err := s.Compile(ctx, compile, Destination{"local", true})
 	if err != nil || len(p.Semantic.Selected) != 1 {
 		t.Fatalf("compile: %+v %v", p, err)
@@ -120,7 +120,7 @@ func TestConcurrentCompileAndRetraction(t *testing.T) {
 		retracted := make(chan error, 1)
 		go func() {
 			<-start
-			p, err := s.Compile(ctx, CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "context", 64000}, Destination{"local", true})
+			p, err := s.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "fixture_error", Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
 			compiled <- compileResult{p, err}
 		}()
 		go func() {

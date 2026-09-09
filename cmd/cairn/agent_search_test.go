@@ -124,10 +124,17 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if req := <-requests; req.Query != "" || req.Scope != scope {
+	if req := <-requests; req.Query != "" || req.Scope != scope || req.BrowseOffset == nil || *req.BrowseOffset != 0 {
 		t.Fatalf("browse must use the existing scoped empty query: %+v", req)
 	}
-	for _, tail := range [][]string{{}, {" "}, {"--browse", "unexpected query"}, {"--browse=false"}} {
+	_, err = run(context.Background(), append(append([]string{}, base...), "--browse", "--offset", "6"), strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req := <-requests; req.BrowseOffset == nil || *req.BrowseOffset != 6 {
+		t.Fatalf("browse continuation offset lost: %+v", req)
+	}
+	for _, tail := range [][]string{{}, {" "}, {"--browse", "unexpected query"}, {"--browse=false"}, {"--offset", "1", "query"}, {"--browse", "--offset", "-1"}, {"--browse", "--offset", "10001"}} {
 		_, err := run(context.Background(), append(append([]string{}, base...), tail...), strings.NewReader(""))
 		if core.Code(err) != "INVALID_REQUEST" {
 			t.Fatalf("invalid query/browse combination %q: %v", tail, err)

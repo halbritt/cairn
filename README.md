@@ -182,6 +182,11 @@ returns eligible previews within the same scope, destination and budget limits;
 it is not a complete inventory. Pull a relevant entry or use its wording to
 refine the next query.
 
+When browsing returns `browse.next_offset`, continue with `--browse --offset N`
+or `{"browse": true, "offset": N}` in the same task/session. Each page has its
+own budget and repeats required instructions; the host must account for the
+combined context. Pages read current state, so edits can shift positions.
+
 Each result includes a complete `pull_command` and matching `pull_arguments`
 for its full body. The [native OpenCode tools](docs/opencode-tools.md) use the
 structured form and derive search scope from the current session. Reuse the

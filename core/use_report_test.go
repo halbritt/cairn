@@ -20,7 +20,7 @@ func TestUseReportJoinsWithoutMultiplyingObservations(t *testing.T) {
 	if _, err = s.Create(ctx, CreateRequest{uuid.NewString(), d}); err != nil {
 		t.Fatal(err)
 	}
-	req := CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "", "context", 64000}
+	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "", Purpose: "context", AvailableTokens: 64000}
 	p, err := s.Compile(ctx, req, Destination{"local", true})
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestRunAssessmentIsVersionedAndDoesNotInferCapabilityFromBinding(t *testing
 	if _, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)}); err != nil {
 		t.Fatal(err)
 	}
-	p, err := s.Compile(ctx, CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "", "context", 64000}, Destination{"local", true})
+	p, err := s.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "", Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestUsageInferenceAndCoverageRemainExplicit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := s.Compile(ctx, CompileRequest{"", nil, uuid.NewString(), Scope{repo, "t", "r"}, "", "context", 64000}, Destination{"local", true})
+	p, err := s.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "t", "r"}, Query: "", Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
 	if err != nil {
 		t.Fatal(err)
 	}

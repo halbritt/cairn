@@ -72,6 +72,12 @@ by packing; browsing is not a complete inventory. Scope, applicability,
 destination filtering and mandatory context still apply. A blank search does
 not enable browsing implicitly, and a nonempty query cannot accompany it.
 
+If the result contains `browse.next_offset`, call `cairn_search` again with
+`{"browse": true, "offset": N}` using that value. Keep the same session and
+context. Every page repeats required instructions, and each page/pull consumes
+context in addition to prior calls. Pages read current state; edits and captures
+may shift positions. Update both the API service and CLI for paged browsing.
+
 Capture saves selected reusable knowledge as repository-wide A testimony.
 `kind` defaults to `note`; omitted `shareable` keeps the note local. Writes return
 only IDs, version and retry ID. Edit takes the same full replacement draft as the

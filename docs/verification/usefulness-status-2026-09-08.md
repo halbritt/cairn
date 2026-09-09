@@ -87,3 +87,9 @@ retrieves the current revision through a fresh native-client task. Identical
 capture retry preserved its identity. This closes the tested client-maintenance
 path; the same coding agent chose every operation, so independent model judgment
 and downstream benefit remain unobserved.
+
+[Browse continuation](browse-pages-2026-09-09.md) addresses a later observed
+retrieval gap: the default preview omitted an older storage note. Installed CLI, native Codex
+and normal OpenCode now reach it on page two at the same per-call budget, with an
+exact body pull. These are client-driven operations, not independent model
+selection or a new task-benefit result.

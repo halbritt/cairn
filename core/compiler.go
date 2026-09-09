@@ -21,6 +21,7 @@ import (
 )
 
 type CompileRequest struct {
+	BrowseOffset    *int         `json:"browse_offset,omitempty"`
 	Mode            string       `json:"mode,omitempty"`
 	Context         *ContextPins `json:"context,omitempty"`
 	RequestID       string       `json:"request_id"`
@@ -45,6 +46,7 @@ type Selection struct {
 	Reason    string     `json:"reason"`
 }
 type SemanticPackage struct {
+	Browse          *BrowsePage     `json:"browse,omitempty" cbor:"browse,omitempty"`
 	Mode            string          `json:"mode,omitempty"`
 	Index           []IndexEntry    `json:"index,omitempty"`
 	Context         *ContextPins    `json:"context,omitempty"`
@@ -82,6 +84,9 @@ func (p Package) Render() (string, error) {
 func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Destination) (Package, error) {
 	if req.Mode != "" && req.Mode != "index" {
 		return Package{}, failure("INVALID_REQUEST", "unknown compile mode")
+	}
+	if req.BrowseOffset != nil && (req.Mode != "index" || req.Query != "" || *req.BrowseOffset < 0 || *req.BrowseOffset > 10000) {
+		return Package{}, failure("INVALID_REQUEST", "browse_offset requires an empty-query index and an offset from 0 to 10000")
 	}
 	if err := req.Context.validate(); err != nil {
 		return Package{}, err
@@ -199,6 +204,10 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	if req.Mode == "index" {
 		p.Mode = "index"
 		p.Schema = "cairn.semantic/5"
+		if req.BrowseOffset != nil {
+			p.Schema = "cairn.semantic/6"
+			p.Browse = &BrowsePage{Offset: *req.BrowseOffset}
+		}
 		return packIndex(p, candidates, evaluations, req.Query)
 	}
 	return packCandidates(p, candidates, evaluations)

@@ -1,0 +1,276 @@
+{
+  "schema": "cairn.browse-pages-verification/1",
+  "baseline_commit": "cd4027fa7ce6bf640d4b781450428355d3e8cd26",
+  "installed_cli_sha256": "d70edd6c7430b4f77d6b9a566c4774cf84ca9c17d8609f042685c173c9bb8b3d",
+  "installed_adapter_sha256": "997d0e0438fda3851a8f2a2a53f38042f4e8376208a20a34bf30cd41c0a28b6b",
+  "installed_api_pid_observed": 1605839,
+  "installed_from_pending_source": true,
+  "sql_schema_changed": false,
+  "ranker_changed": false,
+  "paged_semantic_schema": "cairn.semantic/6",
+  "unpaged_semantic_schema": "cairn.semantic/5",
+  "opencode_version": "1.18.21",
+  "codex_version": "0.153.4",
+  "model_inference_calls": 0,
+  "checks": {
+    "make_check": true,
+    "make_test": true,
+    "full_native_api_integration": true,
+    "old_binary_v5_recompile": true
+  },
+  "cli": {
+    "pages": [
+      {
+        "offset": 0,
+        "returned": 6,
+        "next_offset": 6,
+        "available_tokens": 32000
+      },
+      {
+        "offset": 6,
+        "returned": 3,
+        "next_offset": null,
+        "available_tokens": 32000
+      }
+    ],
+    "unique_records": 9,
+    "storage_page": 2,
+    "storage_body_verified": true,
+    "adapter_sha256": "997d0e0438fda3851a8f2a2a53f38042f4e8376208a20a34bf30cd41c0a28b6b"
+  },
+  "codex": {
+    "thread_id": "01a0852c-06e1-79c1-b7e5-2e64a746044a",
+    "pages": [
+      {
+        "offset": 0,
+        "returned": 6,
+        "next_offset": 6,
+        "available_tokens": 32000
+      },
+      {
+        "offset": 6,
+        "returned": 3,
+        "next_offset": null,
+        "available_tokens": 32000
+      }
+    ],
+    "unique_records": 9,
+    "storage_page": 2,
+    "exact_saved_body": true,
+    "model_turns_started": 0
+  },
+  "opencode": {
+    "route": "normal opencode run with scripted loopback completions",
+    "scope": {
+      "repo": "/home/halbritt/git/cairn",
+      "task_id": "opencode/ses_f7acd2584ffeWoCauNnWQDlb7z",
+      "run_id": "ses_f7acd2584ffeWoCauNnWQDlb7z"
+    },
+    "pages": [
+      {
+        "offset": 0,
+        "returned": 6,
+        "next_offset": 6,
+        "available_tokens": 32000
+      },
+      {
+        "offset": 6,
+        "returned": 3,
+        "next_offset": null,
+        "available_tokens": 32000
+      }
+    ],
+    "unique_records": 9,
+    "storage_page": 2,
+    "exact_saved_body": true,
+    "model_inference_calls": 0,
+    "exit_code": 0,
+    "adapter_sha256": "997d0e0438fda3851a8f2a2a53f38042f4e8376208a20a34bf30cd41c0a28b6b"
+  },
+  "probe_errors": [
+    "Legacy compatibility probe initially compared the CLI historical wrapper instead of its package field; corrected comparison passed.",
+    "OpenCode probe initially expected the CLI data envelope instead of the native result; handler failed and the 60-second subprocess timed out. Corrected native-result parsing passed."
+  ],
+  "limits": [
+    "Current-state offsets can shift after edits or captures",
+    "Each page has independent context and expansion budgets; host owns accumulated context",
+    "Bounded candidate scan and policy/oversize omissions remain",
+    "No independent model task-benefit result",
+    "No standalone TypeScript typecheck"
+  ],
+  "design_review": {
+    "packet_id": "pkt-fe77361dc9221e3e",
+    "packet_content_sha256": "fe77361dc9221e3ec1337814ffecf3bf5223da9c62df13285b0cd34952ccdcc4",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_receipt": "/tmp/cairn-browse-pages-decision.json",
+    "nonmaterial_obligations": 13
+  },
+  "artifacts": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "10d3a54d2262ab791956405aadca07966a2b70824c95432f5cea40ccbf869e39"
+    },
+    {
+      "path": "README.md",
+      "sha256": "983af587c6930c5029057c63b52d8036c21997da10b2446a1766dc7a5f6190da"
+    },
+    {
+      "path": "cmd/cairn/agent_search.go",
+      "sha256": "11e701da72c938b0dd4ca70f8a5b9eaf6a16bb041507024fd9ed3d8a54344df1"
+    },
+    {
+      "path": "cmd/cairn/agent_search_test.go",
+      "sha256": "ecbae213193bf7f50f35e39ba0bf1cff2fd97d421c999ba5803782a723966a24"
+    },
+    {
+      "path": "core/authority_test.go",
+      "sha256": "5e1f67384592cadaeceed077943f883a93337caaf883ba4ec281bc010e385317"
+    },
+    {
+      "path": "core/capture_test.go",
+      "sha256": "54a8535439ea77f97ae105447a38752b16d6f9fa2c18a7efa7917a37c72fee7c"
+    },
+    {
+      "path": "core/compiler.go",
+      "sha256": "8405167b0d8d56fc3894e06fc5887f52eb47627dc66dc993d4f6bb7d6b21c631"
+    },
+    {
+      "path": "core/compiler_test.go",
+      "sha256": "4480236116a072bc8fea654ff6659e4991e34e0017c30ed7d91fb32615253cfe"
+    },
+    {
+      "path": "core/deletion_test.go",
+      "sha256": "22abecd4a5a9710cbf1f19b4ece8229b737a5454ddf2294ef7f7425356a01782"
+    },
+    {
+      "path": "core/demand_test.go",
+      "sha256": "66202528c2777abcf62eb1de3820ca961018f8a38f702acea7b268dab9cd9512"
+    },
+    {
+      "path": "core/index.go",
+      "sha256": "3256e9b8c316e59858edfcb5b18e6fc6070421f8ac1f23f9d8991e3a5bab8d5e"
+    },
+    {
+      "path": "core/recompile.go",
+      "sha256": "8a78c55bbc7ee4092f66550934f34ac9e5a8542787ba6edaaabcdf112f799b71"
+    },
+    {
+      "path": "core/retraction_test.go",
+      "sha256": "c0120786ea2d9813d498ce16df51a28c3ea41862badc7a041eee7b461f1154ed"
+    },
+    {
+      "path": "core/use_report_test.go",
+      "sha256": "e757abe99e330170c9cdcf6f5d85341490ee8b4bea68e8ed8f7941359ab7096d"
+    },
+    {
+      "path": "docs/index-and-pull.md",
+      "sha256": "aad94206481527988cb0289270e2256b06fb30024edebdfd3a272388b40ca1c3"
+    },
+    {
+      "path": "docs/mcp.md",
+      "sha256": "d00524ee858ab530520f1a72d0b5a8ab4f2be240eea45971bf7eeadb10075307"
+    },
+    {
+      "path": "docs/opencode-tools.md",
+      "sha256": "5958f227e5269cde620c96bc38297df9fcb991dac7c93ad65926be7b178771c7"
+    },
+    {
+      "path": "docs/roadmap.md",
+      "sha256": "f02c25ec93c8cdb4c6f12123e3b07c9781a86460200909ba06b6c98c9117c5e4"
+    },
+    {
+      "path": "docs/verification/usefulness-status-2026-09-08.md",
+      "sha256": "aabe7ad6db4acb597d893c5e61b17ac526b65ebe03e3267dc94227478c24b578"
+    },
+    {
+      "path": "integrations/opencode/cairn.ts",
+      "sha256": "997d0e0438fda3851a8f2a2a53f38042f4e8376208a20a34bf30cd41c0a28b6b"
+    },
+    {
+      "path": "mcpapi/server.go",
+      "sha256": "5ed9174e2d2456954c411af00d4535f16d63369a41b3ee305aee77f8d2b6fcaf"
+    },
+    {
+      "path": "mcpapi/server_test.go",
+      "sha256": "5b535d0afa1c136dfd21a51013d484d8a8c5af6f7d0a83cfabae6620a3f5d959"
+    },
+    {
+      "path": "scripts/check_agent_search.py",
+      "sha256": "de1786e7390e96ecb2ece9aa52edd4466abb3f6c2e5ba80bca705a6b3445a269"
+    },
+    {
+      "path": "scripts/check_opencode_tools.py",
+      "sha256": "c56abd455c18c06a8f5790c4c664a7526c8ea99f3829a56c26fb6e721d81fd5b"
+    },
+    {
+      "path": "core/browse_pages_test.go",
+      "sha256": "0839dedff6e2bf28990ab2953cfbfc4f8c1f0fda2674e63c51cb53c9d075c073"
+    },
+    {
+      "path": "docs/verification/browse-pages-2026-09-09.md",
+      "sha256": "cf785b805ddbe66fc70778f6515f5405684b8d7584a9581c27f747b20a17bc47"
+    },
+    {
+      "path": "/tmp/cairn-browse-pages-integration-final.log",
+      "sha256": "4865996557135926baae97e98888adc3d79f8ed6190cd33fe0b512cae120e07b"
+    },
+    {
+      "path": "/tmp/cairn-browse-pages-check.log",
+      "sha256": "b0ea022a3c3cbbe3ce6fee217ec5ece61f56bab9d7b7270dfac51fdb32ff50e3"
+    },
+    {
+      "path": "/tmp/cairn-browse-pages-tests.log",
+      "sha256": "6044a08c9db2442abf3ab92b6bb11590a49146b5a9f46f857e8c5efb0047eb2b"
+    },
+    {
+      "path": "/tmp/cairn-browse-pages-legacy-compatibility.json",
+      "sha256": "b143d7bd7b7b74205b35bbc5f6aea08673a5fb479145bc2dd649e4a3769a9784"
+    },
+    {
+      "path": "/tmp/cairn-browse-pages-cli/report.json",
+      "sha256": "ed50ea19e5501abd9bdc04f17159249da9962cdf521d861eac4a428884791417"
+    },
+    {
+      "path": "/tmp/cairn-codex-browse-pages.py",
+      "sha256": "9d1c3750d0c74810f9b0ff2c7e8628efdff0374a6bd7ddb4e67ea15e4368b32b"
+    },
+    {
+      "path": "/tmp/cairn-codex-browse-pages/report.json",
+      "sha256": "33734185af5077431e932fc04b51341f593676c3dc545ba6e3d33be3bce68291"
+    },
+    {
+      "path": "/tmp/cairn-opencode-browse-pages.py",
+      "sha256": "c3b199a8336c8874f64b6efc50a36901141f1596557b312a0861c407fd48404b"
+    },
+    {
+      "path": "/tmp/cairn-opencode-browse-pages/failed-probe.py",
+      "sha256": "3bfc7188c52cee0d6dbb3d4491b2824d76508de96d07d5a50a5fd0f7c358d982"
+    },
+    {
+      "path": "/tmp/cairn-opencode-browse-pages/stdout.jsonl",
+      "sha256": "cbe8ec09b789d219cb2d78c8bedc1dd22fb8c38f798cf3c7bfb7a8101f791296"
+    },
+    {
+      "path": "/tmp/cairn-opencode-browse-pages-corrected/report.json",
+      "sha256": "c976b8bf936034f0f24667dfd151fd417e8e66c00bd4493874866c662a3b1c45"
+    },
+    {
+      "path": "/tmp/cairn-browse-pages-final.json",
+      "sha256": "4ab919c1435e968c467482d0448838edd3de38d6b1f8d42cd865fe565aba90be"
+    },
+    {
+      "path": "/tmp/cairn-browse-pages-decision.json",
+      "sha256": "ccc19b388a6388876407c7e44bfe6105ff344ba907856c81831dbcbdfead52b4"
+    },
+    {
+      "path": "/tmp/cairn-browse-pages-residuals.json",
+      "sha256": "b752c5d855edf4f339c5f0d70997830a9f1a3245eac88458f732a3d1d379bb5f"
+    },
+    {
+      "path": "/tmp/cairn-browse-pages-citation-result.json",
+      "sha256": "6f1e365622fbeab1a50ecdcb15aba7f704057b7eac635f9fc9cb3133d85bfc86"
+    }
+  ]
+}

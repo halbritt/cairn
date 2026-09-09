@@ -41,6 +41,7 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	request := f.String("request-id", uuid.NewString(), "index retry identity")
 	tokens := f.Int("tokens", 32000, "available memory input room")
 	browse := f.Bool("browse", false, "browse eligible memory without a query (bounded by the memory budget)")
+	offset := f.Int("offset", 0, "next browse offset returned by the previous page")
 	revision := f.String("revision", "", "declared repository revision")
 	workspace := f.String("workspace-sha256", "", "workspace digest")
 	taskClass := f.String("task-class", "", "task category")
@@ -56,6 +57,13 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	if (*browse && query != "") || (!*browse && strings.TrimSpace(query) == "") {
 		return agentSearchView{}, invalid("agent search requires a nonempty query or --browse without a query")
 	}
+	if *offset < 0 || *offset > 10000 || (!*browse && *offset != 0) {
+		return agentSearchView{}, invalid("offset must be 0-10000 and requires --browse")
+	}
+	var browseOffset *int
+	if *browse {
+		browseOffset = offset
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return agentSearchView{}, err
@@ -69,7 +77,7 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 		return agentSearchView{}, err
 	}
 	var result core.IndexResult
-	if err = client.Call(ctx, "index", core.CompileRequest{RequestID: *request,
+	if err = client.Call(ctx, "index", core.CompileRequest{RequestID: *request, BrowseOffset: browseOffset,
 		Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: query, Purpose: "context", AvailableTokens: *tokens,
 		Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability}}, &result); err != nil {
 		return agentSearchView{}, err

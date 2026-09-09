@@ -103,7 +103,7 @@ func TestGrantContainmentAndRevocation(t *testing.T) {
 	}
 	_, err = childActor.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: child.ID, Mandatory: true, RequiresRuntime: false, PolicyKey: "another", Reason: "Must refuse after parent revocation"})
 	requireCode(t, err, "AUTHORITY_DENIED")
-	pkg, err := operator.Compile(ctx, CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "", "context", 32000}, Destination{"local", true})
+	pkg, err := operator.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "", Purpose: "context", AvailableTokens: 32000}, Destination{"local", true})
 	if err != nil {
 		t.Fatal(err)
 	}

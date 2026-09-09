@@ -80,6 +80,10 @@ def check(binary, root, environment, opencode, claim, support):
     assert local['record_id'] not in json.dumps(browse)
     browsed = next(entry for entry in browse['index'] if entry['record_id'] == saved['record_id'])
     assert invoke('pull', browsed['pull_arguments'])['selection']['record']['body'] == capture['body']
+    end_page = invoke('search', dict(browse=True, offset=10000))
+    assert end_page['browse'] == dict(offset=10000) and end_page['index'] == []
+    for args in ({'query': marker, 'offset': 1}, {'browse': True, 'offset': -1}, {'browse': True, 'offset': '1'}):
+        invoke('search', args, 'INVALID_REQUEST')
     pull = first['index'][0]['pull_arguments']
     expanded = invoke('pull', pull)
     assert invoke('pull', pull) == expanded

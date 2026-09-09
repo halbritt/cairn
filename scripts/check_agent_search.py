@@ -65,6 +65,9 @@ def check(binary, root, environment, grant, claim, support):
     browsed = next(entry for entry in browse['index'] if entry['record_id'] == claim['record_id'])
     assert call([*agent, 'expand'], browsed['pull_arguments'])['data']['selection']['record']['record_id'] == claim['record_id']
     assert call([*browse_args, 'unexpected query'], check=False)['status'] == 'INVALID_REQUEST'
+    end_page = call([*browse_args, '--offset', '10000'])['data']
+    assert end_page['browse'] == dict(offset=10000) and end_page['index'] == []
+    assert end_page['selected'] == browse['selected'] and end_page['scope'] == scope
     for flags in [[], ['--task', '*', '--run', 'run'], ['--task', 'task']]:
         refused = call([*agent, 'search', *flags, 'socket'], check=False)
         assert refused['status'] == 'INVALID_REQUEST'

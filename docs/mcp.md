@@ -56,6 +56,14 @@ be omitted when the budget fills; the index is not a complete inventory.
 Omitting the query requires explicit browsing, and combining browsing with query
 text is an error.
 
+Continue with `{"browse": true, "offset": N}` when a result supplies
+`browse.next_offset: N`. Keep the same conversation, context and budget, and use
+a new request ID for a new page. Every page repeats mandatory context and uses
+its own retrieval budget; callers must budget the combined context. Pages read
+current state rather than a retained snapshot, so new or edited notes can shift
+positions. [Paging details](index-and-pull.md#agent-commands-without-request-json)
+include limits and the raw API form.
+
 With an ordinary agent profile, capture is A testimony. Select reusable knowledge
 with source/verification context; exclude raw sessions, private Council material
 and credentials. `shareable: true` explicitly permits hosted delivery. Default

@@ -19,7 +19,7 @@ func TestForgetExcludesCopiesBeforePurgeAndKeepsUseHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	compile := CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "context", 64000}
+	compile := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "fixture_error", Purpose: "context", AvailableTokens: 64000}
 	pkg, err := s.Compile(ctx, compile, Destination{"local", true})
 	if err != nil || len(pkg.Semantic.Selected) != 1 {
 		t.Fatalf("compile: %+v %v", pkg, err)
@@ -105,7 +105,7 @@ func TestForgetRefusesNewCitationsAndBlocksExistingDependents(t *testing.T) {
 	}
 	_, err = s.Create(ctx, CreateRequest{uuid.NewString(), draft})
 	requireCode(t, err, "PAYLOAD_UNAVAILABLE")
-	pkg, err := s.Compile(ctx, CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "context", 64000}, Destination{"local", true})
+	pkg, err := s.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "fixture_error", Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestPurgeFailureIsDurableAndResumesRemainingEffects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkg, err := s.Compile(ctx, CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "context", 64000}, Destination{"local", true})
+	pkg, err := s.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "fixture_error", Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +401,7 @@ func TestForgettingSourceRefusesMandatoryDependentInstruction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Compile(ctx, CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "context", 64000}, Destination{"local", true})
+	_, err = s.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "fixture_error", Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
 	requireCode(t, err, "POLICY_UNENFORCEABLE")
 	// Withdrawal must remain possible after support disappears. It retires the
 	// instruction; it does not make a fresh citation to the forgotten source.

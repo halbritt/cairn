@@ -29,12 +29,31 @@ cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
   search --repo /path/to/repo --task TASK_ID --run RUN_ID --browse
 ```
 
-`--browse` takes no query text. It uses the existing empty-query index, retaining
+`--browse` takes no query text. It uses an empty-query index, retaining
 scope, applicability, destination, mandatory-context and budget checks. Optional
 entries are ordered by scope specificity and recency. This is a bounded preview,
 not a complete inventory; `omitted.OPTIONAL_BUDGET` reports packing omissions.
 Use the returned pull arguments normally or refine a query using the previews.
 Leaving the query blank without `--browse` remains an error.
+
+When `browse.next_offset` is present, continue with `--browse --offset N`, using
+that exact offset and the same task/run, context and budget. Use a new request ID
+for each page; reuse its ID and arguments only for a retry. The native tools use
+`{"browse": true, "offset": N}`. Required instructions appear on every page.
+Stop when `next_offset` is absent. Entries that cannot fit even a fresh page are
+still counted as budget omissions; pagination does not override the policy.
+
+Offsets count eligible optional candidates in scope/recency order, including
+candidates omitted during packing. Do not calculate them from the number of
+returned previews. Each page reads current state, so edits or captures between
+pages can shift positions; restart browsing if necessary. Each page is a new
+retrieval with its own credits and budget. Hosts must still account for the
+combined context from multiple pages and pulls.
+
+Raw `index` requests can opt in with `"browse_offset": 0` and an empty query;
+later requests use the returned `browse.next_offset`. Paged indexes use semantic
+format v6. Unpaged indexes keep v5, and older retained receipts remain replayable.
+Update the Cairn API service as well as clients before using paged browsing.
 
 The `cairn.agent-search/1` view retains the index order and metadata, full
 mandatory `selected` entries, scope/currentness/policy fields, omission counts

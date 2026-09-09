@@ -283,6 +283,12 @@ bounded topic previews when the saved vocabulary is unknown, with normal scope,
 destination, mandatory-context and pull checks. It does not resolve lexical
 mismatches or guarantee that older notes fit the preview budget.
 
+[Browse continuation](verification/browse-pages-2026-09-09.md) now reaches older
+notes over multiple pages at the unchanged per-call budget. Installed CLI, native Codex and
+normal OpenCode checks reached the storage note on page two. Each page reads current
+state and repeats required context; aggregate context remains the host
+responsibility. This closes the observed preview access gap, not E4 task benefit.
+
 [Matching index previews](verification/index-previews-2026-09-08.md) address an
 observed operational search whose preview hid the matching command later in the
 note. Bounded source excerpts make that match visible while preserving full-body

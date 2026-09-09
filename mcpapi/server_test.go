@@ -152,6 +152,13 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	if len(browsed.Index) != 1 || browsed.Index[0].RecordID != record.RecordID || !reflect.DeepEqual(browsed.Selected, view.Selected) || browsed.Scope != view.Scope || browsed.Destination != view.Destination {
 		t.Fatalf("browse lost scope, destination, mandatory context or hosted filtering: %+v", browsed)
 	}
+	var endPage searchResult
+	if err = json.Unmarshal(invoke("cairn_search", searchArgs{Browse: true, Offset: 1}, ""), &endPage); err != nil || endPage.Browse == nil || endPage.Browse.Offset != 1 || endPage.Browse.NextOffset != nil || len(endPage.Index) != 0 || !reflect.DeepEqual(endPage.Selected, view.Selected) {
+		t.Fatalf("MCP page continuation: %+v %v", endPage, err)
+	}
+	for _, invalid := range []searchArgs{{Query: "socketguide", Offset: 1}, {Browse: true, Offset: -1}, {Browse: true, Offset: 10001}} {
+		invoke("cairn_search", invalid, "offset must")
+	}
 	var expanded core.Expansion
 	if err = json.Unmarshal(invoke("cairn_pull", browsed.Index[0].PullArguments, ""), &expanded); err != nil || expanded.Selection.Record.Body != record.Body {
 		t.Fatalf("browse pull: %+v %v", expanded, err)

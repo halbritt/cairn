@@ -17,7 +17,7 @@ func TestReusableScopeSealsAndBudgets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := CompileRequest{"", nil, uuid.NewString(), Scope{repo, "next-task", "next-run"}, "fixture_error", "context", 32000}
+	request := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "next-task", "next-run"}, Query: "fixture_error", Purpose: "context", AvailableTokens: 32000}
 	first, err := s.Compile(ctx, request, Destination{"local", true})
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +70,7 @@ func TestReusableScopeSealsAndBudgets(t *testing.T) {
 
 func TestConcurrentCompileRetry(t *testing.T) {
 	s := testStore(t, Channel{Principal: "compile:retry"})
-	req := CompileRequest{"", nil, uuid.NewString(), Scope{uuid.NewString(), "task", "run"}, "", "context", 32000}
+	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{uuid.NewString(), "task", "run"}, Query: "", Purpose: "context", AvailableTokens: 32000}
 	var wg sync.WaitGroup
 	results := make(chan Package, 6)
 	errs := make(chan error, 6)
@@ -111,7 +111,7 @@ func TestConsequentialGatesAndEvidenceDegradation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := CompileRequest{"", nil, uuid.NewString(), Scope{repo, "task", "run"}, "fixture_error", "planning", 64000}
+	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "fixture_error", Purpose: "planning", AvailableTokens: 64000}
 	pkg, err := operator.Compile(ctx, req, Destination{"local", true})
 	if err != nil || len(pkg.Semantic.Selected) != 0 {
 		t.Fatalf("A entered planning: %+v %v", pkg, err)
@@ -174,7 +174,7 @@ func TestMandatoryPolicyConflictAndUnenforceable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := CompileRequest{"", nil, uuid.NewString(), Scope{repo, "t", "r"}, "unrelated-query", "context", 32000}
+	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "t", "r"}, Query: "unrelated-query", Purpose: "context", AvailableTokens: 32000}
 	pkg, err := operator.Compile(ctx, req, Destination{"local", true})
 	if err != nil || len(pkg.Semantic.Selected) != 1 {
 		t.Fatalf("mandatory disappeared without lexical match: %+v %v", pkg, err)
@@ -216,7 +216,7 @@ func TestHostedPrivacyAndScopeBoundary(t *testing.T) {
 	if _, err := s.Create(ctx, CreateRequest{uuid.NewString(), d}); err != nil {
 		t.Fatal(err)
 	}
-	req := CompileRequest{"", nil, uuid.NewString(), Scope{repo, "t", "r"}, "", "context", 32000}
+	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "t", "r"}, Query: "", Purpose: "context", AvailableTokens: 32000}
 	pkg, err := s.Compile(ctx, req, Destination{"hosted", false})
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +262,7 @@ func TestConflictRetractionAndStaleRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := CompileRequest{"", nil, uuid.NewString(), Scope{repo, "t", "r"}, "fixture_error", "context", 64000}
+	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "t", "r"}, Query: "fixture_error", Purpose: "context", AvailableTokens: 64000}
 	if _, err = s.Compile(ctx, req, Destination{"local", true}); err != nil {
 		t.Fatal(err)
 	}
