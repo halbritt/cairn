@@ -96,13 +96,11 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI: clean `9e6f6d3e3452e84b74006245489cb4dcf61134c2`, with SHA-256
-  `2c07838ee7d78b50b6ecb9c5cba3fd62194d32ed9fda1dd1944e2f0eadab6c67`.
-  It includes the verified Codex configuration generator. The running API remains
-  on clean `45ca33b9bd2431bffe9c83a44efa51de134d7220`, SHA-256
-  `50c2f23d43e2be6a04ce51f379b927f63f084b4440986dad1ed7b210304c6b31`.
-  This CLI setup change required no server restart or migration. The one-thread
-  semantic candidate was not deployed.
+- Installed CLI and running API: clean `559307cbffe4f95fa4c85f54804f5d14f3e65197`,
+  with SHA-256 `b79d63c574560add0d7eb10fced886f3d8a355c5460d1084c360256831b5df2b`.
+  The note-excerpt update installed the matching native OpenCode adapter and
+  restarted the API. No migration was needed. The earlier Codex generator remains
+  included; the one-thread semantic candidate was not deployed.
 - Dedicated PostgreSQL **17.10**, with migrations **001–029** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -120,7 +118,7 @@ Live checks on 2026-09-09 found:
   SHA-256 `d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954`.
   It adds no persistent embedding cache or model service.
 
-The [span deployment report](verification/evidence-spans-2026-09-09.md#local-deployment)
+The [note-excerpt deployment report](verification/note-spans-2026-09-09.md#local-deployment)
 records the backup, executable/adapter checks and hosted smoke path. Installation
 paths and credentials stay outside Git. No automatic backup rotation, pruning
 or grooming timer is installed. Use the user services for the managed store's
@@ -134,7 +132,7 @@ Its optional checks exercised the actual CLI/Unix API, independent MCP stdio
 client, native OpenCode tools and cached-response compatibility with the previous
 binary. The linked feature reports identify their fixtures and limits.
 
-[CI for installed source `9e6f6d3`](https://github.com/halbritt/cairn/actions/runs/34381023579)
+[CI for installed source `559307c`](https://github.com/halbritt/cairn/actions/runs/34384075765)
 passed PostgreSQL integration with the race detector, Python tests, vet and build.
 The earlier thread experiment ran twenty-one complete paired worker cases
 and retained raw measurements outside the repository; it did not change store or
@@ -143,8 +141,10 @@ installation checks read service/build information and database schema metadata.
 
 ## Remaining work and priorities
 
-1. **Demonstrate durable task value.** Complete real tasks with observed use of
-   relevant memory and independent outcome checks. Broader native Striatum
+1. **Demonstrate durable task value.** Observe meaningful work across turns,
+   sessions and tasks, with evidence appropriate to the claimed benefit. Include
+   qualitative judgment, contrary observations and costs; an isolated retrieval
+   need not prove its own value. Broader native Striatum
    ingress, task/host acceptance and cross-harness transfer remain partial
    (U1, U4/U5, E4, D2). Do not rerun retired cohorts unchanged or infer benefit
    from delivery alone. Codex and OpenCode are sufficient for cross-harness task
@@ -756,3 +756,15 @@ cover the new path. Go tests, 30 Python tests, vet and build passed. The change
 adds source-reading capability; task-value and longitudinal effects remain to be
 observed. [Verification](verification/note-spans-2026-09-09.md) and
 [manifest](verification/note-spans-2026-09-09.json).
+
+### 2026-09-09 — note excerpts installed and verified
+
+Implementation `559307c` is pushed and installed as the clean CLI and running API,
+with its matching native OpenCode adapter. The API restarted; existing host settings,
+semantic worker and schema were preserved. A fresh native Codex conversation read
+a full existing note and its exact excerpt, with identical retry and correct shared
+credits. Exact-commit CI passed PostgreSQL/race, Python, vet and build checks.
+[Deployment](verification/note-spans-2026-09-09.md#local-deployment) records the
+versions and checks. This supersedes the earlier split CLI/API installation
+snapshot, while preserving its history. The current priority summary also now
+states the cumulative evaluation horizon already established in the roadmap.

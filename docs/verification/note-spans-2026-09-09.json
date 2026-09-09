@@ -104,6 +104,26 @@
     {
       "path": "/tmp/cairn-note-span-test.sh",
       "sha256": "86b85682b3f84e2cb94f3829842835eb96da2dfbed5d0f1a408fa43464783b66"
+    },
+    {
+      "path": "/tmp/cairn-note-span-deployment/before.json",
+      "sha256": "f997a2e6fb74ffb7e9cdff1421f0bec6ebfff6167bd1070480015aff7f9d6912"
+    },
+    {
+      "path": "/tmp/cairn-note-span-deployment/adapter-install.json",
+      "sha256": "06ee4df120b323bafe6eef0b0ed7849b98d31ffbaae0e7dee6fbd3a3bec917b7"
+    },
+    {
+      "path": "/tmp/cairn-note-span-deployment/installation.json",
+      "sha256": "1dd9e5c3427105fe68ac89b7b7b4d5bb02771a00bd17958e49dfb37f37b57d7d"
+    },
+    {
+      "path": "/tmp/cairn-note-span-deployment/verify-client.py",
+      "sha256": "32fe214b92333a6b3e7af5bf33e43c9aa65acc5c4026900e3fedd8ba06b91b93"
+    },
+    {
+      "path": "/tmp/cairn-note-span-deployment/client/report.json",
+      "sha256": "e3c1c8671603dba80e95327b5a0f4a11bf64c9ce4faccbaf8abbb5e477763cf4"
     }
   ],
   "model_answering_calls": 0,
@@ -170,5 +190,24 @@
         "rationale": "No generic named procedure completion claimed; explicit alternatives, preservation boundaries and completed checks retained."
       }
     ]
+  },
+  "deployment": {
+    "installed_revision": "559307cbffe4f95fa4c85f54804f5d14f3e65197",
+    "installed_sha256": "b79d63c574560add0d7eb10fced886f3d8a355c5460d1084c360256831b5df2b",
+    "api_pid": "3408435",
+    "api_sha256": "b79d63c574560add0d7eb10fced886f3d8a355c5460d1084c360256831b5df2b",
+    "clean_build": true,
+    "api_restarted": true,
+    "host_settings_preserved": true,
+    "semantic_worker_preserved": true,
+    "adapter_sha256": "4d07a80fd26585b5a9a71744da2f0598b2d751cccabbe8ed8b96355bb0c444d0",
+    "schema_changed": false,
+    "native_codex": "0.153.4: full and exact 83-byte excerpt of saved v6, identical retry, correct shared credits; no model turn",
+    "ci": {
+      "run_id": 34384075765,
+      "head_sha": "559307cbffe4f95fa4c85f54804f5d14f3e65197",
+      "conclusion": "success",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34384075765"
+    }
   }
 }
