@@ -46,6 +46,12 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Automatic startup needs a different boundary.** Two isolated OpenCode
+  sessions showed that its system hook runs for title and main requests even
+  when Cairn tools are denied. Existing tool filtering works. No unconditional
+  retrieval plugin was shipped; the next bootstrap must preserve native
+  permissions, request purpose, freshness and combined context budgets.
+  [Investigation](verification/opencode-startup-hook-2026-09-09.md).
 - **Optional model reuse is implemented and verified.** Six paired API requests
   saved 0.56–0.83 seconds with identical source identities and candidate-score
   digests. The API releases idle workers and owns cancellation/shutdown; current
@@ -1419,3 +1425,26 @@ decision receipt and citation closure. Twenty generic implementation obligations
 are nonmaterial to this documentation-only audit; no broader runtime or failure
 qualification is claimed. The existing JSON encoding also normalizes invalid
 UTF-8, so the guide does not claim byte-exact identity for arbitrary Unix argv.
+
+### 2026-09-09 — characterize the native compact-startup boundary
+
+E2 investigation verified the actual OpenCode 1.18.21 system hook using two
+isolated sessions and synthetic input. Both made two main provider requests and
+one auxiliary title request; the hook appended its marker to all three. Denying
+Cairn removed the synthetic search tool from the main catalog but did not gate
+hook delivery. Both native processes exited zero. No model inference or Cairn API
+was used by the fixture, and no production plugin or setting was changed.
+
+The [report](verification/opencode-startup-hook-2026-09-09.md) and
+[metadata](verification/opencode-startup-hook-2026-09-09.json) distinguish the
+native instance permission API from a separate v2 server API, and record the
+missing active-agent, request-purpose and cancellation inputs. The roadmap now
+rejects an unconditional hook fetch and identifies controlled launch or a native
+permission-aware entry point as the next investigation boundary. E2 remains
+partial, including aggregate context budgeting and generic index execution.
+
+The existing OpenCode procedure v10 was read before inspecting this hook. Its
+permission and session-scope guidance informed the checks; it did not contain
+these new findings. This is useful engineering evidence about an unsuitable
+integration route, not a demonstrated memory-benefit result. No task assessment
+was added. All prior implementation history is preserved.

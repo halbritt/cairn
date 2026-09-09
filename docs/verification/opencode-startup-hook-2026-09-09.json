@@ -1,0 +1,274 @@
+{
+  "schema": "cairn.opencode-startup-hook-verification/1",
+  "baseline_commit": "701e5721cbcbf23d7e2c1c613acaad7b07081d3f",
+  "source_tag": "anomalyco/opencode v1.18.21",
+  "native": {
+    "opencode_version": "1.18.21",
+    "binary_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+    "cases": [
+      {
+        "case": "denied",
+        "cairn_permission": "deny",
+        "main_requests": 2,
+        "hook_calls": 3,
+        "session_ids": [
+          "ses_f779f3d05ffexQeL4vEUL6YFQ3"
+        ],
+        "marker_once_in_each_main_request": true,
+        "auxiliary_requests_with_marker": 1,
+        "cairn_search_in_main_tool_catalog": false,
+        "input_keys": [
+          "sessionID",
+          "model"
+        ],
+        "native_exit_code": 0
+      },
+      {
+        "case": "allowed",
+        "cairn_permission": "allow",
+        "main_requests": 2,
+        "hook_calls": 3,
+        "session_ids": [
+          "ses_f779f25d7ffek2zkhmyK09mDE6"
+        ],
+        "marker_once_in_each_main_request": true,
+        "auxiliary_requests_with_marker": 1,
+        "cairn_search_in_main_tool_catalog": true,
+        "input_keys": [
+          "sessionID",
+          "model"
+        ],
+        "native_exit_code": 0
+      }
+    ],
+    "provider_inference_calls": 0,
+    "cairn_api_calls": 0
+  },
+  "decision": "Reject unconditional retrieval from system.transform; retain E2 as partial and investigate a controlled launch or native permission-aware request boundary.",
+  "production_changes": false,
+  "model_inference_calls": 0,
+  "fixture_cairn_api_calls": 0,
+  "prior_memory": {
+    "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+    "version": 10,
+    "body_sha256": "e37d059ce6536b1376b85f9faaa22aad8d5a826869a8f83e357e5cca3060de41",
+    "read_before_investigation": true,
+    "contribution": "Directed attention to native permissions, actual session identity and the distinction between transport and task benefit; source and native execution supplied the new hook findings."
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-startup-hook-probe.py",
+      "sha256": "5edb7162600eacf6dcf31f54784ff0c6f1004b7ba599bf28c864311c7c5cfb00"
+    },
+    {
+      "path": "/tmp/cairn-startup-hook-probe-final.log",
+      "sha256": "d9936d04d04195a836c5cd4bec5dcf351e6881776d41f2e4fdbddaea59aeba42"
+    },
+    {
+      "path": "/tmp/cairn-startup-hook-probe-final/report.json",
+      "sha256": "d9936d04d04195a836c5cd4bec5dcf351e6881776d41f2e4fdbddaea59aeba42"
+    },
+    {
+      "path": "/tmp/cairn-startup-decision.json",
+      "sha256": "33323cf4267fd44bb3ce904d358a07f46d0f0c19f0c121f6e2e862e93008e6d8"
+    },
+    {
+      "path": "/tmp/cairn-startup-doctrine-final.json",
+      "sha256": "70ab1c25ada3aa22f973029f0803a7f71515d225d3577efa79992c584254393f"
+    },
+    {
+      "path": "/tmp/cairn-startup-citation-closure.json",
+      "sha256": "8ce4ec1b2f8ee2cb1fac5740a55d06e0a27d73f7029db3fbbe89a1642940032f"
+    },
+    {
+      "path": "/tmp/cairn-startup-hook-probe-final/allowed/request-1.json",
+      "sha256": "ea2d9958db1622a469f3ae33b8f72bb4f750f6d3888a1a1684d069a91ded39d5"
+    },
+    {
+      "path": "/tmp/cairn-startup-hook-probe-final/allowed/request-2.json",
+      "sha256": "0a2431de12cb81b10ce0728bc182fa32ff375b5d46c023173670a9ec609b9219"
+    },
+    {
+      "path": "/tmp/cairn-startup-hook-probe-final/allowed/request-3.json",
+      "sha256": "b9a3f0cb19c683b522a26d0130b3bde101a2cee82e1d2b44930bcc8985b202af"
+    },
+    {
+      "path": "/tmp/cairn-startup-hook-probe-final/denied/request-1.json",
+      "sha256": "ea2d9958db1622a469f3ae33b8f72bb4f750f6d3888a1a1684d069a91ded39d5"
+    },
+    {
+      "path": "/tmp/cairn-startup-hook-probe-final/denied/request-2.json",
+      "sha256": "5b2a59620adf7600dbea4e2b2d66ecb1270b67e392d6eafe6336d058208a8420"
+    },
+    {
+      "path": "/tmp/cairn-startup-hook-probe-final/denied/request-3.json",
+      "sha256": "09e69d240874e55366f20667324c79bc517a7500aaf4f3aa5808ddb5d0e6c56c"
+    },
+    {
+      "path": "/tmp/cairn-startup-hook-probe-final/allowed/workspace/hooks.jsonl",
+      "sha256": "4b35b216f946453331b70b9b1beabad39806763b79a4c5da779f9adaf3db1684"
+    },
+    {
+      "path": "/tmp/cairn-startup-hook-probe-final/denied/workspace/hooks.jsonl",
+      "sha256": "6ecffcaa62f3428c4852e73339e7e5aa1316d5302cde885336e7bb696871003b"
+    },
+    {
+      "path": "/tmp/cairn-startup-native-source/packages/opencode/src/session/llm/request.ts",
+      "sha256": "7e30f06a8a6536fac3f554e62f846a0bd24f4ce6a8930a110df6d7010350043c"
+    },
+    {
+      "path": "/tmp/cairn-startup-native-source/packages/opencode/src/plugin/index.ts",
+      "sha256": "47c62b7cfae891d268e6b239edb0f1c46df5cb35eb11ccfd8bd4186c156024e9"
+    },
+    {
+      "path": "/tmp/cairn-startup-native-source/packages/opencode/src/permission/index.ts",
+      "sha256": "5b9e4aa65290a39363722b9fae4c68080188d8ed76896afa0d96cd9dbfd2821d"
+    },
+    {
+      "path": "/tmp/cairn-startup-native-source/packages/opencode/src/server/routes/instance/httpapi/groups/permission.ts",
+      "sha256": "830a9dd784e3e12831a73e6f5e1cdc4c013c00b2f41e681771c65658b95b095d"
+    },
+    {
+      "path": "/tmp/cairn-startup-native-source/packages/server/src/handlers/permission.ts",
+      "sha256": "1a168aa5a9ded49eb967778ec06387e3d532c5a47bb31bdcdf01cbcfbaf10b53"
+    }
+  ],
+  "design_review": {
+    "packet_id": "pkt-61799eaabeac2eb5",
+    "packet_content_sha256": "61799eaabeac2eb5791cb90ea6426b598c68c9a0e05f7cb39b25216cd1a8076f",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "typed_passes": 1,
+    "decision_receipt": "/tmp/cairn-startup-decision.json",
+    "citation_closure": "/tmp/cairn-startup-citation-closure.json",
+    "nonmaterial_obligations": [
+      {
+        "requirement": "query frequency and latency distribution",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "query plan or profile showing the access path",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "representative query workload",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "write and storage budget",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "write rate, storage, compaction, and maintenance overhead",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "cleanup and failure tests",
+        "required_by": "go-explicit-contextual-errors",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "current Go version and repository convention",
+        "required_by": "go-explicit-contextual-errors",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "cleanup obligations",
+        "required_by": "implementation-explicit-failure-policy",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "product correctness and availability policy",
+        "required_by": "implementation-explicit-failure-policy",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "side effects and idempotency",
+        "required_by": "implementation-explicit-failure-policy",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "recurring change evidence when available",
+        "required_by": "implementation-placement-by-ownership",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "CI and build matrix",
+        "required_by": "implementation-repository-language-conformance",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "formatter and static-tool configuration",
+        "required_by": "implementation-repository-language-conformance",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "latent security, safety, data, durability, and compatibility check",
+        "required_by": "universal-no-change-option",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "proc-decide-leave-code-alone",
+        "required_by": "universal-no-change-option",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      },
+      {
+        "requirement": "proc-establish-preservation-boundaries",
+        "required_by": "universal-preserve-behavior-by-default",
+        "classification": "nonmaterial",
+        "rationale": "The decision rejects a direct production hook and changes documentation only; no new Go interface, data index, production failure policy, storage or resource lifecycle is implemented. Native permission and request-scope behavior is tested within the stated boundary. Broader implementation qualification remains open."
+      }
+    ]
+  },
+  "limits": [
+    "Synthetic marker and scripted provider; no actual memory delivered by the fixture",
+    "No inference, task acceptance or incremental memory value established",
+    "Unverified alternative hooks, other versions, resume, compaction and aggregate budgeting",
+    "No production code, adapter or configuration change; runtime suite not rerun"
+  ]
+}

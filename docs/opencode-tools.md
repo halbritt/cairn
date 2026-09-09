@@ -80,6 +80,13 @@ explicit requests through the native permission context. Choose permissions for
 the intended task. These names differ from the `cairn_cairn_*` MCP names; an
 existing MCP-only permission entry does not automatically allow native tools.
 
+The installer does not add automatic startup retrieval. An isolated
+[OpenCode 1.18.21 hook check](verification/opencode-startup-hook-2026-09-09.md)
+found that the system-prompt hook also runs for auxiliary requests and is not
+gated by tool permissions. A direct search from that hook would need additional
+permission and lifecycle integration; the normal tools continue to use the
+native permission context.
+
 ## Scope and behavior
 
 Search uses the configured repository, task `opencode/<sessionID>` and run
