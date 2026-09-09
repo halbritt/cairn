@@ -32,7 +32,7 @@ the current summary; do not replace the historical record.
 | Retrieval | Lexical search, matching previews with source byte positions, bounded browsing with continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
 | Semantic discovery | Optional local CPU scoring for vocabulary mismatches, after eligibility checks; bounded work and labelled lexical fallback. Historical recompilation uses retained scores. | [Semantic discovery](semantic-discovery.md) |
 | Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, citation-time digests and optional byte passages on qualified claim versions, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [precise citations](evidence-citations.md), [span verification](verification/evidence-spans-2026-09-09.md) |
-| Harness access | Five ordinary tools for search, body/evidence pulls, capture and edit through MCP; Codex conversation scope and native OpenCode session scope. OpenCode configuration generation and a bundled native-tool installer are shipped. | [MCP](mcp.md), [OpenCode tools](opencode-tools.md) |
+| Harness access | Five ordinary tools for search, body/evidence pulls, capture and edit through MCP; Codex conversation scope and native OpenCode session scope. OpenCode configuration generation and a bundled native-tool installer are shipped; Claude configuration generation has native connection verification with explicit scope. | [MCP](mcp.md), [OpenCode tools](opencode-tools.md) |
 | Host execution | Authenticated observer access, compiled or exact retained-package execution, freshness checks before launch, process observations and separately versioned task assessments. Hosts can associate agent retrievals with observed runs. | [Authenticated runner](authenticated-runner.md), [retained execution](retained-execution.md), [use/outcome join](use-outcome-loop.md) |
 | Inspection and review | Historical replay/recompilation, record and evidence impact, versioned relation paths, use/run reports, conflict inspection, bounded refusal diagnostics and evidence-attached failure review groups. | [Evidence impact](evidence-impact.md), [refusals](refusals.md), [demand review](demand-review.md) |
 | Authority and lifecycle | Operator grants/revocation, independent B promotion and correction, C instructions, guarded retraction, B→A demotion, supersession, scope authorization, governed policy revisions and instruction category limits. | [Relations and demotion](relations-and-demotion.md), [supersession](supersession.md), [scope authorization](scope-authorization.md), [policy](governed-policy.md) |
@@ -106,7 +106,11 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and running API: clean `6dbca8b6a2a2b57c2197a9d00dc8f8a9362da7c7`,
+- Installed CLI: clean `cee290ea5dc36febd7250230994571a38664117e`, with SHA-256
+  `92f896699367d4e7238980b590dfff995df5ff83417a33b8d555ff3bdfdee6d8`. It includes
+  `claude-config`; a per-task configuration was generated without registering
+  it in the owner's Claude settings. This command needed no API restart.
+- Running API: clean `6dbca8b6a2a2b57c2197a9d00dc8f8a9362da7c7`,
   with SHA-256 `b77490a86e70b64af63e21edec3986b3d301f334a14f3ffbb679e76320078174`.
   Ordinary capture and edits accept 512 KiB JSON envelopes for the existing
   64 KiB note bodies. Preview positions and their OpenCode tool guidance remain
@@ -129,8 +133,10 @@ Live checks on 2026-09-09 found:
   SHA-256 `d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954`.
   It adds no persistent embedding cache or model service.
 
+The [Claude CLI installation report](verification/claude-config-2026-09-09.md#local-installation)
+records the installed generator and preserved host settings.
 The [note-transport deployment report](verification/note-transport-2026-09-09.md#local-deployment)
-records the current executable, preserved adapter/configuration identities and
+records the running API executable, preserved adapter/configuration identities and
 fresh retrieval of the corrected capture procedure. Installation
 paths and credentials stay outside Git. No automatic backup rotation, pruning
 or grooming timer is installed. Use the user services for the managed store's
@@ -147,7 +153,11 @@ retained exact retry responses. The [feature report](verification/note-transport
 preserves the failing baseline, initial native debug-output failure and corrected
 integration result. No model inference was used for these checks.
 
-[CI for installed source `6dbca8b`](https://github.com/halbritt/cairn/actions/runs/34399146044)
+[CI for installed CLI source `cee290e`](https://github.com/halbritt/cairn/actions/runs/34400988285)
+passed PostgreSQL/race, Python tests, vet and build. Native Claude configuration
+registration and connection passed separately in the local disposable integration.
+
+[CI for running API source `6dbca8b`](https://github.com/halbritt/cairn/actions/runs/34399146044)
 passed PostgreSQL integration with the race detector, Python tests, vet and build.
 The earlier thread experiment ran twenty-one complete paired worker cases
 and retained raw measurements outside the repository; it did not change store or
@@ -1090,3 +1100,23 @@ Go tests, 30 Python tests, vet and build passed. No model inference or operation
 fixtures were used. U8 advances to partial setup support; native Claude-selected
 use, session attribution and a useful Claude task remain open. This requested
 lower-priority adapter work adds no new task-value evidence or outcome correction.
+
+### 2026-09-09 — installed Claude setup generator
+
+Clean CLI `cee290e` is installed and generates an owner-only task-specific
+configuration. It did not register or change the owner's Claude settings.
+The API stays on `6dbca8b`; this generator needs no service restart or schema
+migration. Both services remain healthy, and Claude/Codex/OpenCode settings and
+adapter identities are unchanged. The
+[installation report](verification/claude-config-2026-09-09.md#local-installation)
+and [manifest](verification/claude-config-2026-09-09.json) retain the separate
+CLI/API identities. The current snapshot has been refreshed with this distinction.
+
+A concise ordinary setup lesson was also saved and freshly pulled through the
+provisioned hosted-agent profile. It retains explicit scope requirements and
+native-use limits with source pointers. No operational test fixture, owner Claude
+registration or accepted task assessment was created. Capture and exact retrieval
+establish continuity support, not independent downstream benefit.
+
+[Exact CLI source CI](https://github.com/halbritt/cairn/actions/runs/34400988285)
+passed PostgreSQL/race, Python tests, vet and build.

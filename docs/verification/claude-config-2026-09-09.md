@@ -47,3 +47,25 @@ a schema-valid decision receipt and a closed citation trace. Nine nonmaterial
 obligations remain, covering unchanged interfaces, unclaimed cost/recurrence
 measurements, additive-command baseline and separate refactoring procedures.
 [Metadata](claude-config-2026-09-09.json) retains verification artifact hashes.
+
+## Local installation
+
+Clean CLI `cee290ea5dc36febd7250230994571a38664117e` is installed with SHA-256
+`92f896699367d4e7238980b590dfff995df5ff83417a33b8d555ff3bdfdee6d8`. A selected
+configuration was generated at `/tmp/cairn-claude-config-deployment/cairn.json`
+with owner-only permissions. Its task/run scope is for setup; regenerate it for
+actual work. The generator did not register it with the owner's Claude settings.
+
+The API remains the healthy `6dbca8b` process; this CLI-only command needs no
+restart or migration. The prior CLI is retained privately. Claude configuration,
+Codex configuration and native OpenCode settings/adapter checksums are unchanged.
+The manifest distinguishes installed CLI and running API identities.
+
+A selected ordinary Claude setup lesson was saved through the hosted-agent profile
+and read back exactly in a fresh declared task/run scope. It records explicit
+scope, literal argument handling, setup commands and the unverified native-use
+boundary. This operational guidance is distinct from the disposable test fixtures;
+its successful capture/pull is not evidence of independent Claude task benefit.
+
+[Exact CLI source CI](https://github.com/halbritt/cairn/actions/runs/34400988285)
+passed PostgreSQL/race, Python tests, vet and build.
