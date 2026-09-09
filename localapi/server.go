@@ -191,6 +191,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveJSON(w, r, c.store.RecordOutcome)
 	case "/v1/assess-run":
 		serveJSON(w, r, c.store.AssessRun)
+	case "/v1/assessments":
+		serveJSON(w, r, func(ctx context.Context, req struct {
+			ReceiptID string `json:"receipt_id"`
+		}) ([]core.Assessment, error) {
+			return c.store.AssessmentHistory(ctx, req.ReceiptID, c.destination)
+		})
 	case "/v1/refusal":
 		if !c.destination.AllowLocal {
 			writeError(w, 403, "AUTHORITY_DENIED", "protected refusal inspection requires a local profile")

@@ -113,9 +113,15 @@ search/pull another writer's shareable note within the same authorized repositor
 
 Operations: `create`, `edit`, `revise`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
-`assess-run`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
+`assess-run`, `assessments`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
-matching the corresponding core request. `get` takes `record_id`. The [expansion contract](index-and-pull.md) binds
+matching the corresponding core request. `get` takes `record_id`.
+`assessments` takes `receipt_id` and returns the owner's full assessment versions
+in ascending order, including reasons and evidence IDs. The profile's repository
+and destination must match the receipt. It returns no evidence or package bodies;
+an owned receipt with no assessments returns `[]`. See the
+[review path](use-outcome-loop.md#qualitative-and-cumulative-review) for use and limits.
+The [expansion contract](index-and-pull.md) binds
 body/evidence pulls to an indexed version and one shared session budget. `compile` takes
 no destination field; the configured profile owns that decision. A hosted profile
 cannot use the protected `use-report` or `run-report` endpoints. The server checks repository scope

@@ -182,6 +182,12 @@ recalled guidance, unavailable counterfactual and unmeasured net costs. The
 supports narrative judgments; multi-task reviews can remain source-linked cases.
 This adds qualitative evidence without closing E4/D2 or changing earlier outcomes.
 
+Authenticated agents and observers can now inspect their own complete assessment
+versions with `agent assessments` and an exact receipt ID, including narrative
+reasons and evidence references. The profile must match the receipt's owner,
+repository and destination. This completes access to the existing per-receipt
+review data without adding a value score or widening protected aggregate reports.
+
 Repair current contract violations first. Then build the smallest real host
 integration and the observation join; add currentness, index/pull and historical
 evaluation; generate evidence-attached demand; only then add grooming. Lifecycle,

@@ -1,0 +1,253 @@
+{
+  "schema": "cairn.assessment-history-verification/1",
+  "baseline_commit": "eac675d",
+  "baseline": "Agent CLI unknown operation; agent and observer API fixtures fail NOT_FOUND unknown endpoint",
+  "source": [
+    {
+      "path": "core/assessment.go",
+      "sha256": "57af6456483ff8a45b4be5d6fc96cfdcb774e398e083d20b1dc241d06e190c26"
+    },
+    {
+      "path": "localapi/server.go",
+      "sha256": "58ecae093b409d1c436c998ad88ce6303aa1a9674837718d7f1c0574f44e32f4"
+    },
+    {
+      "path": "cmd/cairn/agent.go",
+      "sha256": "b88f520a1bd53ddefeaf8284f146ff7c9e23b7cc12c54c79556c20ab57f75410"
+    },
+    {
+      "path": "localapi/assessment_history_test.go",
+      "sha256": "424bce61dfd7365b89b094f4b26bb7bef6828f9917c043567bcf7400e3bf471b"
+    },
+    {
+      "path": "scripts/check_run_retrieval.py",
+      "sha256": "3eb4b331581ed7c55b8d30641e21433b7e17428a6434ffc9a168ef517c47d7fb"
+    }
+  ],
+  "checks": {
+    "disposable_postgres_race": "passed",
+    "agent_observer_history": "passed",
+    "owner_repo_destination_refusals": "passed",
+    "cli_api_history_and_linked_agent_refusal": "passed",
+    "go_tests": "passed",
+    "python_tests": 30,
+    "vet_format_build": "passed"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-assessment-history-baseline.log",
+      "sha256": "58a270f97fdbc3dfb8fad9c1a7a95c0a63c01189520be47d098f227c11ea4a14"
+    },
+    {
+      "path": "/tmp/cairn-assessment-history-focused.log",
+      "sha256": "1b07abb82803a0329b84880762373db7a1e27fd8d3f48bfdea26429f13802075"
+    },
+    {
+      "path": "/tmp/cairn-assessment-history-integration.log",
+      "sha256": "084230c70a10201c27e48b5613c27451e9003782f06dc69432d02ee68d281ae3"
+    },
+    {
+      "path": "/tmp/cairn-assessment-history-tests.log",
+      "sha256": "3697d878853fe5edad658bac0c3d79c6b16cea180c3fab138222fe7236b611f2"
+    },
+    {
+      "path": "/tmp/cairn-assessment-history-check.log",
+      "sha256": "7e9bbc361fc3c1f98d20aec476936b4cd2eaecb7adec63bdd38519d225c274a0"
+    },
+    {
+      "path": "/tmp/cairn-assessment-history-plan.json",
+      "sha256": "30033159d1ccb4f6f3448836f64c947f8497387e3d08af648c7d67593d8f1175"
+    },
+    {
+      "path": "/tmp/cairn-assessment-history-final.json",
+      "sha256": "f48d1aebf42a8649ceb760140a669d2908764b89c148a3c7f0b585c754c6454c"
+    },
+    {
+      "path": "/tmp/cairn-assessment-history-decision.json",
+      "sha256": "12f8b66b9fd7cc50dd85ab771336fcd392b0bcd2324457e53777cc681c63bbac"
+    }
+  ],
+  "schema_changed": false,
+  "model_calls": 0,
+  "doctrine": {
+    "packet_id": "pkt-47b6df0ca1fa589e",
+    "packet_content_sha256": "47b6df0ca1fa589ee0d68e59afcb9c112baa312e3d0b0993621ebcec195f20a7",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_path": "/tmp/cairn-assessment-history-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-43ae71ba61c4fe9f",
+        "required_by": "domain-aggregate-invariant-boundary",
+        "requirement": "expert-validated invariants",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-510952c310440ebc",
+        "required_by": "domain-aggregate-invariant-boundary",
+        "requirement": "measured load when performance drives a split",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-81e4ea1113b0c38e",
+        "required_by": "domain-language-model-loop",
+        "requirement": "authoritative examples",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-1611e4b2e4fe21de",
+        "required_by": "domain-language-model-loop",
+        "requirement": "authoritative expert examples",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-871b5a56eb42f88f",
+        "required_by": "domain-language-model-loop",
+        "requirement": "feedback from implementation and usage",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-672ee2aedbbccb5d",
+        "required_by": "domain-modeling-investment-gate",
+        "requirement": "business differentiation and product lifespan",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-fd9eede1324f4f15",
+        "required_by": "domain-modeling-investment-gate",
+        "requirement": "business-value and expert-access evidence",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-c71eea1802d975ea",
+        "required_by": "domain-modeling-investment-gate",
+        "requirement": "expert access and feedback cadence",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-350b980dc5d4778a",
+        "required_by": "domain-modeling-investment-gate",
+        "requirement": "recurring ambiguity, contradiction, or rule defect",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-4811df978de63122",
+        "required_by": "domain-modeling-investment-gate",
+        "requirement": "team capacity to sustain the model",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-8e4a53a82d33ea91",
+        "required_by": "domain-repository-lifecycle",
+        "requirement": "Aggregate root and lifecycle",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-2d4d284dc896bcec",
+        "required_by": "domain-repository-lifecycle",
+        "requirement": "domain-significant lookup operations",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-97572ca909388b01",
+        "required_by": "domain-repository-lifecycle",
+        "requirement": "realistic scale and latency",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new domain model, aggregate, lifecycle or performance split. Existing receipt and assessment semantics are retained; the actual query, transaction and access invariants are specified and tested. No expert validation or throughput claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface or substitution boundary is introduced; API calls a concrete Store method sharing the existing query with the direct reader."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface or substitution boundary is introduced; API calls a concrete Store method sharing the existing query with the direct reader."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface or substitution boundary is introduced; API calls a concrete Store method sharing the existing query with the direct reader."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface or substitution boundary is introduced; API calls a concrete Store method sharing the existing query with the direct reader."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No named generic procedure completion claimed; explicit alternatives, preservation boundaries and completed checks are retained."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No named generic procedure completion claimed; explicit alternatives, preservation boundaries and completed checks are retained."
+      }
+    ]
+  }
+}

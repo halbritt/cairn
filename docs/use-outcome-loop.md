@@ -150,7 +150,26 @@ still apply; a narrative does not grant authority or turn an agent's judgment
 into human acceptance.
 
 Inspect `cairn assessments RECEIPT_UUID` for the retained reasons, evidence IDs,
-observer and version history. The aggregate `run-report` and `use-report` rows
+observer and version history through the direct store interface. With an existing
+authenticated profile, the same history is available without database access:
+
+```sh
+cairn agent --socket /path/to/api.sock --token-file /path/to/profile.token \
+  assessments < assessment-history-request.json
+```
+
+The request file contains `{"receipt_id":"RECEIPT_UUID"}`, replacing the placeholder
+with an actual owned receipt. `POST /v1/assessments` calls
+`Store.AssessmentHistory` with the authenticated destination. Both agent and
+observer profiles can read their own history; role and witness are preserved.
+Another caller, repository or receipt destination returns `AUTHORITY_DENIED`.
+An invalid UUID returns `INVALID_REQUEST`; an absent receipt returns `NOT_FOUND`.
+An owned receipt without assessments returns `[]`. Reads do not append a version
+or consume expansion credits, and they return evidence IDs without evidence bodies.
+The existing 1,000-version history bound and client response-size limit apply;
+there is no history pagination. The direct `Store.Assessments` contract is unchanged.
+
+The aggregate `run-report` and `use-report` rows
 omit the narrative and evidence IDs. For a linked retrieval, inspect the
 assessment on its `run_receipt_id`; that is the assessment those rows join.
 Do not infer the full judgment from an aggregate outcome label alone.

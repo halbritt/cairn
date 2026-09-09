@@ -83,9 +83,16 @@ def check(binary, root, environment, record):
                          body=json.dumps(dict(gate='synthetic child assertions and parent report checks',
                                               child=child, process_outcome_id=outcome['outcome_id'])),
                          source='disposable dynamic retrieval API fixture', sensitivity='local'))
-    host.call('assess-run', dict(request_id=str(uuid.uuid4()), receipt_id=outcome['receipt_id'],
+    assessment = host.call('assess-run', dict(request_id=str(uuid.uuid4()), receipt_id=outcome['receipt_id'],
                                expected_version=0, task_outcome='accepted', failure_domain='none',
                                method='fixture:exact-source-and-report-gate/1', evidence_ids=[evidence['evidence_id']],
                                reason='Synthetic integration assertions passed; no model benefit is measured.'))
     check_reports('accepted', 1)
+    history_request = dict(receipt_id=outcome['receipt_id'])
+    assert host.call('assessments', history_request) == [assessment]
+    # The retrieval agent does not own the linked host's assessment history.
+    denied = subprocess.run([binary, 'agent', 'assessments'], input=json.dumps(history_request),
+                            env=environment, capture_output=True, text=True, timeout=10)
+    assert denied.returncode == 6 and json.loads(denied.stdout)['status'] == 'AUTHORITY_DENIED'
+    print('Authenticated CLI reads exact assessment narrative and evidence references; linked retrieval ownership does not grant host history access')
     print('Dynamic agent retrievals join an observed child outcome and explicit fixture assessment through the Unix API; one execution, original citation testimony')

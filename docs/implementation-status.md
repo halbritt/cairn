@@ -792,3 +792,19 @@ full history and review a sequence without assigning it a synthetic task outcome
 Existing fields suffice for this case; no evaluator, schema, runtime or permission
 change was made. Documentation links, source claims, hashes and historical
 preservation were checked. No code tests or model cohorts were rerun.
+
+### 2026-09-09 — authenticated assessment history
+
+Following the qualitative review, an actual API check found that authenticated
+agents and observers could write assessments but could not retrieve their history.
+The CLI rejected the operation and both API fixtures returned an unknown endpoint.
+The existing history is now available through `agent assessments` with a receipt
+ID. It preserves complete versions, reasons, evidence IDs and observer/witness
+under owner, repository and receipt-destination checks. A linked retrieval does
+not grant access to its host's assessment. No score, schema or native model tool
+was added, and existing outcomes remain unchanged.
+
+Disposable API and CLI checks, PostgreSQL/race integration, Go tests, 30 Python
+tests, vet and build passed. This completes access to existing review data;
+improved review decisions remain to be observed. [Verification](verification/assessment-history-2026-09-09.md)
+and [manifest](verification/assessment-history-2026-09-09.json) retain the evidence.

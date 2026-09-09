@@ -194,6 +194,19 @@ func checkAssessmentEvidence(ctx context.Context, tx pgx.Tx, id, repo string) er
 	return nil
 }
 func (s *Store) Assessments(ctx context.Context, receiptID string) ([]Assessment, error) {
+	return s.assessments(ctx, receiptID, "")
+}
+
+// AssessmentHistory binds narrative disclosure to the authenticated destination.
+// The direct-store Assessments method retains its existing trusted-local contract.
+func (s *Store) AssessmentHistory(ctx context.Context, receiptID string, dest Destination) ([]Assessment, error) {
+	if (dest.Name != "local" && dest.Name != "hosted") || (dest.Name == "hosted" && dest.AllowLocal) {
+		return nil, failure("DESTINATION_PROHIBITED", "invalid assessment destination")
+	}
+	return s.assessments(ctx, receiptID, dest.Name)
+}
+
+func (s *Store) assessments(ctx context.Context, receiptID, destination string) ([]Assessment, error) {
 	tx, err := s.begin(ctx)
 	if err != nil {
 		return nil, err
@@ -201,6 +214,15 @@ func (s *Store) Assessments(ctx context.Context, receiptID string) ([]Assessment
 	defer tx.Rollback(ctx)
 	if err = s.receiptAccess(ctx, tx, receiptID); err != nil {
 		return nil, err
+	}
+	if destination != "" {
+		var recorded string
+		if err = tx.QueryRow(ctx, `SELECT destination FROM cairn.retrieval_receipt WHERE receipt_id=$1`, receiptID).Scan(&recorded); err != nil {
+			return nil, err
+		}
+		if recorded != destination {
+			return nil, failure("AUTHORITY_DENIED", "assessment destination differs from the receipt destination")
+		}
 	}
 	rows, err := tx.Query(ctx, `SELECT detail FROM cairn.run_assessment WHERE receipt_id=$1 ORDER BY version LIMIT 1001`, receiptID)
 	if err != nil {
