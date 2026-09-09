@@ -1,0 +1,64 @@
+{
+  "schema": "cairn.use-history-cli-verification/1",
+  "date": "2026-09-09",
+  "baseline_commit": "c9447fbad11b30881152b6828c89b2d1461b59fa",
+  "fixture": {
+    "records": 2,
+    "receipts": 51,
+    "exposures": 102,
+    "default_page": 100,
+    "continuation_rows": 2,
+    "filtered_record_rows": 51
+  },
+  "local_checks": {
+    "postgres_race": true,
+    "go": true,
+    "python_tests": 30,
+    "vet_format": true
+  },
+  "model_task": false,
+  "operational_report_read": false,
+  "task_value_claim": false,
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-use-history-plan.md",
+      "sha256": "3a3a2470b5f1a7e8f34bfddac8f92b92147de10cf2551e42a81bb58c1e584574"
+    },
+    {
+      "path": "/tmp/cairn-use-history-red.log",
+      "sha256": "822ace10740f1931c1c77e1799379911d6596c7374ae2de07bc38ba04cf0b0db"
+    },
+    {
+      "path": "/tmp/cairn-use-history-integration.log",
+      "sha256": "4ba08041a1d612c60c77f2e9c53f9f422c8a8c491198ca668d0d559dda12c5e9"
+    },
+    {
+      "path": "/tmp/cairn-use-history-unit.log",
+      "sha256": "1b361bdb9f3b027b00be7d0684d8060c32522dd0612bed0b814d839a2fdbd4fd"
+    },
+    {
+      "path": "/tmp/cairn-use-history-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-use-history-memory.json",
+      "sha256": "5805b52db4266fcd98d3613005745f92a83b2bbe66b120abf5b6bfb2709e77c1"
+    },
+    {
+      "path": "/tmp/cairn-use-history-guidance.json",
+      "sha256": "95683205d571fd53dd98a2403fbdafe52225525aa57561e72747dd9e6a4e82e5"
+    },
+    {
+      "path": "/tmp/cairn-use-history-final.json",
+      "sha256": "48c3a902a1189041416778da0b20dd83b505dcf1255d3cb8af0f5f3f32a1ca0d"
+    },
+    {
+      "path": "/tmp/cairn-use-history-decision.json",
+      "sha256": "3b09f675d5a491ef207111523c49f3cdececc680abca293f5eef9019c0287c21"
+    },
+    {
+      "path": "/tmp/cairn-use-history-citation-result.json",
+      "sha256": "3acb071f22360fa19a888d6fef9aa7d3c2418aacd9aeaf0bc6f339379eac84fd"
+    }
+  ]
+}

@@ -1249,3 +1249,21 @@ The current installation snapshot now reflects the CLI-only deployment.
 Exact installed-CLI-source CI [34406955835](https://github.com/halbritt/cairn/actions/runs/34406955835)
 completed successfully. The API remains on its separately verified source. Full
 prior implementation history and the earlier note versions remain preserved.
+
+### 2026-09-09 — expose complete use-history navigation in the CLI
+
+The trusted use-report command hardcoded the first 100 exposure rows, even though
+the core/API already supported continuation and record filtering. Source review
+confirmed oldest-first ordering, correcting an initial assumption that the hidden
+rows were older. The [CLI history change](verification/use-history-cli-2026-09-09.md)
+and [metadata](verification/use-history-cli-2026-09-09.json) retain the actual
+102-exposure failure and verified continuation/filter behavior.
+
+The command now accepts --limit, --offset and --record while preserving defaults,
+response shape, core validation, permissions and unknown observations. All 102
+exposure pairs and one record's 51 rows are reachable in the unchanged disposable
+fixture. The real CLI check joins local integration and CI. PostgreSQL/race,
+Go, 30 Python, vet and formatting pass locally. No production report, model task
+or task assessment was used. Existing assessment guidance informed documentation's
+interpretation limits; net memory benefit remains unestablished. The source is
+verified; installation and CI are recorded separately after completion.

@@ -315,6 +315,10 @@ now lets the observing host connect agent-owned retrieval receipts to its run's
 outcome and latest assessment, while preserving the source exposure and citation
 testimony. Store and real-child Unix API tests cover the join and one-execution
 population; this is integration evidence, not an additional model-benefit result.
+The [use-history CLI](verification/use-history-cli-2026-09-09.md) now exposes the
+core's existing page and record controls, reaching later exposure rows beyond
+the default oldest-first 100-row page. It preserves unknown observations and
+does not supply missing recurrence/resolution analysis or task-value evidence.
 The
 [run report](use-outcome-loop.md#inspect-runs-including-no-memory-baselines)
 also includes zero-memory baselines and claims without outcomes, with separate

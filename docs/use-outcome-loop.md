@@ -1,6 +1,7 @@
 # Use and outcome observations
 
-`cairn use-report REPO` returns one row per record/version/receipt exposure. Each
+`cairn use-report [--record UUID] [--limit N] [--offset N] REPO` returns one
+row per record/version/receipt exposure. Each
 observation stream is reduced before joining, so repeated deliveries or citations
 do not multiply task outcomes. Rows retain repository/task/run scope, purpose,
 task class, binding and capability identity, process duration/exit, current record
@@ -17,6 +18,35 @@ leave coverage unknown. There is no automatic behavior-inference engine.
 `core.UseReport` accepts `repo`, optional `record_id`, `limit` (1–200) and `offset`.
 The report includes pagination metadata. It is an observational join, not a causal
 benefit score or a completed recurrence evaluation. Exposures never increase rank.
+
+## Page through use history
+
+The trusted CLI defaults to 100 rows, ordered oldest first. Use `--limit` for
+1–200 rows, and pass the returned `next_offset` when `more` is true:
+
+```sh
+cairn use-report --limit 100 /path/to/repo
+cairn use-report --limit 100 --offset 100 /path/to/repo
+cairn use-report --record RECORD_UUID --limit 50 /path/to/repo
+```
+
+Replace the example offset with the response's value. Keep the same repository
+and record filter across pages. `--record` includes all retained versions of that
+record; it does not select only its current version. Flags precede the repository.
+Stop when `more` is false. Invalid limits, negative offsets and malformed record
+UUIDs return `INVALID_REQUEST`; a valid filter with no exposures returns no rows.
+
+Each page reads current state, not a retained snapshot. Concurrent changes can
+shift positions, so a multi-page review is not an atomic historical export.
+Paging does not manufacture missing observations or recover pruned data.
+Use `assessments` on the appropriate receipt to inspect the reasons and evidence
+behind an outcome; aggregate rows do not contain that narrative.
+
+The existing authenticated `agent use-report` accepts JSON containing `repo`,
+`record_id` (optional), `limit` and `offset`. This protected report requires a
+provisioned local profile; hosted profiles remain denied. CLI pagination adds
+no permission or new exposure of private data. Its [verification](verification/use-history-cli-2026-09-09.md)
+uses a disposable history beyond the default page.
 
 ## Retrieval during an observed run
 

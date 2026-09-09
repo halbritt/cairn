@@ -37,7 +37,7 @@ Everyday commands:
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
   proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST
-  list REPO | get UUID | use-report REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
+  list REPO | get UUID | use-report [--record UUID] [--limit N] [--offset N] REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
   create edit revise delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
@@ -199,6 +199,18 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return nil, invalid("conflicts requires one repository")
 		}
 		return store.Conflicts(ctx, core.ConflictsRequest{Repo: f.Arg(0), RecordID: *record, IncludeResolved: *resolved, Limit: *limit, Offset: *offset})
+	case "use-report":
+		f := flags("use-report")
+		limit := f.Int("limit", 100, "maximum exposure rows (1-200)")
+		offset := f.Int("offset", 0, "exposure rows to skip")
+		record := f.String("record", "", "filter by record UUID across retained versions")
+		if err := f.Parse(args[1:]); err != nil {
+			return nil, invalid(err.Error())
+		}
+		if f.NArg() != 1 {
+			return nil, invalid("use-report requires one repository")
+		}
+		return store.UseReport(ctx, core.UseReportRequest{Repo: f.Arg(0), RecordID: *record, Limit: *limit, Offset: *offset})
 	case "run-report", "runs":
 		f := flags("run-report")
 		limit := f.Int("limit", 100, "maximum rows (1-200)")
@@ -227,7 +239,7 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return store.InstructionPolicy(ctx, args[1])
 		}
 		return store.PolicyRevision(ctx, args[1])
-	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "use-report", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict", "supersession", "scope-authorization":
+	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict", "supersession", "scope-authorization":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
 		}
@@ -250,8 +262,6 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return store.Assessments(ctx, args[1])
 		case "conflict":
 			return store.Conflict(ctx, args[1])
-		case "use-report":
-			return store.UseReport(ctx, core.UseReportRequest{Repo: args[1], Limit: 100})
 		case "preview-retract":
 			return store.PreviewRetraction(ctx, args[1])
 		case "supersession":
