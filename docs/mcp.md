@@ -80,8 +80,8 @@ copy `kind`, `body`, `scope`, `claim_type` and any `sensitivity`, `pins`,
 `relations`, `attributed_producer`, `attempt_id` and `result_ref` fields from
 the returned record into `draft`. Change the intended content and use the pulled
 record's ID and version. Keep source and verification context in the correction.
-Do not copy output fields such as `class`, `observed_writer` or `written_at` into
-the draft; the store owns these. Editing records the authenticated writer and
+Do not copy output fields such as `class`, `attribution_state`, `observed_writer`
+or `written_at` into the draft; the store owns these. Editing records the authenticated writer and
 retains the earlier version.
 
 Retry with the exact same request ID and arguments. A new request using an old

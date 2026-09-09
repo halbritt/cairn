@@ -306,6 +306,15 @@ relations or attribution. The store preserves those fields under the existing
 version and retry checks. Full-draft edits remain supported; independent review
 and measured correction-task benefit remain open.
 
+The [stale-note correction exercise](verification/note-correction-2026-09-09.md)
+returned a wrong answer and invalid draft with stale guidance. Its model corrector
+hit the output limit without editing, so downstream and direct-source conditions
+were not run. A compliant no-memory abstention is retained as unknown after
+assessment review. Separately, source review corrected obsolete guidance in the
+live Codex procedure and verified a fresh native pull. This is actual maintenance;
+independent correction and downstream benefit remain open. Keep the existing
+body-only interface and seek observed reuse before extending storage machinery.
+
 A subsequent [actual OpenCode tool experiment](verification/tool-retrieval-2026-09-08.md)
 recovered from the failed query and completed the source-answering task through
 index/pull. Pairing each result with a complete pull command removed three observed
