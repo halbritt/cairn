@@ -374,6 +374,11 @@ and transfer remain open.
 | E3 — cutoff-pinned recompilation | partial | Recompile historical selection under cutoff/revision/policy/evidence pins. Keep saved-byte replay as inspection. Distinguish original-time availability from recurrence scenarios. Test that later claims, revocations and evidence state cannot leak backward; test deterministic reconstructed seals where the contract promises equality. |
 | E4 — real corpus and baselines | partial | Inventory authorized current Striatum history; seed justified B from existing evidence and include real correction/supersession/conflict cases. Do not use historical decision counts as current inventory. Compare no-memory, search/native and H0 runs on reproducible tasks, context cost and repeated failures. Publish bounded usefulness findings, including failures and unknowns. Three repository notes and a wrapped `cat` are not acceptance. |
 
+The [semantic batching comparison](verification/semantic-batching-2026-09-09.md)
+checks a lower-cost local inference path against the same public development
+workload. This changes execution cost, not the evidence for task benefit or the
+status of E4.
+
 [Currentness and replay](currentness-and-replay.md) now implement declared
 revision/workspace/task-class/binding/capability and validity gates. Missing pins
 cannot suppress a mandatory instruction. Semantic v3 seals context; old formats

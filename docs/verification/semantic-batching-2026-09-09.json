@@ -1,0 +1,142 @@
+{
+  "schema": "cairn.semantic-batching-verification/1",
+  "baseline_commit": "19fbfb7f5665e6685c3ceb411cf059c6702727f6",
+  "source_hashes": {
+    "scripts/semantic_rank.py": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954",
+    "scripts/compare_semantic_workers.py": "cc9f22b084fdf0645cfcf54a352a36a588b9c82e75f8cab0b95373a130ca9be5",
+    "semantic/command.go": "8dcd16421669056e85e49e6e4fddb06f3b3475ba9a57cebc4b997741fa936f0a",
+    "scripts/check_semantic_api.py": "ebae1cbf7bc97d897f35b46e94e17b2d338b8fecb6ee1e4b946038adb9c51559"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-semantic-latency-profile/report.json",
+      "sha256": "a05eafe0d90d03cc725ccfaa0d77a3c8a2b579119c416de2ec29703759d8764b"
+    },
+    {
+      "path": "/tmp/cairn-semantic-latency-profile/profile.txt",
+      "sha256": "19f5bfd513bd523f6d945efe55b3acc8bb059716a8b805f54305eb107464982b"
+    },
+    {
+      "path": "/tmp/cairn-semantic-latency-profile/environment.json",
+      "sha256": "51e801c3047957ed374d6ba268b11aa9998b9473b087703652f70733be9e8e86"
+    },
+    {
+      "path": "/tmp/cairn-semantic-batch-probe/report.json",
+      "sha256": "276a96d602d6900751da12e0984f4cd0c64b16bea699c4a7b1147a4691120799"
+    },
+    {
+      "path": "/tmp/cairn-semantic-batch-comparison/report.json",
+      "sha256": "5d0e4cf58896c51bdf4832062926e886114073a1627a0a047fa8428e1b810fdf"
+    },
+    {
+      "path": "/tmp/cairn-semantic-batching-final/report.json",
+      "sha256": "0ca47699f841f0a48996174e7d7693c60614a244082bc090f23d67f8cd982e6a"
+    },
+    {
+      "path": "/tmp/cairn-semantic-batching-api/report.json",
+      "sha256": "6e3e4d15209b1ea3304fd2e3ef469cb4a6eac84c3bab42bc782c0e5c1b121584"
+    },
+    {
+      "path": "/tmp/cairn-semantic-batching-integration.log",
+      "sha256": "47175f6e7d0b354c7e69c7470b336fc73e94afdedfd6b130b3060fa4249fabbc"
+    },
+    {
+      "path": "/tmp/cairn-semantic-batching-tests.log",
+      "sha256": "73ce1842287d256a4bfbb290941319f89fba7291d9f8ece98ae1241891d6b41a"
+    },
+    {
+      "path": "/tmp/cairn-semantic-batching-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    }
+  ],
+  "final_worker_summary": {
+    "wall_seconds": {
+      "baseline": 5.217348631005734,
+      "candidate": 3.1394434350077063
+    },
+    "user_seconds": {
+      "baseline": 8.22,
+      "candidate": 6.14
+    },
+    "system_seconds": {
+      "baseline": 0.17,
+      "candidate": 0.13
+    },
+    "max_rss_kib": {
+      "baseline": 330864,
+      "candidate": 203624
+    },
+    "median_paired_speedup": 1.680619031405265,
+    "model_hashes": {
+      "baseline": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+      "candidate": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b"
+    }
+  },
+  "completed_pairs_with_exact_scores": 20,
+  "capacity_case": {
+    "baseline": {
+      "user_seconds": 25.18,
+      "system_seconds": 0.29,
+      "max_rss_kib": 438264,
+      "wall_seconds": 20.047357050934806,
+      "exit_code": 124
+    },
+    "candidate": {
+      "user_seconds": 28.78,
+      "system_seconds": 0.22,
+      "max_rss_kib": 210216,
+      "wall_seconds": 18.39368847105652,
+      "exit_code": 0
+    }
+  },
+  "api": {
+    "exact_storage_pull": true,
+    "exact_long_pull": true,
+    "unavailable_fallback": true,
+    "semantic_model_fingerprints": [
+      "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b"
+    ]
+  },
+  "checks": {
+    "integration": "passed",
+    "test": "passed",
+    "check": "passed"
+  },
+  "hosted_model_calls": 0,
+  "limits": [
+    "Twofold exploratory target not met across the workload",
+    "20 completed pairs establish observed score equality only",
+    "64-note baseline timed out; no score equality for that pair",
+    "Shared-host latency varies; no throughput or service-percentile claim",
+    "No answering-model task benefit"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-e48d22b52dabe4ec",
+    "packet_content_sha256": "e48d22b52dabe4ec126ae7611167dcb62b0aa5577e6da54f97883b5df9ad546c",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "decision_path": "/tmp/cairn-semantic-batching-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "The generic procedure is not separately claimed. The report directly records alternatives, preserved semantics, exact-score checks, observed cost and limits."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "The generic procedure is not separately claimed. The report directly records alternatives, preserved semantics, exact-score checks, observed cost and limits."
+      }
+    ]
+  }
+}

@@ -61,7 +61,9 @@ The normal context/index budget, duplicate handling, handle credits and pull-byt
 limits still apply. Pulls recheck current eligibility and refuse stale handles.
 
 The worker scores overlapping windows of 384 model tokens at a stride of 320,
-using each note's highest query/window cosine similarity. It includes the entire
+using each note's highest query/window cosine similarity. Each query or passage
+uses a single-input inference batch, avoiding padding short passages to their
+longer neighbours. Batch size is included in the scoring fingerprint. It includes the entire
 tokenized note instead of truncating to the first window. Scores are rounded to
 millionths and are not probabilities. There is no calibrated answer threshold.
 
@@ -96,6 +98,9 @@ this route. [The integrated check](verification/semantic-discovery-2026-09-09.md
 exercises actual CPU scoring, API/CLI budgets, full-body pulls, long notes,
 fallback and historical compatibility. These checks establish usable retrieval;
 independent downstream task benefit and performance at larger scale remain open.
+A [batching comparison](verification/semantic-batching-2026-09-09.md) records
+latency, CPU time, peak resident memory and exact-score comparisons for the local
+worker. It does not establish performance on every workload.
 
 After preparation, run the optional real-worker check against a disposable store:
 

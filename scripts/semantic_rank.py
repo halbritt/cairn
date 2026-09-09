@@ -12,6 +12,7 @@ MODEL = "BAAI/bge-small-en-v1.5"
 PREFIX = "Represent this sentence for searching relevant passages: "
 ALGORITHM = "bge-max-chunk/1"
 WINDOW, STRIDE = 384, 320
+BATCH_SIZE = 1
 
 
 def chunks(tokenizer, body):
@@ -50,7 +51,7 @@ def main():
         with (args.model_dir / name).open("rb") as stream:
             files[name] = hashlib.file_digest(stream, "sha256").hexdigest()
     identity = dict(files=files, packages=versions, model=MODEL, prefix=PREFIX,
-                    window=WINDOW, stride=STRIDE, algorithm=ALGORITHM)
+                    window=WINDOW, stride=STRIDE, algorithm=ALGORITHM, batch_size=BATCH_SIZE)
     model_hash = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
     import numpy as np
@@ -75,7 +76,8 @@ def main():
                 raise ValueError("decoded chunk exceeds model input limit")
             passages.append(chunk)
             owners.append(index)
-    vectors = np.array(list(model.embed([question] + passages, batch_size=16)))
+    # Single-passage batches avoid padding shorter passages to their neighbours.
+    vectors = np.array(list(model.embed([question] + passages, batch_size=BATCH_SIZE)))
     if vectors.shape != (len(passages) + 1, 384) or not np.isfinite(vectors).all():
         raise ValueError("invalid model embeddings")
     norms = np.linalg.norm(vectors, axis=1, keepdims=True)
