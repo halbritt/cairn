@@ -81,9 +81,10 @@ with labelled lexical fallback. Empty eligible optional sets need no model and
 record `not_needed`. Successful semantic discovery records `ready`. No partial
 model ordering is used after a failed validation.
 
-New index requests, including semantic discovery, use `cairn.semantic/8` with
+Unfiltered index requests, including semantic discovery, use `cairn.semantic/8`;
+requests with kind filters use `cairn.semantic/9`. Both carry
 [preview source positions](index-and-pull.md#index-and-expansion-contract).
-Historical semantic requests retain `cairn.semantic/7`. Successful scoring uses
+Semantic requests predating preview positions retain `cairn.semantic/7`. Successful scoring uses
 `semantic-scope-recency/1`; fallback retains lexical v4. The sealed package pins
 the model fingerprint, scoring algorithm and digest of all optional candidate
 scores. Protected candidate facts retain those scores. Historical recompilation
@@ -103,6 +104,10 @@ independent downstream task benefit and performance at larger scale remain open.
 A [batching comparison](verification/semantic-batching-2026-09-09.md) records
 latency, CPU time, peak resident memory and exact-score comparisons for the local
 worker. It does not establish performance on every workload.
+A [small-set startup experiment](verification/semantic-startup-2026-09-09.md)
+found a roughly half-second saving when a scratch worker reused its model.
+The installed worker remains one-shot; bounded API residency is the next
+implementation candidate, with lifecycle checks still required.
 
 After preparation, run the optional real-worker check against a disposable store:
 

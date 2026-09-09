@@ -46,6 +46,11 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Model residency now has bounded experimental support.** Small candidate-set
+  profiling and six interleaved prototype comparisons found 0.34–0.58 seconds
+  saved per warm request with exact responses. Production remains one-shot;
+  API lifecycle and fallback integration are the next implementation work.
+  [Report](verification/semantic-startup-2026-09-09.md).
 - **Use history is accessible beyond its first page.** The installed CLI accepts
   --limit, --offset and --record, preserving the core's oldest-first ordering
   and unknown observations. A 102-exposure fixture verifies continuation and
@@ -1292,3 +1297,30 @@ Exact installed-source CI [34408184103](https://github.com/halbritt/cairn/action
 completed successfully, including the new CLI history fixture against its service
 database. The change provides access to retained exposure rows; it does not close
 U4's broader history analysis or establish memory task benefit.
+
+### 2026-09-09 — measure semantic startup after kind filtering
+
+The [small-set startup investigation](verification/semantic-startup-2026-09-09.md)
+and [metadata](verification/semantic-startup-2026-09-09.json) retain phase timings,
+prototype results and an interleaved comparison. A recalled performance lesson
+pointed to the earlier inference-dominated batching profile. Source review
+confirmed that recent kind filtering supports a different workload: one/three
+optional notes. The retired thread experiment was not rerun.
+
+Six baseline/instrumented pairs preserved complete responses. Imports/model setup
+took 0.51–0.63 seconds, over half the sampled one-note worker time. A scratch
+resident-model process preserved twelve further responses. Its initial separated
+timing blocks were followed by six alternating baseline/warm pairs to reduce
+shared-host drift. All six matched exactly and saved 0.34–0.58 seconds per warm
+request. This supports implementing optional API-owned residency with bounded
+lifetime and fallback checks; the prototype is not deployed or production-qualified.
+The worker, launcher, API/store processes and all installed interfaces remain as
+recorded above. No new API, database, model-task or full integration check is claimed.
+
+The existing semantic performance lesson advanced v2→v3 with the conditional
+small-set results and unfinished deployment checks, preserving the complete prior
+body and metadata. Exact revision retry and a fresh full pull verified it. The
+lesson influenced this investigation's scope; latency savings are not established
+task benefit. The roadmap records the next implementation checkpoint, and the
+semantic guide now correctly distinguishes unfiltered schema8 from kind-filtered
+schema9. Earlier implementation history and experimental outcomes are preserved.

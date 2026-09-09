@@ -1,0 +1,373 @@
+{
+  "schema": "cairn.semantic-startup-verification/1",
+  "source_commit": "9261538df55b4153867d62247a482dae695e7d89",
+  "source_hashes": {
+    "scripts/semantic_rank.py": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954",
+    "semantic/command.go": "8dcd16421669056e85e49e6e4fddb06f3b3475ba9a57cebc4b997741fa936f0a",
+    "core/testdata/retrieval-quality.json": "30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0"
+  },
+  "public_inputs_only": true,
+  "production_runtime_changed": false,
+  "profile_pairs": 6,
+  "prototype_responses": 12,
+  "paired_responses": 6,
+  "exact_complete_responses_equal": true,
+  "paired_results": [
+    {
+      "notes": 1,
+      "baseline_seconds": 0.7337835128419101,
+      "warm_seconds": 0.1798250931315124,
+      "speedup": 4.0805401518978694
+    },
+    {
+      "notes": 3,
+      "baseline_seconds": 1.1035086470656097,
+      "warm_seconds": 0.5587711110711098,
+      "speedup": 1.9748849308803584
+    },
+    {
+      "notes": 12,
+      "baseline_seconds": 2.4809531229548156,
+      "warm_seconds": 2.1416932900901884,
+      "speedup": 1.158407291293489
+    },
+    {
+      "notes": 12,
+      "baseline_seconds": 2.4341220080386847,
+      "warm_seconds": 1.857042629038915,
+      "speedup": 1.3107518211891713
+    },
+    {
+      "notes": 3,
+      "baseline_seconds": 1.1357568269595504,
+      "warm_seconds": 0.5576946449000388,
+      "speedup": 2.0365209480595308
+    },
+    {
+      "notes": 1,
+      "baseline_seconds": 0.7580863181501627,
+      "warm_seconds": 0.17035283893346786,
+      "speedup": 4.450095008080476
+    }
+  ],
+  "paired_cold_priming_seconds": 0.668237617937848,
+  "warm_peak_rss_kib": 212756,
+  "decision": "Develop bounded optional API-owned model residency; do not deploy scratch prototype; no vector cache",
+  "open_verification": [
+    "framing and invalid input",
+    "cold startup",
+    "one active request and busy fallback",
+    "per-request cancellation and failed-child cleanup",
+    "idle release and service shutdown",
+    "model identity and current note eligibility",
+    "API-level performance"
+  ],
+  "memory": {
+    "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+    "previous_version": 2,
+    "current_version": 3,
+    "body_sha256": "39f717e080e97afffd3cd2b17438e535efe1c6447e1e6e0c1429d04a3b8ae1ab",
+    "old_body_prefix_and_metadata_preserved": true,
+    "exact_revision_retry": true,
+    "fresh_pull_verified": true,
+    "role": "Prior lesson was read before experiment and used to narrow workload; net benefit unknown"
+  },
+  "doctrine": {
+    "packet_id": "pkt-818118d2c022b1b9",
+    "packet_content_sha256": "818118d2c022b1b9904b45a5810ab5aca5d62e9f92380f1e345d42e4a395a259",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "typed_passes": 1,
+    "missing_nonmaterial": 25,
+    "decision_receipt_validated": true,
+    "citation_closure_valid": true
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-semantic-startup-profile.py",
+      "sha256": "e8fe1db8e2ba8e7482fed85021b3d0c204657e841ebdac455119ddadcdbe29a9"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-warm.py",
+      "sha256": "93db10bc84d7f836878cf1907d58bfe4008b0020df748dfb254f14fa8cbbe363"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-paired.py",
+      "sha256": "f4b21c08afd809b502a4967e24e8bb98b60ccc81edbde9a5076e1da293f17c3c"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-profile.log",
+      "sha256": "561f8420e421a573dc2be6d99c9dbfc47a031d7e1468f413769490727041f309"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-warm.log",
+      "sha256": "0c378bde1c90de7f7c4bf18f55addac1f6d8aa100b99de7206f892c063d02228"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-paired.log",
+      "sha256": "ffebb78408b2b5680d6e04fe530789a6ee49eb17f91970cd10c1718479c00a92"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-decision.json",
+      "sha256": "d0ad72851fe8e06eca7577fa8ac4046b906a04e5f37a26f8318e90406c60f6be"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-obligations.json",
+      "sha256": "e41da1e4fb5870eccc9d7282122b1bea0baca259c8a8605f0be205f80c24e0b9"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-packet-final.json",
+      "sha256": "8767472b4867210fdd9e93ba150405e45106895ed1b0dab794f5dbebd7cde33d"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-citation-result.json",
+      "sha256": "21530d99bcbebfbe21401f437c1a8810c3f2e882920cb10001eced6ecc909b0a"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/1-notes-r1-baseline.json",
+      "sha256": "7a40fe605446dfb90de5984bbf68fce97510ae9e1b74f3138676306262d79f63"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/1-notes-r1-baseline.stderr",
+      "sha256": "32469f30aea848151e4bd944723953bd3c594df85e9813a452bd3573e04d00bc"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/1-notes-r1-profiled.json",
+      "sha256": "7a40fe605446dfb90de5984bbf68fce97510ae9e1b74f3138676306262d79f63"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/1-notes-r1-profiled.stderr",
+      "sha256": "137ed4ba20104312d763352caa304369ed076a1883baef56608c2c21f1f615e0"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/1-notes-r1-request.json",
+      "sha256": "7b289d6da3b162c40be0af971b0f50d396b9da43cb52ac36af14cd2aa7f0226b"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/1-notes-r2-baseline.json",
+      "sha256": "7a40fe605446dfb90de5984bbf68fce97510ae9e1b74f3138676306262d79f63"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/1-notes-r2-baseline.stderr",
+      "sha256": "8fb4bcfe136ac11917744abf0a7967337e607a81cd39d84d44efc7a851cc19a9"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/1-notes-r2-profiled.json",
+      "sha256": "7a40fe605446dfb90de5984bbf68fce97510ae9e1b74f3138676306262d79f63"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/1-notes-r2-profiled.stderr",
+      "sha256": "c43dedb768ecc6fae1cce78399168cff09a31ae015ec6bbedf610120b76ff077"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/1-notes-r2-request.json",
+      "sha256": "7b289d6da3b162c40be0af971b0f50d396b9da43cb52ac36af14cd2aa7f0226b"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/12-notes-r1-baseline.json",
+      "sha256": "04b424d76f910995bee2a752b035c85b623c2a3a9bad411774581430c9e433fe"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/12-notes-r1-baseline.stderr",
+      "sha256": "84fba1e306d17277d532d022b4b9e1c8113aa79b3ae728638f76d4c579a01abe"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/12-notes-r1-profiled.json",
+      "sha256": "04b424d76f910995bee2a752b035c85b623c2a3a9bad411774581430c9e433fe"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/12-notes-r1-profiled.stderr",
+      "sha256": "82978d75f787a0cda7dec85e2f0b6e321609c1790c4c81a0b565326c931e873b"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/12-notes-r1-request.json",
+      "sha256": "f9e449985a821139089fc1cfe3a2b4988a9b3caaed721a0d455770297b539586"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/12-notes-r2-baseline.json",
+      "sha256": "04b424d76f910995bee2a752b035c85b623c2a3a9bad411774581430c9e433fe"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/12-notes-r2-baseline.stderr",
+      "sha256": "16136cabf01d78b0f0535b7b6a76d4f256a04770a02f4bff8da13f4daf0a277d"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/12-notes-r2-profiled.json",
+      "sha256": "04b424d76f910995bee2a752b035c85b623c2a3a9bad411774581430c9e433fe"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/12-notes-r2-profiled.stderr",
+      "sha256": "d1efcadd9949ba5507aa07541fac427a7ae5d609851c449f94734eead6bdb679"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/12-notes-r2-request.json",
+      "sha256": "f9e449985a821139089fc1cfe3a2b4988a9b3caaed721a0d455770297b539586"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/3-notes-r1-baseline.json",
+      "sha256": "ae5dc8460059b53899f32673c82a948bd2b4c3bf524172648d6a57ca3d6e8ccd"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/3-notes-r1-baseline.stderr",
+      "sha256": "f5d3a3e005417895481a1912ec2790963edd49f1093e3be6ddca780b8f25a9a0"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/3-notes-r1-profiled.json",
+      "sha256": "ae5dc8460059b53899f32673c82a948bd2b4c3bf524172648d6a57ca3d6e8ccd"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/3-notes-r1-profiled.stderr",
+      "sha256": "e5a0d5ed429dedb1c98b023d808d6e2d1af4703e2d83054d9b767512cb8018db"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/3-notes-r1-request.json",
+      "sha256": "48d8278022dcca3dda8581adc471cb3ceb4d683b832cc3a8d99e29c92c1f632f"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/3-notes-r2-baseline.json",
+      "sha256": "ae5dc8460059b53899f32673c82a948bd2b4c3bf524172648d6a57ca3d6e8ccd"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/3-notes-r2-baseline.stderr",
+      "sha256": "a20f4d439a9330ba9252597759467f940d5aeea98e511bca86df88b3f03f424d"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/3-notes-r2-profiled.json",
+      "sha256": "ae5dc8460059b53899f32673c82a948bd2b4c3bf524172648d6a57ca3d6e8ccd"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/3-notes-r2-profiled.stderr",
+      "sha256": "6b6fa2c55a324fb86304a85db7c7c72602b2892b97f0317c383d0f38cfcb1a35"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/3-notes-r2-request.json",
+      "sha256": "48d8278022dcca3dda8581adc471cb3ceb4d683b832cc3a8d99e29c92c1f632f"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/baseline-worker.py",
+      "sha256": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/lesson-after.json",
+      "sha256": "fa86517514a02afaaea1a4d0b0602cfc3f5fcd8ed7b2c3d1ac2b004848442748"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/lesson-before.json",
+      "sha256": "9520884b416d9e47e0c090f8ae881ffb4ab01620f36b063ce040ca3d6a89b12d"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/lesson-retry.json",
+      "sha256": "577331e8e4234c7d9cfa34aad5a28df4c22fe8cc1f68a138fefa2436a6d88901"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/lesson-revise.json",
+      "sha256": "c22583a8e16fd147f9067c043122ea0571bb33dd15bc92300c30b90e45828d85"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/lesson-revised.json",
+      "sha256": "577331e8e4234c7d9cfa34aad5a28df4c22fe8cc1f68a138fefa2436a6d88901"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/lesson-search.json",
+      "sha256": "433e53d43373e797f49f78aefd84edc78ff760aac7e4c8ae027ade6accd698d2"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/paired-cold.json",
+      "sha256": "90d627cfa7f0c66d5c8a5e261bac8548107a518debcf1a588ef38d8443c26ca6"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/paired-plan.json",
+      "sha256": "e9b1b716207d2f8804eb6dcf78e94a7731a819daf0ee9ff1f98b88a4178d2e58"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/paired-report.json",
+      "sha256": "106bdc5bb060cefeb6069e3320a776b6eb809e454d28974929d137e15f742a67"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/paired-warm.stderr",
+      "sha256": "b5ea45522fbea0ba38516eb1b9f04d2ea227de38a99fb0ed3b6f8b40edc944d9"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/plan.json",
+      "sha256": "98313e1c8fe2e08b19a05ded2a76a215b2b2bf0729e7e7f37258daa2ff4edb2c"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/profiled-worker.py",
+      "sha256": "94c09bd0e415a362abf38afec303c9a232947567f9a3099d5908b1442e626c11"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/report.json",
+      "sha256": "bb6d167c476397bd621c2e820398008da797c7327b38e32fe1d64f721378140c"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-1-1-response.json",
+      "sha256": "7a40fe605446dfb90de5984bbf68fce97510ae9e1b74f3138676306262d79f63"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-1-2-response.json",
+      "sha256": "ae5dc8460059b53899f32673c82a948bd2b4c3bf524172648d6a57ca3d6e8ccd"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-1-3-response.json",
+      "sha256": "04b424d76f910995bee2a752b035c85b623c2a3a9bad411774581430c9e433fe"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-1-4-response.json",
+      "sha256": "7a40fe605446dfb90de5984bbf68fce97510ae9e1b74f3138676306262d79f63"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-1-5-response.json",
+      "sha256": "ae5dc8460059b53899f32673c82a948bd2b4c3bf524172648d6a57ca3d6e8ccd"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-1-6-response.json",
+      "sha256": "04b424d76f910995bee2a752b035c85b623c2a3a9bad411774581430c9e433fe"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-1.stderr",
+      "sha256": "030c672d6b9036517de3d7142e25a13bf0f98ebfcf7245769b430edc203a4bfe"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-2-1-response.json",
+      "sha256": "04b424d76f910995bee2a752b035c85b623c2a3a9bad411774581430c9e433fe"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-2-2-response.json",
+      "sha256": "ae5dc8460059b53899f32673c82a948bd2b4c3bf524172648d6a57ca3d6e8ccd"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-2-3-response.json",
+      "sha256": "7a40fe605446dfb90de5984bbf68fce97510ae9e1b74f3138676306262d79f63"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-2-4-response.json",
+      "sha256": "04b424d76f910995bee2a752b035c85b623c2a3a9bad411774581430c9e433fe"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-2-5-response.json",
+      "sha256": "ae5dc8460059b53899f32673c82a948bd2b4c3bf524172648d6a57ca3d6e8ccd"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-2-6-response.json",
+      "sha256": "7a40fe605446dfb90de5984bbf68fce97510ae9e1b74f3138676306262d79f63"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-2.stderr",
+      "sha256": "dcc2286ba2bfcc7104c85bfa74c0c882cae40702c6b54b8a1a361d65feeed43d"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-plan.json",
+      "sha256": "9bf9065d97a65f55c8557c0e02e2094bc2353a67b169517a46bd561025ffd25a"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-prototype.py",
+      "sha256": "8e4c43bf1a3a416ac11b39e3b18359d187646dada2a33fef0d447bfc03e8a9ea"
+    },
+    {
+      "path": "/tmp/cairn-semantic-startup-small/warm-report.json",
+      "sha256": "cbf47548022d50a3639f271dae09f58a2c420d14e653d48e9cc6ee29e01f1e68"
+    }
+  ]
+}

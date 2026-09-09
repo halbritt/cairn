@@ -454,6 +454,15 @@ A [one-thread comparison](verification/semantic-threads-2026-09-09.md) preserved
 all twenty-one score sets but missed its latency target. The installed two-thread
 worker remains; reduced CPU cost alone did not justify the proposed latency change.
 
+A [small-set startup experiment](verification/semantic-startup-2026-09-09.md)
+addresses the different workload enabled by kind filtering. Six interleaved pairs
+preserved complete responses while model reuse saved 0.34–0.58 seconds. Next,
+implement and verify optional API-owned model residency with bounded idle/shutdown
+release, framed responses, one active request, per-request cancellation and
+labelled fallback. Preserve one-shot custom workers, current eligibility and
+model identity. Verify actual API savings before installing it; the scratch
+prototype is not deployment-qualified. No note-vector cache is planned.
+
 [Explicit browsing](verification/browse-2026-09-09.md) now exposes the existing
 empty-query index through the agent CLI, MCP and native OpenCode. It provides
 bounded topic previews when the saved vocabulary is unknown, with normal scope,
