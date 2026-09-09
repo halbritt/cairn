@@ -1,0 +1,43 @@
+{
+  "schema": "cairn.codex-project-verification/1",
+  "baseline_commit": "be5f945",
+  "codex_version": "codex-cli 0.153.4",
+  "prior_project_config": "absent",
+  "user_config_unchanged": true,
+  "project_config_mode": "0o600",
+  "project_config_git_excluded": true,
+  "tool_names": [
+    "cairn_edit",
+    "cairn_pull",
+    "cairn_pull_evidence",
+    "cairn_remember",
+    "cairn_search"
+  ],
+  "fresh_native_threads": 2,
+  "searches_per_thread": 2,
+  "exact_revised_procedure_pulls": 4,
+  "mcp_config_overrides": false,
+  "model_turns_started": 0,
+  "private_artifacts": [
+    {
+      "path": ".codex/config.toml",
+      "sha256": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8"
+    },
+    {
+      "path": "/tmp/cairn-codex-project-enable/before.json",
+      "sha256": "2877c32a3f98662a25f0e14363e2bc1d7db62c7cb26ad0f60a763d64191c1342"
+    },
+    {
+      "path": "/tmp/cairn-codex-project-enable/resolved.json",
+      "sha256": "0038f11d61779a0740bcf370de9bed1bcda1913bd915fe7548a90545e04303a0"
+    },
+    {
+      "path": "/tmp/cairn-codex-project-client.py",
+      "sha256": "c74e4c68bce8d1e6267ec555a8ee3e604afc0cf19c2225f019218a661797e366"
+    },
+    {
+      "path": "/tmp/cairn-codex-project-client/report.json",
+      "sha256": "da48a2cbbe96d90d94c5423e7d0caf895b7ca4a5bf31c0ea810f5a3d5fe03982"
+    }
+  ]
+}

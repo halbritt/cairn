@@ -142,6 +142,13 @@ does not attest that those declarations match the current checkout.
 
 Codex's [configuration instructions](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
 cover user/project placement and command-line overrides. `codex mcp get cairn --json` inspects the resolved configuration; it does not prove the server connected.
+For a trusted project, put the entry in `.codex/config.toml` to keep its repository
+and token profile local to that project. Keep installation-specific paths out of
+Git. Set `required = false` if unavailable memory should not block startup.
+The [local adoption check](verification/codex-project-2026-09-09.md) verified
+discovery and exact retrieval from Cairn's project configuration without MCP
+overrides. New conversations can use it; an already running conversation may
+need a client restart to load the new tools.
 An [actual Codex client check](verification/codex-mcp-2026-09-08.md) connected,
 listed the permitted tools, searched and pulled the exact saved lesson without
 starting a model turn. Model-selected use and task benefit remain unverified.

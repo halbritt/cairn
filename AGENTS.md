@@ -22,8 +22,13 @@ producer-attribution correction where it supersedes earlier synthesis.
 
 On the owner's host, when `~/.local/share/cairn/hosted-agent.token` exists and
 `cairn` is installed, use that profile for hosted-agent memory in this repository.
-At the start of a substantive task, search for relevant prior lessons with a
-specific task/run identity:
+At the start of a substantive task, search for relevant prior lessons.
+
+When the native Cairn MCP tools are available, use `cairn_search` and inspect
+relevant results with `cairn_pull`, passing their complete `pull_arguments`.
+The local Codex project configuration uses conversation scope automatically;
+it does not identify individual turns or execution attempts. Use the CLI below
+when MCP is unavailable or explicit task/run scope is needed.
 
 ```sh
 cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" search \

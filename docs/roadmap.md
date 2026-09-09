@@ -35,6 +35,13 @@ the exact revision in a fresh task. This adds harness compatibility and ordinary
 maintenance; it does not close X2's native resume/compaction interlocks or
 establish model-selected use.
 
+Cairn is now [enabled in this host's trusted Codex project](verification/codex-project-2026-09-09.md).
+Fresh native conversations discover all five ordinary tools from local project
+configuration and retrieve current notes without MCP overrides. Repository
+instructions prefer those tools when available. This closes the local adoption
+gap between temporary probes and normal project startup; durable task benefit
+and other hosts' adoption still require evidence.
+
 The [MCP context extension](verification/mcp-currentness-2026-09-08.md) lets hosts
 supply existing revision/workspace/task-class/binding/capability pins at startup.
 Public stdio checks verify matching retrieval and missing/mismatched withholding.
