@@ -187,10 +187,12 @@ capture as a declared observed-world environment entry, produces a typed ECR
 without contacting Cairn, and checks the submitted body against that same source
 at admission. Focused race tests, a real disposable-service replay after API
 shutdown, and the full Striatum check passed for that producer checkpoint.
-The accepted catalog remains `observation@1`; native request issuance is being
-extended on the branch, and build consumption and actual launch correspondence
-remain unfinished. This is implementation progress, not native enablement or
-new task-benefit evidence.
+The [trusted request frontend](verification/native-observation-2026-09-08.md)
+is also implemented and checked on that branch. It acquires the capture itself
+before issuing the request and refuses ordinary requests claiming a native
+capture identity. The accepted catalog remains `observation@1`; build consumption
+and actual launch correspondence remain unfinished. This is implementation
+progress, not native enablement or new task-benefit evidence.
 
 The retained runner is useful for hosts that need Cairn to own their child
 process. Striatum already owns that process in
