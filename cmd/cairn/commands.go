@@ -34,7 +34,7 @@ Everyday commands:
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
   proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST
-  list REPO | get UUID | use-report REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
+  list REPO | get UUID | use-report REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
   create edit revise delete compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
@@ -161,6 +161,17 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return remember(ctx, store, args[1:], input)
 	case "search":
 		return search(ctx, store, args[1:])
+	case "evidence-impact":
+		f := flags("evidence-impact")
+		recordOffset := f.Int("record-offset", 0, "affected record versions to skip")
+		useOffset := f.Int("use-offset", 0, "recorded exposures to skip")
+		if err := f.Parse(args[1:]); err != nil {
+			return nil, invalid(err.Error())
+		}
+		if f.NArg() != 1 {
+			return nil, invalid("evidence-impact requires an evidence UUID")
+		}
+		return store.InspectEvidenceImpact(ctx, core.EvidenceImpactRequest{EvidenceID: f.Arg(0), RecordOffset: *recordOffset, UseOffset: *useOffset})
 	case "proposal-group":
 		f := flags("proposal-group")
 		limit := f.Int("limit", 100, "maximum source proposals (1-200)")

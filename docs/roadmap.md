@@ -147,7 +147,11 @@ Compiler refusals now retain the already-computed, visibility-filtered candidate
 reasons and ranking/allocation features in a bounded
 [partial diagnostic trace](refusals.md). Missing phases remain explicit; evidence
 snapshots, note bodies and query text are excluded. R5 remains partial for complete
-refusal explanations, and R3 still lacks a broader evidence dependency model.
+refusal explanations. [Evidence impact inspection](evidence-impact.md) now lists
+exact captured-reference roots, known transitive relation types and retained uses
+with independent pagination. It does not infer source-record edges from labels or
+extend mutation authorization. R3/L4 remain partial for the broader lifecycle
+contracts; this report is not a replacement for a guarded mutation preview.
 [Body-pull reasons](verification/pull-reason-2026-09-08.md) now describe the
 current eligibility recheck instead of reporting a zero match count from a
 queryless pass. Original protected ranking and committed retry responses remain

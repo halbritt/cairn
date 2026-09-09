@@ -134,6 +134,23 @@ try:
     assert pulled['evidence']['witness'] == 'testimony' and pulled['credits_remaining'] == 2
     assert evidence_call([*hosted, 'expand-evidence'], evidence_pull, evidence_env) == pulled
     print('Hosted evidence pull preserves exact supporting bytes and testimony, shared credits and retry through Unix API without client DB access')
+    impact_request = dict(evidence_id=support['evidence_id'])
+    impact = evidence_call(['agent', 'evidence-impact'], impact_request, evidence_env)
+    direct = next(r for r in impact['records'] if r['record_id'] == claim['record_id'])
+    assert direct['version'] == claim['version'] and direct['direct_evidence_reference']
+    assert direct['version_class'] == 'B'
+    assert any(u['receipt_id'] == source_pull['receipt_id'] and u['exposure_kind'] == 'index' for u in impact['uses'])
+    assert not impact['records_truncated'] and not impact['uses_truncated']
+    assert 'explicit supporting socket evidence' not in json.dumps(impact)
+    inspected = evidence_call(['evidence-impact', support['evidence_id']], {})
+    assert inspected == impact
+    skipped = evidence_call(['evidence-impact', '--record-offset', '1', '--use-offset', '100', support['evidence_id']], {})
+    assert skipped['records'] == [] and skipped['uses'] == []
+    denied = subprocess.run([binary, *hosted, 'evidence-impact'], input=json.dumps(impact_request),
+                            env=evidence_env, capture_output=True, text=True, timeout=10)
+    assert denied.returncode != 0 and json.loads(denied.stdout)['status'] == 'AUTHORITY_DENIED'
+    assert support['evidence_id'] not in denied.stdout and claim['record_id'] not in denied.stdout
+    print('Evidence impact CLI and local API expose exact linked versions/uses with independent pagination; hosted inspection is refused')
     # The process client must work with an unusable database address. Only the
     # server owns DB access; the child receives neither CAIRN settings nor tokens.
     client_env = dict(env, CAIRN_DATABASE_URL='host=/nonexistent-cairn-host-socket dbname=denied',

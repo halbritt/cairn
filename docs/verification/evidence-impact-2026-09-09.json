@@ -1,0 +1,142 @@
+{
+  "schema": "cairn.evidence-impact-verification/1",
+  "baseline_commit": "3c535912f5826cf1548defd033d2261e58c53c64",
+  "source_hashes": {
+    "core/evidence_impact.go": "dc6c0731c8c0e41569f6a4716aa728d2653b8194d871f5a8addb661a4f41df51",
+    "core/evidence_impact_test.go": "cee7ec8722a9218fc217bcf7a33caa9945a6ef64c9540c108d9e85601fa35193",
+    "cmd/cairn/commands.go": "77ff0dc407e92acd4eb7838e0373c0dbf7113fa55bcf9ea5b3b0dee6de50f0bd",
+    "cmd/cairn/agent.go": "c981bdfa7d98249130d7aa144f92fedbb01d4c25723949161e80f08d9b7a70d4",
+    "localapi/server.go": "109c727990fce92712e7e102087ab4fc6520f9c0659b7edb9d605aa5cc747e92",
+    "scripts/check-local-api.py": "3c23ce3f7c89c8a2edd6744ff4368d71bf51b98d2ae993ac392e83645a79011e"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-evidence-impact-paths-integration.log",
+      "sha256": "9a7c6ecf8bc36f75403bd9f574b71aa1814c8789cab5c69baddf61d052337447"
+    },
+    {
+      "path": "/tmp/cairn-evidence-impact-paths-tests.log",
+      "sha256": "7c6a75841dc11e483fd40f5c53caf38cb720fadbd22ab4b815b98ba5fe63cb83"
+    },
+    {
+      "path": "/tmp/cairn-evidence-impact-paths-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    }
+  ],
+  "checks": {
+    "integration": "passed",
+    "test": "passed",
+    "check": "passed"
+  },
+  "fixtures": {
+    "paginated_versions": 102,
+    "paginated_exposures": 101,
+    "diamond_versions": 3,
+    "independent_correction": true,
+    "historical_retraction": true,
+    "relation_types": true,
+    "body_and_index_exposures": true,
+    "hosted_refusal": true,
+    "source_content_excluded": true
+  },
+  "model_calls": 0,
+  "limits": [
+    "Read-only inspection, not mutation authorization or qualification",
+    "Explicit captured-reference and record-relation edges only",
+    "Current snapshot per page; offsets may shift under mutation",
+    "Recursive work may exceed30second deadline",
+    "No production graph or downstream task-benefit qualification"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-52bc76388664a2ed",
+    "packet_content_sha256": "52bc76388664a2ed9e8c6ae3b35f9c4bcd46690757d1ee2ffeb386ed603856af",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "decision_path": "/tmp/cairn-evidence-impact-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No interface substitution, method-set boundary or typed-nil return is added. Existing consumers receive concrete report values through their established core calls."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No interface substitution, method-set boundary or typed-nil return is added. Existing consumers receive concrete report values through their established core calls."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No interface substitution, method-set boundary or typed-nil return is added. Existing consumers receive concrete report values through their established core calls."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No interface substitution, method-set boundary or typed-nil return is added. Existing consumers receive concrete report values through their established core calls."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-59b5c0f0f6ce0429",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "caller nil checks and method use",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No interface substitution, method-set boundary or typed-nil return is added. Existing consumers receive concrete report values through their established core calls."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-27f0f91281da2f0e",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "documented absence semantics",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No interface substitution, method-set boundary or typed-nil return is added. Existing consumers receive concrete report values through their established core calls."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-902e6d5b9ae03361",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "dynamic type and dynamic value at the return",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No interface substitution, method-set boundary or typed-nil return is added. Existing consumers receive concrete report values through their established core calls."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "The generic named procedure is not separately claimed. Alternatives, preserved behavior, new inspection semantics and completed verification are recorded directly."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "The generic named procedure is not separately claimed. Alternatives, preserved behavior, new inspection semantics and completed verification are recorded directly."
+      }
+    ]
+  }
+}

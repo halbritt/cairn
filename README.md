@@ -146,6 +146,7 @@ bin/cairn list "$PWD"
 bin/cairn get RECORD_UUID
 bin/cairn search --purpose planning 'placement or planning question'
 bin/cairn impact RECORD_UUID
+bin/cairn evidence-impact EVIDENCE_UUID
 bin/cairn replay RECEIPT_UUID
 bin/cairn explain RECEIPT_UUID
 bin/cairn preview-retract RECORD_UUID

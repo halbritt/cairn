@@ -21,6 +21,11 @@ Ordinary retrieval still verifies bytes; it need not wait for a background job
 to detect changed data. Historical recompilation uses its retained earlier gate
 facts and does not rewrite the past from the latest check result.
 
+[Evidence impact inspection](evidence-impact.md) lists the exact directly citing
+versions, known transitive relation links and recorded exposures behind an
+affected-record count. It preserves historical citations after correction and
+does not infer authority or causal influence.
+
 `cairn evidence-checks EVIDENCE_UUID` inspects up to 1,000 check generations.
 `cairn evidence EVIDENCE_UUID` returns the current captured object and status.
 UTF-8 payloads use `body`. Explicit binary payloads use `body_base64` and leave
