@@ -142,6 +142,55 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	if view.Schema != "cairn.mcp-search/1" || view.SourceSeal == "" || len(view.Index) != 1 || view.Index[0].RecordID != record.RecordID || len(view.Selected) != 1 || view.Selected[0].Record.RecordID != mandatory.RecordID || view.Scope.TaskID != "build" || view.Destination.Name != "hosted" {
 		t.Fatalf("search: %s", viewBytes)
 	}
+	t.Run("Codex conversation scope", func(t *testing.T) {
+		threadNote, err := op.Create(ctx, core.CreateRequest{RequestID: uuid.NewString(), Draft: core.Draft{Kind: "note", Body: "socketguide for one conversation", Scope: core.Scope{Repo: repo, TaskID: "codex/thread-one", RunID: "thread-one"}, ClaimType: "self", Sensitivity: "shareable"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		threadServer, err := NewServer(client, Config{Scope: core.Scope{Repo: repo}, CodexThread: true, AvailableTokens: 64000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		threadSession := connect(t, ctx, threadServer)
+		requestID := uuid.NewString()
+		for _, thread := range []string{"thread-one", "thread-two", "thread-one"} {
+			params := &mcp.CallToolParams{Meta: mcp.Meta{"threadId": thread}, Name: "cairn_search", Arguments: searchArgs{Query: "socketguide", RequestID: requestID}}
+			result, err := threadSession.CallTool(ctx, params)
+			if err != nil || result.IsError {
+				t.Fatalf("thread search: %+v %v", result, err)
+			}
+			var got searchResult
+			if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Scope != (core.Scope{Repo: repo, TaskID: "codex/" + thread, RunID: thread}) || got.Destination.Name != "hosted" {
+				t.Fatalf("scope/destination: %+v", got)
+			}
+			found := false
+			for _, entry := range got.Index {
+				found = found || entry.RecordID == threadNote.RecordID
+			}
+			if found != (thread == "thread-one") {
+				t.Fatalf("wrong conversation applicability: %+v", got.Index)
+			}
+			// Reusing a search UUID in a different conversation must not replay
+			// the original conversation's result.
+			params.Meta["threadId"] = "different-thread"
+			conflict, err := threadSession.CallTool(ctx, params)
+			if err != nil || !conflict.IsError || !strings.Contains(conflict.Content[0].(*mcp.TextContent).Text, "IDEMPOTENCY_CONFLICT") {
+				t.Fatalf("cross-thread retry: %+v %v", conflict, err)
+			}
+			requestID = uuid.NewString()
+		}
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Meta: mcp.Meta{"threadId": "thread-one"}, Name: "cairn_search", Arguments: searchArgs{Query: "socketguide"}})
+		if err != nil || result.IsError {
+			t.Fatalf("explicit scope: %+v %v", result, err)
+		}
+		var explicit searchResult
+		if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &explicit); err != nil || explicit.Scope != view.Scope {
+			t.Fatalf("metadata changed explicit scope: %+v %v", explicit.Scope, err)
+		}
+	})
 	pulled := invoke("cairn_pull", view.Index[0].PullArguments, "")
 	if string(invoke("cairn_pull", view.Index[0].PullArguments, "")) != string(pulled) {
 		t.Fatal("pull retry changed")
@@ -292,5 +341,20 @@ func TestToolResultBoundsAndErrors(t *testing.T) {
 	}
 	if _, _, err := toolResult(nil, &core.Error{Code: "AUTHORITY_DENIED", Message: "AUTHORITY_DENIED: outside profile", RefusalID: "retained-refusal"}, 32000); err == nil || err.Error() != "AUTHORITY_DENIED: outside profile; refusal_id=retained-refusal" {
 		t.Fatal("API refusal lost")
+	}
+}
+
+func TestCodexThreadRequiresValidMetadata(t *testing.T) {
+	// No API client: malformed metadata must fail before any database request.
+	server, err := NewServer(nil, Config{Scope: core.Scope{Repo: "repo"}, CodexThread: true, AvailableTokens: 32000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := connect(t, context.Background(), server)
+	for _, thread := range []any{nil, "", "*", 42, []string{"thread"}, "two words", "line\nbreak", "control\x00", "space\u00a0", strings.Repeat("x", 241)} {
+		result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Meta: mcp.Meta{"threadId": thread}, Name: "cairn_search", Arguments: searchArgs{Query: "note"}})
+		if err != nil || !result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "requires tool-call _meta.threadId") {
+			t.Fatalf("metadata %q: %+v %v", thread, result, err)
+		}
 	}
 }

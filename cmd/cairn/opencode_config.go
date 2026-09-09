@@ -25,6 +25,9 @@ func writeOpenCodeConfig(out io.Writer, args []string, executable string) error 
 	if err := f.Parse(args); err != nil {
 		return err
 	}
+	if o.config.CodexThread {
+		return invalid("opencode-config requires explicit --task and --run; --codex-thread is for Codex clients")
+	}
 	if err := o.validate(f.NArg()); err != nil {
 		return err
 	}

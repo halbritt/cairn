@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
@@ -19,11 +20,19 @@ type Config struct {
 	Scope           core.Scope
 	AvailableTokens int
 	Context         *core.ContextPins
+	CodexThread     bool
 }
 
 // Validate checks startup scope and room; the API validates pins on retrieval.
 func (c Config) Validate() error {
-	if strings.TrimSpace(c.Scope.Repo) == "" || strings.TrimSpace(c.Scope.TaskID) == "" || strings.TrimSpace(c.Scope.RunID) == "" || c.Scope.Repo == "*" || c.Scope.TaskID == "*" || c.Scope.RunID == "*" {
+	if strings.TrimSpace(c.Scope.Repo) == "" || c.Scope.Repo == "*" {
+		return fmt.Errorf("MCP requires an explicit repository")
+	}
+	if c.CodexThread {
+		if c.Scope.TaskID != "" || c.Scope.RunID != "" {
+			return fmt.Errorf("--codex-thread cannot be combined with --task or --run")
+		}
+	} else if strings.TrimSpace(c.Scope.TaskID) == "" || strings.TrimSpace(c.Scope.RunID) == "" || c.Scope.TaskID == "*" || c.Scope.RunID == "*" {
 		return fmt.Errorf("MCP requires an explicit repository, task and run")
 	}
 	if c.AvailableTokens < 256 || c.AvailableTokens > 1000000 {
@@ -95,15 +104,24 @@ type memoryTools struct {
 	config Config
 }
 
-func (t memoryTools) search(ctx context.Context, _ *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {
+func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {
 	if strings.TrimSpace(args.Query) == "" {
 		return nil, nil, errors.New("search requires a nonempty query")
+	}
+	scope := t.config.Scope
+	if t.config.CodexThread {
+		thread, _ := request.Params.Meta["threadId"].(string)
+		if thread == "" || thread == "*" || len(thread) > 240 || strings.ContainsFunc(thread, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+			return nil, nil, errors.New("--codex-thread requires tool-call _meta.threadId: a nonempty identifier of at most 240 bytes without whitespace, control characters or wildcard")
+		}
+		// Host-declared conversation grouping, not an authenticated run observation.
+		scope.TaskID, scope.RunID = "codex/"+thread, thread
 	}
 	if args.RequestID == "" {
 		args.RequestID = uuid.NewString()
 	}
 	var index core.IndexResult
-	err := t.client.Call(ctx, "index", core.CompileRequest{RequestID: args.RequestID, Scope: t.config.Scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: t.config.Context}, &index)
+	err := t.client.Call(ctx, "index", core.CompileRequest{RequestID: args.RequestID, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: t.config.Context}, &index)
 	if err != nil {
 		return toolResult(nil, err, t.config.AvailableTokens)
 	}

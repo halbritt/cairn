@@ -1,0 +1,184 @@
+{
+  "schema": "cairn.codex-thread-verification/1",
+  "baseline_commit": "a798f17",
+  "codex_version": "codex-cli 0.153.4",
+  "native_client": {
+    "threads": 2,
+    "searches_per_thread": 2,
+    "exact_body_pulls": 4,
+    "scope_matches_native_thread": true,
+    "distinct_conversation_scopes": true,
+    "manual_task_run_arguments": false,
+    "model_turns_started": 0
+  },
+  "checks": [
+    "make check",
+    "make test (Go packages and 26 Python tests)",
+    "make test-integration (disposable PostgreSQL, race detector)"
+  ],
+  "private_artifacts": [
+    {
+      "path": "/tmp/cairn-codex-thread-client.py",
+      "sha256": "09b611f34d1fbdc18e790715358f1348e63aedeb6bb559407fc516f261d2b86b"
+    },
+    {
+      "path": "/tmp/cairn-codex-thread-client/report.json",
+      "sha256": "2805fd8fd63686e5eb03ec290f191bb8cbeff50aab0656afe6f976e2d579992f"
+    },
+    {
+      "path": "/tmp/cairn-codex-metadata-probe/requests.jsonl",
+      "sha256": "039605d83592b84698a8e30cc4e036dfa4cf2f19899d19fad26b17e78249609a"
+    },
+    {
+      "path": "/tmp/cairn-codex-env-probe/startups.jsonl",
+      "sha256": "d6e28b975d57d7af5cfab189a9c01212ee3406777ab40dfc8df056efb421d3e9"
+    },
+    {
+      "path": "/tmp/cairn-codex-thread-integration.log",
+      "sha256": "39abb9d8d76a1ec76984b75d8723b393121159e64f90448708cbb8133734c17f"
+    }
+  ],
+  "limits": [
+    "Conversation grouping only; no turn or attempt observation",
+    "No model-directed use or task-result benefit measured",
+    "Native metadata verified only with Codex CLI 0.153.4",
+    "No global Codex configuration changes"
+  ],
+  "design_review": {
+    "packet_id": "pkt-aa08a3d04ee2faba",
+    "packet_content_sha256": "aa08a3d04ee2faba4e0443c00319c5cbfc20e2cafccfab8320936f8ae404c240",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_receipt": "/tmp/cairn-codex-thread-decision.json",
+    "nonmaterial_obligations": [
+      {
+        "requirement": "atomic versus eventual consistency decision",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "commands and mutation authority",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "concurrency and failure scenarios",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "expert-validated invariants",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "explicit invariant scenarios",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "measured load when performance drives a split",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "authoritative examples",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "authoritative expert examples",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "feedback from implementation and usage",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "model expressed in executable behavior",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "terms whose meanings affect decisions",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "business differentiation and product lifespan",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "business-value and expert-access evidence",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "expert access and feedback cadence",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "recurring ambiguity, contradiction, or rule defect",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "team capacity to sustain the model",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "Aggregate root and lifecycle",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "domain-significant lookup operations",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "query use cases",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "query, transaction, and consistency semantics",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "realistic scale and latency",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "classification": "nonmaterial",
+        "rationale": "No domain model, aggregate boundary, repository abstraction or Go interface changes. This feature routes existing search requests through the existing authenticated API; no scale, domain-model completeness or architectural improvement claim."
+      }
+    ],
+    "citation_classification": "/tmp/cairn-codex-thread-citation-result.json"
+  },
+  "installed_cli_sha256": "c0397e75d81f9d0b639831bd200896c62ebdb6e570c7ac460f718b5755515001"
+}

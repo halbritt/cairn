@@ -26,8 +26,10 @@ remain explicit responsibilities.
 
 The [native Codex MCP check](verification/codex-mcp-2026-09-08.md) now exercises
 search and exact lesson pull through Codex's actual client with no model turn.
-The [setup example](mcp.md#codex-example) uses the existing Cairn server and
-per-task scope. A [native maintenance follow-up](verification/codex-maintenance-2026-09-08.md)
+The [setup example](mcp.md#codex-example) now supports opt-in Codex conversation
+scope from native tool-call metadata. A [native check](verification/codex-thread-2026-09-09.md)
+retrieved exact saved content in two conversations without manual task/run IDs.
+Explicit task/run configuration remains available for finer scope. A [native maintenance follow-up](verification/codex-maintenance-2026-09-08.md)
 saved and revised a useful setup procedure, refused its stale handle and retrieved
 the exact revision in a fresh task. This adds harness compatibility and ordinary
 maintenance; it does not close X2's native resume/compaction interlocks or

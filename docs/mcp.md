@@ -18,7 +18,7 @@ the facade cannot infer the model's destination or correct a host's wrong token
 choice. The API owns identity, role, repository authorization and destination
 filtering. Do not give models operator or observer credentials.
 
-Searches use the fixed startup scope. Capture saves reusable notes in that
+By default, searches use the fixed startup scope. Capture saves reusable notes in that
 repository with task/run `*`. Pulls retain the API's caller/destination/handle
 checks. Start a new server with the host's actual task/run IDs for a new task;
 reusing an example's IDs combines observations under that declared scope.
@@ -91,8 +91,8 @@ The facade does not expose operator actions, run observation or automatic captur
 
 ## Codex example
 
-Codex can launch the existing stdio server. Replace the absolute paths and the
-example task/run IDs for the task you are starting:
+Codex can launch the stdio server with conversation scope derived from its native
+tool-call metadata. Replace the absolute paths:
 
 ```toml
 [mcp_servers.cairn]
@@ -102,8 +102,7 @@ args = [
   "--socket", "/absolute/path/to/cairn/api.sock",
   "--token-file", "/absolute/path/to/cairn/hosted-agent.token",
   "--repo", "/absolute/path/to/repository",
-  "--task", "investigate-storage",
-  "--run", "attempt-1",
+  "--codex-thread",
 ]
 enabled_tools = [
   "cairn_search", "cairn_pull", "cairn_pull_evidence",
@@ -118,10 +117,28 @@ This example exposes ordinary capture and edit as well as retrieval. Remove
 `cairn_remember` and `cairn_edit` for retrieval-only access. The
 [native maintenance check](verification/codex-maintenance-2026-09-08.md) saved a
 selected procedure, revised it, and retrieved its current version in a fresh task.
-A static configuration retains the
-same declared scope across launches: update the task/run arguments and start a
-fresh server for the next task. Supply the optional context flags described
-above when memory eligibility depends on revision, workspace or binding.
+`--codex-thread` requires each search call to carry `_meta.threadId`. Cairn sets
+`task_id` to `codex/<threadId>` and `run_id` to `<threadId>`, keeping the configured
+repository. Repeated searches within a conversation keep that scope; new
+conversations get distinct scopes. This groups a whole conversation, including
+multiple turns, and does not identify execution attempts or prove task outcomes.
+The metadata is a host declaration, not authentication. The API profile still
+controls identity, repository access and destination. Capture remains repository-wide;
+pulls use their original receipts and existing caller/destination checks.
+
+The flag cannot be combined with `--task` or `--run`. Missing or invalid metadata
+refuses search with `--codex-thread requires tool-call _meta.threadId`; Cairn does
+not guess from environment variables or process IDs. The identifier must be a
+nonempty string of at most 240 bytes, with no whitespace or control characters,
+and cannot be `*`. Use explicit `--task` and `--run` instead for clients without
+this metadata or tasks needing finer scope. Explicit mode ignores thread metadata.
+`opencode-config` requires explicit scope and rejects `--codex-thread`.
+
+The [native thread check](verification/codex-thread-2026-09-09.md) verifies this
+metadata with Codex CLI 0.153.4. Compatibility with other versions remains to be
+checked. Optional context flags still describe startup revision, workspace and
+binding; restart with updated declarations when these change. Conversation scope
+does not attest that those declarations match the current checkout.
 
 Codex's [configuration instructions](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
 cover user/project placement and command-line overrides. `codex mcp get cairn --json` inspects the resolved configuration; it does not prove the server connected.

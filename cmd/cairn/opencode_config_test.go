@@ -60,6 +60,7 @@ func TestOpenCodeConfigPreservesArgumentsWithoutCredentials(t *testing.T) {
 func TestOpenCodeConfigRejectsIncompleteInvocation(t *testing.T) {
 	base := []string{"--socket", "/missing.sock", "--token-file", "/missing.token", "--repo", "repo", "--task", "task", "--run", "run"}
 	for _, args := range [][]string{nil, append(append([]string{}, base...), "extra"),
+		{"--socket", "/missing.sock", "--token-file", "/missing.token", "--repo", "repo", "--codex-thread"},
 		append(append([]string{}, base...), "--task", "*"), append(append([]string{}, base...), "--tokens", "255"),
 		append(append([]string{}, base...), "--token-file=")} {
 		var out bytes.Buffer
