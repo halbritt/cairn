@@ -59,6 +59,63 @@
     {
       "path": "/tmp/cairn-use-history-citation-result.json",
       "sha256": "3acb071f22360fa19a888d6fef9aa7d3c2418aacd9aeaf0bc6f339379eac84fd"
+    },
+    {
+      "path": "/tmp/cairn-use-history-deployment/installation.json",
+      "sha256": "74f0492c87ab349f0d075f9cb5d8506abeef558a2ede97d9c98888f45346a849"
+    },
+    {
+      "path": "/tmp/cairn-use-history-deployment/build.txt",
+      "sha256": "ed4d3b3f3cb2fbedf944a6dd3c5cbdd2934df089cf83e6507f4b26eff4064d20"
+    },
+    {
+      "path": "/tmp/cairn-use-history-deployment/help.json",
+      "sha256": "118fcdb08848fcdd1504a702f0d610e3e34eb02a7e1ea68d9874b5ac5e718539"
+    },
+    {
+      "path": "/tmp/cairn-use-history-ci.log",
+      "sha256": "9df4ec672f7bb1afb059890f52c99bc38b32869337ca51966f0e18f9bcbe42cc"
+    },
+    {
+      "path": "/tmp/cairn-use-history-ci-result.json",
+      "sha256": "1e29eb0a27dcd30911a9fe4ed0181ae644eaef544af128b6085a957f761908e2"
     }
-  ]
+  ],
+  "installation": {
+    "schema": "cairn.use-history-cli-installation/1",
+    "commit": "ab3306ca656ab701134ccf678d026e50c4e07e2c",
+    "binary_sha256": "f46b3d5f004f4ff87629976017fc0f409da2c4d10d88eab6f6b9eeb9540ca79c",
+    "previous_binary_sha256": "1174696e318ee957179d205e9445fb71c32107f8aeb11b86c53f1a64e8e0c0a7",
+    "api_sha256": "7dd724bbf6878bb011d753167eba1447c5ab0e6812ff3bfa7c56e0b6906c3173",
+    "pids": {
+      "cairn-api.service": "3917563",
+      "cairn-store.service": "163669"
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.opencode/tools/cairn.ts": "b7590a3e061133ef55ae41b949147bd30b6a6773c51edf820a76bf54b992b53d",
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d",
+      "/home/halbritt/.local/share/cairn/semantic/worker": "ae97c97e9dca97c3435cd61f77223f9f25cf635b010b2f230e0a84d1537c6d72",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954"
+    },
+    "api_restarted": false,
+    "store_restarted": false,
+    "operational_report_read": false
+  },
+  "ci": {
+    "conclusion": "success",
+    "databaseId": 34408184103,
+    "headSha": "ab3306ca656ab701134ccf678d026e50c4e07e2c",
+    "status": "completed",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34408184103",
+    "history_check": {
+      "completedAt": "2026-09-09T21:42:16Z",
+      "conclusion": "success",
+      "name": "Run CAIRN_DATABASE_URL=\"$CAIRN_TEST_DATABASE_URL\" python3 scripts/check_use_report.py bin/cairn",
+      "number": 8,
+      "startedAt": "2026-09-09T21:42:15Z",
+      "status": "completed"
+    }
+  }
 }

@@ -47,3 +47,19 @@ consumption is closed, with four interface obligations classified nonmaterial.
 [Verification metadata](use-history-cli-2026-09-09.json) retains hashes of the
 failure, completed checks and decision evidence. U4's broader recurrence and
 resolution analysis, and demonstrated task benefit, remain open.
+
+## CLI installation
+
+Clean `ab3306ca656ab701134ccf678d026e50c4e07e2c` is installed as the CLI, SHA-256
+`f46b3d5f004f4ff87629976017fc0f409da2c4d10d88eab6f6b9eeb9540ca79c`. Its help advertises the page and
+record controls. Positive report behavior is verified against disposable data;
+protected operational history was not inspected for this change.
+
+The API remains on `2d67181`. Both services retain their running process IDs;
+no schema or service restart was needed. Host settings, native OpenCode adapter
+and semantic worker hashes are unchanged. The preceding CLI binary is retained
+locally. No operational memory or task assessment was changed.
+
+[CI on the exact installed source](https://github.com/halbritt/cairn/actions/runs/34408184103)
+passed PostgreSQL/race, Python, vet and build, then successfully ran the new
+102-exposure CLI history check against its service database.

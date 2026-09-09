@@ -46,6 +46,10 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Use history is accessible beyond its first page.** The installed CLI accepts
+  --limit, --offset and --record, preserving the core's oldest-first ordering
+  and unknown observations. A 102-exposure fixture verifies continuation and
+  filtering. [Report](verification/use-history-cli-2026-09-09.md).
 - **Retained runs check kind intent.** The previous filter feature omitted this
   comparison. The installed runner now refuses changed or missing filters before
   launch and supports repeated `--kind` in fresh and retained run commands.
@@ -115,12 +119,12 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI: clean `32560239817cfcaa02bfc1d5bb36c19a77a7bc95`, with SHA-256
-  `1174696e318ee957179d205e9445fb71c32107f8aeb11b86c53f1a64e8e0c0a7`. It adds run kind flags and
-  checks equivalent retained filter intent before binding or launch.
+- Installed CLI: clean `ab3306ca656ab701134ccf678d026e50c4e07e2c`, with SHA-256
+  `f46b3d5f004f4ff87629976017fc0f409da2c4d10d88eab6f6b9eeb9540ca79c`. The use report supports
+  explicit page and record controls; retained-run kind checks remain installed.
 - Running API: clean `2d6718112551095caa4fa1c65048702de70d450c`, with SHA-256
   `7dd724bbf6878bb011d753167eba1447c5ab0e6812ff3bfa7c56e0b6906c3173`. It retains kind-filtered search.
-  The CLI-only runner repair needed no API restart or schema migration.
+  The CLI-only history and runner updates needed no API restart or schema migration.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -138,8 +142,9 @@ Live checks on 2026-09-09 found:
   SHA-256 `d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954`.
   It adds no persistent embedding cache or model service.
 
-The [retained-kind CLI repair](verification/retained-kinds-2026-09-09.md#cli-installation-and-retained-guidance)
-records the current CLI and preserved runtime. The [kind-filter installation report](verification/kind-filter-2026-09-09.md#local-installation)
+The [use-history CLI installation](verification/use-history-cli-2026-09-09.md#cli-installation)
+records the current CLI. The [retained-kind CLI repair](verification/retained-kinds-2026-09-09.md#cli-installation-and-retained-guidance)
+records the preceding CLI repair and preserved runtime. The [kind-filter installation report](verification/kind-filter-2026-09-09.md#local-installation)
 records the running API, adapter, preserved configuration and ordinary lookup.
 Earlier [Claude setup](verification/claude-config-2026-09-09.md#local-installation) and
 [note-transport](verification/note-transport-2026-09-09.md#local-deployment)
@@ -150,9 +155,15 @@ lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
 
+The installed use-history CLI passed disposable PostgreSQL/race integration,
+Go, 30 Python, vet and formatting. [Exact source CI `ab3306c`](https://github.com/halbritt/cairn/actions/runs/34408184103)
+passed those checks and the new 102-exposure CLI history check after build.
+The [report](verification/use-history-cli-2026-09-09.md) retains the failed
+continuation baseline, verified page/filter coverage and interpretation limits.
+
 The installed retained-kind CLI repair passed real PostgreSQL/child-process and
 CLI/Unix API checks, all Go packages, 30 Python tests, vet and formatting.
-[Exact CLI-source CI `3256023`](https://github.com/halbritt/cairn/actions/runs/34406955835)
+[Earlier CLI-source CI `3256023`](https://github.com/halbritt/cairn/actions/runs/34406955835)
 passed PostgreSQL/race, Python, vet and build. The
 [repair report](verification/retained-kinds-2026-09-09.md) retains both the failed
 baseline and completed checks.
@@ -1267,3 +1278,17 @@ Go, 30 Python, vet and formatting pass locally. No production report, model task
 or task assessment was used. Existing assessment guidance informed documentation's
 interpretation limits; net memory benefit remains unestablished. The source is
 verified; installation and CI are recorded separately after completion.
+
+### 2026-09-09 — install use-history CLI continuation
+
+Clean `ab3306c` is installed as the CLI; the API remains on `2d67181`.
+Both services, host settings, native adapter and semantic worker remain unchanged.
+The installed help exposes --limit, --offset and --record; actual report behavior
+is verified using disposable history. No protected operational report, memory
+revision or task assessment was used to validate this CLI change. The current
+snapshot now records this deployment while retaining every previous entry.
+
+Exact installed-source CI [34408184103](https://github.com/halbritt/cairn/actions/runs/34408184103)
+completed successfully, including the new CLI history fixture against its service
+database. The change provides access to retained exposure rows; it does not close
+U4's broader history analysis or establish memory task benefit.
