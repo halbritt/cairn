@@ -181,6 +181,17 @@ still acquire and pin that data before sealing the observation, and accepted
 producer/consumer contracts, input resolution and actual host correspondence
 remain open. The tool adds no runtime force to the proposed amendments.
 
+A [draft producer implementation](https://github.com/halbritt/striatum-next/commit/88b2c4f85f843e71a0017412309c82a884ce5509)
+is now on Striatum's `cairn-native-observation` branch. It pins the original
+capture as a declared observed-world environment entry, produces a typed ECR
+without contacting Cairn, and checks the submitted body against that same source
+at admission. Focused race tests, a real disposable-service replay after API
+shutdown, and the full Striatum check passed for that producer checkpoint.
+The accepted catalog remains `observation@1`; native request issuance is being
+extended on the branch, and build consumption and actual launch correspondence
+remain unfinished. This is implementation progress, not native enablement or
+new task-benefit evidence.
+
 The retained runner is useful for hosts that need Cairn to own their child
 process. Striatum already owns that process in
 `internal/backend/llm/supervisor.go:Supervisor.execute` and renders declared
