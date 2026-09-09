@@ -1139,3 +1139,18 @@ validation fix was warranted. The final 18-case native check and full disposable
 integration/race passed; Go tests, 30 Python tests and vet/format also passed.
 Installed binaries, service processes and schema are unchanged. U8 remains
 partial pending useful native task evidence; historical assessments are untouched.
+
+### 2026-09-09 — retained native Claude verification in setup guidance
+
+The existing Claude setup lesson was revised v1→v2 with its metadata preserved.
+It now records the native scripted checks and observed boolean input adjustment,
+while retaining the unverified model-use/task-value boundary. Exact retry and a
+fresh full pull were checked through ordinary hosted access. The
+[follow-up evidence](verification/claude-native-tools-2026-09-09.md#operational-follow-up)
+and [metadata](verification/claude-native-tools-2026-09-09.json) retain the change.
+Installed CLI/API binaries, the API process and owner harness settings remain
+unchanged. No operational test record or task assessment was introduced.
+
+[Exact verification-source CI](https://github.com/halbritt/cairn/actions/runs/34403218213)
+passed PostgreSQL/race, Python tests, vet and build. Native Claude checks ran
+separately on the owner host against disposable data.

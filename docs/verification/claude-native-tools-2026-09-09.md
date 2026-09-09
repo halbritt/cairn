@@ -9,7 +9,8 @@ refused, and local notes stayed outside hosted search.
 This verifies native execution beyond the earlier connection check. The native
 client ran `--bare --print` with scripted loopback Anthropic messages, isolated
 HOME/configuration, the generated MCP server, no built-in tools and explicit
-Cairn permissions. No model inference occurred. These results establish neither
+Cairn permissions. No model inference occurred; scripted usage fields are protocol placeholders,
+not measured tokens or cost. These results establish neither
 model-selected use nor a useful Claude task, and they do not provide automatic
 per-call session attribution. U8 remains partial.
 
@@ -73,3 +74,21 @@ schema-valid decision receipt with a closed citation trace. Six nonmaterial
 obligations retain the unclaimed annotation/checker, character-set and task-cost
 work and separate refactoring procedures. Test-guard review kept independent
 state checks and removed an initial backend-call-count assertion before execution.
+
+## Operational follow-up
+
+The existing ordinary Claude setup lesson advanced from v1 to v2 through a
+body-only revision, preserving its scope and other metadata. It now records the
+scripted native verification, recommends actual boolean arguments, and keeps
+model-selected use and task benefit explicitly open. Its identical retry and
+fresh full pull returned the exact revision. The manifest retains the original
+and updated identities without committing the operational body.
+
+Installed CLI `cee290e`, running API `6dbca8b`, the API process and existing
+Claude/Codex/OpenCode settings retain their earlier identities. This selected
+procedure correction is operational maintenance; native tests used only the
+disposable store. No historical task assessment changed.
+
+[Exact verification-source CI](https://github.com/halbritt/cairn/actions/runs/34403218213)
+passed PostgreSQL/race, Python tests, vet and build. Native Claude checks ran
+separately on the owner host against disposable data.

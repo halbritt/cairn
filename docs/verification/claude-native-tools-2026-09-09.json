@@ -187,6 +187,34 @@
     {
       "path": "/tmp/cairn-claude-native-input-adjustment.json",
       "sha256": "4bdab91294c78b72f370eafbaaa1905848dcedc9a5f2fee0ed4e4a65e5025c1f"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-procedure/before.json",
+      "sha256": "48229c8d3b5c8c0a620f53aebfc3b8bae1ef6bc67bf67990a52160ce9f8d9c46"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-procedure/request.json",
+      "sha256": "8533468b8290bed9d6b6465b08656946871646465c7d4fd57dc42b3a67d8bc0e"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-procedure/revision.json",
+      "sha256": "c066d36fbaf3ca910203b76660f6db328df8c9a5b1fa6bb20a74552aaa2c50f2"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-procedure/fresh.json",
+      "sha256": "e1a054d8d80b821aa99b37116286fe5347a2ddf28ff439d684bff92f7443bab5"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-procedure/report.json",
+      "sha256": "05134977ebc5ef99f0ee38671d40923318d67672c822573504ed277a51adbdfe"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-procedure/runtime-preserved.json",
+      "sha256": "a8d9ced6d90bc20a6d7af7b713fde0f1bd2b0cf5994e1a4e5e822ad2d6447e6a"
+    },
+    {
+      "path": "/tmp/cairn-claude-native-ci-result.json",
+      "sha256": "27b1ea6fa45b08f7c60639ee5e2775ecd77f21f8131c9b306763af42b03695be"
     }
   ],
   "limits": [
@@ -202,5 +230,27 @@
     "native_stored_sensitivity": "local",
     "direct_mcp_refused": true,
     "exact_mcp_wire_captured": false
+  },
+  "selected_procedure": {
+    "record_id": "c41b3b32-1cd5-4a11-a96d-6ac0f4f85ad5",
+    "old_version": 1,
+    "new_version": 2,
+    "body_sha256": "115d44b5a695856711e25ee1220cb2e9d94ae03c60b41a8dcf070b03a9d93b49",
+    "metadata_preserved": true,
+    "retry_exact": true,
+    "fresh_pull_exact": true
+  },
+  "runtime": {
+    "cli_revision": "cee290ea5dc36febd7250230994571a38664117e",
+    "api_revision": "6dbca8b6a2a2b57c2197a9d00dc8f8a9362da7c7",
+    "api_pid": "3757403",
+    "binaries_and_settings_unchanged": true
+  },
+  "ci": {
+    "run_id": 34403218213,
+    "conclusion": "success",
+    "headSha": "fbe41f3f914908332ea45d4081e918b75ab7bf01",
+    "status": "completed",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34403218213"
   }
 }
