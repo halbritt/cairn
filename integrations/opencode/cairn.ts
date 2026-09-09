@@ -3,8 +3,19 @@ import { tool, type ToolContext } from "@opencode-ai/plugin"
 import { execFile } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import { isAbsolute } from "node:path"
+import type { ZodRawShape } from "zod"
 
 const z = tool.schema
+function validatedTool<Args extends ZodRawShape>(definition: Parameters<typeof tool<Args>>[0]) {
+  const schema = z.object(definition.args).strict()
+  return tool({ ...definition, async execute(args, context) {
+    // OpenCode's model-facing schema does not validate the execution arguments.
+    const parsed = schema.safeParse(args)
+    if (!parsed.success) throw new Error("INVALID_REQUEST: invalid arguments for Cairn tool")
+    return definition.execute(parsed.data, context)
+  } })
+}
+
 const absolutePath = z.string().refine(isAbsolute, "Use an absolute installation path")
 const settingsSchema = z.object({
   executable: absolutePath,
@@ -67,7 +78,7 @@ const searchView = z.object({
 }).passthrough()
 const writeResult = z.object({ record_id: z.string().uuid(), version: z.number().int().positive() })
 
-export const search = tool({
+export const search = validatedTool({
   description: "Search repository memory in this OpenCode session. Read mandatory selected context and pull relevant index entries using their complete pull_arguments. A notes are fallible; verify before applying them. Search records exposure, not proven use.",
   args: { query: z.string().min(1), request_id: z.string().uuid().optional() },
   async execute(args, context) {
@@ -89,7 +100,7 @@ export const search = tool({
   },
 })
 
-export const pull = tool({
+export const pull = validatedTool({
   description: "Pull the full memory body using an index entry's complete pull_arguments. Reuse them for retries. STALE_HANDLE requires a fresh search. Shares the original receipt's expansion budget.",
   args: pullArgs,
   async execute(args, context) {
@@ -98,7 +109,7 @@ export const pull = tool({
   },
 })
 
-export const pull_evidence = tool({
+export const pull_evidence = validatedTool({
   description: "Pull evidence attached to an expanded memory. Use its evidence ID and expected SHA256 with the original receipt and handle and a stable request UUID. Shares the expansion budget.",
   args: { ...pullArgs, evidence_id: z.string().uuid(), expected_sha256: z.string().regex(/^[a-f0-9]{64}$/) },
   async execute(args, context) {
@@ -107,7 +118,7 @@ export const pull_evidence = tool({
   },
 })
 
-export const remember = tool({
+export const remember = validatedTool({
   description: "Save explicitly selected reusable repository knowledge as ordinary A testimony across tasks and sessions. Include source and verification context; never raw sessions or secrets. Reuse the request UUID for retries. shareable permits hosted delivery; local is the default.",
   args: { request_id: z.string().uuid(), body: z.string().min(1), kind: z.string().optional().describe("Defaults to note"), shareable: z.boolean().optional() },
   async execute(args, context) {
@@ -120,7 +131,7 @@ export const remember = tool({
   },
 })
 
-export const edit = tool({
+export const edit = validatedTool({
   description: "Revise a pulled active A note. Copy every Draft field from the pulled record, change intended content, and supply its ID, expected version, and a new request UUID. Preserve scope, sensitivity, pins, relations and attribution. Reuse exact arguments for retries; VERSION_CONFLICT needs fresh search/pull and reconciliation. Returns identifiers without echoing the body.",
   args: { request_id: z.string().uuid(), record_id: z.string().uuid(), expected_version: z.number().int().positive(), draft: z.record(z.string(), z.unknown()) },
   async execute(args, context) {

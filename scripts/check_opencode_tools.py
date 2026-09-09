@@ -52,7 +52,12 @@ def check(binary, root, environment, opencode, claim, support):
     assert set(saved) == {'record_id', 'version', 'request_id'} and saved['version'] == 1
     assert invoke('remember', capture) == saved
     invoke('remember', dict(capture, body='different payload'), 'IDEMPOTENCY_CONFLICT')
-    local = invoke('remember', dict(request_id=str(uuid.uuid4()), body=capture['body']))
+    local_args = dict(request_id=str(uuid.uuid4()), body=capture['body'])
+    for invalid in ({'shareable': 'false'}, {'shareable': 0}, {'shareable': None},
+                    {'kind': 7}, {'body': [capture['body']]}, {'unexpected': True}):
+        invoke('remember', dict(local_args, **invalid), 'INVALID_REQUEST')
+    # The refused calls did not reserve the UUID or create a different draft.
+    local = invoke('remember', local_args)
     local_record = json.loads(subprocess.run([binary, 'get', local['record_id']], env=environment,
                              capture_output=True, text=True, check=True, timeout=15).stdout)['data']
     assert local_record['kind'] == 'note' and local_record['sensitivity'] == 'local'
@@ -102,4 +107,4 @@ def check(binary, root, environment, opencode, claim, support):
     config['permission']['cairn_search'] = 'deny'
     config_path.write_text(json.dumps(config))
     invoke('search', dict(query=marker), 'disabled')
-    print('Native OpenCode session scope, capture/edit, exact body/evidence pulls, retries, hosted filtering and permission/refusal paths pass without model calls')
+    print('Native OpenCode session scope, validated capture/edit, exact body/evidence pulls, retries, hosted filtering and permission/refusal paths pass without model calls')

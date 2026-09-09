@@ -72,6 +72,12 @@ only IDs, version and retry ID. Edit takes the same full replacement draft as th
 relations and attribution. Stale versions require a fresh pull and reconciliation.
 Neither capture nor edit grants authority or establishes task success.
 
+The adapter validates arguments itself before accessing connection settings or
+calling Cairn. In the verified OpenCode version, publishing a tool schema does
+not enforce its types at execution time. For example, `shareable` must be a JSON
+boolean; the string `"false"` is refused with `INVALID_REQUEST` instead of being
+treated as permission to share. Omitted `shareable` still keeps a note local.
+
 Connection settings are read for each call. Optional `context` keys are
 `revision`, `workspace_sha256`, `task_class`, `binding` and `capability`; they map
 to the existing CLI search flags. These are host declarations, not attestations
@@ -97,7 +103,22 @@ CAIRN_OPENCODE_TOOLS_BINARY=/absolute/path/to/opencode make test-integration
 This variable enables no-model custom-tool checks. It is separate from the older
 `CAIRN_OPENCODE_BINARY` model probe. Tests cover session scope, default local
 capture, exact body/evidence pulls, retries, edits, stale handles, hosted filtering
-and permission/repository refusals. See the
+and permission/repository refusals, including malformed capture arguments. See the
 [verification record](verification/opencode-tools-2026-09-09.md) for evidence and
 remaining limits. Remove the installed tool file to undo this integration; keep
 ordinary memory records and the existing MCP/CLI alternatives.
+
+To check the separate normal-session argument path on OpenCode 1.18.21:
+
+```sh
+python3 scripts/check_opencode_defaults.py \
+  --opencode /absolute/path/to/opencode \
+  --output /tmp/cairn-opencode-defaults-check
+```
+
+The output directory must be new. This uses a scripted loopback completion
+endpoint, with no model inference or Cairn database access. It characterizes the
+upstream default/type behavior and checks the shipped adapter's rejection path.
+A changed upstream result requires review after a harness upgrade. The
+[validation repair](verification/opencode-validation-2026-09-09.md) records the
+original failure and the distinction from the debug tool path.
