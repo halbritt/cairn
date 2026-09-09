@@ -88,7 +88,7 @@ func TestOrdinaryDeletePreservesReferencedAndFormerlyPrivilegedRecords(t *testin
 				}
 			case "demoted":
 				e := testEvidence(t, op, repo)
-				r, err = op.Promote(ctx, PromoteRequest{uuid.NewString(), r.RecordID, r.Version, root.ID, []string{e.ID}, "Promote independently supported fixture"})
+				r, err = op.Promote(ctx, PromoteRequest{uuid.NewString(), r.RecordID, r.Version, root.ID, []string{e.ID}, "Promote independently supported fixture", nil})
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -9,12 +9,13 @@ import (
 )
 
 type PromoteRequest struct {
-	RequestID       string   `json:"request_id"`
-	RecordID        string   `json:"record_id"`
-	ExpectedVersion int      `json:"expected_version"`
-	GrantID         string   `json:"grant_id"`
-	EvidenceIDs     []string `json:"evidence_ids"`
-	Reason          string   `json:"reason"`
+	RequestID         string                    `json:"request_id"`
+	RecordID          string                    `json:"record_id"`
+	ExpectedVersion   int                       `json:"expected_version"`
+	GrantID           string                    `json:"grant_id"`
+	EvidenceIDs       []string                  `json:"evidence_ids"`
+	Reason            string                    `json:"reason"`
+	EvidenceCitations []EvidenceCitationRequest `json:"evidence_citations,omitempty"`
 }
 type IssueRequest struct {
 	RequestID       string `json:"request_id"`
@@ -27,13 +28,14 @@ type IssueRequest struct {
 	Category        string `json:"category,omitempty"`
 }
 type CorrectRequest struct {
-	RequestID       string   `json:"request_id"`
-	RecordID        string   `json:"record_id"`
-	ExpectedVersion int      `json:"expected_version"`
-	GrantID         string   `json:"grant_id"`
-	Draft           Draft    `json:"draft"`
-	EvidenceIDs     []string `json:"evidence_ids"`
-	Reason          string   `json:"reason"`
+	RequestID         string                    `json:"request_id"`
+	RecordID          string                    `json:"record_id"`
+	ExpectedVersion   int                       `json:"expected_version"`
+	GrantID           string                    `json:"grant_id"`
+	Draft             Draft                     `json:"draft"`
+	EvidenceIDs       []string                  `json:"evidence_ids"`
+	Reason            string                    `json:"reason"`
+	EvidenceCitations []EvidenceCitationRequest `json:"evidence_citations,omitempty"`
 }
 type RetractRequest struct {
 	RequestID       string `json:"request_id"`
@@ -81,7 +83,7 @@ func (s *Store) Promote(ctx context.Context, req PromoteRequest) (Record, error)
 		if err != nil {
 			return Record{}, err
 		}
-		if err = linkEvidence(ctx, tx, next, req.EvidenceIDs); err != nil {
+		if err = linkEvidence(ctx, tx, next, req.EvidenceIDs, req.EvidenceCitations); err != nil {
 			return Record{}, err
 		}
 		if err = recordAuthority(ctx, tx, "promote", current.Version, next, chain, req.Reason, IssueRequest{}); err != nil {
@@ -235,7 +237,7 @@ func (s *Store) Correct(ctx context.Context, req CorrectRequest) (Record, error)
 		if next.AttributionState != "self" && next.AttributionState != "reconciled" {
 			return Record{}, failure("ATTRIBUTION_UNRECONCILED", "corrected claim attribution must reconcile")
 		}
-		if err = linkEvidence(ctx, tx, next, req.EvidenceIDs); err != nil {
+		if err = linkEvidence(ctx, tx, next, req.EvidenceIDs, req.EvidenceCitations); err != nil {
 			return Record{}, err
 		}
 		if err = recordAuthority(ctx, tx, "correct", current.Version, next, chain, req.Reason, IssueRequest{}); err != nil {

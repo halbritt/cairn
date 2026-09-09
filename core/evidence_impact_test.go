@@ -26,7 +26,7 @@ func TestEvidenceImpactRetainsExactVersionsAndDeduplicatesPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, 1, root.ID, []string{evidence.ID}, "Promote evidence impact fixture"})
+	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, 1, root.ID, []string{evidence.ID}, "Promote evidence impact fixture", nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestEvidenceImpactRetainsExactVersionsAndDeduplicatesPaths(t *testing.T) {
 	// version's dependency merely because it shares the logical record ID.
 	other := testEvidence(t, op, repo)
 	draft.Body = "corrected independent"
-	current, err := op.Correct(ctx, CorrectRequest{uuid.NewString(), b.RecordID, b.Version, root.ID, draft, []string{other.ID}, "Correct using different captured support"})
+	current, err := op.Correct(ctx, CorrectRequest{uuid.NewString(), b.RecordID, b.Version, root.ID, draft, []string{other.ID}, "Correct using different captured support", nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestEvidenceImpactPaginatesRecordsAndUsesIndependently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, 1, root.ID, []string{evidence.ID}, "Promote pagination source fixture"})
+	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, 1, root.ID, []string{evidence.ID}, "Promote pagination source fixture", nil})
 	if err != nil {
 		t.Fatal(err)
 	}

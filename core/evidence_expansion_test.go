@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"github.com/google/uuid"
 	"strings"
 	"testing"
@@ -55,7 +54,7 @@ func evidenceExpansionFixtureWithBody(t *testing.T, sensitivity, body string) (*
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err = op.Promote(ctx, PromoteRequest{uuid.NewString(), record.RecordID, 1, root.ID, []string{evidence.ID}, "Support evidence inspection fixture"})
+	record, err = op.Promote(ctx, PromoteRequest{uuid.NewString(), record.RecordID, 1, root.ID, []string{evidence.ID}, "Support evidence inspection fixture", nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,15 +187,10 @@ func TestEvidenceExpansionRefusesUnrelatedCallerAndDestination(t *testing.T) {
 
 func TestEvidenceExpansionRejectsOversizeWithoutSpendingCredit(t *testing.T) {
 	ctx := context.Background()
-	op, _, _, evidence, index, dest := evidenceExpansionFixture(t, "local")
-	// This owned fault fixture supplies a self-consistent oversized object to the
-	// pull guard; byte-budget behavior is independent of digest-divergence refusal.
-	body := []byte(strings.Repeat("large evidence ", 3000))
-	sum := sha256.Sum256(body)
-	if _, err := op.pool.Exec(ctx, `UPDATE cairn.evidence SET body=$2,digest=$3 WHERE evidence_id=$1`, evidence.ID, body, sum[:]); err != nil {
-		t.Fatal(err)
-	}
-	req := ExpandEvidenceRequest{hex.EncodeToString(sum[:]), uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, evidence.ID, nil}
+	op, _, _, evidence, index, dest := evidenceExpansionFixtureWithBody(t, "local", strings.Repeat("large evidence ", 3000))
+	// Capture the large object before citing it; replacement after promotion is
+	// citation divergence and must not stand in for a budget fixture.
+	req := ExpandEvidenceRequest{evidence.Digest, uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, evidence.ID, nil}
 	result, err := op.ExpandEvidence(ctx, req, dest)
 	requireCode(t, err, "BUDGET_REFUSED")
 	if result.Evidence.Body != "" {

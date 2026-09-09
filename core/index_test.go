@@ -88,7 +88,7 @@ func TestExpansionCreditsSerializeAndInvalidateRetractionPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	evidence := testEvidence(t, op, repo)
-	record, err = op.Promote(ctx, PromoteRequest{uuid.NewString(), record.RecordID, 1, root.ID, []string{evidence.ID}, "Support bounded expansion fixture"})
+	record, err = op.Promote(ctx, PromoteRequest{uuid.NewString(), record.RecordID, 1, root.ID, []string{evidence.ID}, "Support bounded expansion fixture", nil})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,7 +16,7 @@ func TestEvidenceRefreshPersistsGenerationAndInvalidatesPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	evidence := testEvidence(t, op, repo)
-	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, 1, root.ID, []string{evidence.ID}, "Promote evidence check fixture"})
+	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, 1, root.ID, []string{evidence.ID}, "Promote evidence check fixture", nil})
 	if err != nil {
 		t.Fatal(err)
 	}

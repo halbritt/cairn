@@ -73,6 +73,7 @@ func (s *Store) ExpandEvidence(ctx context.Context, req ExpandEvidenceRequest, d
 		if doc.State != "resolvable" || doc.Digest != attached.Digest || doc.ActualSHA256 != attached.Digest || doc.Digest != req.ExpectedSHA256 {
 			return failure("EVIDENCE_UNAVAILABLE", "supporting evidence is unavailable or divergent")
 		}
+		doc.Citation = attached.Citation
 		return nil
 	}
 	return privileged(ctx, s, "expand-evidence", req.RequestID, struct {

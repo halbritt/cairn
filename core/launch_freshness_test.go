@@ -108,7 +108,7 @@ func TestClaimRunRechecksGrantAndEvidence(t *testing.T) {
 						t.Fatal(createErr)
 					}
 					evidence = testEvidence(t, op, repo)
-					_, err = op.Promote(ctx, PromoteRequest{uuid.NewString(), record.RecordID, record.Version, grant.ID, []string{evidence.ID}, "Support the consequential launch fixture"})
+					_, err = op.Promote(ctx, PromoteRequest{uuid.NewString(), record.RecordID, record.Version, grant.ID, []string{evidence.ID}, "Support the consequential launch fixture", nil})
 				}
 				if err != nil {
 					t.Fatal(err)

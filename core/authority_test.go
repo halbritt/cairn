@@ -48,7 +48,7 @@ func TestPromotionAuthorityAndCorrection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := PromoteRequest{uuid.NewString(), r.RecordID, 1, grant.ID, []string{e.ID}, "Promote this independently supported claim"}
+	req := PromoteRequest{uuid.NewString(), r.RecordID, 1, grant.ID, []string{e.ID}, "Promote this independently supported claim", nil}
 	_, err = writer.Promote(ctx, req)
 	requireCode(t, err, "SELF_PROMOTION_DENIED")
 	req.RequestID = uuid.NewString()
@@ -63,7 +63,7 @@ func TestPromotionAuthorityAndCorrection(t *testing.T) {
 	requireCode(t, err, "AUTHORITY_DENIED")
 	correction := r.Draft
 	correction.Body = "Use compiler diagnostics before changing dependencies; fixture_error corrected."
-	next, err := operator.Correct(ctx, CorrectRequest{uuid.NewString(), r.RecordID, 2, root.ID, correction, []string{e.ID}, "Correct the earlier overbroad advice"})
+	next, err := operator.Correct(ctx, CorrectRequest{uuid.NewString(), r.RecordID, 2, root.ID, correction, []string{e.ID}, "Correct the earlier overbroad advice", nil})
 	if err != nil || next.Version != 3 {
 		t.Fatalf("correction %+v %v", next, err)
 	}

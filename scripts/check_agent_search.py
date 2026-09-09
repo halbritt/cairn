@@ -68,13 +68,17 @@ def check(binary, root, environment, grant, claim, support):
     for flags in [['--offset', '0'], ['--length', '0'], ['--offset', '-1', '--length', '2']]:
         assert call([*agent, 'pull-evidence', *flags, receipt, handle,
                      support['evidence_id'], support['sha256']], check=False)['status'] == 'INVALID_REQUEST'
+    citation = body['selection']['evidence'][0]['citation']
+    assert citation == dict(sha256=support['sha256'], relation='supports', spans=[dict(offset=9, length=10)])
+    cited_span = citation['spans'][0]
     span_id = str(uuid.uuid4())
-    span_args = [*agent, 'pull-evidence', '--request-id', span_id, '--offset', '9', '--length', '10',
+    span_args = [*agent, 'pull-evidence', '--request-id', span_id, '--offset', str(cited_span['offset']), '--length', str(cited_span['length']),
                  receipt, handle, support['evidence_id'], support['sha256']]
     span = call(span_args)['data']
     assert span['span']['body'] == 'supporting' and span['span']['offset'] == 9 and span['span']['end'] == 19
     assert span['span']['sha256'] == hashlib.sha256(b'supporting').hexdigest()
     assert span['evidence']['body'] == '' and span['evidence']['sha256'] == support['sha256']
+    assert span['evidence']['citation'] == citation
     assert span['credits_remaining'] == 1 and call(span_args)['data'] == span
     assert call([*agent, 'expand-evidence'], dict(request_id=span_id, receipt_id=receipt, handle=handle,
                 evidence_id=support['evidence_id'], expected_sha256=support['sha256'],

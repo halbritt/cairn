@@ -29,7 +29,7 @@ the current summary; do not replace the historical record.
 | Ordinary memory | Authenticated capture of selected notes, retained versions and attribution, repository/task/run scope, compare-and-swap edits, and body-only corrections that preserve metadata. | [Capture and use](../README.md), [ordinary revision](mcp.md#tools) |
 | Retrieval | Lexical search, matching source previews, bounded browsing with continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
 | Semantic discovery | Optional local CPU scoring for vocabulary mismatches, after eligibility checks; bounded work and labelled lexical fallback. Historical recompilation uses retained scores. | [Semantic discovery](semantic-discovery.md) |
-| Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [span verification](verification/evidence-spans-2026-09-09.md) |
+| Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, citation-time digests and optional byte passages on qualified claim versions, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [precise citations](evidence-citations.md), [span verification](verification/evidence-spans-2026-09-09.md) |
 | Harness access | Five ordinary tools for search, body/evidence pulls, capture and edit through MCP; Codex conversation scope and native OpenCode session scope. OpenCode configuration generation and a bundled native-tool installer are shipped. | [MCP](mcp.md), [OpenCode tools](opencode-tools.md) |
 | Host execution | Authenticated observer access, compiled or exact retained-package execution, freshness checks before launch, process observations and separately versioned task assessments. Hosts can associate agent retrievals with observed runs. | [Authenticated runner](authenticated-runner.md), [retained execution](retained-execution.md), [use/outcome join](use-outcome-loop.md) |
 | Inspection and review | Historical replay/recompilation, record and evidence impact, versioned relation paths, use/run reports, conflict inspection, bounded refusal diagnostics and evidence-attached failure review groups. | [Evidence impact](evidence-impact.md), [refusals](refusals.md), [demand review](demand-review.md) |
@@ -154,8 +154,8 @@ installation checks read service/build information and database schema metadata.
    benefit evidence; Agy and Claude Code interfaces (U7/U8) are lower priority
    than increasing task value in those existing harnesses.
 2. **Finish practical retrieval and evidence lifecycle.** Managed artifacts above
-   the inline limit, persisted as-cited span/version relations, richer dependent
-   invalidation and source freshness remain open (L4). Byte-span reads do not
+   the inline limit, broader source relations, richer dependent invalidation and
+   source freshness remain open (L4). Byte-span reads do not
    complete that lifecycle. Per-retrieval budgets do not enforce aggregate task
    context; native resume/compaction interlocks remain unverified.
 3. **Complete governance and capture boundaries where required.** Richer conflict
@@ -847,3 +847,24 @@ at version 2; a fresh scope pulled the exact corrected body.
 [Deployment evidence](verification/evidence-limit-2026-09-09.md#local-deployment)
 records the update and its limits. This supersedes the preceding runtime snapshot
 without changing the historical verification or task-value judgments.
+
+### 2026-09-09 — precise supporting citations
+
+New promotion/correction references now retain the validated full-source digest
+and optional exact byte passages. Qualified scope expansion carries them forward;
+correction and historical recompilation preserve earlier versions. Existing
+ID-only writes pin whole-source identity, while pre-migration links retain absent
+citation metadata. Returned references can drive existing bounded evidence pulls.
+Source replacement remains divergent against an earlier citation even if the
+replacement object's own digest verifies. See the [contract](evidence-citations.md),
+[verification](verification/evidence-citations-2026-09-09.md) and
+[manifest](verification/evidence-citations-2026-09-09.json).
+
+Full disposable PostgreSQL/race, CLI/API/MCP, Go, 30 Python tests and vet/build
+passed. An actual schema-29 previous-binary fixture retained promotion retry,
+cached pulls and exact historical recompilation after migration 030. The existing
+oversize fixture was corrected to capture its large source before citation;
+source replacement has a separate integrity test. This is a practical source
+inspection capability, not a new accepted model task or measured memory benefit.
+L4 remains partial for larger managed sources, broader relations, source freshness
+and richer dependent qualification. Deployment is recorded separately below.

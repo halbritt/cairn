@@ -17,7 +17,7 @@ func TestCouncilAuditRetractionRequiresPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := testEvidence(t, op, repo)
-	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), r.RecordID, 1, root.ID, []string{e.ID}, "Promote synthetic audit claim"})
+	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), r.RecordID, 1, root.ID, []string{e.ID}, "Promote synthetic audit claim", nil})
 	if err != nil {
 		t.Fatal(err)
 	}

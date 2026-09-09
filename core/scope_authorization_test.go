@@ -32,7 +32,7 @@ func TestScopeAuthorizationRetainsIndependentQualificationAndReplay(t *testing.T
 		t.Fatal(err)
 	}
 	e := testEvidence(t, op, repo)
-	b, err := qualifier.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, a.Version, qualification.ID, []string{e.ID}, "Qualify the original narrowly applicable claim"})
+	b, err := qualifier.Promote(ctx, PromoteRequest{RequestID: uuid.NewString(), RecordID: a.RecordID, ExpectedVersion: a.Version, GrantID: qualification.ID, Reason: "Qualify the original narrowly applicable claim", EvidenceCitations: []EvidenceCitationRequest{{EvidenceID: e.ID, ExpectedSHA256: e.Digest, Spans: []ByteSpanRequest{{Offset: 0, Length: 4}}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,6 +68,10 @@ func TestScopeAuthorizationRetainsIndependentQualificationAndReplay(t *testing.T
 	wider, err := op.Compile(ctx, query, Destination{"local", true})
 	if err != nil || len(wider.Semantic.Selected) != 1 {
 		t.Fatalf("wider scope: %+v %v", wider, err)
+	}
+	citation := wider.Semantic.Selected[0].Evidence[0].Citation
+	if citation == nil || citation.SHA256 != e.Digest || len(citation.Spans) != 1 || citation.Spans[0] != (ByteSpanRequest{Offset: 0, Length: 4}) {
+		t.Fatalf("scope authorization lost precise support: %+v", citation)
 	}
 	grants := map[string]bool{}
 	for _, g := range wider.Semantic.Selected[0].Authority {
@@ -135,7 +139,7 @@ func TestScopeAuthorizationRetainsIndependentQualificationAndReplay(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err = qualifier.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, a.Version, qualification.ID, []string{e.ID}, "Qualify the independent revocation fixture"})
+	b, err = qualifier.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, a.Version, qualification.ID, []string{e.ID}, "Qualify the independent revocation fixture", nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +379,7 @@ func TestScopeAuthorizationRefusalsAreAtomic(t *testing.T) {
 				t.Fatal(err)
 			}
 			good, bad := testEvidence(t, op, repo), testEvidence(t, op, repo)
-			record, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, a.Version, root.ID, []string{good.ID, bad.ID}, "Qualify the narrow source before testing scope refusals"})
+			record, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, a.Version, root.ID, []string{good.ID, bad.ID}, "Qualify the narrow source before testing scope refusals", nil})
 			if err != nil {
 				t.Fatal(err)
 			}

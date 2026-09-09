@@ -16,7 +16,7 @@ func TestHistoricalRecompileUsesFrozenEligibilityAndVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := testEvidence(t, op, repo)
-	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), r.RecordID, 1, root.ID, []string{e.ID}, "Historical replay fixture support"})
+	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), r.RecordID, 1, root.ID, []string{e.ID}, "Historical replay fixture support", nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestHistoricalRecompileUsesFrozenEligibilityAndVersions(t *testing.T) {
 	}
 	next := b.Draft
 	next.Body = "Corrected advice without the original matching term"
-	if _, err = op.Correct(ctx, CorrectRequest{uuid.NewString(), b.RecordID, b.Version, root.ID, next, []string{e.ID}, "Correct advice after the historical cutoff"}); err != nil {
+	if _, err = op.Correct(ctx, CorrectRequest{uuid.NewString(), b.RecordID, b.Version, root.ID, next, []string{e.ID}, "Correct advice after the historical cutoff", nil}); err != nil {
 		t.Fatal(err)
 	}
 	replay, err := op.Recompile(ctx, RecompileRequest{ReceiptID: original.ReceiptID, Query: req.Query})
@@ -56,7 +56,7 @@ func TestHistoricalRecompileFreezesEvidenceAndDetectsMissingInputs(t *testing.T)
 		t.Fatal(err)
 	}
 	evidence := testEvidence(t, op, repo)
-	_, err = op.Promote(ctx, PromoteRequest{uuid.NewString(), record.RecordID, 1, root.ID, []string{evidence.ID}, "Retain historical gate evidence"})
+	_, err = op.Promote(ctx, PromoteRequest{uuid.NewString(), record.RecordID, 1, root.ID, []string{evidence.ID}, "Retain historical gate evidence", nil})
 	if err != nil {
 		t.Fatal(err)
 	}

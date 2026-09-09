@@ -118,7 +118,7 @@ func TestConsequentialGatesAndEvidenceDegradation(t *testing.T) {
 	}
 	e := testEvidence(t, operator, repo)
 	e2 := testEvidence(t, operator, repo)
-	_, err = operator.Promote(ctx, PromoteRequest{uuid.NewString(), r.RecordID, 1, root.ID, []string{e.ID, e2.ID}, "Promote a claim with deliberately retained evidence"})
+	_, err = operator.Promote(ctx, PromoteRequest{uuid.NewString(), r.RecordID, 1, root.ID, []string{e.ID, e2.ID}, "Promote a claim with deliberately retained evidence", nil})
 	if err != nil {
 		t.Fatal(err)
 	}

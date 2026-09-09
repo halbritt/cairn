@@ -52,5 +52,10 @@ again, in addition to checking assessment versions. Unavailable evidence refuses
 conversion. Deferral, dismissal and inspection remain available; a checksum does
 not approve a lesson or confer promotion authority.
 
-Managed large artifacts, source-span/version predicates, scheduled refresh jobs,
-class D payload deletion and complete dependent qualification remain unfinished.
+[Precise supporting citations](evidence-citations.md) retain full-source identity
+and optional byte passages on new qualified claim versions. Reference availability
+also compares the current object with that citation-time digest; an object-level
+check alone cannot revalidate a changed citation.
+
+Managed large artifacts, broader source relations, scheduled refresh jobs, class D
+payload deletion and complete dependent qualification remain unfinished.

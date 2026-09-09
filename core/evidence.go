@@ -22,12 +22,29 @@ type EvidenceRequest struct {
 	Sensitivity string `json:"sensitivity"`
 }
 type Evidence struct {
-	CheckGeneration int        `json:"check_generation,omitempty"`
-	CheckedAt       *time.Time `json:"checked_at,omitempty"`
-	ID              string     `json:"evidence_id"`
-	Digest          string     `json:"sha256"`
-	Witness         string     `json:"witness"`
-	State           string     `json:"state"`
+	Citation        *EvidenceCitation `json:"citation,omitempty"`
+	CheckGeneration int               `json:"check_generation,omitempty"`
+	CheckedAt       *time.Time        `json:"checked_at,omitempty"`
+	ID              string            `json:"evidence_id"`
+	Digest          string            `json:"sha256"`
+	Witness         string            `json:"witness"`
+	State           string            `json:"state"`
+}
+
+// EvidenceCitationRequest pins a full captured source and optional exact byte
+// passages. Unlike a pull range, a citation must fit entirely within that source.
+type EvidenceCitationRequest struct {
+	EvidenceID     string            `json:"evidence_id"`
+	ExpectedSHA256 string            `json:"expected_sha256"`
+	Spans          []ByteSpanRequest `json:"spans,omitempty"`
+}
+
+// A nil Citation on supporting evidence means the legacy link did not retain
+// citation-time metadata. Capture and standalone inspection also omit it.
+type EvidenceCitation struct {
+	SHA256   string            `json:"sha256"`
+	Relation string            `json:"relation"`
+	Spans    []ByteSpanRequest `json:"spans,omitempty"`
 }
 
 func (s *Store) CaptureEvidence(ctx context.Context, req EvidenceRequest) (Evidence, error) {
@@ -55,11 +72,25 @@ func (s *Store) CaptureEvidence(ctx context.Context, req EvidenceRequest) (Evide
 	})
 }
 
-func linkEvidence(ctx context.Context, tx pgx.Tx, r Record, ids []string) error {
-	if len(ids) == 0 || len(ids) > 32 {
+func linkEvidence(ctx context.Context, tx pgx.Tx, r Record, ids []string, citations []EvidenceCitationRequest) error {
+	if len(ids) > 0 && len(citations) > 0 {
+		return failure("INVALID_REQUEST", "use evidence_ids or evidence_citations, not both")
+	}
+	if len(ids)+len(citations) == 0 || len(ids)+len(citations) > 32 {
 		return failure("EVIDENCE_UNAVAILABLE", "1-32 captured evidence references required")
 	}
+	seen := map[string]bool{}
+	for _, citation := range citations {
+		if !digestValid(citation.ExpectedSHA256) || len(citation.Spans) > 32 || seen[citation.EvidenceID] {
+			return failure("INVALID_REQUEST", "distinct citation sources require a SHA256 and at most 32 byte spans")
+		}
+		seen[citation.EvidenceID] = true
+	}
 	for _, id := range ids {
+		citations = append(citations, EvidenceCitationRequest{EvidenceID: id})
+	}
+	for _, citation := range citations {
+		id := citation.EvidenceID
 		if err := validID(id); err != nil {
 			return err
 		}
@@ -79,7 +110,19 @@ func linkEvidence(ctx context.Context, tx pgx.Tx, r Record, ids []string) error 
 		if r.Sensitivity == "shareable" && sensitivity != "shareable" {
 			return failure("DESTINATION_PROHIBITED", "shareable claim cannot expose local evidence metadata")
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO cairn.evidence_ref(record_id,version,evidence_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, r.RecordID, r.Version, id); err != nil {
+		if citation.ExpectedSHA256 != "" && citation.ExpectedSHA256 != hex.EncodeToString(digest) {
+			return failure("EVIDENCE_UNAVAILABLE", "captured source differs from the expected citation digest")
+		}
+		for _, span := range citation.Spans {
+			if span.Offset < 0 || span.Offset >= len(body) || span.Length <= 0 || span.Length > len(body)-span.Offset {
+				return failure("INVALID_REQUEST", "cited byte spans must fit entirely within captured evidence")
+			}
+		}
+		var spans any
+		if len(citation.Spans) > 0 {
+			spans = citation.Spans
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.evidence_ref(record_id,version,evidence_id,cited_digest,cited_spans) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, r.RecordID, r.Version, id, digest, spans); err != nil {
 			return err
 		}
 	}
@@ -87,7 +130,7 @@ func linkEvidence(ctx context.Context, tx pgx.Tx, r Record, ids []string) error 
 }
 
 func supportingEvidence(ctx context.Context, tx pgx.Tx, id string, version int) ([]Evidence, error) {
-	rows, err := tx.Query(ctx, `SELECT e.evidence_id::text,e.body,e.digest,e.witness,e.state,e.check_generation,e.checked_at FROM cairn.evidence e JOIN cairn.evidence_ref r USING(evidence_id) WHERE r.record_id=$1 AND r.version=$2 ORDER BY e.evidence_id`, id, version)
+	rows, err := tx.Query(ctx, `SELECT e.evidence_id::text,e.body,e.digest,e.witness,e.state,e.check_generation,e.checked_at,r.cited_digest,r.cited_spans FROM cairn.evidence e JOIN cairn.evidence_ref r USING(evidence_id) WHERE r.record_id=$1 AND r.version=$2 ORDER BY e.evidence_id`, id, version)
 	if err != nil {
 		return nil, err
 	}
@@ -95,14 +138,22 @@ func supportingEvidence(ctx context.Context, tx pgx.Tx, id string, version int) 
 	result := []Evidence{}
 	for rows.Next() {
 		var e Evidence
-		var body, digest []byte
-		if err = rows.Scan(&e.ID, &body, &digest, &e.Witness, &e.State, &e.CheckGeneration, &e.CheckedAt); err != nil {
+		var body, digest, citedDigest []byte
+		var spans []ByteSpanRequest
+		if err = rows.Scan(&e.ID, &body, &digest, &e.Witness, &e.State, &e.CheckGeneration, &e.CheckedAt, &citedDigest, &spans); err != nil {
 			return nil, err
 		}
 		actual := sha256.Sum256(body)
 		e.Digest = hex.EncodeToString(digest)
 		if !bytes.Equal(actual[:], digest) {
 			e.State = "divergent"
+		}
+		if citedDigest != nil {
+			e.Digest = hex.EncodeToString(citedDigest)
+			e.Citation = &EvidenceCitation{SHA256: e.Digest, Relation: "supports", Spans: spans}
+			if !bytes.Equal(citedDigest, digest) {
+				e.State = "divergent"
+			}
 		}
 		result = append(result, e)
 	}

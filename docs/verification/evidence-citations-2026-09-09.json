@@ -1,0 +1,112 @@
+{
+  "schema": "cairn.citation-span-verification/1",
+  "date": "2026-09-09",
+  "base_commit": "53b5c3d",
+  "classification": "implemented and locally verified; task benefit unestablished",
+  "source_sha256": {
+    "core/evidence.go": "45f0fa194fbbceeb4145253c8b07eaf8ba1d48b48b0bb0b0b6fa1ebb74a50b1e",
+    "core/transitions.go": "14eca12965ee9ee49aaf9a07c726d393f90d6157230ab69351ab624070a038b7",
+    "core/scope_authorization.go": "43d118cbe5c6b0d7c8016e1dc40b15d719ba866677a11e3e68214648f4088b36",
+    "core/evidence_expansion.go": "4854fbb6b4605804b6845670fce428a49ede225e4021cbe4731edc0f055ab0e0",
+    "core/schema/030_evidence_citations.sql": "f44bd9d382003896d80b4c3153d7489e4903849f58962fd80ad037b42adc46a8",
+    "core/evidence_citation_test.go": "91e777cc9ff3cee775dbcfdcd7d13febd3798b05a8536da1b432e2cf9b8134f2",
+    "core/scope_authorization_test.go": "92b659faa6b8fb7fb8d4fddcb2112308298115b7bfb672bdbed046841368464a",
+    "scripts/check-local-api.py": "b56b76d382b630b3b6a10c068e665ea64b302c48ee818cc2da3e1b2764aad9f8",
+    "scripts/check_agent_search.py": "5389c319ae67b8e4ac991c70799052687b4c7930bd4e927939d81fe277727a1f"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-citation-span-baseline.log",
+      "sha256": "8488d0d5bbfd6faccbb68efa54c6e3e8df186869c031a3b677d1d86265c69d63"
+    },
+    {
+      "path": "/tmp/cairn-citation-span-focused.log",
+      "sha256": "e75dad403c4ab078d4aa620f0e299d3252e60ead065bb8425b9759ba3475bc1b"
+    },
+    {
+      "path": "/tmp/cairn-citation-span-bounds.log",
+      "sha256": "483f63b740967423ab38a208279d1d79dc5e6b020a755de5dfeffc650df2eac0"
+    },
+    {
+      "path": "/tmp/cairn-citation-span-integration.log",
+      "sha256": "4a1e5aa55fc3adccfe4fa7e2a045dcbc6e86e38de0a5ea1f5433ea12cfdfb126"
+    },
+    {
+      "path": "/tmp/cairn-citation-span-integration-fixed.log",
+      "sha256": "9bfe83bdb07872045fee74e8816bd40945a42ce04e565396173bddb19a322e8f"
+    },
+    {
+      "path": "/tmp/cairn-citation-span-tests.log",
+      "sha256": "cb182fd109420f3402618ba7a10432e3dd247e14a6c9c625cd61e930ba420bcb"
+    },
+    {
+      "path": "/tmp/cairn-citation-span-final-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-citation-span-upgrade.log",
+      "sha256": "5ce52aa01441c86cc821cd1d39cd676b4ecc0fd540d6f63310e443232dbdd230"
+    }
+  ],
+  "checks": {
+    "baseline_failed_as_expected": true,
+    "full_disposable_integration_race_cli_api_mcp": true,
+    "go_and_30_python_tests": true,
+    "vet_build_format": true,
+    "migration_029_to_030_previous_binary": {
+      "old_binary_sha256": "e67c07ff943fc5ca23ae0bf0275d2911211c30c3fb415d2a15c1dbed48bed9b1",
+      "new_binary_sha256": "d25002105439d2f2b3914141c2b612e831abfcaf4cceb3fd1e20299fb3d112c6",
+      "legacy_promotion_retry_exact": true,
+      "legacy_body_cache_exact": true,
+      "legacy_evidence_cache_exact": true,
+      "historical_recompile_exact": true,
+      "legacy_metadata_absent": true
+    }
+  },
+  "doctrine": {
+    "packet_id": "pkt-40693dafb44d4d54",
+    "packet_content_sha256": "40693dafb44d4d54868e719fc561b0feb5bb4e4bcdeef9a3bd55058970bd48bb",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "residual_obligations": [
+    {
+      "requirement": "Go method-set and import-direction compatibility",
+      "classification": "nonmaterial",
+      "reason": "No Go interface or package dependency is added or moved; direct existing consumers remain."
+    },
+    {
+      "requirement": "current consumer call sets and ownership",
+      "classification": "nonmaterial",
+      "reason": "No Go interface or package dependency is added or moved; direct existing consumers remain."
+    },
+    {
+      "requirement": "current consumer inventory",
+      "classification": "nonmaterial",
+      "reason": "No Go interface or package dependency is added or moved; direct existing consumers remain."
+    },
+    {
+      "requirement": "observed substitution, volatility, or cross-boundary pressure",
+      "classification": "nonmaterial",
+      "reason": "No Go interface or package dependency is added or moved; direct existing consumers remain."
+    },
+    {
+      "requirement": "recurring change evidence when available",
+      "classification": "nonmaterial",
+      "reason": "Accepted missing citation behavior and its failing fixture justify this bounded addition without recurring-change history."
+    },
+    {
+      "requirement": "proc-decide-leave-code-alone",
+      "classification": "nonmaterial",
+      "reason": "No-change was considered explicitly in the bounded plan; no broader maintenance campaign is proposed."
+    }
+  ],
+  "limits": [
+    "No new model task or causal benefit measurement",
+    "Legacy citation-time metadata remains absent",
+    "Inline evidence limit and pull budgets unchanged",
+    "No upstream freshness, broader relation policy or evidence sufficiency claim",
+    "Old binaries refuse newer schema; binary-only downgrade is insufficient"
+  ]
+}

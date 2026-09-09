@@ -118,7 +118,9 @@ try:
                           sensitivity='shareable', scope=dict(repo='fixture:socket', task_id='*', run_id='*'))))
     claim = evidence_call(['promote'], dict(request_id=str(uuid.uuid4()), record_id=claim['record_id'],
                           expected_version=claim['version'], grant_id=grant['grant_id'],
-                          evidence_ids=[support['evidence_id']], reason='Support hosted evidence inspection fixture'))
+                          evidence_citations=[dict(evidence_id=support['evidence_id'], expected_sha256=support['sha256'],
+                                                   spans=[dict(offset=9, length=10)])],
+                          reason='Support hosted evidence inspection fixture'))
     hosted = ['agent', '--token-file', str(root / 'hosted.token')]
     evidence_env = dict(env, CAIRN_DATABASE_URL='host=/nonexistent-evidence-client dbname=denied')
     evidence_index = evidence_call([*hosted, 'index'], dict(index_request, request_id=str(uuid.uuid4())), evidence_env)
@@ -126,6 +128,7 @@ try:
     source_pull = dict(request_id=str(uuid.uuid4()), receipt_id=evidence_index['package']['receipt_id'], handle=handle)
     source_body = evidence_call([*hosted, 'expand'], source_pull, evidence_env)
     reference = next(e for e in source_body['selection']['evidence'] if e['evidence_id'] == support['evidence_id'])
+    assert reference['citation'] == dict(sha256=support['sha256'], relation='supports', spans=[dict(offset=9, length=10)])
     evidence_pull = dict(source_pull, request_id=str(uuid.uuid4()), evidence_id=reference['evidence_id'], expected_sha256=reference['sha256'])
     pulled = evidence_call([*hosted, 'expand-evidence'], evidence_pull, evidence_env)
     assert pulled['record_id'] == claim['record_id'] and pulled['version'] == claim['version']

@@ -97,12 +97,16 @@ func (s *Store) AuthorizeScope(ctx context.Context, req AuthorizeScopeRequest) (
 		if reason != "" {
 			return ScopeAuthorization{}, failure(reason, "source qualification does not permit scope authorization")
 		}
-		evidenceIDs := make([]string, 0, len(selection.Evidence))
+		citations := make([]EvidenceCitationRequest, 0, len(selection.Evidence))
 		for _, e := range selection.Evidence {
 			if e.State != "resolvable" {
 				return ScopeAuthorization{}, failure("EVIDENCE_UNAVAILABLE", "degraded evidence cannot support broader applicability")
 			}
-			evidenceIDs = append(evidenceIDs, e.ID)
+			citation := EvidenceCitationRequest{EvidenceID: e.ID, ExpectedSHA256: e.Digest}
+			if e.Citation != nil {
+				citation.Spans = e.Citation.Spans
+			}
+			citations = append(citations, citation)
 		}
 		if err = s.checkRetractionPreview(ctx, tx, RetractRequest{RecordID: old.RecordID, PreviewID: req.PreviewID}); err != nil {
 			return ScopeAuthorization{}, err
@@ -115,7 +119,7 @@ func (s *Store) AuthorizeScope(ctx context.Context, req AuthorizeScopeRequest) (
 			return ScopeAuthorization{}, err
 		}
 		if old.Class == "B" {
-			if err = linkEvidence(ctx, tx, next, evidenceIDs); err != nil {
+			if err = linkEvidence(ctx, tx, next, nil, citations); err != nil {
 				return ScopeAuthorization{}, err
 			}
 		}

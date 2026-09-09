@@ -16,7 +16,7 @@ func TestDemotionPreservesConsumedBAndHasNoAuthorityEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := testEvidence(t, op, repo)
-	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, 1, root.ID, []string{e.ID}, "Promote independently supported fixture"})
+	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, 1, root.ID, []string{e.ID}, "Promote independently supported fixture", nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestDemotionRefusesActiveInstructionDependenciesAndOpenConflict(t *testing.
 		t.Fatal(err)
 	}
 	e := testEvidence(t, op, repo)
-	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, 1, root.ID, []string{e.ID}, "Promote citation fixture"})
+	b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, 1, root.ID, []string{e.ID}, "Promote citation fixture", nil})
 	if err != nil {
 		t.Fatal(err)
 	}

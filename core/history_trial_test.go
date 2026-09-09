@@ -73,7 +73,7 @@ func TestStriatumHistoryRecurrenceCoverage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		promoted, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), record.RecordID, record.Version, root.ID, []string{evidence.ID}, "Admit this exact accepted clause with existing committed source evidence for the bounded recurrence trial"})
+		promoted, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), record.RecordID, record.Version, root.ID, []string{evidence.ID}, "Admit this exact accepted clause with existing committed source evidence for the bounded recurrence trial", nil})
 		if err != nil {
 			t.Fatal(err)
 		}

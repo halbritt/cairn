@@ -324,7 +324,7 @@ func TestRestoreSessionRejectsPromotionReclassifiedAsInstruction(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := testEvidence(t, s, repo)
-	promoted, err := s.Promote(ctx, PromoteRequest{uuid.NewString(), r.RecordID, r.Version, root.ID, []string{e.ID}, "Promote independently authored restore fixture"})
+	promoted, err := s.Promote(ctx, PromoteRequest{uuid.NewString(), r.RecordID, r.Version, root.ID, []string{e.ID}, "Promote independently authored restore fixture", nil})
 	if err != nil {
 		t.Fatal(err)
 	}

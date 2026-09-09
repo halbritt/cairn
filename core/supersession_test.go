@@ -33,7 +33,7 @@ func TestSupersessionPreservesHistoryAndIndependentReplacement(t *testing.T) {
 			t.Fatal(err)
 		}
 		e := testEvidence(t, op, repo)
-		b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, a.Version, root.ID, []string{e.ID}, "Independently qualify the synthetic claim"})
+		b, err := op.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, a.Version, root.ID, []string{e.ID}, "Independently qualify the synthetic claim", nil})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -195,7 +195,7 @@ func TestSupersessionRefusalsLeaveTheSourceActive(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				b, err := promoter.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, a.Version, grant, []string{e.ID}, "Independently promote the refusal fixture"})
+				b, err := promoter.Promote(ctx, PromoteRequest{uuid.NewString(), a.RecordID, a.Version, grant, []string{e.ID}, "Independently promote the refusal fixture", nil})
 				if err != nil {
 					t.Fatal(err)
 				}
