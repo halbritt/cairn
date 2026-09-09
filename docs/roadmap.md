@@ -188,6 +188,13 @@ reasons and evidence references. The profile must match the receipt's owner,
 repository and destination. This completes access to the existing per-receipt
 review data without adding a value score or widening protected aggregate reports.
 
+A [selected procedure-maintenance pass](verification/procedure-maintenance-2026-09-09.md)
+consolidated accumulated Codex/OpenCode setup updates while preserving prior note
+versions. Current bodies are smaller and two setup queries retain their first-place
+answers. Clearer organization is an editorial judgment; task benefit remains
+unmeasured. Maintain useful current guidance when successive updates obscure it;
+do not turn note length or maintenance counts into another value target.
+
 Repair current contract violations first. Then build the smallest real host
 integration and the observation join; add currentness, index/pull and historical
 evaluation; generate evidence-attached demand; only then add grooming. Lifecycle,

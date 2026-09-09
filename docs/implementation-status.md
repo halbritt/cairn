@@ -887,3 +887,21 @@ backup, runtime and note checksums.
 
 [Exact implementation CI](https://github.com/halbritt/cairn/actions/runs/34389972263)
 passed PostgreSQL race tests, Python tests, vet and build.
+
+### 2026-09-09 — consolidate accumulated harness procedures
+
+The existing Codex procedure v6→v7 and OpenCode procedure v8→v9 now present
+current setup and maintenance instructions with source links in place of repeated
+release-by-release updates. Combined bodies decreased from 13,044 to 7,820 bytes;
+previous bodies remain exact in retained version history. Native/MCP differences,
+profile choice, scope, permissions, source inspection, editing and retry guidance
+were preserved in a source review. Documented setup commands ran successfully,
+and the installer wrote its matching adapter in a temporary project.
+
+Both existing setup queries still rank their target first. Fresh scopes pulled the
+exact revisions, old handles refused as stale, and note metadata stayed unchanged.
+See the [review](verification/procedure-maintenance-2026-09-09.md) and
+[manifest](verification/procedure-maintenance-2026-09-09.json). Clearer organization
+is the coding agent's editorial judgment; smaller bodies are measured. Task
+benefit, general retrieval quality and net maintenance cost remain unestablished.
+No code, installed runtime, host settings or automatic grooming changed.

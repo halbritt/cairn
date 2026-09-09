@@ -1,0 +1,252 @@
+{
+  "schema": "cairn.procedure-maintenance/1",
+  "date": "2026-09-09",
+  "source_commit": "ec76c91e82d6be3d7c506549a76b86eed4866d79",
+  "implementation_commit": "3e08c18fedbb920d9f0ddecaa3e4bfae1139ee67",
+  "classification": "selected operational memory maintenance",
+  "notes": [
+    {
+      "name": "codex",
+      "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+      "previous_version": 6,
+      "version": 7,
+      "before_bytes": 5270,
+      "after_bytes": 3466,
+      "before_sha256": "6e9f70f013c0643a7881bca001c36ada3d749686e5f8f8b8fe0bde2c5b532c1c",
+      "body_sha256": "12f1227233ec1e6e74eb8ce5dadd1d68a0a8ceb1413284b07a10de338d49ba13",
+      "rank_before": 1,
+      "rank_after": 1,
+      "exact_full_pull": true,
+      "metadata_preserved": true,
+      "stale_handle_refused": true
+    },
+    {
+      "name": "opencode",
+      "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+      "previous_version": 8,
+      "version": 9,
+      "before_bytes": 7774,
+      "after_bytes": 4354,
+      "before_sha256": "c82ec6ddb689f3f6267370f9dd1c611ba813c75658a264e1897965258e370fc2",
+      "body_sha256": "942ff26d54d6aa4390751320ddb0db7d5292b7ef29d509f00e71ec299e6fa199",
+      "rank_before": 1,
+      "rank_after": 1,
+      "exact_full_pull": true,
+      "metadata_preserved": true,
+      "stale_handle_refused": true
+    }
+  ],
+  "body_bytes": {
+    "before": 13044,
+    "after": 7820,
+    "reduction": 5224,
+    "reduction_percent": 40.0490647040785
+  },
+  "review": [
+    {
+      "area": "setup-generators",
+      "sources": [
+        {
+          "path": "cmd/cairn/codex_config.go",
+          "sha256": "15330cab849611149511a56f6dd60b329263dbccabbd21d6bb9d64a3ce5b3c65"
+        },
+        {
+          "path": "cmd/cairn/opencode_config.go",
+          "sha256": "8fa28383405e1cf5115db96ae8e19fbb2eee52f9ad646e6adbbe1b9298c5ecd7"
+        },
+        {
+          "path": "cmd/cairn/opencode_install.go",
+          "sha256": "2233b92b50258c3ff503d720c1cc7281d35248e0814e4ca7f10fb017a1df45f5"
+        }
+      ],
+      "preserved_claims": [
+        "current commands and output shapes",
+        "existing-project and replacement behavior",
+        "tool and permission defaults"
+      ]
+    },
+    {
+      "area": "native-context",
+      "sources": [
+        {
+          "path": "mcpapi/server.go",
+          "sha256": "10a66909de745c328db6392cb0d0b1f79917d3dbabb6ad2155b4a6d7e2548400"
+        },
+        {
+          "path": "integrations/opencode/cairn.ts",
+          "sha256": "4d07a80fd26585b5a9a71744da2f0598b2d751cccabbe8ed8b96355bb0c444d0"
+        }
+      ],
+      "preserved_claims": [
+        "conversation/session scope",
+        "mandatory selected context and complete pull arguments",
+        "browse/semantic combinations",
+        "capture and edit fields"
+      ]
+    },
+    {
+      "area": "ordinary-maintenance",
+      "sources": [
+        {
+          "path": "core/revise.go",
+          "sha256": "55d474d1d268d153cde9840858f162af5a76bd555a51c21770ffc24a92e5ea3d"
+        },
+        {
+          "path": "docs/mcp.md",
+          "sha256": "a84b9bed305fd78221078d8f2ea3a9848eacbd8c7348979b01b35e56f1df5a08"
+        }
+      ],
+      "preserved_claims": [
+        "body-only metadata preservation",
+        "full-draft alternative and store-owned field exclusions",
+        "retry, version conflict and stale handle handling"
+      ]
+    },
+    {
+      "area": "bounded-pulls",
+      "sources": [
+        {
+          "path": "core/index.go",
+          "sha256": "f2c5292b7510970fc60473e86fbefda79669e59d43237d8ec7ec871ec21b56bb"
+        },
+        {
+          "path": "core/evidence_expansion.go",
+          "sha256": "4854fbb6b4605804b6845670fce428a49ede225e4021cbe4731edc0f055ab0e0"
+        },
+        {
+          "path": "docs/index-and-pull.md",
+          "sha256": "814babc844eb6bb4d7f70822adb6cff67c1b0df6908b5577d91c4e8c7cb22ccc"
+        }
+      ],
+      "preserved_claims": [
+        "source identity and shared budgets",
+        "partial pulls do not replace full read before edit"
+      ]
+    },
+    {
+      "area": "source-navigation",
+      "sources": [
+        {
+          "path": "docs/opencode-tools.md",
+          "sha256": "7ef2e672b035733f83ba2def1f4da40f1ec9beb9153710df2207c511f8d588b7"
+        },
+        {
+          "path": "docs/semantic-discovery.md",
+          "sha256": "8cded203143eafe56840b1d2c18b1fe279dfcb811a497194c0fdb960b017fa99"
+        },
+        {
+          "path": "docs/evidence-citations.md",
+          "sha256": "dbe8aaa8e039a7bc3fb787846f149d9f11ca5ab3ad5f2a4a3f1f49bae2368c06"
+        }
+      ],
+      "preserved_claims": [
+        "current source locators replace repeated release-by-release prose"
+      ]
+    }
+  ],
+  "checks": {
+    "documented_setup_commands": true,
+    "temporary_adapter_install": true,
+    "same_setup_queries_rank_one_before_and_after": true,
+    "fresh_scope_exact_full_pulls": true,
+    "metadata_preserved": true,
+    "prior_version_bodies_retained": true,
+    "stale_handles_refused": true,
+    "new_model_trials": 0,
+    "code_or_runtime_changes": false
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-procedure-maintenance/result.json",
+      "sha256": "6c5d3e77f3ac8e8de9e9d2fbf34e487a67a26241917162b42cc4181ed364eb62"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/history.json",
+      "sha256": "c53876c051154fcfba67f35833f70efff17203877be1eef9071b04fb5d459171"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/claim-review.json",
+      "sha256": "e65e74d2f81d8ab5866c3292882ed661a3a0fceea94cb8b13ca38bf709f470f8"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/check-setup.py",
+      "sha256": "7e4c73d6cb5f74ef21fce307554e22e5b45902f637d1409b3cf6ff7f97d23b80"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/revise.py",
+      "sha256": "1b8034e15aab5ad3d6c03539d31e621a40785ce6f1bfee8e9ddf5e1df59ed4c0"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/codex-generated.toml",
+      "sha256": "8ad77d00d6da1a5a5fc36f8222c7879320546213b0789949c9899d1763863a42"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/opencode-generated.json",
+      "sha256": "022497ebc28a0c1039727a750f8beb29a950f8437012a1c6eab7936cbb83b69d"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/opencode-installed.json",
+      "sha256": "66de53f9c8f38cd5f21b7c0a1f184d2697d2e8f39955bb98eb1b600c0dcece1f"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/codex-search-before.json",
+      "sha256": "62db2b828e32545ee7bb7a90aeecebee682dd0aa6e5530158f051a67ff33d906"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/codex-revision-request.json",
+      "sha256": "b015e504e8371f6701f52ade887bcd0a8b223075296449c5a8b6f0d956cbd428"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/codex-revised.json",
+      "sha256": "ec68f5cdd2c10dbc726f231f9c00f73c6e0833f5af8ff4b56c2caf52042313a2"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/codex-search-after.json",
+      "sha256": "f12c0730119c573582f037f3777513cac5439243409285cc5e4877a17e8702fa"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/codex-pulled.json",
+      "sha256": "697eccf656e64ea9e1a73b67c3cd22b79604f73af22fbdca3cf00e05d1584a67"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/codex-stale.json",
+      "sha256": "930d08a900ef8dcdf4fd56904877208247ea951209a7a2c3ba96da9786093fd4"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/opencode-search-before.json",
+      "sha256": "cc555faeadb88acaa95be32ac30a4362096cd84612d441947e2d8db53b5edb2b"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/opencode-revision-request.json",
+      "sha256": "61ee0acc8633bb91a6e24d715b037652e31a92cbf9a1c63947d0bf74598b2ed5"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/opencode-revised.json",
+      "sha256": "8b6916b83833c88f73c675bcf5f2a07e3d32035a69a91a190daeaed49eafb0fd"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/opencode-search-after.json",
+      "sha256": "1bf4e8bfb6a1d7e62f3ea6faebaf897a2721ec9f67568b8cdddeda9f9ba328ef"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/opencode-pulled.json",
+      "sha256": "6f3f8a877d91668dd90e456e3f079e0a94fe21269414609b594e004bc53dacf5"
+    },
+    {
+      "path": "/tmp/cairn-procedure-maintenance/opencode-stale.json",
+      "sha256": "930d08a900ef8dcdf4fd56904877208247ea951209a7a2c3ba96da9786093fd4"
+    }
+  ],
+  "judgment": {
+    "observer": "Cairn coding agent",
+    "claim": "Current procedures are easier to follow because repeated historical updates no longer interrupt setup and maintenance instructions.",
+    "basis": "Source-reviewed consolidation preserving current contracts and pointers; payload size decreased.",
+    "limits": [
+      "No independent reader or model task comparison",
+      "Two setup queries do not establish general retrieval preservation",
+      "Reduced body bytes do not establish attention, quality or net task benefit",
+      "Review and maintenance consumed work; token, elapsed reading and net costs were not measured",
+      "No automatic grooming or promotion"
+    ]
+  }
+}
