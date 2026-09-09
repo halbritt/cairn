@@ -52,6 +52,17 @@ Cairn binary as in [the Codex example](../mcp.md#codex-example), start two ephem
 threads without model turns, search/pull an existing shareable note, and compare
 each result's scope and exact body/version with its thread and saved source.
 
+## Installed follow-up
+
+Implementation `06a61bb` was pushed and the checked CLI installed. The existing
+ordinary shareable Codex procedure was revised from version 2 to version 3 through
+the authenticated edit API, preserving the full draft except its intended body
+changes. It now describes the opt-in flag, explicit alternative and conversation
+scope limits. Two more fresh native conversations used the installed binary to
+search and pull that exact revised procedure twice each, without task/run args.
+No global Codex configuration was changed. The manifest retains private mutation
+and native-response hashes without publishing operational note bodies.
+
 ## Interpretation and limits
 
 This removes manual scope configuration for conversation-level retrieval on the

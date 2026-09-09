@@ -36,6 +36,22 @@
     {
       "path": "/tmp/cairn-codex-thread-integration.log",
       "sha256": "39abb9d8d76a1ec76984b75d8723b393121159e64f90448708cbb8133734c17f"
+    },
+    {
+      "path": "/tmp/cairn-codex-thread-installed.py",
+      "sha256": "39fefddbd6785373c2d814d4bfdb20ee1f1f0438a9c3ffea2a29633c66372e42"
+    },
+    {
+      "path": "/tmp/cairn-codex-thread-installed/report.json",
+      "sha256": "85d3d46b7f4b16302c9873f8c44a7f5a2035f643fbcdae6fb748c21e35a127dc"
+    },
+    {
+      "path": "/tmp/cairn-codex-thread-procedure/request.json",
+      "sha256": "074eca06a270457cc893ee8e01102dcfdb937bea912960eaaa0bfb4824631964"
+    },
+    {
+      "path": "/tmp/cairn-codex-thread-procedure/edit.json",
+      "sha256": "1bffeb7cdec7e0db5bc1a370da52285b5b8fc1ce53059b4fd77881a9c8a84588"
     }
   ],
   "limits": [
@@ -180,5 +196,14 @@
     ],
     "citation_classification": "/tmp/cairn-codex-thread-citation-result.json"
   },
-  "installed_cli_sha256": "c0397e75d81f9d0b639831bd200896c62ebdb6e570c7ac460f718b5755515001"
+  "installed_cli_sha256": "c0397e75d81f9d0b639831bd200896c62ebdb6e570c7ac460f718b5755515001",
+  "installed_followup": {
+    "implementation_commit": "06a61bb",
+    "threads": 2,
+    "searches_per_thread": 2,
+    "exact_revised_procedure_pulls": 4,
+    "ordinary_procedure_version": 3,
+    "manual_task_run_arguments": false,
+    "model_turns_started": 0
+  }
 }
