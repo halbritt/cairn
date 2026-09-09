@@ -1,0 +1,62 @@
+{
+  "schema": "cairn.native-capture-verification/1",
+  "striatum_base_commit": "0d9245f2954c088a03661463ac52ec15254eddff",
+  "striatum_code_commit": "5ea87ca65c1bd25f228c0447110d991a3f0de8c8",
+  "cairn_test_binary_commit": "93bc66a972222fa47dec97e87beecdb5e82b8a82",
+  "cairn_test_binary_sha256": "756cd084be0430eb9059d401aa45dc1974be1e2c52030711a9c9151990be3089",
+  "verification": {
+    "unit_race_tests": "passed",
+    "real_service_race_tests": "passed",
+    "profiles": [
+      "local",
+      "hosted"
+    ],
+    "exact_cairn_child_rendering": "passed",
+    "offline_after_api_stop": "passed",
+    "ordinary_and_missing_credential_refusal": "passed",
+    "context_mismatch_cases": 14,
+    "full_striatum_make_check": "passed",
+    "go_version": "1.23.4",
+    "accepted_source_pin_checks": "passed",
+    "live_work_guard": "passed"
+  },
+  "logs": {
+    "/tmp/cairn-native-capture-unit.log": {
+      "sha256": "db125ff592f6910cda64d763646e5e79268cf98d7bec64db40365dc2031c387a",
+      "result": "passed"
+    },
+    "/tmp/cairn-native-capture-integration.log": {
+      "sha256": "be40f9333a98d801e8cca96510bf0deb4d57dcd9c6f97f9d5de6b2f3ec56d56b",
+      "result": "fixture-directory-permission-failure"
+    },
+    "/tmp/cairn-native-capture-integration-fixed.log": {
+      "sha256": "588bbb45d619c3b16aa13bb07291bacc8ec88a578aeb90fdb68a3f017cf42d44",
+      "result": "passed"
+    },
+    "/tmp/cairn-native-capture-check.log": {
+      "sha256": "04c1529afdcdd1555a051a504b94b5ab32bfa8dab229851274fe596cb239b3e9",
+      "result": "passed"
+    }
+  },
+  "tool": {
+    "path": "/tmp/striatum-cairn-capture-ready",
+    "sha256": "d11904019727ceaac8d14b20a1aac15d3422b38ce6a846af8800a07968a7f046",
+    "embedded_vcs_revision": false,
+    "globally_installed": false
+  },
+  "accepted_contracts_changed": false,
+  "runtime_deployed": false,
+  "new_graph_requests": false,
+  "native_ecr_producer_implemented": false,
+  "native_build_input_implemented": false,
+  "actual_native_host_correspondence_implemented": false,
+  "model_task_benefit_measured": false,
+  "doctrine": {
+    "packet_id": "pkt-dac63b90e6813393",
+    "packet_content_sha256": "dac63b90e68133936a0cb4a5b6758fd9d627f437e0d7bd937004fb263f50379f",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "unmatched_obligations_classified_for_component": 13
+  }
+}

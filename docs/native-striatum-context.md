@@ -171,6 +171,16 @@ receipt and expected seal, verifies run declarations and executes without
 recompiling. Native acquisition, admitted ECR resolution and adapter/host
 correspondence still need implementation under accepted Striatum contracts.
 
+Striatum's [host acquisition tool](https://github.com/halbritt/striatum-next/blob/5ea87ca65c1bd25f228c0447110d991a3f0de8c8/docs/how-to/capture-cairn-context.md)
+now compiles through the observer profile, confirms the exact retained package,
+and preserves a complete capture that can be read offline using its independently
+pinned hash. Its [real-service verification](verification/native-capture-2026-09-08.md)
+covers local/hosted profiles and correspondence with Cairn's child rendering.
+This is host preparation, not an admitted ECR. The trusted producing path must
+still acquire and pin that data before sealing the observation, and accepted
+producer/consumer contracts, input resolution and actual host correspondence
+remain open. The tool adds no runtime force to the proposed amendments.
+
 The retained runner is useful for hosts that need Cairn to own their child
 process. Striatum already owns that process in
 `internal/backend/llm/supervisor.go:Supervisor.execute` and renders declared

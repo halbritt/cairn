@@ -184,6 +184,10 @@ implementation prerequisites. The [installed interface and verification](verific
 also identify Striatum's existing supervisor as the owner of native execution:
 use authenticated Cairn operations there without adding a second process wrapper
 or another memory copy outside the declared input. The
+[host acquisition tool](verification/native-capture-2026-09-08.md) now confirms
+the exact observer-owned response and retains an offline-readable capture. It
+passed real local/hosted service and child-rendering checks; the producing
+observation and admitted build input remain open. The
 [OpenCode trial host](verification/opencode-host-observation-2026-09-08.md) now
 uses per-arm authenticated observers, exact package/attempt joins and pending
 spawn/terminal recovery. Its full real-harness fixture verification includes
