@@ -74,6 +74,14 @@ each searched and pulled that same exact revision twice. No model turn was
 started and no authority promotion occurred. This establishes working maintenance
 and retrieval of shared knowledge through both installed harness interfaces.
 
+The concrete implementation lesson about
+[OpenCode argument defaults](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/tool/registry.ts#L117)
+was also selected for ordinary shareable capture through `cairn_remember`.
+A fresh Codex conversation pulled its exact body/version through the installed
+MCP interface. Only the source-backed lesson and verification context were
+captured, not the native session transcript. Future task benefit remains to be
+observed; this verifies transfer of the selected implementation guidance.
+
 ## Limits
 
 The installed adapter makes current shared memory available through native
