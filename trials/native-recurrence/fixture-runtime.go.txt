@@ -1,0 +1,90 @@
+// Model-free executor calibration. This emits a valid, harmless Change Set
+// while leaving the real connection defect intact. It must fail the repair
+// oracle even if Driver admission succeeds.
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+
+type product struct {
+	SchemaVersion int               `json:"schema_version"`
+	Files         map[string]string `json:"files"`
+}
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println("native-recurrence-fixture/1")
+		return
+	}
+	prompt := os.Args[len(os.Args)-1]
+	meta := map[string]string{}
+	output := ""
+	for _, line := range strings.Split(prompt, "\n") {
+		if strings.HasPrefix(line, "  ") {
+			key, value, ok := strings.Cut(strings.TrimPrefix(line, "  "), ": ")
+			if ok {
+				meta[key] = value
+			}
+		}
+		if strings.HasPrefix(line, "- outputs/") && strings.Contains(line, `artifact kind "change-set"`) {
+			output = strings.Fields(strings.TrimPrefix(line, "- "))[0]
+		}
+	}
+	if output == "" || meta["base_composition"] == "" {
+		panic("sealed prompt lacks output or base composition")
+	}
+	body, err := os.ReadFile("inputs/01-base")
+	must(err)
+	// Both sealed aliases must be read-only; source is separate scratch.
+	if err := os.WriteFile("inputs/01-base", body, 0600); err == nil {
+		panic("sealed input unexpectedly writable")
+	}
+	if err := os.WriteFile("/work/inputs/01-base", body, 0600); err == nil {
+		panic("alternate sealed input unexpectedly writable")
+	}
+	var base product
+	must(json.Unmarshal(body, &base))
+	for _, target := range []string{"check", "test"} {
+		command := exec.Command("make", target)
+		command.Dir = "source"
+		out, err := command.CombinedOutput()
+		if err != nil {
+			panic(fmt.Sprintf("source make %s: %v: %s", target, err, out))
+		}
+		must(json.NewEncoder(os.Stdout).Encode(map[string]string{"type": "cairn_fixture_check", "target": target, "output": string(out)}))
+	}
+	name, content := "cmd/cairn/native_fixture_test.go", "package main\n"
+	must(os.WriteFile(filepath.Join("source", name), []byte(content), 0600))
+	base.Files[name] = content
+	canonical, err := json.MarshalIndent(base, "", "  ")
+	must(err)
+	digest := sha256.Sum256(append(canonical, '\n'))
+	change := map[string]any{
+		"schema_version": 2,
+		"base_composition": json.RawMessage(meta["base_composition"]),
+		"packet": map[string]string{
+			"work_graph_identity": meta["work_graph_identity"], "work_graph_version_hash": meta["work_graph_version_hash"],
+			"packet_anchor": meta["packet_anchor"], "packet_element_hash": meta["packet_element_hash"],
+		},
+		"files": map[string]string{name: content}, "deletes": []string{},
+		"result_tree_hash": hex.EncodeToString(digest[:]),
+	}
+	body, err = json.MarshalIndent(change, "", "  ")
+	must(err)
+	must(os.WriteFile(output, append(body, '\n'), 0600))
+	fmt.Println(`{"type":"text","part":{"text":"Fixture emitted a harmless Change Set; no model or repair was attempted."}}`)
+}

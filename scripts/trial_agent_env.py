@@ -72,9 +72,12 @@ def candidate(work, originals):
     return changes, outside, ''.join(patches)
 
 
-def command_base(opencode, binary, store, work, home, config, cache, with_api):
-    goroot = subprocess.check_output(['go', 'env', 'GOROOT'], text=True).strip()
-    gomod = subprocess.check_output(['go', 'env', 'GOMODCACHE'], text=True).strip()
+def command_base(opencode, binary, store, work, home, config, cache, with_api, *, go_paths=None):
+    if go_paths is None:
+        goroot = subprocess.check_output(['go', 'env', 'GOROOT'], text=True).strip()
+        gomod = subprocess.check_output(['go', 'env', 'GOMODCACHE'], text=True).strip()
+    else:
+        goroot, gomod = go_paths
     base = sandbox(opencode, binary, work, home, config, store, None, None, with_api)[:-1]
     base += ['--ro-bind', goroot, '/opt/go', '--ro-bind', gomod, '/opt/gomod', '--bind', str(cache), '/trial-cache', '--clearenv']
     environment = dict(PATH='/opt/go/bin:/usr/bin:/bin', HOME='/trial-home', GOROOT='/opt/go', GOPATH='/trial-home/go',
