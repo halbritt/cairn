@@ -6,6 +6,7 @@ contracts. It must not be counted as evidence that memory improves task results.
 
 | Completed observation | Supported conclusion | What remains unproved |
 | --- | --- | --- |
+| [Native Striatum model recurrence](native-permissions-2026-09-08.md): all three conditions reached the invocation timeout without an admitted repair. The native condition retained matching admitted context, exact prompt receipt, claim, delivery and timeout observations. | Actual model contact through the proposed native Driver/host integration, with one invocation per condition and the original failures retained. | No accepted repair, successful memory application, production contract adoption or memory advantage. The control and direct-context traces include permission denials; the native trace does not. A corrected scratch policy passes actual harness calibration, and its separate model comparison is still pending. |
 | [Native MCP configuration follow-up](mcp-host-use-2026-09-08.md): an initial generated configuration configured no server; after a source-checked procedure revision, a fresh run pulled v2 and generated a configuration that connected. Both runs have native retrievals linked to observed process outcomes and separate task assessments. | One operational correction-and-reuse result, with a rejected configuration followed by an accepted configuration task. | The same prompt was used, but this was an exploratory before/after observation with no no-memory or direct-context control. No causal, general recurrence, coding-task or native Striatum benefit is established. |
 | [Operational MCP transfer](mcp-2026-09-08.md): DeepSeek in OpenCode searched and pulled a storage note curated by a Codex session, then correctly answered the source questions with its record ID. | Native MCP tool contact and one useful transfer of explicitly captured knowledge across these sessions/harnesses. | No baseline advantage, coding-task improvement, automatic learning, recurrence reduction or native Striatum ingress. No associated Cairn host-run outcome was recorded. |
 | [Reviewed-lesson recurrence](reviewed-recurrence-2026-09-08.md): the no-lesson candidate introduced an environment regression; the Cairn-fed candidate selected/cited the lesson and avoided that regression. | A bounded positive observation on one known repeated repair. | Full task acceptance stayed unknown. The additional regression check was exploratory and applied after the baseline. Directly supplying the lesson also avoided it. No demonstrated time/cost advantage or benefit beyond direct context. |
@@ -15,8 +16,9 @@ contracts. It must not be counted as evidence that memory improves task results.
 
 Recovery, authority, deletion, compilation and evidence-expansion tests establish
 their named behavior. They do not add a task-usefulness result to this table.
-Native Striatum ingress, harness coverage beyond these paths, recurrence reduction, review
-burden reduction and general task benefit remain unestablished.
+Native Striatum model contact is observed on the proposed integration branch.
+Production contract adoption, harness coverage beyond these paths, recurrence
+reduction, review burden reduction and general task benefit remain unestablished.
 
 The [documentation retrieval experiment](retrieval-quality-2026-09-08.md) measures
 one narrower improvement: an identifier expressed as separate words retrieves its
