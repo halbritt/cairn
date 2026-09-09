@@ -35,7 +35,7 @@ def check(binary, root, environment, grant, claim, support):
                      purpose='context', available_tokens=32000, context={}))['data']
     assert view['selected'] == canonical['package']['semantic']['selected']
     assert any(s['mandatory'] and s['record']['record_id'] == instruction['record_id'] for s in view['selected'])
-    assert [{k: v for k, v in e.items() if k != 'pull_command'} for e in view['index']] == canonical['package']['semantic']['index']
+    assert [{k: v for k, v in e.items() if k not in ('pull_command', 'pull_arguments')} for e in view['index']] == canonical['package']['semantic']['index']
     entry = next(e for e in view['index'] if e['record_id'] == claim['record_id'])
     def pull():
         return json.loads(subprocess.run(entry['pull_command'], shell=True, env=client_env, capture_output=True,
@@ -43,6 +43,7 @@ def check(binary, root, environment, grant, claim, support):
     body = pull()
     assert body['selection']['record']['record_id'] == claim['record_id'] and body['credits_remaining'] == 3
     assert pull() == body  # Repeating the displayed command keeps its request ID.
+    assert call([*agent, 'expand'], entry['pull_arguments'])['data'] == body
     words = shlex.split(entry['pull_command'])
     receipt, handle = words[-2:]
     evidence_args = [*agent, 'pull-evidence', '--request-id', str(uuid.uuid4()), receipt, handle,

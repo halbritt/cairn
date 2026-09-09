@@ -176,7 +176,9 @@ bin/cairn agent remember --kind lesson --shareable 'Run make test-integration fo
 bin/cairn agent search --repo "$PWD" --task TASK_ID --run RUN_ID 'relevant query'
 ```
 
-Each result includes a complete `pull_command` for its full body. Reuse the
+Each result includes a complete `pull_command` and matching `pull_arguments`
+for its full body. The [native OpenCode tools](docs/opencode-tools.md) use the
+structured form and derive search scope from the current session. Reuse the
 host's task/run IDs across queries; the configured token controls destination
 and access. With an ordinary agent profile, `agent remember` saves A testimony,
 local-only unless

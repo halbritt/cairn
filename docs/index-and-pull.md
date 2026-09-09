@@ -30,6 +30,9 @@ are shell-quoted. The token contents never appear in the command. The included
 pull request UUID lets the exact displayed command be retried without spending
 another credit, subject to the usual live checks. A repeated search can generate
 new pull request UUIDs; retain the original command when retrying a pull.
+Entries also include `pull_arguments` containing the same `request_id`,
+`receipt_id` and `handle`. Native adapters can pass that object to `agent expand`
+without parsing shell text; the command and structured form share one retry key.
 
 This is a presentation view, not a new sealed semantic package. `source_schema`
 and `source_seal` identify the underlying package; `receipt_id` identifies the

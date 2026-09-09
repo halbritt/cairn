@@ -24,6 +24,14 @@ scope/context flags. Both output modes connected in OpenCode without a model
 call. This removes routine JSON assembly; host launch and outcome association
 remain explicit responsibilities.
 
+The [native OpenCode adapter](opencode-tools.md) now uses actual custom-tool
+session context for search scope and the existing authenticated CLI for all five
+ordinary tools. CLI results now include structured pull arguments alongside shell
+commands. [Native verification](verification/opencode-tools-2026-09-09.md) covers
+default local capture, exact body/evidence pulls, edits and refusals without a
+model call. The adapter is installed locally; its session grouping adds no
+observed-run authority or model-task benefit claim.
+
 The [native Codex MCP check](verification/codex-mcp-2026-09-08.md) now exercises
 search and exact lesson pull through Codex's actual client with no model turn.
 The [setup example](mcp.md#codex-example) now supports opt-in Codex conversation

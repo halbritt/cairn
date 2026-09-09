@@ -26,8 +26,9 @@ At the start of a substantive task, search for relevant prior lessons.
 
 When the native Cairn MCP tools are available, use `cairn_search` and inspect
 relevant results with `cairn_pull`, passing their complete `pull_arguments`.
-The local Codex project configuration uses conversation scope automatically;
-it does not identify individual turns or execution attempts. Use the CLI below
+The local Codex configuration and native OpenCode adapter use conversation/session
+scope automatically; neither identifies individual turns or execution attempts.
+Use the CLI below
 when MCP is unavailable or explicit task/run scope is needed.
 
 ```sh
@@ -44,7 +45,8 @@ does not block work. Never substitute a local-destination profile when its resul
 will enter a hosted model, and do not provision credentials as part of routine
 retrieval.
 
-Use `agent remember` with the same profile for explicitly selected, useful
+Use native `cairn_remember` when available, or `agent remember` with the same
+profile, for explicitly selected, useful
 repository findings. Include source/verification context in the note, choose
 `--shareable` only for material suitable for hosted delivery, and supply a stable
 `--request-id` when retrying. `--stdin` accepts a chosen note body. Do not capture

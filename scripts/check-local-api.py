@@ -224,6 +224,9 @@ try:
     check_agent_remember(binary, root, env)
     check_mcp(binary, root, env)
     check_mcp_currentness(binary, root, env, grant)
+    if os.environ.get('CAIRN_OPENCODE_TOOLS_BINARY'):
+        from check_opencode_tools import check as check_opencode_tools
+        check_opencode_tools(binary, root, env, os.environ['CAIRN_OPENCODE_TOOLS_BINARY'], claim, support)
 finally:
     process.send_signal(signal.SIGTERM)
     try:

@@ -15,7 +15,8 @@ import (
 
 type agentSearchEntry struct {
 	core.IndexEntry
-	PullCommand string `json:"pull_command"`
+	PullCommand   string             `json:"pull_command"`
+	PullArguments core.ExpandRequest `json:"pull_arguments"`
 }
 
 // This view preserves semantic fields but is not itself a sealed package.
@@ -94,8 +95,9 @@ func presentAgentSearch(result core.IndexResult, request string, command []strin
 		if !exists {
 			return agentSearchView{}, invalid("index response has no handle for a record version")
 		}
-		argv := append(append([]string{}, command...), "pull", "--request-id", uuid.NewString(), result.Package.ReceiptID, handle)
-		view.Index = append(view.Index, agentSearchEntry{entry, shellCommand(argv)})
+		pull := core.ExpandRequest{RequestID: uuid.NewString(), ReceiptID: result.Package.ReceiptID, Handle: handle}
+		argv := append(append([]string{}, command...), "pull", "--request-id", pull.RequestID, pull.ReceiptID, pull.Handle)
+		view.Index = append(view.Index, agentSearchEntry{entry, shellCommand(argv), pull})
 	}
 	encoded, err := json.Marshal(response{Schema: "cairn.response/1", OK: true, Status: "OK", Data: view})
 	if err != nil {

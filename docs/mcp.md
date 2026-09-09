@@ -155,6 +155,9 @@ starting a model turn. Model-selected use and task benefit remain unverified.
 
 ## OpenCode example
 
+For automatic session scope, use the [native OpenCode tools](opencode-tools.md).
+The MCP configuration below remains the explicit task/run alternative.
+
 Generate the server entry with the installed Cairn executable:
 
 ```sh

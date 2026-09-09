@@ -99,6 +99,11 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 		t.Fatalf("unpaired pull command: %s", command)
 	}
 	delete(entry, "pull_command")
+	pull := entry["pull_arguments"].(map[string]any)
+	if pull["receipt_id"] != receipt || pull["handle"] != handle || !strings.Contains(command, "--request-id "+pull["request_id"].(string)+" ") {
+		t.Fatalf("structured pull differs from command: %+v %s", pull, command)
+	}
+	delete(entry, "pull_arguments")
 	view["schema"] = view["source_schema"]
 	for _, key := range []string{"source_schema", "source_seal", "receipt_id", "request_id", "expires_at", "credits_remaining", "bytes_remaining"} {
 		delete(view, key)
