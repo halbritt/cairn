@@ -456,12 +456,14 @@ worker remains; reduced CPU cost alone did not justify the proposed latency chan
 
 A [small-set startup experiment](verification/semantic-startup-2026-09-09.md)
 addresses the different workload enabled by kind filtering. Six interleaved pairs
-preserved complete responses while model reuse saved 0.34–0.58 seconds. Next,
-implement and verify optional API-owned model residency with bounded idle/shutdown
-release, framed responses, one active request, per-request cancellation and
-labelled fallback. Preserve one-shot custom workers, current eligibility and
-model identity. Verify actual API savings before installing it; the scratch
-prototype is not deployment-qualified. No note-vector cache is planned.
+preserved complete responses while model reuse saved 0.34–0.58 seconds.
+[Optional API-owned residency](verification/semantic-residency-2026-09-09.md)
+now implements idle/shutdown release, framed responses, one active request,
+per-request cancellation and labelled fallback. One-shot custom workers remain
+supported. Six paired API requests saved 0.56–0.83 seconds with matching candidate
+score digests; real-worker tests verify current edits, retirement and local-only
+exclusions. This closes that bounded implementation checkpoint, not task-value
+evaluation or performance at larger scale. No note-vector cache was added.
 
 [Explicit browsing](verification/browse-2026-09-09.md) now exposes the existing
 empty-query index through the agent CLI, MCP and native OpenCode. It provides

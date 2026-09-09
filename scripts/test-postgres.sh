@@ -42,6 +42,15 @@ if [[ -n "${CAIRN_SEMANTIC_WORKER:-}" ]]; then
         --worker "$CAIRN_SEMANTIC_WORKER" \
         --output "${CAIRN_SEMANTIC_REPORT:-$test_root/semantic-api}"
 fi
+if [[ -n "${CAIRN_SEMANTIC_STREAM_WORKER:-}" ]]; then
+    semantic_baseline=()
+    if [[ -n "${CAIRN_SEMANTIC_BASELINE_WORKER:-}" ]]; then
+        semantic_baseline=(--baseline-worker "$CAIRN_SEMANTIC_BASELINE_WORKER")
+    fi
+    python3 scripts/check_semantic_api.py --binary "$test_root/cairn" --stream \
+        --worker "$CAIRN_SEMANTIC_STREAM_WORKER" "${semantic_baseline[@]}" \
+        --output "${CAIRN_SEMANTIC_STREAM_REPORT:-$test_root/semantic-stream-api}"
+fi
 if [[ -n "${CAIRN_OPENCODE_BINARY:-}" ]]; then
     python3 scripts/probe-opencode.py "$CAIRN_OPENCODE_BINARY" --cairn-binary "$test_root/cairn" --check-edit --disable-thinking --output "${CAIRN_PROBE_OUTPUT:-$test_root/opencode-probe.json}"
 fi

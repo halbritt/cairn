@@ -1,0 +1,158 @@
+{
+  "schema": "cairn.semantic-residency-verification/1",
+  "base_commit": "e31b4802dd0dee4775e69dbf561ffc24977ac4c6",
+  "source_hashes": {
+    "semantic/stream.go": "a90910150c04451a00e47c00f2ee112b2fc0c9d0ea85262fe24c17cbcef7c999",
+    "semantic/command.go": "eed9eae50f721b03c9becc3a6191ada70061cf74d9499bdb338aba23779c9ad4",
+    "semantic/stream_test.go": "4dc61f2690dc7e499ce4722a55bb0278594cb67f04a5506f150f3039f2738fa0",
+    "cmd/cairn/serve.go": "b7aa200d4d1d64777c6599f7bb2c75719ac7ecb7adf2d42995d03186e08f8b00",
+    "scripts/semantic_rank.py": "290a93245909186c905708f328c276dc074232ef4fcd08c52f02ec56264a4fb5",
+    "scripts/install-semantic.sh": "37087a0edc3036ef0b28e680ddb4a9cd293491e831b527d02176728b97b9ce40",
+    "scripts/check_semantic_api.py": "6ab689236fd595b2c7e9e98a3cb931a23e30e748cc0b753f72eeccdc78f7e2ec",
+    "scripts/test_semantic_stream.py": "7aad74c0b29b3daa5df52ac18778b855869f4f8a3eb111d936b7a60dee524f87",
+    "scripts/test-postgres.sh": "17d18bd9a71ef2d4b847a206f0db75cf1f55d2401a628c4e3c9bcab533b04027"
+  },
+  "api_binary_sha256": "3b16a721fb8a26736b77b22961ef8a0291800a3b5ab40d73cc95a8d54ba510f3",
+  "worker_pids": [
+    4109447
+  ],
+  "paired_results": [
+    {
+      "notes": 1,
+      "one_shot_seconds": 0.9027570569887757,
+      "stream_seconds": 0.300610626116395,
+      "source_identities_equal": true,
+      "candidate_score_digests_equal": true
+    },
+    {
+      "notes": 3,
+      "one_shot_seconds": 1.334760531084612,
+      "stream_seconds": 0.7766523330938071,
+      "source_identities_equal": true,
+      "candidate_score_digests_equal": true
+    },
+    {
+      "notes": 12,
+      "one_shot_seconds": 3.103080051019788,
+      "stream_seconds": 2.4194811468478292,
+      "source_identities_equal": true,
+      "candidate_score_digests_equal": true
+    },
+    {
+      "notes": 12,
+      "one_shot_seconds": 3.286617828067392,
+      "stream_seconds": 2.4554728369694203,
+      "source_identities_equal": true,
+      "candidate_score_digests_equal": true
+    },
+    {
+      "notes": 3,
+      "one_shot_seconds": 1.1692483210936189,
+      "stream_seconds": 0.5555780921131372,
+      "source_identities_equal": true,
+      "candidate_score_digests_equal": true
+    },
+    {
+      "notes": 1,
+      "one_shot_seconds": 0.8015882701147348,
+      "stream_seconds": 0.20291264192201197,
+      "source_identities_equal": true,
+      "candidate_score_digests_equal": true
+    }
+  ],
+  "checks": {
+    "go_race": true,
+    "python_tests": 34,
+    "disposable_postgres": true,
+    "vet_format": true,
+    "edited_note_current": true,
+    "retired_note_excluded": true,
+    "local_only_note_excluded": true,
+    "stale_handle_refused": true,
+    "shutdown_reaped_worker": true,
+    "unconfigured_fallback": true,
+    "new_oneshot_matches_retained": true
+  },
+  "doctrine": {
+    "packet_id": "pkt-b3ffb522d1290195",
+    "packet_content_sha256": "b3ffb522d12901956fb5cc6573a1322c899dd97ee0a92780dc619a3c3226c22e",
+    "typed_passes": 2,
+    "nonmaterial_obligations": 4,
+    "decision_receipt_valid": true,
+    "citation_closure_valid": true
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-semantic-residency-red.log",
+      "sha256": "a8fe92f4902603129f0bd9d812ef4588a1d02bc4eed7c81a8c51ecc702887c45"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-unit.log",
+      "sha256": "d3527c3be2f0223ccb90670b4b68fdfa43d83c32c0fd69c5da3ba3407c57a1f9"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-integration.log",
+      "sha256": "3a7f3abbad4b347ceb3f78bf05c57fcbcb54c2909d3a29608d022413f2dcb8fc"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-integration-final.log",
+      "sha256": "b201543c44141304c468f37421a21464631680197bf53ca14e940e5183aec008"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-final-transport.log",
+      "sha256": "0a012930e98daf85a9d1995bc9c2a6a820d0ff8122d347bf1bbf32e220d8e06c"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-check-final.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-environment.json",
+      "sha256": "12aba7429b866f133ab4eb31d6eafeb0fcf89c5b39fe7b4b97d4a06056f60ccf"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-decision.json",
+      "sha256": "c433f926238de691be12e3908263be56c914e01dc77a818944d0bb458ee33dc1"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-packet-final.json",
+      "sha256": "304771f36c82066bf4cc99ae38b900608c620c214b6106e2d2ac4be3c87274fc"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-citation-result.json",
+      "sha256": "835534fe32f5374c382dc17fe6a51cef05d8154f0c5b1334991d884ee0ee1b05"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-api-final/plan.json",
+      "sha256": "9777a09be7f8dde567aabb5d279aedeb66e0fa142e1b329b4fea2dff65b6f78f"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-api-final/report.json",
+      "sha256": "fe040678cc9254d5aca1849ae1ab718c20db9bc5970f79dfc5b281b09ae633f1"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-api-final/residency-pairs.json",
+      "sha256": "0a25f45f064729d250bd1ac642c9a7f4a22a3e371504f8a93410cd95351b245d"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-api-final/residency-mutation.json",
+      "sha256": "c708dbd5166b95388e96b01584bf255357c56373772ecd0cf630a6b95c61a776"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-api-final/api.log",
+      "sha256": "0c0371ccf94d25f8cea04304391bb5ccc00d85c72d7eaf46cc285f3765256bb1"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-api-final/long.json",
+      "sha256": "89651ed101a23fff1d1bbba5bc8f1a406b4bfc1480814477b3f12f498a5f0ccf"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-api-final/fallback.json",
+      "sha256": "adf8754b8561255d43ed664558a50a443d03711049606f3ab55b72ff0ee1c0fb"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-oneshot/report.json",
+      "sha256": "1d5e9a4438f3aba92c1404614bf0b144c5fbf40eb7e549ce7dc097e97b00a91b"
+    }
+  ]
+}

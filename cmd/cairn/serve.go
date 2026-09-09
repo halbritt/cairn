@@ -25,11 +25,15 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	config := f.String("identities", filepath.Join(directory, "identities.json"), "owner-only identity configuration")
 	socket := f.String("socket", filepath.Join(directory, "api.sock"), "private Unix socket")
 	semanticCommand := f.String("semantic-command", "", "optional absolute local CPU scoring executable")
+	semanticStreamCommand := f.String("semantic-stream-command", "", "optional absolute reusable local CPU scoring executable")
 	if err = f.Parse(args); err != nil {
 		return invalid(err.Error())
 	}
 	if f.NArg() != 0 {
 		return invalid("unexpected serve arguments")
+	}
+	if *semanticCommand != "" && *semanticStreamCommand != "" {
+		return invalid("choose one semantic command mode")
 	}
 	info, err := os.Lstat(*config)
 	if err != nil {
@@ -60,6 +64,14 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 		if err != nil {
 			return err
 		}
+	}
+	if *semanticStreamCommand != "" {
+		var closeWorker func()
+		ranker, closeWorker, err = semantic.StreamCommand(ctx, *semanticStreamCommand)
+		if err != nil {
+			return err
+		}
+		defer closeWorker()
 	}
 	handler, err := localapi.NewWithSemanticRanker(ctx, dsn, identities, ranker)
 	if err != nil {

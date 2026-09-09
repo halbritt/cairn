@@ -38,12 +38,27 @@ existing API process explicitly:
 cairn serve --semantic-command "$HOME/.local/share/cairn/semantic/worker"
 ```
 
+To reuse the loaded model between requests, select the alternative launcher:
+
+```sh
+cairn serve --semantic-stream-command "$HOME/.local/share/cairn/semantic/worker-stream"
+```
+
+Choose one command mode. The streaming worker starts on the first eligible query
+and exits after 30 seconds without scoring work. It occupies about 208 MiB in the
+local experiment while loaded. Every request still embeds its current eligible
+notes; no note-vector cache is kept. Cold requests pay model initialization.
+Existing custom one-shot workers continue to use `--semantic-command`.
+
 Use the printed path if `CAIRN_HOME` is customized. A systemd installation must
 include that argument in its `ExecStart`; restart the API after changing the
 configuration. The worker uses the prepared model snapshot with offline loading.
 Downloads happen during preparation, not retrieval. Reinstalling can update
 transitive Python dependencies or upstream model files; the scoring fingerprint
 records the actual files, dependency versions and algorithm settings used.
+For streaming mode, that fingerprint describes the model loaded by the current
+child. Restart the API after updating worker code, packages or model files for
+immediate adoption; otherwise the next child starts after idle release or failure.
 
 The host configures the executable. Agents cannot supply a command or model path.
 The worker receives only the query and eligible optional note bodies/identities.
@@ -73,6 +88,20 @@ worker uses two CPU threads. One invocation runs at a time per API process;
 another concurrent semantic request falls back immediately. Workers have a
 20-second deadline, within the API's existing request deadline, and a 64 KiB
 output limit. Cancellation terminates the worker process group.
+Streaming mode has the same per-request deadline, busy refusal and output cap.
+The API closes pipes and reaps the group on cancellation, malformed responses or
+shutdown; a later request can start a fresh worker. It does not retry a failed
+request automatically. Idle release bounds process retention, without promising
+erasure of Python/native allocator memory or previously delivered context.
+
+The optional streaming protocol is one UTF-8 JSON line per request and response:
+`{"id":"1","request":{"query":"...","notes":[...]}}` and
+`{"id":"1","result":{"model_sha256":"...","algorithm":"...","scores":[...]}}`.
+IDs belong to the API's transport, not agent-supplied task identity. Requests are
+bounded to 8 MiB before the newline; responses including the newline to 64 KiB.
+Unknown response fields, wrong IDs, missing results, partial lines and changed
+model/algorithm identity within a child refuse the request and discard the child.
+The core independently validates the supplied candidate set and scores as before.
 
 Unconfigured, busy, failed or over-limit backends return lexical results with
 `status: "DEGRADED_NO_EMBEDDINGS"` and `discovery.state: "unavailable"`. A decoded
@@ -106,8 +135,9 @@ latency, CPU time, peak resident memory and exact-score comparisons for the loca
 worker. It does not establish performance on every workload.
 A [small-set startup experiment](verification/semantic-startup-2026-09-09.md)
 found a roughly half-second saving when a scratch worker reused its model.
-The installed worker remains one-shot; bounded API residency is the next
-implementation candidate, with lifecycle checks still required.
+The [resident-worker implementation](verification/semantic-residency-2026-09-09.md)
+preserves that benefit through the API and verifies process lifetime, current
+source selection and fallback. It does not establish downstream task value.
 
 After preparation, run the optional real-worker check against a disposable store:
 
@@ -122,3 +152,10 @@ public development corpus and a synthetic long note, and then restarts that test
 API without scoring to check fallback. It does not modify the supplied worker or
 running operational services. Without this option, normal integration checks use
 controlled scorers and require no embedding model.
+
+For the reusable worker, set `CAIRN_SEMANTIC_STREAM_WORKER` and
+`CAIRN_SEMANTIC_STREAM_REPORT` instead. Add `CAIRN_SEMANTIC_BASELINE_WORKER` pointing
+to a retained one-shot launcher to run six interleaved API comparisons against
+the same disposable store. The stream check also verifies note edits, retirement,
+local-only exclusions and shutdown. This optional check uses the installed local
+CPU environment; regular Go process and Python framing tests need no model.

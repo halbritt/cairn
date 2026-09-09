@@ -46,11 +46,11 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
-- **Model residency now has bounded experimental support.** Small candidate-set
-  profiling and six interleaved prototype comparisons found 0.34–0.58 seconds
-  saved per warm request with exact responses. Production remains one-shot;
-  API lifecycle and fallback integration are the next implementation work.
-  [Report](verification/semantic-startup-2026-09-09.md).
+- **Optional model reuse is implemented and verified.** Six paired API requests
+  saved 0.56–0.83 seconds with identical source identities and candidate-score
+  digests. The API releases idle workers and owns cancellation/shutdown; current
+  note edits and exclusions remain effective. One-shot workers remain supported.
+  [Report](verification/semantic-residency-2026-09-09.md).
 - **Use history is accessible beyond its first page.** The installed CLI accepts
   --limit, --offset and --record, preserving the core's oldest-first ordering
   and unknown observations. A 102-exposure fixture verifies continuation and
@@ -1324,3 +1324,29 @@ lesson influenced this investigation's scope; latency savings are not establishe
 task benefit. The roadmap records the next implementation checkpoint, and the
 semantic guide now correctly distinguishes unfiltered schema8 from kind-filtered
 schema9. Earlier implementation history and experimental outcomes are preserved.
+
+### 2026-09-09 — implement bounded semantic model reuse
+
+The [resident-worker implementation](verification/semantic-residency-2026-09-09.md)
+and [metadata](verification/semantic-residency-2026-09-09.json) follow the previous
+startup experiment. An optional semantic-stream-command gives the API one lazy
+child with framed request IDs, a20-second request deadline, immediate busy fallback
+and30-second idle release. Cancellation/failure/shutdown close pipes and reap the
+process group. The existing one-shot command remains supported. Python shares
+model initialization only; current notes are re-embedded and no vector cache is
+retained. Receipt schemas, ranking and eligibility remain unchanged.
+
+Go/race process tests,34Python tests, disposable PostgreSQL/API integration and
+vet/format pass. The real worker stays alive across17queries, a long-source pull,
+ordinary revision and supersession. It refuses the stale handle, excludes a
+separate local-only note, and disappears on API shutdown. Six interleaved API
+pairs preserve candidate-score digests/source versions and save0.56–0.83seconds.
+The new one-shot Python route also matches retained complete responses. These
+are bounded execution-cost observations, not service percentiles or task benefit.
+
+The initial fixture's sensitivity edit correctly returned AUTHORITY_DENIED; the
+fixture was corrected to use supported A supersession. Source review also
+corrected a goroutine capture before final race checks. Neither observation
+justifies weakening a runtime contract. The prior memory lesson guided scope and
+retained the previous experimental limits. Deployment and CI are recorded after
+completion; all prior implementation history is preserved.

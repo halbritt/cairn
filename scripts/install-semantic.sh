@@ -38,7 +38,14 @@ pending = root / "worker.pending"
 pending.write_text("#!/bin/sh\nexec " + shlex.join(command) + "\n")
 pending.chmod(0o700)
 pending.replace(launcher)
+stream_launcher = root / "worker-stream"
+pending = root / "worker-stream.pending"
+pending.write_text("#!/bin/sh\nexec " + shlex.join(command + ["--stream"]) + "\n")
+pending.chmod(0o700)
+pending.replace(stream_launcher)
 (root / "model-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 print("Prepared local CPU worker. Enable explicitly with:")
 print("cairn serve --semantic-command " + shlex.quote(str(launcher)))
+print("Or reuse the model between requests (30-second idle release):")
+print("cairn serve --semantic-stream-command " + shlex.quote(str(stream_launcher)))
 PY
