@@ -14,19 +14,24 @@ import (
 )
 
 type Refusal struct {
-	ID              string             `json:"refusal_id"`
-	RequestID       string             `json:"request_id"`
-	Operation       string             `json:"operation"`
-	Scope           Scope              `json:"scope"`
-	Destination     string             `json:"destination,omitempty"`
-	Code            string             `json:"code"`
-	Message         string             `json:"message"`
-	QuerySHA256     string             `json:"query_sha256,omitempty"`
-	Considered      []RecordVersionRef `json:"considered"`
-	ConsideredCount int                `json:"considered_count"`
-	TraceComplete   bool               `json:"trace_complete"`
-	Snapshot        string             `json:"snapshot,omitempty"`
-	ObservedAt      time.Time          `json:"observed_at"`
+	ExplanationVersion int                   `json:"explanation_version"`
+	AvailableTokens    int                   `json:"available_tokens,omitempty"`
+	OptionalLimit      int                   `json:"optional_limit,omitempty"`
+	Ranking            string                `json:"ranking,omitempty"`
+	Candidates         []CandidateEvaluation `json:"candidates,omitempty"`
+	ID                 string                `json:"refusal_id"`
+	RequestID          string                `json:"request_id"`
+	Operation          string                `json:"operation"`
+	Scope              Scope                 `json:"scope"`
+	Destination        string                `json:"destination,omitempty"`
+	Code               string                `json:"code"`
+	Message            string                `json:"message"`
+	QuerySHA256        string                `json:"query_sha256,omitempty"`
+	Considered         []RecordVersionRef    `json:"considered"`
+	ConsideredCount    int                   `json:"considered_count"`
+	TraceComplete      bool                  `json:"trace_complete"`
+	Snapshot           string                `json:"snapshot,omitempty"`
+	ObservedAt         time.Time             `json:"observed_at"`
 }
 
 func durablePolicyRefusal(err error) bool {
@@ -89,6 +94,15 @@ func (s *Store) retainRefusal(ctx context.Context, request any, r Refusal, cause
 		r.ConsideredCount = len(r.Considered)
 		if len(r.Considered) > 1000 {
 			r.Considered = r.Considered[:1000]
+		}
+		slices.SortFunc(r.Candidates, func(a, b CandidateEvaluation) int {
+			if c := strings.Compare(a.RecordID, b.RecordID); c != 0 {
+				return c
+			}
+			return a.Version - b.Version
+		})
+		if len(r.Candidates) > 1000 {
+			r.Candidates = r.Candidates[:1000]
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO cairn.refusal(refusal_id,operation,request_id,request_digest,code,detail) VALUES($1,$2,$3,$4,$5,$6)`, r.ID, r.Operation, r.RequestID, digest[:], r.Code, r)
 		if err != nil {

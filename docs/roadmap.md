@@ -143,6 +143,11 @@ and packing cost, with owner-authorized `explain` and fixed census buckets. Name
 policy refusals now return a durable caller-owned observation ID and a partial
 protected trace; full refusal explanations and the remaining policy paths are
 tracked by L2.
+Compiler refusals now retain the already-computed, visibility-filtered candidate
+reasons and ranking/allocation features in a bounded
+[partial diagnostic trace](refusals.md). Missing phases remain explicit; evidence
+snapshots, note bodies and query text are excluded. R5 remains partial for complete
+refusal explanations, and R3 still lacks a broader evidence dependency model.
 [Body-pull reasons](verification/pull-reason-2026-09-08.md) now describe the
 current eligibility recheck instead of reporting a zero match count from a
 queryless pass. Original protected ranking and committed retry responses remain

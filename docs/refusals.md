@@ -14,6 +14,27 @@ record bodies. The trace is explicitly partial: refusal can stop selection early
 and at most 1,000 considered references are retained with the observed count.
 This is not a complete historical candidate explanation or a replayable decision.
 
+New compiler refusals also retain `explanation_version: 1` and up to 1,000
+`candidates`, ordered by record ID/version to match the considered references.
+Each entry contains the reason and ranking/allocation features computed before
+the refusal: lexical matches, optional semantic score, scope specificity,
+timestamp, mandatory flag, rank and cost when available. Evidence/grant snapshots
+and bodies are excluded. `EVALUATION_INCOMPLETE` means processing stopped before
+a candidate reason was assigned; zero rank/cost can mean allocation was not
+reached. These are diagnostic observations from an aborted compilation. A
+`SELECTED` reason does not mean a package was committed or delivered.
+The refusal also records `available_tokens`, plus `optional_limit` and `ranking`
+when compilation reached their initialization. These use the compiler's recorded
+conservative byte-based token bound, not an independently measured model tokenizer.
+
+The observed `considered_count` can exceed the retained 1,000-entry prefix.
+`trace_complete` remains false even when all observed candidates fit, because
+selection or packing may have stopped early. Older and non-compiler refusals
+report `explanation_version: 0` with no reconstructed candidate details.
+Refusal observations have no automatic expiry or purge command; the per-observation
+cap does not bound total database growth. These diagnostic fields follow that
+existing retention lifetime.
+
 Identical caller/operation/request/intent/status refusals reuse the original
 observation. Changed state can allow a later retry to succeed; the older refusal
 remains historical. Start new intent with a new request UUID. This grouping does

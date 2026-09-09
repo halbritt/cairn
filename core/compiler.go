@@ -149,11 +149,22 @@ func (s *Store) compileOnce(ctx context.Context, req CompileRequest, destination
 		if !durablePolicyRefusal(err) {
 			return Package{}, err
 		}
-		refusal := Refusal{RequestID: req.RequestID, Operation: "compile", Scope: req.Scope, Destination: destination.Name, TraceComplete: false}
+		refusal := Refusal{RequestID: req.RequestID, Operation: "compile", Scope: req.Scope, Destination: destination.Name, TraceComplete: false, ExplanationVersion: 1}
+		refusal.AvailableTokens = req.AvailableTokens
+		refusal.OptionalLimit = semantic.OptionalLimit
+		refusal.Ranking = semantic.Ranking
 		digest := sha256.Sum256([]byte(req.Query))
 		refusal.QuerySHA256 = hex.EncodeToString(digest[:])
 		for _, e := range evaluations {
 			refusal.Considered = append(refusal.Considered, RecordVersionRef{e.RecordID, e.Version})
+			// Keep computed diagnostic features, not evidence/grant snapshots.
+			// A refusal is not a committed selection or a recompileable receipt.
+			detail := *e
+			detail.Facts = nil
+			if detail.Reason == "" {
+				detail.Reason = "EVALUATION_INCOMPLETE"
+			}
+			refusal.Candidates = append(refusal.Candidates, detail)
 		}
 		if snapshotErr := tx.QueryRow(ctx, `SELECT pg_current_snapshot()::text`).Scan(&refusal.Snapshot); snapshotErr != nil {
 			return Package{}, snapshotErr

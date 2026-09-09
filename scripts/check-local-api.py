@@ -83,7 +83,15 @@ try:
     refusal=json.loads(result.stdout)
     assert refusal['status']=='BUDGET_REFUSED' and refusal['refusal_id']
     inspected=subprocess.run([binary,'agent','refusal'],input=json.dumps(dict(refusal_id=refusal['refusal_id'])),env=env,capture_output=True,text=True,check=True)
-    assert json.loads(inspected.stdout)['data']['code']=='BUDGET_REFUSED'
+    detail = json.loads(inspected.stdout)['data']
+    assert detail['code'] == 'BUDGET_REFUSED' and detail['explanation_version'] == 1
+    assert detail['available_tokens'] == 256 and detail['optional_limit'] == 25
+    assert detail['ranking'] == 'lexical-scope-recency/4'
+    assert detail['trace_complete'] is False and len(detail['candidates']) == 1
+    candidate = detail['candidates'][0]
+    assert candidate['record_id'] == record['record_id'] and candidate['lexical_matches'] == 1
+    assert candidate['reason'] == 'OPTIONAL_BUDGET' and 'facts' not in candidate
+    assert request['draft']['body'] not in inspected.stdout
     # A second listener must not remove or replace the active socket.
     collision = subprocess.run([binary, 'serve'], env=env, capture_output=True,
                                text=True, timeout=10)
