@@ -207,8 +207,13 @@ both its defective baseline and reviewed fix. Its task-relevant lesson and
 three prospective conditions are pinned. The
 [native experiment executor](verification/native-executor-2026-09-08.md) now
 passes all three model-free conditions through the Driver and supervisor with
-usable source, exact prompt receipt and independent repair rejection. Actual
-model outcomes, accepted native contracts and real-build usefulness remain open. The
+usable source, exact prompt receipt and independent repair rejection. The
+[model comparison](verification/native-permissions-2026-09-08.md) now records
+three invocation timeouts with no admitted repair. Native model contact and
+exact delivery are observed; successful repair and memory benefit remain open.
+An actual OpenCode scratch-permission defect is reproduced and corrected with
+a scripted harness check added to calibration. Accepted native contracts and
+real-build usefulness remain open. The
 [OpenCode trial host](verification/opencode-host-observation-2026-09-08.md) now
 uses per-arm authenticated observers, exact package/attempt joins and pending
 spawn/terminal recovery. Its full real-harness fixture verification includes

@@ -86,6 +86,14 @@ the supervisor's disposable workspace. The fixture checks read-only inputs and
 runs `make check` and `make test` inside the actual native runtime sandbox.
 Its output must pass Driver checks but fail the independent repair oracle.
 
+Calibration first runs the pinned OpenCode with a local scripted provider through
+the same filesystem bridge. It must write temporary scratch while failed write
+attempts leave the sealed Product unchanged and an unrelated home file absent.
+This makes no model requests. The model-run gate requires the resulting
+permission evidence for the exact harness and current policy, in addition to
+the three native fixture conditions. See the [original model results and
+permission correction](../../docs/verification/native-permissions-2026-09-08.md).
+
 ## Execute the frozen model comparison
 
 Use the same command with a fresh output directory, `--execute-model` and

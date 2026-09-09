@@ -1,5 +1,8 @@
 # Native recurrence executor
 
+Follow-up: the [actual model comparison and permission correction](native-permissions-2026-09-08.md)
+supersede the prospective model-run status in this checkpoint.
+
 Cairn now has an opt-in executor for the frozen native recurrence comparison.
 The [trial instructions](../../trials/native-recurrence/README.md) describe source
 calibration, model-free execution and the separately enabled model runs.

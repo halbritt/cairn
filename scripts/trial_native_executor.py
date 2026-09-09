@@ -13,6 +13,7 @@ import shutil
 import subprocess
 
 from trial_agent_env import candidate, evaluate, sha, snapshot
+from trial_native_permissions import probe_permissions
 from trial_native_recurrence import PROJECT, SCENARIO, pinned_inputs, workspace_manifest
 from trial_openrouter import configured_key, relay
 from trial_repair_assessment import repair_assessment
@@ -20,7 +21,7 @@ from trial_retrieval_tools import private_file
 
 
 def executor_pins(striatum, driver_binary):
-    paths = ['trial_native_executor.py', 'trial_native_runtime.py', 'trial_native_recurrence.py',
+    paths = ['trial_native_executor.py', 'trial_native_runtime.py', 'trial_native_permissions.py', 'trial_native_recurrence.py',
              'trial_agent_env.py', 'trial_repair_assessment.py', 'trial_openrouter.py', 'trial_retrieval_tools.py']
     go_paths = subprocess.check_output(['go', 'env', 'GOROOT', 'GOMODCACHE'], text=True).splitlines()
     return dict(driver_binary_sha256=sha(driver_binary.read_bytes()), go_paths=go_paths,
@@ -31,10 +32,22 @@ def executor_pins(striatum, driver_binary):
         fixture_source_sha256=sha((PROJECT / 'trials/native-recurrence/fixture-runtime.go.txt').read_bytes()))
 
 
+def runtime_permissions():
+    # OpenCode's later wildcard deny overrides its default scratch exception.
+    # The native filesystem bridge separately keeps sealed inputs read-only.
+    return {'*': 'deny', 'bash': 'allow', 'read': 'allow', 'edit': 'allow',
+            'write': 'allow', 'glob': 'allow', 'grep': 'allow',
+            'external_directory': {'/tmp/*': 'allow'}}
+
+
 def require_fixture(fixture, scenario, pins):
     if (fixture['execution_kind'] != 'fixture' or fixture['scenario_sha256'] != sha(SCENARIO.read_bytes())
             or fixture['execution_pins'] != pins or [a['mode'] for a in fixture['arms']] != scenario['arms']):
         raise ValueError('Native fixture does not match this executor and all frozen conditions')
+    permission = fixture.get('permission_probe', {})
+    if (not permission.get('passed') or permission.get('opencode_sha256') != scenario['opencode_sha256']
+            or permission.get('permission') != runtime_permissions()):
+        raise ValueError('Native fixture lacks matching real OpenCode permission evidence')
     for arm in fixture['arms']:
         if (not arm['change_set_checked'] or arm['process_exit'] != 0 or arm['invocations'] != 1
                 or arm['provider_requests'] != 0 or arm['gate'].get('gate_actions') != ['fail']
@@ -108,7 +121,7 @@ def run_arm(args, scenario, root, arm, lesson, driver_binary, runtime_binary):
                         options=dict(baseURL=route['endpoint'], apiKey=route['api_key']),
                         models={route['model']: dict(name=route['model'], limit=dict(context=131072, output=limits['output_tokens']))})},
                     agent=dict(build=dict(temperature=0, steps=limits['requests'])),
-                    permission={'*': 'deny', 'bash': 'allow', 'read': 'allow', 'edit': 'allow', 'write': 'allow', 'glob': 'allow', 'grep': 'allow'})
+                    permission=runtime_permissions())
             private_file(config_path, json.dumps(config))
             private_file(root / 'runtime.json', json.dumps(dict(opencode=str(runtime_binary), cairn=str(args.cairn),
                 opencode_config=str(config_path), home=str(root / 'runtime-home'), cache=str(root / 'runtime-cache'),
@@ -203,6 +216,12 @@ def main():
     pins = executor_pins(args.striatum, driver_binary)
     if args.execute_model:
         require_fixture(json.loads(args.fixture_report.read_text()), scenario, pins)
+    permission_probe = None
+    if not args.execute_model:
+        permission_probe = probe_permissions(args.output / 'permission-probe', args.opencode, args.cairn,
+            pins['go_paths'], runtime_permissions())
+        if not permission_probe['passed']:
+            raise RuntimeError('Actual OpenCode permission probe failed; inspect ' + str(args.output / 'permission-probe'))
     runtime_binary = args.opencode
     if not args.execute_model:
         fixture_source = args.output / 'fixture.go'
@@ -212,7 +231,7 @@ def main():
     report = dict(schema='cairn.native-recurrence-result/1', execution_kind='model' if args.execute_model else 'fixture',
                   scenario_sha256=sha(SCENARIO.read_bytes()), controller_sha256=sha(Path(__file__).read_bytes()),
                   runtime_bridge_sha256=sha((PROJECT / 'scripts/trial_native_runtime.py').read_bytes()),
-                  driver_binary_sha256=sha(driver_binary.read_bytes()), execution_pins=pins, arms=[])
+                  driver_binary_sha256=sha(driver_binary.read_bytes()), execution_pins=pins, permission_probe=permission_probe, arms=[])
     for arm in scenario['arms']:
         if executor_pins(args.striatum, driver_binary) != pins:
             raise ValueError('Executor changed during the comparison')

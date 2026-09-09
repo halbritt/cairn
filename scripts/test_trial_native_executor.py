@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from trial_agent_env import command_base
-from trial_native_executor import require_fixture
+from trial_native_executor import require_fixture, runtime_permissions
 from trial_native_recurrence import SCENARIO
 from trial_native_runtime import materialize_source
 
@@ -56,7 +56,7 @@ class NativeExecutorBoundaryTests(unittest.TestCase):
         scenario = json.loads(SCENARIO.read_text())
         pins = {'driver_binary_sha256': 'tested-driver'}
         fixture = dict(execution_kind='fixture', scenario_sha256=hashlib.sha256(SCENARIO.read_bytes()).hexdigest(),
-            execution_pins=pins, arms=[dict(mode=mode, change_set_checked=True, process_exit=0, invocations=1,
+            execution_pins=pins, permission_probe=dict(passed=True, opencode_sha256=scenario['opencode_sha256'], permission=runtime_permissions()), arms=[dict(mode=mode, change_set_checked=True, process_exit=0, invocations=1,
                 provider_requests=0, gate=dict(gate_actions=['fail'], passed=False), exact_prompt_received=True)
                 for mode in scenario['arms']])
         fixture['arms'][-1]['host_observation'] = dict(claim_confirmed=True, invocation_started=True,
@@ -64,7 +64,7 @@ class NativeExecutorBoundaryTests(unittest.TestCase):
         require_fixture(fixture, scenario, pins)
         with self.assertRaises(ValueError):
             require_fixture(fixture, scenario, {'driver_binary_sha256': 'untested-driver'})
-        for mutation in ('missing_arm', 'no_delivery', 'rerun', 'unknown_exit', 'accepted_fixture', 'wrong_prompt'):
+        for mutation in ('missing_arm', 'no_delivery', 'rerun', 'unknown_exit', 'accepted_fixture', 'wrong_prompt', 'missing_permissions', 'wrong_harness', 'wrong_permissions'):
             candidate = copy.deepcopy(fixture)
             if mutation == 'missing_arm':
                 candidate['arms'].pop(0)
@@ -76,8 +76,14 @@ class NativeExecutorBoundaryTests(unittest.TestCase):
                 candidate['arms'][0]['process_exit'] = None
             elif mutation == 'accepted_fixture':
                 candidate['arms'][0]['gate']['passed'] = True
-            else:
+            elif mutation == 'wrong_prompt':
                 candidate['arms'][0]['exact_prompt_received'] = False
+            elif mutation == 'missing_permissions':
+                candidate.pop('permission_probe')
+            elif mutation == 'wrong_harness':
+                candidate['permission_probe']['opencode_sha256'] = 'other-harness'
+            else:
+                candidate['permission_probe']['permission'].pop('external_directory')
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 require_fixture(candidate, scenario, pins)
 
