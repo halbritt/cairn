@@ -138,5 +138,18 @@
         "rationale": "The generic named procedure is not separately claimed. Alternatives, preserved behavior, new inspection semantics and completed verification are recorded directly."
       }
     ]
+  },
+  "deployment": {
+    "source_commit": "6e604ce24e1697d939dbd9f17893bc9fa8c752fe",
+    "binary_sha256": "1adc2afa7feebf3da4cd40662dc8d071c4dac92ad9e2e2cfe144c687252ec62c",
+    "api_pid": 3117151,
+    "postgres_pid_unchanged": true,
+    "semantic_worker_sha256": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954",
+    "semantic_configuration_preserved": true,
+    "hosted_storage_v2_exact_pull": true,
+    "hosted_inspection": "AUTHORITY_DENIED",
+    "protected_operational_trace_read": false,
+    "report_path": "/tmp/cairn-evidence-impact-deployment/report.json",
+    "report_sha256": "405aa9914f84a9e436e869e1bc7425f4a787133ea61a182ee3c6bbb462b895e0"
   }
 }

@@ -63,3 +63,16 @@ as-cited spans, unknown derivations and broader source lifecycle remain open.
 Pagination bounds returned rows; large recursive graphs may time out. No large
 production graph or real evidence incident is qualified by these synthetic checks.
 The feature makes existing links inspectable; downstream task benefit is unproved.
+
+## Local deployment
+
+After a backup, a clean build of `6e604ce24e1697d939dbd9f17893bc9fa8c752fe`
+was installed and the API restarted. The running executable matches binary
+SHA-256 `1adc2afa7feebf3da4cd40662dc8d071c4dac92ad9e2e2cfe144c687252ec62c`.
+PostgreSQL remained running; the semantic worker script and launch configuration
+were preserved.
+
+A hosted search/pull retrieved the current storage note v2 with its exact indexed
+body hash. A hosted call to the new evidence-impact endpoint returned
+`AUTHORITY_DENIED`. Protected operational traces were not read; the positive
+inspection behavior is established by the disposable CLI/API fixtures above.
