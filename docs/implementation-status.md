@@ -944,3 +944,20 @@ was added by this read-only interface.
 
 [Exact installed-source CI](https://github.com/halbritt/cairn/actions/runs/34392942583)
 passed PostgreSQL race tests, Python tests, vet and build.
+
+### 2026-09-09 — retained-version review repairs procedure omissions
+
+Ordinary authenticated history reads of Codex v6 and OpenCode v8 exposed details
+lost in the preceding consolidation: the `offset: N` continuation argument and
+semantic worker/setup prerequisites. The previous preservation claim was too
+broad. Codex v8 and OpenCode v10 restore these instructions, same-scope browsing
+and lexical search guidance. Combined size is now 8,327 bytes; the earlier 7,820
+bytes remains the historical consolidation measurement.
+
+Current source supports the corrections. An ordinary CLI browse continued at the
+returned offset; fresh task/run searches and full pulls verified the exact revised
+bodies and preserved metadata. See the [follow-up review](verification/procedure-maintenance-2026-09-09.md#follow-up-restore-omitted-instructions).
+Raw operational material remains in `/tmp/cairn-procedure-review/`. This is an
+actual correction assisted by retained guidance, with no observed downstream
+failure, independent comprehension comparison or measured net benefit. No code,
+runtime, host configuration or prior outcome assessment changed.

@@ -194,6 +194,9 @@ versions. Current bodies are smaller and two setup queries retain their first-pl
 answers. Clearer organization is an editorial judgment; task benefit remains
 unmeasured. Maintain useful current guidance when successive updates obscure it;
 do not turn note length or maintenance counts into another value target.
+A retained-version follow-up found missing browse arguments and semantic setup
+prerequisites and restored them. This qualifies the original preservation claim:
+smaller notes still need review for lost instructions, and upkeep has a cost.
 
 Repair current contract violations first. Then build the smallest real host
 integration and the observation join; add currentness, index/pull and historical

@@ -62,3 +62,42 @@ Selected consolidation belongs in ordinary upkeep; it does not justify a new
 grooming service, an automatic ranking reward or a target note length. Review
 future notes when current instructions become hard to find, while preserving
 necessary context and earlier versions.
+
+## Follow-up: restore omitted instructions
+
+A subsequent review used the ordinary hosted profile and the installed
+[record-history reader](../record-history.md) to inspect exact Codex v6 and
+OpenCode v8 bodies alongside the consolidated v7/v9 notes. The earlier statement
+that retrieval guidance was preserved was too broad: both consolidated notes
+retained `browse.next_offset` but omitted the input field `offset: N`. They also
+omitted the optional API worker prerequisite for semantic scoring; OpenCode lost
+the reminder that its API, CLI and adapter all need support for that argument.
+These details remained in the linked source documentation, but a reader relying
+on the procedures would have to rediscover them.
+
+Codex v8 and OpenCode v10 restore those details, the same-scope/context/budget
+continuation instruction and the preference for lexical search on precise
+identifiers. Release chronology remains in earlier versions. The two bodies now
+total 8,327 bytes; reducing size is subordinate to keeping usable instructions.
+
+The correction was checked against `mcpapi/server.go`'s search arguments,
+`integrations/opencode/cairn.ts`'s argument forwarding, `cmd/cairn/serve.go`'s
+optional worker configuration, and the current MCP, OpenCode and semantic docs.
+An ordinary CLI browse returned `next_offset: 6`; continuation with `--offset 6`
+returned six entries at offset 6. Fresh task/run searches ranked each corrected
+procedure first and full pulls matched both revisions exactly. Metadata was
+preserved. Native client conformance and software tests were not rerun for these
+note-body changes.
+
+| Procedure | Current revision | Body SHA-256 |
+| --- | --- | --- |
+| Codex | v8 | `2c2fe6cbd96473c772a9cc6be8e28286cd840a3d35c302a5824c54708f999b49` |
+| OpenCode | v10 | `e37d059ce6536b1376b85f9faaa22aad8d5a826869a8f83e357e5cca3060de41` |
+
+Operational histories, revision requests, full pulls and browse responses remain
+outside the checkout under `/tmp/cairn-procedure-review/`; `result.json` records
+the before/after hashes and checks. The original manifest describes the original
+consolidation and is unchanged. This follow-up found and repaired lost guidance;
+it did not observe a failed downstream task caused by the omissions or establish
+improved comprehension or net task benefit. It also supplies contrary evidence
+to assuming that shorter guidance necessarily preserves its practical value.
