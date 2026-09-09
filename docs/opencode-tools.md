@@ -80,9 +80,11 @@ may shift positions. Update both the API service and CLI for paged browsing.
 
 Capture saves selected reusable knowledge as repository-wide A testimony.
 `kind` defaults to `note`; omitted `shareable` keeps the note local. Writes return
-only IDs, version and retry ID. Edit takes the same full replacement draft as the
-[MCP edit tool](mcp.md#tools): preserve scope, sensitivity, applicability,
-relations and attribution. Stale versions require a fresh pull and reconciliation.
+only IDs, version and retry ID. For a text-only correction, edit accepts `body`, the pulled record ID and
+expected version, and a new request UUID. Stored draft metadata is preserved.
+Alternatively, edit takes the same full replacement `draft` as the
+[MCP edit tool](mcp.md#tools); supply exactly one of `body` or `draft`. With a full
+draft, preserve scope, sensitivity, applicability, relations and attribution. Stale versions require a fresh pull and reconciliation.
 Neither capture nor edit grants authority or establishes task success.
 
 The adapter validates arguments itself before accessing connection settings or

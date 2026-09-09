@@ -300,6 +300,12 @@ pulled A note through the existing authenticated edit contract. This closes the
 MCP correction-interface gap exposed by the configuration procedure revision;
 independent agent review and automatic learning remain open.
 
+[Body-only revision](verification/body-revision-2026-09-09.md) now lets ordinary
+MCP/OpenCode callers correct text without reconstructing scope, applicability,
+relations or attribution. The store preserves those fields under the existing
+version and retry checks. Full-draft edits remain supported; independent review
+and measured correction-task benefit remain open.
+
 A subsequent [actual OpenCode tool experiment](verification/tool-retrieval-2026-09-08.md)
 recovered from the failed query and completed the source-answering task through
 index/pull. Pairing each result with a complete pull command removed three observed

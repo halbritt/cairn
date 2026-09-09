@@ -259,6 +259,26 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		invoke("cairn_edit", refused, "AUTHORITY_DENIED")
 	}
 	invoke("cairn_pull", view.Index[0].PullArguments, "STALE_HANDLE")
+	bodyOnly, err := op.Create(ctx, core.CreateRequest{RequestID: uuid.NewString(), Draft: record.Draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newBody := "Body-only correction, preserving the saved note's metadata."
+	revise := editArgs{RequestID: uuid.NewString(), RecordID: bodyOnly.RecordID, ExpectedVersion: 1, Body: &newBody}
+	result := invoke("cairn_edit", revise, "")
+	if string(invoke("cairn_edit", revise, "")) != string(result) || strings.Contains(string(result), "body") {
+		t.Fatalf("body revision retry or disclosure: %s", result)
+	}
+	updatedBody, err := op.Get(ctx, bodyOnly.RecordID)
+	if err != nil || updatedBody.Version != 2 || updatedBody.Body != newBody || updatedBody.Scope != bodyOnly.Scope || updatedBody.Sensitivity != bodyOnly.Sensitivity {
+		t.Fatalf("body-only revision: %+v %v", updatedBody, err)
+	}
+	revise.RequestID = uuid.NewString()
+	invoke("cairn_edit", revise, "VERSION_CONFLICT")
+	revise.Draft = &bodyOnly.Draft
+	invoke("cairn_edit", revise, "supply exactly one")
+	revise.Draft, revise.Body = nil, nil
+	invoke("cairn_edit", revise, "supply exactly one")
 	evidence, err := op.CaptureEvidence(ctx, core.EvidenceRequest{RequestID: uuid.NewString(), Repo: repo, Body: "selected supporting bytes", Source: "MCP integration fixture", Sensitivity: "shareable"})
 	if err != nil {
 		t.Fatal(err)
@@ -272,6 +292,8 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	privileged := core.EditRequest{RequestID: uuid.NewString(), RecordID: mandatory.RecordID, ExpectedVersion: mandatory.Version, Draft: mandatory.Draft}
 	privileged.Draft.Kind = "note"
 	invoke("cairn_edit", privileged, "AUTHORITY_DENIED")
+	invoke("cairn_edit", editArgs{RequestID: uuid.NewString(), RecordID: mandatory.RecordID, ExpectedVersion: mandatory.Version, Body: &newBody}, "AUTHORITY_DENIED")
+	invoke("cairn_edit", editArgs{RequestID: uuid.NewString(), RecordID: record.RecordID, ExpectedVersion: 3, Body: &newBody}, "AUTHORITY_DENIED")
 	if err = json.Unmarshal(invoke("cairn_search", searchArgs{Query: "socketguide"}, ""), &view); err != nil {
 		t.Fatal(err)
 	}

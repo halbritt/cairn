@@ -111,7 +111,7 @@ search/pull another writer's shareable note within the same authorized repositor
 
 ## API operations
 
-Operations: `create`, `edit`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
+Operations: `create`, `edit`, `revise`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
@@ -203,3 +203,20 @@ login or after logout depends on the machine's existing user lingering policy.
 Stopping the API leaves the dedicated store running. Stop the store service to
 shut down both. Unit files, source code and generated credentials have separate
 lifecycles; never commit the token/config files.
+
+### Body-only revisions
+
+`POST /v1/revise` accepts `request_id`, `record_id`, `expected_version`, `repo`
+and `body`. It changes only an active A record's text while preserving its stored
+draft metadata. The repository must match both the record and the authenticated
+profile. It returns only `record_id` and `version`; no stored body or metadata is
+returned by this endpoint. The same JSON is accepted by `cairn agent revise` and
+the operator `cairn revise` command.
+
+The version comparison and revision commit share the existing serializable edit
+transaction. Exact request retries return the original revision, including after
+a later edit. Changed intent under the same UUID returns `IDEMPOTENCY_CONFLICT`;
+a new request based on an old version returns `VERSION_CONFLICT`. Read and
+reconcile before submitting another revision. Full `edit` remains available when
+changing other ordinary draft content is intentional. Upgrade the API and clients
+together before using `revise` or the native edit tools' body-only form.

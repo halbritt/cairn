@@ -44,6 +44,20 @@ def check(binary, root, environment):
     result = subprocess.run(shlex.split(entry['pull_command']), env=client_env, capture_output=True, text=True, timeout=15, check=True)
     pulled = json.loads(result.stdout)['data']['selection']['record']
     assert pulled == saved
+    revise = dict(request_id=str(uuid.uuid4()), record_id=saved['record_id'], expected_version=1,
+                  repo='fixture:socket', body=body + 'Selected correction.\n')
+    revised = client('hosted-agent.token', ['revise'], json.dumps(revise))
+    assert revised == dict(record_id=saved['record_id'], version=2)
+    assert client('hosted-agent.token', ['revise'], json.dumps(revise)) == revised
+    client('hosted-agent.token', ['revise'], json.dumps(dict(revise, body='changed intent')), expected='IDEMPOTENCY_CONFLICT')
+    client('hosted-agent.token', ['revise'], json.dumps(dict(revise, request_id=str(uuid.uuid4()))), expected='VERSION_CONFLICT')
+    fresh = client('hosted-agent.token', ['search', '--repo', 'fixture:socket', '--task', 'later-task', '--run', 'later-run', query])
+    entry = next(e for e in fresh['index'] if e['record_id'] == saved['record_id'])
+    updated = client('hosted-agent.token', ['expand'], json.dumps(entry['pull_arguments']))['selection']['record']
+    assert updated['body'] == revise['body'] and updated['version'] == 2
+    assert updated['observed_writer'] == 'agent:hosted-capture'
+    for field in ('kind', 'scope', 'sensitivity', 'claim_type'):
+        assert updated[field] == saved[field]
     # Operator convenience uses exactly the same parser but retains operator identity.
     result = subprocess.run([binary, 'remember', '--repo', 'fixture:operator-capture', '--stdin'],
                             input='Operator multiline\ntext stays intact.\n', env=environment,

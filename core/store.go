@@ -249,43 +249,47 @@ func (s *Store) Edit(ctx context.Context, req EditRequest) (Record, error) {
 		return Record{}, failure("INVALID_REQUEST", "expected_version must be positive")
 	}
 	return privileged(ctx, s, "edit", req.RequestID, req, func(tx pgx.Tx) (Record, error) {
-		if req.Draft.AttemptID != "" {
-			if err := lock(ctx, tx, "attempt:"+req.Draft.AttemptID); err != nil {
-				return Record{}, err
-			}
-		}
-		var version int
-		err := tx.QueryRow(ctx, `SELECT current_version FROM cairn.memory_record WHERE record_id=$1 FOR UPDATE`, req.RecordID).Scan(&version)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Record{}, failure("NOT_FOUND", "record not found")
-		}
-		if err != nil {
-			return Record{}, err
-		}
-		if version != req.ExpectedVersion {
-			return Record{}, failure("VERSION_CONFLICT", fmt.Sprintf("current version is %d", version))
-		}
-		old, err := readRecord(ctx, tx, req.RecordID)
-		if err != nil {
-			return Record{}, err
-		}
-		if err = s.checkRepo(old.Scope.Repo); err != nil {
-			return Record{}, err
-		}
-		if old.Class != "A" || old.Lifecycle != "active" {
-			return Record{}, failure("AUTHORITY_DENIED", "ordinary edit requires an active A record; use an audited transition")
-		}
-		if old.Scope != req.Draft.Scope || !sameApplicability(old.Pins, req.Draft.Pins) {
-			return Record{}, failure("AUTHORITY_DENIED", "scope changes require an authority path; exact scope is fixed in this slice")
-		}
-		if req.Draft.Sensitivity != "" && req.Draft.Sensitivity != old.Sensitivity {
-			return Record{}, failure("AUTHORITY_DENIED", "sensitivity changes require an audited transition")
-		}
-		if _, err = tx.Exec(ctx, `UPDATE cairn.memory_record SET current_version=current_version+1 WHERE record_id=$1 AND current_version=$2`, req.RecordID, req.ExpectedVersion); err != nil {
-			return Record{}, err
-		}
-		return insertVersion(ctx, tx, req.RecordID, version+1, req.Draft)
+		return s.editVersion(ctx, tx, req)
 	})
+}
+
+func (s *Store) editVersion(ctx context.Context, tx pgx.Tx, req EditRequest) (Record, error) {
+	if req.Draft.AttemptID != "" {
+		if err := lock(ctx, tx, "attempt:"+req.Draft.AttemptID); err != nil {
+			return Record{}, err
+		}
+	}
+	var version int
+	err := tx.QueryRow(ctx, `SELECT current_version FROM cairn.memory_record WHERE record_id=$1 FOR UPDATE`, req.RecordID).Scan(&version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Record{}, failure("NOT_FOUND", "record not found")
+	}
+	if err != nil {
+		return Record{}, err
+	}
+	if version != req.ExpectedVersion {
+		return Record{}, failure("VERSION_CONFLICT", fmt.Sprintf("current version is %d", version))
+	}
+	old, err := readRecord(ctx, tx, req.RecordID)
+	if err != nil {
+		return Record{}, err
+	}
+	if err = s.checkRepo(old.Scope.Repo); err != nil {
+		return Record{}, err
+	}
+	if old.Class != "A" || old.Lifecycle != "active" {
+		return Record{}, failure("AUTHORITY_DENIED", "ordinary edit requires an active A record; use an audited transition")
+	}
+	if old.Scope != req.Draft.Scope || !sameApplicability(old.Pins, req.Draft.Pins) {
+		return Record{}, failure("AUTHORITY_DENIED", "scope changes require an authority path; exact scope is fixed in this slice")
+	}
+	if req.Draft.Sensitivity != "" && req.Draft.Sensitivity != old.Sensitivity {
+		return Record{}, failure("AUTHORITY_DENIED", "sensitivity changes require an audited transition")
+	}
+	if _, err = tx.Exec(ctx, `UPDATE cairn.memory_record SET current_version=current_version+1 WHERE record_id=$1 AND current_version=$2`, req.RecordID, req.ExpectedVersion); err != nil {
+		return Record{}, err
+	}
+	return insertVersion(ctx, tx, req.RecordID, version+1, req.Draft)
 }
 
 func insertVersion(ctx context.Context, tx pgx.Tx, id string, version int, draft Draft) (Record, error) {

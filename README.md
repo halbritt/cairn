@@ -176,6 +176,12 @@ bin/cairn agent remember --kind lesson --shareable 'Run make test-integration fo
 bin/cairn agent search --repo "$PWD" --task TASK_ID --run RUN_ID 'relevant query'
 ```
 
+To correct only a saved note's text, pull its current version and call native
+`cairn_edit` with `record_id`, `expected_version`, a stable `request_id` UUID and
+`body`. Cairn preserves its stored draft metadata. Full-draft edits remain
+available. The [revision API](docs/local-api.md#body-only-revisions) also works
+through `cairn agent revise` with JSON input.
+
 To inspect available topics when the saved vocabulary is unknown, replace the
 query with `--browse`. Native `cairn_search` accepts `{"browse": true}`. This
 returns eligible previews within the same scope, destination and budget limits;

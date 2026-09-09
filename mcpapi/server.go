@@ -55,6 +55,14 @@ type rememberArgs struct {
 	Shareable bool   `json:"shareable,omitempty" jsonschema:"Explicitly allow this content to reach hosted models. Default false keeps it local."`
 }
 
+type editArgs struct {
+	RequestID       string      `json:"request_id"`
+	RecordID        string      `json:"record_id"`
+	ExpectedVersion int         `json:"expected_version"`
+	Body            *string     `json:"body,omitempty" jsonschema:"New body only; preserves all stored draft metadata. Supply body or draft, never both."`
+	Draft           *core.Draft `json:"draft,omitempty" jsonschema:"Complete replacement draft for edits beyond the body. Omit when supplying body."`
+}
+
 type recordWriteResult struct {
 	RecordID  string `json:"record_id"`
 	Version   int    `json:"version"`
@@ -97,7 +105,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull", Description: "Retrieve a full memory body using the complete pull_arguments from cairn_search. Reuse those arguments for retries. Handles expire and stale records require a new search. This spends the search receipt's shared expansion budget."}, tools.pull)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull_evidence", Description: "Pull evidence referenced by an expanded memory, using its evidence ID and expected SHA256 plus the original receipt and handle. Supply a request UUID and reuse it for retries. Shares the same expansion budget."}, tools.pullEvidence)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_remember", Description: "Save an explicitly selected reusable repository note as ordinary A testimony, applicable across tasks and runs. Does not promote claims or grant authority. Choose shareable only for content suitable for hosted models; default local notes will not appear in hosted searches. Preserve the request UUID when retrying."}, tools.remember)
-	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: new(bool)}, Name: "cairn_edit", Description: "Revise a previously pulled active Class A note. Supply its record_id and expected_version, a new request_id UUID, and the complete replacement draft. Copy kind, scope, pins, sensitivity, relations and attribution fields from the pulled record; change only the intended content. Scope and sensitivity changes and privileged records are refused. The authenticated writer is recorded. Retry with exactly the same arguments; VERSION_CONFLICT requires a fresh search/pull and reconciliation, not blind overwrite. Returns identifiers without echoing the body."}, tools.edit)
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: new(bool)}, Name: "cairn_edit", Description: "Revise a previously pulled active Class A note. Supply its record_id and expected_version, a new request_id UUID, and body to change only the text while preserving all stored metadata. Alternatively supply the complete replacement draft, never both body and draft. For a full draft, copy kind, scope, pins, sensitivity, relations and attribution fields from the pulled record; change only the intended content. Scope and sensitivity changes and privileged records are refused. The authenticated writer is recorded. Retry with exactly the same arguments; VERSION_CONFLICT requires a fresh search/pull and reconciliation, not blind overwrite. Returns identifiers without echoing the body."}, tools.edit)
 	return server, nil
 }
 
@@ -165,12 +173,20 @@ func (t memoryTools) remember(ctx context.Context, _ *mcp.CallToolRequest, args 
 	return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)
 }
 
-func (t memoryTools) edit(ctx context.Context, _ *mcp.CallToolRequest, args core.EditRequest) (*mcp.CallToolResult, any, error) {
+func (t memoryTools) edit(ctx context.Context, _ *mcp.CallToolRequest, args editArgs) (*mcp.CallToolResult, any, error) {
+	if (args.Body == nil) == (args.Draft == nil) {
+		return toolResult(nil, &core.Error{Code: "INVALID_REQUEST", Message: "supply exactly one of body or draft"}, t.config.AvailableTokens)
+	}
+	if args.Body != nil {
+		var result core.Revision
+		err := t.client.Call(ctx, "revise", core.ReviseRequest{RequestID: args.RequestID, RecordID: args.RecordID, ExpectedVersion: args.ExpectedVersion, Repo: t.config.Scope.Repo, Body: *args.Body}, &result)
+		return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)
+	}
 	if args.Draft.Scope.Repo != t.config.Scope.Repo {
 		return toolResult(nil, &core.Error{Code: "AUTHORITY_DENIED", Message: "edit draft must use the configured repository"}, t.config.AvailableTokens)
 	}
 	var result core.Record
-	err := t.client.Call(ctx, "edit", args, &result)
+	err := t.client.Call(ctx, "edit", core.EditRequest{RequestID: args.RequestID, RecordID: args.RecordID, ExpectedVersion: args.ExpectedVersion, Draft: *args.Draft}, &result)
 	return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)
 }
 

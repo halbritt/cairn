@@ -102,6 +102,19 @@ def check(binary, root, environment, opencode, claim, support):
     fresh = invoke('search', dict(query=marker))
     current = invoke('pull', fresh['index'][0]['pull_arguments'])['selection']['record']
     assert current['body'] == draft['body'] and current['version'] == 2
+    body_edit = dict(request_id=str(uuid.uuid4()), record_id=record['record_id'], expected_version=2,
+                     body=marker + ': body-only revision')
+    revised_body = invoke('edit', body_edit)
+    assert revised_body == dict(record_id=record['record_id'], version=3, request_id=body_edit['request_id'])
+    assert invoke('edit', body_edit) == revised_body
+    invoke('edit', dict(body_edit, body='changed intent'), 'IDEMPOTENCY_CONFLICT')
+    invoke('edit', dict(body_edit, request_id=str(uuid.uuid4())), 'VERSION_CONFLICT')
+    invoke('edit', dict(body_edit, draft=draft), 'INVALID_REQUEST')
+    fresh_body = invoke('search', dict(query=marker))
+    revised_record = invoke('pull', fresh_body['index'][0]['pull_arguments'])['selection']['record']
+    assert revised_record['body'] == body_edit['body'] and revised_record['version'] == 3
+    for field in ('kind', 'scope', 'sensitivity', 'claim_type'):
+        assert revised_record[field] == current[field]
     evidence_view = invoke('search', dict(query='socket'))
     claim_entry = next(entry for entry in evidence_view['index'] if entry['record_id'] == claim['record_id'])
     invoke('pull', claim_entry['pull_arguments'])

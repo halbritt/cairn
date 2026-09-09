@@ -45,7 +45,7 @@ Leaving all five flags empty preserves searches without a context object.
 | `cairn_pull` | Pass an entry's `pull_arguments` unchanged to receive its full body. Reuse those arguments for retries. |
 | `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its `expected_sha256`, and a retry `request_id`. Shares the body's expansion credits and bytes. |
 | `cairn_remember` | `body` and a stable UUID `request_id`; optional `kind` and `shareable`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |
-| `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and the complete replacement `draft`. Revises an active A note through the existing ordinary edit API. Returns identifiers without echoing the body. |
+| `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and either `body` for a text-only correction or the complete replacement `draft`. Revises an active A note through the existing ordinary edit API. Returns identifiers without echoing the body. |
 
 When the vocabulary of a saved note is unknown, call `cairn_search` with
 `{"browse": true}` to inspect available topics, then pull relevant entries or
@@ -69,7 +69,13 @@ with source/verification context; exclude raw sessions, private Council material
 and credentials. `shareable: true` explicitly permits hosted delivery. Default
 local notes do not appear in hosted searches. Capture does not promote authority.
 
-To correct a saved note, search and pull its current body first. For `cairn_edit`,
+To correct a saved note, search and pull its current body first. For a text-only
+correction, call `cairn_edit` with `record_id`, `expected_version`, a stable
+`request_id` UUID and the new `body`. Cairn preserves kind, scope, sensitivity,
+pins, relations and delegation attribution from that exact version. The new
+version records the authenticated writer. Supply exactly one of `body` or `draft`.
+
+For a full replacement through `cairn_edit`,
 copy `kind`, `body`, `scope`, `claim_type` and any `sensitivity`, `pins`,
 `relations`, `attributed_producer`, `attempt_id` and `result_ref` fields from
 the returned record into `draft`. Change the intended content and use the pulled

@@ -1,0 +1,185 @@
+{
+  "schema": "cairn.body-revision-verification/1",
+  "baseline_commit": "75e7595e81d437cd59a2c07fd63f4b5e9f0b89c1",
+  "installed_cli_sha256": "68aefb01f1f3514581b7a0b0cfd48b384776804153f2f3b6e766f2792ba1346d",
+  "installed_adapter_sha256": "81f4120d3a6bf5b64283732b756d0cc73febfa0b13fe90a2d82f09a33483d78c",
+  "installed_api_pid_observed": 1694317,
+  "installed_from_pending_source": true,
+  "sql_schema_changed": false,
+  "ranker_changed": false,
+  "ordinary_tool_count": 5,
+  "opencode_version": "1.18.21",
+  "codex_version": "0.153.4",
+  "model_inference_calls": 0,
+  "checks": {
+    "make_check": true,
+    "make_test": true,
+    "full_native_api_integration": true
+  },
+  "opencode": {
+    "route": "normal opencode run with scripted loopback completions",
+    "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+    "before_version": 5,
+    "after_version": 6,
+    "identical_retry": true,
+    "exact_saved_body": true,
+    "stored_metadata_preserved": true,
+    "write_response_identifiers_only": true,
+    "model_inference_calls": 0,
+    "exit_code": 0,
+    "adapter_sha256": "81f4120d3a6bf5b64283732b756d0cc73febfa0b13fe90a2d82f09a33483d78c"
+  },
+  "codex": {
+    "thread_id": "01a08541-7f1c-72b1-9dc1-65c05b44564f",
+    "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+    "version": 6,
+    "exact_saved_body": true,
+    "model_turns_started": 0
+  },
+  "corrected_test_expectation": "After ordinary deletion, a new revision returns NOT_FOUND because the row was removed. Initial new test incorrectly expected AUTHORITY_DENIED.",
+  "limits": [
+    "No independent model judgment or controlled task-benefit result",
+    "No standalone TypeScript typecheck",
+    "Revision can be refused if retained relation dependencies no longer qualify",
+    "API and clients need matching revision support"
+  ],
+  "design_review": {
+    "packet_id": "pkt-ab01308c28495c09",
+    "packet_content_sha256": "ab01308c28495c099f54428d21686a6aea18a354ee05946c1220e9cee60198e5",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_receipt": "/tmp/cairn-revise-decision.json",
+    "nonmaterial_obligations": 7
+  },
+  "artifacts": [
+    {
+      "path": "README.md",
+      "sha256": "f0e0ef28385ec998cf32825d355ac080d5e4e8b60cbab02412db490e6e591b8f"
+    },
+    {
+      "path": "cmd/cairn/agent.go",
+      "sha256": "1f16c0b1a6cedac9b13822173990253f72a3d5aaed84a8f3234bccb9c0848d62"
+    },
+    {
+      "path": "cmd/cairn/commands.go",
+      "sha256": "bbfec9e3fa87b47820ff8542cc99013848a1e5f35ae24c8c80100f71b49a77e6"
+    },
+    {
+      "path": "core/store.go",
+      "sha256": "29aabdf5684836b05d87138d30cedc5150943bcdc872c3072620a4859c8812f5"
+    },
+    {
+      "path": "docs/local-api.md",
+      "sha256": "1344aa41752ee386581031047c41eb69ceccc9d68402056cda2f54f1342a3323"
+    },
+    {
+      "path": "docs/mcp.md",
+      "sha256": "9d8a8914672a5a521670392aa046613d01aff7a76ec8e7300fb09202e372c978"
+    },
+    {
+      "path": "docs/opencode-tools.md",
+      "sha256": "bf32744c4a58d684640e308c1f538f1aef38039e7fd118e1c7915aad8e8ae0a1"
+    },
+    {
+      "path": "docs/roadmap.md",
+      "sha256": "924a7c21560e221adb20703a7b24ef84700e104164ba15ce9ec1720e7c794f59"
+    },
+    {
+      "path": "docs/verification/usefulness-status-2026-09-08.md",
+      "sha256": "e31fda82e55f9f78f60d1c7c644c4352f1b687c9406424b6e4e9089a088bb148"
+    },
+    {
+      "path": "integrations/opencode/cairn.ts",
+      "sha256": "81f4120d3a6bf5b64283732b756d0cc73febfa0b13fe90a2d82f09a33483d78c"
+    },
+    {
+      "path": "localapi/server.go",
+      "sha256": "58fb16541819d1b2ab5c7216d4398c7d93597f0a76a510698c476c3d859259d1"
+    },
+    {
+      "path": "mcpapi/server.go",
+      "sha256": "333a4e0ad02fc9a16e3d9c250f7cad7fb54f5965cc8c88d77877c9c14078ce05"
+    },
+    {
+      "path": "mcpapi/server_test.go",
+      "sha256": "0165043ce582169243f0c34a27ad83bd21b4c4f1c75cb3b3d2fa184978bd5d70"
+    },
+    {
+      "path": "scripts/check_agent_remember.py",
+      "sha256": "e2ac7a3003bd9e04e465715dc795488c9b8544aefed4463879f0bb1c207b6e01"
+    },
+    {
+      "path": "scripts/check_opencode_tools.py",
+      "sha256": "01557b734b631329239a49dc395a4e4bd2265c59ab127f33bdac26e47dbd66ce"
+    },
+    {
+      "path": "core/revise.go",
+      "sha256": "55d474d1d268d153cde9840858f162af5a76bd555a51c21770ffc24a92e5ea3d"
+    },
+    {
+      "path": "core/revise_test.go",
+      "sha256": "cd6febcca45e162b1f4a71693f1dcbc0f1d2eb9b8b81c48f250c3df6469517ed"
+    },
+    {
+      "path": "docs/verification/body-revision-2026-09-09.md",
+      "sha256": "696d6506ead554f693868f0ba783f8636634b7764f35790715d1a8ae22b7d164"
+    },
+    {
+      "path": "/tmp/cairn-revise-integration.log",
+      "sha256": "df56cb5935782f072a20366e56b99e527d154c5379bf54d0c0baf6b3112d6743"
+    },
+    {
+      "path": "/tmp/cairn-revise-integration-corrected.log",
+      "sha256": "dace72a712cdeefaaa2de37dcc8f5330908c783286d5c3eeee3732b596792375"
+    },
+    {
+      "path": "/tmp/cairn-revise-check.log",
+      "sha256": "b0ea022a3c3cbbe3ce6fee217ec5ece61f56bab9d7b7270dfac51fdb32ff50e3"
+    },
+    {
+      "path": "/tmp/cairn-revise-tests.log",
+      "sha256": "a3d343515c88ca3b38e2bca4ab54509a7484000d34b24128097ef9fe02caba04"
+    },
+    {
+      "path": "/tmp/cairn-opencode-body-revision.py",
+      "sha256": "e9eaddb9013b0b40e393e874084e54489ed46abdab49d7768d7dac0b2f81a581"
+    },
+    {
+      "path": "/tmp/cairn-opencode-body-revision/report.json",
+      "sha256": "aaee8d00230dc3ad26513832f55c309dae267254ad4bee3485d0ef20741471b2"
+    },
+    {
+      "path": "/tmp/cairn-codex-body-revision.py",
+      "sha256": "cae3e5ea4a9221828bbd8f3c1266754bf6f0b98e5690f0b4da07cb0923000112"
+    },
+    {
+      "path": "/tmp/cairn-codex-body-revision/report.json",
+      "sha256": "24429c277e15c6e8b0fb745ebce05e42304a8d2e49823f4e6e406a4226395684"
+    },
+    {
+      "path": "/tmp/cairn-revise-procedure-before.json",
+      "sha256": "29bd522a41fbdadd72f65fef9f340701a98800a9f091b7a0814dcfebd53277b7"
+    },
+    {
+      "path": "/tmp/cairn-revise-operational-request.json",
+      "sha256": "5dc714fd60c1eb83c1521c0435d4881f43e3b00e9fb30a75037752ed36537e4e"
+    },
+    {
+      "path": "/tmp/cairn-revise-final.json",
+      "sha256": "9e3f81792c0a1e42b71ccd19891cff8b6d451b7fe78aca1c049fd2bd267e983d"
+    },
+    {
+      "path": "/tmp/cairn-revise-decision.json",
+      "sha256": "aada3878b48ce4e36ff3e02ec4c7dabcf1880d0512f1c618b1f60a267b16f0a8"
+    },
+    {
+      "path": "/tmp/cairn-revise-residuals.json",
+      "sha256": "986e2f403e49bb728fdf02d27c6c20893083d0945c2d131e1e77f4944082e782"
+    },
+    {
+      "path": "/tmp/cairn-revise-citation-result.json",
+      "sha256": "e550026a333ceec5a0153a16e5907fc8bb690da1538f4342a1924215e67a73e3"
+    }
+  ]
+}

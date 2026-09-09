@@ -138,11 +138,16 @@ export const remember = validatedTool({
 })
 
 export const edit = validatedTool({
-  description: "Revise a pulled active A note. Copy every Draft field from the pulled record, change intended content, and supply its ID, expected version, and a new request UUID. Preserve scope, sensitivity, pins, relations and attribution. Reuse exact arguments for retries; VERSION_CONFLICT needs fresh search/pull and reconciliation. Returns identifiers without echoing the body.",
-  args: { request_id: z.string().uuid(), record_id: z.string().uuid(), expected_version: z.number().int().positive(), draft: z.record(z.string(), z.unknown()) },
+  description: "Revise a pulled active A note. Supply body to change only text while preserving all stored metadata, or draft for a complete replacement, never both. Supply its ID, expected version, and a new request UUID. Preserve scope, sensitivity, pins, relations and attribution. Reuse exact arguments for retries; VERSION_CONFLICT needs fresh search/pull and reconciliation. Returns identifiers without echoing the body.",
+  args: { request_id: z.string().uuid(), record_id: z.string().uuid(), expected_version: z.number().int().positive(), body: z.string().min(1).optional(), draft: z.record(z.string(), z.unknown()).optional() },
   async execute(args, context) {
+    if ((args.body === undefined) === (args.draft === undefined)) throw new Error("INVALID_REQUEST: supply exactly one of body or draft")
     const config = await settings("edit", context)
-    if ((args.draft.scope as { repo?: unknown } | undefined)?.repo !== config.repo) {
+    if (args.body !== undefined) {
+      const result = await call(config, context, ["revise"], { request_id: args.request_id, record_id: args.record_id, expected_version: args.expected_version, repo: config.repo, body: args.body })
+      return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
+    }
+    if ((args.draft?.scope as { repo?: unknown } | undefined)?.repo !== config.repo) {
       throw new Error("AUTHORITY_DENIED: edit draft must use the configured repository")
     }
     const result = await call(config, context, ["edit"], args)
