@@ -1,0 +1,135 @@
+{
+  "schema": "cairn.record-history-verification/1",
+  "date": "2026-09-09",
+  "base_commit": "21c891fdaabe1ebed5ec41a436ccc6618d54c841",
+  "source_sha256": {
+    "core/record_history.go": "0b94ed3c1e4ab568a5edd0c185bff512073710cbb65e4a74f536add085ec6b21",
+    "localapi/server.go": "3b047e00519193d4c65cc0158acfbcd147eb11d834ddf0b7012b58e06247a154",
+    "cmd/cairn/agent.go": "9f36f4d7309d1f42892faecadbcadea685921118bcd8a7a1f386a4515e31772a",
+    "cmd/cairn/commands.go": "54292aad3f876c7b6522f49934b0745c6e3c1e341e027a7ce8bcde1125cdb9df",
+    "core/record_history_test.go": "c1f3a5dcf2693bd88520f38ec3a641f1bc28560198106d6f6aeee5db40206f2f",
+    "localapi/record_history_test.go": "6fab48b1414967e9cb5c965e48f1cc79375a8485c157c66b09f70c38b7304781",
+    "core/restore_session_test.go": "c01c8f0f6cc88dd71f709ccb32770d1011304656d8abd25baace5e8f9315cada",
+    "scripts/check_agent_remember.py": "677a3534b6b79c085ca40e4b2a9b7a11c5cbf856058c0ce968c857a60a1d6aa4"
+  },
+  "checks": {
+    "missing_route_baseline_failed": true,
+    "full_disposable_postgres_race": true,
+    "actual_cli_without_database_access": true,
+    "focused_deleted_payload_and_restore_pause": true,
+    "go_and_30_python_tests": true,
+    "vet_format_build": true,
+    "migration_required": false,
+    "new_model_trials": 0
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-record-history-baseline.log",
+      "sha256": "dd32ce46dab994880ad933e6785c361a099570abc6fac405e551484b515ecf59"
+    },
+    {
+      "path": "/tmp/cairn-record-history-integration.log",
+      "sha256": "db69327360f83e45a6327fd9bfff24ac5e82067c6b90af10398e2b136d14a8ea"
+    },
+    {
+      "path": "/tmp/cairn-record-history-cli.log",
+      "sha256": "20a3c60566f9eab2276f0e2989e342a450d06d938268b766275da40095617a1f"
+    },
+    {
+      "path": "/tmp/cairn-record-history-exclusion.log",
+      "sha256": "b08856b258ec65d9cf237888b44ccdd64ce0629927805707c8a6b159fcda97d9"
+    },
+    {
+      "path": "/tmp/cairn-record-history-restore.log",
+      "sha256": "1d804c08ad1ed4987b232c825605e001fbef8383d6ca1af211035e8748c52208"
+    },
+    {
+      "path": "/tmp/cairn-record-history-tests.log",
+      "sha256": "c394de103a43d7a261ddfc940b9146e8d2703e75edae827717f101ad61f08346"
+    },
+    {
+      "path": "/tmp/cairn-record-history-check.log",
+      "sha256": "7e9bbc361fc3c1f98d20aec476936b4cd2eaecb7adec63bdd38519d225c274a0"
+    },
+    {
+      "path": "/tmp/cairn-record-history-final-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    }
+  ],
+  "doctrine": {
+    "packet_id": "pkt-d8fd36a096563901",
+    "packet_content_sha256": "d8fd36a096563901e7fa8532278f5d72fe4d272c08e488d91ccceea3973865c7",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "residual_obligations": [
+    {
+      "requirement": "architecture significance and scope",
+      "classification": "nonmaterial",
+      "reason": "This extends an existing inspection owner without a new service, storage representation or architectural boundary. The bounded plan and decision receipt retain implementation authority, scope, alternatives and verification; no separate architecture decision is proposed."
+    },
+    {
+      "requirement": "authority owner",
+      "classification": "nonmaterial",
+      "reason": "This extends an existing inspection owner without a new service, storage representation or architectural boundary. The bounded plan and decision receipt retain implementation authority, scope, alternatives and verification; no separate architecture decision is proposed."
+    },
+    {
+      "requirement": "decision authority and affected stakeholders",
+      "classification": "nonmaterial",
+      "reason": "This extends an existing inspection owner without a new service, storage representation or architectural boundary. The bounded plan and decision receipt retain implementation authority, scope, alternatives and verification; no separate architecture decision is proposed."
+    },
+    {
+      "requirement": "decision scope",
+      "classification": "nonmaterial",
+      "reason": "This extends an existing inspection owner without a new service, storage representation or architectural boundary. The bounded plan and decision receipt retain implementation authority, scope, alternatives and verification; no separate architecture decision is proposed."
+    },
+    {
+      "requirement": "ranked drivers and alternatives",
+      "classification": "nonmaterial",
+      "reason": "This extends an existing inspection owner without a new service, storage representation or architectural boundary. The bounded plan and decision receipt retain implementation authority, scope, alternatives and verification; no separate architecture decision is proposed."
+    },
+    {
+      "requirement": "verification and reversal plan",
+      "classification": "nonmaterial",
+      "reason": "This extends an existing inspection owner without a new service, storage representation or architectural boundary. The bounded plan and decision receipt retain implementation authority, scope, alternatives and verification; no separate architecture decision is proposed."
+    },
+    {
+      "requirement": "Go method-set and import-direction compatibility",
+      "classification": "nonmaterial",
+      "reason": "No Go interface, import direction or package boundary is introduced or moved."
+    },
+    {
+      "requirement": "current consumer call sets and ownership",
+      "classification": "nonmaterial",
+      "reason": "No Go interface, import direction or package boundary is introduced or moved."
+    },
+    {
+      "requirement": "current consumer inventory",
+      "classification": "nonmaterial",
+      "reason": "No Go interface, import direction or package boundary is introduced or moved."
+    },
+    {
+      "requirement": "observed substitution, volatility, or cross-boundary pressure",
+      "classification": "nonmaterial",
+      "reason": "No Go interface, import direction or package boundary is introduced or moved."
+    },
+    {
+      "requirement": "recurring change evidence when available",
+      "classification": "nonmaterial",
+      "reason": "The observed operator-only maintenance step and absent authenticated route justify the bounded read without a recurring-change study."
+    },
+    {
+      "requirement": "proc-decide-leave-code-alone",
+      "classification": "nonmaterial",
+      "reason": "Keeping operator SQL and receipt-only replay was considered explicitly in the bounded plan; no general no-change campaign is needed."
+    }
+  ],
+  "limits": [
+    "Direct inspection, not current eligibility or authority",
+    "No automatic grooming or ranking changes",
+    "No new native MCP/OpenCode tool",
+    "No aggregate context budget or reconstruction of pruned versions",
+    "Task-benefit attribution not established by these software checks"
+  ]
+}

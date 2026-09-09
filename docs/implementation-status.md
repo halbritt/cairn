@@ -26,7 +26,7 @@ the current summary; do not replace the historical record.
 
 | Area | Implemented behavior | Details |
 | --- | --- | --- |
-| Ordinary memory | Authenticated capture of selected notes, retained versions and attribution, repository/task/run scope, compare-and-swap edits, and body-only corrections that preserve metadata. | [Capture and use](../README.md), [ordinary revision](mcp.md#tools) |
+| Ordinary memory | Authenticated capture of selected notes, retained versions and attribution, repository/task/run scope, compare-and-swap edits, body-only corrections that preserve metadata, and authenticated retained-version inspection. | [Capture and use](../README.md), [ordinary revision](mcp.md#tools), [record history](record-history.md) |
 | Retrieval | Lexical search, matching source previews, bounded browsing with continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
 | Semantic discovery | Optional local CPU scoring for vocabulary mismatches, after eligibility checks; bounded work and labelled lexical fallback. Historical recompilation uses retained scores. | [Semantic discovery](semantic-discovery.md) |
 | Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, citation-time digests and optional byte passages on qualified claim versions, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [precise citations](evidence-citations.md), [span verification](verification/evidence-spans-2026-09-09.md) |
@@ -905,3 +905,22 @@ See the [review](verification/procedure-maintenance-2026-09-09.md) and
 is the coding agent's editorial judgment; smaller bodies are measured. Task
 benefit, general retrieval quality and net maintenance cost remain unestablished.
 No code, installed runtime, host settings or automatic grooming changed.
+
+### 2026-09-09 — authenticated retained record history
+
+`history` now exposes bounded newest-first version metadata and one explicitly
+requested earlier body through the ordinary API/CLI. The previous procedure review
+needed operator SQL for that comparison. Current repository/destination rules,
+record and per-version deletion exclusions, and restore admission govern the read.
+Responses label historical intent and distinguish the current class/version from
+the original version. No source copy, migration, mutation/use receipt, ranking
+change or additional native tool is introduced.
+
+The absent-route baseline now passes; disposable checks cover exact source/hash/
+writer/time, cursor continuation across an append, metadata-only pages, earlier
+classes, private/foreign/forgotten refusals and unchanged deletion eligibility.
+Full PostgreSQL/race integration and additional CLI/exclusion/restore checks pass,
+as do Go tests, 30 Python tests and vet/build. See the [contract](record-history.md),
+[verification](verification/record-history-2026-09-09.md) and
+[manifest](verification/record-history-2026-09-09.json). Software checks establish
+access capability; installation and real maintenance use are recorded separately.

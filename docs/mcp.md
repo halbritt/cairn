@@ -82,7 +82,9 @@ the returned record into `draft`. Change the intended content and use the pulled
 record's ID and version. Keep source and verification context in the correction.
 Do not copy output fields such as `class`, `attribution_state`, `observed_writer`
 or `written_at` into the draft; the store owns these. Editing records the authenticated writer and
-retains the earlier version.
+retains the earlier version. The [authenticated history command](record-history.md)
+can inspect retained versions for comparison through the CLI/API; it is separate
+from the five native tools and does not replace pulling the current note before editing.
 
 Retry with the exact same request ID and arguments. A new request using an old
 version returns `VERSION_CONFLICT`: search and pull again, reconcile the other

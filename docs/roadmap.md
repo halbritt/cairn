@@ -447,6 +447,12 @@ procedures with the deployed discovery options. Fresh native clients pulled the
 exact revised bodies. This is manual maintenance of useful guidance; independent
 correction and downstream task benefit remain open.
 
+[Authenticated retained history](record-history.md) now lets a reader list version
+metadata and read one exact earlier body for comparison without operator database
+access. Current repository/destination and deletion restrictions remain; historical
+inspection supplies no current authority. This supports selected maintenance and
+does not close cutoff-recompilation or task-value requirements.
+
 [Body-only revision](verification/body-revision-2026-09-09.md) now lets ordinary
 MCP/OpenCode callers correct text without reconstructing scope, applicability,
 relations or attribution. The store preserves those fields under the existing

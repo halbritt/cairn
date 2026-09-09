@@ -55,6 +55,15 @@ def check(binary, root, environment):
     entry = next(e for e in fresh['index'] if e['record_id'] == saved['record_id'])
     updated = client('hosted-agent.token', ['expand'], json.dumps(entry['pull_arguments']))['selection']['record']
     assert updated['body'] == revise['body'] and updated['version'] == 2
+    history = client('hosted-agent.token', ['history'], json.dumps(dict(record_id=saved['record_id'], limit=1)))
+    assert history['historical'] and history['current_version'] == 2
+    assert len(history['versions']) == 1 and history['versions'][0]['version'] == 2
+    assert 'body' not in history['versions'][0] and history['next_before_version'] == 2
+    earlier = client('hosted-agent.token', ['history'], json.dumps(dict(record_id=saved['record_id'], version=1)))
+    assert earlier['versions'][0]['body'] == body
+    assert earlier['versions'][0]['observed_writer'] == saved['observed_writer']
+    client('hosted-agent.token', ['history'], json.dumps(dict(record_id=local['record_id'])), expected='NOT_FOUND')
+    print('Authenticated CLI inspects retained note versions and exact prior guidance without database access')
     assert updated['observed_writer'] == 'agent:hosted-capture'
     for field in ('kind', 'scope', 'sensitivity', 'claim_type'):
         assert updated[field] == saved[field]

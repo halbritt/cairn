@@ -235,6 +235,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}) (core.ConflictDetail, error) {
 			return c.store.Conflict(ctx, req.ConflictID)
 		})
+	case "/v1/history":
+		serveJSON(w, r, func(ctx context.Context, req core.RecordHistoryRequest) (core.RecordHistory, error) {
+			return c.store.History(ctx, req, c.destination)
+		})
 	case "/v1/get":
 		serveJSON(w, r, func(ctx context.Context, req recordRequest) (core.Record, error) {
 			record, err := c.store.Get(ctx, req.RecordID)

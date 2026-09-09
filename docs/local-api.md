@@ -119,11 +119,14 @@ search/pull another writer's shareable note within the same authorized repositor
 
 ## API operations
 
-Operations: `create`, `edit`, `revise`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
+Operations: `create`, `edit`, `revise`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, `assessments`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`.
+`history` lists bounded retained version metadata or reads one exact body, under
+current repository/destination restrictions. See [record history](record-history.md)
+for paging and historical-inspection limits.
 `assessments` takes `receipt_id` and returns the owner's full assessment versions
 in ascending order, including reasons and evidence IDs. The profile's repository
 and destination must match the receipt. It returns no evidence or package bodies;

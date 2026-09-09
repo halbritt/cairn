@@ -37,6 +37,8 @@ func TestRestoreSessionBlocksFreshAndCachedConsumers(t *testing.T) {
 	// Existing administrative credentials must not accidentally serve data.
 	_, err = s.Get(ctx, record.RecordID)
 	requireCode(t, err, "RESTORE_PAUSED")
+	_, err = s.History(ctx, RecordHistoryRequest{RecordID: record.RecordID}, Destination{"local", true})
+	requireCode(t, err, "RESTORE_PAUSED")
 	// Recovery itself remains available while ordinary consumers are paused.
 	_, err = s.CaptureRecovery(ctx)
 	if err != nil {

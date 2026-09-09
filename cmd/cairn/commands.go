@@ -38,7 +38,7 @@ Everyday commands:
   list REPO | get UUID | use-report REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
-  create edit revise delete compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
+  create edit revise delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
   promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal
   supersession RECORD_UUID
   authorize-scope | scope-authorization RECORD_UUID
@@ -362,6 +362,10 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.GenerateProposals)
 	case "review-proposal":
 		return invoke(ctx, input, store.ReviewProposal)
+	case "history":
+		return invoke(ctx, input, func(ctx context.Context, req core.RecordHistoryRequest) (core.RecordHistory, error) {
+			return store.History(ctx, req, core.Destination{Name: "local", AllowLocal: true})
+		})
 	case "recompile":
 		return invoke(ctx, input, func(ctx context.Context, req core.RecompileRequest) (any, error) {
 			p, err := store.Recompile(ctx, req)
