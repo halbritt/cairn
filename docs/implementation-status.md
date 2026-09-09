@@ -124,12 +124,11 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI: clean `ab3306ca656ab701134ccf678d026e50c4e07e2c`, with SHA-256
-  `f46b3d5f004f4ff87629976017fc0f409da2c4d10d88eab6f6b9eeb9540ca79c`. The use report supports
-  explicit page and record controls; retained-run kind checks remain installed.
-- Running API: clean `2d6718112551095caa4fa1c65048702de70d450c`, with SHA-256
-  `7dd724bbf6878bb011d753167eba1447c5ab0e6812ff3bfa7c56e0b6906c3173`. It retains kind-filtered search.
-  The CLI-only history and runner updates needed no API restart or schema migration.
+- Installed CLI and running API: clean `cf66e1c3cc26b65d4f143f59f0f1070f7b56ec3b`,
+  with SHA-256 `a58d8258296382e6a81b100574ecf65685c62cf88a42682fc23e9afc7c9c7026`.
+  API PID 4121278 uses optional streaming model reuse. The store stayed on PID
+  163669; no schema migration accompanied this deployment. CLI history controls
+  and retained-run kind checks remain installed.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -142,15 +141,19 @@ Live checks on 2026-09-09 found:
   configuration exposes all five ordinary tools with conversation scope and
   optional startup. The installed native OpenCode adapter matches the current
   kind-filter-capable source and retains its existing connection settings.
-- Optional semantic discovery uses the prepared local CPU worker, batch size
-  one and two ONNX threads. The installed script matches the retained baseline
-  SHA-256 `d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954`.
-  It adds no persistent embedding cache or model service.
+- Optional semantic discovery uses the prepared local CPU model, batch size one
+  and two ONNX threads, through the API-owned `worker-stream` launcher. The script
+  SHA-256 is `290a93245909186c905708f328c276dc074232ef4fcd08c52f02ec56264a4fb5`.
+  A live child was reused for two hosted requests and then released after idle.
+  No persistent note-vector cache, package update or independent model service
+  was added. The one-shot launcher remains available.
 
-The [use-history CLI installation](verification/use-history-cli-2026-09-09.md#cli-installation)
-records the current CLI. The [retained-kind CLI repair](verification/retained-kinds-2026-09-09.md#cli-installation-and-retained-guidance)
-records the preceding CLI repair and preserved runtime. The [kind-filter installation report](verification/kind-filter-2026-09-09.md#local-installation)
-records the running API, adapter, preserved configuration and ordinary lookup.
+The [resident-worker installation](verification/semantic-residency-2026-09-09.md#local-installation)
+records the current CLI/API, worker, preserved configuration and idle-release
+check. Earlier [use-history CLI](verification/use-history-cli-2026-09-09.md#cli-installation),
+[retained-kind repair](verification/retained-kinds-2026-09-09.md#cli-installation-and-retained-guidance)
+and [kind-filter](verification/kind-filter-2026-09-09.md#local-installation)
+reports retain their deployment evidence.
 Earlier [Claude setup](verification/claude-config-2026-09-09.md#local-installation) and
 [note-transport](verification/note-transport-2026-09-09.md#local-deployment)
 reports retain their deployment history. Installation
@@ -159,6 +162,16 @@ or grooming timer is installed. Use the user services for the managed store's
 lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
+
+The resident-worker source passed disposable PostgreSQL/race integration with
+actual CPU scoring, same-store paired API timings and current-source exclusion
+checks, plus all Go packages, 34 Python tests, vet and formatting. Additional
+transport tests cover cancellation during a blocked write. Local installation
+verified exact compiled bytes, hosted retrieval/body identity, reuse and idle
+release. Its [report](verification/semantic-residency-2026-09-09.md) separates
+those checks from task-value claims.
+[Exact installed-source CI cf66e1c](https://github.com/halbritt/cairn/actions/runs/34412010428)
+passed PostgreSQL/race, Python, vet/build and the CLI history fixture.
 
 The installed use-history CLI passed disposable PostgreSQL/race integration,
 Go, 30 Python, vet and formatting. [Exact source CI `ab3306c`](https://github.com/halbritt/cairn/actions/runs/34408184103)
@@ -180,9 +193,10 @@ created by the previous binary retry and reconstruct exactly. The
 [feature report](verification/kind-filter-2026-09-09.md) retains the failing
 baseline, corrected test mistakes and final result. Its operational check finds
 and pulls saved direction through the ordinary hosted profile and exercises the
-installed semantic worker. These checks do not use model inference.
+installed semantic worker. These checks use local embeddings and scripted native
+tool responses; they do not run an answering-model task.
 
-[CI for running API source `2d67181`](https://github.com/halbritt/cairn/actions/runs/34405630245)
+[Earlier API-source CI `2d67181`](https://github.com/halbritt/cairn/actions/runs/34405630245)
 passed PostgreSQL/race, Python tests, vet and build. Earlier
 [native Claude checks](verification/claude-native-tools-2026-09-09.md) retain
 separate two-session correction/reuse and refusal evidence. No production
@@ -1350,3 +1364,27 @@ corrected a goroutine capture before final race checks. Neither observation
 justifies weakening a runtime contract. The prior memory lesson guided scope and
 retained the previous experimental limits. Deployment and CI are recorded after
 completion; all prior implementation history is preserved.
+
+### 2026-09-09 — install bounded semantic model reuse
+
+Clean cf66e1c is installed as both CLI and API. The API now selects worker-stream;
+the model files, Python packages, one-shot launcher, Codex/OpenCode settings and
+adapter remain unchanged. PostgreSQL stayed on PID163669. The installed API/CLI
+executable hash, worker and drop-in hashes are retained in the resident-worker
+report and current snapshot. Earlier deployment history remains intact.
+
+Two hosted queries for saved project direction took1.246seconds cold and0.739seconds
+warm, returned identical source versions/body hashes and candidate-score digests,
+and reused one child. An exact body pull verified the value-direction note. The
+child disappeared after the idle deadline. These operational observations do not
+establish a latency distribution or downstream task improvement.
+
+The semantic performance lesson advanced v3→v4 with the installed command and
+verified lifetime behavior, preserving its entire prior body and metadata.
+Exact mutation retry and a fresh full pull verified it. The prior prototype
+observations remain explicitly historical. No task assessment was changed.
+
+Exact installed-source CI [34412010428](https://github.com/halbritt/cairn/actions/runs/34412010428)
+completed successfully. The optional real CPU/API comparison remains separate
+local evidence. This deployment closes the bounded worker-reuse checkpoint;
+general task value, larger-scale retrieval and broader roadmap work remain open.

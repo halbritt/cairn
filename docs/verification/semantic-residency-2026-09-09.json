@@ -153,6 +153,122 @@
     {
       "path": "/tmp/cairn-semantic-residency-oneshot/report.json",
       "sha256": "1d5e9a4438f3aba92c1404614bf0b144c5fbf40eb7e549ce7dc097e97b00a91b"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-ci.json",
+      "sha256": "d3ccabaf6f5cc81c23849a3d2b8b7a93d8ca9c0bd2ede11be0f5fdcc3deff51e"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-ci.log",
+      "sha256": "71173ad4c91f03a242bd4baea087d643fd12ce51c09c276a3f465b63285e5f04"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-deployment/installation.json",
+      "sha256": "f17ce56ff40f67d611c42e0bfc59ecd58c1b40d7279d4438e1b4a461e43ab463"
+    },
+    {
+      "path": "/tmp/cairn-semantic-residency-deployment/lesson-verification.json",
+      "sha256": "b96871e7b0b2361f9379aafbfcc641cf2530e8af767f9459467c9689a6a98204"
     }
-  ]
+  ],
+  "installation": {
+    "installed_revision": "cf66e1c3cc26b65d4f143f59f0f1070f7b56ec3b",
+    "clean_build": true,
+    "before": {
+      "api_pid": 3917563,
+      "store_pid": 163669,
+      "binary_sha256": "f46b3d5f004f4ff87629976017fc0f409da2c4d10d88eab6f6b9eeb9540ca79c",
+      "worker_sha256": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954",
+      "config_sha256": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d"
+    },
+    "after": {
+      "api_pid": 4121278,
+      "store_pid": 163669,
+      "binary_sha256": "a58d8258296382e6a81b100574ecf65685c62cf88a42682fc23e9afc7c9c7026",
+      "worker_sha256": "290a93245909186c905708f328c276dc074232ef4fcd08c52f02ec56264a4fb5",
+      "stream_launcher_sha256": "33a97b9b1b6a86d1ec462ed375b412364361a60dbff189eaeab122d0fb90fcd0",
+      "config_sha256": "bb97a6690041a004c3385743b3b860394f635995d8b63781501900527b2793cd"
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.opencode/tools/cairn.ts": "b7590a3e061133ef55ae41b949147bd30b6a6773c51edf820a76bf54b992b53d",
+      "/home/halbritt/.local/share/cairn/semantic/worker": "ae97c97e9dca97c3435cd61f77223f9f25cf635b010b2f230e0a84d1537c6d72",
+      "/home/halbritt/.local/share/cairn/semantic/model-manifest.json": "30c065eba97b6172c473d9b384834c8e484e596804a798928d9a4dfb1bf2f049"
+    },
+    "hosted_requests": [
+      {
+        "seconds": 1.2461775199044496,
+        "child_pid": 4121321,
+        "discovery": {
+          "state": "ready",
+          "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+          "algorithm": "bge-max-chunk/1",
+          "scores_sha256": "d8ee302c4f0671833c457969de6827850dacb963657ea32c4d26a51f373a2076"
+        },
+        "sources": [
+          {
+            "record_id": "30681751-37ae-4c70-9543-3697f95d3fdc",
+            "version": 1,
+            "body_sha256": "ce957a3027dce0f09fa9654ff36ba6ce0f29826d802e92fe441fac43b8466111"
+          },
+          {
+            "record_id": "91c075c2-32d2-4fc7-83dd-68a4956fff8d",
+            "version": 1,
+            "body_sha256": "9c52b70d75265b3ca972d4280086beafd8b7faea450630bd32255cea996231a8"
+          },
+          {
+            "record_id": "5dd22562-20c7-4267-957b-d8f463cbb177",
+            "version": 1,
+            "body_sha256": "241e44fe5cc9b509a7539fee2087c23919e761ea2a342be0c6772aee9ccb424c"
+          }
+        ]
+      },
+      {
+        "seconds": 0.7392401199322194,
+        "child_pid": 4121321,
+        "discovery": {
+          "state": "ready",
+          "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+          "algorithm": "bge-max-chunk/1",
+          "scores_sha256": "d8ee302c4f0671833c457969de6827850dacb963657ea32c4d26a51f373a2076"
+        },
+        "sources": [
+          {
+            "record_id": "30681751-37ae-4c70-9543-3697f95d3fdc",
+            "version": 1,
+            "body_sha256": "ce957a3027dce0f09fa9654ff36ba6ce0f29826d802e92fe441fac43b8466111"
+          },
+          {
+            "record_id": "91c075c2-32d2-4fc7-83dd-68a4956fff8d",
+            "version": 1,
+            "body_sha256": "9c52b70d75265b3ca972d4280086beafd8b7faea450630bd32255cea996231a8"
+          },
+          {
+            "record_id": "5dd22562-20c7-4267-957b-d8f463cbb177",
+            "version": 1,
+            "body_sha256": "241e44fe5cc9b509a7539fee2087c23919e761ea2a342be0c6772aee9ccb424c"
+          }
+        ]
+      }
+    ],
+    "idle_release_verified": true,
+    "exact_body_pull": true,
+    "schema_migration": false,
+    "operational_records_changed": 0
+  },
+  "memory": {
+    "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+    "previous_version": 3,
+    "current_version": 4,
+    "body_sha256": "03fd1494d139215b8283394aa296e3dc20da1db8bf9a85cc696795dc4e7915f4",
+    "old_body_and_metadata_preserved": true,
+    "exact_retry": true,
+    "fresh_pull": true
+  },
+  "ci": {
+    "run_id": 34412010428,
+    "head_sha": "cf66e1c3cc26b65d4f143f59f0f1070f7b56ec3b",
+    "conclusion": "success"
+  }
 }

@@ -95,4 +95,30 @@ Doctrine packet `pkt-b3ffb522d1290195` has two typed evidence passes, a validate
 decision receipt and citation closure. Four remaining consumer-interface
 obligations are nonmaterial because the existing core ranker interface remains
 unchanged and the new close operation has one explicit API owner. Local deployment
-and exact-source CI are recorded separately after completion.
+and exact-source CI are recorded below.
+
+## Local installation
+
+Clean `cf66e1c3cc26b65d4f143f59f0f1070f7b56ec3b` is installed as CLI and API. The
+API PID is 4121278; its executable matches the clean build. The prepared model,
+Python dependencies, existing one-shot launcher, harness settings and OpenCode
+adapter were preserved. PostgreSQL remained on PID 163669. Only the new binary,
+worker script, streaming launcher and semantic service argument were installed;
+previous versions are retained privately for reversal.
+
+Two ordinary hosted searches for saved project direction took 1.246 seconds cold
+and 0.739 seconds warm with identical source versions/body hashes and discovery
+fingerprints. Both used one child; an exact pull verified the selected value note.
+The child disappeared after the 30-second idle interval. These observations use
+existing authorized hosted notes, not production mutations or protected reports.
+Raw responses remain outside Git. The current model fingerprint matches the
+fixture model; no dependency/model update was performed.
+
+The existing performance lesson advanced v3→v4 with the installed behavior and
+limits. Its full prior body and metadata were preserved; exact revision retry and
+a fresh full pull verified the new hash. No host-run outcome or task assessment
+was changed by this maintenance.
+
+Exact-source [CI 34412010428](https://github.com/halbritt/cairn/actions/runs/34412010428)
+passed PostgreSQL/race, Python, vet/build and the existing CLI history check. The
+optional local CPU/API comparison is separate local evidence, not a CI claim.
