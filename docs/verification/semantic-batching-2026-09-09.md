@@ -85,6 +85,21 @@ and long-note pulls, and labelled lexical fallback after its fixture scorer was
 disabled. These checks used disposable PostgreSQL and no hosted model calls.
 Source, logs and comparison hashes are retained in the adjacent JSON report.
 
+## Local deployment
+
+The installed worker was atomically replaced with the source from clean commit
+`4bfe53a`, retaining the previous script privately. The API binary/process,
+PostgreSQL, launcher, model files and dependency environment were unchanged.
+Each subsequent request starts the newly installed script.
+
+Two hosted-profile queries for the same storage question took 11.64 and 11.16
+seconds before installation, then 8.99 and 9.35 seconds afterward. All four returned
+identical indexed note versions and body hashes; the current storage note v2 was
+pulled and its exact body hash verified. New responses carried the expected batch
+fingerprint. These sequential live observations show a smaller gain than the
+public fixture and are not a service latency distribution. Raw hosted responses
+remain outside Git; the adjacent metadata records timings and deployment hashes.
+
 To compare another worker change, retain the baseline source before editing and
 use the model directory printed in the prepared `semantic/worker` launcher:
 

@@ -138,5 +138,43 @@
         "rationale": "The generic procedure is not separately claimed. The report directly records alternatives, preserved semantics, exact-score checks, observed cost and limits."
       }
     ]
+  },
+  "deployment": {
+    "source_commit": "4bfe53a24b59e23f3dcb1cb69db3bddf168f0f47",
+    "previous_worker_sha256": "68638c7bdcbd1868e7507987b949fb4cabfe67994cd3993cddef281184a69163",
+    "worker_sha256": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954",
+    "api_pid": 2907273,
+    "api_binary_sha256": "1152793c97bd956b1a5c416d844c3bdebf6c7ae705318fc6a1680e0d17d710ca",
+    "api_not_restarted": true,
+    "postgres_not_restarted": true,
+    "launcher_and_model_manifest_unchanged": true,
+    "indexes_identical": true,
+    "exact_storage_v2_pull": true,
+    "hosted_profile_only": true,
+    "no_note_mutation": true,
+    "comparisons": [
+      {
+        "condition": "baseline",
+        "seconds": 11.64282009890303,
+        "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679"
+      },
+      {
+        "condition": "baseline",
+        "seconds": 11.15696147410199,
+        "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679"
+      },
+      {
+        "condition": "candidate",
+        "seconds": 8.993801180971786,
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b"
+      },
+      {
+        "condition": "candidate",
+        "seconds": 9.348447983153164,
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b"
+      }
+    ],
+    "report_path": "/tmp/cairn-semantic-batching-deployment/report.json",
+    "report_sha256": "510cca1f0841b4c33e78a9d555df76b9e7c851f09df0d15b985d279fa1bd7c08"
   }
 }
