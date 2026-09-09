@@ -135,11 +135,13 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and running API: clean `cf66e1c3cc26b65d4f143f59f0f1070f7b56ec3b`,
-  with SHA-256 `a58d8258296382e6a81b100574ecf65685c62cf88a42682fc23e9afc7c9c7026`.
+- Installed CLI: clean `a92820a5d1deabff215ffa5c7af15585879915d5`, with SHA-256
+  `6fd53ab0c4692e25aabc7e0ee7d7ddc4660dc696821cf2bbc4158f1929575f7e`.
+  Explicit compact startup is installed alongside history and retained-kind controls.
+- Running API: clean `cf66e1c3cc26b65d4f143f59f0f1070f7b56ec3b`, with SHA-256
+  `a58d8258296382e6a81b100574ecf65685c62cf88a42682fc23e9afc7c9c7026`.
   API PID 4121278 uses optional streaming model reuse. The store stayed on PID
-  163669; no schema migration accompanied this deployment. CLI history controls
-  and retained-run kind checks remain installed.
+  163669; this CLI deployment required no API restart or schema migration.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -159,9 +161,10 @@ Live checks on 2026-09-09 found:
   No persistent note-vector cache, package update or independent model service
   was added. The one-shot launcher remains available.
 
-The [resident-worker installation](verification/semantic-residency-2026-09-09.md#local-installation)
-records the current CLI/API, worker, preserved configuration and idle-release
-check. Earlier [use-history CLI](verification/use-history-cli-2026-09-09.md#cli-installation),
+The [compact-start installation](verification/compact-start-2026-09-09.md#local-installation-and-ci-correction)
+records the current CLI and preserved API/configuration. The
+[resident-worker installation](verification/semantic-residency-2026-09-09.md#local-installation)
+retains the API, worker and idle-release checks. Earlier [use-history CLI](verification/use-history-cli-2026-09-09.md#cli-installation),
 [retained-kind repair](verification/retained-kinds-2026-09-09.md#cli-installation-and-retained-guidance)
 and [kind-filter](verification/kind-filter-2026-09-09.md#local-installation)
 reports retain their deployment evidence.
@@ -174,6 +177,14 @@ lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
 
+The compact-start CLI passed disposable PostgreSQL/race integration, Go unit
+and 34 Python tests, vet/format checks, and real CLI/API/native transport checks.
+[Exact installed CLI-source CI `a92820a`](https://github.com/halbritt/cairn/actions/runs/34417847517)
+passed, including the authenticated startup suite after its database was isolated
+from Go test authority state. The [report](verification/compact-start-2026-09-09.md)
+retains the initial CI failure, native quoting failure, final checks and deployment.
+Native tests used scripted responses with no inference or task-value claim.
+
 The resident-worker source passed disposable PostgreSQL/race integration with
 actual CPU scoring, same-store paired API timings and current-source exclusion
 checks, plus all Go packages, 34 Python tests, vet and formatting. Additional
@@ -181,7 +192,7 @@ transport tests cover cancellation during a blocked write. Local installation
 verified exact compiled bytes, hosted retrieval/body identity, reuse and idle
 release. Its [report](verification/semantic-residency-2026-09-09.md) separates
 those checks from task-value claims.
-[Exact installed-source CI cf66e1c](https://github.com/halbritt/cairn/actions/runs/34412010428)
+[Exact running API-source CI cf66e1c](https://github.com/halbritt/cairn/actions/runs/34412010428)
 passed PostgreSQL/race, Python, vet/build and the CLI history fixture.
 
 The installed use-history CLI passed disposable PostgreSQL/race integration,
@@ -1488,3 +1499,21 @@ before implementation and informed fresh retrieval and authority separation.
 This closes a bounded initial-index delivery gap, not aggregate task budgeting,
 observed index execution, model-selected use or durable task-value acceptance.
 All earlier implementation history is preserved.
+
+### 2026-09-09 — install compact startup and isolate its CI fixture
+
+Installed implementation `9c349a3` and used its explicit stdin startup through
+the ordinary hosted profile to retrieve and update the OpenCode procedure to v11.
+The complete v10 body and all other metadata were preserved. An identical retry
+and a fresh index/body pull verified the update. No task assessment was added.
+
+The first CI run failed the new authenticated CLI suite: earlier Go tests had
+already installed root authority in the shared service database. Commit `a92820a`
+creates and migrates a separate job-owned database for the CLI fixture. Root
+bootstrap protections remain unchanged. Exact-source CI then passed every step,
+including startup. Clean `a92820a` is installed as the CLI; a fresh stdin launch
+retrieved the saved v11 procedure. API cf66e1c/PID 4121278 and harness configuration
+were preserved. The [installation report](verification/compact-start-2026-09-09.md#local-installation-and-ci-correction)
+and metadata retain both CLI installations, CI outcomes and source hashes.
+This verifies availability and transport; cumulative memory contribution remains
+an open task-value question. All prior history is preserved.

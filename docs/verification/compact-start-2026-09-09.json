@@ -260,5 +260,86 @@
     "Generic observed/retained H0 runner remains body-only",
     "Unsupported kernels and OS resource exhaustion not fault-injected",
     "Normal title generation can include the preloaded task input"
+  ],
+  "deployment": {
+    "implementation_commit": "9c349a3ebf4b2de0da7a9d95e34fa3f101454c96",
+    "installation": {
+      "cli_revision": "a92820a5d1deabff215ffa5c7af15585879915d5",
+      "cli_sha256": "6fd53ab0c4692e25aabc7e0ee7d7ddc4660dc696821cf2bbc4158f1929575f7e",
+      "previous_cli_path": "/tmp/cairn-controlled-bootstrap-deployment/previous-cli-9c349a3",
+      "previous_cli_sha256": "dc594f6e6749c52923230e122065320fa65c7409b94d82348959556dbac3cdb6",
+      "api_pid": 4121278,
+      "api_sha256": "a58d8258296382e6a81b100574ecf65685c62cf88a42682fc23e9afc7c9c7026",
+      "api_restarted": false,
+      "native_adapter_sha256": "b7590a3e061133ef55ae41b949147bd30b6a6773c51edf820a76bf54b992b53d",
+      "native_config_sha256": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "codex_config_sha256": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "ci_run": 34417847517,
+      "api_revision": "cf66e1c3cc26b65d4f143f59f0f1070f7b56ec3b",
+      "initial_installation": "/tmp/cairn-controlled-bootstrap-deployment/installation.json"
+    },
+    "procedure_update": {
+      "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+      "version": 11,
+      "body_sha256": "467c05f031a4d345bac17c05c73f0df4315abc1355cea7d76a2e0df5476851b2",
+      "body_bytes": 5810,
+      "before_version": 10,
+      "full_prior_body_and_metadata_preserved": true,
+      "bootstrap_bytes": 2809,
+      "fresh_receipt_id": "5a8ddfbd-1217-4cd7-a907-93f920fbfee9",
+      "source_seal": "blake3:e36594693a463d46f90bbf13b41582a066d023e06ad70d84ffab973dc3cf8899"
+    },
+    "installed_smoke": {
+      "carrier": "stdin",
+      "command": "/bin/cat",
+      "bytes": 2776,
+      "receipt_id": "b5af28d5-a564-45cf-9485-2415014b6a57",
+      "current_procedure_found": true,
+      "model_inference_calls": 0
+    }
+  },
+  "ci": {
+    "initial": {
+      "run_id": 34417454430,
+      "commit": "9c349a3ebf4b2de0da7a9d95e34fa3f101454c96",
+      "conclusion": "failure",
+      "reason": "New CLI suite reused the Go test database whose root authority was already installed."
+    },
+    "corrected": {
+      "run_id": 34417847517,
+      "commit": "a92820a5d1deabff215ffa5c7af15585879915d5",
+      "conclusion": "success",
+      "correction": "Create and migrate cairn_cli_test in the job-owned PostgreSQL service before CLI fixtures; preserve bootstrap authority contract."
+    }
+  },
+  "deployment_artifacts": [
+    {
+      "path": ".github/workflows/test.yml",
+      "sha256": "ae30f2320ef7ba541cb19683033d57fc9f24e6688e87bb27032a67ed38ad2f27"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-ci-success.json",
+      "sha256": "59f20fc622fd97f847a1ec58e7477f379cc9aa930fbb57ba2937d732390b8111"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-ci-failure.log",
+      "sha256": "9ac3b84c4b5c63ad9a75e819ba376b3f2296ae548fbbb0d94f3f3cb1a970ead6"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-deployment/installation.json",
+      "sha256": "0f95f56708c411ed17236ad0a9fd4177f72ad64f5d20f985bb2b1db1ff76daa7"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-deployment/installation-ci.json",
+      "sha256": "b37eabca97ce34b00653f05ae20ef6ad39550ee7daa4aefa55b9c6d26bd9e785"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-deployment/procedure-update.json",
+      "sha256": "144c5c4b21d972a612c96c8f9b1933bbb591d6c8ade5dfc2bfecb7cf53b4299c"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-deployment/ci-installed-start.txt",
+      "sha256": "8c92b9d80bfda87cb34705a850556d2f7b4959a48ca40eb2281a182d1c22cb92"
+    }
   ]
 }

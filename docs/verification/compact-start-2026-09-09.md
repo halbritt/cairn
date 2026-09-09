@@ -84,3 +84,28 @@ incremental memory-value or task-acceptance result.
 [Metadata](compact-start-2026-09-09.json) retains source, test, native request and
 doctrine receipts. E2 remains partial for observed/retained index execution and
 combined task budgeting; general durable task value remains open.
+
+## Local installation and CI correction
+
+The first implementation commit, `9c349a3`, was installed and used through the
+ordinary hosted profile to retrieve and update the saved OpenCode procedure.
+That procedure is now version 11; the full prior body and all other metadata were
+preserved. An identical mutation retry and a fresh index/body pull verified the
+update. This was maintenance through the CLI, with no model task or assessment.
+
+Its [first CI run](https://github.com/halbritt/cairn/actions/runs/34417454430)
+passed the Go/race, Python, check/build and history steps, then failed the new CLI
+suite because the shared database already had root authority installed by Go
+tests. Commit `a92820a` gives that suite a separate database in the job-owned
+PostgreSQL service and explicitly migrates it. The bootstrap contract is unchanged.
+The [corrected run](https://github.com/halbritt/cairn/actions/runs/34417847517)
+passed every step, including authenticated CLI and compact startup checks.
+
+Clean `a92820a5d1deabff215ffa5c7af15585879915d5` is now installed as the CLI,
+with SHA-256 `6fd53ab0c4692e25aabc7e0ee7d7ddc4660dc696821cf2bbc4158f1929575f7e`.
+A fresh stdin launch into `/bin/cat` returned the current procedure version and
+body digest. The API remains at clean `cf66e1c`, PID 4121278, with executable
+SHA-256 `a58d8258296382e6a81b100574ecf65685c62cf88a42682fc23e9afc7c9c7026`;
+it was not restarted. Native OpenCode adapter/config and Codex config hashes
+match the initial installation. Metadata preserves both installation records,
+the original tested source hashes and the subsequent CI workflow correction.
