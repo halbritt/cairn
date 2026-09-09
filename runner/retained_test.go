@@ -75,7 +75,7 @@ func TestRetainedRunExecutesExactPackageWithoutCompile(t *testing.T) {
 
 func TestRetainedRunRejectsContextChangesBeforeBindingOrChild(t *testing.T) {
 	s, request, pkg := retainedFixture(t)
-	for _, change := range []string{"repo", "task", "run", "query", "purpose", "budget", "binding", "capability", "revision", "workspace", "destination", "seal", "mode"} {
+	for _, change := range []string{"repo", "task", "run", "query", "purpose", "budget", "binding", "capability", "revision", "workspace", "destination", "seal", "mode", "kinds"} {
 		t.Run(change, func(t *testing.T) {
 			req := request
 			req.Compile.Context = nil
@@ -110,6 +110,8 @@ func TestRetainedRunRejectsContextChangesBeforeBindingOrChild(t *testing.T) {
 				req.Retained.Seal = "wrong"
 			case "mode":
 				req.Compile.Mode = "index"
+			case "kinds":
+				req.Compile.Kinds = []string{"note"}
 			}
 			var output bytes.Buffer
 			_, err := Run(context.Background(), noCompileStore{s}, req, &output, &output)
@@ -153,5 +155,39 @@ func TestRetainedRunRechecksAfterLoading(t *testing.T) {
 	status, err := s.RunStatus(context.Background(), pkg.ReceiptID)
 	if err != nil || !status.BindingObserved || status.LaunchClaimed {
 		t.Fatalf("unexpected staged refusal state: %+v, %v", status, err)
+	}
+}
+
+func TestRetainedFilteredRunRequiresEquivalentKindsBeforeLaunch(t *testing.T) {
+	s, req, _ := retainedFixture(t)
+	req.Compile.RequestID = uuid.NewString()
+	req.Compile.Kinds = []string{"note", "decision"}
+	pkg, err := s.Compile(context.Background(), req.Compile, req.Destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Retained = &core.RunPackageRequest{ReceiptID: pkg.ReceiptID, Seal: pkg.Seal}
+	for _, kinds := range [][]string{nil, {"note"}, {"unknown"}} {
+		rejected := req
+		rejected.Compile.Kinds = kinds
+		var output bytes.Buffer
+		_, err := Run(context.Background(), noCompileStore{s}, rejected, &output, &output)
+		if core.Code(err) != "INVALID_REQUEST" || output.Len() != 0 {
+			t.Fatalf("mismatched kinds launched: kinds=%v err=%v output=%q", kinds, err, output.String())
+		}
+		status, err := s.RunStatus(context.Background(), pkg.ReceiptID)
+		if err != nil || status.BindingObserved || status.LaunchClaimed {
+			t.Fatalf("mismatched kinds changed run state: %+v %v", status, err)
+		}
+	}
+	req.Compile.Kinds = []string{"decision", "note", "decision"}
+	var output bytes.Buffer
+	result, err := Run(context.Background(), noCompileStore{s}, req, &output, &output)
+	rendered, renderErr := pkg.Render()
+	if err != nil || renderErr != nil || result.ReceiptID != pkg.ReceiptID || output.String() != rendered+"\nTASK\n"+req.Prompt {
+		t.Fatalf("equivalent kind set did not execute retained bytes: %+v %v", result, err)
+	}
+	if strings.Join(req.Compile.Kinds, ",") != "decision,note,decision" {
+		t.Fatal("run mutated caller's filter")
 	}
 }

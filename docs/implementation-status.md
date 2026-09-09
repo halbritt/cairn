@@ -1195,3 +1195,25 @@ Exact installed-source CI run [34405630245](https://github.com/halbritt/cairn/ac
 completed successfully. The feature's local native and operational checks remain
 separate evidence from CI. The complete preceding implementation history is
 preserved.
+
+### 2026-09-09 — repair retained kind intent and clarify E2
+
+An E2 acceptance review found that the previous kind-filter feature omitted the
+runner's retained-intent comparison and matching run flags. Real child-process
+checks reproduced launch under changed or omitted kinds. The
+[repair and acceptance review](verification/retained-kinds-2026-09-09.md) and
+[metadata](verification/retained-kinds-2026-09-09.json) retain the failure and
+verified correction. Shared normalization now checks kinds before binding/launch;
+fresh and retained trusted/authenticated run commands accept repeated --kind.
+Equivalent sets preserve exact retained bytes and caller input.
+
+PostgreSQL/race, CLI/API, Go, 30 Python, vet and formatting checks pass. This is
+self-created rework, with no claim that memory caused discovery or delivered net
+benefit. Existing retained-launch guidance was read after finding the defect.
+The original kind-filter retrieval checks remain valid within their stated scope.
+
+E2 remains partial: generic H0 runner and retained execution explicitly reject
+index packages, and native tools do not establish automatic compact startup or
+aggregate task budgeting. The roadmap now records those exact gaps. Source
+changes are verified; the current installation snapshot remains the preceding
+deployment until the separate CLI installation check.

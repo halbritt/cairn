@@ -87,7 +87,7 @@ func (p Package) Render() (string, error) {
 }
 func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Destination) (Package, error) {
 	var err error
-	req.Kinds, err = normalizeKinds(req.Kinds)
+	req.Kinds, err = NormalizeKinds(req.Kinds)
 	if err != nil {
 		return Package{}, err
 	}

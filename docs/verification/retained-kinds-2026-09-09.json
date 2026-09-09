@@ -1,0 +1,63 @@
+{
+  "schema": "cairn.retained-kind-verification/1",
+  "date": "2026-09-09",
+  "baseline_commit": "b9ebabb10af0d55d44b44bc1a4214e82f571b193",
+  "introduced_by": "2d6718112551095caa4fa1c65048702de70d450c",
+  "reproduction": "Retained child launched with mismatched kind intent",
+  "verification": {
+    "postgres_race": true,
+    "go_tests": true,
+    "python_tests": 30,
+    "vet_format": true,
+    "authenticated_cli": true
+  },
+  "E2_complete": false,
+  "model_task": false,
+  "memory_caused_discovery": false,
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-retained-kinds-plan.md",
+      "sha256": "178beb624dae39cab55adc7b10d9e13437dc1e9b055db58d1eaffb093f8b1435"
+    },
+    {
+      "path": "/tmp/cairn-retained-kinds-red.log",
+      "sha256": "14fc0571d2b8fa3385ab005ecfbd0bb0a37962129078483d2bbea9735a0aff44"
+    },
+    {
+      "path": "/tmp/cairn-retained-kinds-integration.log",
+      "sha256": "ee5c7bc59d36eada4183c22a6f27da53c9e78a9daa98545ddfa5bd79b3c7adab"
+    },
+    {
+      "path": "/tmp/cairn-retained-kinds-unit.log",
+      "sha256": "627cab38866af7d0e1db488d4bad432bd5ec92155840fc7fefbdd55c19de3ff1"
+    },
+    {
+      "path": "/tmp/cairn-retained-kinds-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-retained-kinds-final.json",
+      "sha256": "d03df533257dc53bd5d3a9c4db0d8ffbd01f8acfc7cdc2beac6c660cd1c37851"
+    },
+    {
+      "path": "/tmp/cairn-retained-kinds-decision.json",
+      "sha256": "c39a58283114369d1939f4d9fa028046742debd206eaa8dfcf8da578c5bc1b8a"
+    },
+    {
+      "path": "/tmp/cairn-retained-kinds-citation-result.json",
+      "sha256": "e1183fe23245335b1b3b51606cff1abeb47b678176591658ec56c20b6cf72b3a"
+    },
+    {
+      "path": "/tmp/cairn-retained-kinds-memory-search.json",
+      "sha256": "b2ad5e62ae0e4cb0a315cce39db083aedea9b0debdd1f71fa9ea6a521cacd0d6"
+    },
+    {
+      "path": "/tmp/cairn-retained-kinds-note-2923953f-80c2-46ff-aea6-1e5b5fd1743c.json",
+      "sha256": "e905b4a6b53ddab3e38c15eeebdf36d57f924d1a910da28fbc21ee475d01cfc1"
+    },
+    {
+      "path": "/tmp/cairn-retained-kinds-note-82fcfec8-474b-48fe-9a00-a36f59d34ac1.json",
+      "sha256": "8641686ebde91a67c7681f6b816754aa1fd6560bd18245648c6036f816344ff8"
+    }
+  ]
+}

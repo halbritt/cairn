@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -62,6 +63,11 @@ type Store interface {
 }
 
 func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer) (Result, error) {
+	kinds, err := core.NormalizeKinds(req.Compile.Kinds)
+	if err != nil {
+		return Result{}, err
+	}
+	req.Compile.Kinds = kinds
 	if req.Compile.Mode != "" {
 		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "H0 requires body compilation; index pull needs a host tool route"}
 	}
@@ -84,7 +90,6 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	}
 	req.Compile.Context = &pins
 	var pkg core.Package
-	var err error
 	if req.Retained == nil {
 		pkg, err = store.Compile(ctx, req.Compile, req.Destination)
 	} else {
@@ -103,8 +108,9 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 		if pkg.ReceiptID != req.Retained.ReceiptID || pkg.Seal != req.Retained.Seal || pkg.Semantic.Mode != "" ||
 			pkg.Semantic.Destination != req.Destination || pkg.Semantic.Scope != req.Compile.Scope ||
 			pkg.Semantic.Context == nil || *pkg.Semantic.Context != pins || pkg.Semantic.Query != query ||
-			pkg.Semantic.Purpose != req.Compile.Purpose || pkg.Semantic.AvailableTokens != req.Compile.AvailableTokens {
-			return result, &core.Error{Code: "INVALID_REQUEST", Message: "retained package must match the receipt, seal, scope, query, context, purpose and memory budget of this run"}
+			pkg.Semantic.Purpose != req.Compile.Purpose || pkg.Semantic.AvailableTokens != req.Compile.AvailableTokens ||
+			!slices.Equal(pkg.Semantic.Kinds, req.Compile.Kinds) {
+			return result, &core.Error{Code: "INVALID_REQUEST", Message: "retained package must match the receipt, seal, scope, query, context, purpose, kinds and memory budget of this run"}
 		}
 	}
 	encodedCommand, err := json.Marshal(req.Command)

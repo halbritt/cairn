@@ -123,8 +123,8 @@ An index contains mandatory instructions in full, plus optional pointers with
 record/version, class, kind, a summary of at most 160 UTF-8 bytes and a body digest.
 It uses the same currentness, authority, conflict, evidence and destination gates
 as ordinary compilation. It fits at most 100 pointers into the existing optional
-budget and reserves room for the handle envelope. Semantic format v8 seals the
-index and bootstrap; opaque delivery handles stay outside that seal. Historical
+budget and reserves room for the handle envelope. Semantic formats v8 (unfiltered)
+and v9 (filtered) seal the index and bootstrap; opaque delivery handles stay outside that seal. Historical
 recompilation reproduces the index without issuing new handles, including the
 prefix previews in older v4 packages.
 

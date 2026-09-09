@@ -106,7 +106,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	} else if original.Semantic.Browse != nil {
 		return Package{}, failure("INTEGRITY_FAILURE", "legacy compiler cannot carry a browse page")
 	}
-	normalized, kindErr := normalizeKinds(original.Semantic.Kinds)
+	normalized, kindErr := NormalizeKinds(original.Semantic.Kinds)
 	if kindErr != nil || !slices.Equal(normalized, original.Semantic.Kinds) || (original.Semantic.Schema == "cairn.semantic/9") != (len(normalized) > 0) {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical kind filter is invalid")
 	}

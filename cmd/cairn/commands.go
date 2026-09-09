@@ -33,7 +33,7 @@ Everyday commands:
   remember [--repo PATH] [--kind KIND] [--shareable] [--task TASK] [--run RUN] [--request-id UUID] TEXT
   remember [FLAGS] --stdin < note.txt
   search [--repo PATH] [--purpose context] [--destination local] [--kind KIND ...] QUERY
-  run [--repo PATH] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
+  run [--repo PATH] [--kind KIND ...] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
   proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST

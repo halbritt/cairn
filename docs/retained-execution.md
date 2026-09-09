@@ -62,3 +62,17 @@ This is the Cairn execution component needed by the proposed native bridge.
 Striatum's observation acquisition, admitted ECR input, adapter integration and
 actual host correspondence remain required; this command alone does not prove
 native Striatum delivery.
+
+## Kind-filtered runs
+
+Fresh `cairn run` and `cairn agent ... run` accept repeated `--kind`, using the
+same optional selection labels as search. Required instructions still apply.
+When executing a retained body package that carries `kinds`, supply the same
+set with `--kind KIND` flags. Order and duplicate labels do not change intent;
+omitting the filter or supplying a different set returns `INVALID_REQUEST`
+before binding or launching. Retained execution does not recompile to satisfy a
+different filter. Omitted kinds continue to match unfiltered retained packages.
+
+The [retained-kind repair](verification/retained-kinds-2026-09-09.md) records the
+original mismatch and verified behavior. Upgrade the CLI or embedded runner;
+this repair requires no API or schema change.

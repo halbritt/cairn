@@ -2,8 +2,9 @@ package core
 
 import "slices"
 
-// Kinds describes optional selection intent, never authority or applicability.
-func normalizeKinds(kinds []string) ([]string, error) {
+// NormalizeKinds validates optional selection labels and returns a sorted, deduplicated copy.
+// Labels never establish authority or applicability.
+func NormalizeKinds(kinds []string) ([]string, error) {
 	if len(kinds) > 8 {
 		return nil, failure("INVALID_REQUEST", "kinds accepts at most eight record labels")
 	}
