@@ -117,5 +117,35 @@
         "rationale": "No separate generic named procedure claim. Alternatives and preservation boundaries are directly documented and tested."
       }
     ]
+  },
+  "deployment": {
+    "commit": "45ca33b9bd2431bffe9c83a44efa51de134d7220",
+    "before": {
+      "api_pid": "3117151",
+      "store_pid": "163669",
+      "binary_sha256": "1adc2afa7feebf3da4cd40662dc8d071c4dac92ad9e2e2cfe144c687252ec62c",
+      "worker_sha256": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954",
+      "dropin_sha256": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d"
+    },
+    "after": {
+      "api_pid": "3208567",
+      "store_pid": "163669",
+      "binary_sha256": "50c2f23d43e2be6a04ce51f379b927f63f084b4440986dad1ed7b210304c6b31",
+      "worker_sha256": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954",
+      "dropin_sha256": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d",
+      "adapter_sha256": "623a17b16f7924c25e0795875af27ad9c0546cbdfde7eb1cf18310f8e55b128d"
+    },
+    "backup_log": "/tmp/cairn-evidence-span-deployment/backup.log",
+    "hosted_smoke": {
+      "record_id": "dee7b299-8c17-4a32-8a9b-09ee77850f15",
+      "version": 2,
+      "body_sha256": "851b0b7ba575aa769eb64896491694da66861001d5e03aa43e4d5662b65594b4",
+      "span_unattached_status": "EVIDENCE_UNAVAILABLE"
+    },
+    "curated_lesson": {
+      "record_id": "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+      "version": 1,
+      "body_sha256": "b0a935b149b7b7b34bba03605c988a31566c1c89b9431717f115bcbdbc5c9008"
+    }
   }
 }

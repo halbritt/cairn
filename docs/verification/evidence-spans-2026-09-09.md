@@ -61,3 +61,20 @@ These are retrieval ranges, not persisted claim-level as-cited span relations.
 L4 remains partial for that lifecycle and managed artifacts above 1 MiB. No
 source label is fetched, no protected operational source was used in these
 checks, and no downstream model-task benefit is established by the fixture.
+
+## Local deployment
+
+A clean build of `45ca33b9bd2431bffe9c83a44efa51de134d7220` was installed after
+backing up the store and preserving the prior binary and native adapter.
+The restarted API executable matches SHA-256
+`50c2f23d43e2be6a04ce51f379b927f63f084b4440986dad1ed7b210304c6b31`.
+The installed OpenCode adapter matches the committed source; connection settings
+were preserved. PostgreSQL was not restarted, and the semantic worker and API
+launch configuration retained their checksums.
+
+A hosted search/pull returned the current storage note with its exact indexed
+body digest. The API accepted span syntax and refused an unattached evidence ID
+with `EVIDENCE_UNAVAILABLE`. Positive span retrieval is established by the
+separate disposable fixtures above. A selected usage lesson was then saved and
+retrieved through the hosted profile. These operational checks did not read
+protected evidence or private traces. Fresh native clients load the new schema.
