@@ -41,11 +41,20 @@ Leaving all five flags empty preserves searches without a context object.
 
 | Tool | Inputs and behavior |
 | --- | --- |
-| `cairn_search` | `query`, optional retry `request_id`. Returns mandatory context plus an ordered index. Each entry has a complete `pull_arguments` object for the next call. |
+| `cairn_search` | A `query`, or `browse: true` without a query; optional retry `request_id`. Returns mandatory context plus a bounded index. Each entry has a complete `pull_arguments` object for the next call. |
 | `cairn_pull` | Pass an entry's `pull_arguments` unchanged to receive its full body. Reuse those arguments for retries. |
 | `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its `expected_sha256`, and a retry `request_id`. Shares the body's expansion credits and bytes. |
 | `cairn_remember` | `body` and a stable UUID `request_id`; optional `kind` and `shareable`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |
 | `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and the complete replacement `draft`. Revises an active A note through the existing ordinary edit API. Returns identifiers without echoing the body. |
+
+When the vocabulary of a saved note is unknown, call `cairn_search` with
+`{"browse": true}` to inspect available topics, then pull relevant entries or
+search again using words from their previews. Browsing uses the same scope,
+applicability, destination and memory-budget checks. Optional notes are ordered
+by scope specificity and recency, rather than query relevance. Older notes may
+be omitted when the budget fills; the index is not a complete inventory.
+Omitting the query requires explicit browsing, and combining browsing with query
+text is an error.
 
 With an ordinary agent profile, capture is A testimony. Select reusable knowledge
 with source/verification context; exclude raw sessions, private Council material

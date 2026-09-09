@@ -142,6 +142,20 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	if view.Schema != "cairn.mcp-search/1" || view.SourceSeal == "" || len(view.Index) != 1 || view.Index[0].RecordID != record.RecordID || len(view.Selected) != 1 || view.Selected[0].Record.RecordID != mandatory.RecordID || view.Scope.TaskID != "build" || view.Destination.Name != "hosted" {
 		t.Fatalf("search: %s", viewBytes)
 	}
+	for _, invalid := range []searchArgs{{}, {Query: " "}, {Browse: true, Query: "socketguide"}} {
+		invoke("cairn_search", invalid, "nonempty query or browse=true")
+	}
+	var browsed searchResult
+	if err = json.Unmarshal(invoke("cairn_search", searchArgs{Browse: true}, ""), &browsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(browsed.Index) != 1 || browsed.Index[0].RecordID != record.RecordID || !reflect.DeepEqual(browsed.Selected, view.Selected) || browsed.Scope != view.Scope || browsed.Destination != view.Destination {
+		t.Fatalf("browse lost scope, destination, mandatory context or hosted filtering: %+v", browsed)
+	}
+	var expanded core.Expansion
+	if err = json.Unmarshal(invoke("cairn_pull", browsed.Index[0].PullArguments, ""), &expanded); err != nil || expanded.Selection.Record.Body != record.Body {
+		t.Fatalf("browse pull: %+v %v", expanded, err)
+	}
 	t.Run("Codex conversation scope", func(t *testing.T) {
 		threadNote, err := op.Create(ctx, core.CreateRequest{RequestID: uuid.NewString(), Draft: core.Draft{Kind: "note", Body: "socketguide for one conversation", Scope: core.Scope{Repo: repo, TaskID: "codex/thread-one", RunID: "thread-one"}, ClaimType: "self", Sensitivity: "shareable"}})
 		if err != nil {

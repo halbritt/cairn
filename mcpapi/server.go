@@ -42,7 +42,8 @@ func (c Config) Validate() error {
 }
 
 type searchArgs struct {
-	Query     string `json:"query" jsonschema:"Words describing the memory needed. Refine a query if it misses."`
+	Query     string `json:"query,omitempty" jsonschema:"Words describing the memory needed. Omit only when browse is true."`
+	Browse    bool   `json:"browse,omitempty" jsonschema:"Browse eligible memory without a query when its vocabulary is unknown. Results are bounded, ordered by scope and recency, and may omit older notes."`
 	RequestID string `json:"request_id,omitempty" jsonschema:"Optional UUID for retrying the same search."`
 }
 
@@ -91,7 +92,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: "1"}, nil)
 	tools := memoryTools{client: client, config: config}
 	destructive := true
-	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_search", Description: "Search scoped memory. Read mandatory context in selected and inspect relevant index entries with cairn_pull using their complete pull_arguments. A notes are fallible; verify before relying on them. Search records exposure, not proven use."}, tools.search)
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_search", Description: "Search scoped memory with a query, or set browse=true without a query to inspect available topics. Browsing is bounded by the same budget and is not a complete inventory or relevance ranking. Read mandatory context in selected and inspect relevant index entries with cairn_pull using their complete pull_arguments. A notes are fallible; verify before relying on them. Search records exposure, not proven use."}, tools.search)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull", Description: "Retrieve a full memory body using the complete pull_arguments from cairn_search. Reuse those arguments for retries. Handles expire and stale records require a new search. This spends the search receipt's shared expansion budget."}, tools.pull)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull_evidence", Description: "Pull evidence referenced by an expanded memory, using its evidence ID and expected SHA256 plus the original receipt and handle. Supply a request UUID and reuse it for retries. Shares the same expansion budget."}, tools.pullEvidence)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_remember", Description: "Save an explicitly selected reusable repository note as ordinary A testimony, applicable across tasks and runs. Does not promote claims or grant authority. Choose shareable only for content suitable for hosted models; default local notes will not appear in hosted searches. Preserve the request UUID when retrying."}, tools.remember)
@@ -105,8 +106,8 @@ type memoryTools struct {
 }
 
 func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {
-	if strings.TrimSpace(args.Query) == "" {
-		return nil, nil, errors.New("search requires a nonempty query")
+	if (args.Browse && args.Query != "") || (!args.Browse && strings.TrimSpace(args.Query) == "") {
+		return nil, nil, errors.New("search requires a nonempty query or browse=true without a query")
 	}
 	scope := t.config.Scope
 	if t.config.CodexThread {

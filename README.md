@@ -176,6 +176,12 @@ bin/cairn agent remember --kind lesson --shareable 'Run make test-integration fo
 bin/cairn agent search --repo "$PWD" --task TASK_ID --run RUN_ID 'relevant query'
 ```
 
+To inspect available topics when the saved vocabulary is unknown, replace the
+query with `--browse`. Native `cairn_search` accepts `{"browse": true}`. This
+returns eligible previews within the same scope, destination and budget limits;
+it is not a complete inventory. Pull a relevant entry or use its wording to
+refine the next query.
+
 Each result includes a complete `pull_command` and matching `pull_arguments`
 for its full body. The [native OpenCode tools](docs/opencode-tools.md) use the
 structured form and derive search scope from the current session. Reuse the

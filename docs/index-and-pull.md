@@ -21,6 +21,21 @@ observer override and does not use database credentials. Optional flags are
 `--tokens` (default 32000), `--request-id`, `--revision`, `--workspace-sha256`,
 `--task-class`, `--binding` and `--capability`.
 
+If a query misses because the saved vocabulary is unknown, inspect eligible
+topics explicitly:
+
+```sh
+cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
+  search --repo /path/to/repo --task TASK_ID --run RUN_ID --browse
+```
+
+`--browse` takes no query text. It uses the existing empty-query index, retaining
+scope, applicability, destination, mandatory-context and budget checks. Optional
+entries are ordered by scope specificity and recency. This is a bounded preview,
+not a complete inventory; `omitted.OPTIONAL_BUDGET` reports packing omissions.
+Use the returned pull arguments normally or refine a query using the previews.
+Leaving the query blank without `--browse` remains an error.
+
 The `cairn.agent-search/1` view retains the index order and metadata, full
 mandatory `selected` entries, scope/currentness/policy fields, omission counts
 and session limits. Each index entry includes a complete `pull_command` with

@@ -40,6 +40,7 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	run := f.String("run", "", "host run identity (required)")
 	request := f.String("request-id", uuid.NewString(), "index retry identity")
 	tokens := f.Int("tokens", 32000, "available memory input room")
+	browse := f.Bool("browse", false, "browse eligible memory without a query (bounded by the memory budget)")
 	revision := f.String("revision", "", "declared repository revision")
 	workspace := f.String("workspace-sha256", "", "workspace digest")
 	taskClass := f.String("task-class", "", "task category")
@@ -49,8 +50,11 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 		return agentSearchView{}, invalid(err.Error())
 	}
 	query := strings.Join(f.Args(), " ")
-	if strings.TrimSpace(query) == "" || strings.TrimSpace(*task) == "" || strings.TrimSpace(*run) == "" || *task == "*" || *run == "*" {
-		return agentSearchView{}, invalid("agent search requires --task, --run and a nonempty query")
+	if strings.TrimSpace(*task) == "" || strings.TrimSpace(*run) == "" || *task == "*" || *run == "*" {
+		return agentSearchView{}, invalid("agent search requires explicit --task and --run")
+	}
+	if (*browse && query != "") || (!*browse && strings.TrimSpace(query) == "") {
+		return agentSearchView{}, invalid("agent search requires a nonempty query or --browse without a query")
 	}
 	executable, err := os.Executable()
 	if err != nil {

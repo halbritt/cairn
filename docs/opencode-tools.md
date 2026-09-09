@@ -65,6 +65,13 @@ adapter omits that redundant command from the tool result. Its
 `cairn.opencode-search/1` presentation preserves the underlying `source_schema`
 and `source_seal` and is not itself a sealed package.
 
+For an unfamiliar topic, `cairn_search` also accepts `{"browse": true}` without
+a query. This exposes eligible previews ordered by scope specificity and recency
+within the existing budget. Inspect `omitted.OPTIONAL_BUDGET` for notes left out
+by packing; browsing is not a complete inventory. Scope, applicability,
+destination filtering and mandatory context still apply. A blank search does
+not enable browsing implicitly, and a nonempty query cannot accompany it.
+
 Capture saves selected reusable knowledge as repository-wide A testimony.
 `kind` defaults to `note`; omitted `shareable` keeps the note local. Writes return
 only IDs, version and retry ID. Edit takes the same full replacement draft as the

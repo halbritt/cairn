@@ -277,6 +277,12 @@ questions. It also records a storage-location rank regression and continuing
 vocabulary misses. Ranker v4 retains historical v1–v3 behavior for recompilation;
 these development results do not close E4.
 
+[Explicit browsing](verification/browse-2026-09-09.md) now exposes the existing
+empty-query index through the agent CLI, MCP and native OpenCode. It provides
+bounded topic previews when the saved vocabulary is unknown, with normal scope,
+destination, mandatory-context and pull checks. It does not resolve lexical
+mismatches or guarantee that older notes fit the preview budget.
+
 [Matching index previews](verification/index-previews-2026-09-08.md) address an
 observed operational search whose preview hid the matching command later in the
 note. Bounded source excerpts make that match visible while preserving full-body

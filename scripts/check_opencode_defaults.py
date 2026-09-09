@@ -49,6 +49,7 @@ def check(opencode, output):
         ('adapter-shareable', 'cairn_remember', {'request_id': 'e7cb56d4-3c24-47a9-8705-c694f036130d',
                                                'body': 'selected lesson', 'shareable': 'false'}),
         ('adapter-query', 'cairn_search', {'query': 7}),
+        ('adapter-browse', 'cairn_search', {'browse': 'true'}),
         ('adapter-pull', 'cairn_pull', {'request_id': 'invalid'}),
         ('adapter-evidence', 'cairn_pull_evidence', {'expected_sha256': 'invalid'}),
         ('adapter-edit', 'cairn_edit', {'draft': []}),

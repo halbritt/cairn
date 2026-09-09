@@ -79,9 +79,13 @@ const searchView = z.object({
 const writeResult = z.object({ record_id: z.string().uuid(), version: z.number().int().positive() })
 
 export const search = validatedTool({
-  description: "Search repository memory in this OpenCode session. Read mandatory selected context and pull relevant index entries using their complete pull_arguments. A notes are fallible; verify before applying them. Search records exposure, not proven use.",
-  args: { query: z.string().min(1), request_id: z.string().uuid().optional() },
+  description: "Search repository memory in this OpenCode session with a query, or set browse=true without a query to inspect available topics. Browsing is bounded by the same budget, ordered by scope and recency, and is not a complete inventory or relevance ranking. Read mandatory selected context and pull relevant index entries using their complete pull_arguments. A notes are fallible; verify before applying them. Search records exposure, not proven use.",
+  args: { query: z.string().optional(), browse: z.boolean().optional(), request_id: z.string().uuid().optional() },
   async execute(args, context) {
+    const query = args.query ?? ""
+    if ((args.browse && query !== "") || (!args.browse && query.trim() === "")) {
+      throw new Error("INVALID_REQUEST: search requires a nonempty query or browse=true without a query")
+    }
     const config = await settings("search", context)
     const session = context.sessionID
     if (!session || session === "*" || Buffer.byteLength(session) > 240 || /[\s\p{Cc}]/u.test(session)) {
@@ -92,7 +96,8 @@ export const search = validatedTool({
     for (const [key, value] of Object.entries(config.context ?? {})) {
       if (value !== undefined) command.push("--" + key.replaceAll("_", "-"), value)
     }
-    command.push("--", args.query)
+    if (args.browse) command.push("--browse")
+    else command.push("--", query)
     const view = searchView.parse(await call(config, context, command))
     // Native callers need the structured arguments, not a shell invocation.
     const index = view.index.map(({ pull_command, ...entry }) => entry)

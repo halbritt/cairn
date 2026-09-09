@@ -26,6 +26,9 @@ At the start of a substantive task, search for relevant prior lessons.
 
 When the native Cairn MCP tools are available, use `cairn_search` and inspect
 relevant results with `cairn_pull`, passing their complete `pull_arguments`.
+If the saved vocabulary is unknown, use `cairn_search` with `{"browse": true}`
+and no query to inspect eligible previews, or add `--browse` to the CLI search
+below. Browsing is bounded and may omit older notes; refine a query when needed.
 The local Codex configuration and native OpenCode adapter use conversation/session
 scope automatically; neither identifies individual turns or execution attempts.
 Use the CLI below

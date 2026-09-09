@@ -73,6 +73,13 @@ def check(binary, root, environment, opencode, claim, support):
         assert local['record_id'] not in json.dumps(view)
         assert view['destination'] == dict(name='hosted', allow_local=False)
     assert first['scope'] != second['scope']
+    for args in ({}, {'query': ' '}, {'query': marker, 'browse': True}, {'browse': 'true'}):
+        invoke('search', args, 'INVALID_REQUEST')
+    browse = invoke('search', dict(browse=True))
+    assert browse['scope']['repo'] == settings['repo'] and browse['destination'] == first['destination']
+    assert local['record_id'] not in json.dumps(browse)
+    browsed = next(entry for entry in browse['index'] if entry['record_id'] == saved['record_id'])
+    assert invoke('pull', browsed['pull_arguments'])['selection']['record']['body'] == capture['body']
     pull = first['index'][0]['pull_arguments']
     expanded = invoke('pull', pull)
     assert invoke('pull', pull) == expanded

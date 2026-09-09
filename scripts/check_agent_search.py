@@ -59,6 +59,12 @@ def check(binary, root, environment, grant, claim, support):
     assert all(e['record_id'] == claim['record_id'] for e in hosted['index'])
     empty = call([*agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'], '--run', scope['run_id'], 'unmatchedmarker'])['data']
     assert empty['index'] == [] and empty['selected'] == view['selected']
+    browse_args = [*agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'], '--run', scope['run_id'], '--browse']
+    browse = call(browse_args)['data']
+    assert browse['selected'] == view['selected'] and browse['scope'] == scope
+    browsed = next(entry for entry in browse['index'] if entry['record_id'] == claim['record_id'])
+    assert call([*agent, 'expand'], browsed['pull_arguments'])['data']['selection']['record']['record_id'] == claim['record_id']
+    assert call([*browse_args, 'unexpected query'], check=False)['status'] == 'INVALID_REQUEST'
     for flags in [[], ['--task', '*', '--run', 'run'], ['--task', 'task']]:
         refused = call([*agent, 'search', *flags, 'socket'], check=False)
         assert refused['status'] == 'INVALID_REQUEST'
