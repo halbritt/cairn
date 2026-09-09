@@ -105,3 +105,17 @@ The decision is limited to this reproduced experiment configuration defect;
 no production deployment or native contract adoption follows. Twelve remaining
 nonmaterial doctrine obligations are retained with their scope rationale under
 `/tmp/cairn-native-permissions-residuals.json`.
+
+## Operational lesson
+
+The verified permission finding is now saved as a shareable A lesson in the
+operational Cairn store. A fresh task searched for the problem, ranked that
+lesson first, and pulled its exact saved body through the authenticated agent
+interface. The note names the experiment and harness version, points to this
+report and the implementation, and limits the correction to its disposable
+sandbox. It remains ordinary testimony, not an authorized instruction.
+
+This is selected capture and successful later-task retrieval by the same coding
+agent. Independent model use and a resulting task improvement are unobserved.
+The operational store is separate from both frozen comparison stores; this
+capture changed neither comparison's treatment.

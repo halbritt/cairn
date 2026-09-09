@@ -313,5 +313,27 @@
     "corpus_version": "corpus-2026-07-12-a11702cc9217",
     "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
     "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "operational_lesson": {
+    "classification": "A",
+    "sensitivity": "shareable",
+    "body_sha256": "29332b2401226c409fbc01d996465e2149ecdd42c21f5981803ef8993cc1e3e8",
+    "fresh_task_search_rank": 1,
+    "exact_body_retrieved": true,
+    "evidence": {
+      "capture.json": {
+        "path": "/tmp/cairn-native-permission-lesson/capture.json",
+        "sha256": "a8a5218afb947f0f8f1b675059a3489e1092967543d67c47992e2f76e40da5bf"
+      },
+      "search.json": {
+        "path": "/tmp/cairn-native-permission-lesson/search.json",
+        "sha256": "a92b5ff54b0e320b8125f8a888c299d7fe62340d9231d2e913fe9f73cd6c3493"
+      },
+      "pull.json": {
+        "path": "/tmp/cairn-native-permission-lesson/pull.json",
+        "sha256": "9fbd8d1563c3456e4acd42aab10583fa0d666215d0f1ebae7d6f84e811e7fe21"
+      }
+    },
+    "boundary": "Selected capture and fresh-task retrieval by the same coding agent through the operational hosted profile; no independent model use or outcome claim."
   }
 }
