@@ -11,8 +11,8 @@ corrected. Durable improvement across coding tasks and harnesses remains
 unestablished. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-This snapshot assesses source through `19facc1` and the local installation on
-2026-09-09. Feature reports below preserve their own verification dates and limits.
+This snapshot assesses the source changes recorded below and the local installation
+on 2026-09-09. Feature reports below preserve their own verification dates and limits.
 The [implementation history](#implementation-history) retains the earlier narrative
 and every committed change through `95ef2ed`, including failed trials and superseded
 work. Future updates should append dated history and corrections while refreshing
@@ -67,9 +67,11 @@ execution attempts or automatically associate retrieval with a host outcome.
   OpenCode clients have retrieved current notes; both support ordinary edits.
   Browsing reaches older notes across pages. OpenCode's bundled installer removes
   source-checkout copying, and its adapter validates arguments before effects.
-  Codex currently uses the documented project TOML configuration; a Codex
-  configuration generator is being investigated and is not implemented.
+  Codex uses project TOML configuration; `codex-config` now generates the entry
+  with conversation or explicit task/run scope. Its actual client loaded generated
+  files and retrieved exact saved content. The generator does not edit host settings.
   [Codex adoption](verification/codex-project-2026-09-09.md),
+  [Codex generator](verification/codex-config-2026-09-09.md),
   [OpenCode installer](verification/opencode-install-2026-09-09.md).
 
 ## What has demonstrated usefulness
@@ -123,7 +125,7 @@ lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
 
-The latest implementation change passed disposable PostgreSQL integration with
+The evidence-span implementation passed disposable PostgreSQL integration with
 Go's race detector, all Go package tests, 26 Python tests, vet and formatting.
 Its optional checks exercised the actual CLI/Unix API, independent MCP stdio
 client, native OpenCode tools and cached-response compatibility with the previous
@@ -661,3 +663,19 @@ The owner also requested Agy and Claude interfaces. Roadmap U7/U8 now specify
 ordinary native access, repeatable setup, actual client verification and observed
 cross-harness use. Advanced H1 behavior and resume/compaction interlocks remain
 separate requirements. These interfaces are planned, not implemented.
+
+### 2026-09-09 — repeatable Codex configuration
+
+`cairn codex-config` now prints an ordinary MCP TOML entry with explicit connection
+settings, either conversation or task/run scope, and optional startup by default.
+It shares argv construction with the existing OpenCode generator and preserves
+its output contract. The command reads no credential contents and edits no host
+configuration. This supersedes the earlier "generator under investigation" status.
+
+The actual Codex CLI 0.153.4 loaded generated files and pulled the exact saved
+procedure in two conversations with distinct native scopes and one explicit task/run
+scope. Quotes and Unicode in the executable path worked. Independent TOML parsing
+verified literal values and control-character escaping. Go tests, 30 Python tests,
+vet, formatting and build passed. No model turn or new task-benefit result was
+claimed. [Verification](verification/codex-config-2026-09-09.md) and
+[manifest](verification/codex-config-2026-09-09.json).

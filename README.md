@@ -38,7 +38,7 @@ with a scoped observer token instead of direct database access.
 
 ## Get started
 
-Requires Go 1.25+, PostgreSQL 16+ client/server binaries, Bash, Python 3, and
+Requires Go 1.25+, PostgreSQL 16+ client/server binaries, Bash, Python 3.11+, and
 `flock`. Run as an ordinary user. The local store uses its own private Unix
 socket and opens no TCP listener.
 
@@ -98,6 +98,11 @@ the [native tools setup](docs/opencode-tools.md#install-in-a-project).
 `cairn opencode-config` generates the native server configuration with explicit
 connection and task scope. See the [OpenCode setup](docs/mcp.md#opencode-example)
 for the command, context flags and optional memory-only permission policy.
+
+`cairn codex-config` generates a Codex MCP TOML entry using the same connection
+flags and either `--codex-thread` or explicit `--task`/`--run` scope. See the
+[Codex setup](docs/mcp.md#codex-example). It prints the entry for review and leaves
+existing host configuration in place.
 
 For a remote model, explicitly allow a note to be delivered outside the local
 machine when you create it:

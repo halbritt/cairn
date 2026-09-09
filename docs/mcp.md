@@ -122,7 +122,32 @@ The facade does not expose operator actions, run observation or automatic captur
 ## Codex example
 
 Codex can launch the stdio server with conversation scope derived from its native
-tool-call metadata. Replace the absolute paths:
+tool-call metadata. Generate its TOML entry with an installed Cairn binary:
+
+```sh
+cairn codex-config \
+  --socket "$HOME/.local/share/cairn/api.sock" \
+  --token-file "$HOME/.local/share/cairn/hosted-agent.token" \
+  --repo "$PWD" --codex-thread > /tmp/cairn-codex.toml
+```
+
+Use the repository identity authorized by the profile; a worktree may need the
+canonical repository instead of `$PWD`. The command resolves the executable,
+socket and token paths to absolute paths without reading credentials or connecting
+to the API. It emits only TOML on stdout. On an invalid invocation it exits nonzero
+with an error on stderr and no fragment; on an output failure, discard the output.
+For example, omitting both scope modes is refused. Supply `--codex-thread` or a
+complete `--task TASK --run RUN` pair and regenerate.
+
+Review the output and merge its `[mcp_servers.cairn]` entry into the appropriate
+Codex configuration. Replace an existing Cairn entry rather than appending a
+duplicate table. The generator does not edit files, set project trust or change
+other tool permissions. Keep paths and profile selection local to the installation.
+Optional startup is the default; `--required` makes Cairn a startup requirement.
+`--tokens` and all existing MCP context flags are forwarded. For retrieval-only
+access, remove `cairn_remember` and `cairn_edit` from the generated `enabled_tools`.
+
+The output has this shape (with the selected budget and context flags in `args`):
 
 ```toml
 [mcp_servers.cairn]
@@ -138,7 +163,7 @@ enabled_tools = [
   "cairn_search", "cairn_pull", "cairn_pull_evidence",
   "cairn_remember", "cairn_edit",
 ]
-required = true
+required = false
 startup_timeout_sec = 15
 ```
 
@@ -182,6 +207,9 @@ need a client restart to load the new tools.
 An [actual Codex client check](verification/codex-mcp-2026-09-08.md) connected,
 listed the permitted tools, searched and pulled the exact saved lesson without
 starting a model turn. Model-selected use and task benefit remain unverified.
+The [generator check](verification/codex-config-2026-09-09.md) also loads generated
+files directly in Codex 0.153.4 and retrieves exact saved content in both scope
+modes; it includes independent TOML parsing of quotes, Unicode and control bytes.
 
 ## OpenCode example
 

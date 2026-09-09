@@ -24,6 +24,12 @@ scope/context flags. Both output modes connected in OpenCode without a model
 call. This removes routine JSON assembly; host launch and outcome association
 remain explicit responsibilities.
 
+The [Codex configuration generator](verification/codex-config-2026-09-09.md) now
+emits a TOML entry from the same connection/context flags, using conversation or
+explicit task/run scope. The actual Codex client loaded generated files and pulled
+exact saved content in both modes. It leaves existing host configuration intact;
+native connection and setup capability do not establish a completed model task.
+
 The [native OpenCode adapter](opencode-tools.md) now uses actual custom-tool
 session context for search scope and the existing authenticated CLI for all five
 ordinary tools. CLI results now include structured pull arguments alongside shell

@@ -1,0 +1,220 @@
+{
+  "schema": "cairn.codex-config-verification/1",
+  "base_commit": "aa0a84592786fbcada3afd530528b60eaed2e792",
+  "source": [
+    {
+      "path": "cmd/cairn/codex_config.go",
+      "sha256": "15330cab849611149511a56f6dd60b329263dbccabbd21d6bb9d64a3ce5b3c65"
+    },
+    {
+      "path": "cmd/cairn/mcp_config.go",
+      "sha256": "e4f59dc9b36dd783a8d8f42a8ecf6d7dd8d0e292e888f045e227d780635f4afc"
+    },
+    {
+      "path": "cmd/cairn/main.go",
+      "sha256": "3079de8dc260e3ec929806bc50cb56dfaf45014abaf29fc0981098f63bd9d085"
+    },
+    {
+      "path": "cmd/cairn/opencode_config.go",
+      "sha256": "8fa28383405e1cf5115db96ae8e19fbb2eee52f9ad646e6adbbe1b9298c5ecd7"
+    },
+    {
+      "path": "cmd/cairn/codex_config_test.go",
+      "sha256": "cfc2ceb433082958f25a903f87450c6c5a3a0ef63260fe5f82af6fdd9081e0b5"
+    },
+    {
+      "path": "scripts/test_codex_config.py",
+      "sha256": "b4983a04b9fdb79932e061f06de4f3f3a330300532a809e81051754938c67722"
+    }
+  ],
+  "checks": {
+    "go_tests": "passed",
+    "python_tests": 30,
+    "vet_format_build": "passed",
+    "database_integration_rerun": false
+  },
+  "native": {
+    "codex_version": "codex-cli 0.153.4",
+    "binary_sha256": "49a23587ea7861ebebb75a9e6105859452fee956591f4e3e20a2bd594ab87c2e",
+    "cases": [
+      {
+        "mode": "conversation-optional",
+        "config_sha256": "35ae1d13a9c541ad6ba436c702db6b0357acbeb21e21a1ec3fe6f00e44275c62",
+        "threads": [
+          {
+            "thread_id": "01a0871d-878b-7f91-bc3e-a24d8b2b3b57",
+            "scope": {
+              "repo": "/home/halbritt/git/cairn",
+              "task_id": "codex/01a0871d-878b-7f91-bc3e-a24d8b2b3b57",
+              "run_id": "01a0871d-878b-7f91-bc3e-a24d8b2b3b57"
+            },
+            "exact_version": 5,
+            "body_sha256": "f5b4e0c2b32ccf53a1702dfdb71c94acede7a512a080ea9ce0edb66ad7304344"
+          },
+          {
+            "thread_id": "01a0871d-87bb-70e1-9518-98afdb021932",
+            "scope": {
+              "repo": "/home/halbritt/git/cairn",
+              "task_id": "codex/01a0871d-87bb-70e1-9518-98afdb021932",
+              "run_id": "01a0871d-87bb-70e1-9518-98afdb021932"
+            },
+            "exact_version": 5,
+            "body_sha256": "f5b4e0c2b32ccf53a1702dfdb71c94acede7a512a080ea9ce0edb66ad7304344"
+          }
+        ],
+        "tools": [
+          "cairn_edit",
+          "cairn_pull",
+          "cairn_pull_evidence",
+          "cairn_remember",
+          "cairn_search"
+        ],
+        "config_loaded_from_file": true,
+        "mcp_overrides": false
+      },
+      {
+        "mode": "explicit-required",
+        "config_sha256": "2c25d109f14f9382cd3e65c158cf85dcb2654c91156376568451261b5d9fa776",
+        "threads": [
+          {
+            "thread_id": "01a0871d-89e5-76f1-b270-70bea893ae55",
+            "scope": {
+              "repo": "/home/halbritt/git/cairn",
+              "task_id": "codex-config-native",
+              "run_id": "codex-config-20260909"
+            },
+            "exact_version": 5,
+            "body_sha256": "f5b4e0c2b32ccf53a1702dfdb71c94acede7a512a080ea9ce0edb66ad7304344"
+          }
+        ],
+        "tools": [
+          "cairn_edit",
+          "cairn_pull",
+          "cairn_pull_evidence",
+          "cairn_remember",
+          "cairn_search"
+        ],
+        "config_loaded_from_file": true,
+        "mcp_overrides": false
+      }
+    ],
+    "model_turns_started": 0
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-codex-config-plan.json",
+      "sha256": "aee4294e28545c2a925dfcc9fed33b9a80255448456ed9f48786ddc4653365b9"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-native.py",
+      "sha256": "ec1ef8970f37e63be5f06589bd668079da29dd46dc9eab4edacae7b399f80112"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-native/report.json",
+      "sha256": "e3055bd0ec7fc403a8387ae470b34e441cd5f4244e4d30eb582bed52ddd5cacb"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-native.log",
+      "sha256": "a8e17548c97e58ad92a777b5992508b155445762ab3e4924ccbeb7c7c72873e3"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-tests.log",
+      "sha256": "4e8983afa9f8680fc3fee11c035850ca0184e8a37f5b77530a202d9c8e0dadbe"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-check.log",
+      "sha256": "7e9bbc361fc3c1f98d20aec476936b4cd2eaecb7adec63bdd38519d225c274a0"
+    }
+  ],
+  "doctrine": {
+    "packet_id": "pkt-b4ca516843c7bb6a",
+    "packet_content_sha256": "b4ca516843c7bb6aa2d2bafea4f3d593537e739ba83bbe63678ea1cb4860a4bc",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_path": "/tmp/cairn-codex-config-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-59b5c0f0f6ce0429",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "caller nil checks and method use",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-27f0f91281da2f0e",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "documented absence semantics",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-902e6d5b9ae03361",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "dynamic type and dynamic value at the return",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No generic named procedure completion claimed; explicit preservation, alternatives and failure boundaries are retained in the scoped decision plan."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No generic named procedure completion claimed; explicit preservation, alternatives and failure boundaries are retained in the scoped decision plan."
+      }
+    ]
+  }
+}

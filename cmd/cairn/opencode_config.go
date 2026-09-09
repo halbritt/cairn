@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"io"
-	"path/filepath"
-	"strconv"
 )
 
 type openCodeMemoryConfig struct {
@@ -31,24 +29,9 @@ func writeOpenCodeConfig(out io.Writer, args []string, executable string) error 
 	if err := o.validate(f.NArg()); err != nil {
 		return err
 	}
-	// The harness may launch from another directory. Resolve paths without
-	// opening the token or requiring a running API just to render configuration.
-	paths := []*string{&executable, &o.socket, &o.token}
-	for _, path := range paths {
-		absolute, err := filepath.Abs(*path)
-		if err != nil {
-			return err
-		}
-		*path = absolute
-	}
-	command := []string{executable, "mcp", "--socket", o.socket, "--token-file", o.token,
-		"--repo", o.config.Scope.Repo, "--task", o.config.Scope.TaskID, "--run", o.config.Scope.RunID,
-		"--tokens", strconv.Itoa(o.config.AvailableTokens)}
-	for _, pin := range [][2]string{{"--revision", o.pins.Revision}, {"--workspace-sha256", o.pins.WorkspaceSHA256},
-		{"--task-class", o.pins.TaskClass}, {"--binding", o.pins.BindingID}, {"--capability", o.pins.CapabilityID}} {
-		if pin[1] != "" {
-			command = append(command, pin[0], pin[1])
-		}
+	command, err := o.command(executable)
+	if err != nil {
+		return err
 	}
 	config := openCodeMemoryConfig{MCP: map[string]openCodeServer{"cairn": {Type: "local", Enabled: true, Command: command}}}
 	if *memoryOnly {
