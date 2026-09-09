@@ -69,7 +69,14 @@ outside its bounded verification conclusion. The repository-wide check completed
 later and is recorded separately. No independent review, contract acceptance or
 production deployment is implied.
 
-## Remaining work
+## Later complete-chain checkpoint
+
+The [Driver integration test](native-chain-2026-09-08.md) now connects real-service
+capture, observation admission, produced Work Packet input and native Change Set
+admission. Its shell output and planning remain fixtures. The following list
+records what remained at the earlier host-only checkpoint.
+
+## Remaining work at this checkpoint
 
 Accept the owning producer/consumer contract changes through Striatum's existing
 process, exercise the complete admitted-input-to-build chain, and run a real

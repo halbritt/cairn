@@ -236,5 +236,8 @@ after a selected note changes; it does not demonstrate an accepted model build.
 
 The integration branch includes proposed host configuration and observation
 schemas. The accepted catalog, generated Decisions and installed runtime remain
-unchanged. The next work is owning contract acceptance and the complete native
-build trial, including separate task acceptance and memory-benefit evidence.
+unchanged. The [complete-chain test](verification/native-chain-2026-09-08.md)
+now joins producer and consumer admission through the Driver using a real Cairn
+service and mechanical fixture planning/build output. The next work is owning
+contract acceptance and a real task comparison with separate task acceptance
+and memory-benefit evidence.

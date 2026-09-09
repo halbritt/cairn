@@ -1,0 +1,36 @@
+{
+  "schema": "cairn.native-chain-verification/1",
+  "date": "2026-09-08",
+  "source_repository": "halbritt/striatum-next",
+  "source_commit": "b99eb6196209e1f055ecb2d22f164d95a3d51ef1",
+  "branch": "cairn-native-observation",
+  "checks": [
+    {
+      "command": "systemd-run --user --scope --quiet -p Delegate=yes env STRIATUM_REQUIRE_CGROUP=1 STRIATUM_CAIRN_TEST_BINARY=/home/halbritt/.local/bin/cairn go test -race ./internal/driver -run '^(TestCairn|TestIssueCairn|TestWorkGraphBuildFrontier$|TestSlashPacketIDSurvivesPlanningExecutionAdmissionAndIntegration$)' -count=1 -v",
+      "scope": "Final Go test source; real service and delegated cgroups",
+      "exit_code": 0,
+      "log_path": "/tmp/cairn-native-chain-final.log",
+      "log_sha256": "41c93214ffcfcd1c090d5ec40b4f34ef37e0e07d99cf50bade170e32ad300f52"
+    },
+    {
+      "command": "make fmtcheck build lint",
+      "scope": "Final Go test source; documentation instructions added afterward and checked against the passing command",
+      "exit_code": 0,
+      "log_path": "/tmp/cairn-native-chain-build.log",
+      "log_sha256": "07e610f75fa6949f7044ebbf82c2640d3b2af05dc69e9655f6f30f09ba311115"
+    }
+  ],
+  "production_source_changed": false,
+  "fixture_limits": [
+    "Proposed contracts only in test catalog",
+    "Mechanical fixture planning and checks",
+    "Prepared Change Set emitted by shell after checking memory delivery",
+    "Fixture adapter invokes the actual supervisor directly",
+    "No model task or accepted native runtime enablement"
+  ],
+  "operational_note_corrections": {
+    "records_revised": 2,
+    "read_back": true,
+    "raw_notes_retained_in_repository": false
+  }
+}
