@@ -25,6 +25,7 @@ Everyday commands:
   mcp --socket PATH --token-file FILE --repo REPO (--task TASK --run RUN | --codex-thread) [--tokens N]
   agent [--token-file FILE] [--socket PATH] OPERATION < request.json
   agent [--token-file FILE] [--socket PATH] search --task TASK --run RUN [--repo REPO] [--kind KIND ...] (QUERY | --browse)
+  agent [--token-file FILE] [--socket PATH] start --task TASK --run RUN --query QUERY --prompt TASK --pull-tool NAME --search-tool NAME -- COMMAND ARGS...
   agent [--token-file FILE] [--socket PATH] pull [--request-id UUID] RECEIPT_UUID HANDLE_UUID
   agent [--token-file FILE] [--socket PATH] pull-evidence [--request-id UUID] RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256
   agent [--token-file OBSERVER_TOKEN] [--socket PATH] run RUN_FLAGS -- COMMAND ARGS...

@@ -105,6 +105,11 @@ installs the adapter bundled with the binary and explicit connection settings.
 It requires no source checkout and leaves host tool permissions unchanged. See
 the [native tools setup](docs/opencode-tools.md#install-in-a-project).
 
+For a compact index in the initial task input, `cairn agent start` explicitly
+preloads ordinary hosted memory and launches the harness. The existing native
+tools handle later pulls under their normal permissions. See
+[compact startup](docs/compact-start.md) for the OpenCode command and budget limits.
+
 `cairn opencode-config` generates the native server configuration with explicit
 connection and task scope. See the [OpenCode setup](docs/mcp.md#opencode-example)
 for the command, context flags and optional memory-only permission policy.

@@ -13,6 +13,7 @@ import uuid
 from trial_host import TrialHost
 from check_run_retrieval import check as check_run_retrieval
 from check_agent_search import check as check_agent_search
+from check_agent_start import check as check_agent_start
 from check_agent_remember import check as check_agent_remember
 from check_mcp import check as check_mcp
 from check_mcp_currentness import check as check_mcp_currentness
@@ -249,6 +250,10 @@ try:
     check_run_retrieval(binary, root, client_env, record)
     check_retained_run(binary, root, client_env)
     check_agent_search(binary, root, env, grant, claim, support)
+    startup_fixture = check_agent_start(binary, root, env, grant)
+    if os.environ.get('CAIRN_OPENCODE_START_BINARY'):
+        from check_agent_start_native import check as check_agent_start_native
+        check_agent_start_native(binary, root, env, os.environ['CAIRN_OPENCODE_START_BINARY'], startup_fixture)
     check_agent_remember(binary, root, env)
     check_mcp(binary, root, env, claim, support)
     check_mcp_currentness(binary, root, env, grant)

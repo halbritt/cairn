@@ -46,11 +46,16 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
-- **Automatic startup needs a different boundary.** Two isolated OpenCode
-  sessions showed that its system hook runs for title and main requests even
-  when Cairn tools are denied. Existing tool filtering works. No unconditional
-  retrieval plugin was shipped; the next bootstrap must preserve native
-  permissions, request purpose, freshness and combined context budgets.
+- **Explicit compact startup is implemented.** `cairn agent start` preloads an
+  ordinary hosted index and task through stdin or argv, then replaces itself
+  with the harness. Native OpenCode stdin delivery, direct pulls, permission
+  denial and stale-source refusal are verified without model inference. Initial
+  budgeting is bounded; whole-task budgeting and observed index runs remain open.
+  [Guide](compact-start.md), [report](verification/compact-start-2026-09-09.md).
+- **Unconditional system-hook preload remains unsuitable.** Two isolated
+  OpenCode sessions showed that its system hook runs for title and main requests
+  even when Cairn tools are denied. Existing tool filtering works. The explicit
+  launcher provides a separate preload; no unconditional retrieval plugin ships.
   [Investigation](verification/opencode-startup-hook-2026-09-09.md).
 - **Optional model reuse is implemented and verified.** Six paired API requests
   saved 0.56–0.83 seconds with identical source identities and candidate-score
@@ -1448,3 +1453,38 @@ permission and session-scope guidance informed the checks; it did not contain
 these new findings. This is useful engineering evidence about an unsuitable
 integration route, not a demonstrated memory-benefit result. No task assessment
 was added. All prior implementation history is preserved.
+
+### 2026-09-09 — explicit compact startup through ordinary memory
+
+Added `cairn agent start`, using a fresh scoped index through the existing
+ordinary hosted-profile interface and the harness's configured pull/search tools.
+It preserves mandatory context, source identity and pull arguments, reserves
+initial room for the task, excludes generated connection/credential instructions
+and refuses a local destination. The command replaces its process with the
+harness; it adds no observer authority, retained context file, recovery state or
+task-outcome claim. Existing observed/retained H0 runs still require bodies.
+
+The first API fixture exceeded its 8 KiB expansion allowance. The final fixture
+preserves that refusal and verifies an exact partial pull and retry. The initial
+native argv probe then exposed OpenCode's extra quoting and timed out during
+provider retries. Pinned source inspection confirmed that stdin preserves the
+input. The new stdin carrier uses a Linux anonymous memory file with no named
+file or disk fallback. Its x/sys dependency version was already pinned and did
+not change. The fixture now records its own failures and returns HTTP 400.
+
+Full disposable PostgreSQL/race integration, Go unit tests, 34 Python tests and
+vet/format checks passed. Final focused CLI/API/native checks preserve Unicode,
+quotes, literal shell-like text, newlines and closed stdin. Three OpenCode 1.18.21
+sessions verified a direct full-body pull, denied tool availability and stale
+source refusal; each received 2,961 bytes of initial input. They used scripted
+provider responses with no inference. Literal argv, process replacement,
+credential environment filtering, exit status and signal behavior also passed.
+The authenticated CLI suite is now included in CI; native checks remain opt-in.
+
+The [guide](compact-start.md), [report](verification/compact-start-2026-09-09.md)
+and [metadata](verification/compact-start-2026-09-09.json) retain semantics,
+failed checks and interpretation limits. The retained-context lesson v3 was read
+before implementation and informed fresh retrieval and authority separation.
+This closes a bounded initial-index delivery gap, not aggregate task budgeting,
+observed index execution, model-selected use or durable task-value acceptance.
+All earlier implementation history is preserved.

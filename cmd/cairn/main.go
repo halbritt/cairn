@@ -51,6 +51,12 @@ func main() {
 		return
 	}
 	data, err := run(ctx, os.Args[1:], os.Stdin)
+	if plan, ok := data.(agentStartPlan); ok {
+		data = nil // Never echo prepared task or memory text in an error envelope.
+		if err == nil {
+			err = plan.execute(ctx)
+		}
+	}
 	envelope := response{Schema: "cairn.response/1", OK: err == nil, Status: "OK", Data: data}
 	exitCode := 0
 	if err != nil {

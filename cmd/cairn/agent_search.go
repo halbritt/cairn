@@ -16,7 +16,7 @@ import (
 
 type agentSearchEntry struct {
 	core.IndexEntry
-	PullCommand   string             `json:"pull_command"`
+	PullCommand   string             `json:"pull_command,omitempty"`
 	PullArguments core.ExpandRequest `json:"pull_arguments"`
 }
 
@@ -115,8 +115,12 @@ func presentAgentSearch(result core.IndexResult, request string, command []strin
 			return agentSearchView{}, invalid("index response has no handle for a record version")
 		}
 		pull := core.ExpandRequest{RequestID: uuid.NewString(), ReceiptID: result.Package.ReceiptID, Handle: handle}
-		argv := append(append([]string{}, command...), "pull", "--request-id", pull.RequestID, pull.ReceiptID, pull.Handle)
-		view.Index = append(view.Index, agentSearchEntry{entry, shellCommand(argv), pull})
+		var pullCommand string
+		if len(command) != 0 {
+			argv := append(append([]string{}, command...), "pull", "--request-id", pull.RequestID, pull.ReceiptID, pull.Handle)
+			pullCommand = shellCommand(argv)
+		}
+		view.Index = append(view.Index, agentSearchEntry{entry, pullCommand, pull})
 	}
 	encoded, err := json.Marshal(response{Schema: "cairn.response/1", OK: true, Status: "OK", Data: view})
 	if err != nil {

@@ -44,12 +44,12 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, invalid("agent requires an API operation and JSON on stdin")
 	}
 	operation := f.Arg(0)
-	commandArgs := operation == "remember" || operation == "run" || operation == "search" || operation == "pull" || operation == "pull-evidence"
+	commandArgs := operation == "remember" || operation == "run" || operation == "start" || operation == "search" || operation == "pull" || operation == "pull-evidence"
 	if !commandArgs && f.NArg() != 1 {
 		return nil, invalid("agent operation requires one JSON request on stdin")
 	}
 	switch operation {
-	case "remember", "search", "pull", "pull-evidence", "run-package", "revise", "assessments", "history":
+	case "remember", "search", "start", "pull", "pull-evidence", "run-package", "revise", "assessments", "history":
 	case "run", "run-status", "register-context", "check-evidence", "evidence-impact", "refusal", "index", "expand", "expand-evidence", "create", "edit", "delete", "compile", "get", "usage", "usage-coverage", "evidence", "spawn", "terminal", "task-state", "bind-run", "link-run-retrieval", "claim-run", "delivery", "outcome", "assess-run", "use-report", "run-report", "conflict", "conflicts", "supersede", "supersession", "preview-retract":
 	default:
 		return nil, invalid("unknown agent operation")
@@ -72,6 +72,9 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	}
 	if operation == "run" {
 		return runTask(ctx, client, f.Args()[1:])
+	}
+	if operation == "start" {
+		return prepareAgentStart(ctx, client, f.Args()[1:])
 	}
 	if operation == "search" {
 		return agentSearch(ctx, client, f.Args()[1:], socketPath, tokenPath)

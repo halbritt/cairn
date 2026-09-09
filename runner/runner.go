@@ -148,7 +148,7 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
 	command.WaitDelay = 2 * time.Second
-	command.Env = childEnvironment()
+	command.Env = ChildEnvironment()
 	if req.Carrier == "stdin" {
 		command.Stdin = strings.NewReader(input)
 	} else {
@@ -243,7 +243,9 @@ func prelaunchFailure(store Store, result Result, cause error) (Result, error) {
 	return result, cause
 }
 
-func childEnvironment() []string {
+// ChildEnvironment preserves harness configuration while removing Cairn and
+// PostgreSQL credential settings from launched tasks.
+func ChildEnvironment() []string {
 	env := []string{}
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")

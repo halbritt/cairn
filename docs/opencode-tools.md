@@ -87,6 +87,11 @@ gated by tool permissions. A direct search from that hook would need additional
 permission and lifecycle integration; the normal tools continue to use the
 native permission context.
 
+Use [explicit compact startup](compact-start.md) to preload an index through
+`cairn agent start`, then pull relevant sources with these normal tools. The
+launcher and tools must use the same API principal. This route does not install
+a system hook or change OpenCode permissions.
+
 ## Scope and behavior
 
 Search uses the configured repository, task `opencode/<sessionID>` and run
