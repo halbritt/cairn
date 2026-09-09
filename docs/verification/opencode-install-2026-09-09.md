@@ -42,9 +42,8 @@ check's coverage. The command does not promise that an independently upgraded
 API supports every feature of its bundled client.
 
 [Metadata](opencode-install-2026-09-09.json) retains artifact hashes and local
-evidence pointers. Operational adoption is verified separately when the clean
-committed binary is installed. No reduction in model task errors or independent
-setup time has been measured.
+evidence pointers. No reduction in model task errors or independent setup time
+has been measured.
 
 The implementation decision used validated doctrine packet
 `pkt-7cf60a527d7b142a`. Its schema-validated receipt retains four nonmaterial
@@ -52,3 +51,20 @@ obligations concerning a policy/mechanism split that was not introduced and
 generic named procedures. File effects, alternatives and consumer checks are
 recorded directly. This supports the bounded installer decision, not full
 roadmap acceptance.
+
+## Installed path
+
+The clean `aedc0163d03d89385f1840b48102d9d0b1b82c7f` binary was installed locally.
+Running its installer in the existing project preserved connection contents and
+tightened the unchanged adapter's file mode. It also installed both files in a
+fresh directory with no Cairn source checkout. The API and PostgreSQL processes
+remained unchanged; the API still runs the compatible `ecbcc54` implementation.
+
+The ordinary OpenCode procedure was revised from version 7 to 8 to describe the
+new setup command, explicit replacement and preserved host permissions. A normal
+OpenCode session launched from the fresh directory used the installed tools to
+find that procedure first and pull its exact version 8 body. The configured
+canonical repository and actual session scope were retained. Completions came
+from the scripted loopback fixture, with no model inference. This verifies
+functional installation and operational note access from the new directory;
+it does not establish autonomous adoption or model task improvement.
