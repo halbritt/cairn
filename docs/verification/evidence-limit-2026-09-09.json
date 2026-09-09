@@ -80,6 +80,38 @@
     {
       "path": "/tmp/cairn-evidence-limit-decision.json",
       "sha256": "197a00d603dcc55645774cf878ee27743f332d10370bd57dee4542e72e52ec77"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/before.json",
+      "sha256": "f2b2d7c4fc6efb3883546d12860ef6fb03e5474d80b3c102ac063e5c7dcbd9a3"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/installation.json",
+      "sha256": "57c0432c53dd53842ca77fa72c689827d395312e30f7c8e208e0c81deca87fe1"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/owned-history-smoke.json",
+      "sha256": "7a401a18a852c8e1d5a499d54db3c406ce09d9c65087a908262edc7f6a8599b8"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/lesson-revision-request.json",
+      "sha256": "2d2a584ac1c678372f35a91c8ec63414be0ed5407c76559f288dd3c9644fbc25"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/lesson-revised.json",
+      "sha256": "35bb128e1f953c0fb6773868057762b34dc579a105dbbd8e63908895e8a4f37f"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/lesson-search.json",
+      "sha256": "75d8bd2b6d54a791ddfc267a65fc3cb1a0b65cafe5ebabc6394d603baa74929c"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/lesson-pulled.json",
+      "sha256": "30b1fb812d17238c52bc8803df6b65f3508f71192fcea9c68b239cd7634e0c14"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/lesson-verification.json",
+      "sha256": "7d5871a0e4bea5782b92400cf1a8711da4fa2ec2bf114646dec54ec55e466f91"
     }
   ],
   "model_calls": 0,
@@ -390,5 +422,37 @@
         "rationale": "No generic named procedure completion claimed; explicit alternatives and preservation boundaries are retained."
       }
     ]
+  },
+  "deployment": {
+    "installed_revision": "283142b5cdc210ee8ee2e045e3f4ce229051545b",
+    "installed_sha256": "e67c07ff943fc5ca23ae0bf0275d2911211c30c3fb415d2a15c1dbed48bed9b1",
+    "api_pid": "3508260",
+    "api_sha256": "e67c07ff943fc5ca23ae0bf0275d2911211c30c3fb415d2a15c1dbed48bed9b1",
+    "api_restarted": true,
+    "clean_build": true,
+    "preserved": {
+      ".codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      ".opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      ".opencode/tools/cairn.ts": "4d07a80fd26585b5a9a71744da2f0598b2d751cccabbe8ed8b96355bb0c444d0",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d",
+      "/home/halbritt/.local/share/cairn/semantic/worker": "ae97c97e9dca97c3435cd61f77223f9f25cf635b010b2f230e0a84d1537c6d72",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954"
+    },
+    "read_only_hosted_smoke": true,
+    "schema_changed": false,
+    "operational_evidence_captures": 0,
+    "ci": {
+      "run_id": 34387578002,
+      "head_sha": "283142b5cdc210ee8ee2e045e3f4ce229051545b",
+      "conclusion": "success",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34387578002"
+    }
+  },
+  "selected_lesson": {
+    "record_id": "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+    "old_version": 1,
+    "version": 2,
+    "body_sha256": "645878a1463302a9a8b839d8e3a79de3d6e24efd8c47e6d9718c376dfc923e90",
+    "fresh_scope_exact_read": true
   }
 }

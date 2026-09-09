@@ -99,11 +99,11 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and running API: clean `9c8c22b6b6f81866535fc6d90ad10cf537517f46`,
-  with SHA-256 `d453cf177382ec42fcccb679aaaa35ed332b6e3c53c132fdb5dcede63b9ca4c8`.
-  The assessment-history update restarted the API without a migration. The earlier
-  note-excerpt adapter and Codex configuration generator remain installed; host
-  settings and the two-thread semantic worker are preserved.
+- Installed CLI and running API: clean `283142b5cdc210ee8ee2e045e3f4ce229051545b`,
+  with SHA-256 `e67c07ff943fc5ca23ae0bf0275d2911211c30c3fb415d2a15c1dbed48bed9b1`.
+  The evidence-envelope update restarted the API without a migration. Assessment
+  history, note excerpts and Codex configuration generation remain installed; host
+  settings, adapters and the two-thread semantic worker are preserved.
 - Dedicated PostgreSQL **17.10**, with migrations **001–029** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -121,7 +121,7 @@ Live checks on 2026-09-09 found:
   SHA-256 `d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954`.
   It adds no persistent embedding cache or model service.
 
-The [assessment-history deployment report](verification/assessment-history-2026-09-09.md#local-deployment)
+The [evidence-envelope deployment report](verification/evidence-limit-2026-09-09.md#local-deployment)
 records the backup, executable/adapter checks and hosted smoke path. Installation
 paths and credentials stay outside Git. No automatic backup rotation, pruning
 or grooming timer is installed. Use the user services for the managed store's
@@ -135,7 +135,7 @@ Its optional checks exercised the actual CLI/Unix API, independent MCP stdio
 client, native OpenCode tools and cached-response compatibility with the previous
 binary. The linked feature reports identify their fixtures and limits.
 
-[CI for installed source `9c8c22b`](https://github.com/halbritt/cairn/actions/runs/34386074013)
+[CI for installed source `283142b`](https://github.com/halbritt/cairn/actions/runs/34387578002)
 passed PostgreSQL integration with the race detector, Python tests, vet and build.
 The earlier thread experiment ran twenty-one complete paired worker cases
 and retained raw measurements outside the repository; it did not change store or
@@ -835,3 +835,15 @@ PostgreSQL/race integration, Go tests, 30 Python tests, vet and build passed.
 This completes the existing capture range, without adding managed artifacts,
 source freshness or task-value evidence. [Verification](verification/evidence-limit-2026-09-09.md)
 and [manifest](verification/evidence-limit-2026-09-09.json) retain the findings.
+
+### 2026-09-09 — evidence transport repair installed
+
+Clean `283142b` is installed as the CLI and running API. Both services are active
+after the API restart, a hosted read passed, and host settings, adapters and
+semantic worker are preserved. No schema change or operational large-source
+capture was performed. Exact-commit CI passed PostgreSQL/race, Python, vet and
+build. The existing ordinary evidence procedure now includes the capture limit
+at version 2; a fresh scope pulled the exact corrected body.
+[Deployment evidence](verification/evidence-limit-2026-09-09.md#local-deployment)
+records the update and its limits. This supersedes the preceding runtime snapshot
+without changing the historical verification or task-value judgments.

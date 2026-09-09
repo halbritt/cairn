@@ -47,3 +47,24 @@ from capture limits. The review does not isolate a causal benefit from that reca
 
 The [manifest](evidence-limit-2026-09-09.json) retains source/check hashes and
 decision provenance. Deployment is recorded separately when completed.
+
+## Local deployment
+
+Clean commit `283142b5cdc210ee8ee2e045e3f4ce229051545b` is installed as the CLI
+and running API, both SHA-256
+`e67c07ff943fc5ca23ae0bf0275d2911211c30c3fb415d2a15c1dbed48bed9b1`.
+The API restarted and both services are active. A hosted read of this task's owned
+receipt history passed. Large capture checks used only disposable stores.
+The prior binary is retained privately; host configuration, native adapters and
+semantic worker/drop-in hashes are unchanged. No schema migration was needed.
+
+The existing ordinary evidence-span procedure was revised from version 1 to 2
+with the capture-envelope limit, retaining the distinction from decoded storage
+and pull budgets. A fresh task scope searched and pulled its exact revised body.
+This is maintenance of selected guidance, without a task-value or source-freshness
+claim. The body remains outside Git; metadata and private artifact hashes are
+included in the manifest.
+
+[CI run 34387578002](https://github.com/halbritt/cairn/actions/runs/34387578002)
+passed for the exact installed implementation commit: PostgreSQL/race tests,
+Python tests, vet and build.
