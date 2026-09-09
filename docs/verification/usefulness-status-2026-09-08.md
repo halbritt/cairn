@@ -76,3 +76,10 @@ connection: its actual MCP client searched and pulled a saved operational lesson
 using an ephemeral thread and a retrieval-only tool filter. The calls were
 explicitly client-driven with no model turn. This establishes protocol
 compatibility; it adds no independent task or memory-benefit result.
+
+The [Codex maintenance follow-up](codex-maintenance-2026-09-08.md) now saves a
+selected operational procedure, revises it, rejects the stale pull handle and
+retrieves the current revision through a fresh native-client task. Identical
+capture retry preserved its identity. This closes the tested client-maintenance
+path; the same coding agent chose every operation, so independent model judgment
+and downstream benefit remain unobserved.

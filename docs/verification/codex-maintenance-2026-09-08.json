@@ -1,0 +1,44 @@
+{
+  "schema": "cairn.codex-memory-maintenance/1",
+  "source_revision": "4ed3a19",
+  "result": {
+    "codex_version": "codex-cli 0.153.4",
+    "tools": [
+      "cairn_edit",
+      "cairn_pull",
+      "cairn_pull_evidence",
+      "cairn_remember",
+      "cairn_search"
+    ],
+    "version": 2,
+    "record_class": "A",
+    "capture_retry_same_record": true,
+    "stale_handle_refused": true,
+    "fresh_task_exact_revision": true,
+    "model_turns_started": 0,
+    "fresh_task_scope_verified": true
+  },
+  "body_sha256": "bcee953fefbadbcea09f9946c65e441876ae13a8207098433b02b540acd0be5f",
+  "evidence": {
+    "report.json": {
+      "path": "/tmp/cairn-codex-maintenance-a/report.json",
+      "sha256": "fbb9f9d8da8603dad2bfaa473fe9841c1afb3c93c617795779c4eb4129ccd5af"
+    },
+    "events.json": {
+      "path": "/tmp/cairn-codex-maintenance-a/events.json",
+      "sha256": "00ca09e130146f14d47b93679d23ce20a6078c8d4f75ba23e1fc9cd99178d126"
+    },
+    "capture-request.json": {
+      "path": "/tmp/cairn-codex-maintenance-a/capture-request.json",
+      "sha256": "fa0aa915050ea629c49fd51522c5119755aab9dd86e454e98e7c31f38bd90872"
+    },
+    "edit-request.json": {
+      "path": "/tmp/cairn-codex-maintenance-a/edit-request.json",
+      "sha256": "c129b08f294d301a8bcb2579b69eed6c00f202a744005b04d6cdcd882fb31d83"
+    },
+    "probe_source": {
+      "path": "/tmp/cairn-codex-maintenance.py",
+      "sha256": "9f4b1f2156c6828b9c949fbf8e58abc2c39864096fe21d8004a1e20d7be66333"
+    }
+  }
+}

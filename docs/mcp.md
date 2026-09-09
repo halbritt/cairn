@@ -105,13 +105,20 @@ args = [
   "--task", "investigate-storage",
   "--run", "attempt-1",
 ]
-enabled_tools = ["cairn_search", "cairn_pull", "cairn_pull_evidence"]
+enabled_tools = [
+  "cairn_search", "cairn_pull", "cairn_pull_evidence",
+  "cairn_remember", "cairn_edit",
+]
 required = true
 startup_timeout_sec = 15
 ```
 
 Use a provisioned profile authorized for that repository and hosted delivery.
-This example exposes retrieval tools only. A static configuration retains the
+This example exposes ordinary capture and edit as well as retrieval. Remove
+`cairn_remember` and `cairn_edit` for retrieval-only access. The
+[native maintenance check](verification/codex-maintenance-2026-09-08.md) saved a
+selected procedure, revised it, and retrieved its current version in a fresh task.
+A static configuration retains the
 same declared scope across launches: update the task/run arguments and start a
 fresh server for the next task. Supply the optional context flags described
 above when memory eligibility depends on revision, workspace or binding.

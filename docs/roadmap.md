@@ -27,8 +27,11 @@ remain explicit responsibilities.
 The [native Codex MCP check](verification/codex-mcp-2026-09-08.md) now exercises
 search and exact lesson pull through Codex's actual client with no model turn.
 The [setup example](mcp.md#codex-example) uses the existing Cairn server and
-per-task scope. This adds harness compatibility; it does not close X2's native
-resume/compaction interlocks or establish model-selected use.
+per-task scope. A [native maintenance follow-up](verification/codex-maintenance-2026-09-08.md)
+saved and revised a useful setup procedure, refused its stale handle and retrieved
+the exact revision in a fresh task. This adds harness compatibility and ordinary
+maintenance; it does not close X2's native resume/compaction interlocks or
+establish model-selected use.
 
 The [MCP context extension](verification/mcp-currentness-2026-09-08.md) lets hosts
 supply existing revision/workspace/task-class/binding/capability pins at startup.
