@@ -22,7 +22,9 @@ producer-attribution correction where it supersedes earlier synthesis.
 
 On the owner's host, when `~/.local/share/cairn/hosted-agent.token` exists and
 `cairn` is installed, use that profile for hosted-agent memory in this repository.
-At the start of a substantive task, search for relevant prior lessons.
+At the start of a substantive task, search for relevant prior decisions,
+preferences and lessons. Project direction and corrections are useful memory
+alongside technical procedures; consult their current source before applying them.
 
 When the native Cairn MCP tools are available, use `cairn_search` and inspect
 relevant results with `cairn_pull`, passing their complete `pull_arguments`.
@@ -62,3 +64,12 @@ repository findings. Include source/verification context in the note, choose
 `--request-id` when retrying. `--stdin` accepts a chosen note body. Do not capture
 raw sessions, private Council content, credentials or workspace dumps; ordinary
 capture does not confer authority or prove task success.
+
+When an owner clarification materially changes priorities, evaluation or a recurring
+workflow, retain a concise selected `decision` or `preference` with its date and a
+pointer to the updated repository source. Check for an existing note first and
+revise it when appropriate. Preserve what superseded the earlier direction rather
+than recording contradictory summaries as equally current. Do not turn every
+message into a note, or treat a remembered preference as authority over current
+instructions. Evaluate whether this continuity helps sustained work; successful
+capture and retrieval alone do not establish that benefit.

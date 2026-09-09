@@ -724,3 +724,17 @@ evaluation across turns, sessions and related tasks: improved decisions, consist
 less rediscovery and correction burden may emerge over time. Practitioner judgment
 can motivate and support a qualified assessment; it is not silently converted into
 a causal result or prior proof of Cairn's value. Evaluation cost also counts.
+
+### 2026-09-09 — retain owner direction for later work
+
+A bounded hosted-profile review found technical procedures and lessons in twelve
+eligible previews, but no preview covering the latest priority, evaluation and
+history corrections. Three selected ordinary source-linked notes now retain those
+decisions/preferences. Fresh task-scope searches pulled the exact notes; the
+priority wording needed the existing semantic route after a lexical miss. Agent
+guidance now explicitly includes material owner decisions and corrections in
+selective capture and task-start retrieval. This is a workflow improvement and
+prospective continuity benefit, not proof of a prevented recurrence: the current
+session already knew the decisions. No ranker or evaluation subsystem was added.
+[Review and limits](verification/project-continuity-2026-09-09.md),
+[metadata](verification/project-continuity-2026-09-09.json).
