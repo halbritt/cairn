@@ -35,3 +35,14 @@ no duplicate guard was added. Memory's incremental contribution remains unknown.
 [Metadata](start-task-file-2026-09-09.json) retains source and test hashes, baseline
 observations and the validated design receipt. Eight generic Go interface/absence
 and recurring-churn obligations are nonmaterial to this private additive reader.
+
+## Local installation
+
+Clean `291557105d036b806a31c3fedee3ff702dc2a95c` is installed as the CLI, SHA-256
+`08f9579d251baeed1ee120e76a916ddee09e04ddc0304b2246d1847c86e2b0e2`. A live ordinary-profile startup
+delivered all 57 task-file bytes to `/bin/cat`, including two trailing newlines,
+within a 2,728-byte combined initial input. The previous CLI is retained locally.
+The API remains at cf66e1c/PID 4121278 and was not restarted.
+
+[Exact-source CI](https://github.com/halbritt/cairn/actions/runs/34418879903) passed PostgreSQL/race, Python, vet/build,
+history and authenticated startup checks.

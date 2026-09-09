@@ -135,9 +135,10 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI: clean `a92820a5d1deabff215ffa5c7af15585879915d5`, with SHA-256
-  `6fd53ab0c4692e25aabc7e0ee7d7ddc4660dc696821cf2bbc4158f1929575f7e`.
-  Explicit compact startup is installed alongside history and retained-kind controls.
+- Installed CLI: clean `291557105d036b806a31c3fedee3ff702dc2a95c`, with SHA-256
+  `08f9579d251baeed1ee120e76a916ddee09e04ddc0304b2246d1847c86e2b0e2`.
+  Explicit compact startup, including task-file input, is installed alongside history
+  and retained-kind controls.
 - Running API: clean `cf66e1c3cc26b65d4f143f59f0f1070f7b56ec3b`, with SHA-256
   `a58d8258296382e6a81b100574ecf65685c62cf88a42682fc23e9afc7c9c7026`.
   API PID 4121278 uses optional streaming model reuse. The store stayed on PID
@@ -161,8 +162,9 @@ Live checks on 2026-09-09 found:
   No persistent note-vector cache, package update or independent model service
   was added. The one-shot launcher remains available.
 
-The [compact-start installation](verification/compact-start-2026-09-09.md#local-installation-and-ci-correction)
-records the current CLI and preserved API/configuration. The
+The [task-file installation](verification/start-task-file-2026-09-09.md#local-installation)
+records the current CLI. The [compact-start installation](verification/compact-start-2026-09-09.md#local-installation-and-ci-correction)
+retains its preceding deployment and preserved API/configuration. The
 [resident-worker installation](verification/semantic-residency-2026-09-09.md#local-installation)
 retains the API, worker and idle-release checks. Earlier [use-history CLI](verification/use-history-cli-2026-09-09.md#cli-installation),
 [retained-kind repair](verification/retained-kinds-2026-09-09.md#cli-installation-and-retained-guidance)
@@ -177,9 +179,14 @@ lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
 
+The installed task-file startup extension passed [exact-source CI `2915571`](https://github.com/halbritt/cairn/actions/runs/34418879903),
+including PostgreSQL/race and the authenticated CLI fixture. Local checks preserve
+exact file text through both carriers and reject invalid sources before retrieval.
+[Report and installation](verification/start-task-file-2026-09-09.md).
+
 The compact-start CLI passed disposable PostgreSQL/race integration, Go unit
 and 34 Python tests, vet/format checks, and real CLI/API/native transport checks.
-[Exact installed CLI-source CI `a92820a`](https://github.com/halbritt/cairn/actions/runs/34417847517)
+[Earlier compact-start CLI-source CI `a92820a`](https://github.com/halbritt/cairn/actions/runs/34417847517)
 passed, including the authenticated startup suite after its database was isolated
 from Go test authority state. The [report](verification/compact-start-2026-09-09.md)
 retains the initial CI failure, native quoting failure, final checks and deployment.
@@ -1529,3 +1536,12 @@ the old unsupported flag, observed shell newline loss, exact real CLI/API delive
 Go/Python and static checks. Native model use and memory task benefit remain
 unclaimed. Saved owner priorities informed selection; current source prevented
 duplicating already-implemented retraction previews. All prior history is retained.
+
+### 2026-09-09 — install task-file input after verification
+
+Clean CLI `2915571` is installed; a live hosted-profile startup delivered an exact
+57-byte task file, including its final two newlines, to `/bin/cat`. The API remains
+cf66e1c/PID 4121278. Exact-source CI 34418879903 passed all steps, including
+PostgreSQL/race and authenticated startup. The task-file report and metadata
+retain installation bytes and verification evidence. The current summary now
+names this CLI separately from the running API; prior history remains intact.

@@ -118,11 +118,41 @@
     {
       "path": "/tmp/cairn-start-task-file-citation-closure.json",
       "sha256": "35985d037bd2fd78b9814315fdbcb063212e6c81c0e3c88e0b694852d9c1106e"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-ci.json",
+      "sha256": "4590cb4b32cb1b346a2a34d57b6032caf2c5c49727aca449eb78d3082a65c878"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-deployment/installation.json",
+      "sha256": "e032855216d84dac7cf377e9a39d26290633ce2a2e198c41cc82dc072c5e68e3"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-deployment/startup.txt",
+      "sha256": "dcd22b28aa85a68a923982bf1bc02ca62bf6654780c56e3d03c713bca570fe9b"
     }
   ],
   "limits": [
     "No model-selected use or incremental memory-value claim",
     "Source file retained by caller; no snapshot guarantee for concurrent edits",
     "Existing combined initial budget and downstream harness behavior remain"
-  ]
+  ],
+  "installation": {
+    "cli_revision": "291557105d036b806a31c3fedee3ff702dc2a95c",
+    "cli_sha256": "08f9579d251baeed1ee120e76a916ddee09e04ddc0304b2246d1847c86e2b0e2",
+    "previous_cli": "/tmp/cairn-start-task-file-deployment/previous-cli",
+    "api_pid": 4121278,
+    "api_sha256": "a58d8258296382e6a81b100574ecf65685c62cf88a42682fc23e9afc7c9c7026",
+    "api_restarted": false,
+    "startup_bytes": 2728,
+    "task_bytes": 57,
+    "exact_task_bytes": true,
+    "receipt_id": "3645c612-466e-47ca-a38a-c5dcfef7a7db",
+    "model_inference_calls": 0
+  },
+  "ci": {
+    "run_id": 34418879903,
+    "commit": "291557105d036b806a31c3fedee3ff702dc2a95c",
+    "conclusion": "success"
+  }
 }
