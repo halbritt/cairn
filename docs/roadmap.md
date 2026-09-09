@@ -200,8 +200,12 @@ receipt at the existing supervisor, claims once, observes a real confined child,
 and retains delivery/outcome correspondence. A changed selected note refuses
 launch. The [complete-chain test](verification/native-chain-2026-09-08.md) now
 connects actual observation and build admission through the Driver with a real
-Cairn service and a confined shell fixture. Accepted native contracts and
-real-build usefulness remain open. The
+Cairn service and a confined shell fixture. A distinct
+[native recurrence preflight](verification/native-recurrence-preflight-2026-09-08.md)
+now verifies a complete frozen repair workspace and the existing oracle against
+both its defective baseline and reviewed fix. Its task-relevant lesson and
+three prospective conditions are pinned; the native model executor remains
+unimplemented. Accepted native contracts and real-build usefulness remain open. The
 [OpenCode trial host](verification/opencode-host-observation-2026-09-08.md) now
 uses per-arm authenticated observers, exact package/attempt joins and pending
 spawn/terminal recovery. Its full real-harness fixture verification includes
