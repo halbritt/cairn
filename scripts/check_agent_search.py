@@ -1,5 +1,7 @@
 """Exercise reusable agent search/pull commands against the disposable Unix API."""
+import hashlib
 import json
+import os
 import shlex
 import subprocess
 import uuid
@@ -51,6 +53,23 @@ def check(binary, root, environment, grant, claim, support):
     evidence = call(evidence_args)['data']
     assert evidence['evidence']['body'] == 'explicit supporting socket evidence' and evidence['credits_remaining'] == 2
     assert call(evidence_args)['data'] == evidence
+    for flags in [['--offset', '0'], ['--length', '0'], ['--offset', '-1', '--length', '2']]:
+        assert call([*agent, 'pull-evidence', *flags, receipt, handle,
+                     support['evidence_id'], support['sha256']], check=False)['status'] == 'INVALID_REQUEST'
+    span_id = str(uuid.uuid4())
+    span_args = [*agent, 'pull-evidence', '--request-id', span_id, '--offset', '9', '--length', '10',
+                 receipt, handle, support['evidence_id'], support['sha256']]
+    span = call(span_args)['data']
+    assert span['span']['body'] == 'supporting' and span['span']['offset'] == 9 and span['span']['end'] == 19
+    assert span['span']['sha256'] == hashlib.sha256(b'supporting').hexdigest()
+    assert span['evidence']['body'] == '' and span['evidence']['sha256'] == support['sha256']
+    assert span['credits_remaining'] == 1 and call(span_args)['data'] == span
+    assert call([*agent, 'expand-evidence'], dict(request_id=span_id, receipt_id=receipt, handle=handle,
+                evidence_id=support['evidence_id'], expected_sha256=support['sha256'],
+                span=dict(offset=9, length=10)))['data'] == span
+    prefix = call([*agent, 'pull-evidence', '--length', '8', receipt, handle,
+                   support['evidence_id'], support['sha256']])['data']
+    assert prefix['span']['body'] == 'explicit' and prefix['credits_remaining'] == 0
     foreign = call(['agent', '--token-file', str(root / 'observer.token'), 'pull', receipt, handle], check=False)
     assert foreign['status'] == 'AUTHORITY_DENIED'
     hosted = call(['agent', '--token-file', str(root / 'hosted.token'), 'search', '--repo', scope['repo'],
@@ -71,5 +90,38 @@ def check(binary, root, environment, grant, claim, support):
     for flags in [[], ['--task', '*', '--run', 'run'], ['--task', 'task']]:
         refused = call([*agent, 'search', *flags, 'socket'], check=False)
         assert refused['status'] == 'INVALID_REQUEST'
+    marker = 'largesource' + uuid.uuid4().hex
+    tail = 'TAIL: use the explicit override'
+    source = 'SOURCE START\n' + 'retained source line\n' * 3000 + tail
+    large = call(['capture-evidence'], dict(request_id=str(uuid.uuid4()), repo=scope['repo'],
+                 body=source, source='synthetic large source', sensitivity='shareable'))['data']
+    draft = call([*agent, 'remember', '--repo', scope['repo'], '--shareable', marker])['data']
+    large_claim = call(['promote'], dict(request_id=str(uuid.uuid4()), record_id=draft['record_id'],
+                       expected_version=draft['version'], grant_id=grant['grant_id'],
+                       evidence_ids=[large['evidence_id']], reason='Inspect a larger retained source'))['data']
+    large_view = call([*agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'],
+                      '--run', scope['run_id'], marker])['data']
+    entry = next(e for e in large_view['index'] if e['record_id'] == large_claim['record_id'])
+    args = dict(entry['pull_arguments'], evidence_id=large['evidence_id'], expected_sha256=large['sha256'])
+    assert call([*agent, 'expand-evidence'], args, check=False)['status'] == 'BUDGET_REFUSED'
+    result = call([*agent, 'pull-evidence', '--offset', str(len(source)-len(tail)), '--length', '4096',
+                   args['receipt_id'], args['handle'], large['evidence_id'], large['sha256']])['data']
+    assert result['span']['body'] == tail and result['span']['end'] == len(source)
+    assert result['span']['total_bytes'] == len(source) and result['credits_remaining'] == 3
+    assert result['span']['sha256'] == hashlib.sha256(tail.encode()).hexdigest()
+    assert result['evidence']['body'] == '' and result['evidence']['sha256'] == large['sha256']
+    previous = os.environ.get('CAIRN_PREVIOUS_BINARY')
+    if previous:
+        def old_call(command, payload):
+            return json.loads(subprocess.run([previous, command], input=json.dumps(payload),
+                              env=environment, capture_output=True, text=True, check=True, timeout=15).stdout)['data']
+        old_index = old_call('index', dict(request_id=str(uuid.uuid4()), scope=scope,
+                                          query='socket', purpose='context', available_tokens=64000))
+        old_handle = next(h['handle'] for h in old_index['handles'] if h['record_id'] == claim['record_id'])
+        old_args = dict(request_id=str(uuid.uuid4()), receipt_id=old_index['package']['receipt_id'],
+                        handle=old_handle, evidence_id=support['evidence_id'], expected_sha256=support['sha256'])
+        original = old_call('expand-evidence', old_args)
+        assert 'span' not in original and call(['expand-evidence'], old_args)['data'] == original
+        print('Previous binary whole-evidence cached response survives new binary retry in disposable database')
     token.unlink()
     print('Reusable agent search/pull/evidence CLI preserves mandatory context, scoped index order, exact handles, quoted paths, retry credits and hosted filtering')

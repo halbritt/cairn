@@ -127,6 +127,15 @@ def check(binary, root, environment, opencode, claim, support):
     evidence = invoke('pull_evidence', evidence_args)
     assert evidence['evidence']['body'] == 'explicit supporting socket evidence'
     assert invoke('pull_evidence', evidence_args) == evidence
+    span_args = dict(evidence_args, request_id=str(uuid.uuid4()), span=dict(offset=9, length=10))
+    for bad_span in ({'offset': 0, 'length': 0}, {'offset': '0', 'length': 10},
+                     {'offset': 0, 'length': 10, 'unknown': True}):
+        invoke('pull_evidence', dict(span_args, span=bad_span), 'INVALID_REQUEST')
+    span = invoke('pull_evidence', span_args)
+    assert span['span']['body'] == 'supporting' and span['span']['total_bytes'] == len('explicit supporting socket evidence')
+    assert span['evidence']['body'] == '' and span['evidence']['sha256'] == support['sha256']
+    assert span['credits_remaining'] == 1 and invoke('pull_evidence', span_args) == span
+    invoke('pull_evidence', dict(span_args, span=dict(offset=0, length=10)), 'IDEMPOTENCY_CONFLICT')
     foreign_draft = dict(draft, scope=dict(repo='outside-fixture', task_id='*', run_id='*'))
     invoke('edit', dict(edit, draft=foreign_draft, request_id=str(uuid.uuid4())), 'AUTHORITY_DENIED')
     settings_path.write_text(json.dumps(dict(settings, repo='outside-fixture')))

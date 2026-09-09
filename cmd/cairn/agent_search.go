@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,6 +141,11 @@ func shellCommand(args []string) string {
 func agentPull(ctx context.Context, client *localapi.Client, operation string, args []string) (json.RawMessage, error) {
 	f := flags("agent " + operation)
 	request := f.String("request-id", uuid.NewString(), "pull retry identity")
+	var offset, length int
+	if operation == "pull-evidence" {
+		f.IntVar(&offset, "offset", 0, "evidence byte offset (requires --length)")
+		f.IntVar(&length, "length", 0, "maximum evidence bytes to return; clipped at EOF")
+	}
 	if err := f.Parse(args); err != nil {
 		return nil, invalid(err.Error())
 	}
@@ -155,7 +161,13 @@ func agentPull(ctx context.Context, client *localapi.Client, operation string, a
 			return nil, invalid("agent pull-evidence requires RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256")
 		}
 		endpoint = "expand-evidence"
-		payload = core.ExpandEvidenceRequest{RequestID: *request, ReceiptID: f.Arg(0), Handle: f.Arg(1), EvidenceID: f.Arg(2), ExpectedSHA256: f.Arg(3)}
+		var span *core.EvidenceSpanRequest
+		f.Visit(func(value *flag.Flag) {
+			if value.Name == "offset" || value.Name == "length" {
+				span = &core.EvidenceSpanRequest{Offset: offset, Length: length}
+			}
+		})
+		payload = core.ExpandEvidenceRequest{RequestID: *request, ReceiptID: f.Arg(0), Handle: f.Arg(1), EvidenceID: f.Arg(2), ExpectedSHA256: f.Arg(3), Span: span}
 	}
 	var result json.RawMessage
 	err := client.Call(ctx, endpoint, payload, &result)

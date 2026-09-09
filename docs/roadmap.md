@@ -152,6 +152,13 @@ exact captured-reference roots, known transitive relation types and retained use
 with independent pagination. It does not infer source-record edges from labels or
 extend mutation authorization. R3/L4 remain partial for the broader lifecycle
 contracts; this report is not a replacement for a guarded mutation preview.
+Optional [evidence byte spans](index-and-pull.md#index-and-expansion-contract)
+let agents inspect selected portions of captured sources that exceed their pull
+budget. Full-object identity checks, destination checks and shared credits remain.
+The [verification](verification/evidence-spans-2026-09-09.md) covers CLI/API,
+MCP, native OpenCode and retry compatibility with the previous binary.
+This retrieves retained bytes; L4 remains partial for managed large artifacts,
+as-cited span relations and broader dependent invalidation.
 [Body-pull reasons](verification/pull-reason-2026-09-08.md) now describe the
 current eligibility recheck instead of reporting a zero match count from a
 queryless pass. Original protected ranking and committed retry responses remain

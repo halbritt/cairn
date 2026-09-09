@@ -247,7 +247,7 @@ try:
     check_retained_run(binary, root, client_env)
     check_agent_search(binary, root, env, grant, claim, support)
     check_agent_remember(binary, root, env)
-    check_mcp(binary, root, env)
+    check_mcp(binary, root, env, claim, support)
     check_mcp_currentness(binary, root, env, grant)
     if os.environ.get('CAIRN_OPENCODE_TOOLS_BINARY'):
         from check_opencode_tools import check as check_opencode_tools

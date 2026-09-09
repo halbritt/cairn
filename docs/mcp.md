@@ -43,7 +43,7 @@ Leaving all five flags empty preserves searches without a context object.
 | --- | --- |
 | `cairn_search` | A `query`, or `browse: true` without a query; optional retry `request_id`. Returns mandatory context plus a bounded index. Each entry has a complete `pull_arguments` object for the next call. |
 | `cairn_pull` | Pass an entry's `pull_arguments` unchanged to receive its full body. Reuse those arguments for retries. |
-| `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its `expected_sha256`, and a retry `request_id`. Shares the body's expansion credits and bytes. |
+| `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its full-object `expected_sha256`, and a retry `request_id`. Optional `span: {offset: 0, length: 4096}` selects at most that many bytes. Shares the body's expansion credits and bytes. |
 | `cairn_remember` | `body` and a stable UUID `request_id`; optional `kind` and `shareable`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |
 | `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and either `body` for a text-only correction or the complete replacement `draft`. Revises an active A note through the existing ordinary edit API. Returns identifiers without echoing the body. |
 

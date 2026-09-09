@@ -66,7 +66,7 @@ def session(binary, root, environment, extra_args=(), generated=False):
     assert process.returncode == 0 and trailing == '', (process.returncode, trailing, errors)
 
 
-def check(binary, root, environment):
+def check(binary, root, environment, claim, support):
     with session(binary, root, environment) as tool:
         query = 'mcpstdio' + uuid.uuid4().hex
         args = dict(request_id=str(uuid.uuid4()), body=query + ': selected stdio lesson', shareable=True)
@@ -100,6 +100,18 @@ def check(binary, root, environment):
         assert revised == tool('cairn_edit', edit) and 'body' not in revised
         assert 'VERSION_CONFLICT' in tool('cairn_edit', dict(edit, request_id=str(uuid.uuid4())), error=True)
         assert 'STALE_HANDLE' in tool('cairn_pull', view['index'][0]['pull_arguments'], error=True)
+        evidence_view = tool('cairn_search', dict(query='socket'))
+        entry = next(e for e in evidence_view['index'] if e['record_id'] == claim['record_id'])
+        tool('cairn_pull', entry['pull_arguments'])
+        evidence_args = dict(entry['pull_arguments'], request_id=str(uuid.uuid4()),
+                             evidence_id=support['evidence_id'], expected_sha256=support['sha256'],
+                             span=dict(offset=9, length=10))
+        span = tool('cairn_pull_evidence', evidence_args)
+        assert span['span']['body'] == 'supporting' and span['evidence']['body'] == ''
+        assert span['evidence']['sha256'] == support['sha256'] and span['credits_remaining'] == 2
+        assert tool('cairn_pull_evidence', evidence_args) == span
+        assert 'IDEMPOTENCY_CONFLICT' in tool('cairn_pull_evidence',
+                dict(evidence_args, span=dict(offset=0, length=10)), error=True)
     with session(binary, root, environment, generated=True) as tool:
         view = tool('cairn_search', dict(query=query))
         assert 'context' not in view

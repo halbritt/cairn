@@ -118,8 +118,9 @@ export const pull = validatedTool({
 })
 
 export const pull_evidence = validatedTool({
-  description: "Pull evidence attached to an expanded memory. Use its evidence ID and expected SHA256 with the original receipt and handle and a stable request UUID. Shares the expansion budget.",
-  args: { ...pullArgs, evidence_id: z.string().uuid(), expected_sha256: z.string().regex(/^[a-f0-9]{64}$/) },
+  description: "Pull evidence attached to an expanded memory. Use its evidence ID and full-object expected SHA256 with the original receipt and handle. Optional span selects byte offset and maximum length, clipped at EOF; selected bytes and their checksum appear in span. Reuse the request UUID only for identical retries. Shares the expansion budget.",
+  args: { ...pullArgs, evidence_id: z.string().uuid(), expected_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    span: z.object({ offset: z.number().int().min(0).max(1048575), length: z.number().int().min(1).max(1048576) }).strict().optional() },
   async execute(args, context) {
     const config = await settings("pull_evidence", context)
     return render(await call(config, context, ["expand-evidence"], args), config)

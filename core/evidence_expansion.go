@@ -2,17 +2,39 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"unicode/utf8"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
 type ExpandEvidenceRequest struct {
-	ExpectedSHA256 string `json:"expected_sha256"`
-	RequestID      string `json:"request_id"`
-	ReceiptID      string `json:"receipt_id"`
-	Handle         string `json:"handle"`
-	EvidenceID     string `json:"evidence_id"`
+	ExpectedSHA256 string               `json:"expected_sha256"`
+	RequestID      string               `json:"request_id"`
+	ReceiptID      string               `json:"receipt_id"`
+	Handle         string               `json:"handle"`
+	EvidenceID     string               `json:"evidence_id"`
+	Span           *EvidenceSpanRequest `json:"span,omitempty"`
+}
+
+// EvidenceSpanRequest selects at most Length bytes starting at Offset. Only EOF
+// clips the range; UTF-8 boundaries do not change the requested byte offsets.
+type EvidenceSpanRequest struct {
+	Offset int `json:"offset"`
+	Length int `json:"length"`
+}
+
+type EvidenceSpan struct {
+	Offset     int    `json:"offset"`
+	End        int    `json:"end"` // Exclusive; the next offset when below TotalBytes.
+	TotalBytes int    `json:"total_bytes"`
+	SHA256     string `json:"sha256"`
+	Body       string `json:"body,omitempty"`
+	BodyBase64 string `json:"body_base64,omitempty"`
 }
 
 type EvidenceExpansion struct {
@@ -21,11 +43,15 @@ type EvidenceExpansion struct {
 	Evidence         EvidenceDocument `json:"evidence"`
 	CreditsRemaining int              `json:"credits_remaining"`
 	BytesRemaining   int              `json:"bytes_remaining"`
+	Span             *EvidenceSpan    `json:"span,omitempty"`
 }
 
 // ExpandEvidence discloses one captured supporting object through an existing
 // index handle. It shares body-pull credits and rechecks authority on retries.
 func (s *Store) ExpandEvidence(ctx context.Context, req ExpandEvidenceRequest, dest Destination) (EvidenceExpansion, error) {
+	if req.Span != nil && (req.Span.Offset < 0 || req.Span.Offset >= 1048576 || req.Span.Length <= 0 || req.Span.Length > 1048576) {
+		return EvidenceExpansion{}, failure("INVALID_REQUEST", "span requires byte offset 0-1048575 and length 1-1048576")
+	}
 	if !digestValid(req.ExpectedSHA256) {
 		return EvidenceExpansion{}, failure("INVALID_REQUEST", "expected supporting evidence SHA256 required")
 	}
@@ -69,6 +95,32 @@ func (s *Store) ExpandEvidence(ctx context.Context, req ExpandEvidenceRequest, d
 		Destination Destination
 	}{req, dest}, func(tx pgx.Tx) (EvidenceExpansion, error) {
 		result := EvidenceExpansion{RecordID: state.selection.Record.RecordID, Version: state.selection.Record.Version, Evidence: doc, CreditsRemaining: state.credits - 1, BytesRemaining: state.remaining}
+		method := "authorized-evidence-pull/1"
+		if req.Span != nil {
+			body := []byte(doc.Body)
+			if doc.BodyBase64 != "" {
+				var err error
+				body, err = base64.StdEncoding.DecodeString(doc.BodyBase64)
+				if err != nil {
+					return EvidenceExpansion{}, err
+				}
+			}
+			if req.Span.Offset >= len(body) {
+				return EvidenceExpansion{}, failure("INVALID_REQUEST", "span offset is outside captured evidence")
+			}
+			end := min(req.Span.Offset+req.Span.Length, len(body))
+			selected := body[req.Span.Offset:end]
+			digest := sha256.Sum256(selected)
+			span := &EvidenceSpan{Offset: req.Span.Offset, End: end, TotalBytes: len(body), SHA256: hex.EncodeToString(digest[:])}
+			if utf8.Valid(selected) {
+				span.Body = string(selected)
+			} else {
+				span.BodyBase64 = base64.StdEncoding.EncodeToString(selected)
+			}
+			result.Span = span
+			result.Evidence.Body, result.Evidence.BodyBase64 = "", ""
+			method = "authorized-evidence-span-pull/1"
+		}
 		encoded, err := json.Marshal(result)
 		if err != nil {
 			return EvidenceExpansion{}, err
@@ -80,7 +132,7 @@ func (s *Store) ExpandEvidence(ctx context.Context, req ExpandEvidenceRequest, d
 		if _, err = tx.Exec(ctx, `UPDATE cairn.index_session SET credits=credits-1,remaining_bytes=remaining_bytes-$2 WHERE receipt_id=$1`, req.ReceiptID, cost); err != nil {
 			return EvidenceExpansion{}, err
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO cairn.usage_observation(observation_id,receipt_id,record_id,version,signal,witness,method) VALUES($1,$2,$3,$4,'expanded','instrumented','authorized-evidence-pull/1')`, uuid.NewString(), req.ReceiptID, result.RecordID, result.Version); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.usage_observation(observation_id,receipt_id,record_id,version,signal,witness,method) VALUES($1,$2,$3,$4,'expanded','instrumented',$5)`, uuid.NewString(), req.ReceiptID, result.RecordID, result.Version, method); err != nil {
 			return EvidenceExpansion{}, err
 		}
 		result.BytesRemaining -= cost

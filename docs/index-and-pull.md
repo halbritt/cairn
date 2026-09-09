@@ -144,9 +144,35 @@ Unavailable/divergent objects refuse; no external file or locator is opened.
 The expected digest also binds retries if an object's body and stored digest
 change together.
 
+For larger evidence, add `"span":{"offset":0,"length":4096}` to the JSON
+request, or use the CLI flags before the positional arguments:
+
+```sh
+cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
+  pull-evidence --request-id NEW_UUID --offset 0 --length 4096 \
+  RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256
+```
+
+Offsets and lengths count **bytes**. Offset must be 0–1048575 and inside the
+captured object; length must be 1–1048576. Length is a maximum, clipped only at
+EOF. `--length` alone starts at zero; `--offset` requires a positive `--length`.
+The API service and client must both support spans.
+
+In span mode, `evidence` keeps the full object's metadata and digests but its
+body is empty. The separate `span` contains `offset`, exclusive `end`,
+`total_bytes`, a SHA-256 of the selected bytes, and either `body` or
+`body_base64`. A range that cuts a UTF-8 character returns exact bytes as base64;
+offsets are never silently adjusted. When `end < total_bytes`, `end` can be used
+as the next offset. Each different range needs a new request UUID and consumes
+one shared credit. The full-object expected digest and live checks still apply,
+including changes outside the selected range. Omitting `span` retains whole-object
+behavior and existing retry identity.
+
 Evidence pulls share the same credits and bytes as body pulls, including encoded
-metadata and a response-envelope allowance. Oversized objects refuse intact and
-do not spend a credit. Identical transport retries return the prior response
+metadata and a response-envelope allowance. Oversized responses return
+`BUDGET_REFUSED` without spending a credit; request a smaller span with a new UUID
+if remaining room permits. Invalid ranges return `INVALID_REQUEST` without
+spending a credit. Identical transport retries return the prior response
 without another spend while repeating live authorization and availability checks.
 `cairn expand-evidence` is the local operator form. The existing `cairn evidence ID`
 remains separate local inspection and does not consume this retrieval budget.
@@ -166,7 +192,8 @@ right to disclose old content.
 
 The use report retains `exposure_kind: index` for the original pointer. A later
 pull appends an instrumented `expanded` observation with method
-`authorized-body-pull/1` or `authorized-evidence-pull/1`; it does not rewrite the earlier exposure as though a
+`authorized-body-pull/1`, `authorized-evidence-pull/1`, or
+`authorized-evidence-span-pull/1`; it does not rewrite the earlier exposure as though a
 full body had been present originally. Pull observations invalidate earlier
 retraction previews. They establish that a body or supporting object was requested and made available,
 not that a model read it or that the task improved. HTTP response loss can still
