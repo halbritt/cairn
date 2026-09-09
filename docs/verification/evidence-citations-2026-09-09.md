@@ -52,3 +52,27 @@ concern a Go interface/dependency boundary not introduced here, one asks for
 recurring-change history beyond this accepted missing feature, and one names a
 no-change procedure whose alternative was considered explicitly. No material
 obligation remains for this bounded implementation claim.
+
+## Local installation
+
+Clean implementation `3e08c18fedbb920d9f0ddecaa3e4bfae1139ee67` is installed as
+both CLI and running API, SHA-256
+`01b27975441815ddd656699688ff02bc6be2d8a4af20530774bb18dd5814c940`.
+The dedicated store was backed up before migration 030; both services are active.
+The store process, Codex/OpenCode configuration and adapter, and semantic worker
+configuration/files were preserved. The hosted caller read its existing assessment
+history successfully after installation.
+
+The operational database had zero qualified evidence references before and after
+migration. Legacy citation preservation is established by the actual old-binary
+disposable upgrade test, not by this empty production reference set. No operational
+citation fixtures were added.
+
+The existing evidence-span lesson `8a47da19-dd71-43b2-a4cc-9cef9d113c81` was
+revised from v2 to v3, retaining earlier retrieval/capture guidance and documenting
+the new citation contract. A fresh task scope retrieved the exact full v3 body;
+its checksum is in the manifest. This demonstrates maintained guidance delivery,
+not task acceptance or a causal memory benefit.
+
+[CI for the exact implementation commit](https://github.com/halbritt/cairn/actions/runs/34389972263)
+passed PostgreSQL race tests, Python tests, vet and build.

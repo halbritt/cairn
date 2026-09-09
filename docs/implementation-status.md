@@ -99,12 +99,12 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and running API: clean `283142b5cdc210ee8ee2e045e3f4ce229051545b`,
-  with SHA-256 `e67c07ff943fc5ca23ae0bf0275d2911211c30c3fb415d2a15c1dbed48bed9b1`.
-  The evidence-envelope update restarted the API without a migration. Assessment
-  history, note excerpts and Codex configuration generation remain installed; host
-  settings, adapters and the two-thread semantic worker are preserved.
-- Dedicated PostgreSQL **17.10**, with migrations **001–029** applied. Data and
+- Installed CLI and running API: clean `3e08c18fedbb920d9f0ddecaa3e4bfae1139ee67`,
+  with SHA-256 `01b27975441815ddd656699688ff02bc6be2d8a4af20530774bb18dd5814c940`.
+  The citation update backed up the store, applied migration 030 and restarted
+  the API. Assessment history, note excerpts and evidence capture remain installed;
+  host settings, adapters and the two-thread semantic worker are preserved.
+- Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
   retention accounting.
@@ -135,7 +135,7 @@ Its optional checks exercised the actual CLI/Unix API, independent MCP stdio
 client, native OpenCode tools and cached-response compatibility with the previous
 binary. The linked feature reports identify their fixtures and limits.
 
-[CI for installed source `283142b`](https://github.com/halbritt/cairn/actions/runs/34387578002)
+[CI for installed source `3e08c18`](https://github.com/halbritt/cairn/actions/runs/34389972263)
 passed PostgreSQL integration with the race detector, Python tests, vet and build.
 The earlier thread experiment ran twenty-one complete paired worker cases
 and retained raw measurements outside the repository; it did not change store or
@@ -868,3 +868,22 @@ source replacement has a separate integrity test. This is a practical source
 inspection capability, not a new accepted model task or measured memory benefit.
 L4 remains partial for larger managed sources, broader relations, source freshness
 and richer dependent qualification. Deployment is recorded separately below.
+
+### 2026-09-09 — citation migration installation and maintained guidance
+
+Clean `3e08c18` is installed as the CLI and running API after a verified backup
+and migration 030. Both services are active, the store process is unchanged, and
+Codex/OpenCode settings, native adapter and semantic runtime files retain their
+previous checksums. An authenticated hosted read succeeded. The operational store
+had zero qualified evidence references, so legacy preservation is demonstrated by
+the disposable upgrade rather than by operational citation use.
+
+The existing evidence-span lesson is now v3, with earlier capture guidance retained
+and the precise citation contract added. A fresh task/run scope read its exact full
+body. This is maintained guidance and tested retrieval, not an additional accepted
+model task or demonstrated memory contribution. The [verification report](verification/evidence-citations-2026-09-09.md)
+and [manifest](verification/evidence-citations-2026-09-09.json) retain deployment,
+backup, runtime and note checksums.
+
+[Exact implementation CI](https://github.com/halbritt/cairn/actions/runs/34389972263)
+passed PostgreSQL race tests, Python tests, vet and build.

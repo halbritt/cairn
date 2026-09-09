@@ -108,5 +108,80 @@
     "Inline evidence limit and pull budgets unchanged",
     "No upstream freshness, broader relation policy or evidence sufficiency claim",
     "Old binaries refuse newer schema; binary-only downgrade is insufficient"
-  ]
+  ],
+  "deployment": {
+    "installed_revision": "3e08c18fedbb920d9f0ddecaa3e4bfae1139ee67",
+    "clean_build": true,
+    "before": {
+      "api_pid": "3508260",
+      "store_pid": "163669",
+      "binary_sha256": "e67c07ff943fc5ca23ae0bf0275d2911211c30c3fb415d2a15c1dbed48bed9b1",
+      "references": {
+        "count": 0,
+        "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+      }
+    },
+    "after": {
+      "api_pid": "3558785",
+      "store_pid": "163669",
+      "binary_sha256": "01b27975441815ddd656699688ff02bc6be2d8a4af20530774bb18dd5814c940",
+      "references": {
+        "count": 0,
+        "identity_hash": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "migration": {
+        "latest": 30
+      },
+      "citations": {
+        "pinned": 0,
+        "spans": 0
+      }
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.opencode/tools/cairn.ts": "4d07a80fd26585b5a9a71744da2f0598b2d751cccabbe8ed8b96355bb0c444d0",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d",
+      "/home/halbritt/.local/share/cairn/semantic/worker": "ae97c97e9dca97c3435cd61f77223f9f25cf635b010b2f230e0a84d1537c6d72",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954"
+    },
+    "backup": "/home/halbritt/.local/share/cairn/backups/cairn-20260909T183647-3558742.dump",
+    "read_only_hosted_smoke": true,
+    "operational_citation_mutations": 0
+  },
+  "maintained_guidance": {
+    "record_id": "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+    "version": 3,
+    "body_sha256": "45ccaadca3b71eba9b49ca0bd363687806c8dadc711c8f2985956d11cb8db689",
+    "fresh_scope_exact_full_pull": true,
+    "task_benefit_claimed": false
+  },
+  "deployment_artifacts": [
+    {
+      "path": "/tmp/cairn-citation-span-deployment/installation.json",
+      "sha256": "c1b85309ec7df78747728d4488c500b2567228b5a423f658bdb5c9db727f70d1"
+    },
+    {
+      "path": "/tmp/cairn-citation-span-deployment/backup.json",
+      "sha256": "1953a0e4918bcf6fb879c9a93eb1495ae427ab85b647c9952d62a15e4358ffcd"
+    },
+    {
+      "path": "/tmp/cairn-citation-span-deployment/migration.json",
+      "sha256": "ec10279c005164c1ddde04b1b21246ecaeac899242a96b61078b52350a28171d"
+    },
+    {
+      "path": "/tmp/cairn-citation-span-deployment/owned-history-smoke.json",
+      "sha256": "7a401a18a852c8e1d5a499d54db3c406ce09d9c65087a908262edc7f6a8599b8"
+    },
+    {
+      "path": "/tmp/cairn-citation-span-deployment/lesson-verification.json",
+      "sha256": "5e3e3bbf154707bc3048ee13f36e8f063500c3e842da9c04f653bf150a6dc9c7"
+    }
+  ],
+  "ci": {
+    "run_id": 34389972263,
+    "commit": "3e08c18fedbb920d9f0ddecaa3e4bfae1139ee67",
+    "conclusion": "success",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34389972263"
+  }
 }
