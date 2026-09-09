@@ -1,0 +1,81 @@
+{
+  "schema": "cairn.kind-filter-verification/1",
+  "date": "2026-09-09",
+  "baseline_commit": "2a93a9e632d114530889359b51527f8068147dd8",
+  "feature": "Optional kind selection through existing retrieval paths",
+  "verification": {
+    "failing_baseline": true,
+    "postgres_race": true,
+    "go_tests": true,
+    "python_tests": 30,
+    "vet_format": true,
+    "native_opencode_scripted": true,
+    "independent_mcp": true,
+    "previous_binary_unfiltered_compatibility": true
+  },
+  "doctrine": {
+    "packet_id": "pkt-9bf566d0dee72fd3",
+    "packet_content_sha256": "9bf566d0dee72fd3ee2030dab0ca1665bfa230f02efc621ca3923d9b07743061",
+    "nonmaterial_residuals": 13
+  },
+  "model_inference": false,
+  "task_value_demonstrated": false,
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-kind-filter-plan.md",
+      "sha256": "5ddea992b3aee852f6983a3e987899e6f28837617a06d59f34468e2b16575241"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-red.log",
+      "sha256": "b48d725633f789756e165a49f1b29ddacac69733d5b23ca61786ecb77fc0b7a4"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-integration.log",
+      "sha256": "31f116c11d0d01626b00a934712ebd91f3915b36a754954152db2781ea6476c0"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-integration-b.log",
+      "sha256": "12159c86089e6acec6f5a244060fccf8194000bf37bf06f123cfc7068308639e"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-integration-c.log",
+      "sha256": "374349d8f0a2c3c50a87da73826fc99a01afed7276e41f78fda4abbda32d3bc7"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-unit.log",
+      "sha256": "083cbe3fa86b3b1a6709f9abeaf2be87c40fd36db27a43a9ca3e6c514f49a7e8"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-check-final.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-final.json",
+      "sha256": "cc6a08d2fbe06b0776875974f824d81bf846f05598dcc9d2c35590d5eb9d561a"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-decision.json",
+      "sha256": "79c6960e2dae606a22b3a9b53e0d674e0923fda828af0f71609b4dafe9a50db7"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-residuals.json",
+      "sha256": "169b6762a77a1a59ac6a6383ee91cbfa6712f2b6022e568c836dd2aba5b4f628"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-citation-result.json",
+      "sha256": "32a673a32f57a05fc8ec946f95bd7d2fc079f14c62f3e8ab6393ca139d2af21c"
+    },
+    {
+      "path": "/tmp/cairn-decision-retrieval-browse.json",
+      "sha256": "f9dd1d7830abbc80cd1e09ef21ede09c85079a0b86ca9bcdc4e0dc7c146d0654"
+    },
+    {
+      "path": "/tmp/cairn-decision-retrieval-page2.json",
+      "sha256": "f13f0761e514f016422a1f9d174c391c01479532cf19f00aa346e4fd4b7d7f22"
+    },
+    {
+      "path": "/tmp/cairn-decision-retrieval-query.json",
+      "sha256": "fae3ef84884d5362c5b1eddf6f211922561fd58d284dc70f368b3e89f1e23b0b"
+    }
+  ]
+}

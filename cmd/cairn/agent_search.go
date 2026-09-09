@@ -35,8 +35,10 @@ type agentSearchView struct {
 }
 
 func agentSearch(ctx context.Context, client *localapi.Client, args []string, socket, tokenFile string) (agentSearchView, error) {
+	var kinds []string
 	f := flags("agent search")
 	repo := f.String("repo", defaultRepo(), "repository identity")
+	f.Func("kind", "optional record kind; repeat for multiple labels (required instructions always apply)", func(value string) error { kinds = append(kinds, value); return nil })
 	task := f.String("task", "", "host task identity (required)")
 	run := f.String("run", "", "host run identity (required)")
 	request := f.String("request-id", uuid.NewString(), "index retry identity")
@@ -82,7 +84,7 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 		return agentSearchView{}, err
 	}
 	var result core.IndexResult
-	if err = client.Call(ctx, "index", core.CompileRequest{RequestID: *request, BrowseOffset: browseOffset, Semantic: *semantic,
+	if err = client.Call(ctx, "index", core.CompileRequest{Kinds: kinds, RequestID: *request, BrowseOffset: browseOffset, Semantic: *semantic,
 		Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: query, Purpose: "context", AvailableTokens: *tokens,
 		Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability}}, &result); err != nil {
 		return agentSearchView{}, err

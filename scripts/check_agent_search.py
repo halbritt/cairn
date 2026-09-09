@@ -166,5 +166,34 @@ def check(binary, root, environment, grant, claim, support):
         original = old_call('expand-evidence', old_args)
         assert 'span' not in original and call(['expand-evidence'], old_args)['data'] == original
         print('Previous binary whole-evidence cached response survives new binary retry in disposable database')
-    token.unlink()
     print('Reusable agent search/pull/evidence CLI preserves mandatory context, scoped index order, exact handles, quoted paths, retry credits and hosted filtering')
+
+    # A known label reaches direction notes without loading matching procedures.
+    marker = 'kindfilter' + uuid.uuid4().hex
+    kinds = {}
+    for kind in ('decision', 'preference', 'procedure'):
+        kinds[kind] = call([*agent, 'remember', '--repo', scope['repo'], '--kind', kind,
+                            '--shareable', marker + ': selected ' + kind])['data']['record_id']
+    filtered = call([*agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'],
+                     '--run', scope['run_id'], '--kind', 'preference', '--kind', 'decision', marker])['data']
+    assert filtered['kinds'] == ['decision', 'preference']
+    assert {e['record_id'] for e in filtered['index']} == {kinds['decision'], kinds['preference']}
+    assert filtered['selected'] == view['selected']
+    assert call([*agent, 'expand'], filtered['index'][0]['pull_arguments'])['data']['selection']['record']['kind'] in filtered['kinds']
+    previous = environment.get('CAIRN_PREVIOUS_BINARY')
+    if previous:
+        for operation in ('compile', 'index'):
+            request = dict(request_id=str(uuid.uuid4()), scope=scope, query=marker,
+                           purpose='context', available_tokens=32000)
+            old = subprocess.run([previous, operation], input=json.dumps(request), env=environment,
+                                 capture_output=True, text=True, check=True, timeout=15)
+            old = json.loads(old.stdout)['data']
+            new = call([operation], request)['data']
+            old_package = old['package'] if operation == 'index' else old
+            new_package = new['package'] if operation == 'index' else new
+            assert old_package == new_package
+            historical = call(['recompile'], dict(receipt_id=old_package['receipt_id'], query=marker))['data']
+            assert historical["historical"] is True and historical["package"] == old_package
+        print('Previous-binary unfiltered compile/index retry and historical reconstruction preserve exact packages')
+    print('Agent search filters direction labels, keeps mandatory context, and pulls the selected record')
+    token.unlink()

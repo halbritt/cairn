@@ -151,7 +151,7 @@ func discoveryStatus(p SemanticPackage) SemanticPackage {
 
 func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*CandidateEvaluation, query string) error {
 	invalid := func() error { return failure("INTEGRITY_FAILURE", "historical semantic ranking metadata is invalid") }
-	if p.Schema != "cairn.semantic/7" && (p.Schema != "cairn.semantic/8" || p.Discovery == nil) {
+	if p.Schema != "cairn.semantic/7" && ((p.Schema != "cairn.semantic/8" && p.Schema != "cairn.semantic/9") || p.Discovery == nil) {
 		if p.Discovery != nil || p.Ranking == "semantic-scope-recency/1" {
 			return invalid()
 		}
@@ -174,7 +174,7 @@ func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*Candidat
 			return invalid()
 		}
 		for _, e := range evaluations {
-			if e.SemanticScore != nil || (d.State == "not_needed" && e.Facts != nil && !e.Mandatory) {
+			if e.SemanticScore != nil || (d.State == "not_needed" && e.Facts != nil && !e.Mandatory && e.Reason != "KIND_FILTERED") {
 				return invalid()
 			}
 		}
@@ -185,7 +185,7 @@ func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*Candidat
 	}
 	scores := []SemanticScore{}
 	for _, e := range evaluations {
-		if e.Facts == nil || e.Mandatory {
+		if e.Facts == nil || e.Mandatory || e.Reason == "KIND_FILTERED" {
 			if e.SemanticScore != nil {
 				return invalid()
 			}

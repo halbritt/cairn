@@ -462,6 +462,12 @@ normal OpenCode checks reached the storage note on page two. Each page reads cur
 state and repeats required context; aggregate context remains the host
 responsibility. This closes the observed preview access gap, not E4 task benefit.
 
+[Kind selection](verification/kind-filter-2026-09-09.md) lets a caller use existing
+labels to find decisions and preferences without first paging through setup
+procedures. It applies to browsing, lexical and semantic discovery through the
+existing interfaces, preserving required context and access checks. Labels remain
+fallible, and passing retrieval checks does not close task-value requirements.
+
 [Matching index previews](verification/index-previews-2026-09-08.md) address an
 observed operational search whose preview hid the matching command later in the
 note. Bounded source excerpts make that match visible while preserving full-body

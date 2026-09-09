@@ -38,6 +38,10 @@ and no query to inspect eligible previews, or add `--browse` to the CLI search
 below. Follow `browse.next_offset` with `offset: N` (CLI `--offset N`) to reach
 later pages within the same scope. Each page has its own budget; account for
 combined context. Pages read current state, so edits can shift positions.
+For saved project direction, narrow browsing with `kinds: ["decision", "preference"]`
+(CLI `--browse --kind decision --kind preference`). Keep those kinds on later
+pages. This uses fallible labels, so search without a filter when classification
+is uncertain. Required instructions and normal access checks still apply.
 The local Codex configuration and native OpenCode adapter use conversation/session
 scope automatically; neither identifies individual turns or execution attempts.
 Use the CLI below

@@ -189,3 +189,12 @@ upstream default/type behavior and checks the shipped adapter's rejection path.
 A changed upstream result requires review after a harness upgrade. The
 [validation repair](verification/opencode-validation-2026-09-09.md) records the
 original failure and the distinction from the debug tool path.
+
+### Select saved kinds
+
+`cairn_search` accepts `kinds`, for example
+`{"browse": true, "kinds": ["decision", "preference"]}` to find saved project
+direction. It also works with lexical or semantic queries. Required instructions
+always apply, and labels confer no authority. Keep the same kinds when following
+`browse.next_offset`. See [index and pull](index-and-pull.md) for the full contract.
+Update the API, CLI and bundled adapter together before using this argument.

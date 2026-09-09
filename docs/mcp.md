@@ -56,6 +56,13 @@ be omitted when the budget fills; the index is not a complete inventory.
 Omitting the query requires explicit browsing, and combining browsing with query
 text is an error.
 
+To find project direction without matching setup procedures, use
+`{"browse": true, "kinds": ["decision", "preference"]}`. The same optional
+`kinds` array works with a query or semantic discovery. Required instructions
+always apply; kind labels do not establish authority. Keep the filter when
+continuing to the next page. See the [kind selection contract](index-and-pull.md#agent-commands-without-request-json)
+for labels, limits, retry behavior and fallback to unfiltered search.
+
 Continue with `{"browse": true, "offset": N}` when a result supplies
 `browse.next_offset: N`. Keep the same conversation, context and budget, and use
 a new request ID for a new page. Every page repeats mandatory context and uses

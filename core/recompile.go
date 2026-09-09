@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/jackc/pgx/v5"
+	"slices"
 	"strings"
 )
 
@@ -94,16 +95,20 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if original.Semantic.Query != "sha256:"+hex.EncodeToString(digest[:]) {
 		return Package{}, failure("INVALID_REQUEST", "query does not match the historical intent digest")
 	}
-	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4" && original.Semantic.Schema != "cairn.semantic/5" && original.Semantic.Schema != "cairn.semantic/6" && original.Semantic.Schema != "cairn.semantic/7" && original.Semantic.Schema != "cairn.semantic/8") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1") {
+	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4" && original.Semantic.Schema != "cairn.semantic/5" && original.Semantic.Schema != "cairn.semantic/6" && original.Semantic.Schema != "cairn.semantic/7" && original.Semantic.Schema != "cairn.semantic/8" && original.Semantic.Schema != "cairn.semantic/9") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1") {
 		return Package{}, failure("REPLAY_INCOMPLETE", "historical compiler version is not supported")
 	}
-	if original.Semantic.Schema == "cairn.semantic/6" || (original.Semantic.Schema == "cairn.semantic/8" && original.Semantic.Browse != nil) {
+	if original.Semantic.Schema == "cairn.semantic/6" || ((original.Semantic.Schema == "cairn.semantic/8" || original.Semantic.Schema == "cairn.semantic/9") && original.Semantic.Browse != nil) {
 		page := original.Semantic.Browse
 		if original.Semantic.Mode != "index" || req.Query != "" || page == nil || page.Offset < 0 || page.Offset > 10000 {
 			return Package{}, failure("INTEGRITY_FAILURE", "historical browse page is invalid")
 		}
 	} else if original.Semantic.Browse != nil {
 		return Package{}, failure("INTEGRITY_FAILURE", "legacy compiler cannot carry a browse page")
+	}
+	normalized, kindErr := normalizeKinds(original.Semantic.Kinds)
+	if kindErr != nil || !slices.Equal(normalized, original.Semantic.Kinds) || (original.Semantic.Schema == "cairn.semantic/9") != (len(normalized) > 0) {
+		return Package{}, failure("INTEGRITY_FAILURE", "historical kind filter is invalid")
 	}
 	switch original.Semantic.Policy {
 	case "local-loop/1":
@@ -181,6 +186,10 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 			return Package{}, failure("INTEGRITY_FAILURE", "historical ranking features changed")
 		}
 		selection := Selection{Category: e.Facts.Category, Record: record, Evidence: e.Facts.Evidence, Authority: e.Facts.Authority, Mandatory: e.Mandatory, Reason: fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)}
+		if !kindAllowed(p.Kinds, selection) {
+			p.Omitted["KIND_FILTERED"]++
+			continue
+		}
 		nonemptyQuery := len(terms) > 0
 		if p.Ranking == "lexical-scope-recency/2" || p.Ranking == "lexical-scope-recency/3" || p.Ranking == "lexical-scope-recency/4" {
 			nonemptyQuery = strings.TrimSpace(req.Query) != ""

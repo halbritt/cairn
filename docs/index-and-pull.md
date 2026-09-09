@@ -50,9 +50,35 @@ pages can shift positions; restart browsing if necessary. Each page is a new
 retrieval with its own credits and budget. Hosts must still account for the
 combined context from multiple pages and pulls.
 
+Use saved labels when you know the kind of memory needed:
+
+```sh
+cairn agent --token-file /path/to/agent.token search \
+  --repo /path/to/repo --task TASK --run RUN --browse \
+  --kind decision --kind preference
+```
+
+The same repeated `--kind` flags work with a query, `--semantic`, and trusted
+`cairn search`. Native `cairn_search` and raw compile/index requests accept
+`"kinds": ["decision", "preference"]`. This selects any listed optional label;
+omitting it or passing an empty array selects all kinds. Accepted labels are
+`note`, `observation`, `claim`, `lesson`, `procedure`, `decision`, `preference`
+and `instruction`, with at most eight inputs. Order and duplicates normalize to
+the same intent. Labels are fallible classification, so use an unfiltered search
+when a note might be mislabelled. They do not establish authority.
+
+Required instructions and all eligibility, privacy and budget checks still apply.
+Filtering happens before ranking and paging; excluded kinds do not consume browse
+positions or reach the semantic worker. Keep the same kinds across page requests.
+Only destination-eligible omissions contribute to `KIND_FILTERED`; hosted
+results expose no local-only record identifiers or counts. Filtered requests use semantic format v9
+and retain their labels for retries and historical reconstruction. Unfiltered
+requests keep their previous formats and request identities. Upgrade both the API
+and clients before using kinds; older binaries cannot reconstruct v9 receipts.
+
 Raw `index` requests can opt in with `"browse_offset": 0` and an empty query;
 later requests use the returned `browse.next_offset`. New paged and unpaged
-indexes use semantic format v8; retained v5/v6 receipts remain replayable.
+unfiltered indexes use semantic format v8; retained v5/v6 receipts remain replayable.
 Update the Cairn API service as well as clients before using paged browsing.
 
 The `cairn.agent-search/1` view retains the index order and metadata, full

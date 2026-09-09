@@ -32,6 +32,11 @@ func TestBrowsePagesReachOlderNotesWithoutSkippingMandatoryContext(t *testing.T)
 		}
 		want[record.RecordID] = true
 	}
+	draft.Kind, draft.Body = "procedure", "Excluded kind must not consume a page position."
+	if _, err := op.Create(ctx, CreateRequest{uuid.NewString(), draft}); err != nil {
+		t.Fatal(err)
+	}
+	draft.Kind = "note"
 	draft.Sensitivity, draft.Body = "local", "Private note must not appear or consume a hosted page position."
 	if _, err := op.Create(ctx, CreateRequest{uuid.NewString(), draft}); err != nil {
 		t.Fatal(err)
@@ -42,12 +47,12 @@ func TestBrowsePagesReachOlderNotesWithoutSkippingMandatoryContext(t *testing.T)
 		if pages >= 10 {
 			t.Fatal("browse failed to make bounded progress")
 		}
-		index, err := op.Index(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", AvailableTokens: 10000, BrowseOffset: &offset}, Destination{"hosted", false})
+		index, err := op.Index(ctx, CompileRequest{Kinds: []string{"note"}, RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", AvailableTokens: 10000, BrowseOffset: &offset}, Destination{"hosted", false})
 		if err != nil {
 			t.Fatal(err)
 		}
 		p := index.Package.Semantic
-		if p.Schema != "cairn.semantic/8" || p.Browse == nil || p.Browse.Offset != offset || len(p.Selected) != 1 || p.Selected[0].Record.RecordID != required.RecordID || !p.Selected[0].Mandatory {
+		if p.Schema != "cairn.semantic/9" || p.Browse == nil || p.Browse.Offset != offset || len(p.Selected) != 1 || p.Selected[0].Record.RecordID != required.RecordID || !p.Selected[0].Mandatory {
 			t.Fatalf("page lost its offset or required instruction: %+v", p)
 		}
 		if len(p.Index) == 0 || p.AvailableTokens != 10000 || p.OptionalLimit != 1000 {
@@ -80,7 +85,7 @@ func TestBrowsePagesReachOlderNotesWithoutSkippingMandatoryContext(t *testing.T)
 		t.Fatalf("older notes unreachable: pages=%d reached=%d want=%d", pages, len(seen), len(want))
 	}
 	offset = 10000
-	last, err := op.Index(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", AvailableTokens: 10000, BrowseOffset: &offset}, Destination{"hosted", false})
+	last, err := op.Index(ctx, CompileRequest{Kinds: []string{"note"}, RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", AvailableTokens: 10000, BrowseOffset: &offset}, Destination{"hosted", false})
 	if err != nil || len(last.Package.Semantic.Index) != 0 || len(last.Package.Semantic.Selected) != 1 || last.Package.Semantic.Browse.NextOffset != nil || last.Package.Semantic.Omitted["BROWSE_OFFSET"] != len(want) {
 		t.Fatalf("end page or private-note count: %+v %v", last, err)
 	}

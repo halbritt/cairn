@@ -21,6 +21,7 @@ import (
 )
 
 type CompileRequest struct {
+	Kinds           []string     `json:"kinds,omitempty"`
 	Semantic        bool         `json:"semantic,omitempty"`
 	BrowseOffset    *int         `json:"browse_offset,omitempty"`
 	Mode            string       `json:"mode,omitempty"`
@@ -47,6 +48,7 @@ type Selection struct {
 	Reason    string     `json:"reason"`
 }
 type SemanticPackage struct {
+	Kinds           []string          `json:"kinds,omitempty" cbor:"kinds,omitempty"`
 	Discovery       *DiscoveryRanking `json:"discovery,omitempty" cbor:"discovery,omitempty"`
 	Browse          *BrowsePage       `json:"browse,omitempty" cbor:"browse,omitempty"`
 	Mode            string            `json:"mode,omitempty"`
@@ -84,6 +86,11 @@ func (p Package) Render() (string, error) {
 	return "MEM-STATUS/" + p.Semantic.Status + "\nCairn context (A is advisory; only C is an authorized instruction):\n" + string(body) + "\n", nil
 }
 func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Destination) (Package, error) {
+	var err error
+	req.Kinds, err = normalizeKinds(req.Kinds)
+	if err != nil {
+		return Package{}, err
+	}
 	if req.Semantic && (req.Mode != "index" || req.Purpose != "context" || strings.TrimSpace(req.Query) == "" || req.BrowseOffset != nil) {
 		return Package{}, failure("INVALID_REQUEST", "semantic discovery requires a nonempty context index query without browsing")
 	}
@@ -219,7 +226,9 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	if req.Mode == "index" {
 		p.Mode = "index"
-		p.Schema = "cairn.semantic/8"
+		if len(req.Kinds) == 0 {
+			p.Schema = "cairn.semantic/8"
+		}
 		if req.BrowseOffset != nil {
 			p.Browse = &BrowsePage{Offset: *req.BrowseOffset}
 		}
@@ -238,6 +247,10 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation) (SemanticPackage, []candidate, error) {
 	queryDigest := sha256.Sum256([]byte(req.Query))
 	p := SemanticPackage{Context: req.Context, Schema: "cairn.semantic/3", Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/4", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
+	if len(req.Kinds) > 0 {
+		p.Kinds = req.Kinds
+		p.Schema = "cairn.semantic/9"
+	}
 	policy, err := policySnapshot(ctx, tx, req.Scope.Repo)
 	if err != nil {
 		return p, nil, err
@@ -361,6 +374,11 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 
 		digest := sha256.Sum256([]byte(record.Body))
 		evaluation.Facts = &CandidateFacts{Category: selection.Category, BodySHA256: hex.EncodeToString(digest[:]), Sensitivity: record.Sensitivity, AttributionState: record.AttributionState, Evidence: selection.Evidence, Authority: selection.Authority}
+		if !kindAllowed(req.Kinds, selection) {
+			evaluation.Reason = "KIND_FILTERED"
+			p.Omitted["KIND_FILTERED"]++
+			continue
+		}
 		selection.Reason = fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)
 		if !req.Semantic && !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 {
 			evaluation.Reason = "NO_LEXICAL_MATCH"

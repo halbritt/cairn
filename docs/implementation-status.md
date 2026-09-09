@@ -29,7 +29,7 @@ the current summary; do not replace the historical record.
 | Area | Implemented behavior | Details |
 | --- | --- | --- |
 | Ordinary memory | Authenticated capture of selected notes up to 64 KiB with room for JSON escaping, retained versions and attribution, repository/task/run scope, compare-and-swap edits, body-only corrections that preserve metadata, and authenticated retained-version inspection. | [Capture and use](../README.md), [ordinary revision](mcp.md#tools), [record history](record-history.md) |
-| Retrieval | Lexical search, matching previews with source byte positions, bounded browsing with continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
+| Retrieval | Lexical search with optional kind selection, matching previews with source byte positions, bounded browsing with continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
 | Semantic discovery | Optional local CPU scoring for vocabulary mismatches, after eligibility checks; bounded work and labelled lexical fallback. Historical recompilation uses retained scores. | [Semantic discovery](semantic-discovery.md) |
 | Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, citation-time digests and optional byte passages on qualified claim versions, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [precise citations](evidence-citations.md), [span verification](verification/evidence-spans-2026-09-09.md) |
 | Harness access | Five ordinary tools for search, body/evidence pulls, capture and edit through MCP; Codex conversation scope and native OpenCode session scope. OpenCode configuration generation and a bundled native-tool installer are shipped; Claude configuration and all five tools have scripted native-session verification with explicit scope. | [MCP](mcp.md), [OpenCode tools](opencode-tools.md) |
@@ -1154,3 +1154,27 @@ unchanged. No operational test record or task assessment was introduced.
 [Exact verification-source CI](https://github.com/halbritt/cairn/actions/runs/34403218213)
 passed PostgreSQL/race, Python tests, vet and build. Native Claude checks ran
 separately on the owner host against disposable data.
+
+### 2026-09-09 — find project direction using existing kind labels
+
+An ordinary direction lookup put recent procedures/lessons on the first browse
+page and the desired decisions/preferences on the next. A lexical query for
+`project decisions preferences` returned setup guidance and one direction note.
+The [kind-filter implementation](verification/kind-filter-2026-09-09.md) and
+[verification metadata](verification/kind-filter-2026-09-09.json) retain that
+baseline and the new optional selection contract.
+
+Existing compile/index, agent/trusted search and native search now accept kind
+selection. Filters apply before optional ranking and paging while required
+instructions, applicability, authority, privacy and budgets remain. Filtered
+requests retain normalized intent in semantic v9; unfiltered v3/v8 requests and
+previous-binary retries stay exact. No migration or additional tool is needed.
+
+Fail-first store cases exposed the gap; final PostgreSQL/race, Go, 30 Python,
+vet/format, CLI/API, independent MCP and scripted native OpenCode checks pass.
+Two intervening failures were test cleanup order and historical-envelope
+comparison mistakes, corrected without runtime changes. Doctrine receipt and
+citation closure are retained, with 13 nonmaterial residuals. This verifies
+retrieval capability; model-selected use and incremental task benefit remain
+open. The local installation snapshot above remains the prior deployment until
+the separately recorded installation check completes.

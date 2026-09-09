@@ -42,11 +42,12 @@ func (c Config) Validate() error {
 }
 
 type searchArgs struct {
-	Semantic  bool   `json:"semantic,omitempty" jsonschema:"Optional semantic discovery for vocabulary mismatches. Requires a query, cannot browse. Similarity is not answer confidence; an unavailable backend returns labelled lexical fallback."`
-	Query     string `json:"query,omitempty" jsonschema:"Words describing the memory needed. Omit only when browse is true."`
-	Browse    bool   `json:"browse,omitempty" jsonschema:"Browse eligible memory without a query when its vocabulary is unknown. Results are bounded, ordered by scope and recency, and may omit older notes."`
-	Offset    int    `json:"offset,omitempty" jsonschema:"For browsing, pass the preceding result's browse.next_offset to continue with the same scope and budget. Default 0. Pages read current state; restart if notes change."`
-	RequestID string `json:"request_id,omitempty" jsonschema:"Optional UUID for retrying the same search."`
+	Kinds     []string `json:"kinds,omitempty" jsonschema:"Optional labels: note, observation, claim, lesson, procedure, decision, preference, instruction. Matches any listed label; empty means all. Required instructions always apply. Labels do not establish authority."`
+	Semantic  bool     `json:"semantic,omitempty" jsonschema:"Optional semantic discovery for vocabulary mismatches. Requires a query, cannot browse. Similarity is not answer confidence; an unavailable backend returns labelled lexical fallback."`
+	Query     string   `json:"query,omitempty" jsonschema:"Words describing the memory needed. Omit only when browse is true."`
+	Browse    bool     `json:"browse,omitempty" jsonschema:"Browse eligible memory without a query when its vocabulary is unknown. Results are bounded, ordered by scope and recency, and may omit older notes."`
+	Offset    int      `json:"offset,omitempty" jsonschema:"For browsing, pass the preceding result's browse.next_offset to continue with the same scope and budget. Default 0. Pages read current state; restart if notes change."`
+	RequestID string   `json:"request_id,omitempty" jsonschema:"Optional UUID for retrying the same search."`
 }
 
 type rememberArgs struct {
@@ -142,7 +143,7 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 		args.RequestID = uuid.NewString()
 	}
 	var index core.IndexResult
-	err := t.client.Call(ctx, "index", core.CompileRequest{RequestID: args.RequestID, BrowseOffset: browseOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: t.config.Context}, &index)
+	err := t.client.Call(ctx, "index", core.CompileRequest{Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: t.config.Context}, &index)
 	if err != nil {
 		return toolResult(nil, err, t.config.AvailableTokens)
 	}

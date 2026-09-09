@@ -132,9 +132,15 @@ def check(binary, root, environment, claim, support):
         assert tool('cairn_pull_evidence', evidence_args) == span
         assert 'IDEMPOTENCY_CONFLICT' in tool('cairn_pull_evidence',
                 dict(evidence_args, span=dict(offset=0, length=10)), error=True)
+        direction = tool('cairn_remember', dict(request_id=str(uuid.uuid4()), body=query + ': project direction', kind='decision', shareable=True))
+        selected = tool('cairn_search', dict(query=query, kinds=['decision']))
+        assert [e['record_id'] for e in selected['index']] == [direction['record_id']]
+        assert selected['kinds'] == ['decision']
+        assert tool('cairn_pull', selected['index'][0]['pull_arguments'])['selection']['record']['kind'] == 'decision'
+        assert 'INVALID_REQUEST' in tool('cairn_search', dict(query=query, kinds=['unknown']), error=True)
         check_harness(tool, binary, environment)
     with session(binary, root, environment, generated=True) as tool:
-        view = tool('cairn_search', dict(query=query))
+        view = tool('cairn_search', dict(query=query, kinds=['note']))
         assert 'context' not in view
         assert [entry['record_id'] for entry in view['index']] == [saved['record_id']]
         corrected = tool('cairn_pull', view['index'][0]['pull_arguments'])['selection']['record']

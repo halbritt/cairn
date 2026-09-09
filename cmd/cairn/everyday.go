@@ -67,8 +67,10 @@ func rememberRequest(args []string, input io.Reader) (core.CreateRequest, error)
 	return core.CreateRequest{RequestID: *request, Draft: core.Draft{Kind: *kind, Body: body, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, ClaimType: "self", Sensitivity: sensitivity}}, nil
 }
 func search(ctx context.Context, s *core.Store, args []string) (core.Package, error) {
+	var kinds []string
 	f := flags("search")
 	repo := f.String("repo", defaultRepo(), "repository identity")
+	f.Func("kind", "optional record kind; repeat for multiple labels (required instructions always apply)", func(value string) error { kinds = append(kinds, value); return nil })
 	purpose := f.String("purpose", "context", "consumer purpose")
 	dest := f.String("destination", "local", "destination")
 	tokens := f.Int("tokens", 32000, "available memory input room")
@@ -82,7 +84,7 @@ func search(ctx context.Context, s *core.Store, args []string) (core.Package, er
 	if err := f.Parse(args); err != nil {
 		return core.Package{}, invalid(err.Error())
 	}
-	return s.Compile(ctx, core.CompileRequest{Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability}, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: strings.Join(f.Args(), " "), Purpose: *purpose, AvailableTokens: *tokens}, core.Destination{Name: *dest, AllowLocal: *dest == "local"})
+	return s.Compile(ctx, core.CompileRequest{Kinds: kinds, Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability}, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: strings.Join(f.Args(), " "), Purpose: *purpose, AvailableTokens: *tokens}, core.Destination{Name: *dest, AllowLocal: *dest == "local"})
 }
 func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result, error) {
 	f := flags("run")

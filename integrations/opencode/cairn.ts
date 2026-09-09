@@ -80,7 +80,7 @@ const writeResult = z.object({ record_id: z.string().uuid(), version: z.number()
 
 export const search = validatedTool({
   description: "Search repository memory in this OpenCode session with a query, or set browse=true without a query to inspect available topics. Browsing is bounded by the same budget, ordered by scope and recency, and is not a complete inventory or relevance ranking. Read mandatory selected context and pull relevant index entries using their complete pull_arguments. A notes are fallible; verify before applying them. Search records exposure, not proven use.",
-  args: { query: z.string().optional(), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Continue browsing with browse.next_offset from the previous result; default 0. Pages read current state."), request_id: z.string().uuid().optional() },
+  args: { kinds: z.array(z.enum(["note", "observation", "claim", "lesson", "procedure", "decision", "preference", "instruction"])).max(8).optional().describe("Select any listed optional record label; empty means all. Required instructions always apply. Labels do not establish authority."), query: z.string().optional(), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Continue browsing with browse.next_offset from the previous result; default 0. Pages read current state."), request_id: z.string().uuid().optional() },
   async execute(args, context) {
     const query = args.query ?? ""
     if (args.semantic && args.browse) throw new Error("INVALID_REQUEST: semantic discovery cannot be combined with browsing")
@@ -98,6 +98,7 @@ export const search = validatedTool({
     for (const [key, value] of Object.entries(config.context ?? {})) {
       if (value !== undefined) command.push("--" + key.replaceAll("_", "-"), value)
     }
+    for (const kind of args.kinds ?? []) command.push("--kind", kind)
     if (args.semantic) command.push("--semantic")
     if (args.browse) command.push("--browse", "--offset", String(args.offset ?? 0))
     else command.push("--", query)

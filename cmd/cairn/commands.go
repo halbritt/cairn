@@ -24,7 +24,7 @@ Everyday commands:
   claude-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N]
   mcp --socket PATH --token-file FILE --repo REPO (--task TASK --run RUN | --codex-thread) [--tokens N]
   agent [--token-file FILE] [--socket PATH] OPERATION < request.json
-  agent [--token-file FILE] [--socket PATH] search --task TASK --run RUN [--repo REPO] QUERY
+  agent [--token-file FILE] [--socket PATH] search --task TASK --run RUN [--repo REPO] [--kind KIND ...] (QUERY | --browse)
   agent [--token-file FILE] [--socket PATH] pull [--request-id UUID] RECEIPT_UUID HANDLE_UUID
   agent [--token-file FILE] [--socket PATH] pull-evidence [--request-id UUID] RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256
   agent [--token-file OBSERVER_TOKEN] [--socket PATH] run RUN_FLAGS -- COMMAND ARGS...
@@ -32,7 +32,7 @@ Everyday commands:
   agent [--token-file FILE] [--socket PATH] remember [FLAGS] --stdin < note.txt
   remember [--repo PATH] [--kind KIND] [--shareable] [--task TASK] [--run RUN] [--request-id UUID] TEXT
   remember [FLAGS] --stdin < note.txt
-  search [--repo PATH] [--purpose context] [--destination local] QUERY
+  search [--repo PATH] [--purpose context] [--destination local] [--kind KIND ...] QUERY
   run [--repo PATH] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
