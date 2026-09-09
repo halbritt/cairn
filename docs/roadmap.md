@@ -192,8 +192,10 @@ now pins captured bytes, emits the typed ECR offline, and validates the submitte
 body against its source. Its [trusted request frontend](verification/native-observation-2026-09-08.md)
 also passes a Driver request-to-admission fixture and public CLI acquisition
 against a real disposable Cairn service. Both branch checkpoints passed full
-Striatum checks. Accepted native contracts, admitted build input consumption and
-host correspondence remain open. The
+Striatum checks. The [native build-input checkpoint](verification/native-build-input-2026-09-08.md)
+now resolves packet-named evidence, pins and renders the complete context, and
+checks its presence in retained launch bytes. Accepted native contracts, actual
+host correspondence and real-build usefulness remain open. The
 [OpenCode trial host](verification/opencode-host-observation-2026-09-08.md) now
 uses per-arm authenticated observers, exact package/attempt joins and pending
 spawn/terminal recovery. Its full real-harness fixture verification includes

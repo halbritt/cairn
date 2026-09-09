@@ -3,8 +3,9 @@
 The proposed native path now acquires Cairn context before issuing an observation
 request, pins the retained capture, produces its ECR offline, and validates the
 submitted body against that source. The source is on Striatum's integration
-branch; accepted native contracts, build consumption, launch correspondence and
-model-task benefit remain unfinished.
+branch. A later [build-input checkpoint](native-build-input-2026-09-08.md) adds
+resolution, rendering and prompt correspondence. Accepted native contracts,
+launch correspondence and model-task benefit remain unfinished.
 
 Source checkpoints:
 
@@ -47,9 +48,9 @@ operational memory fixture was inserted, and no native runtime was deployed.
 
 ## Remaining work
 
-The build must resolve the exact packet-named admitted ECR, verify its producer
-and intended consumer, and render its context with the corresponding source-map
-pin. The existing supervisor must then perform the actual Cairn package,
+The [build-input checkpoint](native-build-input-2026-09-08.md) implements the
+packet-named resolver, source-pinned rendering and prompt correspondence checks.
+The existing supervisor must still perform the actual Cairn package,
 binding, claim, delivery and outcome operations. Relaunch behavior and acceptance
 of the owning contracts remain explicit requirements before native enablement.
 

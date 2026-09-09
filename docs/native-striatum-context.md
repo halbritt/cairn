@@ -190,8 +190,10 @@ shutdown, and the full Striatum check passed for that producer checkpoint.
 The [trusted request frontend](verification/native-observation-2026-09-08.md)
 is also implemented and checked on that branch. It acquires the capture itself
 before issuing the request and refuses ordinary requests claiming a native
-capture identity. The accepted catalog remains `observation@1`; build consumption
-and actual launch correspondence remain unfinished. This is implementation
+capture identity. The [build-input checkpoint](verification/native-build-input-2026-09-08.md)
+now resolves and pins a packet-named ECR, renders its captured context, and checks
+that exact context at prompt admission. The accepted catalog remains
+`observation@1`/`build@3`; actual launch correspondence remains unfinished. This is implementation
 progress, not native enablement or new task-benefit evidence.
 
 The retained runner is useful for hosts that need Cairn to own their child
