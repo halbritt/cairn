@@ -183,6 +183,12 @@ observations. The [adapter-repair case](verification/value-case-validation-2026-
 demonstrates this format with existing evidence. These reviews do not automatically
 produce demand proposals, rank changes or a numeric memory-value score.
 
+The [cumulative maintenance case](verification/cumulative-maintenance-value-2026-09-09.md)
+follows successive related changes and includes a correction caused by earlier
+maintenance. It also distinguishes supplied retrieval scopes from independent
+model sessions and counts maintenance/review work among the costs. Related reads
+and notes should not be presented as independent replications of value.
+
 ## Completed tasks with open delegates
 
 An authenticated observer calls `core.ObserveTask` or `/v1/task-state` with an exact

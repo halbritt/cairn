@@ -198,6 +198,17 @@ A retained-version follow-up found missing browse arguments and semantic setup
 prerequisites and restored them. This qualifies the original preservation claim:
 smaller notes still need review for lost instructions, and upkeep has a cost.
 
+A [cumulative maintenance review](verification/cumulative-maintenance-value-2026-09-09.md)
+follows the contiguous consolidation → history access → correction → preview
+location sequence. It supports a concrete continuity case and retains the
+self-created rework, available alternative sources and unknown net cost. Fresh
+CLI task/run scopes do not establish independent agent sessions. Next, use the
+current interfaces on an accepted defect repair or required behavior change whose
+outcome matters independently of documenting the memory loop. Give additional
+inspection/reporting machinery lower priority when it only makes this same case
+easier to evaluate; concrete task needs can still justify retrieval changes.
+This prioritization does not impose a mechanical value gate or close open items.
+
 Repair current contract violations first. Then build the smallest real host
 integration and the observation join; add currentness, index/pull and historical
 evaluation; generate evidence-attached demand; only then add grooming. Lifecycle,

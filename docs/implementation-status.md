@@ -11,7 +11,9 @@ one accepted configuration task after a stored procedure was corrected, and a
 recalled guidance plausibly helped focus an investigation that fixed a real bug.
 The repair is verified; memory's incremental contribution and net benefit remain
 uncertain. Durable improvement across coding tasks and harnesses remains
-unestablished. Task value may be qualitative, indirect or delayed; mechanical
+unestablished. A [cumulative maintenance case](verification/cumulative-maintenance-value-2026-09-09.md)
+adds actual recovery of lost guidance alongside self-created rework and unknown
+net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
@@ -996,3 +998,21 @@ context benefit remain separate questions.
 
 [Exact implementation CI](https://github.com/halbritt/cairn/actions/runs/34395712027)
 passed PostgreSQL/race, Python tests, vet and build.
+
+### 2026-09-09 — cumulative maintenance value review
+
+The contiguous `ec76c91..e51c3c0` sequence now has a
+[source-linked cumulative review](verification/cumulative-maintenance-value-2026-09-09.md)
+and [metadata](verification/cumulative-maintenance-value-2026-09-09.json).
+All 55 referenced artifact entries across its three original manifests matched
+their retained hashes; exact old/consolidated/corrected bodies and the installed
+passage response were also checked. The review retains the positive observation
+of recovered guidance and the negative observation that consolidation lost it.
+
+The coding agent judges this useful continuity within Cairn development. Net
+benefit, independent reuse and broader task improvement remain uncertain; supplied
+CLI task/run names are not evidence of independent model sessions. The next
+priority is using existing interfaces on an independently worthwhile accepted
+task, with further inspection machinery justified by concrete task needs. This
+changes work selection rather than historical assessments or roadmap completion.
+No code, runtime, operational memory, model trial or authority policy changed.

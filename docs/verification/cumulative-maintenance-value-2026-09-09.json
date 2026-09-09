@@ -1,0 +1,206 @@
+{
+  "schema": "cairn.cumulative-value-review/1",
+  "date": "2026-09-09",
+  "reviewer": "Cairn coding agent",
+  "interval": {
+    "after": "ec76c91e82d6be3d7c506549a76b86eed4866d79",
+    "through": "e51c3c0f6e833483de4de1168613d1ca5ce11737",
+    "selection": "Retrospective contiguous recent maintenance/development sequence; not representative or independent trials"
+  },
+  "sequence": {
+    "verification": "Exact retained note bodies and returned passage inspected, not just manifest booleans",
+    "notes": [
+      {
+        "procedure": "codex",
+        "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+        "versions": [
+          6,
+          7,
+          8
+        ],
+        "bytes": [
+          5270,
+          3466,
+          3718
+        ],
+        "body_sha256": [
+          "6e9f70f013c0643a7881bca001c36ada3d749686e5f8f8b8fe0bde2c5b532c1c",
+          "12f1227233ec1e6e74eb8ce5dadd1d68a0a8ceb1413284b07a10de338d49ba13",
+          "2c2fe6cbd96473c772a9cc6be8e28286cd840a3d35c302a5824c54708f999b49"
+        ],
+        "offset_argument_lost_and_restored": true,
+        "worker_prerequisite_lost_and_restored": true
+      },
+      {
+        "procedure": "opencode",
+        "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+        "versions": [
+          8,
+          9,
+          10
+        ],
+        "bytes": [
+          7774,
+          4354,
+          4609
+        ],
+        "body_sha256": [
+          "c82ec6ddb689f3f6267370f9dd1c611ba813c75658a264e1897965258e370fc2",
+          "942ff26d54d6aa4390751320ddb0db7d5292b7ef29d509f00e71ec299e6fa199",
+          "e37d059ce6536b1376b85f9faaa22aad8d5a826869a8f83e357e5cca3060de41"
+        ],
+        "offset_argument_lost_and_restored": true,
+        "worker_prerequisite_lost_and_restored": true
+      }
+    ],
+    "operational_passage": {
+      "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+      "version": 10,
+      "full_body_sha256": "e37d059ce6536b1376b85f9faaa22aad8d5a826869a8f83e357e5cca3060de41",
+      "summary_span": {
+        "offset": 3736,
+        "length": 154
+      },
+      "exact_source_bytes": true,
+      "bytes_pulled": 154,
+      "credits_remaining": 3,
+      "retry_exact": true
+    },
+    "commits": [
+      "21c891fdaabe1ebed5ec41a436ccc6618d54c841 Consolidate operational harness procedures and record maintenance evidence",
+      "9fb278b025e1a0897e0efcc8282831e5f738d68a Expose authenticated retained record history for memory review",
+      "842fc26455dfb8d855d4a7bb2b2dbec517ee8ae6 Record installed history review through ordinary agent access",
+      "545e8751f99d47699fcaf66b91b58d24a4b6f717 Restore procedure details found through retained history review",
+      "fe59de9fcb0f3ee285f68b522274d36dfcef62c4 Locate indexed source previews for bounded note pulls",
+      "e51c3c0f6e833483de4de1168613d1ca5ce11737 Record installed preview positions and exact source retrieval"
+    ]
+  },
+  "manifests": [
+    {
+      "path": "docs/verification/procedure-maintenance-2026-09-09.json",
+      "sha256": "db57a18e909a766be2ecf8b2b026f9f3c24a091b18066482416dd6c4472320b0",
+      "artifact_entries_checked": 20,
+      "mismatches": 0
+    },
+    {
+      "path": "docs/verification/record-history-2026-09-09.json",
+      "sha256": "ae6b5f110d2a77694d8a415bd93d07441482805d027f4e1786e896f63db43e44",
+      "artifact_entries_checked": 17,
+      "mismatches": 0
+    },
+    {
+      "path": "docs/verification/preview-locations-2026-09-09.json",
+      "sha256": "72eaf305b43e07ec1b573346a72f3ae0d8161cabd3fbfd51ac9f1ad2a222dd5d",
+      "artifact_entries_checked": 18,
+      "mismatches": 0
+    }
+  ],
+  "review_artifacts": [
+    {
+      "path": "/tmp/cairn-cumulative-review-hashes.json",
+      "sha256": "586da78d51e854a14eefeffcb131912dd5f2e13229e7f6ce44a88c1104fc186d"
+    },
+    {
+      "path": "/tmp/cairn-cumulative-review-sequence.json",
+      "sha256": "fcf653ff47977b748aae2188ebe9de6948efb200e521d9edff07c965f37963a2"
+    },
+    {
+      "path": "/tmp/cairn-cumulative-review-search.json",
+      "sha256": "b1ad2f720f99c473a8c498142973b387d06dab150538d83ad94f9bfbf61f73b8"
+    },
+    {
+      "path": "/tmp/cairn-cumulative-review-guidance.json",
+      "sha256": "c0afa541817009993f2d45998984146c375f9603c96adf070a637602b83c27e5"
+    },
+    {
+      "path": "/tmp/cairn-procedure-review/result.json",
+      "sha256": "93d6005934b4b6dd51f2e22ac2c3e33e6174140bc2b7c6c760421682837440ce"
+    },
+    {
+      "path": "/tmp/cairn-procedure-review/codex-history.json",
+      "sha256": "95a7513b6abc65f94b863991618dfb827f023e76a6eb0c4836e7ea32ab9e5ab6"
+    },
+    {
+      "path": "/tmp/cairn-procedure-review/be11369a-4ae6-4600-9345-5ff36446d5ff-pull.json",
+      "sha256": "a840a30bcd635dfc4bfc22c320a5ecb7f3c298060049083b176b3cd4866f9248"
+    },
+    {
+      "path": "/tmp/cairn-procedure-review/codex-pull.json",
+      "sha256": "445bb6e5611f61b05d11448e4ab8a1076fdff672907d1e3b912401e1845ac722"
+    },
+    {
+      "path": "/tmp/cairn-procedure-review/opencode-history.json",
+      "sha256": "534cc8451fe1d7162fcc048e79fb98354e8a331c74873d7cac3d8bda758e09e8"
+    },
+    {
+      "path": "/tmp/cairn-procedure-review/73537cbd-0ec3-4311-98c9-23e58a685b2f-pull.json",
+      "sha256": "41ba057a25f60c5f7d35910cb75702c931e0a4a5ea3d81b60abcbca1b48cac4e"
+    },
+    {
+      "path": "/tmp/cairn-procedure-review/opencode-pull.json",
+      "sha256": "7c32a06f89384d151d7c48348a78dc7145fde49913a6c0e4dc5807f458f70fce"
+    },
+    {
+      "path": "/tmp/cairn-cumulative-review-decision.json",
+      "sha256": "459271fa345e6e29a7a7c9d97823650d46dbc34f9a7565bd7425e65c2907a3d8"
+    },
+    {
+      "path": "/tmp/cairn-cumulative-review-final.json",
+      "sha256": "c8a8a057ecbedf193db957a490a5e0dd1a5c794c263377c7d0ada3cd9a385b02"
+    }
+  ],
+  "observed": "Retained old/current procedures identify lost and restored instructions; an installed source-position pull returns exact retained guidance.",
+  "judgment": "Useful continuity within Cairn development, with self-created rework and uncertain net benefit.",
+  "alternatives": [
+    "Direct source documentation",
+    "Continuing conversation context",
+    "Investigator familiarity and ordinary source review"
+  ],
+  "unestablished": [
+    "Independent model-session reuse in this interval",
+    "Prevented downstream failures",
+    "Net context or elapsed savings",
+    "General task-value improvement"
+  ],
+  "decision": "Prioritize existing interfaces on an independently worthwhile accepted task; further inspection machinery needs a concrete task need.",
+  "historical_assessments_changed": false,
+  "runtime_changed": false,
+  "operational_notes_changed": false,
+  "new_model_calls": 0,
+  "doctrine": {
+    "packet_id": "pkt-98e8caa90a59baeb",
+    "packet_content_sha256": "98e8caa90a59baeb6865a59673752f2631dbb2cc57209e44e94141eb9434ac6c",
+    "residuals": [
+      {
+        "requirement": "a measured toil fraction per person or team over a stated window",
+        "classification": "nonmaterial",
+        "rationale": "No toil fraction, team ceiling or net savings is claimed; incomplete cost evidence is explicit."
+      },
+      {
+        "requirement": "classification of the work against the toil attributes",
+        "classification": "nonmaterial",
+        "rationale": "No toil fraction, team ceiling or net savings is claimed; incomplete cost evidence is explicit."
+      },
+      {
+        "requirement": "the ceiling and its owner",
+        "classification": "nonmaterial",
+        "rationale": "No toil fraction, team ceiling or net savings is claimed; incomplete cost evidence is explicit."
+      },
+      {
+        "requirement": "evidence-co-change",
+        "classification": "nonmaterial",
+        "rationale": "Commits establish a temporal boundary; no statistical coupling, architecture or author-performance inference is made."
+      },
+      {
+        "requirement": "proc-decide-leave-code-alone",
+        "classification": "nonmaterial",
+        "rationale": "No code change is proposed; current interfaces are preferred over another evaluator or inspection extension."
+      },
+      {
+        "requirement": "proc-establish-preservation-boundaries",
+        "classification": "nonmaterial",
+        "rationale": "This documentary review preserves actual prior history and outcomes; no code refactoring is proposed."
+      }
+    ]
+  }
+}
