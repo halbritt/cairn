@@ -282,8 +282,8 @@ recovers every labelled documentation answer within three results, including the
 lexical vocabulary misses. It also worsens some first-place answers and retrieves
 unrelated neighbours for no-answer controls. This supports an optional semantic
 discovery experiment that preserves lexical search, structured eligibility,
-mandatory selection and budgets. Actual store integration, long-note handling
-and downstream benefit remain open; the installed ranker is unchanged.
+mandatory selection and budgets. The integrated follow-up below now supplies
+store and long-note evidence; downstream benefit remains open.
 
 [Optional semantic discovery](semantic-discovery.md) now connects the CPU worker
 to actual structured eligibility and budgeted index packing. The integrated
@@ -291,7 +291,9 @@ development corpus retains all fifteen labelled answers within three results;
 a 14 KB note's final guidance is found and pulled intact. Mandatory selection,
 hosted filtering, stale handles, frozen-score recompilation, bounded workers and
 labelled lexical fallback are checked. Native search tools expose the opt-in
-route. Larger-scale behavior, independent source use and task benefit remain open;
+route, and the installed API now enables the prepared worker. Fresh Codex and
+OpenCode clients both found and pulled the exact updated storage note through
+that route. Larger-scale behavior, independent source use and task benefit remain open;
 this does not close E4.
 
 [Explicit browsing](verification/browse-2026-09-09.md) now exposes the existing
