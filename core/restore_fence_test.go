@@ -111,7 +111,7 @@ func TestRestoreFenceBlocksCachedBindingsPullsAndLateContextWrites(t *testing.T)
 	if len(index.Handles) != 1 {
 		t.Fatalf("missing fixture handle: %+v", index)
 	}
-	pull := ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle}
+	pull := ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil}
 	if _, err = s.Expand(ctx, pull, Destination{"local", true}); err != nil {
 		t.Fatal(err)
 	}

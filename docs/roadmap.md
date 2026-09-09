@@ -218,6 +218,10 @@ let agents inspect selected portions of captured sources that exceed their pull
 budget. Full-object identity checks, destination checks and shared credits remain.
 The [verification](verification/evidence-spans-2026-09-09.md) covers CLI/API,
 MCP, native OpenCode and retry compatibility with the previous binary.
+[Note excerpts](verification/note-spans-2026-09-09.md) now make selected A/B body
+ranges readable when a retained note exceeds the 24,000-byte expansion cap.
+The existing pull path preserves full-source guards and shared budgets; Class C
+instructions remain whole. CLI, MCP and native OpenCode checks cover the path.
 This retrieves retained bytes; L4 remains partial for managed large artifacts,
 as-cited span relations and broader dependent invalidation.
 [Body-pull reasons](verification/pull-reason-2026-09-08.md) now describe the

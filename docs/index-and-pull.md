@@ -128,6 +128,36 @@ Submit a pull as JSON:
 `cairn expand` is local operator inspection. `cairn agent expand` uses the
 configured agent identity and destination. The response includes the selection,
 its evidence/authority metadata, and remaining session credits and bytes.
+For a partial A/B note body, add `"span":{"offset":0,"length":4096}` to the
+pull JSON, or use:
+
+```sh
+cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
+  pull --request-id NEW_UUID --offset 0 --length 4096 RECEIPT_UUID HANDLE_UUID
+```
+
+This makes selected text from a long saved note readable without increasing the
+24,000-byte session ceiling. Note offsets range from 0 to 65,535 and lengths from
+1 to 65,536 bytes. The offset must be inside the body; only EOF clips the length.
+Class C instructions refuse partial delivery. Omitting the span retains the whole
+pull, including its original retry identity and budget accounting.
+
+In a note excerpt, `selection` retains record, scope, evidence and authority
+metadata, but `selection.record.body` is empty. The separate `span` contains
+`offset`, exclusive `end`, `total_bytes`, the selected bytes' `sha256` and the full
+indexed body's `source_sha256`. Its `body` is UTF-8 text; a range splitting a
+multibyte character uses `body_base64`. Compare `source_sha256` with the index's
+`body_sha256`. All eligibility checks still inspect the complete current source.
+A range spends one of the shared credits plus encoded response bytes; it does not
+provide unlimited streaming. Use a new request UUID for a different range and
+repeat the same UUID only for identical retries. `end` is the next offset when
+below `total_bytes`. A rejected whole pull spends no credit.
+
+Treat the result as a partial source, not a replacement record body. Read the
+complete note and reconcile unseen text before editing it. The API, CLI and native
+adapter must support note spans together. See the
+[note-span verification](verification/note-spans-2026-09-09.md).
+
 To inspect one attached evidence object, use `cairn agent expand-evidence` with
 its `evidence_id` and `sha256` from the selection's evidence metadata:
 
@@ -193,7 +223,8 @@ right to disclose old content.
 The use report retains `exposure_kind: index` for the original pointer. A later
 pull appends an instrumented `expanded` observation with method
 `authorized-body-pull/1`, `authorized-evidence-pull/1`, or
-`authorized-evidence-span-pull/1`; it does not rewrite the earlier exposure as though a
+`authorized-evidence-span-pull/1`. Note excerpts use
+`authorized-body-span-pull/1`; none rewrites the earlier exposure as though a
 full body had been present originally. Pull observations invalidate earlier
 retraction previews. They establish that a body or supporting object was requested and made available,
 not that a model read it or that the task improved. HTTP response loss can still

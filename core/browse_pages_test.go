@@ -63,7 +63,7 @@ func TestBrowsePagesReachOlderNotesWithoutSkippingMandatoryContext(t *testing.T)
 		if err != nil || replay.Seal != index.Package.Seal {
 			t.Fatalf("page replay: %v", err)
 		}
-		pulled, err := op.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle}, Destination{"hosted", false})
+		pulled, err := op.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil}, Destination{"hosted", false})
 		if err != nil || !want[pulled.Selection.Record.RecordID] {
 			t.Fatalf("page pull: %+v %v", pulled, err)
 		}

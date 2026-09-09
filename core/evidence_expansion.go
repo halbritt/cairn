@@ -2,11 +2,8 @@ package core
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -21,21 +18,9 @@ type ExpandEvidenceRequest struct {
 	Span           *EvidenceSpanRequest `json:"span,omitempty"`
 }
 
-// EvidenceSpanRequest selects at most Length bytes starting at Offset. Only EOF
-// clips the range; UTF-8 boundaries do not change the requested byte offsets.
-type EvidenceSpanRequest struct {
-	Offset int `json:"offset"`
-	Length int `json:"length"`
-}
-
-type EvidenceSpan struct {
-	Offset     int    `json:"offset"`
-	End        int    `json:"end"` // Exclusive; the next offset when below TotalBytes.
-	TotalBytes int    `json:"total_bytes"`
-	SHA256     string `json:"sha256"`
-	Body       string `json:"body,omitempty"`
-	BodyBase64 string `json:"body_base64,omitempty"`
-}
+// Evidence span names are retained for source compatibility.
+type EvidenceSpanRequest = ByteSpanRequest
+type EvidenceSpan = ByteSpan
 
 type EvidenceExpansion struct {
 	RecordID         string           `json:"record_id"`
@@ -64,7 +49,7 @@ func (s *Store) ExpandEvidence(ctx context.Context, req ExpandEvidenceRequest, d
 	var state expansionState
 	var doc EvidenceDocument
 	guard := func(tx pgx.Tx) error {
-		if err := s.prepareExpansion(ctx, tx, ExpandRequest{req.RequestID, req.ReceiptID, req.Handle}, dest, &state); err != nil {
+		if err := s.prepareExpansion(ctx, tx, ExpandRequest{req.RequestID, req.ReceiptID, req.Handle, nil}, dest, &state); err != nil {
 			return err
 		}
 		var attached *Evidence
@@ -108,16 +93,8 @@ func (s *Store) ExpandEvidence(ctx context.Context, req ExpandEvidenceRequest, d
 			if req.Span.Offset >= len(body) {
 				return EvidenceExpansion{}, failure("INVALID_REQUEST", "span offset is outside captured evidence")
 			}
-			end := min(req.Span.Offset+req.Span.Length, len(body))
-			selected := body[req.Span.Offset:end]
-			digest := sha256.Sum256(selected)
-			span := &EvidenceSpan{Offset: req.Span.Offset, End: end, TotalBytes: len(body), SHA256: hex.EncodeToString(digest[:])}
-			if utf8.Valid(selected) {
-				span.Body = string(selected)
-			} else {
-				span.BodyBase64 = base64.StdEncoding.EncodeToString(selected)
-			}
-			result.Span = span
+			span := selectByteSpan(body, *req.Span)
+			result.Span = &span
 			result.Evidence.Body, result.Evidence.BodyBase64 = "", ""
 			method = "authorized-evidence-span-pull/1"
 		}

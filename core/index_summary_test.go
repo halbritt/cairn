@@ -60,7 +60,7 @@ func TestIndexMatchingPreviewKeepsExactPullAndHistoricalVersion(t *testing.T) {
 	if len(index.Package.Semantic.Index) != 1 || !strings.Contains(index.Package.Semantic.Index[0].Summary, "opencode-config") {
 		t.Fatalf("search hid the matching command: %+v", index.Package.Semantic.Index)
 	}
-	expanded, err := s.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle}, Destination{"local", true})
+	expanded, err := s.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil}, Destination{"local", true})
 	if err != nil || expanded.Selection.Record.Body != draft.Body {
 		t.Fatalf("preview replaced full body: %+v, %v", expanded, err)
 	}

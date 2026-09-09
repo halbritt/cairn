@@ -85,6 +85,12 @@ def check(binary, root, environment, claim, support):
         assert pulled['selection']['record']['body'] == args['body']
         assert pulled['selection']['record']['observed_writer'] == 'agent:hosted-capture'
         assert pulled['credits_remaining'] == view['credits_remaining'] - 1
+        partial_args = dict(view['index'][0]['pull_arguments'], request_id=str(uuid.uuid4()), span=dict(offset=0, length=8))
+        partial = tool('cairn_pull', partial_args)
+        assert partial['span']['body'] == args['body'][:8] and partial['selection']['record']['body'] == ''
+        assert partial['span']['total_bytes'] == len(args['body'].encode()) and partial['credits_remaining'] == 2
+        assert partial == tool('cairn_pull', partial_args)
+        assert 'IDEMPOTENCY_CONFLICT' in tool('cairn_pull', dict(partial_args, span=dict(offset=1, length=8)), error=True)
         missing = tool('cairn_pull', dict(view['index'][0]['pull_arguments'],
                        receipt_id=str(uuid.uuid4())), error=True)
         assert missing.startswith('NOT_FOUND:'), missing
@@ -100,6 +106,7 @@ def check(binary, root, environment, claim, support):
         assert revised == tool('cairn_edit', edit) and 'body' not in revised
         assert 'VERSION_CONFLICT' in tool('cairn_edit', dict(edit, request_id=str(uuid.uuid4())), error=True)
         assert 'STALE_HANDLE' in tool('cairn_pull', view['index'][0]['pull_arguments'], error=True)
+        assert 'STALE_HANDLE' in tool('cairn_pull', partial_args, error=True)
         evidence_view = tool('cairn_search', dict(query='socket'))
         entry = next(e for e in evidence_view['index'] if e['record_id'] == claim['record_id'])
         tool('cairn_pull', entry['pull_arguments'])

@@ -142,31 +142,29 @@ func agentPull(ctx context.Context, client *localapi.Client, operation string, a
 	f := flags("agent " + operation)
 	request := f.String("request-id", uuid.NewString(), "pull retry identity")
 	var offset, length int
-	if operation == "pull-evidence" {
-		f.IntVar(&offset, "offset", 0, "evidence byte offset (requires --length)")
-		f.IntVar(&length, "length", 0, "maximum evidence bytes to return; clipped at EOF")
-	}
+	f.IntVar(&offset, "offset", 0, "source byte offset (requires --length)")
+	f.IntVar(&length, "length", 0, "maximum source bytes to return; clipped at EOF")
 	if err := f.Parse(args); err != nil {
 		return nil, invalid(err.Error())
 	}
 	var payload any
+	var span *core.ByteSpanRequest
+	f.Visit(func(value *flag.Flag) {
+		if value.Name == "offset" || value.Name == "length" {
+			span = &core.ByteSpanRequest{Offset: offset, Length: length}
+		}
+	})
 	endpoint := "expand"
 	if operation == "pull" {
 		if f.NArg() != 2 {
 			return nil, invalid("agent pull requires RECEIPT_UUID HANDLE_UUID")
 		}
-		payload = core.ExpandRequest{RequestID: *request, ReceiptID: f.Arg(0), Handle: f.Arg(1)}
+		payload = core.ExpandRequest{RequestID: *request, ReceiptID: f.Arg(0), Handle: f.Arg(1), Span: span}
 	} else {
 		if f.NArg() != 4 {
 			return nil, invalid("agent pull-evidence requires RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256")
 		}
 		endpoint = "expand-evidence"
-		var span *core.EvidenceSpanRequest
-		f.Visit(func(value *flag.Flag) {
-			if value.Name == "offset" || value.Name == "length" {
-				span = &core.EvidenceSpanRequest{Offset: offset, Length: length}
-			}
-		})
 		payload = core.ExpandEvidenceRequest{RequestID: *request, ReceiptID: f.Arg(0), Handle: f.Arg(1), EvidenceID: f.Arg(2), ExpectedSHA256: f.Arg(3), Span: span}
 	}
 	var result json.RawMessage

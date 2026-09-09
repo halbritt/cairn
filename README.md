@@ -27,6 +27,10 @@ Agents can [read byte spans of captured evidence](docs/index-and-pull.md#index-a
 when the whole source exceeds their context budget. Spans retain the full source
 identity and carry a separate checksum for the selected bytes.
 
+Long saved notes also support [explicit body excerpts](docs/index-and-pull.md#index-and-expansion-contract)
+through `cairn agent pull --offset N --length N` and native `cairn_pull` span
+arguments. Instructions retain whole-body delivery.
+
 [Governed policy](docs/governed-policy.md) lets an authorized operator revise
 optional-memory budgets, restore earlier rules as a new revision and inspect runs
 by the policy they used. Existing repositories retain their original policy until

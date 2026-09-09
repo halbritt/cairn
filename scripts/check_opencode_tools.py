@@ -94,6 +94,14 @@ def check(binary, root, environment, opencode, claim, support):
     record = expanded['selection']['record']
     assert record['body'] == capture['body'] and record['class'] == 'A'
     assert record['witness'] == 'testimony' and record['observed_writer'] == 'agent:hosted-capture'
+    partial_args = dict(pull, request_id=str(uuid.uuid4()), span=dict(offset=0, length=8))
+    for bad in ({'offset': '0', 'length': 8}, {'offset': 0, 'length': 0}, {'offset': 0, 'length': 8, 'unknown': True}):
+        invoke('pull', dict(partial_args, span=bad), 'INVALID_REQUEST')
+    partial = invoke('pull', partial_args)
+    assert partial['span']['body'] == capture['body'][:8] and partial['selection']['record']['body'] == ''
+    assert partial['span']['total_bytes'] == len(capture['body'].encode()) and partial['credits_remaining'] == 2
+    assert invoke('pull', partial_args) == partial
+    invoke('pull', dict(partial_args, span=dict(offset=1, length=8)), 'IDEMPOTENCY_CONFLICT')
     draft = {key: record[key] for key in ('kind', 'body', 'scope', 'claim_type', 'sensitivity',
              'pins', 'relations', 'attributed_producer', 'attempt_id', 'result_ref') if key in record}
     draft['body'] = marker + ': corrected selected lesson'
@@ -103,6 +111,7 @@ def check(binary, root, environment, opencode, claim, support):
     assert invoke('edit', edit) == revised
     invoke('edit', dict(edit, request_id=str(uuid.uuid4())), 'VERSION_CONFLICT')
     invoke('pull', dict(pull, request_id=str(uuid.uuid4())), 'STALE_HANDLE')
+    invoke('pull', partial_args, 'STALE_HANDLE')
     fresh = invoke('search', dict(query=marker))
     current = invoke('pull', fresh['index'][0]['pull_arguments'])['selection']['record']
     assert current['body'] == draft['body'] and current['version'] == 2

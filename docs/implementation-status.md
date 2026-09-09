@@ -24,7 +24,7 @@ the current summary; do not replace the historical record.
 | Area | Implemented behavior | Details |
 | --- | --- | --- |
 | Ordinary memory | Authenticated capture of selected notes, retained versions and attribution, repository/task/run scope, compare-and-swap edits, and body-only corrections that preserve metadata. | [Capture and use](../README.md), [ordinary revision](mcp.md#tools) |
-| Retrieval | Lexical search, matching source previews, bounded browsing with continuation, currentness and destination filtering, mandatory context, and exact body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
+| Retrieval | Lexical search, matching source previews, bounded browsing with continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
 | Semantic discovery | Optional local CPU scoring for vocabulary mismatches, after eligibility checks; bounded work and labelled lexical fallback. Historical recompilation uses retained scores. | [Semantic discovery](semantic-discovery.md) |
 | Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [span verification](verification/evidence-spans-2026-09-09.md) |
 | Harness access | Five ordinary tools for search, body/evidence pulls, capture and edit through MCP; Codex conversation scope and native OpenCode session scope. OpenCode configuration generation and a bundled native-tool installer are shipped. | [MCP](mcp.md), [OpenCode tools](opencode-tools.md) |
@@ -738,3 +738,21 @@ prospective continuity benefit, not proof of a prevented recurrence: the current
 session already knew the decisions. No ranker or evaluation subsystem was added.
 [Review and limits](verification/project-continuity-2026-09-09.md),
 [metadata](verification/project-continuity-2026-09-09.json).
+
+### 2026-09-09 — read bounded excerpts of long saved notes
+
+A disposable-store reproduction accepted a 60,042-byte note but could not pull it
+under the fixed 24,000-byte expansion ceiling. The existing pull operation now
+accepts explicit A/B byte ranges, returns separately labelled partial text and
+full/selected hashes, and preserves full-source checks and shared credits. Class C
+instructions remain whole. A selected tail is now readable without increasing the
+ceiling. The existing evidence-span lesson pointed to the interaction and guards;
+current code was checked before applying it.
+
+Disposable PostgreSQL/race integration, actual CLI/API, MCP and native OpenCode
+checks passed, including earlier-binary whole-response retries. Range, source
+corruption, stale version, caller/destination, shared-credit and forgetting checks
+cover the new path. Go tests, 30 Python tests, vet and build passed. The change
+adds source-reading capability; task-value and longitudinal effects remain to be
+observed. [Verification](verification/note-spans-2026-09-09.md) and
+[manifest](verification/note-spans-2026-09-09.json).

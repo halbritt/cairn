@@ -13,7 +13,7 @@ func TestEvidenceExpansionSharesBodyBudgetAndObservesExactSource(t *testing.T) {
 	ctx := context.Background()
 	op, _, record, evidence, index, dest := evidenceExpansionFixture(t, "local")
 	repo := record.Scope.Repo
-	body, err := op.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle}, dest)
+	body, err := op.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil}, dest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestEvidenceExpansionRejectsOversizeWithoutSpendingCredit(t *testing.T) {
 	if result.Evidence.Body != "" {
 		t.Fatal("oversized failure returned partial evidence")
 	}
-	expansion, err := op.Expand(ctx, ExpandRequest{uuid.NewString(), req.ReceiptID, req.Handle}, dest)
+	expansion, err := op.Expand(ctx, ExpandRequest{uuid.NewString(), req.ReceiptID, req.Handle, nil}, dest)
 	if err != nil || expansion.CreditsRemaining != 3 {
 		t.Fatalf("refused evidence spent credit: %+v %v", expansion, err)
 	}
@@ -218,7 +218,7 @@ func TestEvidenceExpansionSharesConcurrentCreditsWithBodyPulls(t *testing.T) {
 			if evidencePull {
 				_, err = op.ExpandEvidence(ctx, ExpandEvidenceRequest{evidence.Digest, uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, evidence.ID, nil}, dest)
 			} else {
-				_, err = op.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle}, dest)
+				_, err = op.Expand(ctx, ExpandRequest{uuid.NewString(), index.Package.ReceiptID, index.Handles[0].Handle, nil}, dest)
 			}
 			results <- err
 		}(i%2 == 0)

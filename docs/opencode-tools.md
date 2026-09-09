@@ -159,6 +159,13 @@ and permission/repository refusals, including malformed capture arguments. See t
 remaining limits. Remove the installed tool file to undo this integration; keep
 ordinary memory records and the existing MCP/CLI alternatives.
 
+`cairn_pull` also accepts `span: {offset: 0, length: 4096}` for a partial A/B
+note. Its text, byte range and full/selected hashes appear in `span`, while
+`selection.record.body` is empty. Instructions require a whole pull. Use a new
+request UUID for each range and read the full note before replacing its body.
+The [note excerpt contract](index-and-pull.md#index-and-expansion-contract)
+defines limits and currentness checks.
+
 `cairn_pull_evidence` accepts an optional `span: {offset: 0, length: 4096}`
 for byte ranges of larger captured sources. Keep `expected_sha256` bound to the
 full object and use a new request UUID for each range. Selected bytes and their

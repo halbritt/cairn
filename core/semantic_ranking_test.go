@@ -88,7 +88,7 @@ func TestSemanticDiscoveryUsesEligibleNotesAndFrozenScores(t *testing.T) {
 			handle = h.Handle
 		}
 	}
-	pull := ExpandRequest{uuid.NewString(), p.ReceiptID, handle}
+	pull := ExpandRequest{uuid.NewString(), p.ReceiptID, handle, nil}
 	expanded, err := s.Expand(ctx, pull, Destination{"hosted", false})
 	if err != nil || expanded.Selection.Record.Body != want.Body {
 		t.Fatalf("exact source pull: %v", err)

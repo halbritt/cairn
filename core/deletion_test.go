@@ -249,94 +249,107 @@ func TestPurgeFailureIsDurableAndResumesRemainingEffects(t *testing.T) {
 }
 
 func TestForgetPreviewAuthorityConflictAndExpansionBoundaries(t *testing.T) {
-	ctx := context.Background()
-	s, root := testOperator(t)
-	repo := uuid.NewString()
-	r, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ordinary, err := s.PreviewRetraction(ctx, r.RecordID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := ForgetRequest{uuid.NewString(), r.RecordID, 1, root.ID, ordinary.PreviewID}
-	_, err = s.Forget(ctx, req)
-	requireCode(t, err, "IMPACT_PREVIEW_REQUIRED")
-	preview, err := s.PreviewDeletion(ctx, r.RecordID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.PreviewID = preview.PreviewID
-	idx, err := s.Index(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "fixture_error", Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
-	if err != nil || len(idx.Handles) != 1 {
-		t.Fatalf("index: %+v %v", idx, err)
-	}
-	_, err = s.Forget(ctx, req)
-	requireCode(t, err, "STALE_PREVIEW")
-	pull := ExpandRequest{uuid.NewString(), idx.Package.ReceiptID, idx.Handles[0].Handle}
-	_, err = s.Expand(ctx, pull, Destination{"local", true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	other, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	conflict, err := s.Dispute(ctx, DisputeRequest{uuid.NewString(), []string{r.RecordID, other.RecordID}, "Synthetic unresolved conflicting claims"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	preview, err = s.PreviewDeletion(ctx, r.RecordID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.PreviewID = preview.PreviewID
-	_, err = s.Forget(ctx, req)
-	requireCode(t, err, "OPEN_CONFLICT")
-	var refusal *Error
-	if !errors.As(err, &refusal) || refusal.RefusalID == "" {
-		t.Fatal("forget refusal was not retained")
-	}
-	if _, err = s.Resolve(ctx, ResolveRequest{uuid.NewString(), conflict.ID, conflict.Version, root.ID, "Resolve synthetic conflict before forgetting"}); err != nil {
-		t.Fatal(err)
-	}
-	outsider := testStore(t, Channel{Principal: "deletion-outsider:" + repo, Operator: true, Repo: "different:" + repo})
-	_, err = outsider.PreviewDeletion(ctx, r.RecordID)
-	requireCode(t, err, "AUTHORITY_DENIED")
-	agent := testStore(t, Channel{Principal: "deletion-agent:" + repo, Repo: repo})
-	_, err = agent.Forget(ctx, req)
-	requireCode(t, err, "AUTHORITY_DENIED")
-	preview, err = s.PreviewDeletion(ctx, r.RecordID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.PreviewID = preview.PreviewID
-	forgotten, err := s.Forget(ctx, req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.Expand(ctx, pull, Destination{"local", true})
-	requireCode(t, err, "PAYLOAD_UNAVAILABLE")
-	if _, err = s.PurgeDeletion(ctx, forgotten.DeletionID); err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.Expand(ctx, pull, Destination{"local", true})
-	requireCode(t, err, "PAYLOAD_UNAVAILABLE")
-	_, err = outsider.DeletionStatus(ctx, forgotten.DeletionID)
-	requireCode(t, err, "AUTHORITY_DENIED")
-	checkpoint, err := s.Checkpoint(ctx, CheckpointRequest{uuid.NewString(), "fixture:deletion-backup"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var included bool
-	for _, member := range checkpoint.Members {
-		if member.EventID == forgotten.EventID {
-			included = true
-		}
-	}
-	if !included {
-		t.Fatal("A forgetting D event omitted from checkpoint")
+	for _, mode := range []struct {
+		name string
+		span *ByteSpanRequest
+	}{{"whole", nil}, {"span", &ByteSpanRequest{Offset: 0, Length: 8}}} {
+		t.Run(mode.name, func(t *testing.T) {
+
+			ctx := context.Background()
+			s, root := testOperator(t)
+			repo := uuid.NewString()
+			r, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ordinary, err := s.PreviewRetraction(ctx, r.RecordID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := ForgetRequest{uuid.NewString(), r.RecordID, 1, root.ID, ordinary.PreviewID}
+			_, err = s.Forget(ctx, req)
+			requireCode(t, err, "IMPACT_PREVIEW_REQUIRED")
+			preview, err := s.PreviewDeletion(ctx, r.RecordID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.PreviewID = preview.PreviewID
+			idx, err := s.Index(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "fixture_error", Purpose: "context", AvailableTokens: 64000}, Destination{"local", true})
+			if err != nil || len(idx.Handles) != 1 {
+				t.Fatalf("index: %+v %v", idx, err)
+			}
+			_, err = s.Forget(ctx, req)
+			requireCode(t, err, "STALE_PREVIEW")
+			pull := ExpandRequest{uuid.NewString(), idx.Package.ReceiptID, idx.Handles[0].Handle, mode.span}
+			_, err = s.Expand(ctx, pull, Destination{"local", true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			other, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			conflict, err := s.Dispute(ctx, DisputeRequest{uuid.NewString(), []string{r.RecordID, other.RecordID}, "Synthetic unresolved conflicting claims"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			preview, err = s.PreviewDeletion(ctx, r.RecordID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.PreviewID = preview.PreviewID
+			_, err = s.Forget(ctx, req)
+			requireCode(t, err, "OPEN_CONFLICT")
+			var refusal *Error
+			if !errors.As(err, &refusal) || refusal.RefusalID == "" {
+				t.Fatal("forget refusal was not retained")
+			}
+			if _, err = s.Resolve(ctx, ResolveRequest{uuid.NewString(), conflict.ID, conflict.Version, root.ID, "Resolve synthetic conflict before forgetting"}); err != nil {
+				t.Fatal(err)
+			}
+			outsider := testStore(t, Channel{Principal: "deletion-outsider:" + repo, Operator: true, Repo: "different:" + repo})
+			_, err = outsider.PreviewDeletion(ctx, r.RecordID)
+			requireCode(t, err, "AUTHORITY_DENIED")
+			agent := testStore(t, Channel{Principal: "deletion-agent:" + repo, Repo: repo})
+			_, err = agent.Forget(ctx, req)
+			requireCode(t, err, "AUTHORITY_DENIED")
+			preview, err = s.PreviewDeletion(ctx, r.RecordID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.PreviewID = preview.PreviewID
+			forgotten, err := s.Forget(ctx, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = s.Expand(ctx, pull, Destination{"local", true})
+			requireCode(t, err, "PAYLOAD_UNAVAILABLE")
+			if _, err = s.PurgeDeletion(ctx, forgotten.DeletionID); err != nil {
+				t.Fatal(err)
+			}
+			_, err = s.Expand(ctx, pull, Destination{"local", true})
+			requireCode(t, err, "PAYLOAD_UNAVAILABLE")
+			var responsePurged bool
+			if err = s.pool.QueryRow(ctx, `SELECT response IS NULL FROM cairn.mutation_request WHERE operation='expand' AND request_id=$1`, pull.RequestID).Scan(&responsePurged); err != nil || !responsePurged {
+				t.Fatalf("cached body response survived purge: %v %v", responsePurged, err)
+			}
+			_, err = outsider.DeletionStatus(ctx, forgotten.DeletionID)
+			requireCode(t, err, "AUTHORITY_DENIED")
+			checkpoint, err := s.Checkpoint(ctx, CheckpointRequest{uuid.NewString(), "fixture:deletion-backup"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var included bool
+			for _, member := range checkpoint.Members {
+				if member.EventID == forgotten.EventID {
+					included = true
+				}
+			}
+			if !included {
+				t.Fatal("A forgetting D event omitted from checkpoint")
+			}
+
+		})
 	}
 }
 

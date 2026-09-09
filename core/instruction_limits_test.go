@@ -115,7 +115,7 @@ func TestInstructionLimitsOmitOptionalOverflowAndReserveIndexBodies(t *testing.T
 						if !instructions[h.RecordID] {
 							continue
 						}
-						if _, err = op.Expand(ctx, ExpandRequest{uuid.NewString(), p.ReceiptID, h.Handle}, Destination{"local", true}); err != nil {
+						if _, err = op.Expand(ctx, ExpandRequest{uuid.NewString(), p.ReceiptID, h.Handle, nil}, Destination{"local", true}); err != nil {
 							t.Fatal(err)
 						}
 					}

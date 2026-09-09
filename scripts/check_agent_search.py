@@ -110,6 +110,24 @@ def check(binary, root, environment, grant, claim, support):
     assert result['span']['total_bytes'] == len(source) and result['credits_remaining'] == 3
     assert result['span']['sha256'] == hashlib.sha256(tail.encode()).hexdigest()
     assert result['evidence']['body'] == '' and result['evidence']['sha256'] == large['sha256']
+    note_marker = 'longnote' + uuid.uuid4().hex
+    note_tail = 'Keep the complete implementation history.'
+    long_body = note_marker + '\n' + 'retained selected procedure\n' * 2000 + note_tail
+    note = call([*agent, 'remember', '--repo', scope['repo'], '--request-id', str(uuid.uuid4()), '--', long_body])['data']
+    note_index = call([*agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'], '--run', scope['run_id'], '--tokens', '1000000', note_marker])['data']
+    note_entry = next(e for e in note_index['index'] if e['record_id'] == note['record_id'])
+    note_pull = note_entry['pull_arguments']
+    assert call([*agent, 'expand'], note_pull, check=False)['status'] == 'BUDGET_REFUSED'
+    tail_args = [*agent, 'pull', '--request-id', note_pull['request_id'], '--offset', str(len(long_body.encode())-len(note_tail)), '--length', '256', note_pull['receipt_id'], note_pull['handle']]
+    selected = call(tail_args)['data']
+    assert selected['span']['body'] == note_tail and selected['selection']['record']['body'] == ''
+    assert selected['span']['source_sha256'] == hashlib.sha256(long_body.encode()).hexdigest()
+    assert selected['span']['sha256'] == hashlib.sha256(note_tail.encode()).hexdigest()
+    assert selected['span']['total_bytes'] == len(long_body.encode()) and selected['credits_remaining'] == 3
+    assert call(tail_args)['data'] == selected
+    for flags in [['--offset', '0'], ['--length', '0'], ['--offset', '-1', '--length', '2']]:
+        assert call([*agent, 'pull', *flags, note_pull['receipt_id'], note_pull['handle']], check=False)['status'] == 'INVALID_REQUEST'
+    print('An accepted long note refuses whole expansion and exposes its exact selected tail through the agent CLI/API')
     previous = os.environ.get('CAIRN_PREVIOUS_BINARY')
     if previous:
         def old_call(command, payload):
@@ -120,6 +138,11 @@ def check(binary, root, environment, grant, claim, support):
         old_handle = next(h['handle'] for h in old_index['handles'] if h['record_id'] == claim['record_id'])
         old_args = dict(request_id=str(uuid.uuid4()), receipt_id=old_index['package']['receipt_id'],
                         handle=old_handle, evidence_id=support['evidence_id'], expected_sha256=support['sha256'])
+        old_body_args = {k:old_args[k] for k in ('request_id','receipt_id','handle')}
+        old_body_args['request_id'] = str(uuid.uuid4())
+        original_body = old_call('expand',old_body_args)
+        assert 'span' not in original_body and call(['expand'],old_body_args)['data'] == original_body
+        print('Previous binary whole-body cached response and retry budget remain identical')
         original = old_call('expand-evidence', old_args)
         assert 'span' not in original and call(['expand-evidence'], old_args)['data'] == original
         print('Previous binary whole-evidence cached response survives new binary retry in disposable database')

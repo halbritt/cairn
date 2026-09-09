@@ -225,14 +225,23 @@ func (s *Store) Index(ctx context.Context, req CompileRequest, dest Destination)
 }
 
 type ExpandRequest struct {
-	RequestID string `json:"request_id"`
-	ReceiptID string `json:"receipt_id"`
-	Handle    string `json:"handle"`
+	RequestID string           `json:"request_id"`
+	ReceiptID string           `json:"receipt_id"`
+	Handle    string           `json:"handle"`
+	Span      *ByteSpanRequest `json:"span,omitempty"`
 }
+
+// NoteSpan is partial source text; SourceSHA256 identifies the full indexed body.
+type NoteSpan struct {
+	ByteSpan
+	SourceSHA256 string `json:"source_sha256"`
+}
+
 type Expansion struct {
 	Selection        Selection `json:"selection"`
 	CreditsRemaining int       `json:"credits_remaining"`
 	BytesRemaining   int       `json:"bytes_remaining"`
+	Span             *NoteSpan `json:"span,omitempty"`
 }
 
 type expansionState struct {
@@ -331,6 +340,9 @@ func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandReque
 }
 
 func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination) (Expansion, error) {
+	if req.Span != nil && (req.Span.Offset < 0 || req.Span.Offset >= 65536 || req.Span.Length <= 0 || req.Span.Length > 65536) {
+		return Expansion{}, failure("INVALID_REQUEST", "note span requires byte offset 0-65535 and length 1-65536")
+	}
 	if err := validID(req.Handle); err != nil {
 		return Expansion{}, err
 	}
@@ -342,7 +354,27 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 	}{req, dest}, func(tx pgx.Tx) (Expansion, error) {
 		selection := state.selection
 		credits, remaining := state.credits, state.remaining
-		encoded, err := json.Marshal(selection)
+		method := "authorized-body-pull/1"
+		var span *NoteSpan
+		var payload any = selection
+		if req.Span != nil {
+			if selection.Record.Class == "C" {
+				return Expansion{}, failure("INVALID_REQUEST", "instructions require whole-body delivery; omit span")
+			}
+			body := []byte(selection.Record.Body)
+			if req.Span.Offset >= len(body) {
+				return Expansion{}, failure("INVALID_REQUEST", "span offset is outside the indexed note")
+			}
+			digest := sha256.Sum256(body)
+			span = &NoteSpan{ByteSpan: selectByteSpan(body, *req.Span), SourceSHA256: hex.EncodeToString(digest[:])}
+			selection.Record.Body = ""
+			payload = struct {
+				Selection Selection `json:"selection"`
+				Span      *NoteSpan `json:"span"`
+			}{selection, span}
+			method = "authorized-body-span-pull/1"
+		}
+		encoded, err := json.Marshal(payload)
 		if err != nil {
 			return Expansion{}, err
 		}
@@ -354,10 +386,10 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 			return Expansion{}, err
 		}
 
-		if _, err = tx.Exec(ctx, `INSERT INTO cairn.usage_observation(observation_id,receipt_id,record_id,version,signal,witness,method) VALUES($1,$2,$3,$4,'expanded','instrumented','authorized-body-pull/1')`, uuid.NewString(), req.ReceiptID, selection.Record.RecordID, selection.Record.Version); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.usage_observation(observation_id,receipt_id,record_id,version,signal,witness,method) VALUES($1,$2,$3,$4,'expanded','instrumented',$5)`, uuid.NewString(), req.ReceiptID, selection.Record.RecordID, selection.Record.Version, method); err != nil {
 			return Expansion{}, err
 		}
-		return Expansion{selection, credits - 1, remaining - cost}, nil
+		return Expansion{Selection: selection, CreditsRemaining: credits - 1, BytesRemaining: remaining - cost, Span: span}, nil
 	}, guard)
 }
 func sameSelectionFacts(a, b []Selection) bool {
