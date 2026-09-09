@@ -53,13 +53,17 @@ explicit token path is not replaced with the default token. The agent client
 never opens the database. Use the same request UUID for a transport retry. The
 server has bounded request bodies and deadlines; an HTTP write failure does not roll back a committed mutation.
 
-The encoded JSON request limit is 128 KiB for ordinary operations and 8 MiB for
-`evidence` capture. The larger envelope accommodates the existing maximum of
-1 MiB of decoded evidence body, including JSON escaping. It does not increase
-the source-size limit or retrieval budgets. The agent CLI, API client and server
-share these limits; the store still validates source size, repository and sensitivity.
-Update both API and CLI before sending evidence requests above the older 128 KiB
-envelope. Older-sized requests and their retry identities retain their behavior.
+Encoded JSON limits are 512 KiB for ordinary `create`, `edit` and `revise`,
+8 MiB for `evidence`, and 128 KiB for other API operations. The larger envelopes
+accommodate the existing 64 KiB decoded note and 1 MiB decoded evidence limits,
+including JSON escaping and metadata. They do not increase stored source sizes
+or retrieval budgets. The agent CLI, API client and server share these limits;
+the store still validates size, repository and sensitivity. `agent remember`
+uses `create`; native capture/edit tools use these same operations. Trusted local
+JSON `create`, `edit` and `revise` also accept 512 KiB envelopes.
+Update both API and CLI before sending larger requests. Existing accepted requests
+and their retry identities retain their behavior. Oversized envelopes, including
+excess trailing whitespace, are refused before a write or retry reservation.
 
 
 ## Save an ordinary note

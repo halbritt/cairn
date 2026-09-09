@@ -57,11 +57,10 @@ func TestAuthenticatedEvidenceCaptureReachesStoreLimit(t *testing.T) {
 	if err = client.Call(ctx, "evidence", req, &got); err != nil {
 		t.Fatal(err)
 	}
-	// Other operation envelopes retain the old limit even with a valid note body.
-	create := core.CreateRequest{RequestID: uuid.NewString(), Draft: core.Draft{Kind: "note", Body: strings.Repeat("<", 65536), ClaimType: "self", Scope: core.Scope{Repo: repo, TaskID: "*", RunID: "*"}}}
+	// Operations without note bodies retain their smaller envelope.
 	var ignored json.RawMessage
-	if err = client.Call(ctx, "create", create, &ignored); core.Code(err) != "INVALID_REQUEST" || !strings.Contains(err.Error(), "128 KiB") {
-		t.Fatalf("non-evidence limit widened: %v", err)
+	if err = client.Call(ctx, "get", map[string]string{"record_id": strings.Repeat("x", 128*1024)}, &ignored); core.Code(err) != "INVALID_REQUEST" || !strings.Contains(err.Error(), "128 KiB") {
+		t.Fatalf("non-body operation limit widened: %v", err)
 	}
 }
 
@@ -111,10 +110,29 @@ func TestEvidenceEnvelopeLimitsAreEnforcedByServerAndClient(t *testing.T) {
 	}
 
 	create := core.CreateRequest{RequestID: uuid.NewString(), Draft: core.Draft{Kind: "note", Body: strings.Repeat("<", 65536), ClaimType: "self", Scope: core.Scope{Repo: repo, TaskID: "*", RunID: "*"}}}
-	send("create", create, 0)
+	send("create", create, 512*1024)
 	create.Draft.Body = "valid note after refused envelope"
 	var record core.Record
 	if err := client.Call(ctx, "create", create, &record); err != nil {
-		t.Fatalf("non-evidence cap refusal reserved intent: %v", err)
+		t.Fatalf("create cap refusal reserved intent: %v", err)
 	}
+	edit := core.EditRequest{RequestID: uuid.NewString(), RecordID: record.RecordID, ExpectedVersion: 1, Draft: record.Draft}
+	send("edit", edit, 512*1024)
+	edit.Draft.Body = "valid edit after refused envelope"
+	if err := client.Call(ctx, "edit", edit, &record); err != nil || record.Version != 2 {
+		t.Fatalf("edit cap refusal reserved intent: %v", err)
+	}
+	revise := core.ReviseRequest{RequestID: uuid.NewString(), RecordID: record.RecordID, ExpectedVersion: 2, Repo: repo, Body: record.Body}
+	send("revise", revise, 512*1024)
+	revise.Body = "valid revision after refused envelope"
+	var revision core.Revision
+	if err := client.Call(ctx, "revise", revise, &revision); err != nil || revision.Version != 3 {
+		t.Fatalf("revise cap refusal reserved intent: %v", err)
+	}
+	for _, operation := range []string{"create", "edit", "revise"} {
+		if err := client.Call(ctx, operation, map[string]string{"body": strings.Repeat("x", 512*1024)}, &record); core.Code(err) != "INVALID_REQUEST" || !strings.Contains(err.Error(), "512 KiB") {
+			t.Fatalf("%s client cap not enforced: %v", operation, err)
+		}
+	}
+	send("get", map[string]string{"record_id": record.RecordID}, 128*1024)
 }

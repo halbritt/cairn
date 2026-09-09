@@ -25,7 +25,7 @@ export const runtime = tool({
 '''
 
 
-def check(opencode, output):
+def check(opencode, output, *, connection=None, extra_cases=()):
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     work = output / 'workspace'
     tool_dir = work / '.opencode/tools'
@@ -33,6 +33,10 @@ def check(opencode, output):
     (tool_dir / 'defaults.ts').write_text(TOOL)
     adapter = Path(__file__).resolve().parents[1] / 'integrations/opencode/cairn.ts'
     shutil.copyfile(adapter, tool_dir / 'cairn.ts')
+    if connection is not None:
+        settings = work / '.opencode/cairn.json'
+        settings.write_text(json.dumps(connection))
+        settings.chmod(0o600)
     env = {key: os.environ[key] for key in ('PATH', 'LANG') if key in os.environ}
     for key, folder in [('HOME', 'home'), ('XDG_CONFIG_HOME', 'config'),
                         ('XDG_CACHE_HOME', 'cache'), ('XDG_DATA_HOME', 'data'), ('XDG_STATE_HOME', 'state')]:
@@ -54,6 +58,7 @@ def check(opencode, output):
         ('adapter-evidence', 'cairn_pull_evidence', {'expected_sha256': 'invalid'}),
         ('adapter-edit', 'cairn_edit', {'draft': []}),
     ]
+    cases.extend(extra_cases)
     requests = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -134,7 +139,7 @@ def check(opencode, output):
         assert json.loads(results[name]) == expected, (name, results[name])
     for name in ('declared-invalid', 'runtime-invalid'):
         assert json.loads(results[name]) == {'body': 'selected lesson', 'kind': 7}, (name, results[name])
-    # No Cairn connection file exists here: validation must run before config or API access.
+    # Malformed calls must be refused whether or not a connection is configured.
     for name, _, _ in cases:
         if name.startswith('adapter-'):
             assert 'INVALID_REQUEST: invalid arguments for Cairn tool' in results[name], (name, results[name])
@@ -149,6 +154,7 @@ def check(opencode, output):
                   operational_store_access=False)
     (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
+    return report
 
 
 if __name__ == '__main__':

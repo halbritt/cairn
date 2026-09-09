@@ -28,7 +28,7 @@ the current summary; do not replace the historical record.
 
 | Area | Implemented behavior | Details |
 | --- | --- | --- |
-| Ordinary memory | Authenticated capture of selected notes, retained versions and attribution, repository/task/run scope, compare-and-swap edits, body-only corrections that preserve metadata, and authenticated retained-version inspection. | [Capture and use](../README.md), [ordinary revision](mcp.md#tools), [record history](record-history.md) |
+| Ordinary memory | Authenticated capture of selected notes up to 64 KiB with room for JSON escaping, retained versions and attribution, repository/task/run scope, compare-and-swap edits, body-only corrections that preserve metadata, and authenticated retained-version inspection. | [Capture and use](../README.md), [ordinary revision](mcp.md#tools), [record history](record-history.md) |
 | Retrieval | Lexical search, matching previews with source byte positions, bounded browsing with continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
 | Semantic discovery | Optional local CPU scoring for vocabulary mismatches, after eligibility checks; bounded work and labelled lexical fallback. Historical recompilation uses retained scores. | [Semantic discovery](semantic-discovery.md) |
 | Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, citation-time digests and optional byte passages on qualified claim versions, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [precise citations](evidence-citations.md), [span verification](verification/evidence-spans-2026-09-09.md) |
@@ -1016,3 +1016,20 @@ priority is using existing interfaces on an independently worthwhile accepted
 task, with further inspection machinery justified by concrete task needs. This
 changes work selection rather than historical assessments or roadmap completion.
 No code, runtime, operational memory, model trial or authority policy changed.
+
+### 2026-09-09 — ordinary note JSON transport
+
+Ordinary create/edit/revise now allow 512 KiB encoded envelopes for the existing
+64 KiB decoded bodies across API, agent and trusted operator JSON ingress. MCP
+and native OpenCode use the same paths. Evidence remains 8 MiB; other operations
+retain their existing caps. The prior evidence feature's ordinary 128 KiB boundary
+is intentionally superseded for these three operations only.
+
+The [report](verification/note-transport-2026-09-09.md) and
+[manifest](verification/note-transport-2026-09-09.json) preserve the failing
+baseline, exact body and prior-binary retry checks, refused oversize requests
+before effects, and full disposable integration/race, Go/Python/vet/build results.
+An initial native debug-output JSON parse failure remains recorded; the corrected
+normal-session fixture passed without inference. No schema, permission, model
+trial or task assessment changed. The recalled analogous evidence procedure
+helped frame verification; incremental memory value remains uncertain.

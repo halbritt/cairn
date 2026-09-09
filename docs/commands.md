@@ -2,8 +2,10 @@
 
 Every mutation has a caller-scoped request UUID. Reuse it only for retrying the
 same intent. These examples use placeholder UUIDs; substitute IDs returned by
-your own requests. CLI input is one JSON object, bounded to 128 KiB. The core
-library permits up to 1 MiB per inline evidence object.
+your own requests. CLI input is one JSON object, normally bounded to 128 KiB.
+Ordinary `create`, `edit` and `revise` allow 512 KiB of encoded JSON for their
+existing 64 KiB decoded body limit. The core library permits up to 1 MiB per
+inline evidence object; authenticated `agent evidence` allows an 8 MiB envelope.
 
 Create an ordinary note:
 

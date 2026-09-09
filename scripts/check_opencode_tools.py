@@ -4,6 +4,8 @@ from pathlib import Path
 import subprocess
 import uuid
 
+from check_note_transport import check_opencode_session
+
 
 def check(binary, root, environment, opencode, claim, support):
     work = root / 'opencode-tools'
@@ -150,6 +152,7 @@ def check(binary, root, environment, opencode, claim, support):
     invoke('pull_evidence', dict(span_args, span=dict(offset=0, length=10)), 'IDEMPOTENCY_CONFLICT')
     foreign_draft = dict(draft, scope=dict(repo='outside-fixture', task_id='*', run_id='*'))
     invoke('edit', dict(edit, draft=foreign_draft, request_id=str(uuid.uuid4())), 'AUTHORITY_DENIED')
+    check_opencode_session(opencode, root / 'opencode-note-limit', settings, binary, environment)
     settings_path.write_text(json.dumps(dict(settings, repo='outside-fixture')))
     invoke('search', dict(query=marker), 'AUTHORITY_DENIED')
     settings_path.write_text(json.dumps(settings))

@@ -86,6 +86,12 @@ CLI fix, with corrected unknown/binding-quota assessments, but no transfer or
 completed model-task result. Use task-relevant memory in the next real build
 and verify actual tool contact before drawing a benefit conclusion.
 
+[Ordinary note transport](verification/note-transport-2026-09-09.md) now accepts
+maximum 64 KiB bodies even when JSON escaping exceeds the old envelope, through
+existing capture and edit interfaces. Overlimit refusal and previous mutation
+retries are verified; qualified operator limits remain separate. This repairs a
+storage obstacle without establishing memory's incremental task contribution.
+
 [Authenticated note capture](verification/agent-remember-2026-09-08.md) is now
 installed: `agent remember` and explicit stdin use the existing create API, with
 shared operator parsing. A scoped hosted-agent profile and repository guidance

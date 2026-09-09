@@ -5,6 +5,8 @@ import select
 import subprocess
 import uuid
 
+from check_note_transport import check_harness
+
 
 @contextmanager
 def session(binary, root, environment, extra_args=(), generated=False):
@@ -122,6 +124,7 @@ def check(binary, root, environment, claim, support):
         assert tool('cairn_pull_evidence', evidence_args) == span
         assert 'IDEMPOTENCY_CONFLICT' in tool('cairn_pull_evidence',
                 dict(evidence_args, span=dict(offset=0, length=10)), error=True)
+        check_harness(tool, binary, environment)
     with session(binary, root, environment, generated=True) as tool:
         view = tool('cairn_search', dict(query=query))
         assert 'context' not in view

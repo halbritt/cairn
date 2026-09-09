@@ -4,6 +4,8 @@ import shlex
 import subprocess
 import uuid
 
+from check_note_transport import check_cli
+
 
 def check(binary, root, environment):
     client_env = dict(environment, CAIRN_DATABASE_URL='host=/absent-capture-client dbname=denied')
@@ -74,4 +76,5 @@ def check(binary, root, environment):
     operator = json.loads(result.stdout)['data']
     assert operator['body'] == 'Operator multiline\ntext stays intact.\n'
     assert operator['sensitivity'] == 'local' and operator['observed_writer'].startswith('local-uid:')
+    check_cli(binary, environment, client)
     print('Authenticated remember preserves text, A testimony and retry identity; a second hosted agent retrieves only shareable notes without HOME or database access')

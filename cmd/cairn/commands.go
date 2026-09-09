@@ -12,6 +12,7 @@ import (
 
 	"github.com/halbritt/cairn/artifacts"
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/localapi"
 )
 
 const help = `Cairn: local memory for agents
@@ -319,11 +320,11 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	case "grants":
 		return store.Grants(ctx)
 	case "create":
-		return invoke(ctx, input, store.Create)
+		return invokeBounded(ctx, input, store.Create, localapi.RequestBodyLimit("create"))
 	case "edit":
-		return invoke(ctx, input, store.Edit)
+		return invokeBounded(ctx, input, store.Edit, localapi.RequestBodyLimit("edit"))
 	case "revise":
-		return invoke(ctx, input, store.Revise)
+		return invokeBounded(ctx, input, store.Revise, localapi.RequestBodyLimit("revise"))
 	case "delete":
 		return invoke(ctx, input, store.Delete)
 	case "bootstrap":
@@ -435,9 +436,13 @@ func recoverRun(ctx context.Context, store *core.Store, id string) (core.Observa
 	return observed, os.Rename(path, filepath.Join(root, "runs", id, "outcome.json"))
 }
 func invoke[Request, Response any](ctx context.Context, input io.Reader, call func(context.Context, Request) (Response, error)) (Response, error) {
+	return invokeBounded(ctx, input, call, 128*1024)
+}
+
+func invokeBounded[Request, Response any](ctx context.Context, input io.Reader, call func(context.Context, Request) (Response, error), limit int64) (Response, error) {
 	var req Request
 	var zero Response
-	if err := decode(input, &req); err != nil {
+	if err := decodeBounded(input, &req, limit); err != nil {
 		return zero, invalid(err.Error())
 	}
 	return call(ctx, req)

@@ -1,0 +1,77 @@
+{
+  "schema": "cairn.note-transport-verification/1",
+  "date": "2026-09-09",
+  "decoded_note_bytes": 65536,
+  "encoded_note_envelope_bytes": 524288,
+  "checks": {
+    "authenticated_exact_bodies": true,
+    "decoded_overflow_refused": true,
+    "raw_envelope_refusal_before_effects": true,
+    "previous_binary_mutation_retries": true,
+    "cli_operator_mcp": true,
+    "normal_opencode_session": true,
+    "postgres_race": true,
+    "go_python_vet_build": true
+  },
+  "previous_binary_revision": "fe59de9fcb0f3ee285f68b522274d36dfcef62c4",
+  "doctrine": {
+    "packet_id": "pkt-7f81487991784826",
+    "packet_content_sha256": "7f8148799178482680963174153e8eae9cc91c09fb6264ae47dd5a7d3c842cff",
+    "nonmaterial_residuals": 9
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-note-transport-plan.md",
+      "sha256": "83dde49e1e4889febb6376dff15b08ef6e04d72576211d9e2bbf27b213ab8908"
+    },
+    {
+      "path": "/tmp/cairn-note-transport-baseline.log",
+      "sha256": "f4b4b5863a6deb839220f5bd0d2bf19614712bd32d88b2fa7788daa7188cb0b5"
+    },
+    {
+      "path": "/tmp/cairn-note-transport-focused.log",
+      "sha256": "d7d517e88e1381a2e22d2f621082b10f63afc61baf3331867f450b9bdcd0689a"
+    },
+    {
+      "path": "/tmp/cairn-note-transport-tests.log",
+      "sha256": "3e695d9254a025cf6640614f03ec14323633d789b864bdb91444b87443c68776"
+    },
+    {
+      "path": "/tmp/cairn-note-transport-final-check.log",
+      "sha256": "7e9bbc361fc3c1f98d20aec476936b4cd2eaecb7adec63bdd38519d225c274a0"
+    },
+    {
+      "path": "/tmp/cairn-note-transport-integration.log",
+      "sha256": "c1e7f8e2eac21c36884efb0fa1fe4089598cea6bd8a5249e7ab0309c9e56bf87"
+    },
+    {
+      "path": "/tmp/cairn-note-transport-integration-fixed.log",
+      "sha256": "bca92f97a80370a6cae7784efd3b357590c510faed51d4b9828c5d8ebd084ca3"
+    },
+    {
+      "path": "/tmp/cairn-note-transport-guidance.json",
+      "sha256": "e1ebd746fa23a8ea4d4713c37c8ce7bf2ad6d84e8fb24a924845baaff004bb34"
+    },
+    {
+      "path": "/tmp/cairn-note-transport-decision.json",
+      "sha256": "ed0272cf5f836ffda85185c376e22a7864f37011279d05a456625a898ea00e16"
+    },
+    {
+      "path": "/tmp/cairn-note-transport-final.json",
+      "sha256": "abb944f9a3af73b88563a36559e736b28d9dda25e7c550ed747e92a3b4cd3c21"
+    },
+    {
+      "path": "/tmp/cairn-note-transport-residuals.json",
+      "sha256": "643d0a14fd424f7538015f1ff727f5c386f28ec07bf8da1873f644425663cf53"
+    },
+    {
+      "path": "/tmp/cairn-note-transport-citation-closure.json",
+      "sha256": "63a2d58024ef8a1e384c55244eee01b92672b9b8e6e01b149e2c10ae209bcaf9"
+    }
+  ],
+  "limits": [
+    "Original debug-output check failed; corrected normal-session integration passed.",
+    "No model inference, operational fixture or task-benefit measurement.",
+    "Qualified operator command limits remain separate."
+  ]
+}
