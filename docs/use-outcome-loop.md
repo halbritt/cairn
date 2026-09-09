@@ -133,6 +133,37 @@ process-derived task outcome. A correction back to unknown restores that count.
 Compile-only receipts are outside this denominator, and a run needs no memory
 exposure to be counted. Other summary counters remain operational observations.
 
+## Qualitative and cumulative review
+
+Task acceptance and memory benefit answer different questions. An accepted task
+can receive no discernible help from memory; a rejected or unfinished task can
+still contain a useful insight prompted by it. The outcome labels above must not
+be treated as a complete vocabulary for value.
+
+For an assessment tied to a receipt, `reason` can describe the observed work,
+the proposed memory contribution, contrary evidence and costs. `method` identifies
+how that judgment was made, and `evidence_ids` references explicitly selected
+support. Use `task_outcome: "unknown"` when task acceptance is unknown, including
+when there is a plausible qualitative benefit. Unknown acceptance does not mean
+zero benefit. The existing failure-domain consistency and receipt-access checks
+still apply; a narrative does not grant authority or turn an agent's judgment
+into human acceptance.
+
+Inspect `cairn assessments RECEIPT_UUID` for the retained reasons, evidence IDs,
+observer and version history. The aggregate `run-report` and `use-report` rows
+omit the narrative and evidence IDs. For a linked retrieval, inspect the
+assessment on its `run_receipt_id`; that is the assessment those rows join.
+Do not infer the full judgment from an aggregate outcome label alone.
+
+For benefit that develops across turns, sessions or tasks, retain a source-linked
+case describing the sequence and relevant versions, receipts or artifacts.
+Ordinary project documentation can carry such a review without inventing a
+single run for the whole sequence or changing its individual task assessments.
+Preserve the reviewer's identity, evidence limits, alternatives and negative
+observations. The [adapter-repair case](verification/value-case-validation-2026-09-09.md)
+demonstrates this format with existing evidence. These reviews do not automatically
+produce demand proposals, rank changes or a numeric memory-value score.
+
 ## Completed tasks with open delegates
 
 An authenticated observer calls `core.ObserveTask` or `/v1/task-state` with an exact

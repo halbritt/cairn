@@ -5,9 +5,12 @@ versioned notes and supporting evidence, makes them available through CLI,
 Codex and OpenCode interfaces, and records supplied context and observed outcomes.
 The installed system supports ordinary cross-session use today.
 
-The strongest usefulness evidence is one successful knowledge transfer between
-harnesses and one accepted configuration task after a stored procedure was
-corrected. Durable improvement across coding tasks and harnesses remains
+Usefulness evidence includes one successful knowledge transfer between harnesses,
+one accepted configuration task after a stored procedure was corrected, and a
+[qualitative repair case](verification/value-case-validation-2026-09-09.md) where
+recalled guidance plausibly helped focus an investigation that fixed a real bug.
+The repair is verified; memory's incremental contribution and net benefit remain
+uncertain. Durable improvement across coding tasks and harnesses remains
 unestablished. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
@@ -768,3 +771,24 @@ credits. Exact-commit CI passed PostgreSQL/race, Python, vet and build checks.
 versions and checks. This supersedes the earlier split CLI/API installation
 snapshot, while preserving its history. The current priority summary also now
 states the cumulative evaluation horizon already established in the roadmap.
+
+### 2026-09-09 — review a qualitative task-value case
+
+The owner clarified that absence of single-turn or mechanically provable benefit
+must not exclude qualitative and cumulative value. A retrospective review of the
+OpenCode argument-validation repair now follows the retrieved lesson, applicability
+check, malformed-write reproduction, shipped fix and corrected guidance across
+harnesses. Historical source and all 31 private artifact hashes match the original
+manifest. The repair is verified; the coding agent assesses recalled guidance as
+a plausible useful contribution to the investigation. Existing context and ordinary
+review remain alternative explanations, and net benefit is unmeasured.
+
+This adds a [qualified case](verification/value-case-validation-2026-09-09.md) with
+[review metadata](verification/value-case-validation-2026-09-09.json), preserving
+the original report and all task outcomes. It does not establish independent
+replication, general task benefit or later benefit from the corrected note.
+Assessment guidance now explains how to retain narrative judgments, inspect their
+full history and review a sequence without assigning it a synthetic task outcome.
+Existing fields suffice for this case; no evaluator, schema, runtime or permission
+change was made. Documentation links, source claims, hashes and historical
+preservation were checked. No code tests or model cohorts were rerun.

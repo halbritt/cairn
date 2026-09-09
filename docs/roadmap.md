@@ -175,6 +175,13 @@ Codex/OpenCode interfaces are sufficient for this work; additional adapters rema
 lower priority. This clarification broadens admissible evidence, not the claims
 supported by the trials already completed.
 
+A [retrospective adapter-repair case](verification/value-case-validation-2026-09-09.md)
+now distinguishes a verified useful repair from the plausible contribution of
+recalled guidance, unavailable counterfactual and unmeasured net costs. The
+[existing assessment path](use-outcome-loop.md#qualitative-and-cumulative-review)
+supports narrative judgments; multi-task reviews can remain source-linked cases.
+This adds qualitative evidence without closing E4/D2 or changing earlier outcomes.
+
 Repair current contract violations first. Then build the smallest real host
 integration and the observation join; add currentness, index/pull and historical
 evaluation; generate evidence-attached demand; only then add grooming. Lifecycle,

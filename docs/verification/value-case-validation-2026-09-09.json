@@ -1,0 +1,122 @@
+{
+  "schema": "cairn.qualitative-value-review/1",
+  "review_date": "2026-09-09",
+  "reviewer": "Cairn coding agent",
+  "baseline_commit": "bd8a8ed",
+  "case": "Recalled guidance during OpenCode argument validation repair",
+  "historical_repair_commit": "d457b294f4dc7445128b3554f36e092dc83352db",
+  "private_artifacts_verified": 31,
+  "historical_sources": [
+    {
+      "path": "integrations/opencode/cairn.ts",
+      "sha256": "6538720e20db231b8ab3f39b3473351e89a0b03c04df93640d329f0384be8e85"
+    },
+    {
+      "path": "scripts/check_opencode_defaults.py",
+      "sha256": "b31b73a5a920971abd6d95adae6feec6db3517259102250f15b3a7c4e6e0dfc1"
+    },
+    {
+      "path": "scripts/check_opencode_tools.py",
+      "sha256": "346e091eb1151ce9fe5d61fd3677ea7ad4c53d73f6321b74cf2f546bbde11bf8"
+    }
+  ],
+  "observed": "Guidance was pulled; malformed capture was reproduced and repaired; revised guidance was made available in another harness.",
+  "judgment": "A plausible useful contribution to the investigation; incremental and net memory value remain uncertain.",
+  "counterfactual": "unavailable",
+  "costs": "not measured sufficiently to estimate net benefit",
+  "historical_outcomes_changed": false,
+  "new_model_calls": 0,
+  "runtime_changes": false,
+  "source_artifact_manifest": "opencode-validation-2026-09-09.json",
+  "review_artifacts": [
+    {
+      "path": "/tmp/cairn-value-evidence-hash-check.json",
+      "sha256": "0054dac2a5e2aae65237ae55802ad2ac272616cc8b06bd04fcd0269ddb83d610"
+    },
+    {
+      "path": "/tmp/cairn-value-evidence-plan.json",
+      "sha256": "2233b09d6f525e27e02871a2ff3a123f357e6c12072b4af331cf313cca84b32b"
+    },
+    {
+      "path": "/tmp/cairn-value-evidence-decision.json",
+      "sha256": "4551ff8adb568966c725ee9da6d66764ea05094d6fe964234398b4e597f83628"
+    },
+    {
+      "path": "/tmp/cairn-value-evidence-final.json",
+      "sha256": "a15df25034fa59c4277d68264b07e8818ea5bdcb1d6600b610127498b13decfa"
+    }
+  ],
+  "doctrine": {
+    "packet_id": "pkt-0d8f5377e8b5b8eb",
+    "packet_content_sha256": "0d8f5377e8b5b8ebd9f07631495484e2dc96a45501e3ce88c9856efdbdbf5c3b",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-535dc272b70414f0",
+        "required_by": "operations-toil-ceiling",
+        "requirement": "a measured toil fraction per person or team over a stated window",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No toil ceiling, team productivity claim or measured savings is proposed; case costs and net value remain explicitly unmeasured."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-2803ec602eb44661",
+        "required_by": "operations-toil-ceiling",
+        "requirement": "classification of the work against the toil attributes",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No toil ceiling, team productivity claim or measured savings is proposed; case costs and net value remain explicitly unmeasured."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-09793df656e6d4c2",
+        "required_by": "operations-toil-ceiling",
+        "requirement": "the ceiling and its owner",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No toil ceiling, team productivity claim or measured savings is proposed; case costs and net value remain explicitly unmeasured."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-abad47f2ee933a0b",
+        "required_by": "task:repository-assessment",
+        "requirement": "evidence-co-change",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No co-change or structural causality claim; the review uses the actual defect diff, prior guidance and retained observations."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-79f0096bfdc52afa",
+        "required_by": "task:repository-assessment",
+        "requirement": "evidence-generated-artifacts",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No generated-code or configuration fitness conclusion; historical reproduction outputs were inspected as test evidence."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No named generic procedure completion claimed. Explicit alternatives and preservation boundaries are recorded for a documentation-only review."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No named generic procedure completion claimed. Explicit alternatives and preservation boundaries are recorded for a documentation-only review."
+      }
+    ]
+  }
+}
