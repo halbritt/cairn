@@ -60,5 +60,24 @@ The doctrine review used packet `pkt-7f81487991784826`, two evidence passes and
 a schema-validated decision receipt. Nine generic interface, nil and procedure
 obligations remain explicitly nonmaterial to this bounded transport change.
 [Verification metadata](note-transport-2026-09-09.json) retains packet identity,
-artifact hashes, the failed run and completed checks. Local deployment is recorded
-separately after installation.
+artifact hashes, the failed run and completed checks. Local deployment follows below.
+
+## Local deployment
+
+Clean implementation `6dbca8b6a2a2b57c2197a9d00dc8f8a9362da7c7` is installed as
+CLI/API. The binary reports `vcs.modified=false`; the running API executable
+matches SHA-256 `b77490a86e70b64af63e21edec3986b3d301f334a14f3ffbb679e76320078174`.
+Both services are active and PostgreSQL accepts connections. The store process,
+OpenCode adapter, connection settings, Codex configuration and semantic runtime
+files retain their prior identities. There was no schema migration. The prior
+binary is retained under the private deployment artifact directory.
+
+The existing evidence procedure's capture paragraph was corrected from v3 to v4
+through ordinary authenticated body revision, preserving its other paragraphs
+and metadata. The same request retries exactly, and a fresh search/full pull
+returns the exact revised body. Its identity and checksum are in the manifest.
+This is selected operational maintenance; maximum-size fixtures ran only in the
+disposable store. No historical task assessment was revised.
+
+[Exact implementation CI](https://github.com/halbritt/cairn/actions/runs/34399146044)
+passed PostgreSQL/race, Python tests, vet and build.

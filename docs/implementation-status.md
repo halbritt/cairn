@@ -1033,3 +1033,19 @@ An initial native debug-output JSON parse failure remains recorded; the correcte
 normal-session fixture passed without inference. No schema, permission, model
 trial or task assessment changed. The recalled analogous evidence procedure
 helped frame verification; incremental memory value remains uncertain.
+
+### 2026-09-09 — installed ordinary note transport and corrected guidance
+
+Clean `6dbca8b` is installed as CLI/API, with both services healthy and the store
+process unchanged. The native adapter, harness configuration and semantic worker
+files retain their prior checksums. No migration or operational test fixture was
+needed. The existing evidence procedure's capture paragraph now describes the
+ordinary 512 KiB envelope; v4 was saved with metadata preserved and read back
+exactly in fresh authenticated scope. The same revision request retries exactly.
+[Deployment evidence](verification/note-transport-2026-09-09.md#local-deployment)
+and [metadata](verification/note-transport-2026-09-09.json) retain source/binary
+identities and the actual procedure checks. This completes deployment of the
+transport repair; it adds no independent model-task benefit claim.
+
+[Exact implementation CI](https://github.com/halbritt/cairn/actions/runs/34399146044)
+passed PostgreSQL/race, Python tests, vet and build.
