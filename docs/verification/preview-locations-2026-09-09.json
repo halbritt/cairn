@@ -76,11 +76,75 @@
     {
       "path": "/tmp/cairn-preview-location-residuals.json",
       "sha256": "44475821b544927a865c74860494807ff2674e3af56e6c152b4a5b83dbc706f6"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-deployment/installation.json",
+      "sha256": "974c920d3014a6a96077e7b20fd51e88a781ff6e3959582f228de760cf3e1b7d"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-deployment/build.txt",
+      "sha256": "6c8c72bf2dcbe0704ec1ae9b36011c2efce63407f1f08d9d6206c2acb1b78ffe"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-deployment/search.json",
+      "sha256": "8a6152fe7ec89a3b6826495667907bf8d33ebc551f29de7df06bbbbdf0aa2c7a"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-deployment/pull-request.json",
+      "sha256": "e465be6ba215576f210853c5ceabf17a9b99da173518d09ff31cffca23c059a8"
+    },
+    {
+      "path": "/tmp/cairn-preview-location-deployment/pull.json",
+      "sha256": "44955ffe846c0c31a358c184227e4ab358b498525d252fd0f230679cb76366fb"
     }
   ],
   "limits": [
     "No independent model-task benefit or total-context savings measured.",
     "Metadata increases index cost; source range does not establish relevance.",
     "No native model calls or operational fixture capture."
-  ]
+  ],
+  "deployment": {
+    "installed_revision": "fe59de9fcb0f3ee285f68b522274d36dfcef62c4",
+    "clean_build": true,
+    "before": {
+      "api_pid": "3615987",
+      "store_pid": "163669",
+      "binary_sha256": "c912496c4fd12b75f9996367bfdd7fb8e7ca8701877c6a6711d137e62ec9b66b",
+      "adapter_sha256": "4d07a80fd26585b5a9a71744da2f0598b2d751cccabbe8ed8b96355bb0c444d0"
+    },
+    "after": {
+      "api_pid": "3672179",
+      "store_pid": "163669",
+      "binary_sha256": "de5f606095f8195dac8293f292c93ea344553cc7d58e442e46b7d555acd297f4",
+      "adapter_sha256": "926bcd54dcf62cff3d474ced38f79c9f03ce2e6b37adf21d4244a8ccb0822797"
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d",
+      "/home/halbritt/.local/share/cairn/semantic/worker": "ae97c97e9dca97c3435cd61f77223f9f25cf635b010b2f230e0a84d1537c6d72",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954"
+    },
+    "schema_migration": false,
+    "operational_records_changed": 0,
+    "operational_passage": {
+      "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+      "version": 10,
+      "full_body_sha256": "e37d059ce6536b1376b85f9faaa22aad8d5a826869a8f83e357e5cca3060de41",
+      "summary_span": {
+        "offset": 3736,
+        "length": 154
+      },
+      "exact_source_bytes": true,
+      "bytes_pulled": 154,
+      "credits_remaining": 3,
+      "retry_exact": true
+    }
+  },
+  "ci": {
+    "run_id": 34395712027,
+    "revision": "fe59de9fcb0f3ee285f68b522274d36dfcef62c4",
+    "conclusion": "success",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34395712027"
+  }
 }

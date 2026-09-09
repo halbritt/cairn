@@ -49,3 +49,29 @@ records their hashes. This establishes a usable source-location path, not lower
 total context use or improved task outcomes. Locations consume index space and
 may reduce entries per page. Semantic similarity does not establish relevance;
 a lexically unmatched semantic result still has its ordinary prefix preview.
+
+## Local deployment
+
+Clean `fe59de9` is installed as CLI and running API. The binary SHA-256 is
+`de5f606095f8195dac8293f292c93ea344553cc7d58e442e46b7d555acd297f4`.
+The matching bundled OpenCode adapter includes the source-range tool guidance;
+its SHA-256 is `926bcd54dcf62cff3d474ced38f79c9f03ce2e6b37adf21d4244a8ccb0822797`.
+Both services are active; the store process, migration 030, connection settings,
+Codex configuration and two-thread semantic worker are preserved.
+
+The ordinary hosted profile repeated the operational `VERSION_CONFLICT` query.
+OpenCode procedure v10 now supplied offset 3,736 and length 154. Passing that
+range into the existing pull returned exactly those source bytes, matching the
+previous full body and full-source digest, with three credits remaining. Retrying
+returned the identical response. No operational note was changed. Deployment
+artifacts remain under `/tmp/cairn-preview-location-deployment/`.
+
+This is an actual source inspection through the installed path. It does not
+establish task improvement or compare overall context costs. Pincite packet
+`pkt-43c2751e7849208c` supported the bounded implementation decision; its seven
+remaining obligations are classified as nonmaterial in the retained decision
+because they concern unchanged interfaces, a recurring-change study, or broader
+procedures already narrowed by the explicit alternatives and compatibility checks.
+
+[CI for `fe59de9`](https://github.com/halbritt/cairn/actions/runs/34395712027) passed
+PostgreSQL/race, Python tests, vet and build.

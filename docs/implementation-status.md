@@ -99,11 +99,11 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and running API: clean `9fb278b025e1a0897e0efcc8282831e5f738d68a`,
-  with SHA-256 `c912496c4fd12b75f9996367bfdd7fb8e7ca8701877c6a6711d137e62ec9b66b`.
-  The retained-history update restarted the API without a migration. Assessment
-  history, note excerpts, precise citations and evidence capture remain installed;
-  host settings, adapters and the two-thread semantic worker are preserved.
+- Installed CLI and running API: clean `fe59de9fcb0f3ee285f68b522274d36dfcef62c4`,
+  with SHA-256 `de5f606095f8195dac8293f292c93ea344553cc7d58e442e46b7d555acd297f4`.
+  Preview positions are installed with the matching OpenCode tool guidance.
+  The API restarted without a migration; host settings and the two-thread
+  semantic worker are preserved. Earlier capabilities remain installed.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -121,8 +121,8 @@ Live checks on 2026-09-09 found:
   SHA-256 `d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954`.
   It adds no persistent embedding cache or model service.
 
-The [evidence-envelope deployment report](verification/evidence-limit-2026-09-09.md#local-deployment)
-records the backup, executable/adapter checks and hosted smoke path. Installation
+The [preview-position deployment report](verification/preview-locations-2026-09-09.md#local-deployment)
+records the executable/adapter checks and hosted source inspection. Installation
 paths and credentials stay outside Git. No automatic backup rotation, pruning
 or grooming timer is installed. Use the user services for the managed store's
 lifecycle; standalone scripts also support isolated/manual installations.
@@ -135,7 +135,7 @@ Its optional checks exercised the actual CLI/Unix API, independent MCP stdio
 client, native OpenCode tools and cached-response compatibility with the previous
 binary. The linked feature reports identify their fixtures and limits.
 
-[CI for installed source `9fb278b`](https://github.com/halbritt/cairn/actions/runs/34392942583)
+[CI for installed source `fe59de9`](https://github.com/halbritt/cairn/actions/runs/34395712027)
 passed PostgreSQL integration with the race detector, Python tests, vet and build.
 The earlier thread experiment ran twenty-one complete paired worker cases
 and retained raw measurements outside the repository; it did not change store or
@@ -978,3 +978,21 @@ Go, 30 Python tests and vet/format checks passed. See the
 [verification](verification/preview-locations-2026-09-09.md) and
 [manifest](verification/preview-locations-2026-09-09.json). Task benefit and net
 context savings remain unmeasured. Deployment is recorded separately.
+
+### 2026-09-09 — installed preview locations and exact passage retrieval
+
+Clean `fe59de9` is installed as CLI/API with its bundled OpenCode adapter. Both
+services are active, with the existing store process and migration 030. Connection
+settings, Codex configuration and semantic runtime files retain their previous
+checksums. An ordinary hosted search located a passage in the existing OpenCode
+v10 procedure; a pull using the returned offset 3,736 and length 154 returned
+those exact bytes and retained three credits. Its retry was identical.
+
+The [deployment report](verification/preview-locations-2026-09-09.md#local-deployment)
+and [manifest](verification/preview-locations-2026-09-09.json) retain checksums and
+source correspondence. No operational note or prior task assessment changed.
+This verifies practical source inspection; memory's task contribution and net
+context benefit remain separate questions.
+
+[Exact implementation CI](https://github.com/halbritt/cairn/actions/runs/34395712027)
+passed PostgreSQL/race, Python tests, vet and build.
