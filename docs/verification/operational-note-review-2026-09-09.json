@@ -1,0 +1,125 @@
+{
+  "schema": "cairn.operational-note-review/1",
+  "source_commit": "87356a88cd81d2cc9899a4286784830ed2457e49",
+  "installed_source_commit": "ecbcc54c5ae0c177ea83bab660b083f5ba8f29ab",
+  "scope": {
+    "repo": "/home/halbritt/git/cairn",
+    "task_id": "note-currentness-review",
+    "run_id": "note-currentness-20260909",
+    "destination": "hosted"
+  },
+  "eligible_notes": 9,
+  "revised": [
+    {
+      "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+      "before_version": 6,
+      "after_version": 7,
+      "exact_saved_body": true,
+      "preserved_fields": [
+        "record_id",
+        "class",
+        "lifecycle",
+        "sensitivity",
+        "kind",
+        "scope",
+        "claim_type",
+        "witness",
+        "attribution_state"
+      ],
+      "before_body_sha256": "5386ba5263e1111d346f3ec75fee36e56ff6c8618455dcd975be716b41de90aa",
+      "after_body_sha256": "a0251790aad425c4953cb96aa5321375a1df24d26d98724a8eceeb28eab2f0d6"
+    },
+    {
+      "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+      "before_version": 4,
+      "after_version": 5,
+      "exact_saved_body": true,
+      "preserved_fields": [
+        "record_id",
+        "class",
+        "lifecycle",
+        "sensitivity",
+        "kind",
+        "scope",
+        "claim_type",
+        "witness",
+        "attribution_state"
+      ],
+      "before_body_sha256": "c4706ed1dde364563704a0a61be88de2f588a81cdcb539a93af9e9931c267632",
+      "after_body_sha256": "f5b4e0c2b32ccf53a1702dfdb71c94acede7a512a080ea9ce0edb66ad7304344"
+    }
+  ],
+  "unchanged_notes": 7,
+  "review_scope": "Current setup, native scope, discovery and permission instructions; historical experiment claims are not comprehensively requalified",
+  "codex": {
+    "thread_id": "01a085a2-26d2-7aa3-b0ef-8b0fbec42bf2",
+    "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+    "version": 5,
+    "exact_saved_body": true,
+    "discovery": {
+      "state": "ready",
+      "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+      "algorithm": "bge-max-chunk/1",
+      "scores_sha256": "122976c84b9486018c3fbc858df2b40ad6eea67039702e04ac2b548cf3113db4"
+    },
+    "procedure_rank": 1,
+    "model_turns_started": 0
+  },
+  "opencode": {
+    "route": "normal opencode run with scripted loopback completions",
+    "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+    "version": 7,
+    "exact_saved_body": true,
+    "discovery": {
+      "state": "ready",
+      "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+      "algorithm": "bge-max-chunk/1",
+      "scores_sha256": "808c8e68f23ea8db7f1dd0924197199730466be03f7a9718650ca55c73b5aa4b"
+    },
+    "scope": {
+      "repo": "/home/halbritt/git/cairn",
+      "task_id": "opencode/ses_f7a5da10effeLTEqGmjF1m4sB9",
+      "run_id": "ses_f7a5da10effeLTEqGmjF1m4sB9"
+    },
+    "procedure_rank": 1,
+    "model_inference_calls": 0,
+    "exit_code": 0,
+    "adapter_sha256": "e7888f9ce4f4eac83fbcbcdffd05956f44da090c0e2e1ce7f8e20a6fb169e274"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-currentness-review/index.json",
+      "sha256": "f0f320de7f5e2986929ca04147875bd33b8a56af087f8ec59e31d5b35f50e7d5"
+    },
+    {
+      "path": "/tmp/cairn-currentness-review/config-default.json",
+      "sha256": "8b76b1d017b4c9641c1a84e0e548e4f4390a64c8cfde75aabe9cac719f766bb8"
+    },
+    {
+      "path": "/tmp/cairn-currentness-review/config-memory-only.json",
+      "sha256": "e5d887347f0b2e2ca19afc37f8135ab7b3c294b0438d8a0ba5737e6152cea156"
+    },
+    {
+      "path": "/tmp/cairn-codex-currentness-verify/report.json",
+      "sha256": "d314eb3308c4f21e6d10f50292fc577e57d3555575011291a9b7d0993aa2d7d1"
+    },
+    {
+      "path": "/tmp/cairn-opencode-currentness-verify/report.json",
+      "sha256": "081a129af9d4ce412fdb6c993caf91aa86054a999327f0366ad08530881e6fae"
+    }
+  ],
+  "source_locators": [
+    "docs/mcp.md",
+    "docs/opencode-tools.md",
+    "docs/semantic-discovery.md",
+    "cmd/cairn/opencode_config.go",
+    "mcpapi/server.go",
+    "integrations/opencode/cairn.ts"
+  ],
+  "limits": [
+    "Selected manual maintenance by this coding agent",
+    "No independent model-selected correction or downstream task benefit",
+    "Only notes eligible for the ordinary hosted profile in the stated scope were inspected",
+    "Raw operational bodies and model-facing tool outputs remain outside Git"
+  ]
+}

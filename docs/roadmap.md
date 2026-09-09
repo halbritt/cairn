@@ -319,6 +319,12 @@ pulled A note through the existing authenticated edit contract. This closes the
 MCP correction-interface gap exposed by the configuration procedure revision;
 independent agent review and automatic learning remain open.
 
+An [operational note review](verification/operational-note-review-2026-09-09.md)
+corrected an ambiguous OpenCode permission example and updated both harness
+procedures with the deployed discovery options. Fresh native clients pulled the
+exact revised bodies. This is manual maintenance of useful guidance; independent
+correction and downstream task benefit remain open.
+
 [Body-only revision](verification/body-revision-2026-09-09.md) now lets ordinary
 MCP/OpenCode callers correct text without reconstructing scope, applicability,
 relations or attribution. The store preserves those fields under the existing
