@@ -49,7 +49,25 @@
         "process_state": "timeout",
         "runtime_error": "wall-clock invocation limit exceeded",
         "tool_calls": 33,
-        "permission_denials": 7
+        "permission_denials": 7,
+        "relay_summary": {
+          "report_sha256": "852470725af57a18de1c02b76ab886ed41047f008af6e0b7605eb85b22dd96b9",
+          "request_statuses": {
+            "failed": 3,
+            "completed": 24
+          },
+          "failure_types": {
+            "TimeoutError": 2,
+            "BrokenPipeError": 1
+          },
+          "rejections": 0,
+          "requests_with_usage": 24,
+          "requests_without_usage": 3,
+          "reported_prompt_tokens": 1154678,
+          "reported_completion_tokens": 28739,
+          "reported_cost_field_sum": "0.09205264",
+          "usage_boundary": "Sum of the last reported usage object per request. Missing request usage is excluded, not treated as zero. Cost is the provider-reported field, not a complete billing reconciliation."
+        }
       },
       {
         "mode": "direct_context",
@@ -75,7 +93,24 @@
         "process_state": "timeout",
         "runtime_error": "wall-clock invocation limit exceeded",
         "tool_calls": 28,
-        "permission_denials": 1
+        "permission_denials": 1,
+        "relay_summary": {
+          "report_sha256": "bd2715fa7bd2c85909fd358799acb85726899fee972fcd4660ef92f65d9dd879",
+          "request_statuses": {
+            "completed": 30,
+            "failed": 2
+          },
+          "failure_types": {
+            "TimeoutError": 2
+          },
+          "rejections": 3,
+          "requests_with_usage": 30,
+          "requests_without_usage": 2,
+          "reported_prompt_tokens": 1064883,
+          "reported_completion_tokens": 11402,
+          "reported_cost_field_sum": "0.042865775",
+          "usage_boundary": "Sum of the last reported usage object per request. Missing request usage is excluded, not treated as zero. Cost is the provider-reported field, not a complete billing reconciliation."
+        }
       },
       {
         "mode": "native_context",
@@ -118,6 +153,24 @@
             "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
           },
           "admitted_input_matches": true
+        },
+        "relay_summary": {
+          "report_sha256": "abfa1de083696b8e030d54aa3dc95d2b3af98f6656d2b4681fb76892834269ec",
+          "request_statuses": {
+            "completed": 26,
+            "failed": 3
+          },
+          "failure_types": {
+            "TimeoutError": 2,
+            "ConnectionResetError": 1
+          },
+          "rejections": 0,
+          "requests_with_usage": 26,
+          "requests_without_usage": 3,
+          "reported_prompt_tokens": 857810,
+          "reported_completion_tokens": 9082,
+          "reported_cost_field_sum": "0.036571857",
+          "usage_boundary": "Sum of the last reported usage object per request. Missing request usage is excluded, not treated as zero. Cost is the provider-reported field, not a complete billing reconciliation."
         }
       }
     ]

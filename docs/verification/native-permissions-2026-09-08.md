@@ -31,6 +31,29 @@ Direct context contains the lesson twice and native context once, so the
 comparison is not dose-matched. No accepted Striatum catalog or production
 backend was changed.
 
+## Transport and usage limits
+
+Zero relay rejections does not mean every provider response completed. The
+control had two `TimeoutError` responses and one `BrokenPipeError`; direct
+context had two `TimeoutError` responses; native context had two `TimeoutError`
+responses and one `ConnectionResetError`. Five response timeouts lasted about
+90 seconds and one lasted about 45 seconds. The final broken/reset connections
+in control/native occurred near invocation termination. These observations do
+not establish which failure caused the missing repair.
+
+| Condition | Requests with usage / total | Reported prompt tokens | Reported completion tokens |
+|---|---:|---:|---:|
+| No memory | 24 / 27 | 1,154,678 | 28,739 |
+| Direct context | 30 / 32 | 1,064,883 | 11,402 |
+| Native context | 26 / 29 | 857,810 | 9,082 |
+
+These are sums of the last reported usage object for each request, including
+repeated prompt context. Failed requests have no retained usage object; missing
+usage is excluded rather than counted as zero. The metadata also preserves the
+sum of the reported `cost` fields. It is not a complete billing reconciliation.
+The different token totals do not establish efficiency: no condition completed
+the task, response failures differ, and direct/native lesson counts differ.
+
 ## Observed setup defect
 
 The control transcript records a denied `write` to `/tmp/opencode`, although
