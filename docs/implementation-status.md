@@ -8,7 +8,8 @@ The installed system supports ordinary cross-session use today.
 The strongest usefulness evidence is one successful knowledge transfer between
 harnesses and one accepted configuration task after a stored procedure was
 corrected. Durable improvement across coding tasks and harnesses remains
-unestablished. The [roadmap](roadmap.md) retains the complete requirements and
+unestablished. Task value may be qualitative, indirect or delayed; mechanical
+proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
 This snapshot assesses the source changes recorded below and the local installation
@@ -95,11 +96,13 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and running API: clean implementation commit
-  `45ca33b9bd2431bffe9c83a44efa51de134d7220`. Both executable hashes match
+- Installed CLI: clean `9e6f6d3e3452e84b74006245489cb4dcf61134c2`, with SHA-256
+  `2c07838ee7d78b50b6ecb9c5cba3fd62194d32ed9fda1dd1944e2f0eadab6c67`.
+  It includes the verified Codex configuration generator. The running API remains
+  on clean `45ca33b9bd2431bffe9c83a44efa51de134d7220`, SHA-256
   `50c2f23d43e2be6a04ce51f379b927f63f084b4440986dad1ed7b210304c6b31`.
-  Later source commits through `19facc1` contain verification and benchmark
-  metadata changes; the one-thread candidate was not deployed.
+  This CLI setup change required no server restart or migration. The one-thread
+  semantic candidate was not deployed.
 - Dedicated PostgreSQL **17.10**, with migrations **001–029** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -131,8 +134,9 @@ Its optional checks exercised the actual CLI/Unix API, independent MCP stdio
 client, native OpenCode tools and cached-response compatibility with the previous
 binary. The linked feature reports identify their fixtures and limits.
 
-[CI for assessed source `19facc1`](https://github.com/halbritt/cairn/actions/runs/34378500108)
-passed. The thread experiment ran twenty-one complete paired worker cases
+[CI for installed source `9e6f6d3`](https://github.com/halbritt/cairn/actions/runs/34381023579)
+passed PostgreSQL integration with the race detector, Python tests, vet and build.
+The earlier thread experiment ran twenty-one complete paired worker cases
 and retained raw measurements outside the repository; it did not change store or
 runtime behavior. No production database was used for those tests. Today's
 installation checks read service/build information and database schema metadata.
@@ -690,3 +694,33 @@ U7/U8 remain requested, open and lower priority than useful task progress with
 Codex/OpenCode. Further adapter work needs either that progress or a concrete task
 that requires the missing harness. The verified Codex setup command is being
 completed; it is setup capability, not a new task-benefit result.
+
+### 2026-09-09 — value evidence is broader than mechanical proof
+
+The owner clarified that the objective is convincing evidence that memory creates
+task value, without restricting value to what a mechanical evaluator can prove.
+Qualitative, indirect and delayed benefits remain eligible. Roadmap evaluation
+guidance now calls for task context, source evidence, observed behavior/artifacts,
+explicit judgment and alternative explanations; comparisons and tests are used
+where they fit the claim. No single score, citation count or known task oracle is
+the product objective. Unexpected benefits may be investigated as exploratory
+evidence. This does not upgrade any previous trial's acceptance or causal claim.
+
+### 2026-09-09 — Codex setup installation completed
+
+The history correction was committed as `aa0a845`, the verified generator as
+`0ffe2dd`, and the task-value priority clarification as `9e6f6d3`. A clean CLI build
+of `9e6f6d3` is installed; the API remains on `45ca33b` without a restart or schema
+change. Existing host configuration hashes are preserved. Native generated-file
+checks passed against the installed build in both scope modes. The selected
+ordinary Codex procedure now includes the command at version 6, verified by a fresh
+scoped pull. [Installation evidence](verification/codex-config-2026-09-09.md#local-installation).
+
+### 2026-09-09 — cumulative value across sustained work
+
+The owner cited confidence in Pincite's benefit across multiple model turns despite
+no single-turn value proof. The roadmap now explicitly admits longitudinal
+evaluation across turns, sessions and related tasks: improved decisions, consistency,
+less rediscovery and correction burden may emerge over time. Practitioner judgment
+can motivate and support a qualified assessment; it is not silently converted into
+a causal result or prior proof of Cairn's value. Evaluation cost also counts.

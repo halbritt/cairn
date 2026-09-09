@@ -49,7 +49,7 @@ client behavior was checked separately.
   required startup configurations both connected. Two automatic scopes were
   distinct; the explicit scope matched the supplied task/run exactly.
 - `make test` passed all Go package tests and 30 Python tests. `make check build`
-  passed vet, formatting and build. Database integration was not rerun for this
+  passed vet, formatting and build. The local disposable integration script was not rerun for this
   CLI-only change; no database behavior changed. Native retrieval used the ordinary
   hosted-agent profile, without protected operator reports or test mutations.
 
@@ -61,3 +61,22 @@ Claude interfaces remain separate open roadmap items.
 The [verification manifest](codex-config-2026-09-09.json) retains source hashes,
 check artifacts and doctrine decision provenance. Raw native replies and local
 configuration are private temporary artifacts, not committed memory content.
+
+## Local installation
+
+Installed the clean CLI build from `9e6f6d3e3452e84b74006245489cb4dcf61134c2`,
+SHA-256 `2c07838ee7d78b50b6ecb9c5cba3fd62194d32ed9fda1dd1944e2f0eadab6c67`.
+The previous executable is retained under the private deployment directory.
+The existing API process remains on `45ca33b`; no server restart, migration or
+host configuration change was needed. API executable and Codex/OpenCode/semantic
+configuration hashes remained unchanged.
+
+A copy of the installed executable passed the same native generated-file check:
+two distinct conversation scopes and one explicit scope, all five tools, exact
+procedure retrieval and no model turn. The selected ordinary Codex procedure was
+then revised to include the verified setup command and retrieved at version 6
+through the scoped hosted profile. This is manual procedure maintenance.
+
+[CI for installed source `9e6f6d3`](https://github.com/halbritt/cairn/actions/runs/34381023579)
+also passed PostgreSQL integration with Go's race detector, all Python checks,
+vet and build. This supplies integration coverage beyond the local CLI checks.

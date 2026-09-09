@@ -130,6 +130,51 @@ settle mechanics without canceling unfinished requirements.
 
 ## Delivery sequence
 
+### Assess task value without narrowing it to an evaluator
+
+Owner clarification, 2026-09-09: the desired result is convincing evidence that
+memory creates task value. Mechanical provability is not a requirement for every
+form of value. The evaluation must not reward only benefits that happen to be easy
+to count, nor make a particular evaluator's preferences the system's objective.
+
+Useful outcomes can include a better decision or artifact, less rediscovery,
+earlier recognition of a problem, preserved constraints, a more appropriate
+question, or continuity across tasks and harnesses. Some benefits are qualitative,
+indirect or delayed. Keep them eligible for investigation rather than assigning
+them zero value because a task oracle cannot score them.
+
+Evaluate sequences of meaningful work across turns, sessions and related tasks
+when the benefit accumulates there. The owner cited Pincite as an example: no
+single-turn value proof, but confidence from repeated use that guidance helps.
+That is practitioner judgment supporting a hypothesis worth examining, not an
+established causal result or evidence already demonstrating Cairn's value. Look
+for durable changes in decisions, consistency, rediscovery and correction burden,
+including counterexamples. Do not require each retrieval to justify itself as an
+isolated intervention, or make evaluation overhead consume the benefit sought.
+
+For substantive claims, retain the actual task context, relevant memory and its
+provenance, the observed behavior or artifact, and the reasoning connecting them.
+Include contrary evidence and plausible alternatives such as the model's prior
+knowledge, direct context, task differences or ordinary iteration. Separate what
+was observed from the judgment about its value and from stronger causal claims.
+An informed reviewer or the owner's assessment can support a qualitative value
+claim; label who made that judgment and its limits. Never invent human acceptance.
+
+Use a test, comparison or repeated trial when it answers a material question.
+Use source-backed case analysis and artifact review when those better fit the
+benefit. Controls and repeated observations can strengthen attribution, but every
+useful case need not become a mechanically scored benchmark. Unexpected benefits
+can be examined after the fact if identified as exploratory. Preserve failures,
+unknowns and the cost of retrieving, reading, maintaining and correcting memory.
+
+Choose tasks because the work matters, then choose evidence appropriate to the
+claimed benefit. Avoid a single aggregate success score, training toward one known
+oracle, or treating citation/delivery counts as a target. Revisit the evaluation
+when it excludes plausible value or encourages superficial compliance. Current
+Codex/OpenCode interfaces are sufficient for this work; additional adapters remain
+lower priority. This clarification broadens admissible evidence, not the claims
+supported by the trials already completed.
+
 Repair current contract violations first. Then build the smallest real host
 integration and the observation join; add currentness, index/pull and historical
 evaluation; generate evidence-attached demand; only then add grooming. Lifecycle,
@@ -481,6 +526,11 @@ Depends on U4/U5 and E3/E4. R4's early protected event does not satisfy this sta
 | --- | --- | --- |
 | D1 — evidence-attached demand docket | partial | Failure→recovery pairs and standalone explicitly assessed task failures share evidence-attached review dispositions. [Exact-signature review groups](demand-review.md#review-matching-failures-together) combine current due proposals across tasks with matching repository/task-class/binding/capability fields, preserving each source and witness. [Verification](verification/proposal-groups-2026-09-08.md) covers 105-member pagination and inspection of the restored real model failure. Current pairs suppress duplicate standalone demand without rewriting source history. A [restored real-trial check](verification/standalone-demand-2026-09-08.md) verified generation and dismissal with zero memory exposures. General novel-failure discovery, richer conflict/promotion groups and measured review burden remain open. |
 | D2 — adaptation acceptance | partial | A reviewed, evidence-backed lesson was promoted, selected and cited in a real H0 run that avoided the baseline's environment regression within budget. Preserve the bounded [recurrence result](verification/reviewed-recurrence-2026-09-08.md), negative results and unknown overall acceptance. Broader task/host acceptance and transfer remain open. Exposure alone must not amplify ranking. |
+
+D2's value evidence may include reviewed qualitative or indirect improvements,
+with sources, reasoning and alternative explanations under the evaluation guidance
+above. Mechanical task acceptance is one kind of evidence, not the definition of
+value or a universal prerequisite for a supported qualitative claim.
 
 The [demand review path](demand-review.md) now generates bounded, source-attached
 failure/recovery proposals from assessed task outcomes. It excludes binding
