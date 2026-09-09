@@ -99,11 +99,11 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and running API: clean `559307cbffe4f95fa4c85f54804f5d14f3e65197`,
-  with SHA-256 `b79d63c574560add0d7eb10fced886f3d8a355c5460d1084c360256831b5df2b`.
-  The note-excerpt update installed the matching native OpenCode adapter and
-  restarted the API. No migration was needed. The earlier Codex generator remains
-  included; the one-thread semantic candidate was not deployed.
+- Installed CLI and running API: clean `9c8c22b6b6f81866535fc6d90ad10cf537517f46`,
+  with SHA-256 `d453cf177382ec42fcccb679aaaa35ed332b6e3c53c132fdb5dcede63b9ca4c8`.
+  The assessment-history update restarted the API without a migration. The earlier
+  note-excerpt adapter and Codex configuration generator remain installed; host
+  settings and the two-thread semantic worker are preserved.
 - Dedicated PostgreSQL **17.10**, with migrations **001–029** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -121,7 +121,7 @@ Live checks on 2026-09-09 found:
   SHA-256 `d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954`.
   It adds no persistent embedding cache or model service.
 
-The [note-excerpt deployment report](verification/note-spans-2026-09-09.md#local-deployment)
+The [assessment-history deployment report](verification/assessment-history-2026-09-09.md#local-deployment)
 records the backup, executable/adapter checks and hosted smoke path. Installation
 paths and credentials stay outside Git. No automatic backup rotation, pruning
 or grooming timer is installed. Use the user services for the managed store's
@@ -135,7 +135,7 @@ Its optional checks exercised the actual CLI/Unix API, independent MCP stdio
 client, native OpenCode tools and cached-response compatibility with the previous
 binary. The linked feature reports identify their fixtures and limits.
 
-[CI for installed source `559307c`](https://github.com/halbritt/cairn/actions/runs/34384075765)
+[CI for installed source `9c8c22b`](https://github.com/halbritt/cairn/actions/runs/34386074013)
 passed PostgreSQL integration with the race detector, Python tests, vet and build.
 The earlier thread experiment ran twenty-one complete paired worker cases
 and retained raw measurements outside the repository; it did not change store or
@@ -808,3 +808,14 @@ Disposable API and CLI checks, PostgreSQL/race integration, Go tests, 30 Python
 tests, vet and build passed. This completes access to existing review data;
 improved review decisions remain to be observed. [Verification](verification/assessment-history-2026-09-09.md)
 and [manifest](verification/assessment-history-2026-09-09.json) retain the evidence.
+
+### 2026-09-09 — assessment history installed
+
+Clean `9c8c22b` is installed as the CLI and running API. Both services are active
+following the API restart; host settings, adapters and the semantic worker are
+unchanged. The hosted client read its owned empty history with home lookup and
+client database access disabled. Exact-commit CI passed. A selected ordinary
+procedure describing the new read and its limits was saved and pulled exactly
+from a fresh task scope. [Deployment details](verification/assessment-history-2026-09-09.md#local-deployment)
+include the checks and retained metadata. No operational assessment was written;
+no task-value claim is added by this deployment.

@@ -51,3 +51,29 @@ without database access. It does not establish improved review decisions or
 longitudinal memory value. The [manifest](assessment-history-2026-09-09.json)
 records source, checks and decision provenance; local deployment is recorded below
 when completed.
+
+## Local deployment
+
+Clean commit `9c8c22b6b6f81866535fc6d90ad10cf537517f46` is installed as the CLI
+and running API, both SHA-256
+`d453cf177382ec42fcccb679aaaa35ed332b6e3c53c132fdb5dcede63b9ca4c8`.
+The API restarted and both user services are active. The previous binary is
+retained privately. Codex/OpenCode settings, the installed adapter and semantic
+worker/drop-in hashes are unchanged. No migration or operational assessment write
+was performed.
+
+The ordinary hosted profile read the empty history of this task's owned receipt
+through the installed CLI/API with home-directory lookup disabled and an invalid
+client database address. Narrative history and refusal checks used the disposable
+fixtures described above. The deployment manifest records the live executable
+and configuration checks.
+
+A concise selected ordinary procedure records the new history command, ownership
+limits and distinction between task acceptance and memory value. A fresh task
+scope searched and pulled its exact version-1 body through the hosted profile.
+This preserves usage guidance for later work; it is not evidence that a later
+review decision improved. The note body remains outside Git.
+
+[CI run 34386074013](https://github.com/halbritt/cairn/actions/runs/34386074013)
+passed for the exact installed implementation commit: PostgreSQL/race tests,
+Python tests, vet and build.
