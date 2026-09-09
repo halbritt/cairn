@@ -99,10 +99,10 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and running API: clean `3e08c18fedbb920d9f0ddecaa3e4bfae1139ee67`,
-  with SHA-256 `01b27975441815ddd656699688ff02bc6be2d8a4af20530774bb18dd5814c940`.
-  The citation update backed up the store, applied migration 030 and restarted
-  the API. Assessment history, note excerpts and evidence capture remain installed;
+- Installed CLI and running API: clean `9fb278b025e1a0897e0efcc8282831e5f738d68a`,
+  with SHA-256 `c912496c4fd12b75f9996367bfdd7fb8e7ca8701877c6a6711d137e62ec9b66b`.
+  The retained-history update restarted the API without a migration. Assessment
+  history, note excerpts, precise citations and evidence capture remain installed;
   host settings, adapters and the two-thread semantic worker are preserved.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
@@ -135,7 +135,7 @@ Its optional checks exercised the actual CLI/Unix API, independent MCP stdio
 client, native OpenCode tools and cached-response compatibility with the previous
 binary. The linked feature reports identify their fixtures and limits.
 
-[CI for installed source `3e08c18`](https://github.com/halbritt/cairn/actions/runs/34389972263)
+[CI for installed source `9fb278b`](https://github.com/halbritt/cairn/actions/runs/34392942583)
 passed PostgreSQL integration with the race detector, Python tests, vet and build.
 The earlier thread experiment ran twenty-one complete paired worker cases
 and retained raw measurements outside the repository; it did not change store or
@@ -924,3 +924,23 @@ as do Go tests, 30 Python tests and vet/build. See the [contract](record-history
 [verification](verification/record-history-2026-09-09.md) and
 [manifest](verification/record-history-2026-09-09.json). Software checks establish
 access capability; installation and real maintenance use are recorded separately.
+
+### 2026-09-09 — installed ordinary history review
+
+Clean `9fb278b` is installed as CLI/API; both services are active with the existing
+store process and migration 030. Host settings, native adapter and semantic
+runtime files retain their previous checksums. The ordinary hosted profile read
+metadata plus exact Codex v6/v7 and OpenCode v8/v9 bodies, matching the preceding
+maintenance review's four source hashes without operator SQL or database access.
+This completes that practical inspection step through ordinary access; it does
+not establish an independent model-task benefit.
+
+A short selected history-review procedure was saved as
+`cd6217ad-2f69-45f1-bcfb-a01066909855` v1 and pulled exactly in a fresh task scope.
+Existing harness procedures were not expanded again. The [verification report](verification/record-history-2026-09-09.md)
+and [manifest](verification/record-history-2026-09-09.json) retain installed-source,
+review and guidance evidence. No storage, restore, grooming or authority policy
+was added by this read-only interface.
+
+[Exact installed-source CI](https://github.com/halbritt/cairn/actions/runs/34392942583)
+passed PostgreSQL race tests, Python tests, vet and build.

@@ -131,5 +131,106 @@
     "No new native MCP/OpenCode tool",
     "No aggregate context budget or reconstruction of pruned versions",
     "Task-benefit attribution not established by these software checks"
-  ]
+  ],
+  "installation": {
+    "installed_revision": "9fb278b025e1a0897e0efcc8282831e5f738d68a",
+    "clean_build": true,
+    "before": {
+      "api_pid": "3558785",
+      "store_pid": "163669",
+      "binary_sha256": "01b27975441815ddd656699688ff02bc6be2d8a4af20530774bb18dd5814c940"
+    },
+    "after": {
+      "api_pid": "3615987",
+      "store_pid": "163669",
+      "binary_sha256": "c912496c4fd12b75f9996367bfdd7fb8e7ca8701877c6a6711d137e62ec9b66b"
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.opencode/tools/cairn.ts": "4d07a80fd26585b5a9a71744da2f0598b2d751cccabbe8ed8b96355bb0c444d0",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d",
+      "/home/halbritt/.local/share/cairn/semantic/worker": "ae97c97e9dca97c3435cd61f77223f9f25cf635b010b2f230e0a84d1537c6d72",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954"
+    },
+    "schema_changed": false,
+    "ordinary_hosted_history_review": [
+      {
+        "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+        "version": 6,
+        "body_sha256": "6e9f70f013c0643a7881bca001c36ada3d749686e5f8f8b8fe0bde2c5b532c1c",
+        "exact": true
+      },
+      {
+        "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+        "version": 7,
+        "body_sha256": "12f1227233ec1e6e74eb8ce5dadd1d68a0a8ceb1413284b07a10de338d49ba13",
+        "exact": true
+      },
+      {
+        "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+        "version": 8,
+        "body_sha256": "c82ec6ddb689f3f6267370f9dd1c611ba813c75658a264e1897965258e370fc2",
+        "exact": true
+      },
+      {
+        "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+        "version": 9,
+        "body_sha256": "942ff26d54d6aa4390751320ddb0db7d5292b7ef29d509f00e71ec299e6fa199",
+        "exact": true
+      }
+    ],
+    "operator_sql_for_review": false,
+    "operational_record_mutations": 0
+  },
+  "maintained_guidance": {
+    "record_id": "cd6217ad-2f69-45f1-bcfb-a01066909855",
+    "version": 1,
+    "body_sha256": "e31d4d277eee3cf0169e5f1193a9a85c9b318e4f7a658552901143c0f223bad0",
+    "fresh_scope_exact_full_pull": true
+  },
+  "deployment_artifacts": [
+    {
+      "path": "/tmp/cairn-record-history-deployment/before.json",
+      "sha256": "be3e33fc39930c25430d6a5ae2c51d7e986308d09a777f31f081c6fce395dd85"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/codex-page.json",
+      "sha256": "38adc38dbc2cec4eb8dc1310a6e93310db01bcc3c81c901d9682ad101163797f"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/codex-version-6.json",
+      "sha256": "85e088aae530266bec5b13ca6ea95fee45a98f306ce41b07348aa84c7d44bfc9"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/codex-version-7.json",
+      "sha256": "85aa99626cb8658d5b12eadb5a8ff651d28bf28005ede3cd11dfdb5512fc5d05"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/guidance-verification.json",
+      "sha256": "ff4322b0fc09f9936e718b91a50066fdc379235a9fbde2961c6e6d5f84f79a73"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/installation.json",
+      "sha256": "783850f860c1199e5ae613168f7c297da6b690926e9e8fe95dd5933ab2a4fd56"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/opencode-page.json",
+      "sha256": "3b01025e96c3f072ac2b9533a1db06b683e3803b5b78d88bb0d29c948f396099"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/opencode-version-8.json",
+      "sha256": "6435f8f19cdc2972dc4ee7e795ad596c19a55cb7670d8a75385e6a0ca83bf0ab"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/opencode-version-9.json",
+      "sha256": "daeae89c92c0b4a7d212071cc4fddee8180967a5540b9ca22c7be39628e110d5"
+    }
+  ],
+  "ci": {
+    "run_id": 34392942583,
+    "commit": "9fb278b025e1a0897e0efcc8282831e5f738d68a",
+    "conclusion": "success",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34392942583"
+  }
 }

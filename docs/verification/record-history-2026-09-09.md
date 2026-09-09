@@ -49,3 +49,28 @@ consumption closure passed. Twelve residual route obligations are classified as
 nonmaterial in the manifest: separate architecture/interface redesign is not
 introduced, the observed missing read justifies this bounded change without a
 recurring-change study, and no-change alternatives were considered in the plan.
+
+## Installed use
+
+Clean `9fb278b025e1a0897e0efcc8282831e5f738d68a` is installed as the CLI and
+running API, SHA-256
+`c912496c4fd12b75f9996367bfdd7fb8e7ca8701877c6a6711d137e62ec9b66b`.
+Both services are active; the store process, migration 030, host configuration,
+native adapter and semantic worker files remain unchanged.
+
+The ordinary hosted profile listed metadata and read the exact Codex procedure
+v6/v7 and OpenCode procedure v8/v9 bodies from the preceding maintenance review.
+All four body hashes match that review's retained evidence. This inspection used
+no operator SQL or database credentials and did not mutate those records. It
+completes the previously operator-only comparison through the ordinary interface.
+No claim about improved model decisions follows from that access check.
+
+A selected ordinary procedure explaining history was saved as record
+`cd6217ad-2f69-45f1-bcfb-a01066909855` v1 and retrieved intact from a fresh task
+scope. Its source and checksum are retained in the manifest. This adds practical
+review guidance without expanding the existing harness procedures or conferring
+authority. Deployment and review responses remain under
+`/tmp/cairn-record-history-deployment/`; raw note bodies are outside the checkout.
+
+[CI for the exact installed source](https://github.com/halbritt/cairn/actions/runs/34392942583)
+passed PostgreSQL race tests, Python tests, vet and build.
