@@ -204,8 +204,11 @@ Cairn service and a confined shell fixture. A distinct
 [native recurrence preflight](verification/native-recurrence-preflight-2026-09-08.md)
 now verifies a complete frozen repair workspace and the existing oracle against
 both its defective baseline and reviewed fix. Its task-relevant lesson and
-three prospective conditions are pinned; the native model executor remains
-unimplemented. Accepted native contracts and real-build usefulness remain open. The
+three prospective conditions are pinned. The
+[native experiment executor](verification/native-executor-2026-09-08.md) now
+passes all three model-free conditions through the Driver and supervisor with
+usable source, exact prompt receipt and independent repair rejection. Actual
+model outcomes, accepted native contracts and real-build usefulness remain open. The
 [OpenCode trial host](verification/opencode-host-observation-2026-09-08.md) now
 uses per-arm authenticated observers, exact package/attempt joins and pending
 spawn/terminal recovery. Its full real-harness fixture verification includes
