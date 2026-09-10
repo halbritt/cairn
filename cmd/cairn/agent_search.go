@@ -28,6 +28,7 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	request := f.String("request-id", uuid.NewString(), "index retry identity")
 	tokens := f.Int("tokens", 32000, "available memory input room")
 	browse := f.Bool("browse", false, "browse eligible memory without a query (bounded by the memory budget)")
+	advisory := f.Bool("advisory-conflicts", false, "include qualified competing advisory positions together; context retrieval only")
 	signature := f.String("error-signature-sha256", "", "optional reviewed failure signature (SHA-256); a retrieval hint, not observed failure")
 	semantic := f.Bool("semantic", false, "optional semantic discovery; labelled lexical fallback if unavailable")
 	offset := f.Int("offset", 0, "ranked search page offset (0 to start), or next browse offset")
@@ -76,7 +77,7 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 		return agentSearchView{}, err
 	}
 	var result core.IndexResult
-	if err = client.Call(ctx, "index", core.CompileRequest{Entities: *entities, ErrorSignature: *signature, Kinds: kinds, RequestID: *request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *semantic,
+	if err = client.Call(ctx, "index", core.CompileRequest{AdvisoryConflicts: *advisory, Entities: *entities, ErrorSignature: *signature, Kinds: kinds, RequestID: *request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *semantic,
 		Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: query, Purpose: "context", AvailableTokens: *tokens,
 		Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability}}, &result); err != nil {
 		return agentSearchView{}, err

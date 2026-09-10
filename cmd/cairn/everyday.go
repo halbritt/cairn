@@ -83,6 +83,7 @@ func search(ctx context.Context, s *core.Store, args []string) (core.Package, er
 	var kinds []string
 	f := flags("search")
 	entities := entityFlags(f)
+	advisory := f.Bool("advisory-conflicts", false, "include qualified competing advisory positions together; context retrieval only")
 	signature := f.String("error-signature-sha256", "", "optional reviewed failure signature (SHA-256); a retrieval hint, not observed failure")
 
 	repo := f.String("repo", defaultRepo(), "repository identity")
@@ -101,7 +102,7 @@ func search(ctx context.Context, s *core.Store, args []string) (core.Package, er
 	if err := f.Parse(args); err != nil {
 		return core.Package{}, invalid(err.Error())
 	}
-	return s.Compile(ctx, core.CompileRequest{Entities: *entities, ErrorSignature: *signature, Kinds: kinds, Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability}, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: strings.Join(f.Args(), " "), Purpose: *purpose, AvailableTokens: *tokens}, core.Destination{Name: *dest, AllowLocal: *dest == "local"})
+	return s.Compile(ctx, core.CompileRequest{AdvisoryConflicts: *advisory, Entities: *entities, ErrorSignature: *signature, Kinds: kinds, Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability}, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: strings.Join(f.Args(), " "), Purpose: *purpose, AvailableTokens: *tokens}, core.Destination{Name: *dest, AllowLocal: *dest == "local"})
 }
 func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result, error) {
 	var kinds []string
@@ -124,6 +125,7 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 	prompt := f.String("prompt", "", "task prompt")
 	promptFile := f.String("prompt-file", "", "read task text from a regular UTF-8 file instead of --prompt")
 	query := f.String("query", "", "retrieval query (defaults to inline prompt for fresh compilation; file input stays separate)")
+	advisory := f.Bool("advisory-conflicts", false, "include qualified competing advisory positions together; context retrieval only")
 	signature := f.String("error-signature-sha256", "", "optional reviewed failure signature (SHA-256); a retrieval hint, not observed failure")
 	semantic := f.Bool("semantic", false, "optional semantic index discovery")
 	browse := f.Bool("browse", false, "browse an index without a query")
@@ -190,7 +192,7 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 	if err != nil {
 		return runner.Result{}, err
 	}
-	req := runner.Request{AttemptID: *attempt, Compile: core.CompileRequest{Entities: *entities, ErrorSignature: *signature, Kinds: kinds, RequestID: *request, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: *query, Purpose: "context", AvailableTokens: *tokens}, Destination: core.Destination{Name: *dest, AllowLocal: *dest == "local"}, Command: command, Directory: *directory, Carrier: *carrier, Prompt: *prompt, Timeout: *timeout, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability, Revision: *revision, WorkspaceSHA256: *workspace, ArtifactDirectory: filepath.Join(artifacts, "runs")}
+	req := runner.Request{AttemptID: *attempt, Compile: core.CompileRequest{AdvisoryConflicts: *advisory, Entities: *entities, ErrorSignature: *signature, Kinds: kinds, RequestID: *request, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: *query, Purpose: "context", AvailableTokens: *tokens}, Destination: core.Destination{Name: *dest, AllowLocal: *dest == "local"}, Command: command, Directory: *directory, Carrier: *carrier, Prompt: *prompt, Timeout: *timeout, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability, Revision: *revision, WorkspaceSHA256: *workspace, ArtifactDirectory: filepath.Join(artifacts, "runs")}
 	if *index {
 		req.Compile.Mode = "index"
 	}

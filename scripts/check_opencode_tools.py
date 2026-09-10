@@ -9,6 +9,7 @@ from check_note_transport import check_opencode_session, operator
 from check_failure_retrieval import check_harness as check_failure_signatures
 from check_literal_retrieval import check_harness as check_literals
 from check_entities import check_harness as check_entities
+from check_advisory_conflicts import check_harness as check_advisory_conflicts
 from check_opencode_unicode import check as check_unicode
 from check_native_history import check as check_history
 from check_recent_file_session import check as check_recent_files
@@ -62,6 +63,7 @@ def check(binary, root, environment, opencode, claim, support):
     check_history(invoke, large_history['record_id'])
     check_citations(invoke, support)
     check_entities(lambda name, args: invoke(name.removeprefix("cairn_"), args))
+    check_advisory_conflicts(lambda name, args: invoke(name.removeprefix("cairn_"), args), binary, environment)
     check_literals(lambda name, args: invoke(name.removeprefix("cairn_"), args))
     check_failure_signatures(lambda name, args: invoke(name.removeprefix("cairn_"), args), binary, environment)
     marker = 'nativeopencode' + uuid.uuid4().hex

@@ -84,6 +84,7 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 	query := f.String("query", "", "memory search query; use --browse instead for eligible previews")
 	browse := f.Bool("browse", false, "browse eligible previews without a query")
 	entities := entityFlags(f)
+	advisory := f.Bool("advisory-conflicts", false, "include qualified competing advisory positions together; context retrieval only")
 	signature := f.String("error-signature-sha256", "", "optional reviewed failure signature (SHA-256); a retrieval hint, not observed failure")
 	semantic := f.Bool("semantic", false, "optional semantic search with labelled lexical fallback")
 	prompt := f.String("prompt", "", "task text for the harness (or use --prompt-file)")
@@ -157,7 +158,7 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 	if room < 256 {
 		return agentStartPlan{}, &core.Error{Code: "BUDGET_REFUSED", Message: "task and startup guidance leave insufficient memory input room"}
 	}
-	request := core.CompileRequest{Entities: *entities, ErrorSignature: *signature, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run},
+	request := core.CompileRequest{AdvisoryConflicts: *advisory, Entities: *entities, ErrorSignature: *signature, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run},
 		Query: *query, Purpose: "context", AvailableTokens: room, Kinds: kinds, Context: &pins, Semantic: *semantic}
 	if *browse {
 		offset := 0

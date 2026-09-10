@@ -119,6 +119,14 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 	if string(actual) != string(want) {
 		t.Fatalf("lost canonical context fields:\ngot %s\nwant %s", actual, want)
 	}
+	_, err = run(context.Background(), []string{"agent", "--socket", socket, "--token-file", tokenFile,
+		"search", "--repo", scope.Repo, "--task", scope.TaskID, "--run", scope.RunID, "--advisory-conflicts", "query"}, strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req := <-requests; !req.AdvisoryConflicts {
+		t.Fatal("explicit advisory intent was lost")
+	}
 	base := []string{"agent", "--socket", socket, "--token-file", tokenFile,
 		"search", "--repo", scope.Repo, "--task", scope.TaskID, "--run", scope.RunID}
 	_, err = run(context.Background(), append(append([]string{}, base...), "--semantic", "query"), strings.NewReader(""))

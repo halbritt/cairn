@@ -176,7 +176,8 @@ a new request UUID and the original receipt/handle; the ordinary full-body
 whole note exceeds the pull budget. To read surrounding context, choose a wider
 range under the existing span limits. A preview alone may omit qualifications;
 read sufficient context before applying it and the complete note before editing.
-Class C pointers omit `summary_span` because instructions require whole pulls.
+Class C and [competing advisory positions](advisory-conflicts.md) omit
+`summary_span` because they require whole pulls.
 
 The location is sealed with the record version and full-body digest and counts
 toward index packing cost; fewer entries can fit a page. It grants no extra access
@@ -212,7 +213,7 @@ cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
 This makes selected text from a long saved note readable without increasing the
 24,000-byte session ceiling. Note offsets range from 0 to 65,535 and lengths from
 1 to 65,536 bytes. The offset must be inside the body; only EOF clips the length.
-Class C instructions refuse partial delivery. Omitting the span retains the whole
+Class C instructions and marked competing advisory positions refuse partial delivery. Omitting the span retains the whole
 pull, including its original retry identity and budget accounting.
 
 In a note excerpt, `selection` retains record, scope, evidence and authority

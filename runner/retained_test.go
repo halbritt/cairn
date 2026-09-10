@@ -79,7 +79,7 @@ func TestRetainedRunExecutesExactPackageWithoutCompile(t *testing.T) {
 
 func TestRetainedRunRejectsContextChangesBeforeBindingOrChild(t *testing.T) {
 	s, request, pkg := retainedFixture(t)
-	for _, change := range []string{"repo", "task", "run", "query", "purpose", "budget", "phase", "binding", "capability", "revision", "workspace", "destination", "seal", "mode", "kinds", "entities"} {
+	for _, change := range []string{"repo", "task", "run", "query", "purpose", "budget", "phase", "binding", "capability", "revision", "workspace", "destination", "seal", "mode", "kinds", "entities", "advisory-conflicts"} {
 		t.Run(change, func(t *testing.T) {
 			req := request
 			req.Compile.Context = nil
@@ -118,6 +118,8 @@ func TestRetainedRunRejectsContextChangesBeforeBindingOrChild(t *testing.T) {
 				req.Compile.Mode = "index"
 			case "kinds":
 				req.Compile.Kinds = []string{"note"}
+			case "advisory-conflicts":
+				req.Compile.AdvisoryConflicts = true
 			case "entities":
 				req.Compile.Entities = []core.EntityRef{{Kind: "file", Name: "different.go"}}
 			}

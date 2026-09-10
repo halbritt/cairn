@@ -30,8 +30,7 @@ updated too.
 This snapshot assesses the source changes recorded below and the local installation
 on 2026-09-10. Feature reports below preserve their own verification dates and limits.
 The [implementation history](#implementation-history) retains the earlier narrative
-and every committed change through `95ef2ed`, including failed trials and superseded
-work. Future updates should append dated history and corrections while refreshing
+and subsequent recorded changes, including failed trials and superseded work. Future updates should append dated history and corrections while refreshing
 the current summary; do not replace the historical record.
 
 ## Working capabilities
@@ -55,6 +54,12 @@ task acceptance. Native conversation/session scope does not identify individual
 execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
+
+[Qualified advisory conflict delivery](advisory-conflicts.md) is implemented and
+verified through the core, MCP and native OpenCode tools. Explicit requests return
+complete competing positions with currentness and privacy checks; default omission
+and binding refusals remain. Installation of this source update is pending; the
+builds named above remain the live baseline. Task benefit is unmeasured.
 
 [OpenCode guidance is separated by workflow](verification/procedure-maintenance-2026-09-09.md#2026-09-10--separate-ordinary-tools-from-harness-launch-instructions):
 the current setup/tool note is 9,270 bytes, while launcher instructions have a
@@ -3380,3 +3385,36 @@ an editorial workflow choice, not proof of better model decisions, an avoided
 failure, net savings or durable task benefit. No new model calls or automated
 grooming were introduced. See [the maintained procedure report](verification/procedure-maintenance-2026-09-09.md#2026-09-10--separate-ordinary-tools-from-harness-launch-instructions)
 and its exact partition evidence. All prior implementation history is preserved.
+
+
+### 2026-09-10 — qualified competing advisory positions
+
+Implemented explicit `advisory_conflicts` context retrieval through CLI, MCP,
+OpenCode and host start/run. Optional disputed A/B positions previously disappeared
+from retrieval. The opt-in now allocates complete marked previews or bodies,
+and pulling either preview returns the requested `selection` plus all `competing`
+positions under one shared credit/byte budget. Overlapping groups stay together;
+independently recorded equal-text positions are retained.
+
+Every counterpart must qualify for destination, scope, applicability, currentness,
+evidence and authority at its originally disputed version. Incomplete/private
+components are omitted without hidden IDs, bodies, reasons or counts. Binding C
+conflicts still refuse. Connected delivery components are bounded to 16 positions
+and 16 groups. Fresh pulls and retained launch recheck the full component before
+cached delivery; frozen historical recompilation preserves the original positions.
+Companion bodies participate in ordinary usage and deletion accounting. Schema 14
+marks explicit intent; the database remains at migration 034.
+
+The initial regression confirmed absent delivery. A draft assertion was refined
+from inline index bodies to compact previews with whole-group pulls. Review later
+reproduced an excluded failure-signature reference breaking historical replay;
+clearing it alongside the excluded candidate facts fixed the defect. Complete
+PostgreSQL/race integration, CLI/API/MCP, native OpenCode 1.18.21 protocol checks,
+previous-binary compatibility, static checks and 40 Python tests passed. No model
+calls or operational conflict mutations were made. See the
+[verification and limitations](verification/advisory-conflicts-2026-09-10.md).
+
+This is implemented retrieval behavior, not evidence of incremental task value.
+Richer interested-party resolution and acted-under-conflict outcomes remain L2
+work. The source checkpoint precedes installation; the previous installed CLI
+670cf19/API3ff1fcd remain the baseline until a subsequent installation entry.

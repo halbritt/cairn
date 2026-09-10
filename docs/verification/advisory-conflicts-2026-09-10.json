@@ -1,0 +1,239 @@
+{
+  "schema": "cairn.advisory-conflicts-verification/1",
+  "date": "2026-09-10",
+  "baseline_commit": "16122b01faceb06d35b8ec75cde270ccc08fbeda",
+  "change": "Explicit complete advisory conflict delivery through existing ordinary tools",
+  "task_value": "Unmeasured; deterministic protocol and store behavior only",
+  "database_migration": 34,
+  "operational_conflicts_mutated": false,
+  "model_calls": 0,
+  "limits": {
+    "component_positions": 16,
+    "component_groups": 16,
+    "index_positions": 100,
+    "expansion_bytes": 24000
+  },
+  "checks": [
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/core-final-2.log",
+      "sha256": "0073217c30b7755cc833ed346278db193ac5caab321e0bf9f12d451c626a5b3b"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/integration-verified.log",
+      "sha256": "af576b9662e8c9b1f0450d162d8697bdaaa39a075ba2a9d48e151c366e631b70"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/native.log",
+      "sha256": "a4376074902066b15956aa2cacafed1a75924b6ac0f9f5da0022ac362db72964"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/check-final.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/test.log",
+      "sha256": "c04c453479f730fa8cbc28ab77d658feb5e7e218d703d6711b1632aaba69dd50"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/signature-red.log",
+      "sha256": "0cc5180e9607ce67a0746989130021170456f4aeb464aa1b3068dab6a7513d13"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/delivery-red.log",
+      "sha256": "c5f5ab27e3ac8f92e2febbb333d19b9032f7101d56bd959645ea90b9951ad2e7"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/core-final-3.log",
+      "sha256": "83e599e33f16e4f0956437b7d17037de3895a93bcf26e2e44bb04f018c8a2199"
+    }
+  ],
+  "doctrine": {
+    "packet_id": "pkt-72f7d6c8f27d0e4c",
+    "packet_sha256": "72f7d6c8f27d0e4ca730928ddf6c7dea9e3ebb0cfaecb508eb4c3135080aef70",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "missing_obligations": [
+      {
+        "requirement": "query frequency and latency distribution",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "query plan or profile showing the access path",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "representative query workload",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "write and storage budget",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "write rate, storage, compaction, and maintenance overhead",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "caller nil checks and method use",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "documented absence semantics",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "dynamic type and dynamic value at the return",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "complexity and work-count model",
+        "required_by": "performance-algorithm-and-work-first",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "memory, latency, and semantic tradeoffs",
+        "required_by": "performance-algorithm-and-work-first",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "profile contribution and input distribution/scale",
+        "required_by": "performance-algorithm-and-work-first",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "representative empirical comparison",
+        "required_by": "performance-algorithm-and-work-first",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "accepted workload and operation boundary",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "authority to inspect the target and identify the objective owner",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "environment, input distribution and scale, concurrency, and success/failure population",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "latency percentile, throughput, CPU, memory, I/O, network, cost, or other metric with a target",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "owner for the objective and any quality tradeoff",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "access to instrumentation definition or benchmark harness",
+        "required_by": "performance-metric-semantics",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "instrumentation definition and configuration",
+        "required_by": "performance-metric-semantics",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "instrumentation overhead and data-loss limits",
+        "required_by": "performance-metric-semantics",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "sanity check against actual runtime behavior",
+        "required_by": "performance-metric-semantics",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "unit, aggregation window, population, and sampling behavior",
+        "required_by": "performance-metric-semantics",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "direct versus cumulative contribution and concurrency boundary analysis",
+        "required_by": "performance-profile-causal-bottleneck",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "profile type and sampling/granularity semantics",
+        "required_by": "performance-profile-causal-bottleneck",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "representative workload, version, and profile interval",
+        "required_by": "performance-profile-causal-bottleneck",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "reproducibility or independent corroboration",
+        "required_by": "performance-profile-causal-bottleneck",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      }
+    ]
+  }
+}

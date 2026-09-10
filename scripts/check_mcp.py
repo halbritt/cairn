@@ -10,6 +10,7 @@ from check_note_transport import check_harness
 from check_failure_retrieval import check_harness as check_failure_signatures
 from check_literal_retrieval import check_harness as check_literals
 from check_entities import check_harness as check_entities
+from check_advisory_conflicts import check_harness as check_advisory_conflicts
 from check_native_history import check as check_history
 
 
@@ -161,6 +162,7 @@ def check(binary, root, environment, claim, support):
         assert 'INVALID_REQUEST' in tool('cairn_search', dict(query=query, kinds=['unknown']), error=True)
         check_harness(tool, binary, environment)
         check_entities(tool)
+        check_advisory_conflicts(tool, binary, environment)
         check_literals(tool)
         check_failure_signatures(tool, binary, environment)
     with session(binary, root, environment, generated=True) as tool:

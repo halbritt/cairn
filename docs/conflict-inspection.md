@@ -43,7 +43,8 @@ Disposable PostgreSQL tests cover original positions after edits, open/resolved
 filtering, member filtering and pagination, resolver participation, cross-repo
 refusal, and forgotten-body exclusion while preserving the surviving position.
 Authenticated API tests cover local inspection and hosted-profile refusal.
-Qualified conflict positions, acted-under-conflict outcomes and richer resolution
+[Qualified advisory positions](advisory-conflicts.md) are now available through
+explicit ordinary retrieval. Acted-under-conflict outcomes and richer resolution
 semantics remain roadmap work.
 
 Clean commit `e2648a4ca3019993113465cbf311bd418bca0a49` is installed locally after

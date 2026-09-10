@@ -98,6 +98,10 @@ func entityReason(reason string, matched bool) string {
 }
 
 func withEntitySchema(p SemanticPackage) SemanticPackage {
+	if p.AdvisoryConflicts {
+		p.Schema = "cairn.semantic/14"
+		return p
+	}
 	for _, selection := range p.Selected {
 		if len(selection.Record.Entities) > 0 {
 			p.Schema = "cairn.semantic/13"

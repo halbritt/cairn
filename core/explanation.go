@@ -76,11 +76,12 @@ func omissionCensus() map[string]int {
 // Frozen gate facts reference immutable record versions; raw evidence and query
 // bytes are not duplicated here. These facts are for historical inspection only.
 type CandidateFacts struct {
-	EntitiesSHA256   *string    `json:"entities_sha256,omitempty"`
-	Category         string     `json:"category,omitempty"`
-	BodySHA256       string     `json:"body_sha256"`
-	Sensitivity      string     `json:"sensitivity"`
-	AttributionState string     `json:"attribution_state"`
-	Evidence         []Evidence `json:"evidence"`
-	Authority        []Grant    `json:"authority"`
+	Conflicts        []AdvisoryConflict `json:"conflicts,omitempty"`
+	EntitiesSHA256   *string            `json:"entities_sha256,omitempty"`
+	Category         string             `json:"category,omitempty"`
+	BodySHA256       string             `json:"body_sha256"`
+	Sensitivity      string             `json:"sensitivity"`
+	AttributionState string             `json:"attribution_state"`
+	Evidence         []Evidence         `json:"evidence"`
+	Authority        []Grant            `json:"authority"`
 }

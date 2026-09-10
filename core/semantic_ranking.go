@@ -134,14 +134,34 @@ func (s *Store) rankSemantic(ctx context.Context, query string, p *SemanticPacka
 	}
 	// Model errors and bounded-work refusals degrade to the existing lexical
 	// route. No partial semantic ordering or unvalidated model result survives.
+	var pool map[string]candidate
+	if p.AdvisoryConflicts {
+		pool = map[string]candidate{}
+		for _, c := range candidates {
+			pool[c.selection.Record.RecordID] = c
+		}
+	}
 	kept := candidates[:0]
 	for _, c := range candidates {
-		if !c.selection.Mandatory && c.score == 0 && !c.literal && !c.failure && !c.identity {
-			evaluations[c.selection.Record.RecordID].Reason = "NO_LEXICAL_MATCH"
-			p.Omitted["NO_LEXICAL_MATCH"]++
+		reason := ""
+		if !kindAllowed(p.Kinds, c.selection) {
+			reason = "KIND_FILTERED"
+		} else if !c.selection.Mandatory && c.score == 0 && !c.literal && !c.failure && !c.identity {
+			reason = "NO_LEXICAL_MATCH"
+		}
+		if reason != "" {
+			evaluations[c.selection.Record.RecordID].Reason = reason
+			p.Omitted[reason]++
 			continue
 		}
 		kept = append(kept, c)
+	}
+	if p.AdvisoryConflicts {
+		groups, err := frozenAdvisoryGroups(*p, evaluations)
+		if err != nil {
+			return nil, err
+		}
+		kept = qualifyAdvisoryCandidates(p, pool, kept, groups, evaluations)
 	}
 	return kept, nil
 }
@@ -159,7 +179,7 @@ func discoveryStatus(p SemanticPackage) SemanticPackage {
 
 func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*CandidateEvaluation, query string) error {
 	invalid := func() error { return failure("INTEGRITY_FAILURE", "historical semantic ranking metadata is invalid") }
-	if p.Schema != "cairn.semantic/7" && ((p.Schema != "cairn.semantic/8" && p.Schema != "cairn.semantic/9" && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/11" && p.Schema != "cairn.semantic/12" && p.Schema != "cairn.semantic/13") || p.Discovery == nil) {
+	if p.Schema != "cairn.semantic/7" && ((p.Schema != "cairn.semantic/8" && p.Schema != "cairn.semantic/9" && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/11" && p.Schema != "cairn.semantic/12" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/14") || p.Discovery == nil) {
 		if p.Discovery != nil || p.Ranking == "semantic-scope-recency/1" || p.Ranking == "semantic-scope-recency/2" || p.Ranking == "semantic-scope-recency/3" || p.Ranking == "semantic-scope-recency/4" {
 			return invalid()
 		}

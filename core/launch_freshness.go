@@ -17,7 +17,7 @@ func (s *Store) receiptSelectionCurrent(ctx context.Context, tx pgx.Tx, id strin
 	original := pkg.Semantic
 	_, candidates, err := s.collectCandidates(ctx, tx, CompileRequest{
 		Context: original.Context, Scope: original.Scope, Purpose: original.Purpose,
-		AvailableTokens: original.AvailableTokens,
+		AvailableTokens: original.AvailableTokens, AdvisoryConflicts: original.AdvisoryConflicts,
 	}, original.Destination, map[string]*CandidateEvaluation{})
 	if err != nil {
 		return err
@@ -47,7 +47,7 @@ func (s *Store) receiptSelectionCurrent(ctx context.Context, tx pgx.Tx, id strin
 	for _, entry := range original.Index {
 		fresh, ok := current[entry.RecordID]
 		if !ok || fresh.Record.Version != entry.Version || fresh.Record.Class != entry.Class ||
-			fresh.Record.Kind != entry.Kind || fresh.Category != entry.Category || indexEntry(fresh.Record).BodySHA256 != entry.BodySHA256 {
+			!sameAdvisoryConflicts(fresh.Conflicts, entry.Conflicts) || fresh.Record.Kind != entry.Kind || fresh.Category != entry.Category || indexEntry(fresh.Record).BodySHA256 != entry.BodySHA256 {
 			return failure("STALE_PACKAGE", "indexed memory changed or is no longer eligible; compile with a new request ID")
 		}
 	}

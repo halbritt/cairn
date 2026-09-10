@@ -90,7 +90,7 @@ func (s *Store) AuthorizeScope(ctx context.Context, req AuthorizeScopeRequest) (
 		if old.Class == "A" {
 			purpose = "context"
 		}
-		selection, reason, err := eligibleWithoutScope(ctx, tx, old, purpose)
+		selection, reason, err := eligibleWithoutScope(ctx, tx, old, purpose, false)
 		if err != nil {
 			return ScopeAuthorization{}, err
 		}

@@ -21,20 +21,21 @@ import (
 )
 
 type CompileRequest struct {
-	Entities        []EntityRef  `json:"entities,omitempty"`
-	ErrorSignature  string       `json:"error_signature_sha256,omitempty"`
-	ExpansionReader string       `json:"expansion_reader,omitempty"`
-	Kinds           []string     `json:"kinds,omitempty"`
-	Semantic        bool         `json:"semantic,omitempty"`
-	PageOffset      *int         `json:"page_offset,omitempty"`
-	BrowseOffset    *int         `json:"browse_offset,omitempty"`
-	Mode            string       `json:"mode,omitempty"`
-	Context         *ContextPins `json:"context,omitempty"`
-	RequestID       string       `json:"request_id"`
-	Scope           Scope        `json:"scope"`
-	Query           string       `json:"query"`
-	Purpose         string       `json:"purpose"`
-	AvailableTokens int          `json:"available_tokens"`
+	AdvisoryConflicts bool         `json:"advisory_conflicts,omitempty"`
+	Entities          []EntityRef  `json:"entities,omitempty"`
+	ErrorSignature    string       `json:"error_signature_sha256,omitempty"`
+	ExpansionReader   string       `json:"expansion_reader,omitempty"`
+	Kinds             []string     `json:"kinds,omitempty"`
+	Semantic          bool         `json:"semantic,omitempty"`
+	PageOffset        *int         `json:"page_offset,omitempty"`
+	BrowseOffset      *int         `json:"browse_offset,omitempty"`
+	Mode              string       `json:"mode,omitempty"`
+	Context           *ContextPins `json:"context,omitempty"`
+	RequestID         string       `json:"request_id"`
+	Scope             Scope        `json:"scope"`
+	Query             string       `json:"query"`
+	Purpose           string       `json:"purpose"`
+	AvailableTokens   int          `json:"available_tokens"`
 }
 
 // Destination comes from trusted host configuration, never request JSON.
@@ -44,37 +45,39 @@ type Destination struct {
 	AllowLocal bool   `json:"allow_local"`
 }
 type Selection struct {
-	Category  string     `json:"category,omitempty" cbor:"category,omitempty"`
-	Record    Record     `json:"record"`
-	Evidence  []Evidence `json:"evidence"`
-	Authority []Grant    `json:"authority"`
-	Mandatory bool       `json:"mandatory"`
-	Reason    string     `json:"reason"`
+	Conflicts []AdvisoryConflict `json:"conflicts,omitempty" cbor:"conflicts,omitempty"`
+	Category  string             `json:"category,omitempty" cbor:"category,omitempty"`
+	Record    Record             `json:"record"`
+	Evidence  []Evidence         `json:"evidence"`
+	Authority []Grant            `json:"authority"`
+	Mandatory bool               `json:"mandatory"`
+	Reason    string             `json:"reason"`
 }
 type SemanticPackage struct {
-	EntitiesSHA256  string            `json:"entities_sha256,omitempty" cbor:"entities_sha256,omitempty"`
-	ErrorSignature  string            `json:"error_signature_sha256,omitempty" cbor:"error_signature_sha256,omitempty"`
-	Kinds           []string          `json:"kinds,omitempty" cbor:"kinds,omitempty"`
-	Discovery       *DiscoveryRanking `json:"discovery,omitempty" cbor:"discovery,omitempty"`
-	Page            *BrowsePage       `json:"page,omitempty" cbor:"page,omitempty"`
-	Browse          *BrowsePage       `json:"browse,omitempty" cbor:"browse,omitempty"`
-	Mode            string            `json:"mode,omitempty"`
-	Index           []IndexEntry      `json:"index,omitempty"`
-	Context         *ContextPins      `json:"context,omitempty"`
-	Schema          string            `json:"schema"`
-	Status          string            `json:"status"`
-	Scope           Scope             `json:"scope"`
-	Query           string            `json:"query"` // v1: legacy text; v2: SHA-256 digest only.
-	Purpose         string            `json:"purpose"`
-	Destination     Destination       `json:"destination"`
-	Policy          string            `json:"policy"`
-	PolicyRevision  *PolicySnapshot   `json:"policy_revision,omitempty" cbor:"policy_revision,omitempty"`
-	Ranking         string            `json:"ranking"`
-	Tokenizer       string            `json:"tokenizer"`
-	AvailableTokens int               `json:"available_tokens"`
-	OptionalLimit   int               `json:"optional_limit"`
-	Selected        []Selection       `json:"selected"`
-	Omitted         map[string]int    `json:"omitted"`
+	AdvisoryConflicts bool              `json:"advisory_conflicts,omitempty" cbor:"advisory_conflicts,omitempty"`
+	EntitiesSHA256    string            `json:"entities_sha256,omitempty" cbor:"entities_sha256,omitempty"`
+	ErrorSignature    string            `json:"error_signature_sha256,omitempty" cbor:"error_signature_sha256,omitempty"`
+	Kinds             []string          `json:"kinds,omitempty" cbor:"kinds,omitempty"`
+	Discovery         *DiscoveryRanking `json:"discovery,omitempty" cbor:"discovery,omitempty"`
+	Page              *BrowsePage       `json:"page,omitempty" cbor:"page,omitempty"`
+	Browse            *BrowsePage       `json:"browse,omitempty" cbor:"browse,omitempty"`
+	Mode              string            `json:"mode,omitempty"`
+	Index             []IndexEntry      `json:"index,omitempty"`
+	Context           *ContextPins      `json:"context,omitempty"`
+	Schema            string            `json:"schema"`
+	Status            string            `json:"status"`
+	Scope             Scope             `json:"scope"`
+	Query             string            `json:"query"` // v1: legacy text; v2: SHA-256 digest only.
+	Purpose           string            `json:"purpose"`
+	Destination       Destination       `json:"destination"`
+	Policy            string            `json:"policy"`
+	PolicyRevision    *PolicySnapshot   `json:"policy_revision,omitempty" cbor:"policy_revision,omitempty"`
+	Ranking           string            `json:"ranking"`
+	Tokenizer         string            `json:"tokenizer"`
+	AvailableTokens   int               `json:"available_tokens"`
+	OptionalLimit     int               `json:"optional_limit"`
+	Selected          []Selection       `json:"selected"`
+	Omitted           map[string]int    `json:"omitted"`
 }
 type Package struct {
 	ReceiptID string          `json:"receipt_id"`
@@ -93,6 +96,9 @@ func (p Package) Render() (string, error) {
 	return "MEM-STATUS/" + p.Semantic.Status + "\nCairn context (A is advisory; only C is an authorized instruction):\n" + string(body) + "\n", nil
 }
 func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Destination) (Package, error) {
+	if req.AdvisoryConflicts && req.Purpose != "context" {
+		return Package{}, failure("INVALID_REQUEST", "advisory_conflicts requires context retrieval")
+	}
 	if req.ExpansionReader != "" {
 		if !s.channel.Instrumented {
 			return Package{}, failure("AUTHORITY_DENIED", "designating an expansion reader requires an observing host")
@@ -243,6 +249,8 @@ func sealPackage(semantic SemanticPackage) ([]byte, string, error) {
 }
 
 type candidate struct {
+	companion   bool
+	group       []candidate
 	identity    bool
 	literal     bool
 	failure     bool
@@ -329,6 +337,19 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 	if len(ids) > 10000 {
 		return p, nil, failure("BUDGET_REFUSED", "repository selection exceeds bounded scan; narrow task scope")
 	}
+	var groups []AdvisoryConflict
+	allowDisputes := false
+	if req.AdvisoryConflicts {
+		p.AdvisoryConflicts = true
+		groups, allowDisputes, err = advisoryConflictSnapshot(ctx, tx, ids)
+		if err != nil {
+			return p, nil, err
+		}
+	}
+	var pool map[string]candidate
+	if allowDisputes {
+		pool = map[string]candidate{}
+	}
 	matches, err := currentFailureMatches(ctx, tx, req, dest)
 	if err != nil {
 		return p, nil, err
@@ -408,7 +429,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			p.Omitted[reason]++
 			continue
 		}
-		selection, reason, err := eligible(ctx, tx, record, req.Purpose)
+		selection, reason, err := eligibleWithAdvisory(ctx, tx, record, req.Purpose, allowDisputes)
 		if err != nil {
 			return p, nil, err
 		}
@@ -444,12 +465,16 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			evaluation.FailureMatch = matches[id]
 		}
 		failureMatch := evaluation.FailureMatch != nil
+		selection.Reason = entityReason(failureReason(literalReason(fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity), literal), failureMatch), entity)
+		item := candidate{identity: hasEntityRanking(p.Ranking) && (entity || failureMatch), literal: literal, failure: failureMatch, selection: selection, score: score, specificity: specificity}
+		if allowDisputes {
+			pool[id] = item
+		}
 		if !kindAllowed(req.Kinds, selection) {
 			evaluation.Reason = "KIND_FILTERED"
 			p.Omitted["KIND_FILTERED"]++
 			continue
 		}
-		selection.Reason = entityReason(failureReason(literalReason(fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity), literal), failureMatch), entity)
 		if len(req.Entities) > 0 && strings.TrimSpace(req.Query) == "" && !selection.Mandatory && !entity && !failureMatch {
 			evaluation.Reason = "NO_ENTITY_MATCH"
 			p.Omitted["NO_ENTITY_MATCH"]++
@@ -465,17 +490,51 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			p.Omitted["NO_LEXICAL_MATCH"]++
 			continue
 		}
-		candidates = append(candidates, candidate{hasEntityRanking(p.Ranking) && (entity || failureMatch), literal, failureMatch, selection, score, specificity})
+		candidates = append(candidates, item)
+	}
+	if allowDisputes {
+		candidates = qualifyAdvisoryCandidates(&p, pool, candidates, groups, evaluations)
 	}
 	return p, candidates, nil
 }
 
 func packCandidates(p SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation) (SemanticPackage, error) {
-	sortCandidates(candidates)
+	if p.AdvisoryConflicts {
+		candidates = allocationUnits(candidates)
+	} else {
+		sortCandidates(candidates)
+	}
 	instructions := newInstructionBudget(&p)
 	optionalCost := 0
 	seenBodies := map[string]bool{}
 	for rank, candidate := range candidates {
+		if len(candidate.group) > 0 {
+			cost := 0
+			for _, member := range candidate.group {
+				encoded, err := json.Marshal(member.selection)
+				if err != nil {
+					return p, err
+				}
+				e := evaluations[member.selection.Record.RecordID]
+				e.Rank, e.Cost = rank+1, len(encoded)+1
+				cost += e.Cost
+			}
+			for _, member := range candidate.group {
+				e := evaluations[member.selection.Record.RecordID]
+				if optionalCost+cost > p.OptionalLimit {
+					e.Reason = "OPTIONAL_BUDGET"
+					p.Omitted[e.Reason]++
+				} else {
+					e.Reason = "SELECTED"
+					p.Selected = append(p.Selected, member.selection)
+					seenBodies[member.selection.Record.Body] = true
+				}
+			}
+			if optionalCost+cost <= p.OptionalLimit {
+				optionalCost += cost
+			}
+			continue
+		}
 		entry := candidate.selection
 		evaluation := evaluations[entry.Record.RecordID]
 		evaluation.Rank = rank + 1
@@ -523,9 +582,16 @@ func packCandidates(p SemanticPackage, candidates []candidate, evaluations map[s
 		if n == 0 || p.Selected[n-1].Mandatory {
 			return p, failure("BUDGET_REFUSED", "mandatory context and envelope exceed available input room")
 		}
-		evaluations[p.Selected[n-1].Record.RecordID].Reason = "TOTAL_BUDGET"
-		p.Selected = p.Selected[:n-1]
-		p.Omitted["TOTAL_BUDGET"]++
+		key := conflictKey(p.Selected[n-1].Conflicts)
+		for {
+			last := p.Selected[len(p.Selected)-1]
+			evaluations[last.Record.RecordID].Reason = "TOTAL_BUDGET"
+			p.Selected = p.Selected[:len(p.Selected)-1]
+			p.Omitted["TOTAL_BUDGET"]++
+			if key == "" || len(p.Selected) == 0 || conflictKey(p.Selected[len(p.Selected)-1].Conflicts) != key {
+				break
+			}
+		}
 		if len(p.Selected) == 0 {
 			p.Status = "SCOPE_EMPTY"
 		}
@@ -534,6 +600,10 @@ func packCandidates(p SemanticPackage, candidates []candidate, evaluations map[s
 }
 
 func eligible(ctx context.Context, tx pgx.Tx, r Record, purpose string) (Selection, string, error) {
+	return eligibleWithAdvisory(ctx, tx, r, purpose, false)
+}
+
+func eligibleWithAdvisory(ctx context.Context, tx pgx.Tx, r Record, purpose string, advisory bool) (Selection, string, error) {
 	chain, err := scopeAuthority(ctx, tx, r.RecordID)
 	if Code(err) == "AUTHORITY_DENIED" {
 		return Selection{Record: r}, "SCOPE_AUTHORITY_INACTIVE", nil
@@ -541,7 +611,7 @@ func eligible(ctx context.Context, tx pgx.Tx, r Record, purpose string) (Selecti
 	if err != nil {
 		return Selection{}, "", err
 	}
-	entry, reason, err := eligibleWithoutScope(ctx, tx, r, purpose)
+	entry, reason, err := eligibleWithoutScope(ctx, tx, r, purpose, advisory)
 	if err != nil || reason != "" {
 		return entry, reason, err
 	}
@@ -558,7 +628,7 @@ func eligible(ctx context.Context, tx pgx.Tx, r Record, purpose string) (Selecti
 	return entry, "", nil
 }
 
-func eligibleWithoutScope(ctx context.Context, tx pgx.Tx, r Record, purpose string) (Selection, string, error) {
+func eligibleWithoutScope(ctx context.Context, tx pgx.Tx, r Record, purpose string, advisory bool) (Selection, string, error) {
 	entry := Selection{Record: r, Evidence: []Evidence{}, Authority: []Grant{}}
 	if r.Class == "A" && purpose != "context" {
 		return entry, "CLASS_NOT_CONSEQUENTIAL", nil
@@ -603,7 +673,9 @@ func eligibleWithoutScope(ctx context.Context, tx pgx.Tx, r Record, purpose stri
 		if r.Class == "C" {
 			return entry, "", failure("OPEN_CONFLICT", "binding instruction has an unresolved dispute")
 		}
-		return entry, "OPEN_CONFLICT", nil
+		if !advisory || purpose != "context" {
+			return entry, "OPEN_CONFLICT", nil
+		}
 	}
 	if r.Class == "A" || r.Class == "B" {
 		if r.Class == "B" && r.AttributionState != "self" && r.AttributionState != "reconciled" {
