@@ -111,7 +111,7 @@ def check(opencode, output, *, connection=None, extra_cases=()):
     config_path = output / 'opencode.json'
     config_path.write_text(json.dumps(config))
     env.update(OPENCODE_CONFIG=str(config_path), OPENCODE_DISABLE_AUTOUPDATE='true',
-               OPENCODE_DISABLE_MODELS_FETCH='true')
+               OPENCODE_DISABLE_MODELS_FETCH='true', OPENCODE_DISABLE_DEFAULT_PLUGINS='true')
     version = subprocess.run([opencode, '--version'], env=env, capture_output=True,
                              text=True, check=True, timeout=15).stdout.strip()
     thread.start()

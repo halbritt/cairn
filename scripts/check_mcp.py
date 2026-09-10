@@ -5,6 +5,7 @@ import select
 import subprocess
 import uuid
 
+from check_ordinary_citations import check_harness as check_citations
 from check_note_transport import check_harness
 
 
@@ -85,6 +86,12 @@ def session(binary, root, environment, extra_args=(), generated=False):
 
 def check(binary, root, environment, claim, support):
     with session(binary, root, environment) as tool:
+        def citation_tool(name, args, error=None):
+            result = tool('cairn_' + name, args, error=error is not None)
+            if error:
+                assert error in result, result
+            return result
+        check_citations(citation_tool, support)
         invalid = tool('cairn_remember', dict(request_id=str(uuid.uuid4()), body='Invalid direct MCP boolean', shareable='false'), error=True)
         assert 'validating' in invalid and 'boolean' in invalid, invalid
         query = 'mcpstdio' + uuid.uuid4().hex

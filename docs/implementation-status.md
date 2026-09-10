@@ -31,7 +31,7 @@ the current summary; do not replace the historical record.
 | Ordinary memory | Authenticated capture of selected notes up to 64 KiB with room for JSON escaping, retained versions and attribution, repository/task/run scope, compare-and-swap edits, body-only corrections that preserve metadata, and authenticated retained-version inspection. | [Capture and use](../README.md), [ordinary revision](mcp.md#tools), [record history](record-history.md) |
 | Retrieval | Lexical search with optional kind selection, matching previews with source byte positions, ranked and browse continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
 | Semantic discovery | Optional local CPU scoring for vocabulary mismatches, after eligibility checks; bounded work and labelled lexical fallback. Historical recompilation uses retained scores. | [Semantic discovery](semantic-discovery.md) |
-| Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, citation-time digests and optional byte passages on qualified claim versions, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [precise citations](evidence-citations.md), [span verification](verification/evidence-spans-2026-09-09.md) |
+| Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, citation-time digests and optional byte passages on qualified claims and ordinary note versions, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [precise citations](evidence-citations.md), [span verification](verification/evidence-spans-2026-09-09.md) |
 | Harness access | Five ordinary tools for search, body/evidence pulls, capture and edit through MCP; Codex conversation scope and native OpenCode session scope. OpenCode configuration generation and a bundled native-tool installer are shipped; Claude configuration and all five tools have scripted native-session verification with explicit scope. | [MCP](mcp.md), [OpenCode tools](opencode-tools.md) |
 | Host execution | Authenticated observer access, compiled or exact retained-package execution, freshness checks before launch, process observations and separately versioned task assessments. Hosts can associate agent retrievals with observed runs. | [Authenticated runner](authenticated-runner.md), [retained execution](retained-execution.md), [use/outcome join](use-outcome-loop.md) |
 | Inspection and review | Historical replay/recompilation, record and evidence impact, versioned relation paths, use/run reports, conflict inspection, bounded refusal diagnostics and evidence-attached failure review groups. | [Evidence impact](evidence-impact.md), [refusals](refusals.md), [demand review](demand-review.md) |
@@ -45,6 +45,12 @@ task acceptance. Native conversation/session scope does not identify individual
 execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
+
+- **Ordinary notes can retain exact source citations.** Explicit citation updates
+  preserve earlier versions; text edits retain references and current pulls expose
+  exact captured passages. Notes remain A testimony. Upgrade writers together.
+  [Contract](evidence-citations.md#ordinary-notes),
+  [verification](verification/ordinary-citations-2026-09-09.md).
 
 - **Malformed JSON Unicode refuses before capture.** Raw invalid UTF-8 and
   lone surrogate escapes can no longer be silently replaced during request
@@ -2146,3 +2152,41 @@ serialized Unicode rule, valid-input preservation, upstream transformation limit
 and refusal of malformed legacy retries. Earlier body and metadata remain. Exact
 retry and fresh pull match c3a17d08e2e6811be75b8d054c72443d7db443225042cc58d700b3a2c9648dc9.
 CI 34435235516 is in_progress. Deployment evidence: /tmp/cairn-json-integrity-deployment/.
+
+
+### 2026-09-09 — Ordinary note source citation implementation
+
+Added explicit `cite` updates through CLI/API and an exclusive `evidence_citations`
+input on the existing MCP/OpenCode edit tool. Updates replace references on a new
+unchanged-body A version; an explicit empty array clears current references.
+Existing source digest/span, repository, sensitivity, request identity and CAS
+checks apply. Ordinary body/full-draft revisions retain even degraded references,
+while earlier versions and frozen receipt facts remain available. A citations
+confer no qualification or upstream freshness.
+
+Full disposable PostgreSQL/race packages, static checks and Go/40-Python tests
+passed. Early fixtures had an off-by-one passage length, attempted self-promotion
+and shared-source impact interference; corrected the fixtures without weakening
+existing assertions. CLI/stdio workflows then passed; native OpenCode startup
+hit npm contact and a timeout. Isolated diagnosis reached validation with default
+plugins disabled, now applied only to test harnesses. Final native verification
+and installation are recorded separately below.
+
+The old/new executable check preserved existing create/revise retry identities and
+confirmed that old writers drop A citations on edit. All writers must upgrade
+together. No schema, semantic payload shape, authority path or tool name changed.
+This is a source-retrieval capability; task value remains unassessed. L4 stays
+partial. [Report](verification/ordinary-citations-2026-09-09.md).
+
+Correction to the preceding Unicode deployment observation: CI 34435235516 for
+463ccef subsequently completed successfully, verified during this work.
+
+
+### 2026-09-09 — Ordinary citation native verification
+
+The isolated CLI/API rerun now passes with stdio MCP and OpenCode 1.18.21 native
+custom-tool checks. Both edit surfaces attached sources, retained them through a
+text edit, pulled exact cited passages, cleared current refs and refused changed
+retry intent and stale handles. Existing host permissions, sharing, session scope
+and maximum-body scripted checks pass. Default plugins are disabled only in the
+isolated test harness; no answering model or owner configuration was changed.

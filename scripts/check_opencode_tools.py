@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import uuid
 
+from check_ordinary_citations import check_harness as check_citations
 from check_note_transport import check_opencode_session
 
 
@@ -33,7 +34,7 @@ def check(binary, root, environment, opencode, claim, support):
         directory.mkdir()
         env[key] = str(directory)
     env.update(OPENCODE_CONFIG=str(config_path), OPENCODE_DISABLE_AUTOUPDATE='true',
-               OPENCODE_DISABLE_MODELS_FETCH='true', CAIRN_DATABASE_URL='host=/absent-native-tool-db dbname=denied')
+               OPENCODE_DISABLE_MODELS_FETCH='true', OPENCODE_DISABLE_DEFAULT_PLUGINS='true', CAIRN_DATABASE_URL='host=/absent-native-tool-db dbname=denied')
 
     def invoke(name, args, error=None):
         result = subprocess.run([opencode, 'debug', 'agent', 'build', '--pure', '--tool', 'cairn_' + name,
@@ -45,6 +46,7 @@ def check(binary, root, environment, opencode, claim, support):
         assert result.returncode == 0, (name, result.stderr, result.stdout)
         return json.loads(json.loads(result.stdout)['result']['output'])
 
+    check_citations(invoke, support)
     marker = 'nativeopencode' + uuid.uuid4().hex
     capture = dict(request_id=str(uuid.uuid4()), body='Earlier setup context. ' * 30 + marker + ': selected lesson $(literal)',
                    kind='lesson', shareable=True, pins=dict(task_phase='validation'))

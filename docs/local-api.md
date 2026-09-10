@@ -135,7 +135,7 @@ Authenticated `version` takes `{}` and reports the running API executable withou
 reading repository data. `cairn agent ... version` also reports its own CLI build
 and needs no stdin request. [Build identity and limitations](build-identity.md).
 
-Operations: `create`, `edit`, `revise`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
+Operations: `create`, `edit`, `revise`, `cite`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, `assessments`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
@@ -253,3 +253,16 @@ a new request based on an old version returns `VERSION_CONFLICT`. Read and
 reconcile before submitting another revision. Full `edit` remains available when
 changing other ordinary draft content is intentional. Upgrade the API and clients
 together before using `revise` or the native edit tools' body-only form.
+
+
+### Ordinary source citations
+
+`POST /v1/cite` accepts `request_id`, `record_id`, `expected_version`, `repo`
+and an explicit `evidence_citations` array. It creates a new A version with the
+same body and metadata and replaces its references, returning only record ID and
+version. Each nonempty citation uses a captured evidence ID, full SHA-256 and
+optional byte spans. Empty `[]` clears current references; absent/null refuses.
+The 128 KiB request limit applies. Text/full-draft edits preserve the existing
+references. Upgrade all store writers before use; older edits drop A references.
+See [ordinary citations](evidence-citations.md#ordinary-notes) for source checks,
+retry behavior, native edit arguments and the qualification boundary.

@@ -221,3 +221,10 @@ direction. It also works with lexical or semantic queries. Required instructions
 always apply, and labels confer no authority. Keep the same kinds when following
 `browse.next_offset`. See [index and pull](index-and-pull.md) for the full contract.
 Update the API, CLI and bundled adapter together before using this argument.
+
+
+`cairn_edit` also accepts `evidence_citations` instead of `body` or `draft` to
+replace an ordinary note's captured source references. An explicit empty list
+clears the current references; text edits preserve them. The note remains A
+testimony. See [ordinary source citations](evidence-citations.md#ordinary-notes)
+for exact digests, optional passages and upgrade requirements.

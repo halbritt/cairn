@@ -355,6 +355,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invokeBounded(ctx, input, store.Edit, localapi.RequestBodyLimit("edit"))
 	case "revise":
 		return invokeBounded(ctx, input, store.Revise, localapi.RequestBodyLimit("revise"))
+	case "cite":
+		return invoke(ctx, input, store.Cite)
 	case "delete":
 		return invoke(ctx, input, store.Delete)
 	case "bootstrap":

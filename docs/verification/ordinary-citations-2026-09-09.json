@@ -1,0 +1,163 @@
+{
+  "schema": "cairn.ordinary-citations-verification/1",
+  "baseline_commit": "1d022c0364a09b1f862904cbaf92e6555330c757",
+  "checks": {
+    "static": true,
+    "go_python": true,
+    "python_tests": 40,
+    "full_disposable_pg_race": true,
+    "stdio_mcp": true,
+    "native_opencode_custom_tools": true,
+    "opencode_version": "1.18.21",
+    "native_default_plugins_disabled_in_fixture": true,
+    "old_request_retry_compatibility": true,
+    "old_writer_loses_A_citations": true,
+    "answering_model": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-9dbe4ec856198351",
+    "packet_content_sha256": "9dbe4ec8561983510ce9dc36544e4b62a49b120d13a9b1a5fe2700d2f435baee",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or interface-valued absence contract; existing concrete store and API owners remain."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or interface-valued absence contract; existing concrete store and API owners remain."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or interface-valued absence contract; existing concrete store and API owners remain."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or interface-valued absence contract; existing concrete store and API owners remain."
+      },
+      {
+        "requirement": "caller nil checks and method use",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or interface-valued absence contract; existing concrete store and API owners remain."
+      },
+      {
+        "requirement": "documented absence semantics",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or interface-valued absence contract; existing concrete store and API owners remain."
+      },
+      {
+        "requirement": "dynamic type and dynamic value at the return",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or interface-valued absence contract; existing concrete store and API owners remain."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-ordinary-citations-evidence-authority.json",
+      "sha256": "b0617ca91ec69b68e1279a46cc38d175382dc8c36897e5102a6034e106426e7e"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-evidence-implementation.json",
+      "sha256": "4f6ef226fba37bf05c9956e35e26ae40980355e80fac66718f7ed1ecea81fd92"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-evidence-contracts.json",
+      "sha256": "91bc95ea3a685b0e638d67829e7940f0d64a2cfd03aaa4d5385d127986851fa5"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-evidence-tests.json",
+      "sha256": "02050c7fc82bde11addd16382b7d4b91461b0290f427bc8aab9e8c9a85742c55"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-red.log",
+      "sha256": "bcef988a391ed11e7c8967fca7e8c085154558ac9ce5ebbb7287ce3ca577f24d"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-green.log",
+      "sha256": "0c9df8e40871e582b091ccdb2d27596009f0eff238370587328193c615751e10"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-core.log",
+      "sha256": "ca3a7ccfe6baaa43f9bac434b5170041af7dc832bbb94e0d7be5a10fbd1307b7"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-check-final.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-tests.log",
+      "sha256": "b495940fcb04da4111cac11d2667eaed70d4a7874bd32d5d0f787baa60fe84b2"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-python-final.log",
+      "sha256": "2dd9ce4c807c17d2a12e21f58e014bc8d81cff09b48c5c8596a6c0c6d1ba86f7"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-integration.log",
+      "sha256": "6161cdd1043897d710d2a5cedc54740b643a6a3932a3d09b3215bb4beca58978"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-integration-final.log",
+      "sha256": "6156fb5b61e2902d388de8b06c27d8c3b96620039ea35910ada43c05879d4316"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-api.log",
+      "sha256": "c027ad2a5f8d109251c86e715b40ce08fb3d4ca8c5e7bafed40c8c98bb60240a"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-api-final.log",
+      "sha256": "496c8d907029ec6e3d7c761d5378be87b7ed1b375e997ae7ee3c8a00ab077e20"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-compatibility.json",
+      "sha256": "381299829e425122411052dc5944e8b13131aedcacd1153f3277685b7f1fa3fc"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-decision.json",
+      "sha256": "ed0331c847994eae5fc1eeb3b2d738be69fdf7764d38c217674826770bb07dcf"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-doctrine.json",
+      "sha256": "1de6f46835e60e76ef174668cba94c92d5ea3ae261dd46bb01be44164d9b9362"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-doctrine-final.json",
+      "sha256": "c98542299ff05e02ceb9aaedf83dd6b9a411b2ca582d6b8b33ccddd4d95077ab"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-citations.json",
+      "sha256": "928e717ef7b3592e54b4388edbcc87eb350609b3022ebee2e57ac6d25832aba8"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-citations-final.json",
+      "sha256": "da790b8ac6d12b54b98324c5e0f5aa5ec0ea25969a264993dd74ed2a0eaed12d"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-native-diagnosis/process.trace",
+      "sha256": "0a37fbb537d17de0974c1692106be2836154682e8b611001579d823460936f7b"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-native-diagnosis/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/cairn-ordinary-citations-native-diagnosis/without-defaults.stderr",
+      "sha256": "cdf8414f7363732a6556bb70b77755a108e9ef1818e4b86e9c0a2e4007fa918e"
+    }
+  ]
+}

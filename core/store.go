@@ -265,6 +265,12 @@ func (s *Store) Edit(ctx context.Context, req EditRequest) (Record, error) {
 }
 
 func (s *Store) editVersion(ctx context.Context, tx pgx.Tx, req EditRequest) (Record, error) {
+	return s.editVersionWithCitations(ctx, tx, req, nil)
+}
+
+// A nil citations argument preserves existing references, including degraded
+// sources. An explicit list replaces them with newly checked source identities.
+func (s *Store) editVersionWithCitations(ctx context.Context, tx pgx.Tx, req EditRequest, citations *[]EvidenceCitationRequest) (Record, error) {
 	if req.Draft.AttemptID != "" {
 		if err := lock(ctx, tx, "attempt:"+req.Draft.AttemptID); err != nil {
 			return Record{}, err
@@ -300,7 +306,17 @@ func (s *Store) editVersion(ctx context.Context, tx pgx.Tx, req EditRequest) (Re
 	if _, err = tx.Exec(ctx, `UPDATE cairn.memory_record SET current_version=current_version+1 WHERE record_id=$1 AND current_version=$2`, req.RecordID, req.ExpectedVersion); err != nil {
 		return Record{}, err
 	}
-	return insertVersion(ctx, tx, req.RecordID, version+1, req.Draft)
+	next, err := insertVersion(ctx, tx, req.RecordID, version+1, req.Draft)
+	if err != nil {
+		return Record{}, err
+	}
+	if citations == nil {
+		_, err = tx.Exec(ctx, `INSERT INTO cairn.evidence_ref(record_id,version,evidence_id,cited_digest,cited_spans)
+ SELECT record_id,$3,evidence_id,cited_digest,cited_spans FROM cairn.evidence_ref WHERE record_id=$1 AND version=$2`, req.RecordID, version, next.Version)
+	} else if len(*citations) > 0 {
+		err = linkEvidence(ctx, tx, next, nil, *citations)
+	}
+	return next, err
 }
 
 func insertVersion(ctx context.Context, tx pgx.Tx, id string, version int, draft Draft) (Record, error) {

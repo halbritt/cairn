@@ -536,8 +536,8 @@ func eligibleWithoutScope(ctx context.Context, tx pgx.Tx, r Record, purpose stri
 		}
 		return entry, "OPEN_CONFLICT", nil
 	}
-	if r.Class == "B" {
-		if r.AttributionState != "self" && r.AttributionState != "reconciled" {
+	if r.Class == "A" || r.Class == "B" {
+		if r.Class == "B" && r.AttributionState != "self" && r.AttributionState != "reconciled" {
 			return entry, "ATTRIBUTION_UNRECONCILED", nil
 		}
 		evidence, err := supportingEvidence(ctx, tx, r.RecordID, r.Version)
@@ -551,7 +551,7 @@ func eligibleWithoutScope(ctx context.Context, tx pgx.Tx, r Record, purpose stri
 				resolvable = true
 			}
 		}
-		if !resolvable && purpose != "context" {
+		if r.Class == "B" && !resolvable && purpose != "context" {
 			return entry, "EVIDENCE_UNAVAILABLE", nil
 		}
 	}

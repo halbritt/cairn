@@ -152,11 +152,19 @@ export const remember = validatedTool({
 })
 
 export const edit = validatedTool({
-  description: "Revise a pulled active A note. Supply body to change only text while preserving all stored metadata, or draft for a complete replacement, never both. Supply its ID, expected version, and a new request UUID. Preserve scope, sensitivity, pins, relations and attribution. Reuse exact arguments for retries; VERSION_CONFLICT needs fresh search/pull and reconciliation. Returns identifiers without echoing the body.",
-  args: { request_id: z.string().uuid(), record_id: z.string().uuid(), expected_version: z.number().int().positive(), body: z.string().min(1).optional(), draft: z.record(z.string(), z.unknown()).optional() },
+  description: "Revise a pulled active A note. Supply exactly one of body (text only), draft (complete replacement), or evidence_citations (replace source references; [] clears them). Text edits preserve citations; earlier versions retain their sources. Citations require captured source IDs and full-source digests and remain testimony, not qualification. Supply its ID, expected version, and a new request UUID. Preserve scope, sensitivity, pins, relations and attribution. Reuse exact arguments for retries; VERSION_CONFLICT needs fresh search/pull and reconciliation. Returns identifiers without echoing the body.",
+  args: { request_id: z.string().uuid(), record_id: z.string().uuid(), expected_version: z.number().int().positive(), body: z.string().min(1).optional(), draft: z.record(z.string(), z.unknown()).optional(),
+    evidence_citations: z.array(z.object({ evidence_id: z.string().uuid(), expected_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      spans: z.array(z.object({ offset: z.number().int().min(0), length: z.number().int().positive() }).strict()).max(32).optional(),
+    }).strict()).max(32).optional(),
+  },
   async execute(args, context) {
-    if ((args.body === undefined) === (args.draft === undefined)) throw new Error("INVALID_REQUEST: supply exactly one of body or draft")
+    if ([args.body, args.draft, args.evidence_citations].filter(value => value !== undefined).length !== 1) throw new Error("INVALID_REQUEST: supply exactly one of body, draft or evidence_citations")
     const config = await settings("edit", context)
+    if (args.evidence_citations !== undefined) {
+      const result = await call(config, context, ["cite"], { request_id: args.request_id, record_id: args.record_id, expected_version: args.expected_version, repo: config.repo, evidence_citations: args.evidence_citations })
+      return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
+    }
     if (args.body !== undefined) {
       const result = await call(config, context, ["revise"], { request_id: args.request_id, record_id: args.record_id, expected_version: args.expected_version, repo: config.repo, body: args.body })
       return render({ ...writeResult.parse(result), request_id: args.request_id }, config)

@@ -105,6 +105,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveJSON(w, r, c.store.Edit)
 	case "/v1/revise":
 		serveJSON(w, r, c.store.Revise)
+	case "/v1/cite":
+		serveJSON(w, r, c.store.Cite)
 	case "/v1/delete":
 		serveJSON(w, r, c.store.Delete)
 	case "/v1/supersede":

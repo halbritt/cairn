@@ -60,11 +60,12 @@ type rememberArgs struct {
 }
 
 type editArgs struct {
-	RequestID       string      `json:"request_id"`
-	RecordID        string      `json:"record_id"`
-	ExpectedVersion int         `json:"expected_version"`
-	Body            *string     `json:"body,omitempty" jsonschema:"New body only; preserves all stored draft metadata. Supply body or draft, never both."`
-	Draft           *core.Draft `json:"draft,omitempty" jsonschema:"Complete replacement draft for edits beyond the body. Omit when supplying body."`
+	EvidenceCitations *[]core.EvidenceCitationRequest `json:"evidence_citations,omitempty" jsonschema:"Replace source citations only; explicit empty list clears current references. Supply exactly one of body, draft or evidence_citations. Requires captured source IDs and full-source digests. Citations remain testimony, not qualification."`
+	RequestID         string                          `json:"request_id"`
+	RecordID          string                          `json:"record_id"`
+	ExpectedVersion   int                             `json:"expected_version"`
+	Body              *string                         `json:"body,omitempty" jsonschema:"New body only; preserves all stored draft metadata. Supply exactly one of body, draft or evidence_citations."`
+	Draft             *core.Draft                     `json:"draft,omitempty" jsonschema:"Complete replacement draft for edits beyond the body. Omit when supplying body or evidence_citations."`
 }
 
 type recordWriteResult struct {
@@ -109,7 +110,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull", Description: "Pull a memory body using complete pull_arguments from cairn_search. Optional span selects byte offset and maximum length for a partial A/B source; bytes and hashes appear in span with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers. Instructions require a whole pull. Use a new request UUID for a different range. A stale handle requires a fresh search. Shares the receipt's expansion budget. Read the complete note before replacing its body."}, tools.pull)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull_evidence", Description: "Pull evidence referenced by an expanded memory, using its evidence ID and full-object expected SHA256 plus the original receipt and handle. Optional span selects byte offset and maximum length, clipped at EOF; selected bytes and their checksum appear in span. Reuse a request UUID only for identical retries. Shares the same expansion budget."}, tools.pullEvidence)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_remember", Description: "Save an explicitly selected reusable repository note as ordinary A testimony, applicable across tasks and runs. Does not promote claims or grant authority. Choose shareable only for content suitable for hosted models; default local notes will not appear in hosted searches. Preserve the request UUID when retrying."}, tools.remember)
-	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: new(bool)}, Name: "cairn_edit", Description: "Revise a previously pulled active Class A note. Supply its record_id and expected_version, a new request_id UUID, and body to change only the text while preserving all stored metadata. Alternatively supply the complete replacement draft, never both body and draft. For a full draft, copy kind, scope, pins, sensitivity, relations and attribution fields from the pulled record; change only the intended content. Scope and sensitivity changes and privileged records are refused. The authenticated writer is recorded. Retry with exactly the same arguments; VERSION_CONFLICT requires a fresh search/pull and reconciliation, not blind overwrite. Returns identifiers without echoing the body."}, tools.edit)
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: new(bool)}, Name: "cairn_edit", Description: "Revise a previously pulled active Class A note. Supply its record_id and expected_version, a new request_id UUID, and body to change only the text while preserving all stored metadata. Alternatively supply the complete replacement draft or evidence_citations to replace source references ([] clears them). Supply exactly one of body, draft or evidence_citations. Text edits preserve citations and earlier versions retain their sources. Citations remain testimony, not qualification. For a full draft, copy kind, scope, pins, sensitivity, relations and attribution fields from the pulled record; change only the intended content. Scope and sensitivity changes and privileged records are refused. The authenticated writer is recorded. Retry with exactly the same arguments; VERSION_CONFLICT requires a fresh search/pull and reconciliation, not blind overwrite. Returns identifiers without echoing the body."}, tools.edit)
 	return server, nil
 }
 
@@ -187,8 +188,19 @@ func (t memoryTools) remember(ctx context.Context, _ *mcp.CallToolRequest, args 
 }
 
 func (t memoryTools) edit(ctx context.Context, _ *mcp.CallToolRequest, args editArgs) (*mcp.CallToolResult, any, error) {
-	if (args.Body == nil) == (args.Draft == nil) {
-		return toolResult(nil, &core.Error{Code: "INVALID_REQUEST", Message: "supply exactly one of body or draft"}, t.config.AvailableTokens)
+	choices := 0
+	for _, supplied := range []bool{args.Body != nil, args.Draft != nil, args.EvidenceCitations != nil} {
+		if supplied {
+			choices++
+		}
+	}
+	if choices != 1 {
+		return toolResult(nil, &core.Error{Code: "INVALID_REQUEST", Message: "supply exactly one of body, draft or evidence_citations"}, t.config.AvailableTokens)
+	}
+	if args.EvidenceCitations != nil {
+		var result core.Revision
+		err := t.client.Call(ctx, "cite", core.CiteRequest{RequestID: args.RequestID, RecordID: args.RecordID, ExpectedVersion: args.ExpectedVersion, Repo: t.config.Scope.Repo, EvidenceCitations: *args.EvidenceCitations}, &result)
+		return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)
 	}
 	if args.Body != nil {
 		var result core.Revision
