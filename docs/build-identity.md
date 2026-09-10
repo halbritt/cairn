@@ -1,5 +1,9 @@
 # Identify the installed binaries
 
+The [changelog](../CHANGELOG.md) summarizes development changes and upgrade
+requirements. Cairn currently has no numbered release tags; the build revision
+identifies the source used for an installation.
+
 When saved guidance names an option that the current installation does not
 recognize, inspect the executable versions before changing the guidance:
 

@@ -32,6 +32,9 @@ Claude task using memory remains unverified.
 
 The [roadmap](docs/roadmap.md) tracks accepted requirements, remaining gaps and
 acceptance evidence.
+The [changelog](CHANGELOG.md) summarizes development changes and upgrade notes;
+the [implementation status](docs/implementation-status.md) records the current
+installation and complete history.
 
 Agents can [read byte spans of captured evidence](docs/index-and-pull.md#index-and-expansion-contract)
 when the whole source exceeds their context budget. Spans retain the full source

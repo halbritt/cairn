@@ -4,6 +4,8 @@ Cairn is a usable local alpha for explicitly selected agent memory. It stores
 versioned notes and supporting evidence, makes them available through CLI,
 Codex and OpenCode interfaces, and records supplied context and observed outcomes.
 The installed system supports ordinary cross-session use today.
+The [changelog](../CHANGELOG.md) summarizes user-visible development changes and
+upgrade requirements; the full implementation history remains below.
 
 Usefulness evidence includes one successful knowledge transfer between harnesses,
 one accepted configuration task after a stored procedure was corrected, and a
@@ -3790,3 +3792,21 @@ tool, with six ordinary tools still available. The facade, CLI and API report th
 installed source. No operational note was changed for verification. This records
 installation and the tested correction capability; downstream task benefit and
 net savings remain unmeasured.
+
+
+### 2026-09-10 — Development changelog and version navigation
+
+Added a root [changelog](../CHANGELOG.md) with source-dated development changes,
+links to the feature contracts, the latest recorded installation and upgrade
+requirements. README and build-identity documentation now link to it. Cairn
+remains an untagged local alpha; local and remote tag inspection found no release
+tags. The running CLI and API still report clean `96e8eae`, while later commits
+record documentation changes.
+
+Verified 95 local links/anchors across the changed navigation surfaces, all 16
+explicit source commit references, the first source commit and current build
+identity. Check output is retained at `/tmp/cairn-changelog-20260910/checks.json`.
+No executable, store, host setting or operational note changed. This closes the
+missing concise changelog surface alongside the earlier version/status request;
+it adds no new task-benefit result. All previous implementation history, including
+negative results and superseded work, is preserved.
