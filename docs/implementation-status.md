@@ -17,7 +17,8 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `9b888e1`, including native retained history,
+The installed CLI and API are clean `a848e3c`, including a twenty-five-second
+semantic worker budget, native retained history,
 argument Unicode validation, per-call search context, reviewed failure signatures,
 proposal version pins and quoted search.
 The database schema remains at migration 033; the native OpenCode adapter is
@@ -51,6 +52,13 @@ task acceptance. Native conversation/session scope does not identify individual
 execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
+
+- **Cold semantic scoring can finish the observed corpus.** Both transports now
+  allow twenty-five seconds, within native/API outer limits. OpenCode and Codex
+  retrieved and pulled the intended setup note with identical full-corpus scores;
+  the tested model and inputs are unchanged. This permits more computation and
+  waiting rather than reducing inference cost; larger-corpus cost and task benefit
+  remain open. [Investigation and deployment](verification/semantic-deadline-2026-09-10.md).
 
 - **Long-note ranking remains under evaluation.** A fixed prefix tie-break
   improves dedicated-note ranks on twelve questions, but the subject-derived
@@ -3002,3 +3010,46 @@ packet `pkt-ba3bab962ec3ebec`, typed evidence and a validated decision receipt
 separate the rejected optimization from the availability decision. Broader
 workload/environment evidence remains missing; no general speedup, service
 percentile, answering-model acceptance or net memory benefit is claimed.
+
+### 2026-09-10 — Install and verify the semantic deadline adjustment
+
+Clean source `a848e3c0051b4dabc334613d8fcc3ce969b550dd` is installed as the ordinary
+CLI, project CLI and running API. Binary SHA-256 is
+`8d0f1836bca1532ea2643a43890e6fbf23778ba14c0e16ccb5cd19e8ef581e2f`;
+API PID is `2093518`. Preflight found no API-owned children before restart.
+PostgreSQL PID `163669`, schema 033, native adapter, semantic worker/model,
+configuration and identities are unchanged. The prior intentional Codex history
+allowlist change was reconciled against its separate configuration receipt.
+The feature's CI run `34468167658` succeeded; all jobs and steps were inspected.
+
+Actual native OpenCode debug execution started with no existing API worker and
+completed unfiltered semantic search in 25.210 seconds including native process
+startup; the pull took 0.942 seconds. A fresh ephemeral Codex app-server thread
+used the actual project configuration without MCP overrides and completed its
+search in 20.494 seconds. Both returned ready, ranked the Codex procedure first
+and pulled exact v9 SHA-256
+`92d3d1461c35b7543a188406ace2facdfa38ddadb6c152aace89f7de6fa59850`.
+Their complete corpus score digest was identical:
+`3b9db33eed6e6f451f3828ccfc7f1b2cb24d232e2be6aaa242ce6d7aef6a8fc1`,
+also matching the unchanged worker's direct result. This verifies the observed
+retrieval route inside both clients' outer limits; no answering model chose or
+used the note, and no downstream task acceptance is inferred.
+
+Worker guidance `225ad6f4-87ab-41af-a19c-1d38b53232c3` advanced v6→v7. Its current
+paragraph states the twenty-five-second budget and fallible kind-filter option,
+removing the incidental setup query that displaced the actual procedures.
+All other text and metadata are preserved; native history returned the exact v6
+body. An identical edit retry and fresh current pull passed. Current SHA-256 is
+`99fce4e09c2939972b7460e013c50766ad79fa95572887c1f3eaf9a32e38e539`;
+body size changed 6,319→6,296 bytes. Fresh lexical lookup again has OpenCode first
+and Codex second, so only the extra maintenance-induced displacement is repaired.
+The native timing and score checks predate this final note edit. The first
+scratch correction script had an indentation error and performed no edit before
+it was corrected.
+
+The [report](verification/semantic-deadline-2026-09-10.md) and
+[metadata](verification/semantic-deadline-2026-09-10.json) include deployment and
+private evidence under `/tmp/cairn-cold-cost/deployment/`. The previous binary is
+retained there. This closes the installation checkpoint above, while leaving
+cold inference cost, larger-corpus availability, ranking quality and demonstrated
+sustained task value open. The complete preceding implementation history is kept.

@@ -98,3 +98,28 @@ model outputs, scripts and logs remain under `/tmp/cairn-cold-cost/`, outside Gi
 The [metadata](semantic-deadline-2026-09-10.json) retains identities, measurements,
 checks and artifact hashes. No new answering-model run, independent task
 acceptance or net memory benefit is claimed.
+
+## Installed behavior and guidance correction
+
+Clean build `a848e3c0051b4dabc334613d8fcc3ce969b550dd` is installed in both CLI
+locations and the running API. Configuration, adapter, model worker, identities
+and PostgreSQL stayed unchanged; schema remains 033. Feature CI `34468167658`
+completed successfully, with every job and step inspected.
+
+Starting with no API-owned worker, actual native OpenCode debug tool execution
+completed unfiltered semantic search in **25.210 seconds**, including OpenCode's
+own startup. A fresh Codex app-server thread using the actual project MCP
+configuration completed its search in **20.494 seconds**. Both returned `ready`,
+ranked the current Codex setup procedure first, and pulled its exact v9 body.
+Their complete corpus score digests matched each other and the retained direct
+worker result. No answering model selected or acted on these results.
+
+Worker guidance advanced v6→v7 through native MCP. The current paragraph now
+states the installed budget and narrowing tradeoff, while removing the incidental
+setup query. All other text and metadata are preserved; the exact v6 body remains
+readable through native history. An identical edit retry and fresh current pull
+passed. The note shrank from 6,319 to 6,296 bytes. Fresh lexical search again
+returns the OpenCode and Codex procedures ahead of the general worker note.
+The original wrong-harness first rank remains; this correction removes only the
+additional displacement caused by the maintenance update. Timing and score-parity
+observations above precede this final note edit.

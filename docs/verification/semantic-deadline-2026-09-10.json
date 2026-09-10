@@ -155,7 +155,12 @@
     "python_tests": 40,
     "static": "passed",
     "answering_model_calls": 0,
-    "installation": "pending subsequent clean build and native verification"
+    "installation": "verified clean a848e3c through native OpenCode and actual Codex project MCP",
+    "feature_ci": {
+      "run": 34468167658,
+      "conclusion": "success",
+      "all_jobs_and_steps_checked": true
+    }
   },
   "doctrine": {
     "packet_id": "pkt-ba3bab962ec3ebec",
@@ -293,6 +298,132 @@
     {
       "path": "/tmp/cairn-cold-cost/doctrine-final.json",
       "sha256": "444e9a0a66a3bdad18e84a248812dbd0720799481b5ab89f09b34cdaa3e5d98e"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/install.py",
+      "sha256": "d9aa77b8cc572384fdb733174ed133c94bf0d21b6b252eb33f9a06a812da3324"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/native_opencode.py",
+      "sha256": "2b33fd132920adc613d36163d6c661c5c0daa5e6e6dd6073056eba9750f1a060"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/native_codex.py",
+      "sha256": "be45c13f3045040e09faa3ac8ef3a9c3b144c6905a2cf129a902a10fbf85dbdc"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/update_guide.py",
+      "sha256": "999565ab78a7165f7b456ead690ade73aeed06e757ff7c242f3587468ef3bf46"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/ci.json",
+      "sha256": "e994da4152b315c660e039eb65b749c8e2d06283a0e3ec2b6d4bb298ea73a36b"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/installation.json",
+      "sha256": "4de448c659edbe1f2a97729931c01f57897ad41744cfa7deaaae533dcbba959c"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/preflight.json",
+      "sha256": "2f4366b0ce3a46902ad0e8f548adaaf6bef65befbef3b9c484471d46df17720c"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/opencode-report.json",
+      "sha256": "1bcc1cec4e626d1f646b7cc40eea47b405ca5659f7c3adc52ae3ff55d0dbd0b8"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/opencode-search.json",
+      "sha256": "2a49b960b56fbdc63011a592392c3a3112ee30bc65681704e6ea2d68815514c1"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/opencode-pull.json",
+      "sha256": "d7b0ed78466813994a22fac4930682aac0cea2ed654740d19a7d19987c0d54de"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/codex/report.json",
+      "sha256": "ee022e0e4ff564e07bc873f176bc36236fe42d952ea872f82cb6919106de3ceb"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/codex/search.json",
+      "sha256": "e0e32e1a19b0d02e130f256abd88e91bc3f3d66e57ed892e42f820be6d85b5ec"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/codex/pull.json",
+      "sha256": "d7b0ed78466813994a22fac4930682aac0cea2ed654740d19a7d19987c0d54de"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/guide-update.json",
+      "sha256": "f016f4c63005015c0f19c756060e1e1191930e2d8bd0f105c6e536414e393d07"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/guide-after.json",
+      "sha256": "0a3a88c674c6cc6ca458c6fd63542bffe403aa9a2d0d47d57bfc3c4175ff224f"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/lexical-after-guide.json",
+      "sha256": "d8f92ffddc7058bf59670335cf41f7b683ad9e72533be6e2c73ffb4fc2d1e982"
     }
-  ]
+  ],
+  "deployment": {
+    "commit": "a848e3c0051b4dabc334613d8fcc3ce969b550dd",
+    "binary_sha256": "8d0f1836bca1532ea2643a43890e6fbf23778ba14c0e16ccb5cd19e8ef581e2f",
+    "api_pid": "2093518",
+    "postgres_pid": "163669",
+    "schema": 33,
+    "configuration_and_worker_unchanged": true,
+    "opencode": {
+      "opencode_version": "1.18.21",
+      "cold_seconds": 25.209559882059693,
+      "pull_seconds": 0.9415554951410741,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "3b9db33eed6e6f451f3828ccfc7f1b2cb24d232e2be6aaa242ce6d7aef6a8fc1"
+      },
+      "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+      "version": 9,
+      "body_sha256": "92d3d1461c35b7543a188406ace2facdfa38ddadb6c152aace89f7de6fa59850",
+      "full_corpus_score_digest_matches": true,
+      "cold_api_children_before": [],
+      "model_calls": 0,
+      "mode": "actual native debug tool execution, no answering model",
+      "adapter_sha256": "63476bf4d92f1812b09a7f51be4603e23261d5d4eb20a56c790051ae8bc3bbec"
+    },
+    "codex": {
+      "codex_version": "codex-cli 0.153.4",
+      "thread_id": "01a08c22-98d0-7610-b097-511c760cb6b6",
+      "search_seconds": 20.49395666178316,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "3b9db33eed6e6f451f3828ccfc7f1b2cb24d232e2be6aaa242ce6d7aef6a8fc1"
+      },
+      "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+      "version": 9,
+      "body_sha256": "92d3d1461c35b7543a188406ace2facdfa38ddadb6c152aace89f7de6fa59850",
+      "exact_scores_match_opencode": true,
+      "project_configuration_used": true,
+      "mcp_overrides": false,
+      "model_turns": 0,
+      "ephemeral": true
+    },
+    "guidance_update": {
+      "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+      "before_version": 6,
+      "after_version": 7,
+      "before_sha256": "ac8e2d3da16104904841661d5491de7652333e1e877ac1fdd7f0d0838d98c8bf",
+      "after_sha256": "99fce4e09c2939972b7460e013c50766ad79fa95572887c1f3eaf9a32e38e539",
+      "preserved_all_other_text": true,
+      "previous_body_retained": true,
+      "metadata_preserved": true,
+      "request_id": "d58e8282-855f-4beb-a429-0b90e3af10d7",
+      "before_receipt": "c7e4aada-6557-4fa5-b62f-501b9f552b9a",
+      "after_receipt": "bafa4411-0fa1-4b32-a3f0-f41895830ef6",
+      "after_body_bytes": 6296
+    },
+    "lexical_after_correction": "OpenCode setup first and Codex setup second; general worker guidance no longer displaces them",
+    "measurement_corpus": "All timing and native score parity observations precede guide v7"
+  }
 }
