@@ -475,6 +475,17 @@ tuning these questions; revisit length-aware ranking with actual long-note
 failures and relevance labels fixed before scoring. This does not establish or
 reject sustained task value.
 
+The [long-note prefix screen](verification/leading-context-2026-09-10.md)
+reproduces an actual setup query that ranks OpenCode ahead of Codex. One fixed
+tie-break improves dedicated-note ranks on twelve questions, but subject-derived
+labels favor it; production lexical v4 remains. Do not tune that new question
+set either. Revisit ranking with naturally arising detail questions. Existing
+semantic procedure filtering resolves the setup query, while the unfiltered
+twenty-note corpus returns lexical fallback and a separate worker run takes
+20.015 seconds against the API's twenty-second deadline. The live fallback cause
+is unconfirmed. Investigate current cold semantic cost before changing ranking
+or timeout defaults; retain full notes, eligibility and score semantics.
+
 [Ranked search continuation](verification/search-pages-2026-09-09.md) now reaches
 later eligible matches through opt-in lexical and semantic pages in CLI, MCP and
 OpenCode. Required instructions, per-page budgets and historical replay remain;

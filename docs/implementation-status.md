@@ -52,6 +52,15 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Long-note ranking remains under evaluation.** A fixed prefix tie-break
+  improves dedicated-note ranks on twelve questions, but the subject-derived
+  workload does not justify a default change. Existing semantic procedure
+  filtering retrieves the intended Codex setup note first. Unfiltered semantic
+  search fell back; a separate installed-worker run on the twenty-note corpus
+  took 20.015 seconds, near the API deadline. Cold cost needs investigation;
+  the specific live fallback cause and task benefit remain unconfirmed.
+  [Comparison and current guidance](verification/leading-context-2026-09-10.md).
+
 - **Retained versions are readable through native tools.** `cairn_history` exposes
   existing metadata pages and exact historical bodies in MCP and OpenCode.
   Repository, destination and output limits remain enforced; earlier wording
@@ -2898,3 +2907,47 @@ Private before/after bodies, requests and checks are under
 `1ebb721a2acddad0e0ec20b209714d63f3921edcaab4c01d495d053d4fd145fe`.
 Current public contracts remain [search context](search-context.md) and
 [native history](record-history.md#native-tools).
+
+### 2026-09-10 — Long-note ranking screen and semantic cost finding
+
+At source `5537557` and installed CLI/API `9b888e1`, `Codex setup configuration`
+still returned the OpenCode procedure first and Codex second. The appropriate
+note remained visible; no wrong model answer was observed. A fixed comparison
+retained twenty eligible hosted notes (57,544 bytes), twelve queries and dedicated
+note labels before scoring. Complete baseline orders matched the current
+paginated API and exact source versions/hashes.
+
+One first-160-byte match tie-break, after lexical score and scope, moved dedicated
+notes to first place for all twelve questions: baseline three with actual recency,
+ten with reversed recency. Nine questions were authored from note subjects,
+favoring the candidate. No question or parameter was tuned, no retired public
+cohort was rerun, and no production ranker was selected. The
+[report](verification/leading-context-2026-09-10.md) retains individual ranks,
+limits and the material missing evidence for broader adoption.
+
+Existing unfiltered semantic lookup returned labelled lexical fallback. A separate
+installed-worker run successfully scored the same corpus in 20.015 seconds and
+put Codex first; this is consistent with pressure at the twenty-second API
+worker deadline, but does not prove that live failure's cause. Existing semantic
+procedure filtering reduced input to seven notes/28,630 bytes and returned Codex
+first in 10.181 seconds, then 0.060 seconds, with identical score digests. The
+selected current v9 body was pulled and its exact hash checked. No answering-model
+run, service percentile, generalization or incremental task benefit is claimed.
+
+Worker guidance `225ad6f4-87ab-41af-a19c-1d38b53232c3` advanced v5→v6 through native
+MCP. Current hash is
+`ac8e2d3da16104904841661d5491de7652333e1e877ac1fdd7f0d0838d98c8bf`;
+the edit preserves prior text and metadata, adds 809 bytes, and records the
+observed route plus its fallible-label and timing limits. An exact retry and fresh
+current pull passed. The comparison corpus predates this edit. This is selected
+continuity work with added reading cost, not a performance repair.
+
+The initial corpus collection exceeded a receipt's expansion budget and resumed
+with two whole pulls per page. Doctrine receipt validation initially required an
+explicit rival for an inference; that was added and validation passed. Private
+inputs, responses, scripts and receipts are retained under
+`/tmp/cairn-leading-screen/`; hashes and bounded results are in the
+[metadata](verification/leading-context-2026-09-10.json). No runtime binary,
+configuration, schema or default changed. The next material investigation is
+cold semantic cost on current notes. The full preceding implementation history
+is preserved.
