@@ -97,3 +97,7 @@ remain separate roadmap work.
 
 The feature provides a reuse path for reviewed failures. Its tests establish
 retrieval behavior, not reduced recurrence or durable task benefit.
+A [retained real-failure check](verification/real-signature-retrieval-2026-09-10.md)
+also retrieves the original local lesson after a new exact-version review, with
+its historical revision supplied. Ordinary text search already ranks that lesson
+first for the three diagnostic queries; the check adds no task-benefit claim.

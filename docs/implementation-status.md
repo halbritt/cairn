@@ -58,6 +58,13 @@ execution attempts or automatically associate retrieval with a host outcome.
   [Contract](failure-signature-search.md),
   [verification](verification/failure-signature-search-2026-09-10.md).
 
+  A [check of the retained real failure](verification/real-signature-retrieval-2026-09-10.md)
+  retrieves its local lesson after an exact-version review in an isolated copy,
+  with the historical revision required. Three ordinary text queries already
+  rank it first. This adds contract evidence without a retrieval advantage in
+  that case or a new model-task benefit claim; further signature expansion awaits
+  an observed need.
+
 - **Proposal conversions retain lesson versions.** The operator can require the
   inspected version and inspect earlier conversions after reopening. Legacy pins
   stay unknown; audited forgetting can still erase lesson bodies. This source
@@ -2623,3 +2630,32 @@ PostgreSQL/race, static, CLI/MCP and native-tool checks pass. Hosted CI run
 `34456197141` completed successfully for the feature commit: PostgreSQL/race,
 Python, static/build, report and authenticated CLI/compact startup steps all passed.
 No additional task-benefit claim is made.
+
+
+### 2026-09-10 — Real failure signature check and text baseline
+
+Verified the installed `61627b3` retrieval path against an isolated restore of the
+actual rejected repair trial. Original proposal `f41b3559-59db-428f-92c2-3ba77bd39345`
+links local A lesson `16a90b22-ae29-436c-a73f-343c7a2dc273` version 1. Its legacy
+conversion pin remains unknown. A new review version 3 in the copy pins the exact
+lesson and enables signature lookup under the lesson's historical revision.
+Missing revision produces an omitted candidate with `CONTEXT_MISSING`; a different
+revision produces `CURRENTNESS_MISMATCH`. Hosted retrieval still excludes the
+local lesson. Exact local pull and both historical recompilations pass.
+
+All three diagnostic natural-language queries already rank the lesson first.
+This check establishes no ranking advantage, new repair outcome, review-cost
+saving or model-task benefit. Different task/harness labels are declared probe
+context, not agent executions. No answering model ran. All eight original trial
+artifact hashes, source assessment history and the lesson remain unchanged; the
+verification cluster was removed after retaining a private dump. The operational
+store was not used.
+
+The initial probe hit the observer receipt-ownership boundary, then a corrected
+probe exposed its own missing revision. Both observations and corrections are
+retained in the [report](verification/real-signature-retrieval-2026-09-10.md) and
+metadata manifest. Product code and lesson pins were left unchanged. The roadmap
+now favors ordinary task use before further signature feature work, while keeping
+qualitative, cumulative and indirect value admissible. E1/E4/D1/D2 remain partial.
+Pincite packet `pkt-1ddf7666ccf3178f` has validated evidence and decision receipt,
+closed citation traces and 15 explicitly nonmaterial outstanding obligations.

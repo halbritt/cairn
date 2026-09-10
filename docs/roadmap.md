@@ -610,9 +610,21 @@ cannot suppress a mandatory instruction. Semantic v3 seals context; old formats
 remain readable. Explanation v2 preserves gate facts for historical ranking and
 packing from the named receipt's read set, with input digest and result-seal
 checks. Later B corrections and evidence changes cannot rewrite that selection.
-Declared task-phase matching is implemented. Arbitrary historical cutoffs without
-retained observations, entity/file/error matching, and the real-history usefulness
-trial remain open.
+Declared task-phase matching, quoted-text preference and reviewed failure-signature
+matching are implemented. Arbitrary historical cutoffs without retained
+observations, structured entity/file matching and broader real-history usefulness
+remain open.
+
+A [retained real-failure check](verification/real-signature-retrieval-2026-09-10.md)
+now verifies signature lookup against the original local lesson after a new
+exact-version review in an isolated copy. It also exposes the applicability limit:
+the lesson requires its historical revision. Missing or different revision omits
+it; the lesson remains local. All three diagnostic text queries already rank it
+first, so this case shows no ranking advantage or added task benefit. Keep further
+signature expansion behind an observed retrieval need. Prioritize ordinary task
+use, including qualitative and cumulative benefit across turns, with the existing
+Codex/OpenCode interfaces. This does not close E1/E4/D1/D2 or supersede the original
+failed trial.
 
 [Index and pull](index-and-pull.md) now delivers a sealed bounded pointer index
 with full mandatory bootstrap and expiring caller/destination-bound handles.

@@ -1,0 +1,309 @@
+{
+  "schema": "cairn.real-signature-retrieval/1",
+  "source_commit": "61627b3d17f96c95515b1ce6c8e0d3377096d214",
+  "binary_sha256": "4abbca2242bfae4903c9974d8fdd4802bca13177299e3f0fac9c7468a926a20e",
+  "original_artifacts": {
+    "report.json": {
+      "path": "/tmp/cairn-observed-model-20260908-p/report.json",
+      "sha256": "07c7815882a9bd9db9156b801409cd95dd7e732fb6ea96125e974620a9d9b1e6"
+    },
+    "host-verification.json": {
+      "path": "/tmp/cairn-observed-model-20260908-p/host-verification.json",
+      "sha256": "41937fd4a27eb0b5bd28129f2e3192377c0fbe4445aeda675e6ef04322035653"
+    },
+    "hosted-relay.json": {
+      "path": "/tmp/cairn-observed-model-20260908-p/hosted-relay.json",
+      "sha256": "ed71e5684833cb6e97d977b66d421938c334363741b533523cc4419e128a21b3"
+    },
+    "cairn_h0.patch": {
+      "path": "/tmp/cairn-observed-model-20260908-p/cairn_h0.patch",
+      "sha256": "e17d0d447a10838cc631e3884075c3c8e7c9eb9a4b1141e6ef8d8c55cb1c9eb0"
+    },
+    "demand-review.json": {
+      "path": "/tmp/cairn-observed-model-20260908-p/demand-review.json",
+      "sha256": "19ea8455701176e5b33e1d905b0a8b2a46c4b626920e8d064b907c37e4a4dfd1"
+    },
+    "trial.dump": {
+      "path": "/tmp/cairn-observed-model-20260908-p/trial.dump",
+      "sha256": "c378f7c18db962573d6ad287e40dbbc1d848c3b1b264dd8ec2b0d00cd76e74c4"
+    },
+    "reviewed-trial.dump": {
+      "path": "/tmp/cairn-observed-model-20260908-p/reviewed-trial.dump",
+      "sha256": "ff2c80e54eca292c231212ac1ec243a3ad4ac19425cd69d4cea17b0cf245bd7a"
+    },
+    "cleanup.json": {
+      "path": "/tmp/cairn-observed-model-20260908-p/cleanup.json",
+      "sha256": "3616e56b4e6348a1e33e2565ecd18671b63bb0ee53194d7858dc2068400a914d"
+    }
+  },
+  "operational_store_touched": false,
+  "answering_model_run": false,
+  "source_bodies_published": false,
+  "foreign_assessment_cli_refused": true,
+  "assessment_history_sha256": "2191965fa02cd647df47fac491905e0d579910f20e8012fed689b1dbdb87dc92",
+  "proposal_id": "f41b3559-59db-428f-92c2-3ba77bd39345",
+  "source_receipt": "ad4f4fad-1400-425c-810b-b08d10513b58",
+  "source_assessment_version": 2,
+  "source_current": true,
+  "signature_sha256": "f2e17f8bc20de0b9a439b4e9690a470f8f815075ef56354e1fe61f670ac5f3ce",
+  "result_record": "16a90b22-ae29-436c-a73f-343c7a2dc273",
+  "result_version": 1,
+  "result_class": "A",
+  "result_sensitivity": "local",
+  "result_body_sha256": "32a49cce9065b3d8fbc7bd97fb7978aec04889a2850fd7335afd8cb6f1c2157c",
+  "result_scope": {
+    "repo": "trial:cairn_h0",
+    "task_id": "*",
+    "run_id": "*"
+  },
+  "result_pins": {
+    "revision": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af"
+  },
+  "evidence": [
+    {
+      "evidence_id": "f2ca6a4d-dd00-4eb9-9148-1327eec54c5e",
+      "sha256": "606c0d9429ecc2894cf4528f876239e5473bfa55be93023a4c85370c088e1618",
+      "actual_sha256": "606c0d9429ecc2894cf4528f876239e5473bfa55be93023a4c85370c088e1618",
+      "state": "resolvable",
+      "witness": "instrumented"
+    }
+  ],
+  "missing_revision_refused": true,
+  "different_revision_excluded": true,
+  "baseline_queries": [
+    {
+      "query": "explicit environment overrides lost",
+      "result_ids": [
+        "16a90b22-ae29-436c-a73f-343c7a2dc273",
+        "0719eefe-ac9c-4f7c-93fd-f177334763da"
+      ],
+      "lesson_rank": 1,
+      "receipt_id": "6f00834c-bf95-47af-8be5-5830f98207c0"
+    },
+    {
+      "query": "inherited GOCACHE survives",
+      "result_ids": [
+        "16a90b22-ae29-436c-a73f-343c7a2dc273",
+        "0719eefe-ac9c-4f7c-93fd-f177334763da"
+      ],
+      "lesson_rank": 1,
+      "receipt_id": "d4af2923-bf02-44dc-b31f-2f4b7c3ff134"
+    },
+    {
+      "query": "child process ignores requested environment",
+      "result_ids": [
+        "16a90b22-ae29-436c-a73f-343c7a2dc273",
+        "0719eefe-ac9c-4f7c-93fd-f177334763da"
+      ],
+      "lesson_rank": 1,
+      "receipt_id": "40cc5fad-7fe8-468a-9b8d-e9bbc95e3255"
+    }
+  ],
+  "legacy_signature_result_ids": [],
+  "current_signature_result_ids": [
+    "16a90b22-ae29-436c-a73f-343c7a2dc273"
+  ],
+  "new_review_version": 3,
+  "legacy_pin_remains_unknown": true,
+  "exact_local_pull": true,
+  "hosted_local_lesson_excluded": true,
+  "source_assessments_unchanged": true,
+  "lesson_unchanged": true,
+  "historical_searches_recompile": true,
+  "old_search_receipt": "1c7d89bf-62ad-4165-8e6b-e701d7553ba1",
+  "new_search_receipt": "f719f629-94cb-41fe-be65-7adcfa1d658f",
+  "cross_task_scope": true,
+  "scope_labels_are_not_agent_execution": true,
+  "availability": "post-review recurrence at explicitly declared historical revision; not a present-day task",
+  "verification_dump": {
+    "path": "/tmp/cairn-real-signature-verified.dump",
+    "sha256": "f1d66fbfe7ca59596f89dbe58b748621b2d216c8859e6375968455d20ca5fd3e"
+  },
+  "source_trial_unchanged": true,
+  "disposable_cluster_removed": true,
+  "interpretation": {
+    "lexical_lesson_rank": [
+      1,
+      1,
+      1
+    ],
+    "incremental_retrieval_advantage_observed": false,
+    "task_benefit_established": false,
+    "scope": "One retained corpus and three diagnostic queries; not general retrieval equivalence",
+    "missing_revision_behavior": "Successful index response omits lesson with CONTEXT_MISSING; not an operation refusal"
+  },
+  "doctrine": {
+    "packet_id": "pkt-1ddf7666ccf3178f",
+    "packet_content_sha256": "1ddf7666ccf3178fb9deb8ea2afdc991fa91d4c10553d0926f9b0eb1f051326d",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "required_by": "debugging-causal-repair",
+        "requirement": "changed path exercised after repair",
+        "classification": "nonmaterial",
+        "reason": "No product repair is proposed; the earlier probe omitted required context and the corrected probe exercises the existing contract."
+      },
+      {
+        "required_by": "debugging-causal-repair",
+        "requirement": "failing reproduction before repair",
+        "classification": "nonmaterial",
+        "reason": "No product repair is proposed; the earlier probe omitted required context and the corrected probe exercises the existing contract."
+      },
+      {
+        "required_by": "debugging-causal-repair",
+        "requirement": "relevant regression evidence",
+        "classification": "nonmaterial",
+        "reason": "No product repair is proposed; the earlier probe omitted required context and the corrected probe exercises the existing contract."
+      },
+      {
+        "required_by": "operations-contract-conformance-testing",
+        "requirement": "consumer-owned contract tests with a run cadence",
+        "classification": "nonmaterial",
+        "reason": "No service boundary or consumer contract is changed; this report verifies one isolated historical corpus through the installed CLI."
+      },
+      {
+        "required_by": "operations-contract-conformance-testing",
+        "requirement": "request-side and response-side suites separated from live dependencies",
+        "classification": "nonmaterial",
+        "reason": "No service boundary or consumer contract is changed; this report verifies one isolated historical corpus through the installed CLI."
+      },
+      {
+        "required_by": "operations-contract-conformance-testing",
+        "requirement": "shared specification as oracle",
+        "classification": "nonmaterial",
+        "reason": "No service boundary or consumer contract is changed; this report verifies one isolated historical corpus through the installed CLI."
+      },
+      {
+        "required_by": "operations-contract-conformance-testing",
+        "requirement": "the shared specification as the test oracle",
+        "classification": "nonmaterial",
+        "reason": "No service boundary or consumer contract is changed; this report verifies one isolated historical corpus through the installed CLI."
+      },
+      {
+        "required_by": "task:repository-assessment",
+        "requirement": "evidence-co-change",
+        "classification": "nonmaterial",
+        "reason": "No structural or generated-code intervention is proposed; co-change and generated-file inventory cannot change the bounded retrieval result."
+      },
+      {
+        "required_by": "task:repository-assessment",
+        "requirement": "evidence-generated-artifacts",
+        "classification": "nonmaterial",
+        "reason": "No structural or generated-code intervention is proposed; co-change and generated-file inventory cannot change the bounded retrieval result."
+      },
+      {
+        "required_by": "testing-deterministic-async-observation",
+        "requirement": "repeated or adversarial scheduling results",
+        "classification": "nonmaterial",
+        "reason": "No asynchronous product behavior changes; subprocesses have explicit completion checks and the final proof is written after cleanup."
+      },
+      {
+        "required_by": "universal-information-hiding",
+        "requirement": "actual caller needs",
+        "classification": "nonmaterial",
+        "reason": "No interface or abstraction change is proposed; the existing retrieval contract supplies the relevant caller obligations."
+      },
+      {
+        "required_by": "universal-information-hiding",
+        "requirement": "caller needs and decision owner",
+        "classification": "nonmaterial",
+        "reason": "No interface or abstraction change is proposed; the existing retrieval contract supplies the relevant caller obligations."
+      },
+      {
+        "required_by": "universal-information-hiding",
+        "requirement": "decision owner and volatility",
+        "classification": "nonmaterial",
+        "reason": "No interface or abstraction change is proposed; the existing retrieval contract supplies the relevant caller obligations."
+      },
+      {
+        "required_by": "universal-information-hiding",
+        "requirement": "leaked knowledge or coordinated change",
+        "classification": "nonmaterial",
+        "reason": "No interface or abstraction change is proposed; the existing retrieval contract supplies the relevant caller obligations."
+      },
+      {
+        "required_by": "universal-information-hiding",
+        "requirement": "material cost/failure semantics callers require",
+        "classification": "nonmaterial",
+        "reason": "No interface or abstraction change is proposed; the existing retrieval contract supplies the relevant caller obligations."
+      }
+    ]
+  },
+  "verification_artifacts": [
+    {
+      "path": "/tmp/cairn-real-signature-check.py",
+      "sha256": "63b184fbb01db6baf63a13e7e3db64a435d6ad6c33aca9061f300e61053edfe9"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-result.json",
+      "sha256": "8fb2044cf172d258a4c9ecca4a67a56ff9369fbf0155b794f7160fce27ec382b"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-check.log",
+      "sha256": "6cb1378803e43177873075c43b2c48a6b60cda9b9a9f5d0316021f3df0759d08"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-check-fixed.log",
+      "sha256": "8a0eb34fb2d8dc72243a83d9a6950f1db244c5474e3517c8910404537e4226d5"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-check-diagnostic.log",
+      "sha256": "964bb52d1b59969660da39612f0e0ff53c84a751cf9401a6fd9ebd23feb6c098"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-check-final.log",
+      "sha256": "69f075a8283632d0cd120cbc05f343f5229fd44e84621b25f8d0930f2a539fc3"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-diagnostic.json",
+      "sha256": "079d470f840529242cc136f645a8fe33d99dfb1aad7dfcc6a63cf37f806a19b8"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-authority.json",
+      "sha256": "dfaa34f65d64aae1b9029eabb0d8bdf366e43cd26515f45679564e6f5da22962"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-contracts.json",
+      "sha256": "6606cbeac9418086011e5474f4c498bbd6da24f435683486b423fc9480dab2b8"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-source.json",
+      "sha256": "f6ef9673419244c56cc6b655f297b884402481d5c4b8d0936a10943c09d3ed1c"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-observations.json",
+      "sha256": "1f3f8c77eaf5c460505f52af6728ea0ad3688e74dc0040a0481519ba807a204c"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-history.json",
+      "sha256": "901ba8ae57f3e1fdc7ecd74c2a82855511e76a1a9881d092708dbb02f34d0643"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-decision-context.json",
+      "sha256": "1247dc3896566d93ff0e107a25d43f36c81343d343d8f8691e80393f1be9c727"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-doctrine.json",
+      "sha256": "1406e0cba9224be4601bbe1d133f2c7d6ea06396cea9c4e1dfa938fdbfc23703"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-doctrine-verified.json",
+      "sha256": "12e7c5dd3d2608de52a6b9ae5b5dba26a32ea67591e355b52d5b0793d94e6a44"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-decision.json",
+      "sha256": "40289ba79a18f3c695e7ff86c0428fa10cbd3bf0d5713296733a1c45dd0d3bb8"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-citations.json",
+      "sha256": "41b39489dbbcd500ccf87510ca2569d4697d9c54809793409fa5f287aba36866"
+    },
+    {
+      "path": "/tmp/cairn-real-signature-citations-verified.json",
+      "sha256": "98710743519427d3711e45672557532e6c57da8c9b112d673be3cecd63f07fab"
+    }
+  ]
+}
