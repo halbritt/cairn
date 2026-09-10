@@ -46,6 +46,12 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Selected task files can be fingerprinted.** The runner captures labels, sizes
+  and SHA-256 after the process outcome through existing observer evidence. File
+  contents and actual paths stay out of the manifest; local is the default.
+  This identifies reviewed bytes without inferring task acceptance or memory value.
+  [Guide](run-artifact-evidence.md), [verification](verification/run-artifact-evidence-2026-09-09.md).
+
 - **Known applicability mismatches take precedence over missing pins.** An
   instruction pinned to a build at revision A no longer blocks a review merely
   because revision is absent. Truly unknown applicability still refuses; private
@@ -1590,3 +1596,20 @@ a fresh full pull verified its content. Exact-source CI 34419842234 passed all
 steps. The repair report retains deployment and lesson identities. This adds a
 usable repair and saved guidance; no model task or benefit assessment is inferred.
 All earlier implementation history remains intact.
+
+### 2026-09-09 — retain fingerprints of explicitly selected task files
+
+Added repeatable `run --artifact LABEL=PATH` to the local and authenticated host
+runner. Up to 16 regular files and 64 MiB total are hashed after the process stops
+and its outcome is committed. Existing evidence capture stores a metadata-only
+manifest with run IDs, labels, sizes and digests. Local sensitivity is the default;
+sharing needs an explicit flag. No database migration or new server endpoint was
+introduced.
+
+File-read failures preserve the process observation and submit no partial manifest.
+Ambiguous capture responses retain the exact request for explicit retry without
+rerunning the task. The [verification](verification/run-artifact-evidence-2026-09-09.md)
+records PostgreSQL/race, real authenticated API and privacy/retry checks. A fixture
+assessment can reference the evidence while fingerprint capture itself leaves task
+outcome unknown. U2 remains partial for convincing native-task value evidence;
+qualitative and cumulative review retains its place. All prior history is preserved.

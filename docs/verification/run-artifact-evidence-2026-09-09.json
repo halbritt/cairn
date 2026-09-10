@@ -1,0 +1,146 @@
+{
+  "schema": "cairn.run-artifact-verification/1",
+  "date": "2026-09-09",
+  "baseline_commit": "c581aa8d9c94fa4f25ea20da42b2ea050d334871",
+  "verification": {
+    "command": "make check && make test && make test-integration",
+    "exit_code": 0,
+    "disposable_postgres": true,
+    "native_model_task": false,
+    "memory_benefit_assessed": false
+  },
+  "doctrine": {
+    "initial_packet": "pkt-b5e41e735be704ec",
+    "initial_sha256": "b5e41e735be704ec1886028e93cd0ae7d8abf704e0c56874fa3e8e40b52a7a06",
+    "packet_id": "pkt-f0b5e687ba6d7e40",
+    "packet_sha256": "f0b5e687ba6d7e402d06fdb826a1992dcbd6b80cfbb3e7e64c888de28cdf1a18",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "doctrine": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "used_concepts": [
+      "universal-repository-contract-precedence",
+      "go-explicit-contextual-errors",
+      "implementation-placement-by-ownership",
+      "universal-preserve-behavior-by-default",
+      "implementation-explicit-failure-policy"
+    ],
+    "unmet_obligations": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "material": false,
+        "rationale": "No interface relocation or new abstraction is proposed. The existing runner Store gains the already implemented evidence operation for its two tested consumers."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-23c645f54d9ad27b",
+        "required_by": "implementation-placement-by-ownership",
+        "requirement": "recurring change evidence when available",
+        "status": "missing",
+        "material": false,
+        "rationale": "No recurring-change or refactoring benefit is claimed; this implements a selected-file requirement in the existing runner."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-8c8a20d5bef005dd",
+        "required_by": "testing-test-first-feedback",
+        "requirement": "observable failing condition",
+        "status": "missing",
+        "material": false,
+        "rationale": "This is a new opt-in capability with contract tests added after implementation, not a reproduced defect or a test-first claim."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-0a506f1cf59a4e05",
+        "required_by": "universal-information-hiding",
+        "requirement": "decision owner and volatility",
+        "status": "missing",
+        "material": false,
+        "rationale": "Runner ownership is inspected; no representation-volatility or architecture-improvement claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-733a86bfcf974e5c",
+        "required_by": "universal-information-hiding",
+        "requirement": "leaked knowledge or coordinated change",
+        "status": "missing",
+        "material": false,
+        "rationale": "No existing information-leakage or change-amplification repair is claimed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ec0bebeb749e3fa9",
+        "required_by": "universal-no-change-option",
+        "requirement": "actual current cost/risk or absence within a stated interval",
+        "status": "missing",
+        "material": false,
+        "rationale": "Manual evidence capture remains viable. No measured time saving or memory-value claim is made; the scoped optional implementation is an experiment under U2."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-run-artifacts-check-final.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-tests-final.log",
+      "sha256": "db9b93db999ebf3f0f298eac82180778fddb163d9d8561ad8be5b28590f536ae"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-integration-final.log",
+      "sha256": "760d6c65b368647e8bbde81ca1ec0a4f9183a82bdb6b81722f3e6882368471e4"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-doctrine.json",
+      "sha256": "60efe349d9bc82bb8287f620a1e102af44d66250a2b115f82887d99779901afd"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-doctrine-final.json",
+      "sha256": "d4206afca8624a86c10ee09fc5bf253c8a88e19701621d01f09cc5f4fb2b505d"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-decision.json",
+      "sha256": "3ba4fb9ff710d1fb72c15b516ee409db0ee5f80e43164d8d50a72ee125becfb4"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-unmet.json",
+      "sha256": "f7f2f1af17da0baf88ef9ee7a7d37a139318162f85cc942bb90d14ec7d2e7d51"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-citation-initial.json",
+      "sha256": "ca85d185579e9d2a6606bf0ba45fc02474e9ea43272a353cb00550a2d9649575"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-citation-final.json",
+      "sha256": "59d7e1918dd40ed10b1bc9a9403198f0fed29a548f5212f38a983ff089fd76c5"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-runtime-before.json",
+      "sha256": "4f206bd9fec9f4d340647a93f5cb4d084d96909542fe14628f1a8d9bcf8fd35f"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-evidence-authority.json",
+      "sha256": "f201a2ac1122df3ec86530d8be263f7823a1a8c9d642ef5593321376ad47f484"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-evidence-contract.json",
+      "sha256": "3edecc8359017041b9c25fcd014d3b905f2b34e405abd5e28ed33770c837945a"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-evidence-source.json",
+      "sha256": "6a55d74be4f53224d17dfa89548a9ddded880b380a293ebbf05796c1968e2a1e"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-evidence-tests.json",
+      "sha256": "5c1b7c968e7854796b06de9c3139584d6cf95e25e0c81863de1253dc976a77a8"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-evidence-consumers-runtime.json",
+      "sha256": "a43224766f549f3f88c981cce1c12923a95f56551d2e045c257659cfee91176c"
+    }
+  ]
+}

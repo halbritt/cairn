@@ -167,18 +167,31 @@ try:
                    attempt_id=attempt_id, dispatcher='fixture:dispatcher', delegate='fixture:delegate',
                    scope=dict(repo='fixture:socket', task_id='interactive', run_id='socket-host-run'))),
                    env=client_env, capture_output=True, text=True, check=True)
-    child = ('import os,sys; body=sys.stdin.read(); '
+    artifact_body = b'BINARY-ARTIFACT-' + uuid.uuid4().hex.encode() + b'\x00\xff'
+    (root / 'artifact-source.bin').write_bytes(artifact_body)
+    child = ('import os,sys,pathlib; body=sys.stdin.read(); '
              'assert "Synthetic socket lesson" in body; '
              'assert "SOCKET-HOST-PROMPT" in body; '
              'assert not any(k.startswith("CAIRN_") for k in os.environ); '
+             'pathlib.Path("artifact-output.bin").write_bytes(pathlib.Path("artifact-source.bin").read_bytes()); '
              'print("observed-host-ok")')
     command = [*host, 'run', '--repo', 'fixture:socket', '--request-id', request_id,
                '--run', 'socket-host-run', '--attempt-id', attempt_id, '--prompt', 'SOCKET-HOST-PROMPT',
-               '--query', 'socket', '--', sys.executable, '-c', child]
+               '--query', 'socket', '--dir', str(root), '--artifact', 'build-output=artifact-output.bin',
+               '--', sys.executable, '-c', child]
     run = subprocess.run(command, env=client_env, capture_output=True, text=True, timeout=15)
     assert run.returncode == 0 and run.stdout.strip() == 'observed-host-ok', (run.stdout, run.stderr)
     observed = json.loads(run.stderr)['data']
     assert observed['process_state'] == 'exited' and observed['outcome_id'] and observed['attempt_id'] == attempt_id
+    assert observed['artifact_evidence']['witness'] == 'instrumented'
+    captured = subprocess.run([binary, 'evidence', observed['artifact_evidence']['evidence_id']],
+                              env=env, capture_output=True, text=True, check=True)
+    document = json.loads(captured.stdout)['data']
+    fingerprint = json.loads(document['body'])
+    assert document['sensitivity'] == 'local'
+    assert fingerprint['receipt_id'] == observed['receipt_id'] and fingerprint['outcome_id'] == observed['outcome_id']
+    assert fingerprint['files'] == [dict(label='build-output', bytes=len(artifact_body), sha256=hashlib.sha256(artifact_body).hexdigest())]
+    assert 'BINARY-ARTIFACT-' not in document['body'] and 'artifact-output.bin' not in document['body'] and str(root) not in document['body']
     status_request = json.dumps(dict(receipt_id=observed['receipt_id']))
     inspected = subprocess.run([*host, 'run-status'], input=status_request,
                                env=client_env, capture_output=True, text=True, check=True)
@@ -205,6 +218,7 @@ try:
         run = subprocess.run([*host, 'run', '--repo', 'fixture:socket', '--timeout', '100ms',
                               '--', *args], env=client_env, capture_output=True, text=True, timeout=15)
         assert run.returncode == code and json.loads(run.stderr)['data']['process_state'] == state
+        assert 'artifact_evidence' not in json.loads(run.stderr)['data']
     report = subprocess.run([*host, 'run-report'], input=json.dumps(dict(repo='fixture:socket', limit=10)),
                             env=client_env, capture_output=True, text=True, check=True)
     rows = json.loads(report.stdout)['data']['rows']

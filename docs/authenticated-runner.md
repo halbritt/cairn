@@ -49,6 +49,10 @@ The existing [command and delivery digests](use-outcome-loop.md#command-and-deli
 identify different parts of the invocation. The command digest excludes the
 combined memory/task input added by the selected carrier.
 
+Use repeatable `--artifact LABEL=PATH` to [fingerprint selected task files](run-artifact-evidence.md)
+after the process stops. The manifest retains labels, sizes and digests, with
+local sensitivity by default. Task assessment remains separate.
+
 ## Custody and failures
 
 Before claiming a launch, Cairn [rechecks the retained memory](launch-freshness.md)

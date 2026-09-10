@@ -172,11 +172,14 @@ files. This verifies those inputs and paths, not every capture route or physical
 erasure. Existing [historical run rows](verification/run-report-2026-09-08.json)
 already included command digests before this audit.
 
-The generic runner does not automatically fingerprint selected output files or
-diffs. Deliberate evidence capture and assessment links are available separately;
-they do not become an automatic observation of a produced artifact. That remaining
-capture contract stays in U2/L7. No new runtime fields or storage were needed to
-correct the earlier roadmap wording.
+The generic runner now supports [explicit file selections](run-artifact-evidence.md)
+with `--artifact LABEL=PATH`. It captures an observer-generated manifest of file
+sizes and digests after the process outcome, using existing evidence storage.
+Default workspace capture remains off. A selected saved diff can be fingerprinted
+like any file; Cairn does not generate a diff or infer which files the task produced.
+Assessments can reference the evidence ID without treating the fingerprint as
+correctness or memory-benefit proof. The earlier command-digest audit itself
+required no new runtime fields or storage.
 
 ## Task assessments and corrections
 

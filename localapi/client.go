@@ -153,6 +153,11 @@ func (c *Client) RecordOutcome(ctx context.Context, req core.OutcomeRequest) (re
 	return
 }
 
+func (c *Client) CaptureEvidence(ctx context.Context, req core.EvidenceRequest) (result core.Evidence, err error) {
+	err = c.Call(ctx, "evidence", req, &result)
+	return
+}
+
 func (c *Client) RunStatus(ctx context.Context, id string) (result core.RunStatus, err error) {
 	err = c.Call(ctx, "run-status", struct {
 		ReceiptID string `json:"receipt_id"`

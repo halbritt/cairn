@@ -89,6 +89,16 @@ func search(ctx context.Context, s *core.Store, args []string) (core.Package, er
 func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result, error) {
 	var kinds []string
 	f := flags("run")
+	var outputs []runner.OutputArtifact
+	f.Func("artifact", "fingerprint a selected file after the process: LABEL=PATH (repeat, at most 16)", func(value string) error {
+		label, path, ok := strings.Cut(value, "=")
+		if !ok {
+			return invalid("artifact requires LABEL=PATH")
+		}
+		outputs = append(outputs, runner.OutputArtifact{Label: label, Path: path})
+		return nil
+	})
+	shareArtifacts := f.Bool("share-artifact-evidence", false, "allow hosted delivery of the selected fingerprint manifest (contents are never captured)")
 	f.Func("kind", "optional record kind; repeat for multiple labels (required instructions always apply)", func(value string) error { kinds = append(kinds, value); return nil })
 	attempt := f.String("attempt-id", "", "existing host-observed attempt UUID")
 	repo := f.String("repo", defaultRepo(), "repository identity")
@@ -136,6 +146,7 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 		return runner.Result{}, err
 	}
 	req := runner.Request{AttemptID: *attempt, Compile: core.CompileRequest{Kinds: kinds, RequestID: *request, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: *query, Purpose: "context", AvailableTokens: *tokens}, Destination: core.Destination{Name: *dest, AllowLocal: *dest == "local"}, Command: command, Directory: *directory, Carrier: *carrier, Prompt: *prompt, Timeout: *timeout, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability, Revision: *revision, WorkspaceSHA256: *workspace, ArtifactDirectory: filepath.Join(artifacts, "runs")}
+	req.OutputArtifacts, req.ShareArtifactEvidence = outputs, *shareArtifacts
 	if retainedRequested {
 		req.Retained = &core.RunPackageRequest{ReceiptID: *receipt, Seal: *seal}
 	}

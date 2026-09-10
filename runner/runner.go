@@ -24,30 +24,33 @@ import (
 )
 
 type Request struct {
-	AttemptID         string
-	Compile           core.CompileRequest
-	Retained          *core.RunPackageRequest
-	Destination       core.Destination
-	Command           []string
-	Directory         string
-	Carrier           string
-	Prompt            string
-	Timeout           time.Duration
-	TaskClass         string
-	BindingID         string
-	CapabilityID      string
-	Revision          string
-	WorkspaceSHA256   string
-	ArtifactDirectory string
+	AttemptID             string
+	Compile               core.CompileRequest
+	Retained              *core.RunPackageRequest
+	Destination           core.Destination
+	Command               []string
+	Directory             string
+	Carrier               string
+	Prompt                string
+	Timeout               time.Duration
+	TaskClass             string
+	BindingID             string
+	CapabilityID          string
+	Revision              string
+	WorkspaceSHA256       string
+	ArtifactDirectory     string
+	OutputArtifacts       []OutputArtifact
+	ShareArtifactEvidence bool
 }
 type Result struct {
-	AttemptID    string `json:"attempt_id,omitempty"`
-	ReceiptID    string `json:"receipt_id"`
-	Seal         string `json:"seal"`
-	ProcessState string `json:"process_state"`
-	ExitCode     *int   `json:"exit_code,omitempty"`
-	OutcomeID    string `json:"outcome_id,omitempty"`
-	Artifacts    string `json:"artifacts"`
+	ArtifactEvidence *core.Evidence `json:"artifact_evidence,omitempty"`
+	AttemptID        string         `json:"attempt_id,omitempty"`
+	ReceiptID        string         `json:"receipt_id"`
+	Seal             string         `json:"seal"`
+	ProcessState     string         `json:"process_state"`
+	ExitCode         *int           `json:"exit_code,omitempty"`
+	OutcomeID        string         `json:"outcome_id,omitempty"`
+	Artifacts        string         `json:"artifacts"`
 }
 
 // Store is the persistence boundary used by a process observer. Both a local
@@ -60,9 +63,14 @@ type Store interface {
 	ClaimRun(context.Context, string) error
 	RecordDelivery(context.Context, core.DeliveryRequest) (core.Observation, error)
 	RecordOutcome(context.Context, core.OutcomeRequest) (core.Observation, error)
+	CaptureEvidence(context.Context, core.EvidenceRequest) (core.Evidence, error)
 }
 
 func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer) (Result, error) {
+	outputs, err := prepareOutputArtifacts(req.Directory, req.OutputArtifacts, req.ShareArtifactEvidence)
+	if err != nil {
+		return Result{}, err
+	}
 	kinds, err := core.NormalizeKinds(req.Compile.Kinds)
 	if err != nil {
 		return Result{}, err
@@ -213,6 +221,15 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	}
 	if startErr != nil {
 		return result, startErr
+	}
+	if len(outputs) > 0 {
+		evidence, err := captureOutputArtifacts(store, result, req.Compile.Scope.Repo, outputs, req.ShareArtifactEvidence)
+		if evidence.ID != "" {
+			result.ArtifactEvidence = &evidence
+		}
+		if err != nil {
+			return result, errors.Join(deliveryErr, waitErr, err)
+		}
 	}
 	if deliveryErr != nil {
 		return result, deliveryErr
