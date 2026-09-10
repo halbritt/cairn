@@ -70,7 +70,9 @@ improve cold scoring or guarantee that the next eligible set will hit the cache.
 The library's `semantic.StreamCommand` retains the 30-second default;
 `semantic.StreamCommandWithIdleTimeout` lets its host choose a positive interval.
 
-The worker occupied about 208 MiB in the original local experiment while loaded. The prepared worker now reuses exact note vectors
+The [spaced-follow-up check](verification/semantic-idle-2026-09-10.md) records this
+host's five-minute choice and its observed cost reduction. The worker occupied
+about 208 MiB in the original local experiment while loaded. The prepared worker now reuses exact note vectors
 from its last successfully scored request. Only body hashes and vectors are retained;
 query text, note text and record IDs are not cached. Notes absent from the next
 successful request are dropped. Changed bodies are embedded again, and all current

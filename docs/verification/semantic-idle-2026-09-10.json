@@ -1,0 +1,204 @@
+{
+  "schema": "cairn.semantic-idle-verification/1",
+  "date": "2026-09-10",
+  "source_commit": "72e7c243ae211acc3c04b4520e5bb4d5676200e6",
+  "installed_sha256": "c046c983a48c04918a8c9ed8d102143faef8d0a917291b9985aeb0c6bbc21911",
+  "api_pid": "2934824",
+  "configuration_change": {
+    "path": "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf",
+    "before_sha256": "bb97a6690041a004c3385743b3b860394f635995d8b63781501900527b2793cd",
+    "after_sha256": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb",
+    "idle_seconds_before": 30,
+    "idle_seconds_after": 300
+  },
+  "default_idle_seconds": 30,
+  "request_deadline_seconds": 25,
+  "paired_idle_gap_seconds": 35,
+  "timings_seconds": {
+    "baseline": [
+      20.696198012912646,
+      24.850630745990202
+    ],
+    "candidate": [
+      20.951316315913573,
+      0.063425820088014
+    ]
+  },
+  "candidate_rss_kib": [
+    225288,
+    225292
+  ],
+  "all_source_seals_and_discovery_equal": true,
+  "discovery": {
+    "state": "ready",
+    "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+    "algorithm": "bge-max-chunk/1",
+    "scores_sha256": "fcc91842ae0f93b920c6d77b5d420cf2ad88c158e3797029e6998783e4168860"
+  },
+  "model_or_worker_changed": false,
+  "store_migration": 33,
+  "checks": {
+    "disposable_pg_race_integration": "passed before final CLI duration validation",
+    "final_affected_race": "passed",
+    "final_static": "passed",
+    "answering_model_calls": 0,
+    "ci": {
+      "run_id": 34505340594,
+      "conclusion": "success",
+      "jobs": [
+        {
+          "name": "postgres",
+          "conclusion": "success"
+        }
+      ]
+    }
+  },
+  "guide_update": {
+    "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+    "before_version": 8,
+    "after_version": 9,
+    "before_sha256": "cb554748454149321d8bda93eeced21c925fe9b0f860b7a1990665eb2f1cf8c7",
+    "after_sha256": "0d4370853ef619383ace281aa0d7d0bf7abb3c4d2bdc28cab4c05fb03cf59abf",
+    "preserved_all_other_text": true,
+    "previous_body_retained": true,
+    "metadata_preserved": true,
+    "request_id": "63f81397-edf3-4ba7-9cb4-ed7709f411e2",
+    "before_receipt": "e6b6fa4b-be0c-4d5f-b57a-6bc5bab606a0",
+    "after_receipt": "4a39c481-405d-4b91-9272-728461cab696",
+    "after_body_bytes": 3557
+  },
+  "doctrine": {
+    "packet_id": "pkt-77bf59d0753a1c94",
+    "packet_content_sha256": "77bf59d0753a1c94530a86dcbd55cf734121631ed706f0c173e5189ed8bcf73a",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "unmet_obligations": [
+      {
+        "requirement": "co-change where available",
+        "classification": "nonmaterial to the bounded observed operation",
+        "reason": "No abstraction or co-change claim; the existing single owner loop receives a host-selected duration."
+      },
+      {
+        "requirement": "repeated raw results, variance, and environment stability",
+        "classification": "nonmaterial to the bounded observed operation",
+        "reason": "One sequential pair per condition on a shared host supports only the observed spaced follow-up. No percentile, stationary environment or generalized latency claim."
+      },
+      {
+        "requirement": "representative input distribution and resource limits",
+        "classification": "nonmaterial to the bounded observed operation",
+        "reason": "The current eligible corpus and fixed query are one operation case. Broader corpus/traffic representativeness and future capacity are not established or claimed."
+      },
+      {
+        "requirement": "exact code, dependency, build, benchmark, data, and environment versions",
+        "classification": "nonmaterial to the bounded observed operation",
+        "reason": "Binary/model/worker/config identities and request result seals are retained. Every ambient shared-host process and OS dependency is not frozen; there is no cross-host reproducibility or isolated speedup claim."
+      },
+      {
+        "requirement": "repeated raw measurements and variance",
+        "classification": "nonmaterial to the bounded observed operation",
+        "reason": "Three cold observations and one warm follow-up are individually retained, not treated as independent replicated distributions. The claim is cache survival and observed latency on this case."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/plan.json",
+      "sha256": "03c6cef0d3557d554a89e42e52743144cd9d754689ca716b81b85f2a5800ce2a"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/probe.py",
+      "sha256": "d5d0d4908a8e0a859e6821d77e7bdaa484ede75b2f1c74fd18e795bf1fdf3589"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/baseline-report.json",
+      "sha256": "e80b620b430e94d9957a11e1df57e352410662dc0b01c68eb80c1cb03b925a5c"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/candidate-report.json",
+      "sha256": "80940d23674c5b4e8af4802c5fdee9360989efc8add8f02730e8e1087df032ed"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/baseline.log",
+      "sha256": "8e03f2454c3dcda810fb2f4bb27b675847a8a4559d67cd7dafeb816956fd09c4"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/candidate.log",
+      "sha256": "20fad39541667aca3f1e3c7d327234d81d1bf337d13aa0e9ef1db903dd5ed2fc"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/red.log",
+      "sha256": "52d36eb7cd29bd33bd93f648d4e1f502682426d2d3e07feb596b1b73e70b7daa"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/green.log",
+      "sha256": "d063d51009657670a00697740dd832bc07afa3b72f26afcfa874e75aebe224ef"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/validation-red.log",
+      "sha256": "87f64e536f9c4065c5a2d4c2cad166d02a0ec35e5a12273dbcdc4e5524da5ee4"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/validation-green.log",
+      "sha256": "8bd63e30098ea5c90f1858fd81d87b7ffc3f9ae485659d9c13111d4889eb66b8"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/cli-red.log",
+      "sha256": "1205332c6088bd1e140cfc8c3e795e3d13dd02900a56d687badbad1353000e79"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/cli-green.log",
+      "sha256": "a62bdcb3d9defe24502954a98cc6431d722a0a294ea7ac0268f75da90c6e6fdc"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/cli-validation-red.log",
+      "sha256": "6b473679995982f44e9bc1c6d9017bc5bfdc467335d2c348d6faddfffd9f4459"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/final-affected.log",
+      "sha256": "d555b43763fd17480e105b7b1937942c2520eb730a4fefb4ab1809832a8ac51d"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/integration.log",
+      "sha256": "f75db9e9ab5a3852be04b52ad13c2ef6e1ac973d9af301c1b8fa715e520746f6"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/final-check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/deployment/installation.json",
+      "sha256": "c42420bf987d116317b769e161bb0c91eaeee43c49a8afa81f0003ee74e49b81"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/deployment/guide-update.json",
+      "sha256": "887412d0a03c22f6539ed010eb33d6b91e20b9d4a917533df8149edc371741d3"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/decision-receipt.json",
+      "sha256": "327bbfb03f70c0e41bef8961e3dcf9bd859f0d024d5b0ca279b728fed5480b35"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/doctrine-verified.json",
+      "sha256": "61ffa904fc42c2b098d640ecba59b3aaa57b4844798d1fde43b634a88b512826"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/idle-release.json",
+      "sha256": "ebfe3ecd2abdabdf5fb19291b159fd74c67f5eb3e61de9965036861afe828de0"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/watch_release.py",
+      "sha256": "5a7df68aa2745123c487452cec651d4c00ca9d77c983ae4ee2fafd49dcd95661"
+    },
+    {
+      "path": "/tmp/cairn-semantic-idle-20260910/ci.json",
+      "sha256": "ae06fc531b34efdd86ae16aaa216e89363f947c726d89b33cc3cd2f5d0148fe5"
+    }
+  ],
+  "idle_release": {
+    "pid": 2934859,
+    "seconds_since_report_when_last_alive": 299.87218594551086,
+    "seconds_since_report_when_absent": 300.87237095832825,
+    "note": "Report mtime approximates last response completion; poll interval1s, no semantic requests during observation"
+  }
+}

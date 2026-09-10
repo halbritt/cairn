@@ -436,6 +436,14 @@ native ingress, full task acceptance or general usefulness.
 
 ### 3. Make retrieval current and evaluate real history
 
+[Configurable semantic idle retention](verification/semantic-idle-2026-09-10.md)
+now avoids repeated cold embedding during spaced follow-ups on this host. A
+five-minute setting reduced one follow-up after 35 idle seconds from 24.851 to
+0.063 seconds with matching complete results, retaining about 220 MiB RSS. The
+thirty-second default, current eligibility and request deadline remain intact.
+This reduces observed retrieval cost; cold inference, larger workloads and
+sustained task-value evidence remain open.
+
 A [currentness repair](verification/applicability-precedence-2026-09-09.md) prevents
 an earlier missing pin from masking a known mismatch in a later pin. Inapplicable
 instructions no longer block unrelated tasks; unknown applicability, private

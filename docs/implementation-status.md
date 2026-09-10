@@ -17,8 +17,9 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `a848e3c`, including a twenty-five-second
-semantic worker budget, native retained history,
+The installed CLI and API are clean `72e7c24`, including a host-selected idle
+lifetime (five minutes here; the default remains thirty seconds), a
+twenty-five-second semantic worker budget, native retained history,
 argument Unicode validation, per-call search context, reviewed failure signatures,
 proposal version pins and quoted search.
 The database schema remains at migration 033; the native OpenCode adapter is
@@ -52,6 +53,12 @@ task acceptance. Native conversation/session scope does not identify individual
 execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
+
+- **Spaced semantic follow-ups reuse cached vectors.** After a 35-second pause,
+  a five-minute host lifetime reduced one follow-up from 24.851 to 0.063 seconds
+  with matching sealed context and complete score digest, at about 220 MiB RSS.
+  This host uses five minutes; the default remains thirty seconds. Cold work and
+  model-task benefit remain open. [Comparison and installation](verification/semantic-idle-2026-09-10.md).
 
 - **Cold semantic scoring can finish the observed corpus.** Both transports now
   allow twenty-five seconds, within native/API outer limits. OpenCode and Codex
@@ -3159,3 +3166,43 @@ Private baseline responses, the frozen plan, probe and check logs are under
 five-minute configuration trial on this host after the final checks, preserving
 worker/model files and other host settings. Candidate performance, installation
 and retained task benefit are not established by this source checkpoint.
+
+### 2026-09-10 — Install and verify the spaced semantic follow-up improvement
+
+Clean `72e7c243ae211acc3c04b4520e5bb4d5676200e6` is installed as CLI and API;
+SHA-256 is `c046c983a48c04918a8c9ed8d102143faef8d0a917291b9985aeb0c6bbc21911`.
+The API restarted at PID 2934824 with `--semantic-idle-timeout 5m`. PostgreSQL
+remained PID 163669/migration 033. Previous Cairn executables and the API configuration are
+retained under `/tmp/cairn-semantic-idle-20260910/deployment/`. Identity, native
+adapter, Codex/OpenCode settings and Python/model files retained their hashes.
+Final affected-package race tests and static checks passed after the extra CLI
+nonpositive-duration validation; earlier full disposable integration also passed.
+
+Under the fixed 35-second idle-gap comparison, candidate cold scoring took
+20.951 seconds and the follow-up 0.063 seconds, compared with baseline cold
+20.696 seconds and follow-up 24.851 seconds. The baseline lost its child before
+the follow-up; the candidate retained the same child. Every full discovery digest,
+source seal and returned source version matched across all four calls. Candidate
+RSS was 225,288/225,292 KiB. The predeclared follow-up latency and memory target
+passed. This removes repeated cold work in the measured case; cold performance,
+representative traffic, task quality and net memory benefit remain unestablished.
+
+Ordinary worker guidance `225ad6f4-87ab-41af-a19c-1d38b53232c3` advanced v8→v9,
+3,365→3,557 bytes, documenting the host setting and unchanged default. Current
+SHA-256 is `0d4370853ef619383ace281aa0d7d0bf7abb3c4d2bdc28cab4c05fb03cf59abf`.
+MCP checked exact retry, fresh pull, unchanged metadata and the complete retained
+v8 body. The comparison precedes this note edit. It added no incidental task
+query to the general guidance.
+
+The [report](verification/semantic-idle-2026-09-10.md) and
+[metadata](verification/semantic-idle-2026-09-10.json) retain the measured limits,
+private evidence hashes, validated doctrine decision and source checks. No
+answering-model trial, new cache store, ranking change or native contract change
+was introduced. All preceding implementation history remains intact.
+
+The final idle-release observation found the candidate child alive at 299.872
+seconds and absent at 300.872 seconds after the final response report, using
+one-second polling with no intervening semantic request. This verifies that the
+installed five-minute setting still releases the worker. Exact feature CI run
+34505340594 completed successfully; all job steps were inspected. These results
+are included in the same verification metadata.
