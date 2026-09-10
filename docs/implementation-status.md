@@ -203,14 +203,14 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and API: clean `386eae14cb1ad4d44e6bd61a56601217c14d4fe4`, SHA-256
-  `332601448045c160ca95c88de27100a6bcf9104e6bfb120403d0f609a68d8260`; API PID 825681.
-  `cairn version` and authenticated `agent version` report local and running
-  builds. Explicit binary evidence input is installed; ranked pagination,
-  capture pins and phase support remain. Earlier stamped/unstamped and MCP
-  initialization checks are retained in the build-diagnosis report. PostgreSQL remains
-  PID 163669; no migration was required. Earlier pre-phase readers remain
-  unsuitable for phase data. Existing MCP processes keep their loaded executable.
+- Installed CLI: clean `57164ce4f5f6782c1b115257afc1afc0a2ac8994`, SHA-256
+  `c9309a9eef2fa509ef2276e09240efc76909bc40313b5016ab7f4fe9a570130a`. Direct selected-file capture is installed.
+- Running API: clean `386eae14cb1ad4d44e6bd61a56601217c14d4fe4`, SHA-256
+  `332601448045c160ca95c88de27100a6bcf9104e6bfb120403d0f609a68d8260`; PID 825681.
+  The CLI update needs no API restart. Local and authenticated version commands
+  distinguish these builds. Binary capture, ranked pages, capture pins and phase
+  support remain. No migration was required. Existing MCP processes keep their
+  loaded executable; earlier pre-phase readers remain unsuitable for phase data.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -232,8 +232,10 @@ Live checks on 2026-09-09 found:
   took about 14 seconds. Candidate scores matched. No persistent cache, package
   update or independent service was added; the one-shot launcher remains available.
 
-The [binary-capture installation](verification/binary-evidence-capture-2026-09-09.md#local-installation)
-records the current CLI/API and updated evidence guide. The
+The [file-capture installation](verification/file-evidence-capture-2026-09-09.md#local-installation)
+records the current CLI and preserved API. The
+[binary-capture installation](verification/binary-evidence-capture-2026-09-09.md#local-installation)
+retains the current API and preceding CLI deployment. The
 [build-diagnosis installation](verification/build-identity-2026-09-09.md#local-installation)
 retains its preceding CLI/API and distinct stamped/unstamped observations.
 The [ranked-page installation](verification/search-pages-2026-09-09.md#local-installation)
@@ -2080,3 +2082,19 @@ limits and retry rules; current code and conversation also supplied those facts.
 This removes manual JSON preparation but does not establish net task benefit.
 No API/core schema or native adapter changed. Installation is recorded separately.
 [Report](verification/file-evidence-capture-2026-09-09.md).
+
+
+### 2026-09-09 — Selected-file CLI installed and guidance updated
+
+Installed clean `57164ce` as the CLI, SHA-256
+c9309a9eef2fa509ef2276e09240efc76909bc40313b5016ab7f4fe9a570130a.
+Running API remains 386eae1 at PID 825681; PostgreSQL PID 163669, semantic worker,
+native adapter and connection settings are unchanged. The installed CLI rejects
+an empty file before capture. No synthetic evidence was added to the operational
+store; exact full-size capture was verified in disposable integration.
+
+Evidence guide 8a47da19-dd71-43b2-a4cc-9cef9d113c81 was revised v5→v6 with selected-file
+commands, source-label and sharing choices, exact retry rules and the distinction
+between operator file and JSON limits. Earlier body and metadata remain; exact
+retry and fresh pull match c2f4a0938ca00aaca5b97ccf0ec80b3a312bc2209243ef9835f8b22415b0731f.
+CI 34434364680 is in_progress. Installation evidence: /tmp/cairn-file-capture-deployment/.
