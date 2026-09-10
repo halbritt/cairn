@@ -58,6 +58,7 @@ def check(binary, root, environment, grant, claim, support):
     assert body['selection']['record']['record_id'] == claim['record_id'] and body['credits_remaining'] == 3
     assert pull() == body  # Repeating the displayed command keeps its request ID.
     assert call([*agent, 'expand'], entry['pull_arguments'])['data'] == body
+    assert call([*agent, 'pull'], entry['pull_arguments'])['data'] == body
     words = shlex.split(entry['pull_command'])
     receipt, handle = words[-2:]
     evidence_args = [*agent, 'pull-evidence', '--request-id', str(uuid.uuid4()), receipt, handle,
@@ -65,6 +66,9 @@ def check(binary, root, environment, grant, claim, support):
     evidence = call(evidence_args)['data']
     assert evidence['evidence']['body'] == 'explicit supporting socket evidence' and evidence['credits_remaining'] == 2
     assert call(evidence_args)['data'] == evidence
+    evidence_json = dict(request_id=evidence_args[evidence_args.index('--request-id') + 1], receipt_id=receipt, handle=handle,
+                         evidence_id=support['evidence_id'], expected_sha256=support['sha256'])
+    assert call([*agent, 'pull-evidence'], evidence_json)['data'] == evidence
     for flags in [['--offset', '0'], ['--length', '0'], ['--offset', '-1', '--length', '2']]:
         assert call([*agent, 'pull-evidence', *flags, receipt, handle,
                      support['evidence_id'], support['sha256']], check=False)['status'] == 'INVALID_REQUEST'
@@ -79,6 +83,8 @@ def check(binary, root, environment, grant, claim, support):
     assert span['span']['sha256'] == hashlib.sha256(b'supporting').hexdigest()
     assert span['evidence']['body'] == '' and span['evidence']['sha256'] == support['sha256']
     assert span['evidence']['citation'] == citation
+    span_json = dict(evidence_json, request_id=span_id, span=cited_span)
+    assert call([*agent, 'pull-evidence'], span_json)['data'] == span
     assert span['credits_remaining'] == 1 and call(span_args)['data'] == span
     assert call([*agent, 'expand-evidence'], dict(request_id=span_id, receipt_id=receipt, handle=handle,
                 evidence_id=support['evidence_id'], expected_sha256=support['sha256'],
@@ -88,6 +94,9 @@ def check(binary, root, environment, grant, claim, support):
     assert prefix['span']['body'] == 'explicit' and prefix['credits_remaining'] == 0
     foreign = call(['agent', '--token-file', str(root / 'observer.token'), 'pull', receipt, handle], check=False)
     assert foreign['status'] == 'AUTHORITY_DENIED'
+    assert call(['agent', '--token-file', str(root / 'observer.token'), 'pull'],
+                dict(entry['pull_arguments'], request_id=str(uuid.uuid4())), check=False)['status'] == 'AUTHORITY_DENIED'
+    assert call([*agent, 'pull'], dict(entry['pull_arguments'], unknown_field=True), check=False)['status'] == 'INVALID_REQUEST'
     hosted = call(['agent', '--token-file', str(root / 'hosted.token'), 'search', '--repo', scope['repo'],
                    '--task', scope['task_id'], '--run', scope['run_id'], 'socket'])['data']
     assert hosted['destination'] == dict(name='hosted', allow_local=False)
@@ -145,8 +154,15 @@ def check(binary, root, environment, grant, claim, support):
     assert selected['span']['sha256'] == hashlib.sha256(expected).hexdigest()
     assert selected['span']['total_bytes'] == len(long_body.encode()) and selected['credits_remaining'] == 3
     assert call(tail_args)['data'] == selected
+    assert call([*agent, 'pull'], dict(note_pull, request_id=tail_args[tail_args.index('--request-id') + 1],
+                                     span=location))['data'] == selected
     for flags in [['--offset', '0'], ['--length', '0'], ['--offset', '-1', '--length', '2']]:
         assert call([*agent, 'pull', *flags, note_pull['receipt_id'], note_pull['handle']], check=False)['status'] == 'INVALID_REQUEST'
+    call([*agent, 'revise'], dict(request_id=str(uuid.uuid4()), repo=scope['repo'], record_id=note['record_id'],
+                                expected_version=note['version'], body=long_body + '\nRevised selected guidance.'))
+    stale_request = dict(note_pull, request_id=tail_args[tail_args.index('--request-id') + 1], span=location)
+    assert call([*agent, 'pull'], stale_request, check=False)['status'] == 'STALE_HANDLE'
+    assert call(tail_args, check=False)['status'] == 'STALE_HANDLE'
     print('An accepted long note refuses whole expansion and exposes its exact selected tail through the agent CLI/API')
     previous = os.environ.get('CAIRN_PREVIOUS_BINARY')
     if previous:

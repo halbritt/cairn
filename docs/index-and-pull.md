@@ -123,7 +123,8 @@ another credit, subject to the usual live checks. A repeated search can generate
 new pull request UUIDs; retain the original command when retrying a pull.
 Entries also include `pull_arguments` containing the same `request_id`,
 `receipt_id` and `handle`. Native adapters can pass that object to `agent expand`
-without parsing shell text; the command and structured form share one retry key.
+without parsing shell text. The CLI also accepts it directly on stdin with
+`agent pull` and no trailing arguments; both forms share the same retry key.
 
 This is a presentation view, not a new sealed semantic package. `source_schema`
 and `source_seal` identify the underlying package; `receipt_id` identifies the
@@ -143,7 +144,25 @@ cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
 
 The evidence ID and expected SHA-256 come from the pulled selection's attached
 evidence metadata. These commands return the existing expansion response. A
-missing request ID generates a new one; preserve an explicit ID for retries.
+missing request ID in the shell form generates a new one; preserve an explicit
+ID for retries. The JSON form requires the supplied request ID.
+To use a saved entry's `pull_arguments` object directly:
+
+```sh
+cairn agent --socket /path/to/api.sock --token-file /path/to/agent.token \
+  pull < pull-arguments.json
+```
+
+The file contains the argument object itself, not the enclosing search response.
+`agent pull-evidence` also accepts one JSON request on stdin: add `evidence_id`
+and `expected_sha256` from the selected evidence. Both accept the existing
+optional `span: {offset, length}`. Supply no trailing flags or positional arguments
+in this form. JSON requests keep the existing 128 KiB encoded-input limit and
+server validation; missing IDs, unknown fields and stale handles refuse normally.
+A successful retry across shell/JSON forms retains the same response and credit
+count when its request ID and intent are identical. It still rechecks current
+eligibility. This is a CLI addition; the API does not need an upgrade.
+
 The raw JSON `agent index`, `expand` and `expand-evidence` operations remain
 available. A host may [link the retrieval to its run](use-outcome-loop.md#retrieval-during-an-observed-run);
 search itself does not assert that association or task acceptance.

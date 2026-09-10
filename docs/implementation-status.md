@@ -4002,3 +4002,26 @@ was updated v2→v3 by exact passage replacement to point at merged main and rem
 the obsolete worktree direction. All other text and the retained v2 body were
 preserved. Fresh ordinary search/pull verified v3; downstream benefit remains
 unmeasured. No credentials or raw operational note bodies were committed.
+
+
+### 2026-09-10 — Accept structured pull arguments through the agent CLI
+
+`agent pull` and `agent pull-evidence` now accept JSON on stdin with no trailing
+arguments. This resolves a repeated interaction mismatch from native integration:
+structured pull arguments previously required the differently named `agent expand`
+operation, while `agent pull` accepted only shell arguments. The old documented
+interface was working as specified; this is a usability extension. Shell forms
+remain available, and the existing authenticated API owns expansion validation.
+
+The change is confined to CLI dispatch. Focused race tests reproduce the former
+refusal and verify argument preservation, invalid input and partial-shell refusal.
+The real disposable API checks equivalent body/evidence pulls, byte excerpts,
+shared retry credit, foreign-owner and unknown-field refusal, and stale handles
+after a note edit. The full API/MCP script and `make check` pass. No store schema,
+API endpoint, adapter, authority or ranking change is introduced. Installed-build
+verification will be recorded after the checked commit is deployed. Removing this
+particular interaction failure does not establish net task benefit.
+
+[Verification and decision record](verification/pull-json-2026-09-10.md) also retain
+the ordinary live API comparison: new JSON pull and old expand returned identical
+responses. Operational note content was unchanged.

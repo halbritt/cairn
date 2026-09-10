@@ -24,6 +24,12 @@ scope/context flags. Both output modes connected in OpenCode without a model
 call. This removes routine JSON assembly; host launch and outcome association
 remain explicit responsibilities.
 
+The [structured CLI pull form](index-and-pull.md) now accepts a returned
+`pull_arguments` object directly on stdin. It resolves a repeated CLI interaction
+mismatch encountered during native integration; shell/JSON retries and stale
+handle refusal are verified against the real API. This is access usability,
+not additional evidence of a completed model task or cross-harness benefit.
+
 The [harness command help repair](verification/harness-help-2026-09-10.md) now exposes
 registered setup flags offline for MCP and all three configuration generators.
 It resolves a failed help request from installation work; broader ingress and

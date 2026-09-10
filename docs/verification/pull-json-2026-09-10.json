@@ -1,0 +1,543 @@
+{
+  "schema": "cairn.pull-json-verification/1",
+  "date": "2026-09-10",
+  "live_read": {
+    "record_id": "30681751-37ae-4c70-9543-3697f95d3fdc",
+    "version": 1,
+    "body_sha256": "ce957a3027dce0f09fa9654ff36ba6ce0f29826d802e92fe441fac43b8466111",
+    "previous_cli_json_pull_status": "INVALID_REQUEST",
+    "new_cli_json_pull_status": "OK",
+    "previous_cli_expand_retry_identical": true,
+    "credits_remaining": 3,
+    "production_content_mutated": false,
+    "model_task_benefit": "unmeasured"
+  },
+  "doctrine": {
+    "packet_id": "pkt-7ff07a641aa06d68",
+    "packet_content_sha256": "7ff07a641aa06d68d32a018166304f83c7259d46ccb47d3eb1fa3d8884250f0c",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "unmet_obligations": [
+    {
+      "requirement": "an explicit enumeration of the record's identity dimensions matched against the key's columns",
+      "required_by": "data-dedup-key-identity-completeness",
+      "classification": "nonmaterial",
+      "reason": "No key, record identity or collision policy changes."
+    },
+    {
+      "requirement": "logical-identity definition of the affected record",
+      "required_by": "data-dedup-key-identity-completeness",
+      "classification": "nonmaterial",
+      "reason": "No key, record identity or collision policy changes."
+    },
+    {
+      "requirement": "the conflict-handling semantics at that key - abort update or silent drop",
+      "required_by": "data-dedup-key-identity-completeness",
+      "classification": "nonmaterial",
+      "reason": "No key, record identity or collision policy changes."
+    },
+    {
+      "requirement": "a dry-run enumeration with counts compared against expectation",
+      "required_by": "data-ingest-population-scoping",
+      "classification": "nonmaterial",
+      "reason": "No ingest or backfill is introduced."
+    },
+    {
+      "requirement": "the discovery pattern shown to match the specification's depth and class constraints",
+      "required_by": "data-ingest-population-scoping",
+      "classification": "nonmaterial",
+      "reason": "No ingest or backfill is introduced."
+    },
+    {
+      "requirement": "the input population specification",
+      "required_by": "data-ingest-population-scoping",
+      "classification": "nonmaterial",
+      "reason": "No ingest or backfill is introduced."
+    },
+    {
+      "requirement": "the specified input population stated precisely",
+      "required_by": "data-ingest-population-scoping",
+      "classification": "nonmaterial",
+      "reason": "No ingest or backfill is introduced."
+    },
+    {
+      "requirement": "Go method-set and import-direction compatibility",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "reason": "No interface or package dependency is added."
+    },
+    {
+      "requirement": "current consumer call sets and ownership",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "reason": "No interface or package dependency is added."
+    },
+    {
+      "requirement": "current consumer inventory",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "reason": "No interface or package dependency is added."
+    },
+    {
+      "requirement": "observed substitution, volatility, or cross-boundary pressure",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "reason": "No interface or package dependency is added."
+    },
+    {
+      "requirement": "an enumeration of lifecycle phases with a designed state for each",
+      "required_by": "implementation-async-ui-state-design",
+      "classification": "nonmaterial",
+      "reason": "No asynchronous UI is involved."
+    },
+    {
+      "requirement": "content lifecycle phases enumerated",
+      "required_by": "implementation-async-ui-state-design",
+      "classification": "nonmaterial",
+      "reason": "No asynchronous UI is involved."
+    },
+    {
+      "requirement": "explicit handlers where platform defaults were overridden",
+      "required_by": "implementation-async-ui-state-design",
+      "classification": "nonmaterial",
+      "reason": "No asynchronous UI is involved."
+    },
+    {
+      "requirement": "geometry reserved independent of the async payload",
+      "required_by": "implementation-async-ui-state-design",
+      "classification": "nonmaterial",
+      "reason": "No asynchronous UI is involved."
+    },
+    {
+      "requirement": "a load-time or gate check resolving every reference against them",
+      "required_by": "implementation-config-reference-validation",
+      "classification": "nonmaterial",
+      "reason": "No configuration declarations or references change."
+    },
+    {
+      "requirement": "a named-identifier failure on mismatch",
+      "required_by": "implementation-config-reference-validation",
+      "classification": "nonmaterial",
+      "reason": "No configuration declarations or references change."
+    },
+    {
+      "requirement": "the consumer's defined identifier and enum sets",
+      "required_by": "implementation-config-reference-validation",
+      "classification": "nonmaterial",
+      "reason": "No configuration declarations or references change."
+    },
+    {
+      "requirement": "the match-text composition enumerated field by field",
+      "required_by": "implementation-rank-before-truncate",
+      "classification": "nonmaterial",
+      "reason": "No ranking, candidate selection or truncation changes."
+    },
+    {
+      "requirement": "the scan shown to score the full bounded set before truncation",
+      "required_by": "implementation-rank-before-truncate",
+      "classification": "nonmaterial",
+      "reason": "No ranking, candidate selection or truncation changes."
+    },
+    {
+      "requirement": "the selection contract stated",
+      "required_by": "implementation-rank-before-truncate",
+      "classification": "nonmaterial",
+      "reason": "No ranking, candidate selection or truncation changes."
+    },
+    {
+      "requirement": "the selection contract stated - relevance-ordered top-N versus first-N",
+      "required_by": "implementation-rank-before-truncate",
+      "classification": "nonmaterial",
+      "reason": "No ranking, candidate selection or truncation changes."
+    },
+    {
+      "requirement": "current page inventory classified symptom-versus-cause",
+      "required_by": "operations-symptom-cause-monitoring",
+      "classification": "nonmaterial",
+      "reason": "No monitoring, page or SLO changes are proposed."
+    },
+    {
+      "requirement": "golden-signal coverage with the error definition stated",
+      "required_by": "operations-symptom-cause-monitoring",
+      "classification": "nonmaterial",
+      "reason": "No monitoring, page or SLO changes are proposed."
+    },
+    {
+      "requirement": "the service's user-visible failure modes",
+      "required_by": "operations-symptom-cause-monitoring",
+      "classification": "nonmaterial",
+      "reason": "No monitoring, page or SLO changes are proposed."
+    }
+  ],
+  "decision_receipt": {
+    "schema_version": "decision-receipt/2",
+    "receipt_id": "cairn-pull-json-20260910",
+    "question": "How should the agent CLI accept returned structured pull arguments on stdin without changing existing shell pulls or authenticated expansion checks?",
+    "scope": [
+      "Accept existing expansion JSON through CLI pull commands with no trailing arguments"
+    ],
+    "status": "verified",
+    "authority_boundary": {
+      "owner": "Repository owner",
+      "authority_source": "Active Cairn goal and delegated implementation decisions",
+      "authorized_scope": [
+        "Implement, test, integrate and install the CLI improvement; preserve existing API authority checks"
+      ]
+    },
+    "evidence": [
+      {
+        "schema_version": "evidence-record/1",
+        "id": "pull-json-authority",
+        "evidence_class": "evidence-repository-contracts",
+        "summary": "Owner authorizes useful Cairn implementation and routine decisions. Existing instructions prefer ordinary hosted memory access, protect authenticated ownership and require complete implementation history. This task adds no-argument JSON stdin forms to existing CLI pull commands, preserving shell forms and API validation. Existing expand names already support JSON; the prior documented interface was not a contract violation. No new API, schema, adapter, grant, core transaction, ranking or deployment of a server is selected. A CLI-only install is reversible with its binary backup.",
+        "provenance": [
+          {
+            "locator": "/home/halbritt/git/cairn/AGENTS.md",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.354621+00:00",
+            "content_sha256": "9134ec8fbad207d26749a985e2c0f17acfa3452094131fc6f5240059c0c5bf6d"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/docs/roadmap.md",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.354671+00:00",
+            "content_sha256": "92b509b5b02bdcf6f78769d955c62d57243858c350370283c6317e7b128a6376"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/docs/index-and-pull.md",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.354751+00:00",
+            "content_sha256": "90fb03b4f2eb7427c8774347e0873767d6e25b218f68d4c419f7a3d71722de6e"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/docs/local-api.md",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.354781+00:00",
+            "content_sha256": "1f1d2d75e6ccac9ff76089d864666bbb671f8135787401591bdb6ac03213bc6f"
+          }
+        ],
+        "satisfies": [
+          "affected behavior and state",
+          "decision owner",
+          "explicit task authority",
+          "repository contract",
+          "reversibility and verification",
+          "task scope and authority statement",
+          "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+          "current source, configuration, and relevant runtime state",
+          "repository instructions from root through target path",
+          "target repository and task scope",
+          "user instruction and authority",
+          "change-type classification",
+          "checkpoint verification",
+          "per-edit change classification",
+          "preservation boundary and semantic authority"
+        ]
+      },
+      {
+        "schema_version": "evidence-record/1",
+        "id": "pull-json-incident",
+        "evidence_class": "evidence-incidents",
+        "summary": "During native integration maintenance the agent sent returned pull_arguments as JSON to agent pull, which refused because only its shell form was accepted. The public run-interface test reproduces the same usage mismatch for both existing pull commands before the change. Already-supported alternatives are constructing shell arguments or using differently named expand operations; the selected bounded alias removes that extra caller distinction without changing endpoint semantics. This is a usability problem, not proof of downstream memory value.",
+        "provenance": [
+          {
+            "locator": "/tmp/cairn-pull-json-20260910/red.log",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.358762+00:00",
+            "content_sha256": "e2d6979acdac97fafe59114182430d61f60212fb0b380493156c04165b78bbbc"
+          },
+          {
+            "locator": "/tmp/cairn-native-integration-20260910/maintain-guidance.py",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.358788+00:00",
+            "content_sha256": "b8a079630373c9d8fdfbd4120346c5d5508368bfaba32d6cb9cc2ef502f6f7bf"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/cmd/cairn/agent_search.go",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.358810+00:00",
+            "content_sha256": "4824a5a90df48d29ea4fe3dc19592e6fd23c87ef3ecf250c0d88bd4bd5957285"
+          }
+        ],
+        "satisfies": [
+          "a bounded decision question",
+          "alternatives including no change where viable",
+          "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+          "evidence connecting the proposed action to the condition",
+          "actual current cost/risk or absence within a stated interval",
+          "expected future change from accepted plans",
+          "intervention cost and uncertainty",
+          "latent security, safety, data, durability, and compatibility check",
+          "proc-decide-leave-code-alone"
+        ]
+      },
+      {
+        "schema_version": "evidence-record/1",
+        "id": "pull-json-live",
+        "evidence_class": "evidence-runtime-observation",
+        "summary": "Authenticated ordinary hosted-profile search against the running Unix API returned current decision version 1. The old CLI refused JSON pull; the new CLI returned that exact record version and body hash, and old expand retried the identical response with three credits remaining. Endpoint self-description identifies the running clean API as 4999caa and the previous clean CLI as af43ac7. This verifies the selected body operation against the actual endpoint. Evidence pulls and stale handles are verified on the disposable API only; installed new CLI verification is pending and model task benefit is unmeasured.",
+        "provenance": [
+          {
+            "locator": "/tmp/cairn-pull-json-20260910/live-pull.json",
+            "method": "Inspected terminal command report and endpoint response",
+            "observed_at": "2026-09-10T22:57:46.449197+00:00",
+            "content_sha256": "69dfa4ee9074152e90e44716d94d860fd9c286709cd1abde40bc59c5f3329ec3"
+          },
+          {
+            "locator": "/tmp/cairn-pull-json-20260910/live-pull.py",
+            "method": "Inspected terminal command report and endpoint response",
+            "observed_at": "2026-09-10T22:57:46.449244+00:00",
+            "content_sha256": "638d551aa9a092979a3ea09fb73695543e6119f5641c769cdfd281a7658d3647"
+          },
+          {
+            "locator": "/tmp/cairn-pull-json-20260910/live-version.json",
+            "method": "Inspected terminal command report and endpoint response",
+            "observed_at": "2026-09-10T22:57:46.449266+00:00",
+            "content_sha256": "fd7fd42166a96dd7dc810a5b26d3ac8dc050845fb4c401fce877906abd8a9c2e"
+          }
+        ],
+        "satisfies": [
+          "access to the real device or endpoint",
+          "an end-to-end verification artifact against the actual device or endpoint",
+          "or an explicit record that verification is provisional",
+          "the real system's own statement of its capability - device configuration output wire capture or endpoint self-description"
+        ]
+      },
+      {
+        "schema_version": "evidence-record/1",
+        "id": "pull-json-runtime",
+        "evidence_class": "evidence-runtime-observation",
+        "summary": "Real disposable Unix API checks returned the identical whole-body, evidence and byte-span results across shell, expand and JSON pull forms using the same operation identity; retry credit counts remain equal. Foreign receipt ownership and unknown fields refuse. After revising the selected A note, both JSON and shell retries return STALE_HANDLE. The checks use the existing authenticated core and disposable PostgreSQL. No model inference, new production memory content or successful model task is claimed.",
+        "provenance": [
+          {
+            "locator": "/tmp/cairn-pull-json-20260910/api.log",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.369496+00:00",
+            "content_sha256": "d4f9e5862e2b4d81bd9f5edadf01b2d3fd19ce845f3701dacff33ca043abb032"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/scripts/check_agent_search.py",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.369524+00:00",
+            "content_sha256": "2616109494aac4ce4209d163be4447e31a91af7b30e5a565dd39db01284a1e94"
+          },
+          {
+            "locator": "/tmp/cairn-search-context-api-check.sh",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.369551+00:00",
+            "content_sha256": "efba255a163d651ccbc3e04b7b0d1dce3236a7ed5b468af24f487ba9468ea2a3"
+          }
+        ],
+        "satisfies": []
+      },
+      {
+        "schema_version": "evidence-record/1",
+        "id": "pull-json-source",
+        "evidence_class": "evidence-static-source-structure",
+        "summary": "agentRequest owns agent CLI dispatch and already implements bounded JSON stdin passthrough. For pull and pull-evidence, trailing arguments still delegate unchanged to agentPull; otherwise the command maps to expand or expand-evidence and uses that existing JSON path. RequestBodyLimit is 128 KiB for those endpoints. The authenticated client and server preserve IDs, optional byte spans, validation, response/error handling and live expansion guards. No generated retry ID is introduced for JSON. This hides endpoint-name translation in the existing CLI owner rather than in each script; no shared helper, public Go API or package dependency is added.",
+        "provenance": [
+          {
+            "locator": "/home/halbritt/git/cairn/cmd/cairn/agent.go",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.362251+00:00",
+            "content_sha256": "7f6f00e861a2a17cea4b6c1fc9dde8cc1fea83dbd02d02a361753f726f5a09aa"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/cmd/cairn/agent_search.go",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.362280+00:00",
+            "content_sha256": "4824a5a90df48d29ea4fe3dc19592e6fd23c87ef3ecf250c0d88bd4bd5957285"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/localapi/request_limit.go",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.362300+00:00",
+            "content_sha256": "cd1ae49b7a1fcac3db33b56eb95c8587d9816c7dea59f7e94656e2e99ce6c241"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/core/index.go",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.362316+00:00",
+            "content_sha256": "e43cdc56abf76485deaf1b59e25f650dfd07b4852040a201aa623f0ef223e85a"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/go.mod",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.362345+00:00",
+            "content_sha256": "ba43e503a3bb15f07b23aa9430349d379cf8a8d9ff53381e42778fb7356e0b3a"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/Makefile",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.362363+00:00",
+            "content_sha256": "11a9b33c9331ef6f81cca240607e5afd421c405ea923deeb2c0b39602fc4690e"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/.github/workflows/test.yml",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.362379+00:00",
+            "content_sha256": "c57140dfad3ab7e2a7cb19fdac18bf98c0dbff0e12420b2d0459f31c8e36cd3c"
+          }
+        ],
+        "satisfies": [
+          "callee contract",
+          "caller recovery behavior",
+          "cleanup and failure tests",
+          "current Go version and repository convention",
+          "caller recovery needs",
+          "cleanup obligations",
+          "language and repository convention",
+          "operation and caller contract",
+          "product correctness and availability policy",
+          "side effects and idempotency",
+          "accepted dependency direction",
+          "behavior contract and ownership evidence",
+          "data and policy ownership",
+          "existing interfaces and callers",
+          "recurring change evidence when available",
+          "relevant invariants",
+          "CI and build matrix",
+          "adjacent code",
+          "behavior tests",
+          "formatter and static-tool configuration",
+          "repository version and dependency contract",
+          "actual caller needs",
+          "caller needs and decision owner",
+          "decision owner and volatility",
+          "leaked knowledge or coordinated change",
+          "material cost/failure semantics callers require",
+          "knowledge and navigation required by callers/maintainers",
+          "representative change or use scenario",
+          "representative change scenario",
+          "state, invariant, and dependency ownership",
+          "accepted desired behavior and semantic authority",
+          "preservation matrix and consumers",
+          "proc-establish-preservation-boundaries",
+          "tests, characterization, probes, or explicit residual risk"
+        ]
+      },
+      {
+        "schema_version": "evidence-record/1",
+        "id": "pull-json-tests",
+        "evidence_class": "evidence-tests",
+        "summary": "Final command package race tests pass. New tests observe authenticated endpoint requests, exact supplied payload/response and one API call; malformed, empty, overlimit, unpaired-Unicode and incomplete shell inputs refuse before API contact. Existing shell behavior runs in the real API check. make check passes. The full disposable API/MCP script passes with the previous installed binary available for compatibility checks. No core or store changes require a separate local store-wide rerun.",
+        "provenance": [
+          {
+            "locator": "/tmp/cairn-pull-json-20260910/cli-tests-final.log",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.365992+00:00",
+            "content_sha256": "f4b6939ea5f07ed27bb234e7d0211326fc5d092eec0ee9b35d6e291252f1f1b2"
+          },
+          {
+            "locator": "/tmp/cairn-pull-json-20260910/check.log",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.366016+00:00",
+            "content_sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+          },
+          {
+            "locator": "/tmp/cairn-pull-json-20260910/api.log",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.366036+00:00",
+            "content_sha256": "d4f9e5862e2b4d81bd9f5edadf01b2d3fd19ce845f3701dacff33ca043abb032"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/cmd/cairn/agent_pull_test.go",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.366056+00:00",
+            "content_sha256": "5bb2609c24e81ade17958b4e11aa1e3db29fa13dc84ddaf100235c463be29b37"
+          },
+          {
+            "locator": "/home/halbritt/git/cairn/scripts/check_agent_search.py",
+            "method": "Inspected source or observed executable check",
+            "observed_at": "2026-09-10T22:52:57.366073+00:00",
+            "content_sha256": "2616109494aac4ce4209d163be4447e31a91af7b30e5a565dd39db01284a1e94"
+          }
+        ],
+        "satisfies": []
+      }
+    ],
+    "assertions": [
+      {
+        "id": "pressure",
+        "type": "observation",
+        "text": "The CLI refused structured arguments sent to pull during maintenance; expand already supported them under another name.",
+        "evidence": [
+          "pull-json-incident"
+        ]
+      },
+      {
+        "id": "verification",
+        "type": "verification",
+        "depends_on": [
+          "pressure"
+        ],
+        "text": "Race and disposable API tests preserve request identity, errors and shared retry credits. The new CLI also pulls an ordinary retained note from the running API with a response identical to old expand.",
+        "criteria": [
+          "Same authenticated endpoint and supplied JSON",
+          "Existing shell forms remain usable",
+          "Retry credits remain identical",
+          "Stale and foreign handles refuse"
+        ],
+        "evidence": [
+          "pull-json-tests",
+          "pull-json-runtime",
+          "pull-json-live"
+        ]
+      },
+      {
+        "id": "decision",
+        "type": "decision",
+        "depends_on": [
+          "verification"
+        ],
+        "text": "Ship the CLI alias and install after CI passes. This is a usability extension; model task value remains unmeasured.",
+        "owner": "Repository owner through delegated implementation",
+        "authority": "Active Cairn goal"
+      }
+    ],
+    "alternatives": [
+      {
+        "option": "Keep expand JSON and pull shell only",
+        "disposition": "rejected",
+        "evidence": [
+          "pull-json-incident"
+        ]
+      },
+      {
+        "option": "Teach each caller to translate the endpoint name",
+        "disposition": "rejected",
+        "evidence": [
+          "pull-json-source"
+        ]
+      },
+      {
+        "option": "Reuse existing bounded JSON request handling for no-argument pulls",
+        "disposition": "selected",
+        "evidence": [
+          "pull-json-source",
+          "pull-json-tests"
+        ]
+      }
+    ],
+    "source_locators": [
+      "cmd/cairn/agent.go",
+      "cmd/cairn/agent_pull_test.go",
+      "scripts/check_agent_search.py",
+      "docs/index-and-pull.md"
+    ],
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "reopening_conditions": [
+      "An existing caller depends on immediate no-argument refusal",
+      "API expansion contract changes",
+      "Installed verification fails"
+    ],
+    "residual_risk": [
+      "No additional model-task benefit established",
+      "JSON reads stdin until EOF, like other JSON operations",
+      "Twenty-five nonmaterial generic obligations retained"
+    ]
+  }
+}

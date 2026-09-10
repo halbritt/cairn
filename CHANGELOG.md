@@ -15,6 +15,11 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Use structured pull arguments directly.** `agent pull` and `agent pull-evidence`
+  now accept JSON on stdin when no trailing arguments are supplied. The shell
+  forms, retry IDs and existing API expansion checks are preserved.
+  [Usage](docs/index-and-pull.md); no API upgrade is required.
+
 - **Integrate the preparatory Striatum path.** Native capture, observation, build
   inputs and supervisor correspondence are merged into Striatum main at
   `5848b23`, with historical-contract compatibility repairs. Native contracts

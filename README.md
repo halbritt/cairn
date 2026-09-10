@@ -278,7 +278,9 @@ own budget and repeats required instructions; the host must account for the
 combined context. Pages read current state, so edits can shift positions.
 
 Each result includes a complete `pull_command` and matching `pull_arguments`
-for its full body. The [native OpenCode tools](docs/opencode-tools.md) use the
+for its full body. Pass the argument object on stdin to `agent pull` with no
+trailing arguments, or run the supplied shell command.
+The [native OpenCode tools](docs/opencode-tools.md) use the
 structured form and derive search scope from the current session. Reuse the
 host's task/run IDs across queries; the configured token controls destination
 and access. With an ordinary agent profile, `agent remember` saves A testimony,

@@ -103,7 +103,14 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return agentSearch(ctx, client, f.Args()[1:], socketPath, tokenPath)
 	}
 	if operation == "pull" || operation == "pull-evidence" {
-		return agentPull(ctx, client, operation, f.Args()[1:])
+		if f.NArg() > 1 {
+			return agentPull(ctx, client, operation, f.Args()[1:])
+		}
+		if operation == "pull" {
+			operation = "expand"
+		} else {
+			operation = "expand-evidence"
+		}
 	}
 	limit := localapi.RequestBodyLimit(operation)
 	body, err := io.ReadAll(io.LimitReader(input, limit+1))
