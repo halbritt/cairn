@@ -20,7 +20,7 @@ func TestCitedPassageSurvivesCorrectionAndHistoricalRecompile(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := strings.Repeat("background\n", 3000) + "use the explicit override"
-	e, err := op.CaptureEvidence(ctx, EvidenceRequest{uuid.NewString(), repo, body, "passage fixture", "local"})
+	e, err := op.CaptureEvidence(ctx, EvidenceRequest{uuid.NewString(), repo, body, "passage fixture", "local", ""})
 	if err != nil {
 		t.Fatal(err)
 	}

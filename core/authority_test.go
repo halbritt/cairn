@@ -27,7 +27,7 @@ func projectNote(repo string) Draft {
 }
 func testEvidence(t *testing.T, s *Store, repo string) Evidence {
 	t.Helper()
-	e, err := s.CaptureEvidence(context.Background(), EvidenceRequest{uuid.NewString(), repo, "synthetic exit code 1", "test fixture", "local"})
+	e, err := s.CaptureEvidence(context.Background(), EvidenceRequest{uuid.NewString(), repo, "synthetic exit code 1", "test fixture", "local", ""})
 	if err != nil {
 		t.Fatal(err)
 	}

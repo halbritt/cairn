@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"github.com/google/uuid"
 	"testing"
 )
@@ -70,7 +71,7 @@ func TestEvidenceInspectionPreservesExplicitBinaryBytes(t *testing.T) {
 	ctx := context.Background()
 	op, _ := testOperator(t)
 	original := []byte{0xff, 0x00, 0x01}
-	evidence, err := op.CaptureEvidence(ctx, EvidenceRequest{uuid.NewString(), uuid.NewString(), string(original), "explicit binary fixture", "local"})
+	evidence, err := op.CaptureEvidence(ctx, EvidenceRequest{RequestID: uuid.NewString(), Repo: uuid.NewString(), BodyBase64: base64.StdEncoding.EncodeToString(original), Source: "explicit binary fixture", Sensitivity: "local"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,4 +82,29 @@ func TestEvidenceInspectionPreservesExplicitBinaryBytes(t *testing.T) {
 	if inspected.Body != "" || inspected.BodyBase64 != "/wAB" {
 		t.Fatalf("binary evidence was not lossless: %+v", inspected)
 	}
+}
+
+func TestBinaryEvidenceRequiresLosslessRequestIntent(t *testing.T) {
+	ctx := context.Background()
+	store := testStore(t, Channel{Principal: "binary-capture-intent"})
+	request := EvidenceRequest{RequestID: uuid.NewString(), Repo: uuid.NewString(), Source: "explicit binary intent"}
+	// JSON request hashing would map both invalid strings to the same replacement
+	// character. Refuse them before reservation and require the lossless input form.
+	for _, body := range []string{string([]byte{0xff}), string([]byte{0xfe})} {
+		request.Body = body
+		_, err := store.CaptureEvidence(ctx, request)
+		requireCode(t, err, "INVALID_REQUEST")
+	}
+	request.Body, request.BodyBase64 = "", "/w=="
+	first, err := store.CaptureEvidence(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := store.CaptureEvidence(ctx, request)
+	if err != nil || again.ID != first.ID {
+		t.Fatalf("retry: %+v %v", again, err)
+	}
+	request.BodyBase64 = "/g=="
+	_, err = store.CaptureEvidence(ctx, request)
+	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
 }

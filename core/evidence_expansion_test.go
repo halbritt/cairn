@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"github.com/google/uuid"
 	"strings"
 	"testing"
@@ -50,7 +51,7 @@ func evidenceExpansionFixtureWithBody(t *testing.T, sensitivity, body string) (*
 	if err != nil {
 		t.Fatal(err)
 	}
-	evidence, err := op.CaptureEvidence(ctx, EvidenceRequest{uuid.NewString(), repo, body, "bounded evidence pull fixture", sensitivity})
+	evidence, err := op.CaptureEvidence(ctx, EvidenceRequest{RequestID: uuid.NewString(), Repo: repo, BodyBase64: base64.StdEncoding.EncodeToString([]byte(body)), Source: "bounded evidence pull fixture", Sensitivity: sensitivity})
 	if err != nil {
 		t.Fatal(err)
 	}

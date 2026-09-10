@@ -16,7 +16,7 @@ func TestEvidenceImpactRetainsExactVersionsAndDeduplicatesPaths(t *testing.T) {
 	op, root := testOperator(t)
 	repo := uuid.NewString()
 	writer := testStore(t, Channel{Principal: "impact-author:" + repo})
-	evidence, err := op.CaptureEvidence(ctx, EvidenceRequest{uuid.NewString(), repo, "EVIDENCE_BODY_CANARY", "SOURCE_LABEL_CANARY", "local"})
+	evidence, err := op.CaptureEvidence(ctx, EvidenceRequest{uuid.NewString(), repo, "EVIDENCE_BODY_CANARY", "SOURCE_LABEL_CANARY", "local", ""})
 	if err != nil {
 		t.Fatal(err)
 	}

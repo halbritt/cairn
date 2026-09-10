@@ -46,6 +46,11 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Binary evidence has an explicit capture path.** API and CLI accept canonical
+  base64 without changing decoded source bytes or the 1 MiB limit. Existing text
+  retries remain compatible. [Contract](evidence-refresh.md),
+  [verification](verification/binary-evidence-capture-2026-09-09.md).
+
 - **Agy setup reuses the existing MCP server.** Native 1.2.0 registration and
   configuration updates preserve explicit scope in an isolated home. User-wide
   settings require care with concurrent tasks; native tool execution and task
@@ -1994,3 +1999,29 @@ Agy work remains lower priority than task value in Codex/OpenCode. The broader
 qualitative and cumulative evaluation standard is unchanged, and all previous
 implementation history is preserved.
 [Report](verification/agy-configuration-2026-09-09.md).
+
+
+### 2026-09-09 — Explicit binary evidence capture and request identity
+
+Added canonical `body_base64` input to the existing evidence capture operation.
+API/CLI capture now preserves arbitrary decoded bytes, source SHA-256 and retry
+identity within the existing 1 MiB limit. Invalid encodings, conflicting nonempty
+source forms and oversize input refuse without reserving an identity. Existing
+text request serialization remains unchanged; a capture written by installed
+605be1a retries exactly with the new code in a disposable store.
+
+The initial API test failed because the field was rejected. Review also found
+that direct Go invalid UTF-8 Body input was accepted despite lossy JSON request
+hashing. A failing regression precedes its refusal; binary callers must use
+BodyBase64, including callers attempting legacy invalid-Body retries. Existing
+retained bytes and inspection are unchanged. Tests preserve local default,
+repository constraints, testimony and qualified hosted pull rules. Operator
+capture retains its separate 128 KiB encoded bound; agent capture has 8 MiB.
+
+Targeted store/API tests, static checks, Go/40 Python and final full disposable
+PostgreSQL/race integration pass, including actual CLI capture/inspection/pull
+with no client DB access and existing stdio MCP tools. Native adapters are
+unchanged and no model task ran. The saved evidence guide was retrieved after
+source discovery to preserve related constraints, not credited with finding the
+gap. L4 and durable task value remain partial. Installation is recorded separately.
+[Report](verification/binary-evidence-capture-2026-09-09.md).

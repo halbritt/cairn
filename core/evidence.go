@@ -20,6 +20,7 @@ type EvidenceRequest struct {
 	Body        string `json:"body"`
 	Source      string `json:"source"`
 	Sensitivity string `json:"sensitivity"`
+	BodyBase64  string `json:"body_base64,omitempty"`
 }
 type Evidence struct {
 	Citation        *EvidenceCitation `json:"citation,omitempty"`
@@ -51,7 +52,21 @@ func (s *Store) CaptureEvidence(ctx context.Context, req EvidenceRequest) (Evide
 	if err := s.checkRepo(req.Repo); err != nil {
 		return Evidence{}, err
 	}
-	if req.Repo == "" || req.Repo == "*" || len(req.Repo) > 256 || len(req.Body) == 0 || len(req.Body) > 1048576 || strings.TrimSpace(req.Source) == "" || len(req.Source) > 512 {
+	if !utf8.ValidString(req.Body) {
+		return Evidence{}, failure("INVALID_REQUEST", "binary evidence requires body_base64; body must be UTF-8")
+	}
+	body := []byte(req.Body)
+	if req.BodyBase64 != "" {
+		if req.Body != "" || len(req.BodyBase64) > base64.StdEncoding.EncodedLen(1048576) {
+			return Evidence{}, failure("INVALID_REQUEST", "use one bounded evidence body or body_base64")
+		}
+		var err error
+		body, err = base64.StdEncoding.Strict().DecodeString(req.BodyBase64)
+		if err != nil || base64.StdEncoding.EncodeToString(body) != req.BodyBase64 {
+			return Evidence{}, failure("INVALID_REQUEST", "body_base64 requires canonical padded standard base64")
+		}
+	}
+	if req.Repo == "" || req.Repo == "*" || len(req.Repo) > 256 || len(body) == 0 || len(body) > 1048576 || strings.TrimSpace(req.Source) == "" || len(req.Source) > 512 {
 		return Evidence{}, failure("INVALID_REQUEST", "bounded evidence body, source label and exact repository required")
 	}
 	if req.Sensitivity == "" {
@@ -62,12 +77,12 @@ func (s *Store) CaptureEvidence(ctx context.Context, req EvidenceRequest) (Evide
 	}
 	return mutate(ctx, s, "capture-evidence", req.RequestID, req, func(tx pgx.Tx) (Evidence, error) {
 		id := uuid.NewString()
-		digest := sha256.Sum256([]byte(req.Body))
+		digest := sha256.Sum256(body)
 		witness := "testimony"
 		if s.channel.Instrumented {
 			witness = "instrumented"
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO cairn.evidence(evidence_id,repo,body,digest,source,witness,sensitivity) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, req.Repo, []byte(req.Body), digest[:], req.Source, witness, req.Sensitivity)
+		_, err := tx.Exec(ctx, `INSERT INTO cairn.evidence(evidence_id,repo,body,digest,source,witness,sensitivity) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, req.Repo, body, digest[:], req.Source, witness, req.Sensitivity)
 		return Evidence{ID: id, Digest: hex.EncodeToString(digest[:]), Witness: witness, State: "resolvable"}, err
 	})
 }

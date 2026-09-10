@@ -190,7 +190,7 @@ func TestSupersessionRefusalsLeaveTheSourceActive(t *testing.T) {
 				e := testEvidence(t, op, repo)
 				// Shareable claims require shareable evidence as well.
 				if d.Sensitivity == "shareable" {
-					e, err = op.CaptureEvidence(ctx, EvidenceRequest{uuid.NewString(), repo, "Synthetic shareable support", "fixture", "shareable"})
+					e, err = op.CaptureEvidence(ctx, EvidenceRequest{uuid.NewString(), repo, "Synthetic shareable support", "fixture", "shareable", ""})
 					if err != nil {
 						t.Fatal(err)
 					}

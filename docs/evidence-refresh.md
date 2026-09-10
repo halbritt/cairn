@@ -2,9 +2,44 @@
 
 Explicit evidence capture accepts up to 1 MiB of decoded source bytes.
 `cairn agent evidence` reads an `EvidenceRequest` JSON object from stdin with
-`request_id`, `repo`, `body`, `source` and optional `sensitivity` (default `local`).
+`request_id`, `repo`, `source`, optional `sensitivity` (default `local`), and
+one nonempty source representation: UTF-8 text in `body` or arbitrary bytes in
+`body_base64`.
 Use an existing provisioned profile and choose the source deliberately. The
 `source` field is a label or locator; capture does not fetch it.
+
+For binary files, encode the selected bytes as canonical padded standard base64
+(for example, Python's `base64.b64encode(data).decode("ascii")`). Do not decode
+arbitrary binary as UTF-8 or put replacement characters into `body`. An example
+request capturing the three bytes `00 ff fe` is:
+
+```json
+{"request_id":"d5f3a8c5-ea2c-45aa-a392-1585fdd9fd99","repo":"/path/to/repo","body_base64":"AP/+","source":"explicitly selected binary source","sensitivity":"local"}
+```
+
+Choose an actual repository, source label and fresh request UUID; submit through
+`cairn agent evidence` or the operator CLI's `capture-evidence`. Reuse the same
+UUID and representation for an exact retry. Changing bytes or switching between
+text and base64 is different request intent, even if decoded bytes match.
+Base64 input rejects invalid characters, noncanonical padding bits, missing
+required padding, line breaks and simultaneous nonempty `body`. Empty sources
+and decoded data above 1 MiB refuse before reserving the request identity.
+The limit applies to decoded bytes; base64 does not raise it. Existing text-only
+requests retain their earlier retry identity. Older servers reject the new field;
+upgrade the API before using it. No schema migration is needed.
+
+Direct Go callers must also use `BodyBase64` for non-UTF-8 bytes. Such bytes in
+`Body` now refuse, including retries of that legacy input form: JSON request
+hashing cannot distinguish all invalid UTF-8 strings. Already captured evidence
+is not rewritten or removed. The operator `capture-evidence` command retains
+its 128 KiB encoded request limit; use `agent evidence` for sources needing the
+full 1 MiB decoded allowance.
+
+Capture returns an evidence identity and checksum, not an automatic note or a
+qualified claim. Existing explicit citation, destination and pull checks still
+apply. UTF-8 evidence is returned as `body`; non-UTF-8 evidence is returned as
+`body_base64`, regardless of its input representation.
+[Binary capture verification](verification/binary-evidence-capture-2026-09-09.md).
 
 The authenticated CLI/client/API allow an 8 MiB encoded envelope for this operation,
 so a full-size source can fit even when each source byte requires six bytes of

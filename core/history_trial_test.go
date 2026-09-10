@@ -69,7 +69,7 @@ func TestStriatumHistoryRecurrenceCoverage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		evidence, err := collector.CaptureEvidence(ctx, EvidenceRequest{uuid.NewString(), repo, string(evidenceBody), "Explicit committed decision-clause capture", "local"})
+		evidence, err := collector.CaptureEvidence(ctx, EvidenceRequest{uuid.NewString(), repo, string(evidenceBody), "Explicit committed decision-clause capture", "local", ""})
 		if err != nil {
 			t.Fatal(err)
 		}
