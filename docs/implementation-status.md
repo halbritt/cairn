@@ -2723,3 +2723,22 @@ completed successfully for installed `9f43b00`: PostgreSQL/race, Python,
 static/build, use-report and authenticated CLI/compact startup checks all passed.
 The final local native check additionally verified all six per-call fields and
 OpenCode's binding/capability name mapping, with fixed-host conflicts refused.
+
+
+### 2026-09-10 — Native startup timeout investigation
+
+Investigated the 60-second timeout from the first native context check without
+changing product code or increasing its deadline. A fresh isolated OpenCode 1.18.21
+startup with a synthetic echo tool completed in 7.193 seconds, including system-call
+tracing, and returned the exact fixture text. It made no Cairn or answering-model
+call. The trace shows external TLS activity; pinned upstream source confirms
+startup installation of the matching plugin SDK. Source blob identities match
+the retained v1.18.21 tree.
+
+This does not reproduce or explain the original timeout. Two later full native
+checks had already passed. Left timeouts, dependencies and network settings
+unchanged and documented the startup dependency boundary in the native-tool
+instructions. A timed-out startup trace is the next useful diagnostic if it recurs.
+The [investigation](verification/native-startup-2026-09-10.md) and metadata retain
+the bounded observation, uncertainty and Pincite abstention receipt. No task-value
+claim or roadmap completion follows from this diagnostic.

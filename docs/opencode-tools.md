@@ -92,6 +92,14 @@ Use [explicit compact startup](compact-start.md) to preload an index through
 launcher and tools must use the same API principal. This route does not install
 a system hook or change OpenCode permissions.
 
+OpenCode also initializes its own plugin SDK dependencies during startup. Its
+[v1.18.21 implementation](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/config/config.ts)
+requests the matching `@opencode-ai/plugin` package in its configuration
+directories. A fresh environment can therefore involve registry access before a
+Cairn tool runs. A [startup investigation](verification/native-startup-2026-09-10.md)
+observed that work but did not reproduce an earlier timeout; dependency activity
+alone does not identify the cause of a stalled tool call.
+
 ## Scope and behavior
 
 Capture accepts explicit [applicability pins](currentness-and-replay.md#saving-guidance-with-explicit-applicability),
