@@ -93,7 +93,9 @@ raw sessions, private Council content, credentials or workspace dumps; ordinary
 capture does not confer authority or prove task success.
 
 When comparing revisions, `cairn_history` lists retained metadata or reads one
-exact earlier body using a known record ID. CLI/API `agent history` remains
+exact earlier body using a known record ID. Add `span: {offset, length}` with a
+positive version to inspect a bounded historical passage; offsets count bytes.
+CLI/API `agent history` remains
 available. Historical wording and class do not establish current eligibility or
 authority; pull the current note before editing. Budget combined context across
 history reads as well as searches and pulls. See `docs/record-history.md`.

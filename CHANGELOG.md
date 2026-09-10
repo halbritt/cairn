@@ -14,6 +14,10 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Inspect a passage from a long earlier note.** [History excerpts](docs/record-history.md#read-a-passage-from-an-earlier-version)
+  add optional byte ranges to exact-version reads through CLI/API, MCP and native
+  OpenCode. Results retain full-source identity and lossless selected bytes;
+  current access rules and per-call output budgets still apply.
 - Documented [retiring obsolete advice](docs/ordinary-delete.md#retire-obsolete-advice-while-retaining-history)
   through existing guarded retraction. The guide distinguishes stopping future
   retrieval from hard deletion and explains the ordinary hosted-tool limitation.

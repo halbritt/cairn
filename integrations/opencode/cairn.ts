@@ -140,10 +140,11 @@ export const search = validatedTool({
 })
 
 export const history = validatedTool({
-  description: "Inspect retained versions of a known record for comparison. Omit version for newest-first metadata; follow next_before_version as before_version. Supply a positive version for one exact body, without nonzero paging fields. Historical text and class do not establish current eligibility or authority; pull the current note before editing. The authenticated profile controls repository and destination; forgotten or excluded payloads refuse. No request UUID or expansion handle is needed. This read has its own output budget and does not spend index expansion credits; budget combined context across calls.",
+  description: "Inspect retained versions of a known record for comparison. Omit version for newest-first metadata; follow next_before_version as before_version. Supply a positive version for one exact body, without nonzero paging fields. Optional span selects a byte excerpt of that version and omits the full body; UTF-8 fragments use body_base64. Historical text and class do not establish current eligibility or authority; pull the current note before editing. The authenticated profile controls repository and destination; forgotten or excluded payloads refuse. No request UUID or expansion handle is needed. This read has its own output budget and does not spend index expansion credits; budget combined context across calls.",
   args: { record_id: z.string().uuid(), version: z.number().int().min(0).max(2147483647).optional(),
     before_version: z.number().int().min(0).max(2147483647).optional(),
-    limit: z.number().int().min(0).max(100).optional().describe("Metadata page size; omitted or zero means 20") },
+    limit: z.number().int().min(0).max(100).optional().describe("Metadata page size; omitted or zero means 20"),
+    span: z.object({ offset: z.number().int().min(0).max(65535), length: z.number().int().min(1).max(65536) }).strict().optional().describe("Byte excerpt; requires a positive exact version") },
   async execute(args, context) {
     const config = await settings("history", context)
     return render(await call(config, context, ["history"], { ...args, repo: config.repo }), config)

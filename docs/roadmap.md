@@ -67,6 +67,12 @@ when available. This closes the local adoption
 gap between temporary probes and normal project startup; durable task benefit
 and other hosts' adoption still require evidence.
 
+[Historical byte excerpts](record-history.md#read-a-passage-from-an-earlier-version)
+now let an agent inspect a passage from a long retained version within its
+existing tool-output budget. Whole-body reads and current access rules remain
+unchanged. This improves inspection capability; downstream task value still
+requires observation.
+
 The [MCP context extension](verification/mcp-currentness-2026-09-08.md) lets hosts
 supply existing revision/workspace/task-class/binding/capability pins at startup.
 Public stdio checks verify matching retrieval and missing/mismatched withholding.

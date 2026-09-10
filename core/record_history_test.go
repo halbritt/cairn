@@ -47,7 +47,7 @@ func TestRecordHistoryPagesThroughAppendAndReadsExactVersion(t *testing.T) {
 	}
 	for _, page := range []RecordHistory{first, next} {
 		for _, v := range page.Versions {
-			if v.Body != nil || !v.PayloadAvailable {
+			if v.Body != nil || v.Span != nil || !v.PayloadAvailable {
 				t.Fatalf("metadata mode returned body: %+v", v)
 			}
 		}
@@ -102,6 +102,8 @@ func TestRecordHistoryKeepsVersionClassAndForgettingExclusion(t *testing.T) {
 		_, err = op.History(ctx, RecordHistoryRequest{RecordID: b.RecordID, Version: version}, Destination{"local", true})
 		requireCode(t, err, "PAYLOAD_UNAVAILABLE")
 	}
+	_, err = op.History(ctx, RecordHistoryRequest{RecordID: b.RecordID, Version: 1, Span: &ByteSpanRequest{0, 1}}, Destination{"local", true})
+	requireCode(t, err, "PAYLOAD_UNAVAILABLE")
 	// Model an excluded earlier payload whose identity is still retained while
 	// a later version remains available. Inspection must respect the row marker.
 	current, err := writer.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
@@ -119,6 +121,8 @@ func TestRecordHistoryKeepsVersionClassAndForgettingExclusion(t *testing.T) {
 		t.Fatalf("excluded source metadata leaked: %+v %v", page, err)
 	}
 	_, err = op.History(ctx, RecordHistoryRequest{RecordID: current.RecordID, Version: 1}, Destination{"local", true})
+	requireCode(t, err, "PAYLOAD_UNAVAILABLE")
+	_, err = op.History(ctx, RecordHistoryRequest{RecordID: current.RecordID, Version: 1, Span: &ByteSpanRequest{0, 1}}, Destination{"local", true})
 	requireCode(t, err, "PAYLOAD_UNAVAILABLE")
 	latest, err := op.History(ctx, RecordHistoryRequest{RecordID: current.RecordID, Version: 2}, Destination{"local", true})
 	if err != nil || len(latest.Versions) != 1 || latest.Versions[0].Body == nil || *latest.Versions[0].Body != "later available text" {

@@ -141,7 +141,8 @@ local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`
 `assess-run`, `assessments`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `run-package`, `run-index`, `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`.
-`history` lists bounded retained version metadata or reads one exact body, under
+`history` lists bounded retained version metadata or reads one exact body (optionally
+as a byte excerpt with `span`), under
 current repository/destination restrictions. See [record history](record-history.md)
 for paging and historical-inspection limits.
 `recompile` takes the original `receipt_id`, `query` and optional `entities`, with

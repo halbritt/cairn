@@ -58,9 +58,9 @@ func TestAuthenticatedRecordHistoryPreservesDestinationAndRepository(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, version := range []int{0, 1} {
+			for _, request := range []core.RecordHistoryRequest{{RecordID: rec.RecordID}, {RecordID: rec.RecordID, Version: 1}, {RecordID: rec.RecordID, Version: 1, Span: &core.ByteSpanRequest{Offset: 0, Length: 5}}} {
 				var result json.RawMessage
-				err = client.Call(ctx, "history", map[string]any{"record_id": rec.RecordID, "version": version}, &result)
+				err = client.Call(ctx, "history", request, &result)
 				if core.Code(err) != tc.code || len(result) != 0 {
 					t.Fatalf("history disclosed refused content: %s %v", result, err)
 				}

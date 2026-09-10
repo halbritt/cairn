@@ -55,6 +55,12 @@ The [implementation history](#implementation-history) retains the earlier narrat
 and subsequent recorded changes, including failed trials and superseded work. Future updates should append dated history and corrections while refreshing
 the current summary; do not replace the historical record.
 
+Source now supports [historical byte excerpts](verification/history-spans-2026-09-10.md)
+through the existing history tool. An agent can inspect selected earlier bytes
+within its current output room; whole-body behavior and current access checks
+remain. The installation snapshot above stays at its separately verified build
+until deployment is recorded. Downstream task value remains unmeasured.
+
 ## Working capabilities
 
 | Area | Implemented behavior | Details |
@@ -3834,3 +3840,27 @@ Verification output is retained at `/tmp/cairn-obsolete-guidance-20260910/checks
 No runtime code, installation, operational note or authority state changed. The
 prior implementation history is preserved. This adds verified operating guidance,
 not a new task-benefit finding or completion of the remaining lifecycle roadmap.
+
+
+### 2026-09-10 — Bounded passages from retained history
+
+Added optional byte spans to exact-version history through CLI/API, MCP and native
+OpenCode. The standing 64 KiB fixture exposed a concrete gap: storing the note was
+valid but its whole historical body exceeded the tool's configured room. A selected
+passage now fits without increasing that room. Results preserve the original full
+hash, byte count and version metadata, omit the full body, and return exact selected
+bytes with a separate hash. Split UTF-8 uses base64; EOF alone clips the range.
+
+The API and MCP regressions first failed on the unsupported argument, then passed.
+Disposable PostgreSQL tests cover earlier/current distinction, bounds, hashes,
+Unicode fragments, private/foreign/forgotten/excluded refusal and no new durable
+references. Full race integration, static checks, 40 Python tests and native
+OpenCode checks passed. Both native interfaces preserve whole-body budget refusal
+while successfully returning the selected passage. No migration, extra tool,
+operational-note mutation or model inference was needed.
+
+[Verification](verification/history-spans-2026-09-10.md) records the scope and limits.
+This improves historical inspection capability; independent downstream task value
+and net cost remain unmeasured. Current instruction delivery still requires full
+bodies. All prior implementation history is preserved. The installation remains
+at its last recorded build until the separate deployment entry is appended.

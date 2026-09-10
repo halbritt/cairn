@@ -1,0 +1,64 @@
+{
+  "schema": "cairn.history-spans-verification/1",
+  "date": "2026-09-10",
+  "baseline_commit": "c8a9f48308972a59a960a6b05834cdaf431fc458",
+  "migration": 34,
+  "new_tools": 0,
+  "operational_records_mutated": false,
+  "model_inference_calls": 0,
+  "task_value": "Earlier-passage retrieval within existing output room; independent downstream benefit and net cost unmeasured",
+  "checks": {
+    "/tmp/cairn-history-spans-20260910/api-red.log": "848494360174715afb26ece68b7bdd1bcf06f3ca9bf48181cd4ef9eaadbe458e",
+    "/tmp/cairn-history-spans-20260910/api-green.log": "ee67d85fb4c36a1acd04281b7cace384f73a8da0945ae3a4e4df4f092cabd267",
+    "/tmp/cairn-history-spans-20260910/mcp-red.log": "124f7c8a0ced312d4f306c016dd32693b25025d2af3ea204f58c4e5b2ccb7a76",
+    "/tmp/cairn-history-spans-20260910/mcp-green.log": "90b2122ed1fe671bc5dee16dd68aaa0a29b99960d9b2192ce1f8a0971001b2b6",
+    "/tmp/cairn-history-spans-20260910/core.log": "c301acb1da7a4eaf2814a43f028d4ebf1c3547ed82a48867bee3ba005bbb1d6e",
+    "/tmp/cairn-history-spans-20260910/integration.log": "ae987447709953da7c9fde49a0a2de08f9992bbd267ed787e7dc760dcd2f085b",
+    "/tmp/cairn-history-spans-20260910/check.log": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029",
+    "/tmp/cairn-history-spans-20260910/python.log": "aac1416c8d105adc96382048cccdb8bedb6561b41dc0fc5704ad23a7878a5276",
+    "/tmp/cairn-history-spans-20260910/native.log": "7a588a351535fdf9894e5379fc69377113075e96e5faa347be318d2975b38afc",
+    "/tmp/cairn-history-spans-20260910/decision-receipt.json": "21906107bdf2fd4e439e678a7e9b455cf245f70f97c981e5817fa5991b63c828"
+  },
+  "production_source_sha256": {
+    "core/record_history.go": "1db6a8a8d09ec1a99c697b837114907c30bcc0d4ecffcced8d556fa65a2b28de",
+    "core/byte_span.go": "7b08a946e4e91c4f5e5956e14caae6da2c786958af136c28b2ba909a367cfc66",
+    "mcpapi/server.go": "4eeed5d772a7a365b76758ab489c54399bff994de565a1352f542cd2ff4fa521",
+    "integrations/opencode/cairn.ts": "47882fb9427901b730377f7ccd66ff8c0b3b68c69567ddb2f568fe53b1683492"
+  },
+  "doctrine": {
+    "packet_id": "pkt-dbd929f07903391a",
+    "packet_sha256": "dbd929f07903391aeb5b72fc76fab7fc71180765772cf3759c60cea70fc26a1f",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "missing_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or substitution hierarchy is introduced; existing concrete Store and byte span helper remain."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or substitution hierarchy is introduced; existing concrete Store and byte span helper remain."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or substitution hierarchy is introduced; existing concrete Store and byte span helper remain."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or substitution hierarchy is introduced; existing concrete Store and byte span helper remain."
+      }
+    ],
+    "decision_receipt_validated": true,
+    "citation_loops_closed": true
+  }
+}

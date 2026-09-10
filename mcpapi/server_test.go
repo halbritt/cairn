@@ -381,6 +381,13 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		t.Fatalf("history did not preserve the prior wording: %+v", history)
 	}
 	invoke("cairn_history", map[string]any{"record_id": bodyOnly.RecordID, "repo": repo}, "additional")
+	var excerpt core.RecordHistory
+	if err := json.Unmarshal(invoke("cairn_history", core.RecordHistoryRequest{RecordID: bodyOnly.RecordID, Version: 1, Span: &core.ByteSpanRequest{Offset: 0, Length: 4}}, ""), &excerpt); err != nil {
+		t.Fatal(err)
+	}
+	if len(excerpt.Versions) != 1 || excerpt.Versions[0].Body != nil || excerpt.Versions[0].Span == nil || excerpt.Versions[0].Span.Body != bodyOnly.Body[:4] {
+		t.Fatalf("history excerpt did not preserve the selected earlier bytes: %+v", excerpt)
+	}
 	revise.RequestID = uuid.NewString()
 	invoke("cairn_edit", revise, "VERSION_CONFLICT")
 	revise.Draft = &bodyOnly.Draft

@@ -91,7 +91,8 @@ the intended task. These names differ from the `cairn_cairn_*` MCP names; an
 existing MCP-only permission entry does not automatically allow native tools.
 
 Use [cairn_history](record-history.md#native-tools) to compare earlier wording
-without shell access. It reads retained metadata or an exact historical body;
+without shell access. It reads retained metadata or an exact historical body,
+with an optional byte `span` for a passage from a long earlier version;
 it does not authorize current use or replace pulling the current note before
 editing. Explicit tool allowlists need the additional read permission.
 

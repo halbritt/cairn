@@ -10,11 +10,12 @@ import (
 // RecordHistoryRequest lists retained version metadata, or reads one exact body.
 // Version and paging are separate modes; BeforeVersion is an exclusive cursor.
 type RecordHistoryRequest struct {
-	RecordID      string `json:"record_id"`
-	Repo          string `json:"repo,omitempty"`
-	Version       int    `json:"version,omitempty"`
-	BeforeVersion int    `json:"before_version,omitempty"`
-	Limit         int    `json:"limit,omitempty"`
+	RecordID      string           `json:"record_id"`
+	Repo          string           `json:"repo,omitempty"`
+	Version       int              `json:"version,omitempty"`
+	BeforeVersion int              `json:"before_version,omitempty"`
+	Limit         int              `json:"limit,omitempty"`
+	Span          *ByteSpanRequest `json:"span,omitempty"`
 }
 
 type HistoricalVersion struct {
@@ -30,6 +31,7 @@ type HistoricalVersion struct {
 	BodySHA256       string      `json:"body_sha256,omitempty"`
 	BodyBytes        int         `json:"body_bytes,omitempty"`
 	Body             *string     `json:"body,omitempty"`
+	Span             *ByteSpan   `json:"span,omitempty"`
 }
 
 type RecordHistory struct {
@@ -56,6 +58,9 @@ func (s *Store) History(ctx context.Context, req RecordHistoryRequest, dest Dest
 		return RecordHistory{}, failure("INVALID_REQUEST", "history requires a positive exact version or metadata paging with limit 1-100 and a positive before_version")
 	}
 	limit := req.Limit
+	if req.Span != nil && (req.Version == 0 || req.Span.Offset < 0 || req.Span.Offset >= 65536 || req.Span.Length < 1 || req.Span.Length > 65536) {
+		return RecordHistory{}, failure("INVALID_REQUEST", "history span requires an exact version, offset 0-65535 and length 1-65536")
+	}
 	if limit == 0 {
 		limit = 20
 	}
@@ -129,6 +134,15 @@ func (s *Store) History(ctx context.Context, req RecordHistoryRequest, dest Dest
 		return RecordHistory{}, failure("NOT_FOUND", "retained record version not found")
 	}
 	if req.Version > 0 {
+		if req.Span != nil {
+			v := &result.Versions[0]
+			if req.Span.Offset >= v.BodyBytes {
+				return RecordHistory{}, failure("INVALID_REQUEST", "history span offset must be before the end of the retained body")
+			}
+			span := selectByteSpan([]byte(*v.Body), *req.Span)
+			v.Span = &span
+			v.Body = nil
+		}
 		result.Versions[0].Entities, err = readEntities(ctx, tx, id, req.Version)
 		if err != nil {
 			return RecordHistory{}, err
