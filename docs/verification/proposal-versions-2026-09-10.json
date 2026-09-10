@@ -1,0 +1,125 @@
+{
+  "schema": "cairn.proposal-version-verification/1",
+  "baseline_commit": "e6918bd1c88f3580897f113cb181c8c564f554e6",
+  "previous_writer_commit": "7dcf3dc8815791aa6027ecf49dd0fa3e9dfaf5f4",
+  "migration": 32,
+  "checks": {
+    "disposable_postgres_race": true,
+    "static": true,
+    "go_tests": true,
+    "python_tests": 40,
+    "operator_cli": true,
+    "older_writer": true,
+    "legacy_retries": true,
+    "audited_forgetting": true,
+    "answering_model": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-5117c43b460d6a45",
+    "packet_content_sha256": "5117c43b460d6a45285d2eae0e66376d6d65edac3c04f4f55a10ab2222ddd990",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "classification": "nonmaterial",
+        "reason": "Existing concrete proposal module and CLI gain fields and a read operation; no Go interface or substitution boundary changes."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "classification": "nonmaterial",
+        "reason": "Existing concrete proposal module and CLI gain fields and a read operation; no Go interface or substitution boundary changes."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "classification": "nonmaterial",
+        "reason": "Existing concrete proposal module and CLI gain fields and a read operation; no Go interface or substitution boundary changes."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "classification": "nonmaterial",
+        "reason": "Existing concrete proposal module and CLI gain fields and a read operation; no Go interface or substitution boundary changes."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-proposal-version-authority.json",
+      "sha256": "b45cbcc3e28173e1ef17d12752e83528d68b9171b008e6fb888546d162daf850"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-contracts.json",
+      "sha256": "62de3856f741e462d2cb3a58d8d1b530093bdfa1a51aee1489ba602e9a3652a4"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-structure.json",
+      "sha256": "cf36caf71dd4e230579edd3d42f3fdcb745d8ea8e96d3df9d781df1f0c783818"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-tests.json",
+      "sha256": "91275534e6410678285c35f2553011c0f97806f91c651734a3ca3e5b504a018d"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-review.json",
+      "sha256": "dbe9865a7f496fa3dd11f987302ef7c00d362974561439b84fb96c273077dd48"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-red.log",
+      "sha256": "8f0b037f1c8645fa0dc45b67431548f81e8bbed98fe2c466e01db45d10b69e5f"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-history-red.log",
+      "sha256": "fb9f984d535e49dd5db45d7e7de0feaa523d4631066cc9ca66d250a6fc05e1f4"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-history-green.log",
+      "sha256": "cdc5cecb6bb913d546a300cb998efea7fafbbad573ac12fa4ae05ea42a1baa60"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-boundaries-compile-error.log",
+      "sha256": "c18b6d1917c777d8db5973157714266994e257dd8df02433af0d6e5846a48878"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-boundaries.log",
+      "sha256": "d5cd979f732e9532ffb936da7249b35d0bacc83a284690eaffb7f431e70fbf7e"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-integration.log",
+      "sha256": "e551aed6165d30d7273b7429be1aa0a1a173d39c259358a96d9fef247cf0c44e"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-tests.log",
+      "sha256": "69002a8859afa2568b0ed7e83c895e04aefadda69c9abe7cd8374abba0f13b92"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-decision.json",
+      "sha256": "1779f394baec75e68ae549e7a6213ac169a77359e168bb4c369f0e3c5eaf7f81"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-doctrine.json",
+      "sha256": "51d788798862fcba31f7c831855546e06acfaaa1e9427420b90585d8c02e7eb3"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-doctrine-final.json",
+      "sha256": "252c63e82915fc4baf18c3fa0a6e361845ec1402f32cc6b26fdaeec5c69d2a55"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-citations.json",
+      "sha256": "edc1a4d7cf72a100b094acabb0aa479eab083dda8b377c8dc3d96e41a7405713"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-citations-final.json",
+      "sha256": "1668c50721a9674b9a677ed3c3630ad5fb47baa5f4577fffb3c44968f27e428d"
+    }
+  ]
+}

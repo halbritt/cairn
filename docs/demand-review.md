@@ -35,7 +35,7 @@ and resolver state. Divergent bytes remain labelled divergent; inspection does
 not silently revalidate them.
 
 `cairn review-proposal` accepts `request_id`, `proposal_id`, `expected_version`,
-`disposition`, `reason`, and optional `until` or `result_record`. Dispositions:
+`disposition`, `reason`, and optional `until`, `result_record` or `result_version`. Dispositions:
 
 - `open`: return a current proposal to review.
 - `deferred`: suppress it until the supplied future time.
@@ -46,6 +46,8 @@ Review decisions retain versions and actors. Conversion does not create or
 promote a record. Stale source assessments cannot be reopened or converted;
 review locks their receipt boundaries against concurrent assessment changes.
 Conversion also checks that selected evidence is currently resolvable and digest-valid.
+New conversions retain the linked lesson version; see the review-history contract
+below.
 
 The docket prioritizes attribution contradictions and incomplete delegated work
 above ordinary blocked demand. New failure/recovery proposals appear as
@@ -110,3 +112,77 @@ groups are a read-time projection over retained proposals and assessments.
 Migration 019 permits an absent recovery source while preserving existing pairs.
 Deploy the updated binary with this migration before generating standalone
 proposals; older binaries assume every proposal has a recovery.
+
+
+## Preserve the linked lesson version
+
+New conversions record the lesson version linked in that transaction. Editing the
+lesson later does not change this pin. Supply `result_version` with
+`result_record` when converting a version you inspected:
+
+```json
+{
+  "request_id": "REVIEW_UUID",
+  "proposal_id": "PROPOSAL_UUID",
+  "expected_version": 1,
+  "disposition": "converted",
+  "result_record": "LESSON_UUID",
+  "result_version": 3,
+  "reason": "Link the inspected lesson to this reviewed failure"
+}
+```
+
+Replace the UUID placeholders with real IDs and pass this object to
+`cairn review-proposal` on stdin. The proposal's
+`expected_version` guards its disposition; `result_version` independently guards
+the lesson. A changed lesson returns `VERSION_CONFLICT` without committing a
+review. Inspect the change before retrying. If `result_version` is omitted, the
+existing record-only request remains supported: Cairn links and returns the
+current lesson version while holding the record lock. This does not prove that
+the caller read that version. Only conversions accept result fields.
+
+The `proposal` response includes `result_version` for a pinned current
+conversion. Use `cairn history` with that record ID and exact version to inspect
+the original text under the existing availability rules. A pin is a historical
+reference; it does not assert current eligibility, correctness, authority or task
+benefit. Later edits, retirement or forgetting do not retarget it.
+
+`cairn proposal-history` accepts an object on stdin:
+
+```json
+{"proposal_id":"PROPOSAL_UUID","limit":20}
+```
+
+It returns the current `proposal` snapshot and retained `reviews`, newest first.
+Each review includes its version, disposition, reason, observer and time. New
+reviews also preserve the conversion record/version or deferral time, where
+applicable. Reopening, deferring, dismissing or converting again preserves earlier
+review entries. Creation is proposal version 1; review entries begin at version 2.
+
+Paging defaults to 20 reviews and accepts 1–100. When `more` is true, pass
+`next_before_version` as `before_version` on the next request. This exclusive
+version cursor avoids shifting older pages when a new review is appended. The
+current proposal header can change between pages. Inspection is local CLI work;
+the agent API and ordinary harness tools do not expose proposal review history.
+Trusted core callers retain repository scope checks. No lesson body is copied
+into the review history.
+
+A retained conversion reference prevents ordinary deletion even after a proposal
+is reopened. Use the existing `preview-delete` and audited forgetting workflow
+when removal is required. Forgetting and purging can remove the lesson bytes while
+retaining review IDs and version metadata. Review reasons retain their existing
+policy; this change does not add general metadata redaction or retention pruning.
+
+Apply migration 032 with the new binary before using the new read/write paths.
+It adds nullable metadata to individual review rows and does not backfill old
+reviews from today's lesson. Legacy conversions keep unknown version pins;
+missing `result_version` means unknown, not the current version. Their per-review
+result IDs and deferral times may also be unavailable. A genuinely older writer
+can still create an unpinned review after migration; the new reader does not carry
+an earlier pin into that review. Upgrade active review writers to obtain new pins.
+Previously committed mutation retries retain their original responses.
+
+[Verification](verification/proposal-versions-2026-09-10.md) covers conversion,
+source edits, reopen/history paging, stale-version refusal, body forgetting and
+an actual older writer. Error-signature retrieval using these links remains a
+separate E1 implementation step.

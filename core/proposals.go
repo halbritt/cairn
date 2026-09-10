@@ -31,6 +31,7 @@ type Proposal struct {
 	Method          string     `json:"method"`
 	DueAt           *time.Time `json:"due_at,omitempty"`
 	ResultRecord    string     `json:"result_record,omitempty"`
+	ResultVersion   int        `json:"result_version,omitempty"`
 }
 type ProposalBatch struct {
 	Proposals  []Proposal `json:"proposals"`
@@ -112,7 +113,7 @@ func readProposal(ctx context.Context, tx pgx.Tx, id string) (Proposal, error) {
 	var version int
 	var disposition, result string
 	var due *time.Time
-	err := tx.QueryRow(ctx, `SELECT detail,version,disposition,due_at,COALESCE(result_record::text,''),failure_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=failure_receipt) AND (recovery_receipt IS NULL OR recovery_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=recovery_receipt)) FROM cairn.lesson_proposal WHERE proposal_id=$1`, id).Scan(&p, &version, &disposition, &due, &result, &p.SourceCurrent)
+	err := tx.QueryRow(ctx, `SELECT detail,version,disposition,due_at,COALESCE(result_record::text,''),COALESCE((SELECT review.result_version FROM cairn.proposal_review review WHERE review.proposal_id=lesson_proposal.proposal_id AND review.version=lesson_proposal.version AND review.result_record=lesson_proposal.result_record),0),failure_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=failure_receipt) AND (recovery_receipt IS NULL OR recovery_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=recovery_receipt)) FROM cairn.lesson_proposal WHERE proposal_id=$1`, id).Scan(&p, &version, &disposition, &due, &result, &p.ResultVersion, &p.SourceCurrent)
 	if err == pgx.ErrNoRows {
 		return p, failure("NOT_FOUND", "proposal not found")
 	}
@@ -153,6 +154,7 @@ type ReviewProposalRequest struct {
 	Disposition     string     `json:"disposition"`
 	Until           *time.Time `json:"until"`
 	ResultRecord    string     `json:"result_record,omitempty"`
+	ResultVersion   int        `json:"result_version,omitempty"`
 	Reason          string     `json:"reason"`
 }
 
@@ -177,11 +179,14 @@ func (s *Store) ReviewProposal(ctx context.Context, req ReviewProposalRequest) (
 	if req.Disposition != "deferred" && req.Until != nil {
 		return Proposal{}, failure("INVALID_REQUEST", "only deferred proposals have a review time")
 	}
+	if req.ResultVersion < 0 || req.ResultVersion > 2147483647 {
+		return Proposal{}, failure("INVALID_REQUEST", "result_version must be a positive version when supplied")
+	}
 	if req.Disposition == "converted" {
 		if err := validID(req.ResultRecord); err != nil {
 			return Proposal{}, err
 		}
-	} else if req.ResultRecord != "" {
+	} else if req.ResultRecord != "" || req.ResultVersion != 0 {
 		return Proposal{}, failure("INVALID_REQUEST", "only converted proposals link a resulting record")
 	}
 	return mutate(ctx, s, "review-proposal", req.RequestID, req, func(tx pgx.Tx) (Proposal, error) {
@@ -208,6 +213,7 @@ func (s *Store) ReviewProposal(ctx context.Context, req ReviewProposalRequest) (
 		if !p.SourceCurrent && (req.Disposition == "converted" || req.Disposition == "open") {
 			return p, failure("STALE_PROPOSAL", "source assessment changed; generate and review a current proposal")
 		}
+		resultVersion := 0
 		if req.ResultRecord != "" {
 			for _, id := range p.EvidenceIDs {
 				if err = checkAssessmentEvidence(ctx, tx, id, p.Repo); err != nil {
@@ -222,17 +228,21 @@ func (s *Store) ReviewProposal(ctx context.Context, req ReviewProposalRequest) (
 			if err != nil {
 				return p, err
 			}
-			if record.Lifecycle == "tombstoned" {
-				return p, failure("PAYLOAD_UNAVAILABLE", "a forgotten record cannot complete proposal review")
-			}
 			if record.Scope.Repo != p.Repo {
 				return p, failure("AUTHORITY_DENIED", "result record is outside proposal repository")
+			}
+			if req.ResultVersion != 0 && req.ResultVersion != record.Version {
+				return p, failure("VERSION_CONFLICT", "result lesson version changed; inspect the current lesson before converting")
+			}
+			resultVersion = record.Version
+			if record.Lifecycle == "tombstoned" {
+				return p, failure("PAYLOAD_UNAVAILABLE", "a forgotten record cannot complete proposal review")
 			}
 		}
 		if _, err = tx.Exec(ctx, `UPDATE cairn.lesson_proposal SET version=version+1,disposition=$2,due_at=$3,result_record=NULLIF($4,'')::uuid WHERE proposal_id=$1`, p.ID, req.Disposition, req.Until, req.ResultRecord); err != nil {
 			return p, err
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO cairn.proposal_review(proposal_id,version,disposition,reason) VALUES($1,$2,$3,$4)`, p.ID, p.Version+1, req.Disposition, req.Reason); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.proposal_review(proposal_id,version,disposition,reason,result_record,result_version,due_at) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,NULLIF($6,0),$7)`, p.ID, p.Version+1, req.Disposition, req.Reason, req.ResultRecord, resultVersion, req.Until); err != nil {
 			return p, err
 		}
 		return readProposal(ctx, tx, p.ID)

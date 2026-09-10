@@ -46,7 +46,7 @@ Everyday commands:
 
 JSON commands (read one request from stdin):
   create edit revise delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
-  promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal
+  promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal proposal-history
   supersession RECORD_UUID
   authorize-scope | scope-authorization RECORD_UUID
   policy-revise | policy REPO | policy-revision REVISION_UUID
@@ -393,6 +393,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.Resolve)
 	case "generate-proposals":
 		return invoke(ctx, input, store.GenerateProposals)
+	case "proposal-history":
+		return invoke(ctx, input, store.ProposalHistory)
 	case "review-proposal":
 		return invoke(ctx, input, store.ReviewProposal)
 	case "history":

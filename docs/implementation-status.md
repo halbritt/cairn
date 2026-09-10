@@ -49,6 +49,13 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Proposal conversions retain lesson versions.** The operator can require the
+  inspected version and inspect earlier conversions after reopening. Legacy pins
+  stay unknown; audited forgetting can still erase lesson bodies. This source
+  change is verified and awaiting installation.
+  [Contract](demand-review.md#preserve-the-linked-lesson-version),
+  [verification](verification/proposal-versions-2026-09-10.md).
+
 - **Quoted search prefers exact text.** Known paths, identifiers and error messages
   can be quoted in existing queries. Matching source previews, lexical/semantic
   fallback and old receipt behavior are verified through CLI, MCP and native
@@ -2491,3 +2498,31 @@ A spacing cleanup in deployment documentation also changed one older status line
 in `4683a29`. The history-preservation check detected it; the original line has
 been restored exactly. The check now confirms that the full history through
 `7dcf3dc` remains intact, followed by these deployment and CI additions.
+
+
+### 2026-09-10 — Proposal conversions retain exact lesson versions and review history
+
+The conversion path retained only a logical lesson ID, so edits obscured which
+version was linked to a failure review. Reopening also cleared the current result
+link without storing it on the old review row. Migration 032 now records exact
+conversion references and deferral times on individual review events. An optional
+result_version rejects a changed lesson; omission preserves record-only calls and
+pins the current version under the existing record lock. proposal-history exposes
+retained review decisions through bounded version-cursor paging.
+
+The initial behavioral test failed on the missing pin. A history test initially
+failed to compile before its API existed; a later fixture mistook metadata-only
+Revision output for a record body and was corrected. Database and actual CLI
+checks now preserve conversions across edits/reopening, reject stale versions
+without writes, retain exact retries, enforce repository/paging bounds and allow
+audited forgetting while protecting retained references from ordinary deletion.
+The actual older writer creates an explicitly unpinned new event after migration;
+no earlier pin is carried forward, and its original mutation response still retries.
+Full disposable PostgreSQL/race, static checks, Go tests, 40 Python tests and
+ordinary CLI/stdio workflows pass. The generic previous-binary quoted-search check
+was updated to handle an already-upgraded v5 baseline as well as legacy v4.
+
+No old pin was reconstructed, no body is copied into review history, and no model
+task ran. This prepares the reviewed-failure path for exact-signature retrieval;
+that E1 work and the broader D1/value requirements remain open. Installation is
+pending at this entry. Complete earlier implementation history is preserved.

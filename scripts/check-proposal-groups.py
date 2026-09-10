@@ -6,6 +6,8 @@ import subprocess
 import sys
 import uuid
 
+from check_proposal_versions import check as check_versions
+
 
 binary, artifact_home = sys.argv[1:]
 env = dict(os.environ, CAIRN_HOME=artifact_home)
@@ -96,3 +98,5 @@ group = request("proposal-group", None, repo, key)
 assert group["summary"]["proposal_count"] == 1 and len(group["members"]) == 1, group
 assert group["members"][0]["proposal"]["disposition"] == "open", group
 print("Proposal grouping CLI preserves paginated sources, testimony and individual review decisions")
+
+check_versions(binary, env, members[1]["proposal"])

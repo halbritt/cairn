@@ -35,15 +35,20 @@ def check_cli(binary, root, environment):
             request = dict(request_id=str(uuid.uuid4()), scope=scope, query=query, purpose='context',
                            available_tokens=64000, mode=mode)
             old = operator(previous, environment, 'compile', request)
-            assert old['semantic']['ranking'] == 'lexical-scope-recency/4'
+            previous_ranking = old['semantic']['ranking']
+            assert previous_ranking in ('lexical-scope-recency/4', 'lexical-scope-recency/5')
             entries = old['semantic']['index'] if mode else [s['record'] for s in old['semantic']['selected']]
-            assert entries[0]['record_id'] == other['record_id']
+            expected = other if previous_ranking == 'lexical-scope-recency/4' else exact
+            assert entries[0]['record_id'] == expected['record_id']
             replayed = operator(binary, environment, 'recompile', dict(receipt_id=old['receipt_id'], query=query))['package']
             assert replayed == old
             retry = subprocess.run([binary, 'compile'], input=json.dumps(request), env=environment,
                                    capture_output=True, text=True, timeout=15)
-            assert retry.returncode != 0 and json.loads(retry.stdout)['status'] == 'STALE_PACKAGE'
-        print('Actual previous-binary quoted-query body/index receipts recompile unchanged; current retries refuse STALE_PACKAGE')
+            if previous_ranking == 'lexical-scope-recency/4':
+                assert retry.returncode != 0 and json.loads(retry.stdout)['status'] == 'STALE_PACKAGE'
+            else:
+                assert retry.returncode == 0 and json.loads(retry.stdout)['data'] == old
+        print('Actual previous-binary quoted-query receipts recompile unchanged; retries preserve unchanged profiles and refuse changed ranking')
 
 
 def check_harness(invoke):
