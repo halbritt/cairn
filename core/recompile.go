@@ -95,7 +95,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if original.Semantic.Query != "sha256:"+hex.EncodeToString(digest[:]) {
 		return Package{}, failure("INVALID_REQUEST", "query does not match the historical intent digest")
 	}
-	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4" && original.Semantic.Schema != "cairn.semantic/5" && original.Semantic.Schema != "cairn.semantic/6" && original.Semantic.Schema != "cairn.semantic/7" && original.Semantic.Schema != "cairn.semantic/8" && original.Semantic.Schema != "cairn.semantic/9" && original.Semantic.Schema != "cairn.semantic/10" && original.Semantic.Schema != "cairn.semantic/11") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1" && !hasLiteralRanking(original.Semantic.Ranking)) {
+	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4" && original.Semantic.Schema != "cairn.semantic/5" && original.Semantic.Schema != "cairn.semantic/6" && original.Semantic.Schema != "cairn.semantic/7" && original.Semantic.Schema != "cairn.semantic/8" && original.Semantic.Schema != "cairn.semantic/9" && original.Semantic.Schema != "cairn.semantic/10" && original.Semantic.Schema != "cairn.semantic/11" && original.Semantic.Schema != "cairn.semantic/12") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1" && !hasLiteralRanking(original.Semantic.Ranking)) {
 		return Package{}, failure("REPLAY_INCOMPLETE", "historical compiler version is not supported")
 	}
 	if original.Semantic.Schema == "cairn.semantic/6" || ((original.Semantic.Schema == "cairn.semantic/8" || original.Semantic.Schema == "cairn.semantic/9" || original.Semantic.Schema == "cairn.semantic/10") && original.Semantic.Browse != nil) {
@@ -106,10 +106,14 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	} else if original.Semantic.Browse != nil {
 		return Package{}, failure("INTEGRITY_FAILURE", "legacy compiler cannot carry a browse page")
 	}
-	pagedSchema := original.Semantic.Schema == "cairn.semantic/11"
+	signatureSchema := original.Semantic.Schema == "cairn.semantic/12"
+	if signatureSchema != (original.Semantic.ErrorSignature != "") || (signatureSchema && (!digestValid(original.Semantic.ErrorSignature) || original.Semantic.ErrorSignature != strings.ToLower(original.Semantic.ErrorSignature) || !hasFailureRanking(original.Semantic.Ranking))) || (!signatureSchema && hasFailureRanking(original.Semantic.Ranking)) {
+		return Package{}, failure("INTEGRITY_FAILURE", "historical failure signature is invalid")
+	}
+	pagedSchema := original.Semantic.Schema == "cairn.semantic/11" || (signatureSchema && original.Semantic.Page != nil)
 	page := original.Semantic.Page
 	if pagedSchema {
-		if original.Semantic.Mode != "index" || original.Semantic.Purpose != "context" || strings.TrimSpace(req.Query) == "" || original.Semantic.Browse != nil || page == nil || page.Offset < 0 || page.Offset > 10000 {
+		if original.Semantic.Mode != "index" || original.Semantic.Purpose != "context" || (strings.TrimSpace(req.Query) == "" && !signatureSchema) || original.Semantic.Browse != nil || page == nil || page.Offset < 0 || page.Offset > 10000 {
 			return Package{}, failure("INTEGRITY_FAILURE", "historical search page is invalid")
 		}
 	} else if page != nil {
@@ -117,10 +121,10 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	}
 	normalized, kindErr := NormalizeKinds(original.Semantic.Kinds)
 	phaseSchema := original.Semantic.Schema == "cairn.semantic/10"
-	if (!pagedSchema && phaseSchema != (original.Semantic.Context != nil && original.Semantic.Context.TaskPhase != "")) || original.Semantic.Context.validate() != nil {
+	if (!signatureSchema && !pagedSchema && phaseSchema != (original.Semantic.Context != nil && original.Semantic.Context.TaskPhase != "")) || original.Semantic.Context.validate() != nil {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical task phase is invalid")
 	}
-	if kindErr != nil || !slices.Equal(normalized, original.Semantic.Kinds) || (!pagedSchema && !phaseSchema && (original.Semantic.Schema == "cairn.semantic/9") != (len(normalized) > 0)) {
+	if kindErr != nil || !slices.Equal(normalized, original.Semantic.Kinds) || (!signatureSchema && !pagedSchema && !phaseSchema && (original.Semantic.Schema == "cairn.semantic/9") != (len(normalized) > 0)) {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical kind filter is invalid")
 	}
 	switch original.Semantic.Policy {
@@ -161,6 +165,9 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	p.Status = "READY"
 	p.Selected = []Selection{}
 	p.Omitted = omissionCensus()
+	if signatureSchema {
+		p.Omitted["NO_FAILURE_MATCH"] = 0
+	}
 	candidates := []candidate{}
 	terms := rankingTerms(req.Query, p.Ranking)
 	var literals []string
@@ -168,6 +175,9 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		literals = queryLiterals(req.Query)
 	}
 	for _, e := range evaluations {
+		if err = validateFrozenFailure(ctx, tx, p, e); err != nil {
+			return Package{}, err
+		}
 		if e.Facts == nil {
 			switch e.Reason {
 			case "CLASS_NOT_CONSEQUENTIAL", "AUTHORITY_INACTIVE", "SCOPE_AUTHORITY_INACTIVE", "POLICY_UNENFORCEABLE", "OPEN_CONFLICT", "ATTRIBUTION_UNRECONCILED", "EVIDENCE_UNAVAILABLE", "CONTEXT_MISSING", "CURRENTNESS_MISMATCH", "OUTSIDE_VALIDITY":
@@ -204,24 +214,29 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 			return Package{}, failure("INTEGRITY_FAILURE", "historical ranking features changed")
 		}
 		selection := Selection{Category: e.Facts.Category, Record: record, Evidence: e.Facts.Evidence, Authority: e.Facts.Authority, Mandatory: e.Mandatory, Reason: fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)}
-		selection.Reason = literalReason(selection.Reason, literal)
+		failureMatch := e.FailureMatch != nil
+		selection.Reason = failureReason(literalReason(selection.Reason, literal), failureMatch)
 		if !kindAllowed(p.Kinds, selection) {
 			p.Omitted["KIND_FILTERED"]++
 			continue
 		}
+		if signatureSchema && strings.TrimSpace(req.Query) == "" && !selection.Mandatory && !failureMatch {
+			p.Omitted["NO_FAILURE_MATCH"]++
+			continue
+		}
 		nonemptyQuery := len(terms) > 0
-		if p.Ranking == "lexical-scope-recency/2" || p.Ranking == "lexical-scope-recency/3" || p.Ranking == "lexical-scope-recency/4" || p.Ranking == "lexical-scope-recency/5" {
+		if p.Ranking == "lexical-scope-recency/2" || p.Ranking == "lexical-scope-recency/3" || p.Ranking == "lexical-scope-recency/4" || hasLiteralRanking(p.Ranking) {
 			nonemptyQuery = strings.TrimSpace(req.Query) != ""
 		}
-		if p.Ranking != "semantic-scope-recency/1" && p.Ranking != "semantic-scope-recency/2" && !selection.Mandatory && nonemptyQuery && score == 0 && !literal {
+		if p.Ranking != "semantic-scope-recency/1" && p.Ranking != "semantic-scope-recency/2" && p.Ranking != "semantic-scope-recency/3" && !selection.Mandatory && nonemptyQuery && score == 0 && !literal && !failureMatch {
 			p.Omitted["NO_LEXICAL_MATCH"]++
 			continue
 		}
-		if (p.Ranking == "semantic-scope-recency/1" || p.Ranking == "semantic-scope-recency/2") && !selection.Mandatory {
+		if (p.Ranking == "semantic-scope-recency/1" || p.Ranking == "semantic-scope-recency/2" || p.Ranking == "semantic-scope-recency/3") && !selection.Mandatory {
 			score = *e.SemanticScore
-			selection.Reason = literalReason(semanticReason(score, specificity), literal)
+			selection.Reason = failureReason(literalReason(semanticReason(score, specificity), literal), failureMatch)
 		}
-		candidates = append(candidates, candidate{literal, selection, score, specificity})
+		candidates = append(candidates, candidate{literal, failureMatch, selection, score, specificity})
 	}
 	if p.Mode == "index" {
 		p, err = packIndex(p, candidates, evaluations, req.Query)

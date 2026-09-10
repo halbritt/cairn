@@ -228,3 +228,8 @@ replace an ordinary note's captured source references. An explicit empty list
 clears the current references; text edits preserve them. The note remains A
 testimony. See [ordinary source citations](evidence-citations.md#ordinary-notes)
 for exact digests, optional passages and upgrade requirements.
+
+
+Known failure signatures can also find reviewed lessons without shared query
+vocabulary. See [failure signature search](failure-signature-search.md) for the
+optional `error_signature_sha256` tool field and operator sharing requirement.

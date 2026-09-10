@@ -1,0 +1,189 @@
+{
+  "schema": "cairn.failure-signature-verification/1",
+  "baseline_commit": "9bf06a5",
+  "previous_writer_commit": "97816e95514850c63379d2bdc3ffa4c61dba8f0d",
+  "migration": 33,
+  "checks": {
+    "disposable_postgres_race": true,
+    "static": true,
+    "go_tests": true,
+    "python_tests": 40,
+    "operator_cli": true,
+    "authenticated_cli": true,
+    "mcp": true,
+    "native_opencode_tools": true,
+    "explicit_startup": true,
+    "retained_run_intent": true,
+    "old_receipt_compatibility": true,
+    "answering_model": false,
+    "operational_converted_proposals": 0
+  },
+  "doctrine": {
+    "packet_id": "pkt-e1505300c9e82e37",
+    "packet_content_sha256": "e1505300c9e82e37789fe6ef485d30889bb35eddb270e0686f2fb594acd28390",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "business completion and temporal requirements",
+        "classification": "nonmaterial",
+        "reason": "No new asynchronous workflow, queue or recovery protocol; current synchronous mutation, retrieval and historical replay are covered separately."
+      },
+      {
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "queue and end-to-end observability",
+        "classification": "nonmaterial",
+        "reason": "No new asynchronous workflow, queue or recovery protocol; current synchronous mutation, retrieval and historical replay are covered separately."
+      },
+      {
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "recovery owner",
+        "classification": "nonmaterial",
+        "reason": "No new asynchronous workflow, queue or recovery protocol; current synchronous mutation, retrieval and historical replay are covered separately."
+      },
+      {
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "workflow completion semantics",
+        "classification": "nonmaterial",
+        "reason": "No new asynchronous workflow, queue or recovery protocol; current synchronous mutation, retrieval and historical replay are covered separately."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface, method set or substitution boundary; existing concrete request and result structs carry optional fields."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface, method set or substitution boundary; existing concrete request and result structs carry optional fields."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface, method set or substitution boundary; existing concrete request and result structs carry optional fields."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface, method set or substitution boundary; existing concrete request and result structs carry optional fields."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-failure-signature-authority.json",
+      "sha256": "f3f494102f6210f94e163b001876d06c3414c77f13fdfb5f0c5b7069abcacd61"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-contracts.json",
+      "sha256": "b7757d6b37b40e68eb3ec773815a8141bf7707e6ff7212aa2beae58c04357e7f"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-structure.json",
+      "sha256": "1a7a8ad37a0527a8b6aeda32b1605de25124e2058f3f3c5ee410a6f79c55bc7a"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-tests.json",
+      "sha256": "5f879d6a8a840807fd4a9d57392195c317b52ef8b0d1f26a4917b85c88a01a97"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-review.json",
+      "sha256": "06317c89ee458f8739522edd31845b52432317ec59c399721830ed2dbed79df0"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-red.log",
+      "sha256": "6a3dcbd5419a1d67405fb49ed2c5ad5d11b24929e64c155306effaced4fe2f09"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-sharing-red.log",
+      "sha256": "ca5091934e9b7404fa87b98ba027eab3c15f12926af4c0c11538f45806a1c723"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-boundaries.log",
+      "sha256": "260b120f36daabb2c648c2621cb2601e9636f22f88370740c25c2fc2a5fc3eca"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-boundaries-fixed.log",
+      "sha256": "dfc809394c9d8fb6cf63fc9b774705a965c806916539f4e09f49373a6f391f96"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-demand-red.log",
+      "sha256": "869638f92d1e9c3813fa3e30d3342ee45f40d378149c6e10f07cb4879725fefc"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-demand-green.log",
+      "sha256": "5d83e5805cb9271af9bedc2bc66cf6c56b59cf799d7de6e1fc99bee1628eb1d5"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-final-target.log",
+      "sha256": "920ad8628cab779bbf5ddb240c6ce34b2fd888e7702f9c7e23cfcf53ce9b0513"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-integration.log",
+      "sha256": "5a4e98f62a49021ed74d4ae17187be793e05e978bfae151fc5339a83c1686df1"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-integration-fixed.log",
+      "sha256": "0ad1e3fb34e8c50801f0e61b607cb3d1c087e599bb5db5dd904ae2bf6e103fb7"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-integration-final.log",
+      "sha256": "08b0ef279d02eb6388c172bb26115ccb918c024b49ca5d5e9e0e3840c2267df0"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-api.log",
+      "sha256": "58c7855683b9bef367df233303430a7f08bb7a7eb43b890bfd8a6c1b1e2b7be3"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-api-fixed.log",
+      "sha256": "5631fd3843253615fd44d5ecc06cdd91f9a2bdc6200ee644ee88270d783353e8"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-api-final.log",
+      "sha256": "f29b4f261765140ba43b7b777181884a220ba2731e55db1a919d8d0bdc46efb8"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-check-final.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-tests.log",
+      "sha256": "3400fd0d711e25864ca97ea6c59cf9e9677a555de56125ede5ec90a5f6e9b4f4"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-decision.json",
+      "sha256": "cfdcd9c19d4b2938ac6064991de50cb2e790207e263f207b9a9a2fb49d8c2ddc"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-doctrine.json",
+      "sha256": "3a8941bf86bc5926e6d1f9a3da56362d03786795767568db8492a081995806a9"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-doctrine-final.json",
+      "sha256": "df51fb66926badd71a365753ff10e250b834d2dab6338161d4369d6b0c6e39fb"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-doctrine-verified.json",
+      "sha256": "2ae833c79e3b4e18bd816c958b4d8d6eac9aa3492f0339340955527b74562179"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-citations.json",
+      "sha256": "fbd504de3e7b0370b4e1f8026bc52a64f0fe05a6b0e73e783873c0f09658af2a"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-citations-final.json",
+      "sha256": "ec1b3339997af918e6fb56c247d37a3a321ffa287046850c7109d9bf091eb490"
+    },
+    {
+      "path": "/tmp/cairn-failure-signature-citations-verified.json",
+      "sha256": "248282a7357075bd29c4d0995bc115fc6a6e9f7dede4a8673bfce9cf622ae9bd"
+    }
+  ]
+}

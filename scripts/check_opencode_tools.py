@@ -6,6 +6,7 @@ import uuid
 
 from check_ordinary_citations import check_harness as check_citations
 from check_note_transport import check_opencode_session
+from check_failure_retrieval import check_harness as check_failure_signatures
 from check_literal_retrieval import check_harness as check_literals
 
 
@@ -49,6 +50,7 @@ def check(binary, root, environment, opencode, claim, support):
 
     check_citations(invoke, support)
     check_literals(lambda name, args: invoke(name.removeprefix("cairn_"), args))
+    check_failure_signatures(lambda name, args: invoke(name.removeprefix("cairn_"), args), binary, environment)
     marker = 'nativeopencode' + uuid.uuid4().hex
     capture = dict(request_id=str(uuid.uuid4()), body='Earlier setup context. ' * 30 + marker + ': selected lesson $(literal)',
                    kind='lesson', shareable=True, pins=dict(task_phase='validation'))

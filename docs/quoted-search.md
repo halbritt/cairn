@@ -75,3 +75,8 @@ for current retrieval.
 ordinary interfaces, previous receipts and eligibility boundaries. This adds a
 retrieval capability. Structured entity/file/error metadata, automatic host intent
 collection and broader task-value evidence remain open in E1 and the roadmap.
+
+
+Known failure signatures can also find reviewed lessons without shared query
+vocabulary. See [failure signature search](failure-signature-search.md) for the
+optional `error_signature_sha256` tool field and operator sharing requirement.

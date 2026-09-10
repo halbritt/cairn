@@ -20,6 +20,7 @@ from check_mcp_currentness import check as check_mcp_currentness
 from check_retained_run import check as check_retained_run
 from check_observed_index import check as check_observed_index
 from check_run_task_file import check as check_run_task_file
+from check_failure_retrieval import check_cli as check_failure_signatures
 from check_literal_retrieval import check_cli as check_literal_retrieval
 from check_binary_evidence import check as check_binary_evidence
 from check_json_unicode import check as check_json_unicode
@@ -285,6 +286,7 @@ try:
     print('Host-issued attempt ID survives authenticated wrapper invocation and run reporting')
     print('Owner-only run status works without client database access and does not grant observer authority')
     print('Authenticated host CLI records process outcomes without database access and preserves output/exit semantics')
+    check_failure_signatures(binary, root, env)
     check_run_retrieval(binary, root, client_env, record)
     check_retained_run(binary, root, client_env)
     check_observed_index(binary, root, client_env)

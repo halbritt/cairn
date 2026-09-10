@@ -49,6 +49,14 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Reviewed failure signatures can retrieve lessons.** An optional supplied digest
+  finds the exact current lesson version linked by a reviewed failure, including
+  on another task or harness. Hosted associations require explicit review sharing;
+  currentness and destination gates, historical replay and retained-run intent are
+  verified. Source is ready; installation is recorded below when complete.
+  [Contract](failure-signature-search.md),
+  [verification](verification/failure-signature-search-2026-09-10.md).
+
 - **Proposal conversions retain lesson versions.** The operator can require the
   inspected version and inspect earlier conversions after reopening. Legacy pins
   stay unknown; audited forgetting can still erase lesson bodies. This source
@@ -2554,3 +2562,37 @@ The local integration run additionally exercised an actual older proposal writer
 and its exact retries. Versioned conversion/history is installed and verified;
 error-signature retrieval, broader demand adaptation and durable task value remain
 open. No model-task result was added by this change.
+
+
+### 2026-09-10 — Reviewed failure signature retrieval
+
+Implemented optional `error_signature_sha256` in the compiler and existing
+CLI/MCP/native OpenCode search, startup and runner surfaces. A current converted
+review can prefer its exact current lesson version on later tasks even when query
+words differ. Source assessments must still be current. Lesson scope, pins,
+destination and authority remain gates; old task/harness labels do not silently
+restrict reuse. Signature and quoted-text matches share one optional preference,
+with no weight from repeated proposals or exposures.
+
+Migration 033 adds explicit `signature_shareable` on each conversion review, false
+by default. Sharing a note alone does not publish its private failure association.
+Old writers retain their existing pins and leave sharing false. Reopening, editing
+a lesson or correcting an assessment changes fresh matching without retargeting
+historical reviews. New signature receipts use semantic schema 12 and ranking
+profiles lexical v6/semantic v3; no-signature profiles remain unchanged. Retained
+execution checks the supplied signature before binding/launch.
+
+Behavioral regressions reproduced missing retrieval, missing explicit hosted
+sharing and missing blocked demand for signature-matched ordinary testimony with
+no lexical overlap. These now pass. Full disposable PostgreSQL/race, CLI/API, MCP,
+actual native OpenCode tooling, startup and retained intent checks pass, along
+with Go, 40 Python tests and static checks. Fixture errors and their corrections
+are preserved in the [verification report](verification/failure-signature-search-2026-09-10.md)
+and its artifact manifest. A final API rerun separately verifies the refined
+retained signature/filter cases.
+
+The operational preflight still showed zero proposals and reviews. No production
+synthetic conversion or answering-model trial was added. This completes a bounded
+structured-intent capability, not E1/D1/D2 or proof of task value. Pincite packet
+`pkt-e1505300c9e82e37` has validated typed evidence and decision receipt with closed
+citation trace. Eight nonmaterial asynchronous/interface obligations remain named.

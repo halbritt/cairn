@@ -83,6 +83,7 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 	run := f.String("run", "", "declared run identity (required)")
 	query := f.String("query", "", "memory search query; use --browse instead for eligible previews")
 	browse := f.Bool("browse", false, "browse eligible previews without a query")
+	signature := f.String("error-signature-sha256", "", "optional reviewed failure signature (SHA-256); a retrieval hint, not observed failure")
 	semantic := f.Bool("semantic", false, "optional semantic search with labelled lexical fallback")
 	prompt := f.String("prompt", "", "task text for the harness (or use --prompt-file)")
 	promptFile := f.String("prompt-file", "", "read task text from a regular UTF-8 file instead of --prompt")
@@ -113,8 +114,8 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 		return agentStartPlan{}, err
 	}
 
-	if (*browse && (*query != "" || *semantic)) || (!*browse && strings.TrimSpace(*query) == "") {
-		return agentStartPlan{}, invalid("start requires --query or --browse; semantic search cannot accompany browsing")
+	if (*browse && (*query != "" || *signature != "" || *semantic)) || (!*browse && strings.TrimSpace(*query) == "" && *signature == "") {
+		return agentStartPlan{}, invalid("start requires --query, --error-signature-sha256 or --browse; semantic search cannot accompany browsing")
 	}
 	// A single Linux argv element includes a terminating NUL and cannot exceed
 	// 128 KiB. Refuse before retrieval rather than losing the task at exec.
@@ -155,7 +156,7 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 	if room < 256 {
 		return agentStartPlan{}, &core.Error{Code: "BUDGET_REFUSED", Message: "task and startup guidance leave insufficient memory input room"}
 	}
-	request := core.CompileRequest{RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run},
+	request := core.CompileRequest{ErrorSignature: *signature, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run},
 		Query: *query, Purpose: "context", AvailableTokens: room, Kinds: kinds, Context: &pins, Semantic: *semantic}
 	if *browse {
 		offset := 0

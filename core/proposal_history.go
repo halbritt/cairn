@@ -14,14 +14,15 @@ type ProposalHistoryRequest struct {
 }
 
 type ProposalReview struct {
-	Version       int        `json:"version"`
-	Disposition   string     `json:"disposition"`
-	Reason        string     `json:"reason"`
-	Observer      string     `json:"observer"`
-	ObservedAt    time.Time  `json:"observed_at"`
-	ResultRecord  string     `json:"result_record,omitempty"`
-	ResultVersion int        `json:"result_version,omitempty"`
-	DueAt         *time.Time `json:"due_at,omitempty"`
+	SignatureShareable bool       `json:"signature_shareable,omitempty"`
+	Version            int        `json:"version"`
+	Disposition        string     `json:"disposition"`
+	Reason             string     `json:"reason"`
+	Observer           string     `json:"observer"`
+	ObservedAt         time.Time  `json:"observed_at"`
+	ResultRecord       string     `json:"result_record,omitempty"`
+	ResultVersion      int        `json:"result_version,omitempty"`
+	DueAt              *time.Time `json:"due_at,omitempty"`
 }
 
 type ProposalReviewHistory struct {
@@ -57,7 +58,7 @@ func (s *Store) ProposalHistory(ctx context.Context, req ProposalHistoryRequest)
 	if err = s.checkRepo(p.Repo); err != nil {
 		return ProposalReviewHistory{}, err
 	}
-	rows, err := tx.Query(ctx, `SELECT version,disposition,reason,observer,observed_at,COALESCE(result_record::text,''),COALESCE(result_version,0),due_at
+	rows, err := tx.Query(ctx, `SELECT version,disposition,reason,observer,observed_at,COALESCE(result_record::text,''),COALESCE(result_version,0),due_at,signature_shareable
  FROM cairn.proposal_review WHERE proposal_id=$1 AND ($2::integer=0 OR version<$2)
  ORDER BY version DESC LIMIT $3`, req.ProposalID, req.BeforeVersion, limit+1)
 	if err != nil {
@@ -66,7 +67,7 @@ func (s *Store) ProposalHistory(ctx context.Context, req ProposalHistoryRequest)
 	result := ProposalReviewHistory{Proposal: p, Reviews: []ProposalReview{}}
 	for rows.Next() {
 		var r ProposalReview
-		if err = rows.Scan(&r.Version, &r.Disposition, &r.Reason, &r.Observer, &r.ObservedAt, &r.ResultRecord, &r.ResultVersion, &r.DueAt); err != nil {
+		if err = rows.Scan(&r.Version, &r.Disposition, &r.Reason, &r.Observer, &r.ObservedAt, &r.ResultRecord, &r.ResultVersion, &r.DueAt, &r.SignatureShareable); err != nil {
 			rows.Close()
 			return ProposalReviewHistory{}, err
 		}

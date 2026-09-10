@@ -10,6 +10,7 @@ import (
 // CandidateEvaluation contains features, never query text or candidate bodies.
 // Rank is the one-based eligible ordering before packing; zero means unranked.
 type CandidateEvaluation struct {
+	FailureMatch      *FailureMatch   `json:"failure_match,omitempty"`
 	ExactTextMatch    bool            `json:"exact_text_match,omitempty"`
 	SemanticScore     *int            `json:"semantic_score,omitempty"`
 	Facts             *CandidateFacts `json:"facts,omitempty"`

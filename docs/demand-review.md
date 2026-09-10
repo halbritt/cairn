@@ -35,7 +35,7 @@ and resolver state. Divergent bytes remain labelled divergent; inspection does
 not silently revalidate them.
 
 `cairn review-proposal` accepts `request_id`, `proposal_id`, `expected_version`,
-`disposition`, `reason`, and optional `until`, `result_record` or `result_version`. Dispositions:
+`disposition`, `reason`, and optional `until`, `result_record`, `result_version` or `signature_shareable`. Dispositions:
 
 - `open`: return a current proposal to review.
 - `deferred`: suppress it until the supplied future time.
@@ -186,3 +186,13 @@ Previously committed mutation retries retain their original responses.
 source edits, reopen/history paging, stale-version refusal, body forgetting and
 an actual older writer. Error-signature retrieval using these links remains a
 separate E1 implementation step.
+
+
+## Retrieve a converted lesson on a later task
+
+[Failure signature search](failure-signature-search.md) uses current, exact-version
+conversion links as optional retrieval hints. The association remains local unless
+the conversion explicitly sets `signature_shareable: true`; hosted delivery still
+requires an eligible shareable lesson. Ordinary note sharing does not publish
+private review associations. Source assessment corrections, reopening and lesson
+edits remove old links from fresh matching. Historical retrieval remains distinct.

@@ -81,12 +81,12 @@ const writeResult = z.object({ record_id: z.string().uuid(), version: z.number()
 
 export const search = validatedTool({
   description: "Search repository memory in this OpenCode session with a query, or set browse=true without a query to inspect available topics. Browsing is bounded by the same budget, ordered by scope and recency, and is not a complete inventory or relevance ranking. Read mandatory selected context and pull relevant index entries using their complete pull_arguments. A notes are fallible; verify before applying them. Search records exposure, not proven use.",
-  args: { kinds: z.array(z.enum(["note", "observation", "claim", "lesson", "procedure", "decision", "preference", "instruction"])).max(8).optional().describe("Select any listed optional record label; empty means all. Required instructions always apply. Labels do not establish authority."), query: z.string().optional().describe("Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available."), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget."), request_id: z.string().uuid().optional() },
+  args: { error_signature_sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional().describe("SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by a shareable operator review. May replace query text; cannot browse. Not proof of failure or correctness."), kinds: z.array(z.enum(["note", "observation", "claim", "lesson", "procedure", "decision", "preference", "instruction"])).max(8).optional().describe("Select any listed optional record label; empty means all. Required instructions always apply. Labels do not establish authority."), query: z.string().optional().describe("Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available."), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget."), request_id: z.string().uuid().optional() },
   async execute(args, context) {
     const query = args.query ?? ""
     if (args.semantic && args.browse) throw new Error("INVALID_REQUEST: semantic discovery cannot be combined with browsing")
-    if ((args.browse && query !== "") || (!args.browse && query.trim() === "")) {
-      throw new Error("INVALID_REQUEST: search requires a nonempty query or browse=true without a query")
+    if ((args.browse && (query !== "" || args.error_signature_sha256)) || (!args.browse && query.trim() === "" && !args.error_signature_sha256)) {
+      throw new Error("INVALID_REQUEST: search requires a query, error_signature_sha256, or browse=true without either")
     }
     const config = await settings("search", context)
     const session = context.sessionID
@@ -99,6 +99,7 @@ export const search = validatedTool({
       if (value !== undefined) command.push("--" + key.replaceAll("_", "-"), value)
     }
     for (const kind of args.kinds ?? []) command.push("--kind", kind)
+    if (args.error_signature_sha256) command.push("--error-signature-sha256", args.error_signature_sha256)
     if (args.semantic) command.push("--semantic")
     if (args.browse) command.push("--browse", "--offset", String(args.offset ?? 0))
     else {

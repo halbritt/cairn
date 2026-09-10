@@ -13,25 +13,26 @@ type GenerateProposalsRequest struct {
 	Offset    int    `json:"offset"`
 }
 type Proposal struct {
-	Kind            string     `json:"kind"`
-	SourceCurrent   bool       `json:"source_current"`
-	ID              string     `json:"proposal_id"`
-	Repo            string     `json:"repo"`
-	Version         int        `json:"version"`
-	Disposition     string     `json:"disposition"`
-	FailureReceipt  string     `json:"failure_receipt"`
-	FailureVersion  int        `json:"failure_version"`
-	RecoveryReceipt string     `json:"recovery_receipt"`
-	RecoveryVersion int        `json:"recovery_version"`
-	EvidenceIDs     []string   `json:"evidence_ids"`
-	TaskClass       string     `json:"task_class"`
-	BindingID       string     `json:"binding_id"`
-	CapabilityID    string     `json:"capability_id"`
-	ErrorSignature  string     `json:"error_signature_sha256"`
-	Method          string     `json:"method"`
-	DueAt           *time.Time `json:"due_at,omitempty"`
-	ResultRecord    string     `json:"result_record,omitempty"`
-	ResultVersion   int        `json:"result_version,omitempty"`
+	SignatureShareable bool       `json:"signature_shareable,omitempty"`
+	Kind               string     `json:"kind"`
+	SourceCurrent      bool       `json:"source_current"`
+	ID                 string     `json:"proposal_id"`
+	Repo               string     `json:"repo"`
+	Version            int        `json:"version"`
+	Disposition        string     `json:"disposition"`
+	FailureReceipt     string     `json:"failure_receipt"`
+	FailureVersion     int        `json:"failure_version"`
+	RecoveryReceipt    string     `json:"recovery_receipt"`
+	RecoveryVersion    int        `json:"recovery_version"`
+	EvidenceIDs        []string   `json:"evidence_ids"`
+	TaskClass          string     `json:"task_class"`
+	BindingID          string     `json:"binding_id"`
+	CapabilityID       string     `json:"capability_id"`
+	ErrorSignature     string     `json:"error_signature_sha256"`
+	Method             string     `json:"method"`
+	DueAt              *time.Time `json:"due_at,omitempty"`
+	ResultRecord       string     `json:"result_record,omitempty"`
+	ResultVersion      int        `json:"result_version,omitempty"`
 }
 type ProposalBatch struct {
 	Proposals  []Proposal `json:"proposals"`
@@ -113,7 +114,7 @@ func readProposal(ctx context.Context, tx pgx.Tx, id string) (Proposal, error) {
 	var version int
 	var disposition, result string
 	var due *time.Time
-	err := tx.QueryRow(ctx, `SELECT detail,version,disposition,due_at,COALESCE(result_record::text,''),COALESCE((SELECT review.result_version FROM cairn.proposal_review review WHERE review.proposal_id=lesson_proposal.proposal_id AND review.version=lesson_proposal.version AND review.result_record=lesson_proposal.result_record),0),failure_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=failure_receipt) AND (recovery_receipt IS NULL OR recovery_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=recovery_receipt)) FROM cairn.lesson_proposal WHERE proposal_id=$1`, id).Scan(&p, &version, &disposition, &due, &result, &p.ResultVersion, &p.SourceCurrent)
+	err := tx.QueryRow(ctx, `SELECT detail,version,disposition,due_at,COALESCE(result_record::text,''),COALESCE((SELECT review.result_version FROM cairn.proposal_review review WHERE review.proposal_id=lesson_proposal.proposal_id AND review.version=lesson_proposal.version AND review.result_record=lesson_proposal.result_record),0),COALESCE((SELECT review.signature_shareable FROM cairn.proposal_review review WHERE review.proposal_id=lesson_proposal.proposal_id AND review.version=lesson_proposal.version AND review.result_record=lesson_proposal.result_record),false),failure_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=failure_receipt) AND (recovery_receipt IS NULL OR recovery_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=recovery_receipt)) FROM cairn.lesson_proposal WHERE proposal_id=$1`, id).Scan(&p, &version, &disposition, &due, &result, &p.ResultVersion, &p.SignatureShareable, &p.SourceCurrent)
 	if err == pgx.ErrNoRows {
 		return p, failure("NOT_FOUND", "proposal not found")
 	}
@@ -148,14 +149,15 @@ func (s *Store) Proposal(ctx context.Context, id string) (Proposal, error) {
 }
 
 type ReviewProposalRequest struct {
-	RequestID       string     `json:"request_id"`
-	ProposalID      string     `json:"proposal_id"`
-	ExpectedVersion int        `json:"expected_version"`
-	Disposition     string     `json:"disposition"`
-	Until           *time.Time `json:"until"`
-	ResultRecord    string     `json:"result_record,omitempty"`
-	ResultVersion   int        `json:"result_version,omitempty"`
-	Reason          string     `json:"reason"`
+	SignatureShareable bool       `json:"signature_shareable,omitempty"`
+	RequestID          string     `json:"request_id"`
+	ProposalID         string     `json:"proposal_id"`
+	ExpectedVersion    int        `json:"expected_version"`
+	Disposition        string     `json:"disposition"`
+	Until              *time.Time `json:"until"`
+	ResultRecord       string     `json:"result_record,omitempty"`
+	ResultVersion      int        `json:"result_version,omitempty"`
+	Reason             string     `json:"reason"`
 }
 
 func (s *Store) ReviewProposal(ctx context.Context, req ReviewProposalRequest) (Proposal, error) {
@@ -186,7 +188,7 @@ func (s *Store) ReviewProposal(ctx context.Context, req ReviewProposalRequest) (
 		if err := validID(req.ResultRecord); err != nil {
 			return Proposal{}, err
 		}
-	} else if req.ResultRecord != "" || req.ResultVersion != 0 {
+	} else if req.ResultRecord != "" || req.ResultVersion != 0 || req.SignatureShareable {
 		return Proposal{}, failure("INVALID_REQUEST", "only converted proposals link a resulting record")
 	}
 	return mutate(ctx, s, "review-proposal", req.RequestID, req, func(tx pgx.Tx) (Proposal, error) {
@@ -242,7 +244,7 @@ func (s *Store) ReviewProposal(ctx context.Context, req ReviewProposalRequest) (
 		if _, err = tx.Exec(ctx, `UPDATE cairn.lesson_proposal SET version=version+1,disposition=$2,due_at=$3,result_record=NULLIF($4,'')::uuid WHERE proposal_id=$1`, p.ID, req.Disposition, req.Until, req.ResultRecord); err != nil {
 			return p, err
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO cairn.proposal_review(proposal_id,version,disposition,reason,result_record,result_version,due_at) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,NULLIF($6,0),$7)`, p.ID, p.Version+1, req.Disposition, req.Reason, req.ResultRecord, resultVersion, req.Until); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.proposal_review(proposal_id,version,disposition,reason,result_record,result_version,due_at,signature_shareable) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,NULLIF($6,0),$7,$8)`, p.ID, p.Version+1, req.Disposition, req.Reason, req.ResultRecord, resultVersion, req.Until, req.SignatureShareable); err != nil {
 			return p, err
 		}
 		return readProposal(ctx, tx, p.ID)

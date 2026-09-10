@@ -142,8 +142,8 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	if view.Schema != "cairn.mcp-search/1" || view.SourceSeal == "" || len(view.Index) != 1 || view.Index[0].RecordID != record.RecordID || len(view.Selected) != 1 || view.Selected[0].Record.RecordID != mandatory.RecordID || view.Scope.TaskID != "build" || view.Destination.Name != "hosted" {
 		t.Fatalf("search: %s", viewBytes)
 	}
-	for _, invalid := range []searchArgs{{}, {Query: " "}, {Browse: true, Query: "socketguide"}} {
-		invoke("cairn_search", invalid, "nonempty query or browse=true")
+	for _, invalid := range []searchArgs{{}, {Query: " "}, {Browse: true, Query: "socketguide"}, {Browse: true, ErrorSignature: strings.Repeat("b", 64)}} {
+		invoke("cairn_search", invalid, "query, error_signature_sha256, or browse=true")
 	}
 	var browsed searchResult
 	var fallback searchResult

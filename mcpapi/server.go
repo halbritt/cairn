@@ -43,12 +43,13 @@ func (c Config) Validate() error {
 }
 
 type searchArgs struct {
-	Kinds     []string `json:"kinds,omitempty" jsonschema:"Optional labels: note, observation, claim, lesson, procedure, decision, preference, instruction. Matches any listed label; empty means all. Required instructions always apply. Labels do not establish authority."`
-	Semantic  bool     `json:"semantic,omitempty" jsonschema:"Optional semantic discovery for vocabulary mismatches. Requires a query, cannot browse. Similarity is not answer confidence; an unavailable backend returns labelled lexical fallback."`
-	Query     string   `json:"query,omitempty" jsonschema:"Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available. Omit only when browse is true."`
-	Browse    bool     `json:"browse,omitempty" jsonschema:"Browse eligible memory without a query when its vocabulary is unknown. Results are bounded, ordered by scope and recency, and may omit older notes."`
-	Offset    *int     `json:"offset,omitempty" jsonschema:"Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget; restart if notes change."`
-	RequestID string   `json:"request_id,omitempty" jsonschema:"Optional UUID for retrying the same search."`
+	ErrorSignature string   `json:"error_signature_sha256,omitempty" jsonschema:"Optional SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by an explicitly shareable operator review. Does not establish current failure or correctness. May replace the query; cannot browse. Semantic discovery still requires query text."`
+	Kinds          []string `json:"kinds,omitempty" jsonschema:"Optional labels: note, observation, claim, lesson, procedure, decision, preference, instruction. Matches any listed label; empty means all. Required instructions always apply. Labels do not establish authority."`
+	Semantic       bool     `json:"semantic,omitempty" jsonschema:"Optional semantic discovery for vocabulary mismatches. Requires a query, cannot browse. Similarity is not answer confidence; an unavailable backend returns labelled lexical fallback."`
+	Query          string   `json:"query,omitempty" jsonschema:"Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available. Omit when browse is true or a failure signature is supplied."`
+	Browse         bool     `json:"browse,omitempty" jsonschema:"Browse eligible memory without a query when its vocabulary is unknown. Results are bounded, ordered by scope and recency, and may omit older notes."`
+	Offset         *int     `json:"offset,omitempty" jsonschema:"Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget; restart if notes change."`
+	RequestID      string   `json:"request_id,omitempty" jsonschema:"Optional UUID for retrying the same search."`
 }
 
 type rememberArgs struct {
@@ -123,8 +124,8 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 	if args.Semantic && args.Browse {
 		return nil, nil, fmt.Errorf("semantic discovery cannot be combined with browsing")
 	}
-	if (args.Browse && args.Query != "") || (!args.Browse && strings.TrimSpace(args.Query) == "") {
-		return nil, nil, errors.New("search requires a nonempty query or browse=true without a query")
+	if (args.Browse && (args.Query != "" || args.ErrorSignature != "")) || (!args.Browse && strings.TrimSpace(args.Query) == "" && args.ErrorSignature == "") {
+		return nil, nil, errors.New("search requires a query, error_signature_sha256, or browse=true without either")
 	}
 	if args.Offset != nil && (*args.Offset < 0 || *args.Offset > 10000) {
 		return nil, nil, errors.New("offset must be 0-10000")
@@ -152,7 +153,7 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 		args.RequestID = uuid.NewString()
 	}
 	var index core.IndexResult
-	err := t.client.Call(ctx, "index", core.CompileRequest{Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: t.config.Context}, &index)
+	err := t.client.Call(ctx, "index", core.CompileRequest{ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: t.config.Context}, &index)
 	if err != nil {
 		return toolResult(nil, err, t.config.AvailableTokens)
 	}

@@ -114,7 +114,7 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 			}
 		}
 		entry := indexEntry(c.selection.Record)
-		if p.Schema == "cairn.semantic/8" || p.Schema == "cairn.semantic/9" || p.Schema == "cairn.semantic/10" || p.Schema == "cairn.semantic/11" {
+		if p.Schema == "cairn.semantic/8" || p.Schema == "cairn.semantic/9" || p.Schema == "cairn.semantic/10" || p.Schema == "cairn.semantic/11" || p.Schema == "cairn.semantic/12" {
 			var span ByteSpanRequest
 			entry.Summary, span = indexPreview(c.selection.Record.Body, query, p.Ranking)
 			if c.selection.Record.Class != "C" && span.Length > 0 {

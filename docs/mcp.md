@@ -314,3 +314,8 @@ demonstrate a curated procedure revision, native MCP use and host-run associatio
 The host observes tool results and calls `link-run-retrieval` with its observer
 profile; the model keeps its ordinary agent profile. The association does not
 turn a process exit into task acceptance.
+
+
+Known failure signatures can also find reviewed lessons without shared query
+vocabulary. See [failure signature search](failure-signature-search.md) for the
+optional `error_signature_sha256` tool field and operator sharing requirement.

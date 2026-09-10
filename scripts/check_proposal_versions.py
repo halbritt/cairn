@@ -41,12 +41,18 @@ def check(binary, environment, proposal):
                               expected_version=opened['version'], disposition='converted',
                               result_record=note['record_id'], reason='Older writer has no version field')
         legacy = operator(previous, environment, 'review-proposal', legacy_request)
-        assert 'result_version' not in legacy
         assert operator(binary, environment, 'review-proposal', legacy_request) == legacy
         current = operator(binary, environment, 'proposal', record_id=proposal['proposal_id'])
-        assert current['result_record'] == note['record_id'] and 'result_version' not in current
+        assert current['result_record'] == note['record_id']
+        assert not current.get('signature_shareable', False)
         history = operator(binary, environment, 'proposal-history', dict(proposal_id=proposal['proposal_id']))
-        assert history['reviews'][0]['disposition'] == 'converted' and 'result_version' not in history['reviews'][0]
-        assert 'result_record' not in history['reviews'][0]
+        assert history['reviews'][0]['disposition'] == 'converted'
+        assert not history['reviews'][0].get('signature_shareable', False)
+        if 'result_version' in legacy:
+            assert legacy['result_version'] == current['result_version'] == history['reviews'][0]['result_version'] == 2
+            print('Previous version-aware writer keeps pins but leaves signature associations local; mutation retries remain exact')
+        else:
+            assert 'result_version' not in current and 'result_version' not in history['reviews'][0]
+            assert 'result_record' not in history['reviews'][0]
+            print('Actual older writer leaves conversions unpinned; legacy mutation retries remain exact')
         assert any(r.get('result_version') == 1 for r in history['reviews'])
-        print('Actual older writer leaves new conversions explicitly unpinned; historical pins and legacy mutation retries remain exact')

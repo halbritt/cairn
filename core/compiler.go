@@ -21,6 +21,7 @@ import (
 )
 
 type CompileRequest struct {
+	ErrorSignature  string       `json:"error_signature_sha256,omitempty"`
 	ExpansionReader string       `json:"expansion_reader,omitempty"`
 	Kinds           []string     `json:"kinds,omitempty"`
 	Semantic        bool         `json:"semantic,omitempty"`
@@ -50,6 +51,7 @@ type Selection struct {
 	Reason    string     `json:"reason"`
 }
 type SemanticPackage struct {
+	ErrorSignature  string            `json:"error_signature_sha256,omitempty" cbor:"error_signature_sha256,omitempty"`
 	Kinds           []string          `json:"kinds,omitempty" cbor:"kinds,omitempty"`
 	Discovery       *DiscoveryRanking `json:"discovery,omitempty" cbor:"discovery,omitempty"`
 	Page            *BrowsePage       `json:"page,omitempty" cbor:"page,omitempty"`
@@ -97,6 +99,10 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 			return Package{}, failure("INVALID_REQUEST", "expansion_reader requires an index and a different nonblank principal of at most 256 bytes")
 		}
 	}
+	if req.ErrorSignature != "" && (!digestValid(req.ErrorSignature) || req.BrowseOffset != nil) {
+		return Package{}, failure("INVALID_REQUEST", "error_signature_sha256 requires a SHA-256 digest without browsing")
+	}
+	req.ErrorSignature = strings.ToLower(req.ErrorSignature)
 	var err error
 	req.Kinds, err = NormalizeKinds(req.Kinds)
 	if err != nil {
@@ -111,8 +117,8 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	if req.BrowseOffset != nil && (req.Mode != "index" || req.Query != "" || *req.BrowseOffset < 0 || *req.BrowseOffset > 10000) {
 		return Package{}, failure("INVALID_REQUEST", "browse_offset requires an empty-query index and an offset from 0 to 10000")
 	}
-	if req.PageOffset != nil && (req.Mode != "index" || req.Purpose != "context" || strings.TrimSpace(req.Query) == "" || req.BrowseOffset != nil || *req.PageOffset < 0 || *req.PageOffset > 10000) {
-		return Package{}, failure("INVALID_REQUEST", "page_offset requires a nonempty context index query and an offset from 0 to 10000, without browsing")
+	if req.PageOffset != nil && (req.Mode != "index" || req.Purpose != "context" || (strings.TrimSpace(req.Query) == "" && req.ErrorSignature == "") || req.BrowseOffset != nil || *req.PageOffset < 0 || *req.PageOffset > 10000) {
+		return Package{}, failure("INVALID_REQUEST", "page_offset requires a context index query or failure signature and an offset from 0 to 10000, without browsing")
 	}
 	if err := req.Context.validate(); err != nil {
 		return Package{}, err
@@ -229,6 +235,7 @@ func sealPackage(semantic SemanticPackage) ([]byte, string, error) {
 
 type candidate struct {
 	literal     bool
+	failure     bool
 	selection   Selection
 	score       int
 	specificity int
@@ -241,14 +248,16 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	if req.Mode == "index" {
 		p.Mode = "index"
-		if len(req.Kinds) == 0 && p.Schema != "cairn.semantic/10" {
+		if len(req.Kinds) == 0 && p.Schema != "cairn.semantic/10" && req.ErrorSignature == "" {
 			p.Schema = "cairn.semantic/8"
 		}
 		if req.BrowseOffset != nil {
 			p.Browse = &BrowsePage{Offset: *req.BrowseOffset}
 		}
 		if req.PageOffset != nil {
-			p.Schema = "cairn.semantic/11"
+			if req.ErrorSignature == "" {
+				p.Schema = "cairn.semantic/11"
+			}
 			p.Page = &BrowsePage{Offset: *req.PageOffset}
 		}
 		if req.Semantic {
@@ -277,6 +286,12 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 	if req.Context != nil && req.Context.TaskPhase != "" {
 		p.Schema = "cairn.semantic/10"
 	}
+	if req.ErrorSignature != "" {
+		p.Schema = "cairn.semantic/12"
+		p.ErrorSignature = req.ErrorSignature
+		p.Ranking = "lexical-scope-recency/6"
+		p.Omitted["NO_FAILURE_MATCH"] = 0
+	}
 	policy, err := policySnapshot(ctx, tx, req.Scope.Repo)
 	if err != nil {
 		return p, nil, err
@@ -297,6 +312,10 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 	}
 	if len(ids) > 10000 {
 		return p, nil, failure("BUDGET_REFUSED", "repository selection exceeds bounded scan; narrow task scope")
+	}
+	matches, err := currentFailureMatches(ctx, tx, req, dest)
+	if err != nil {
+		return p, nil, err
 	}
 	var now time.Time
 	if err = tx.QueryRow(ctx, `SELECT transaction_timestamp()`).Scan(&now); err != nil {
@@ -379,7 +398,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		}
 		evaluation.Mandatory = selection.Mandatory
 		evaluation.Reason = reason
-		evaluation.EscalationBlocked = reason == "CLASS_NOT_CONSEQUENTIAL" && (strings.TrimSpace(req.Query) == "" || score > 0)
+		evaluation.EscalationBlocked = reason == "CLASS_NOT_CONSEQUENTIAL" && (strings.TrimSpace(req.Query) == "" || score > 0 || matches[id] != nil)
 		if reason != "" {
 			p.Omitted[reason]++
 			continue
@@ -402,18 +421,27 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		evaluation.Facts = &CandidateFacts{Category: selection.Category, BodySHA256: hex.EncodeToString(digest[:]), Sensitivity: record.Sensitivity, AttributionState: record.AttributionState, Evidence: selection.Evidence, Authority: selection.Authority}
 		literal := !selection.Mandatory && matchesLiteral(record.Body, literals)
 		evaluation.ExactTextMatch = literal
+		if !selection.Mandatory {
+			evaluation.FailureMatch = matches[id]
+		}
+		failureMatch := evaluation.FailureMatch != nil
 		if !kindAllowed(req.Kinds, selection) {
 			evaluation.Reason = "KIND_FILTERED"
 			p.Omitted["KIND_FILTERED"]++
 			continue
 		}
-		selection.Reason = literalReason(fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity), literal)
-		if !req.Semantic && !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 && !literal {
+		selection.Reason = failureReason(literalReason(fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity), literal), failureMatch)
+		if req.ErrorSignature != "" && strings.TrimSpace(req.Query) == "" && !selection.Mandatory && !failureMatch {
+			evaluation.Reason = "NO_FAILURE_MATCH"
+			p.Omitted["NO_FAILURE_MATCH"]++
+			continue
+		}
+		if !req.Semantic && !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 && !literal && !failureMatch {
 			evaluation.Reason = "NO_LEXICAL_MATCH"
 			p.Omitted["NO_LEXICAL_MATCH"]++
 			continue
 		}
-		candidates = append(candidates, candidate{literal, selection, score, specificity})
+		candidates = append(candidates, candidate{literal, failureMatch, selection, score, specificity})
 	}
 	return p, candidates, nil
 }
@@ -694,8 +722,8 @@ func sortCandidates(candidates []candidate) {
 			}
 			return 1
 		}
-		if a.literal != b.literal {
-			if a.literal {
+		if (a.literal || a.failure) != (b.literal || b.failure) {
+			if a.literal || a.failure {
 				return -1
 			}
 			return 1

@@ -7,6 +7,7 @@ import uuid
 
 from check_ordinary_citations import check_harness as check_citations
 from check_note_transport import check_harness
+from check_failure_retrieval import check_harness as check_failure_signatures
 from check_literal_retrieval import check_harness as check_literals
 
 
@@ -157,6 +158,7 @@ def check(binary, root, environment, claim, support):
         assert 'INVALID_REQUEST' in tool('cairn_search', dict(query=query, kinds=['unknown']), error=True)
         check_harness(tool, binary, environment)
         check_literals(tool)
+        check_failure_signatures(tool, binary, environment)
     with session(binary, root, environment, generated=True) as tool:
         view = tool('cairn_search', dict(query=query, kinds=['note']))
         assert 'context' not in view
