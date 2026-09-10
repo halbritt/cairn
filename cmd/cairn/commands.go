@@ -29,9 +29,9 @@ Everyday commands:
   agent [--token-file FILE] [--socket PATH] pull [--request-id UUID] RECEIPT_UUID HANDLE_UUID
   agent [--token-file FILE] [--socket PATH] pull-evidence [--request-id UUID] RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256
   agent [--token-file OBSERVER_TOKEN] [--socket PATH] run RUN_FLAGS -- COMMAND ARGS...
-  agent [--token-file FILE] [--socket PATH] remember [--repo REPO] [--kind KIND] [--shareable] [--task TASK] [--run RUN] [--request-id UUID] TEXT
+  agent [--token-file FILE] [--socket PATH] remember [--repo REPO] [--kind KIND] [--shareable] [--pins JSON] [--task TASK] [--run RUN] [--request-id UUID] TEXT
   agent [--token-file FILE] [--socket PATH] remember [FLAGS] --stdin < note.txt
-  remember [--repo PATH] [--kind KIND] [--shareable] [--task TASK] [--run RUN] [--request-id UUID] TEXT
+  remember [--repo PATH] [--kind KIND] [--shareable] [--pins JSON] [--task TASK] [--run RUN] [--request-id UUID] TEXT
   remember [FLAGS] --stdin < note.txt
   search [--repo PATH] [--purpose context] [--destination local] [--kind KIND ...] QUERY
   run [--repo PATH] [--kind KIND ...] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...

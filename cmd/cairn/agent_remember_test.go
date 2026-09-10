@@ -135,7 +135,7 @@ func TestRememberExplicitPins(t *testing.T) {
 	if err != nil || plain.Draft.Pins != nil {
 		t.Fatalf("default capture gained pins: %+v %v", plain, err)
 	}
-	for _, pins := range []string{`null`, `{"task_phaze":"validation"}`, `{"task_phase":7}`, `{} {}`, `{"valid_until":"tomorrow"}`} {
+	for _, pins := range []string{"", `null`, `{"task_phaze":"validation"}`, `{"task_phase":7}`, `{} {}`, `{"valid_until":"tomorrow"}`} {
 		_, err := rememberRequest([]string{"--pins", pins, "note"}, strings.NewReader(""))
 		if core.Code(err) != "INVALID_REQUEST" {
 			t.Fatalf("invalid pins %s: %v", pins, err)
@@ -154,6 +154,8 @@ func TestAgentRememberRejectsInvalidInputBeforeCapture(t *testing.T) {
 		text  string
 	}{
 		{"empty", nil, ""},
+		{"empty_pins", []string{"--pins", "", "note"}, ""},
+		{"empty_pins_equals", []string{"--pins=", "note"}, ""},
 		{"blank_stdin", []string{"--stdin"}, " \n\t"},
 		{"oversized_stdin", []string{"--stdin"}, strings.Repeat("x", 65537)},
 		{"invalid_utf8", []string{"--stdin"}, string([]byte{0xff})},

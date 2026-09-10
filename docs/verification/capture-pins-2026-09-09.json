@@ -108,5 +108,43 @@
     "headSha": "215ecbf1e893afc530c31b9f773b243d851ccac3",
     "status": "completed",
     "url": "https://github.com/halbritt/cairn/actions/runs/34425510304"
+  },
+  "empty_pins_repair": {
+    "baseline": "be47add7affe49dee78dd1271f69f2047ad33946",
+    "problem": "Explicit empty --pins was treated as omission and reached Create with no pins.",
+    "repair": "Track flag presence independently of its value and decode every supplied JSON argument.",
+    "checks": {
+      "targeted_red_observed": true,
+      "pre_capture_refusals_pass": true,
+      "check": 0,
+      "test": 0,
+      "final_cli_tests": 0
+    },
+    "artifacts": [
+      {
+        "path": "/tmp/cairn-empty-pins-red.log",
+        "sha256": "ebca16a5ac216087a5ae18e6a3bdb6279a2c4991378f007c70f0fada83379c75"
+      },
+      {
+        "path": "/tmp/cairn-empty-pins-green.log",
+        "sha256": "2279f5766e1c6376eb019b405c14df3b377ddfb10ebbe5dfd5761f6602ffd2a5"
+      },
+      {
+        "path": "/tmp/cairn-empty-pins-check.log",
+        "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+      },
+      {
+        "path": "/tmp/cairn-empty-pins-tests.log",
+        "sha256": "9ef37d2ff218b4109bb23912ab61e82649ae553e8636c865ebbf6bb3a00deca7"
+      },
+      {
+        "path": "/tmp/cairn-empty-pins-cli-final.log",
+        "sha256": "fbb3acb8a3de9d06c40c780fcd96c71ec0e396e697a983004a3f299b1428277f"
+      },
+      {
+        "path": "/tmp/cairn-empty-pins-guidance-pull.json",
+        "sha256": "9a519469187519bb4bc5a356c830202da6d1485758c25a1666162547edf7e7e1"
+      }
+    ]
   }
 }

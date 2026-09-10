@@ -48,7 +48,9 @@ func rememberRequest(args []string, input io.Reader) (core.CreateRequest, error)
 		return core.CreateRequest{}, invalid(err.Error())
 	}
 	var pins *core.Applicability
-	if *pinsJSON != "" {
+	pinsProvided := false
+	f.Visit(func(fl *flag.Flag) { pinsProvided = pinsProvided || fl.Name == "pins" })
+	if pinsProvided {
 		if err := decode(strings.NewReader(*pinsJSON), &pins); err != nil {
 			return core.CreateRequest{}, invalid(err.Error())
 		}

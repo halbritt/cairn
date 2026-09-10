@@ -115,6 +115,8 @@ not evidence that a physical workspace matches them.
 Omitted pins remain absent even when the harness has declared a phase or revision
 for search. Native capture retains repository-wide task/run scope; CLI callers
 can select narrower `--task` and `--run` scope separately. Sharing defaults to local.
+An explicitly empty CLI value (`--pins ''` or `--pins=`) is invalid JSON and refuses
+before capture. Omit the option to save unpinned guidance.
 
 Retry with the same request UUID and identical pins and body. Changing pins under
 the same UUID is an idempotency conflict. Ordinary edits preserve pins, including

@@ -61,7 +61,8 @@ execution attempts or automatically associate retrieval with a host outcome.
   `cairn_remember` can save phase, revision and other existing restrictions. Omitted
   pins remain unpinned even under a constrained search context. Public MCP and native
   OpenCode verify retries, constrained retrieval and revision preservation.
-  [Verification](verification/capture-pins-2026-09-09.md).
+  Explicitly empty CLI arguments now refuse before capture instead of becoming
+  unpinned notes. [Verification](verification/capture-pins-2026-09-09.md).
 
 - **Guidance can be constrained to a task phase.** `--task-phase` distinguishes
   implementation and validation within the same task class. Phase matching covers
@@ -1827,3 +1828,17 @@ rechecked; no new launcher/model trial was run. This is a selected guidance
 coverage correction, not a ranking change, independent benchmark or task-value
 assessment. Runtime, binaries and model configuration remain unchanged.
 [Report](verification/task-handoff-guidance-2026-09-09.md) retains comparison pointers.
+
+### 2026-09-09 — Refuse explicitly empty capture pins
+
+Found and reproduced a CLI capture defect: `--pins ''` and `--pins=` were treated
+as omission, producing an unpinned draft and reaching the Create API. The shared
+operator/agent parser now distinguishes flag presence from value and refuses
+invalid JSON before capture. Omitted pins and valid objects keep their previous
+behavior. CLI help now lists the option.
+
+The saved capture procedure was retrieved before the repair and checked against
+current source. Targeted tests first failed on accepted empty input and observed
+API contact; they now pass, along with static/Go/40 Python and final CLI package
+checks. Store rules and API behavior do not change. No task-value assessment or
+new note was added. [Correction and evidence](verification/capture-pins-2026-09-09.md#correction-explicitly-empty-cli-pins).

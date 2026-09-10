@@ -62,3 +62,22 @@ Deployment and procedure hashes are retained in the companion metadata.
 
 [Implementation CI](https://github.com/halbritt/cairn/actions/runs/34425510304)
 passed for exact source `215ecbf1e893afc530c31b9f773b243d851ccac3`.
+
+## Correction: explicitly empty CLI pins
+
+The initial CLI implementation distinguished omission by testing whether the
+string value was nonempty. Consequently `--pins ''` and `--pins=` were accepted
+as absent pins. Public client tests reproduced both forms reaching the Create API;
+the parser returned a draft with no applicability instead of refusing invalid JSON.
+
+The shared operator/agent parser now checks whether the flag was supplied and
+parses every supplied value. Both empty forms return `INVALID_REQUEST` before
+capture. Omitted pins and valid JSON retain their prior behavior. CLI help now
+lists `--pins JSON`. The stored capture procedure was read before the repair and
+checked against the existing JSON-object contract; no new applicability rule was
+introduced.
+
+Targeted red/green tests, `make check`, Go/40 Python tests and a final CLI package
+run pass. The store and API are unchanged; this repair exercises the parsing and
+pre-request boundary. It adds no task-value assessment or ordinary note revision.
+Evidence is retained under `empty_pins_repair` in the companion metadata.
