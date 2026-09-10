@@ -61,14 +61,14 @@ files. A passing report means source/oracle calibration, not experiment completi
 ## Calibrate the native executor
 
 The source preflight above does not launch Striatum or OpenCode. The separate
-executor uses the opt-in `TestCairnNativeRepairExperiment` in the Striatum native
-integration worktree. Its default is a model-free runtime that emits a harmless
-Change Set while leaving the connection defect intact:
+executor uses the opt-in `TestCairnNativeRepairExperiment` in a clean Striatum
+checkout containing `5848b23` or a later compatible commit. Its default is a
+model-free runtime that emits a harmless Change Set while leaving the connection defect intact:
 
 ```sh
 python3 -B scripts/trial_native_executor.py \
   --output /tmp/cairn-native-executor-fixture \
-  --striatum "$HOME/git/striatum-next-wt/cairn-native-observation" \
+  --striatum "$HOME/git/striatum-next" \
   --cairn "$HOME/.local/bin/cairn" \
   --opencode "$HOME/.npm-global/lib/node_modules/opencode-ai/bin/opencode.exe" \
   --lesson /path/to/private-cairn-pull-response.json \

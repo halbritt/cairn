@@ -62,6 +62,12 @@ through the existing history tool. An agent can inspect selected earlier bytes
 within its current output room; whole-body behavior and current access checks
 remain. Downstream task value remains unmeasured.
 
+[Native Striatum implementation is now merged](verification/native-integration-2026-09-10.md)
+to Striatum main at `5848b23`. The integration repairs two historical-contract
+regressions and passes full repository and focused native race checks. Its
+accepted catalog remains `observation@1`/`build@3`; native adoption and real-build
+benefit remain open. The installed Driver and Cairn services were not upgraded.
+
 ## Working capabilities
 
 | Area | Implemented behavior | Details |
@@ -3961,3 +3967,38 @@ normally. Receipt validation also caught a missing verification dependency, whic
 was corrected. No graph mutation, deployment, operational-note revision or model
 inference occurred. Recalled guidance oriented this review; avoided rework and net
 task benefit remain unestablished. Earlier implementation history is preserved.
+
+
+### 2026-09-10 — Integrate existing native Striatum implementation
+
+Merged and pushed Striatum's six existing native commits plus compatibility
+repair `5848b23f1800e7051e59f4f70303244c711e0575` into main. The implementation
+contains acquisition/request handling, deterministic observation production and
+admission, packet-selected build inputs, exact prompt correspondence, and host
+operations in the existing supervisor. The merged branch and worktree were
+removed; the unrelated untracked main file was preserved byte for byte.
+
+Review found two regressions in the preparatory branch: ordinary requests with
+`cairn-context/` subjects were rejected under observation contract 1, and old
+build preparation treated prefixed file paths as native identities. The repaired
+version guards preserve historical behavior while new native contracts retain
+their acquisition and evidence checks. Both final regression fixtures fail on
+the old branch code through a Go overlay and pass after repair. Full `make check`
+passes, including the 615.422-second Driver suite; focused Driver/native race
+checks and strict supervision checks also pass. The real disposable Cairn service
+and complete Driver chain ran; the model experiment remained skipped.
+
+The accepted catalog, generated Decisions, policy and backend declarations are
+unchanged. New schemas remain proposed. No production deployment or compiler
+acceptance occurred, and no operational graph mutation or new opening request
+was made. RQ-408328 remains the existing captured subject; the wider native
+contract/adoption work and its eventual closing observation remain open. The
+retired model comparison was not repeated. Source integration is concrete
+implementation progress, not evidence of incremental memory benefit or full U1
+completion. [Verification and limits](verification/native-integration-2026-09-10.md).
+
+The selected native capture procedure `82fcfec8-474b-48fe-9a00-a36f59d34ac1`
+was updated v2→v3 by exact passage replacement to point at merged main and remove
+the obsolete worktree direction. All other text and the retained v2 body were
+preserved. Fresh ordinary search/pull verified v3; downstream benefit remains
+unmeasured. No credentials or raw operational note bodies were committed.

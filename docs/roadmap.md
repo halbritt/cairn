@@ -444,7 +444,12 @@ capture and supervised launch, including stale-selection refusal. Kind filters,
 task phase, failure signatures, semantic discovery and index/pull are not exposed
 by that watch. The refreshed guide separates implemented branch work from owning
 contract acceptance and the retired model comparison; do not duplicate the
-existing producer/consumer/host path. The
+existing producer/consumer/host path. The [preparatory integration](verification/native-integration-2026-09-10.md)
+is now merged and pushed to Striatum main at `5848b23`. Two repaired version
+guards preserve ordinary prefixed requests and packet paths under historical
+contracts; full repository and focused native race checks pass. This removes
+stranded branch work while leaving native contract adoption, closing observation
+and task-value requirements open. The
 [OpenCode trial host](verification/opencode-host-observation-2026-09-08.md) now
 uses per-arm authenticated observers, exact package/attempt joins and pending
 spawn/terminal recovery. Its full real-harness fixture verification includes

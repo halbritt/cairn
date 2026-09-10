@@ -1,7 +1,7 @@
 # Native Striatum context: implementation direction
 
-Updated 2026-09-10. The native path is implemented on Striatum's
-`cairn-native-observation` branch at `ee8a463`, including observation production,
+Updated 2026-09-10. The native path is [merged to Striatum main](verification/native-integration-2026-09-10.md)
+at `5848b23`, including observation production,
 build input admission and host execution. The accepted catalog still specifies
 `observation@1` and `build@3`; the proposed native contracts are not enabled in
 production. U1 remains partial.
@@ -22,7 +22,7 @@ global flag before the verb. The review did not advance native contract acceptan
 | Boundary | Implemented evidence | Remaining work |
 | --- | --- | --- |
 | Acquisition | [Host capture](verification/native-capture-2026-09-08.md), merged to Striatum main at `5ea87ca`, compiles and confirms the exact observer-owned receipt. | The watch supports the existing body request described below; newer retrieval options need an explicit interface extension when a task needs them. |
-| Observation and build | [Request/producer](verification/native-observation-2026-09-08.md), [build input](verification/native-build-input-2026-09-08.md) and [complete Driver chain](verification/native-chain-2026-09-08.md) run on the integration branch with proposed contracts. | Owning contract acceptance and production adoption. Do not implement another producer or duplicate the input path. |
+| Observation and build | [Request/producer](verification/native-observation-2026-09-08.md), [build input](verification/native-build-input-2026-09-08.md) and [complete Driver chain](verification/native-chain-2026-09-08.md) are merged into main with proposed contracts. | Owning contract acceptance and production adoption. Do not implement another producer or duplicate the input path. |
 | Host execution | [Supervisor integration](verification/native-host-2026-09-08.md) checks actual context, claims current delivery and records process correspondence. | Verify any new task's actual binding and outcome through this existing supervisor. Do not wrap native Striatum in `cairn run`. |
 | Task value | [Executor](verification/native-executor-2026-09-08.md) and two retained model comparisons exercised the path; neither comparison completed its repair. | Use a meaningful task with a justified execution condition. Preserve qualitative and cumulative observations as well as completed artifacts; do not repeat the retired comparison unchanged. |
 
@@ -284,7 +284,8 @@ Advance those prerequisites and the accepted contract path under the existing
 captured subject. Do not create another opening request, rewrite these drafts
 as accepted decisions, or repeat the prompt-asset inventory. The eventual
 closing observation must record actual resulting changes and evidence; it has
-not been issued yet. [Amendment metadata](verification/native-amendments-2026-09-08.json)
+not been issued yet. Preparatory source integration at `5848b23` does not close
+the wider native contract and adoption work. [Amendment metadata](verification/native-amendments-2026-09-08.json)
 records the draft-only verification boundary.
 
 Validated Pincite packet `pkt-7e9933beb3fab6e1` informed repository precedence,

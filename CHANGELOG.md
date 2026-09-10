@@ -15,6 +15,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Integrate the preparatory Striatum path.** Native capture, observation, build
+  inputs and supervisor correspondence are merged into Striatum main at
+  `5848b23`, with historical-contract compatibility repairs. Native contracts
+  remain disabled in the accepted catalog; this does not change the installed
+  Cairn builds. [Scope and checks](docs/verification/native-integration-2026-09-10.md).
+
 - **Discover harness setup flags offline.** `mcp`, `opencode-config`, `codex-config`
   and `claude-config` now print useful `--help`/`-h` output and exit successfully
   (`af43ac7`).
