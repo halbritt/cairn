@@ -243,6 +243,53 @@
     {
       "path": "/tmp/cairn-intent-matching-citations-final.json",
       "sha256": "233d6b2110d5dbf2220ef8cc5f6e9606c6f8d2d16733de2a6e25b5ddeed1cb91"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-deployment/preflight.json",
+      "sha256": "464801c5ed2a90594969c3d9adb7c069106bb404fd78fa44b1c387d20b6ad255"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-deployment/installation.json",
+      "sha256": "b95d58081db0bfe6358833514f62ead7d0966a346b7e312712a2f5b501e5a929"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-deployment/installed-check.json",
+      "sha256": "6737cbad04659d4d0a7e6d5f25741c7ed56036b9de70ad836865058b90b2e6a0"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-deployment/ci.json",
+      "sha256": "8e52bcab70a136d6e5708e6e67ec639a9eaeb5477d602bc1651b8acbb435958e"
     }
-  ]
+  ],
+  "deployment": {
+    "commit": "7dcf3dc8815791aa6027ecf49dd0fa3e9dfaf5f4",
+    "binary_sha256": "24eed8586c50067858f352b11d7a0458681b9e383cbdac48d9628a157ddb87da",
+    "adapter_sha256": "22436ea0a18c6659787d1964b454e9bbff291cc7f265101559411b868dafc4cc",
+    "api_pid": 1513779,
+    "postgres_pid": 163669,
+    "no_migration": true,
+    "connection_configuration_preserved": true,
+    "semantic_worker_source_preserved": true,
+    "installed_check": {
+      "receipt_id": "73bec888-288c-49a2-b7d3-28295edff0ce",
+      "record_id": "81751203-8768-49ee-bfce-895efb69889d",
+      "version": 1,
+      "body_sha256": "617555818bf48ce98cdfdfb3204c4cbf821685e6d718c1006c4ab96dd26374ca",
+      "quoted_ranking": "lexical-scope-recency/5",
+      "unquoted_ranking": "lexical-scope-recency/4",
+      "semantic_ranking": "semantic-scope-recency/2",
+      "discovery_state": "ready",
+      "exact_source_pull": true,
+      "matching_preview_span": true,
+      "client_database_access": false,
+      "notes_edited": false,
+      "task_value_claim": false
+    },
+    "semantic_model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+    "ci": {
+      "id": 34451418062,
+      "conclusion": "success",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34451418062"
+    }
+  }
 }

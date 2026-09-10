@@ -17,8 +17,8 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `5946c5d`, including supporting evidence in
-required retirement previews. The database schema remains at migration 031.
+The installed CLI and API are clean `7dcf3dc`, including quoted exact-text search
+and supporting evidence in required retirement previews. The database schema remains at migration 031.
 
 This snapshot assesses the source changes recorded below and the local installation
 on 2026-09-10. Feature reports below preserve their own verification dates and limits.
@@ -52,7 +52,7 @@ execution attempts or automatically associate retrieval with a host outcome.
 - **Quoted search prefers exact text.** Known paths, identifiers and error messages
   can be quoted in existing queries. Matching source previews, lexical/semantic
   fallback and old receipt behavior are verified through CLI, MCP and native
-  OpenCode. This source change is awaiting installation; E1 remains partial.
+  OpenCode. The change is installed; E1 remains partial.
   [Contract](quoted-search.md), [verification](verification/quoted-search-2026-09-10.md).
 
 - **Retraction previews include supporting evidence.** Protected local inspection
@@ -1982,7 +1982,7 @@ is claimed. Runtime deployment is recorded separately below when verified.
 
 Installed clean `032b9c7` as CLI/API and the bundled native OpenCode adapter after
 an operational catalog-backed backup. API PID680757 runs the installed executable;
-PostgreSQL PID163669, migrations001–030, semantic worker d633c68 and connection
+PostgreSQL PID 163669, migrations001–030, semantic worker d633c68 and connection
 settings remain. No operational note was changed. Exact-source CI34430333159 passed.
 
 The existing live query keeps its six-result unpaged response. Ranked pages reach
@@ -2462,3 +2462,17 @@ intent remain open under E1. An operational path query already ranked correctly
 before this change, so the fixture improvement is not presented as a production
 incident repair or established task benefit. Details and evidence are retained in
 the quoted-search verification report. Installation is pending at this entry.
+
+
+### 2026-09-10 — Quoted search installed and exercised on current notes
+
+Clean `7dcf3dc` is installed in the CLI, API and project binary; SHA-256
+24eed8586c50067858f352b11d7a0458681b9e383cbdac48d9628a157ddb87da.
+The native OpenCode tool description was refreshed. API PID 1513779 serves the
+new build; PostgreSQL PID 163669, schema 031, connection settings, identities and
+semantic worker source are preserved. Live hosted retrieval confirmed lexical v5
+for quoted text, lexical v4 for unquoted text, semantic v2 with the actual local
+worker ready, and an exact pull plus matching byte span for the existing
+applicability-precedence note v1. No operational notes were rewritten. This is
+installation and retrieval evidence, not a completed model task or new value
+claim. CI 34451418062 remains in progress at this entry.

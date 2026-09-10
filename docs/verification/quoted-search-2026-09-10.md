@@ -68,3 +68,27 @@ asynchronous workflow architecture and Go interface ownership; they are classifi
 as nonmaterial to this bounded feature conclusion, with reasons in the
 [verification manifest](quoted-search-2026-09-10.json). Task value remains unproved
 by this capability check.
+
+
+## Local installation
+
+Clean commit `7dcf3dc8815791aa6027ecf49dd0fa3e9dfaf5f4` is installed in the CLI,
+API and ignored project binary. SHA-256:
+`24eed8586c50067858f352b11d7a0458681b9e383cbdac48d9628a157ddb87da`.
+The native OpenCode tool file was refreshed for its query description. Connection
+settings, identities and semantic worker source retain their previous hashes.
+API PID 1513779 serves the new build; PostgreSQL PID 163669 is unchanged and the
+schema remains at migration 031.
+
+The ordinary hosted profile searched the existing applicability-precedence note
+with and without quotes. Quoted lexical ranking reports v5, unquoted ranking v4,
+and actual local semantic scoring reports v2 with `discovery.state: ready`.
+Receipt `73bec888-288c-49a2-b7d3-28295edff0ce` returned the existing note
+`81751203-8768-49ee-bfce-895efb69889d` v1; its exact pull matched the recorded body
+digest and preview span. The client had no database access. No operational note
+was changed and no model task was started. This confirms installed behavior,
+without adding a task-value claim.
+
+[CI 34451418062](https://github.com/halbritt/cairn/actions/runs/34451418062)
+completed successfully for installed `7dcf3dc`, including PostgreSQL/race tests,
+40 Python tests, static/build checks and authenticated CLI/stdio workflows.
