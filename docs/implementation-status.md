@@ -3084,3 +3084,44 @@ are under `/tmp/cairn-guidance-curation/`. Its `result.json` SHA-256 is
 `36488377fda593e7aa8c4319e3e9fe93dd32ca9c139f500f6cd64ada2db4892e`.
 The complete preceding implementation history remains intact. This is selected
 maintenance with a measured context-size reduction; net task value is unmeasured.
+
+### 2026-09-10 — Reconcile native integration guidance with current compatibility
+
+The main [native integration guide](native-striatum-context.md) still described
+acquisition, build consumption and host correspondence as unfinished in several
+places, although later checkpoints implemented them. It now leads with current
+branch implementation, accepted-contract status, the two failed model comparisons
+and their retired unchanged task/binding. Earlier design requirements and
+checkpoint notes remain labelled as historical. The roadmap points to this
+current view rather than implying another producer or supervisor is needed.
+
+Source inspection confirmed Striatum main `5ea87ca65c1bd25f228c0447110d991a3f0de8c8`
+and integration branch `ee8a463c9978833bc53d2726eef63eb9417fcb91`. The accepted
+catalog remains observation 1/build 3; RFC 0004/0007 amendments remain proposed.
+The existing watch supports schema-3 body compilation, not Cairn's later kind,
+task-phase, failure-signature, semantic-discovery or index/pull options. Current
+Cairn still emits schema 3 for that watch. No schema extension is needed to keep
+its existing request working; a task needing a newer option would require one.
+
+The existing opt-in `TestCairnService` ran with the race detector against installed
+Cairn `a848e3c0051b4dabc334613d8fcc3ce969b550dd`, binary SHA-256
+`8d0f1836bca1532ea2643a43890e6fbf23778ba14c0e16ccb5cd19e8ef581e2f`.
+It owns a disposable PostgreSQL cluster, API and graph. Local/hosted capture,
+exact child rendering, observer ownership refusal, request acquisition, offline
+replay and observation production passed. The first run skipped native host
+execution because the shell's cgroup was not delegated. A second run under
+`systemd-run --user --scope --quiet -p Delegate=yes`, with
+`STRIATUM_REQUIRE_CGROUP=1`, passed every subtest, including a real supervised
+shell/outcome and refusal before launch after a selected note changed.
+
+- Initial log: `/tmp/cairn-native-current-20260910.log`, SHA-256
+  `b032d6461d04bf7d6d2b6cc09ee754d57f742b3a51d327ec56982cecc2bd2884`.
+- Delegated log: `/tmp/cairn-native-current-delegated-20260910.log`, SHA-256
+  `29495f8b4940977069fc85b0e508909064507175cf0890757963d404d80974e9`.
+
+This verifies current component compatibility; full Driver build admission and
+model-task comparisons were not rerun. It adds no task-value result or contract
+acceptance. No Striatum source, live graph, installed binary or configuration was
+changed. The unrelated untracked `cmd_test.go` in Striatum main was left intact.
+Documentation claims and links were checked against source and retained reports;
+the complete preceding implementation history is preserved.

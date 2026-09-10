@@ -1,23 +1,74 @@
 # Native Striatum context: implementation direction
 
-Status: proposed Cairn-side integration direction, 2026-09-08. This document
-does not amend or accept a Striatum contract. U1 remains partial. The opening
-request is RQ-408328 on Striatum's compiler graph, subject
-`striatum-next/passes/cairn-native-context-input-20260908`. The existing Driver
-produced intent-capture run 408357 and accepted intent head 408364. A read-only
-planner inspection found no unmet capture steps, and subsequent live status
-reports the `captured` request satisfied. That is an opening bracket,
-not native memory delivery or implementation acceptance.
+Updated 2026-09-10. The native path is implemented on Striatum's
+`cairn-native-observation` branch at `ee8a463`, including observation production,
+build input admission and host execution. The accepted catalog still specifies
+`observation@1` and `build@3`; the proposed native contracts are not enabled in
+production. U1 remains partial.
 
-The desired outcome is a real Striatum build that receives useful Cairn context
-through a declared, sealed input, with its retrieval receipt linked to the actual
-host execution and separately assessed task outcome. The
-[admission assessment](verification/native-admission-assessment-2026-09-08.md)
-remains the historical evidence baseline. The latest
-[host checkpoint](verification/native-host-2026-09-08.md) implements binding,
-claim and outcome correspondence on the integration branch. Earlier checkpoints
-below retain their original scope; accepted native contracts and real-build
-benefit remain open.
+Two real model comparisons received native context but produced no admitted
+repair. The [corrected comparison](verification/native-corrected-recurrence-2026-09-08.md)
+retired that unchanged task and binding. Native delivery is observed; useful
+application in a completed build remains unestablished.
+
+## Current implementation and next work
+
+| Boundary | Implemented evidence | Remaining work |
+| --- | --- | --- |
+| Acquisition | [Host capture](verification/native-capture-2026-09-08.md), merged to Striatum main at `5ea87ca`, compiles and confirms the exact observer-owned receipt. | The watch supports the existing body request described below; newer retrieval options need an explicit interface extension when a task needs them. |
+| Observation and build | [Request/producer](verification/native-observation-2026-09-08.md), [build input](verification/native-build-input-2026-09-08.md) and [complete Driver chain](verification/native-chain-2026-09-08.md) run on the integration branch with proposed contracts. | Owning contract acceptance and production adoption. Do not implement another producer or duplicate the input path. |
+| Host execution | [Supervisor integration](verification/native-host-2026-09-08.md) checks actual context, claims current delivery and records process correspondence. | Verify any new task's actual binding and outcome through this existing supervisor. Do not wrap native Striatum in `cairn run`. |
+| Task value | [Executor](verification/native-executor-2026-09-08.md) and two retained model comparisons exercised the path; neither comparison completed its repair. | Use a meaningful task with a justified execution condition. Preserve qualitative and cumulative observations as well as completed artifacts; do not repeat the retired comparison unchanged. |
+
+The original opening request was RQ-408328, subject
+`striatum-next/passes/cairn-native-context-input-20260908`, with intent-capture run
+408357 and accepted intent head 408364. Those historical records establish the
+opening capture, not native contract acceptance. Current source and the evidence
+above supersede earlier reports' descriptions of unimplemented components.
+
+### Current watch compatibility
+
+Striatum `internal/cairn/capture.go` at `ee8a463` accepts only
+`cairn.semantic/3` body packages. Its watch declares repository/task/run,
+revision/workspace, task class, binding/capability, query, destination and budget.
+It does not expose semantic discovery, kind filters, task phase, failure signatures
+or index/pull delivery. Unknown watch fields and unsupported package schemas
+refuse; dropping those fields is not a compatible way to request their behavior.
+
+Cairn `a848e3c` still emits schema 3 for that existing request. Its compiler emits
+schema 9 for kind filtering, 10 for task phase and 12 for failure signatures.
+Those newer options are available through Cairn's ordinary interfaces, but their
+presence does not establish native Striatum support. There is no observed need
+to widen the native adapter merely to keep its existing watch working.
+
+### Current-build verification (2026-09-10)
+
+The existing `TestCairnService` passed against installed Cairn `a848e3c` and
+Striatum integration branch `ee8a463`. It creates its own PostgreSQL cluster,
+API identities and graph. Local/hosted capture, exact child rendering, observer
+ownership refusal, request acquisition, offline replay and offline observation
+production passed. With a delegated cgroup, the actual supervised shell also
+ran and recorded its outcome; a changed selected note refused before launch.
+
+Reproduce from the Striatum integration checkout with a built Cairn CLI:
+
+```sh
+systemd-run --user --scope --quiet -p Delegate=yes env \
+  STRIATUM_REQUIRE_CGROUP=1 \
+  STRIATUM_CAIRN_TEST_BINARY=/absolute/path/to/cairn \
+  go test -race ./tools/cairn-capture -run '^TestCairnService$' -count=1 -v
+```
+
+The initial nondelegated run passed capture but skipped the native-host subtest.
+The command above passed all subtests without skips. This is a current component
+compatibility check, not a rerun of full Driver build admission or a model task.
+The dated [implementation history](implementation-status.md#implementation-history)
+retains the source/binary pins and both log hashes. No production configuration,
+contract or runtime changed.
+
+The requirements below remain the design direction. The implementation table
+above identifies which parts now exist; acceptance and task value remain
+separate.
 
 ## Choose the input according to its lifetime
 
@@ -35,10 +86,10 @@ resolve the input through its accepted producer/consumer contracts and pin the
 result before dispatch. It must not infer a memory input from an arbitrary file
 in the workspace or repurpose the optional Review Ledger.
 
-The proposed producer is the existing **observation** pass, extended with a
-declared Cairn watch target. Its Exogenous Change Record records the authenticated
+The producer implemented on the integration branch is the existing **observation**
+pass, extended with a declared Cairn watch target. Its Exogenous Change Record records the authenticated
 API observation and retains the exact returned context bytes and their digest.
-The proposed consumer is **build**, with an explicitly declared optional
+The implemented consumer is **build**, with an explicitly declared optional
 Exogenous Change Record input selected by the packet's input identity and
 resolved to an exact admitted version. The ECR attests what Cairn returned; it
 does not certify the truth of the enclosed notes. This uses the existing Evidence
@@ -51,8 +102,8 @@ host configuration. The retained record must distinguish the requested tuple,
 authenticated Cairn response, semantic seal and receipt, selected versions,
 capture time and prior/observed content hashes. An arbitrary ECR or a caller's
 unverified claim that some bytes came from Cairn is insufficient. These are
-proposed contract requirements; the current observation executor does not
-implement a Cairn watch target.
+proposed contract requirements implemented on the integration branch; the accepted
+observation contract does not yet enable a Cairn watch target.
 
 Prompt-asset support is useful shared infrastructure, but implementing static
 assets alone will not close native Cairn U1. Do not spend another iteration
@@ -103,12 +154,14 @@ selections or required context to manufacture an A-only package: if the chosen
 native path cannot honor the returned package, refuse that case. Full class,
 authority and mandatory-runtime behavior stays on the roadmap.
 
-## Concrete implementation boundaries
+## Historical implementation boundaries
 
-The inspected Striatum source is commit
+The following table records the initial assessment, before the implementation
+checkpoints above. Its missing-work descriptions are historical, not the current
+backlog. That assessment inspected Striatum commit
 `a6b1ae71d95cdf99200c10d8c6ce855d9da70a69`.
 
-| Boundary | Current source | Required change or decision |
+| Boundary | Source at the initial assessment | Required change at that time |
 | --- | --- | --- |
 | Pass declarations | `internal/driver/catalog.go: PassSpec, LoadCatalog` | Prompt-asset declarations are currently omitted from the driver projection. The dynamic memory consumer also needs an accepted declared-input contract. |
 | Fresh materialization | `internal/driver/session_dispatch.go` | Fresh Run/Dispatch Manifests hard-code empty prompt assets. Resolve and retain only the chosen contract's exact input before opening dispatch. |
@@ -120,7 +173,7 @@ The inspected Striatum source is commit
 
 ## Acceptance evidence for this direction
 
-Before calling the native path implemented, retain a real admitted input's
+The native path must retain a real admitted input's
 producer and consumer pins, the Cairn package/receipt correspondence, the actual
 dispatch bundle, and the invocation's admitted rendering evidence. Demonstrate
 wrong repository/destination/context, missing bytes, digest substitution, stale
@@ -128,8 +181,8 @@ delivery, unsupported mandatory content and changed packet inputs being refused
 at their owning boundary. Existing unrelated requests, graphs and timers must
 remain outside the experiment's mutations.
 
-Then perform an authorized real build with relevant previously captured memory,
-prospective task checks and a complete workspace. Compare the same task/binding/
+For further task-value work, use an authorized real build with relevant previously
+captured memory, prospective task checks and a complete workspace. Compare the same task/binding/
 budget with no optional memory and with the same material supplied directly when
 that comparison is valid. Record actual retrieval contact, accepted/rejected/
 unknown task outcome, repeated failures, elapsed time, context/pull cost and
@@ -143,11 +196,13 @@ a hand-authored Striatum Decision Record.
 
 ## Evidence and next contract work
 
-[Recorded metadata](verification/native-input-proposal-2026-09-08.json) separates
-the completed opening capture from the unimplemented proposal. The source and
-read-only diagnostic records remain under `/tmp/cairn-native-input-` on the
-development host. No Cairn binary, API profile, Striatum source or live lane was
-changed in this assessment.
+[Original proposal metadata](verification/native-input-proposal-2026-09-08.json)
+records the opening assessment, when the proposal was unimplemented. Its source
+and diagnostic records remain under `/tmp/cairn-native-input-` on the development
+host. The later branch implementation and model comparisons are linked above.
+The owning RFC 0004/0007 amendments remain proposals. Acceptance must follow
+Striatum's existing contract and generated-decision process before production
+enablement; the opening intent capture and fixture admission do not grant it.
 
 The owning proposed amendments now exist in Striatum commit
 `0d9245f2954c088a03661463ac52ec15254eddff`:
@@ -162,7 +217,14 @@ proposed execution-scope label without a future-manifest hash cycle, D0 replay
 from a retained authenticated capture, and use of the ordinary input rendering
 path. Static prompt-asset support is not a prerequisite.
 
-Two source constraints sharpen the implementation work. Pre-launch compilation
+### Historical amendment and implementation notes (2026-09-08)
+
+The following paragraphs retain the sequence of earlier checkpoints. Statements
+that work was unfinished describe those checkpoints; use the current table above
+for the remaining work. The doctrine packet at the end belongs to the original
+proposal, not the 2026-09-10 compatibility check.
+
+Two source constraints sharpened the implementation work. Pre-launch compilation
 must use the observing host's receipt identity: `BindRun` and `ClaimRun` enforce
 ownership, while `LinkRunRetrieval` only joins retrievals created during an
 already observed host run. Also, current `ClaimRun` checks restore generation,
@@ -224,7 +286,7 @@ evidence before intervention and behavior preservation. The private decision
 classifies 15 obligations as nonmaterial to this proposal; the implementation
 and real-task obligations above remain open.
 
-## Native host implementation checkpoint
+## Historical native host implementation checkpoint
 
 The [host verification](verification/native-host-2026-09-08.md) extends the
 [build input checkpoint](verification/native-build-input-2026-09-08.md) through
@@ -238,6 +300,6 @@ The integration branch includes proposed host configuration and observation
 schemas. The accepted catalog, generated Decisions and installed runtime remain
 unchanged. The [complete-chain test](verification/native-chain-2026-09-08.md)
 now joins producer and consumer admission through the Driver using a real Cairn
-service and mechanical fixture planning/build output. The next work is owning
-contract acceptance and a real task comparison with separate task acceptance
-and memory-benefit evidence.
+service and mechanical fixture planning/build output. Later real model comparisons are
+linked in the current table above. They established delivery but no completed
+repair, and the unchanged comparison is retired.

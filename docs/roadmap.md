@@ -411,7 +411,14 @@ a scripted harness check added to calibration. The [corrected comparison](verifi
 also produced no admitted repair. This unchanged task/binding comparison is
 retired from the active sequence; further usefulness work needs completed real
 tasks and practical cross-harness retrieval. Accepted native contracts and
-real-build usefulness remain open. The
+real-build usefulness remain open. A
+[current-build check](native-striatum-context.md#current-build-verification-2026-09-10)
+confirms that Cairn `a848e3c` still supports the native watch's schema-3 body
+capture and supervised launch, including stale-selection refusal. Kind filters,
+task phase, failure signatures, semantic discovery and index/pull are not exposed
+by that watch. The refreshed guide separates implemented branch work from owning
+contract acceptance and the retired model comparison; do not duplicate the
+existing producer/consumer/host path. The
 [OpenCode trial host](verification/opencode-host-observation-2026-09-08.md) now
 uses per-arm authenticated observers, exact package/attempt joins and pending
 spawn/terminal recovery. Its full real-harness fixture verification includes
