@@ -51,6 +51,13 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Native argument transport preserves supplied text.** OpenCode now refuses
+  malformed Unicode before it can become a different query or context label.
+  Native debug and scripted normal-session checks preserve valid Unicode and
+  recover with a refused request ID. This repair followed recalled validation
+  guidance; incremental memory benefit remains uncertain.
+  [Verification](verification/opencode-unicode-2026-09-10.md).
+
 - **Native searches accept changing task context.** MCP and OpenCode can declare
   context for one call when the host left those fields unset. Host-fixed values
   remain enforced. This makes phase-restricted guidance reachable without changing
@@ -2742,3 +2749,29 @@ instructions. A timed-out startup trace is the next useful diagnostic if it recu
 The [investigation](verification/native-startup-2026-09-10.md) and metadata retain
 the bounded observation, uncertainty and Pincite abstention receipt. No task-value
 claim or roadmap completion follows from this diagnostic.
+
+
+### 2026-09-10 — Native process-argument Unicode repair
+
+An ordinary review of per-call context retrieved and pulled the earlier OpenCode
+validation lesson, version 2. That guidance informed investigation of the actual
+argument boundary and a normal-session check. Source inspection found a separate
+transport gap: a lone UTF-16 surrogate in a binding declaration became U+FFFD
+before reaching the API's existing JSON guard. The native disposable-API regression
+returned success with the altered context, establishing the defect before repair.
+
+The shared native adapter now rejects malformed Unicode in executable/process
+arguments before CLI launch, without echoing values. Valid Unicode, JSON stdin,
+fixed host context, scope, permissions and retry semantics retain their contracts.
+No store migration or Go API change is needed. Both the initial and expanded full
+native API suites passed. Additional checks cover malformed queries and configured
+bindings, high/low/reversed surrogates, exact Japanese/emoji/literal-escape/U+FFFD
+preservation and reuse of refused request UUIDs. A scripted normal OpenCode session
+separately verifies refusal followed by correction. Go/40 Python and static checks
+also pass; no answering model or production fixture capture was used.
+
+The [report](verification/opencode-unicode-2026-09-10.md) and metadata preserve the
+failed reproduction, verification and Pincite decision receipt. This is a verified
+repair during memory-guided work; it does not establish independent model benefit,
+time savings or net task value. Other upstream serializers remain outside the
+claim. The full prior implementation history remains intact.

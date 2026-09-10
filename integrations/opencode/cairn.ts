@@ -47,8 +47,13 @@ async function settings(name: string, context: ToolContext) {
 }
 
 function call(config: Settings, context: ToolContext, args: string[], input?: unknown): Promise<unknown> {
+  const command = ["agent", "--socket", config.socket, "--token-file", config.token_file, ...args]
+  // Process arguments replace lone UTF-16 surrogates before Cairn can inspect them.
+  if ([config.executable, ...command].some(value => /[\uD800-\uDFFF]/u.test(value))) {
+    return Promise.reject(new Error("INVALID_REQUEST: CLI arguments require well-formed Unicode"))
+  }
   return new Promise((resolve, reject) => {
-    const child = execFile(config.executable, ["agent", "--socket", config.socket, "--token-file", config.token_file, ...args],
+    const child = execFile(config.executable, command,
       { encoding: "utf8", timeout: 30000, maxBuffer: 1024 * 1024, signal: context.abort }, (error, stdout) => {
         let response
         try { response = JSON.parse(stdout) } catch {

@@ -26,6 +26,12 @@ settings on each call; those configured values also cannot be replaced by a tool
 argument. In OpenCode's settings file the keys remain `binding` and `capability`;
 tool arguments use the canonical `binding_id` and `capability_id` names.
 
+Native OpenCode rejects malformed Unicode in process arguments before invoking
+the CLI. A lone UTF-16 surrogate in a query or context label returns
+`INVALID_REQUEST`, rather than becoming a replacement character in the receipt.
+Valid Unicode, including emoji and an intentionally supplied replacement
+character, remains supported. Correct the malformed value before retrying.
+
 Per-call declarations do not carry forward. Repeat the same context on later
 pages and exact retries. A new phase or revision requires a new search request
 identity. The result reports the effective context, and its receipt retains that

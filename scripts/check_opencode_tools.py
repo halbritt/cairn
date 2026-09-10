@@ -8,6 +8,7 @@ from check_ordinary_citations import check_harness as check_citations
 from check_note_transport import check_opencode_session
 from check_failure_retrieval import check_harness as check_failure_signatures
 from check_literal_retrieval import check_harness as check_literals
+from check_opencode_unicode import check as check_unicode
 
 
 def check(binary, root, environment, opencode, claim, support):
@@ -48,6 +49,7 @@ def check(binary, root, environment, opencode, claim, support):
         assert result.returncode == 0, (name, result.stderr, result.stdout)
         return json.loads(json.loads(result.stdout)['result']['output'])
 
+    check_unicode(invoke, opencode, root / 'opencode-unicode', settings_path, settings)
     check_citations(invoke, support)
     check_literals(lambda name, args: invoke(name.removeprefix("cairn_"), args))
     check_failure_signatures(lambda name, args: invoke(name.removeprefix("cairn_"), args), binary, environment)

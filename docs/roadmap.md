@@ -443,6 +443,12 @@ overridden; declarations do not carry into later calls. [Verification](verificat
 covers applicability and existing tool boundaries. Automatic context observation
 and task benefit remain open.
 
+A [native argument repair](verification/opencode-unicode-2026-09-10.md) now refuses
+malformed Unicode before process launch, after a real fixture returned a context
+label different from the supplied declaration. Valid Unicode and refused-ID
+recovery pass through native debug and scripted normal sessions. Retained review
+guidance informed this repair; incremental memory benefit remains uncertain.
+
 The [evidence capture transport repair](verification/evidence-limit-2026-09-09.md)
 allows authenticated clients to use the store's existing 1 MiB inline source limit,
 including heavily escaped JSON. Evidence alone has an 8 MiB encoded request cap;
