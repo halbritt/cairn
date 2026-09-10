@@ -29,6 +29,9 @@ This includes notes considered but not selected by a retained compilation.
 Former B/C records and service-generated failure-recovery observations also
 require the [audited forgetting workflow](deletion.md). The ordinary command
 returns `FORGET_REQUIRED`; it does not silently discard those references.
+If the goal is to stop future retrieval while retaining the record, use the
+retirement workflow below. `FORGET_REQUIRED` describes the refused hard deletion;
+it does not mean that removing the retained history is necessary to retire advice.
 An open conflict returns a retained `OPEN_CONFLICT` refusal. Use
 `cairn conflicts --record RECORD_UUID REPO` and `cairn conflict CONFLICT_UUID`
 to [inspect its retained positions](conflict-inspection.md).
@@ -53,3 +56,45 @@ integration/static checks and a backup/restore lifecycle drill. Installation
 followed a private backup; migration 020, the API binary and authenticated
 retrieval were verified. Operational record versions retained their previous
 digest. No operational note was deleted for verification.
+
+## Retire obsolete advice while retaining history
+
+Choose the operation that matches the intended change:
+
+| Intended change | Existing operation | Access |
+| --- | --- | --- |
+| Correct an active A note | [Ordinary text edit](local-api.md#body-only-revisions), including exact passage replacement | Ordinary CLI/API and native edit tools |
+| Replace an obsolete record with a different current record | [Supersede](supersession.md), with both versions and an impact preview | Local agent API for A; operator authority for B |
+| Stop retrieving a record without naming a replacement | `retract`, with a live grant and an impact preview | Operator CLI, including when the record is Class A |
+| Remove retained body content | [Audited forgetting](deletion.md), with its deletion guards and effect tracking | Operator authority |
+
+For retraction, obtain and review the current impact with
+`cairn preview-retract RECORD_UUID`. Then pass a request to `cairn retract`:
+
+```json
+{
+  "request_id": "NEW_REQUEST_UUID",
+  "record_id": "RECORD_UUID",
+  "expected_version": 3,
+  "grant_id": "AUTHORIZED_RETRACT_GRANT_UUID",
+  "preview_id": "RETURNED_PREVIEW_UUID",
+  "reason": "This workaround is obsolete and should not enter new task context"
+}
+```
+
+Replace the example IDs and version with those for the inspected record, preview
+and live grant. The caller must own the preview and hold `retract` authority for
+the repository. New exposures or changed dependency state invalidate the preview;
+`STALE_PREVIEW` requires another impact review. Exact accepted-request retries
+return their original result. An open conflict blocks retraction.
+
+Retraction creates an inactive version and an audit event. Fresh retrieval omits
+the record, while earlier versions, recorded uses and existing receipt history
+remain retained. [Historical reads](record-history.md) still apply current
+destination and forgetting restrictions. Retraction does not erase already
+delivered context or remove content from a running agent's session.
+
+Ordinary hosted profiles cannot inspect the protected impact preview or invoke
+`retract`; the native six-tool interface has no retirement operation. Use the
+operator workflow when an already-used note needs retirement. Editing its body
+to say “obsolete” changes the text but leaves the record active in retrieval.

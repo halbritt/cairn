@@ -3810,3 +3810,27 @@ No executable, store, host setting or operational note changed. This closes the
 missing concise changelog surface alongside the earlier version/status request;
 it adds no new task-benefit result. All previous implementation history, including
 negative results and superseded work, is preserved.
+
+
+### 2026-09-10 — Existing retirement workflow for obsolete ordinary advice
+
+Verified that an already-used A note can stop appearing in fresh retrieval through
+existing grant-backed retraction, while retaining its earlier history. Ordinary
+hard deletion refuses protected references with `FORGET_REQUIRED`; that error does
+not mean that erasing history is needed to retire advice. The deletion guide now
+explains correction, supersession, retraction and forgetting as different choices,
+with the exact retraction request and access requirements. README, changelog and
+roadmap link to the workflow.
+
+The existing disposable PostgreSQL tests passed for referenced-note deletion
+refusal, preview ownership/expiry/new-exposure invalidation, exact retraction
+retry, fresh retrieval exclusion and concurrent compile/retract ordering.
+Source inspection confirms retained-version access and the CLI/API authority
+boundaries. Ordinary hosted tools cannot perform the protected retirement path;
+this limitation remains explicit. The existing path satisfies operator retirement
+without a new archive flag or changed lifecycle contract.
+
+Verification output is retained at `/tmp/cairn-obsolete-guidance-20260910/checks.log`.
+No runtime code, installation, operational note or authority state changed. The
+prior implementation history is preserved. This adds verified operating guidance,
+not a new task-benefit finding or completion of the remaining lifecycle roadmap.

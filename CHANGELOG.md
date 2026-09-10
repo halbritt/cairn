@@ -14,6 +14,10 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- Documented [retiring obsolete advice](docs/ordinary-delete.md#retire-obsolete-advice-while-retaining-history)
+  through existing guarded retraction. The guide distinguishes stopping future
+  retrieval from hard deletion and explains the ordinary hosted-tool limitation.
+
 - **Correct notes without rewriting unrelated instructions.** The existing edit
   tool supports [exact passage replacement](docs/local-api.md#replace-one-exact-passage)
   (`96e8eae`) and [verbatim append](docs/local-api.md#append-selected-guidance)

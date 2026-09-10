@@ -256,6 +256,10 @@ through `cairn agent revise` with JSON input. For an additive update, use native
 through that edit tool; [exact passage replacement](docs/local-api.md#replace-one-exact-passage)
 preserves all text outside one unique match. [Append](docs/local-api.md#append-selected-guidance) preserves the
 existing text verbatim; include separating whitespace and reconcile version conflicts.
+For obsolete guidance that should stop appearing in new context, follow the
+[retirement workflow](docs/ordinary-delete.md#retire-obsolete-advice-while-retaining-history).
+Retirement preserves the record history and currently requires the appropriate
+local/operator path.
 
 To inspect available topics when the saved vocabulary is unknown, replace the
 query with `--browse`. Native `cairn_search` accepts `{"browse": true}`. This
