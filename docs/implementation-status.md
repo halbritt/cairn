@@ -159,12 +159,16 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and running API: clean `8f6864a0555097be6d99bb3ccd4592701f8c2316`,
-  SHA-256 `1a83019ee4645662225778cf0bd7df690006943509ba7c1e4b7852337b450f07`.
-  API PID 430775 now applies declared task-phase constraints. Both database
-  readers were upgraded after a backup; PostgreSQL remains PID 163669 with no
-  migration. Compact startup, task-file input, history, retained-kind checks,
-  selected-file fingerprints and optional streaming model reuse remain installed.
+- Installed CLI: clean `215ecbf1e893afc530c31b9f773b243d851ccac3`, SHA-256
+  `0bd5304706293ef967d2ddb55a4bf15ab03b5e56c561ee77ad5a974c429bd780`.
+  Ordinary capture now accepts explicit applicability through CLI/MCP and the
+  matching installed native OpenCode adapter. Fresh MCP processes load the new
+  tool schema; existing sessions retain their original process.
+- API remains clean `8f6864a0555097be6d99bb3ccd4592701f8c2316`, SHA-256
+  `1a83019ee4645662225778cf0bd7df690006943509ba7c1e4b7852337b450f07`, PID 430775.
+  It already supports all captured pins. PostgreSQL remains PID 163669; this
+  adapter-only extension required neither migration nor API restart. Both direct
+  readers support phase; earlier pre-phase binaries remain unsuitable for phase data.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -176,7 +180,7 @@ Live checks on 2026-09-09 found:
   Agent and observer roles remain separate. The trusted project's Codex MCP
   configuration exposes all five ordinary tools with conversation scope and
   optional startup. The installed native OpenCode adapter matches the current
-  kind-filter-capable source and retains its existing connection settings.
+  capture-pins-capable source and retains its existing connection settings.
 - Optional semantic discovery uses the prepared local CPU model, batch size one
   and two ONNX threads, through the API-owned `worker-stream` launcher. The script
   SHA-256 is `290a93245909186c905708f328c276dc074232ef4fcd08c52f02ec56264a4fb5`.
@@ -205,6 +209,13 @@ or grooming timer is installed. Use the user services for the managed store's
 lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
+
+The capture extension passed static/Go/Python and full disposable PostgreSQL/race
+integration, including actual native OpenCode tool execution. The installed CLI
+revised the existing capture procedure to v2, retried identically and freshly
+retrieved the exact body through the unchanged API. The procedure stays unpinned.
+[Implementation CI](https://github.com/halbritt/cairn/actions/runs/34425510304)
+passed for exact source `215ecbf`. [Capture report](verification/capture-pins-2026-09-09.md).
 
 The installed phase extension passed local Go/Python/static checks and full
 PostgreSQL/race integration, with scripted native OpenCode forwarding. Existing
@@ -1713,3 +1724,25 @@ unchanged default capture, retries and revision preservation. CLI forwarding was
 also checked after the full run. No answering-model task or value assessment was
 performed. E1 remains partial; this is practical access to existing constraints.
 [Report](verification/capture-pins-2026-09-09.md) retains evidence and decision pointers.
+
+### 2026-09-09 — Capture installation and procedure continuity
+
+Installed clean CLI `215ecbf` and its bundled native OpenCode adapter. Existing
+Codex/OpenCode connection settings retain their exact hashes. API `8f6864a`/PID
+430775 and PostgreSQL PID 163669 remain active; the API already supports these
+capture fields, so no restart or migration was needed. Fresh MCP processes load
+the extended schema.
+
+Updated the existing authenticated capture procedure `e2d3c2fd-92c1-42ce-8201-4348c94dfae1`
+from v1 to v2 with explicit applicability usage and preservation checks. Exact
+retry and fresh hosted pull matched SHA-256
+`b5340899b14dd5e14b54b82f30d01085b8338e8f70c67e778b4f4a8aef0d284f`.
+It remains unpinned and retains its previous version. This is knowledge maintenance
+and live interface verification; no incremental task-value conclusion is added.
+Installation and procedure metadata live under `/tmp/cairn-capture-deployment/`.
+
+Corrected stale E1 prose that still listed phase matching as open; entity/file/error
+matching and broader real-history usefulness remain open.
+
+Exact implementation CI `34425510304` passed for `215ecbf`; the subsequent update
+records deployment/evidence and corrects roadmap prose only.

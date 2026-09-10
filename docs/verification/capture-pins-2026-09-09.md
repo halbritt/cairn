@@ -46,3 +46,19 @@ No interface abstraction, performance or net-task-value claim depends on them.
 The decision receipt passed schema validation and both citation observations closed.
 The [metadata](capture-pins-2026-09-09.json) retains local evidence paths and hashes;
 operational notes and generated binaries remain outside Git.
+
+## Local installation
+
+Installed clean CLI `215ecbf` and the matching bundled native adapter. Connection
+settings retain their prior byte hashes. API `8f6864a`/PID 430775 already supports
+the stored fields and remains active alongside PostgreSQL PID 163669. Existing
+MCP processes need a fresh session to load the extended tool schema.
+
+The existing ordinary capture procedure was revised from v1 to v2, retried
+identically and freshly pulled through the installed CLI and unchanged API.
+It remains unpinned; the prior version is retained. This updates reusable guidance
+without creating a duplicate note or claiming that maintenance proves task value.
+Deployment and procedure hashes are retained in the companion metadata.
+
+[Implementation CI](https://github.com/halbritt/cairn/actions/runs/34425510304)
+passed for exact source `215ecbf1e893afc530c31b9f773b243d851ccac3`.

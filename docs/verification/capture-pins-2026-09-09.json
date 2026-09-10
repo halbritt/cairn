@@ -68,5 +68,45 @@
       "path": "/tmp/cairn-capture-citations-doctrine-final.json",
       "sha256": "215a17a10ec9cb95ef79eab532a758fe037d8ba085b408eca34d4019a089d013"
     }
-  ]
+  ],
+  "implementation_commit": "215ecbf1e893afc530c31b9f773b243d851ccac3",
+  "installation": {
+    "source_commit": "215ecbf1e893afc530c31b9f773b243d851ccac3",
+    "installed_sha256": "0bd5304706293ef967d2ddb55a4bf15ab03b5e56c561ee77ad5a974c429bd780",
+    "clean_build": true,
+    "services": {
+      "cairn-api.service": {
+        "MainPID": "430775",
+        "ActiveState": "active",
+        "exe_sha256": "1a83019ee4645662225778cf0bd7df690006943509ba7c1e4b7852337b450f07"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "api_source_commit": "8f6864a0555097be6d99bb3ccd4592701f8c2316",
+    "settings_sha256": {
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8"
+    },
+    "adapter_sha256": "35ac51295b801db408d6250bee5866f369c58d62841e5c260921767857c4092e",
+    "migration_needed": false,
+    "api_restart_needed": false
+  },
+  "procedure": {
+    "record_id": "e2d3c2fd-92c1-42ce-8201-4348c94dfae1",
+    "previous_version": 1,
+    "version": 2,
+    "body_sha256": "b5340899b14dd5e14b54b82f30d01085b8338e8f70c67e778b4f4a8aef0d284f",
+    "unpinned": true,
+    "exact_retry": true
+  },
+  "ci": {
+    "conclusion": "success",
+    "headSha": "215ecbf1e893afc530c31b9f773b243d851ccac3",
+    "status": "completed",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34425510304"
+  }
 }

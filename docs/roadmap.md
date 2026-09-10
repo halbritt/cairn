@@ -568,8 +568,9 @@ cannot suppress a mandatory instruction. Semantic v3 seals context; old formats
 remain readable. Explanation v2 preserves gate facts for historical ranking and
 packing from the named receipt's read set, with input digest and result-seal
 checks. Later B corrections and evidence changes cannot rewrite that selection.
-Arbitrary historical cutoffs without retained observations, entity/file/error/phase
-matching, and the real-history usefulness trial remain open.
+Declared task-phase matching is implemented. Arbitrary historical cutoffs without
+retained observations, entity/file/error matching, and the real-history usefulness
+trial remain open.
 
 [Index and pull](index-and-pull.md) now delivers a sealed bounded pointer index
 with full mandatory bootstrap and expiring caller/destination-bound handles.
