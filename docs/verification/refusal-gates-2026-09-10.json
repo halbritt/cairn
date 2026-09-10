@@ -1,0 +1,80 @@
+{
+  "schema": "cairn.refusal-gate-verification/1",
+  "date": "2026-09-10",
+  "baseline_commit": "8d466cdb86e9f30dd6c440c859c26f8356743a0e",
+  "migration": 34,
+  "explanation_version": 2,
+  "operational_records_mutated": false,
+  "model_runs": 0,
+  "task_value": "Known diagnostic mismatch repaired; independent downstream and net memory benefit unmeasured",
+  "checks": {
+    "/tmp/cairn-refusal-completion-20260910/red.log": "080fd7b8708bacea4b8fa72533aa563c271a5c2c5da8307ee47e8c6538b4bbd5",
+    "/tmp/cairn-refusal-completion-20260910/allocation-red.log": "3f8309169f62c1802f002a4cd8f0679838ca29033e44b725a4fe1c13ffd11f90",
+    "/tmp/cairn-refusal-completion-20260910/green.log": "eed4b39f67c14ea0c9965725936e90699f2fd58394bcb96ce3f714e4b97de427",
+    "/tmp/cairn-refusal-completion-20260910/core-green.log": "9d64e3a7c5ba73f944055514807b38d0a1abd078b4e55d3e035ebfc9cae9549c",
+    "/tmp/cairn-refusal-completion-20260910/retry-green.log": "9323be43292547744a4120ab796bbe28addbcd93871b388eafa25aac25fcbd73",
+    "/tmp/cairn-refusal-completion-20260910/integration-fixture-failure.log": "190664b8fe1534fe0fb08ae747cb52c228d1d3cbf31502a6ec0859b1a1087f66",
+    "/tmp/cairn-refusal-completion-20260910/integration-version-assertion-failure.log": "b5bb962009ef51fd8993de5089e24931cdaa92132c7d23c56691c4dedd220481",
+    "/tmp/cairn-refusal-completion-20260910/integration.log": "dda9083d447c8c4589df7544aeec6460a02112be8a9969b875f1bdc4a8d3f695",
+    "/tmp/cairn-refusal-completion-20260910/check.log": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029",
+    "/tmp/cairn-refusal-completion-20260910/decision-receipt.json": "a01955b9c5e7cf72128440056d191e9af25cda33409d011c1e7da501c9ce3982"
+  },
+  "production_source_sha256": {
+    "core/compiler.go": "940a176cdaa60dc4989c44cd71ff8c126859a5464d5a9eb05ea1a3daf5d73d8c",
+    "core/instruction_limits.go": "f39477b6f980fcc1b26f41f8b0ec061cb183907cc7e534602896f406eec1ee4a"
+  },
+  "doctrine": {
+    "packet_id": "pkt-0bf5356afef1acdc",
+    "packet_sha256": "0bf5356afef1acdc4d9a9980f8b80e7deafaa9ec5693e6f75a59f26d1a70f80e",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "missing_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No interface or substitution boundary is added."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No interface or substitution boundary is added."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No interface or substitution boundary is added."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No interface or substitution boundary is added."
+      },
+      {
+        "requirement": "caller nil checks and method use",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No interface or nil-return contract changes; original non-nil errors propagate unchanged."
+      },
+      {
+        "requirement": "documented absence semantics",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No interface or nil-return contract changes; original non-nil errors propagate unchanged."
+      },
+      {
+        "requirement": "dynamic type and dynamic value at the return",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No interface or nil-return contract changes; original non-nil errors propagate unchanged."
+      }
+    ],
+    "decision_receipt_validated": true,
+    "citation_loops_closed": true
+  }
+}

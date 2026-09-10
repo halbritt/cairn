@@ -107,7 +107,7 @@ try:
     assert refusal['status']=='BUDGET_REFUSED' and refusal['refusal_id']
     inspected=subprocess.run([binary,'agent','refusal'],input=json.dumps(dict(refusal_id=refusal['refusal_id'])),env=env,capture_output=True,text=True,check=True)
     detail = json.loads(inspected.stdout)['data']
-    assert detail['code'] == 'BUDGET_REFUSED' and detail['explanation_version'] == 1
+    assert detail['code'] == 'BUDGET_REFUSED' and detail['explanation_version'] == 2
     assert detail['available_tokens'] == 256 and detail['optional_limit'] == 25
     assert detail['ranking'] == 'lexical-scope-recency/4'
     assert detail['trace_complete'] is False and len(detail['candidates']) == 1

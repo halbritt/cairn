@@ -3662,3 +3662,35 @@ also distinguishes current availability from the historical Claude native check,
 which exercised the original five tools. Native Claude history remains unverified;
 this correction adds no harness execution or task-benefit evidence. Dated prior
 claims and all committed implementation history remain unchanged.
+
+
+### 2026-09-10 — Preserve known instruction refusal gates
+
+Corrected a retrieval-diagnostic mismatch: a required instruction could refuse
+compilation while its candidate trace reported `mandatory: false` and
+`EVALUATION_INCOMPLETE`. The compiler returned before copying already-known gate
+results. Mandatory category overflow could instead appear `SELECTED` before
+admission passed. Known mandatory flags and reasons now reach the protected
+trace, with explanation version 2 for new compiler refusals. Admission and error
+behavior, the early stopping point, privacy restrictions and the 1,000-candidate
+cap are unchanged. Traces remain partial; R5 is not closed by this repair.
+
+The initial body/index regressions reproduced runtime, missing-context and dispute
+misclassification, plus the category label error. A two-policy test incorrectly
+expected both positions to be evaluated; normal issuance already creates a
+dispute, so compilation correctly stops at the first. Its expectation was corrected.
+An API fixture needed exact bootstrap request reuse across destinations, and a
+CLI assertion needed its expected explanation version changed to 2. Those failed
+runs remain in the [report and verification metadata](verification/refusal-gates-2026-09-10.md).
+
+The final targeted checks, disposable PostgreSQL race/API/MCP suite and static
+checks pass. Local authenticated readers receive corrected diagnostics; hosted
+owners remain denied access. Existing version-1 observations and exact retries
+remain unchanged. The retrieved phase procedure was read fully after the first
+reproduction and corroborated expected context gating; it did not establish
+memory-led discovery, independent downstream task value or net savings.
+
+Pincite packet `pkt-0bf5356afef1acdc` has a validated decision receipt and closed
+citation loops. Seven interface/nil-contract obligations remain nonmaterial.
+Installation is recorded separately when complete. All prior implementation
+history remains byte-for-byte intact.

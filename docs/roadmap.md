@@ -262,6 +262,11 @@ and packing cost, with owner-authorized `explain` and fixed census buckets. Name
 policy refusals now return a durable caller-owned observation ID and a partial
 protected trace; full refusal explanations and the remaining policy paths are
 tracked by L2.
+The [known-gate correction](verification/refusal-gates-2026-09-10.md) preserves a
+required instruction's known mandatory flag and rejection reason when collection
+aborts, and distinguishes mandatory category refusal from selection. This repairs
+misleading diagnostics; early-stop and bounded-trace limits remain, so R5 stays
+partial.
 Compiler refusals now retain the already-computed, visibility-filtered candidate
 reasons and ranking/allocation features in a bounded
 [partial diagnostic trace](refusals.md). Missing phases remain explicit; evidence

@@ -109,10 +109,10 @@ func (b *instructionBudget) admit(entry Selection, e *CandidateEvaluation, omitt
 	used.count++
 	used.tokens += len(entry.Record.Body)
 	if used.count > limit.MaxCount || used.tokens > limit.MaxTokens {
+		e.Reason = "CATEGORY_BUDGET"
 		if entry.Mandatory {
 			return false, failure("BUDGET_REFUSED", fmt.Sprintf("mandatory %s instruction limit exceeded", entry.Category))
 		}
-		e.Reason = "CATEGORY_BUDGET"
 		omitted["CATEGORY_BUDGET"]++
 		return false, nil
 	}

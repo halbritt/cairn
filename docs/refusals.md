@@ -14,7 +14,7 @@ record bodies. The trace is explicitly partial: refusal can stop selection early
 and at most 1,000 considered references are retained with the observed count.
 This is not a complete historical candidate explanation or a replayable decision.
 
-New compiler refusals also retain `explanation_version: 1` and up to 1,000
+New compiler refusals retain `explanation_version: 2` and up to 1,000
 `candidates`, ordered by record ID/version to match the considered references.
 Each entry contains the reason and ranking/allocation features computed before
 the refusal: lexical matches, optional semantic score, scope specificity,
@@ -23,6 +23,21 @@ and bodies are excluded. `EVALUATION_INCOMPLETE` means processing stopped before
 a candidate reason was assigned; zero rank/cost can mean allocation was not
 reached. These are diagnostic observations from an aborted compilation. A
 `SELECTED` reason does not mean a package was committed or delivered.
+
+Version 2 preserves known mandatory flags and gate results before an instruction
+aborts collection. When missing context is the stopping cause, its visible instruction is labelled
+`CONTEXT_MISSING`; an unsupported mandatory runtime requirement or unavailable
+required support retains `POLICY_UNENFORCEABLE`; a disputed instruction retains
+`OPEN_CONFLICT`. Its mandatory flag describes the stored instruction, not a
+successful admission. A mandatory category-limit failure is labelled
+`CATEGORY_BUDGET`, rather than `SELECTED` or `EVALUATION_INCOMPLETE`.
+
+These labels describe only candidates actually inspected and retained within the
+existing cap. Collection still stops at the first binding failure; later records
+are not retrospectively evaluated. Private instructions still have no candidate
+ID or diagnostic entry in a hosted-destination trace. Version 1 observations may
+lack these known fields. Exact retries keep the original observation and do not
+upgrade or rewrite its historical explanation.
 The refusal also records `available_tokens`, plus `optional_limit` and `ranking`
 when compilation reached their initialization. These use the compiler's recorded
 conservative byte-based token bound, not an independently measured model tokenizer.

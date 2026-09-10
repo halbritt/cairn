@@ -191,7 +191,7 @@ func (s *Store) compileOnce(ctx context.Context, req CompileRequest, destination
 		if !durablePolicyRefusal(err) {
 			return Package{}, err
 		}
-		refusal := Refusal{RequestID: req.RequestID, Operation: "compile", Scope: req.Scope, Destination: destination.Name, TraceComplete: false, ExplanationVersion: 1}
+		refusal := Refusal{RequestID: req.RequestID, Operation: "compile", Scope: req.Scope, Destination: destination.Name, TraceComplete: false, ExplanationVersion: 2}
 		refusal.AvailableTokens = req.AvailableTokens
 		refusal.OptionalLimit = semantic.OptionalLimit
 		refusal.Ranking = semantic.Ranking
@@ -416,24 +416,27 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		evaluation := &CandidateEvaluation{RecordID: id, Version: record.Version, Class: record.Class, LexicalMatches: score, ScopeSpecificity: specificity, WrittenAt: record.WrittenAt}
 		evaluations[id] = evaluation
 		if reason := applicabilityReason(record.Pins, req.Context, now); reason != "" {
+			evaluation.Reason = reason
 			if record.Class == "C" && reason == "CONTEXT_MISSING" {
 				entry, gate, err := eligible(ctx, tx, record, req.Purpose)
+				evaluation.Mandatory = entry.Mandatory
 				if err != nil {
+					evaluation.Reason = Code(err)
 					return p, nil, err
 				}
 				if gate == "" && entry.Mandatory {
 					return p, nil, failure("POLICY_UNENFORCEABLE", "required instruction applicability cannot be established without context pins")
 				}
 			}
-			evaluation.Reason = reason
 			p.Omitted[reason]++
 			continue
 		}
 		selection, reason, err := eligibleWithAdvisory(ctx, tx, record, req.Purpose, allowDisputes)
+		evaluation.Mandatory = selection.Mandatory
 		if err != nil {
+			evaluation.Reason = Code(err)
 			return p, nil, err
 		}
-		evaluation.Mandatory = selection.Mandatory
 		evaluation.Reason = reason
 		evaluation.EscalationBlocked = reason == "CLASS_NOT_CONSEQUENTIAL" && (strings.TrimSpace(req.Query) == "" || score > 0 || matches[id] != nil || matchesEntities(record.Entities, req.Entities))
 		if reason != "" {
@@ -449,6 +452,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 				selection.Category = category
 			}
 			if previous, ok := policyKeys[key]; ok && previous != record.Body {
+				evaluation.Reason = "OPEN_CONFLICT"
 				return p, nil, failure("OPEN_CONFLICT", "applicable instructions disagree on a policy key")
 			}
 			policyKeys[key] = record.Body

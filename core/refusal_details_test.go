@@ -48,7 +48,7 @@ func TestRefusedCompileRetainsPartialVisibleDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if refusal.ExplanationVersion != 1 || refusal.TraceComplete || len(refusal.Candidates) != 2 || refusal.ConsideredCount != 2 {
+	if refusal.ExplanationVersion != 2 || refusal.TraceComplete || len(refusal.Candidates) != 2 || refusal.ConsideredCount != 2 {
 		t.Fatalf("missing partial trace: %+v", refusal)
 	}
 	if refusal.AvailableTokens != 256 || refusal.OptionalLimit != 25 || refusal.Ranking != "lexical-scope-recency/4" {
@@ -124,6 +124,158 @@ func TestRefusalDiagnosticRetentionKeepsAnAlignedBoundedPrefix(t *testing.T) {
 	for i := range actual.Considered {
 		if actual.Considered[i].RecordID != ids[i] || actual.Candidates[i].RecordID != ids[i] {
 			t.Fatal("diagnostic prefix diverges from considered references")
+		}
+	}
+}
+
+func TestRefusalRetainsKnownInstructionGate(t *testing.T) {
+	for _, mode := range []string{"", "index"} {
+		for _, gate := range []string{"runtime", "context", "dispute"} {
+			t.Run(mode+"/"+gate, func(t *testing.T) {
+				ctx := context.Background()
+				op, root := testOperator(t)
+				repo := uuid.NewString()
+				draft := projectNote(repo)
+				draft.Kind = "instruction"
+				draft.Sensitivity = "shareable"
+				if gate == "context" {
+					draft.Pins = &Applicability{TaskClass: "repair"}
+				}
+				issued, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: root.ID, Mandatory: true, RequiresRuntime: gate == "runtime", PolicyKey: "required-gate", Reason: "Retain known refusal gate"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if gate == "dispute" {
+					other, err := op.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, err = op.Dispute(ctx, DisputeRequest{uuid.NewString(), []string{issued.RecordID, other.RecordID}, "Synthetic instruction dispute"})
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", AvailableTokens: 64000, Mode: mode}
+				_, err = op.Compile(ctx, req, Destination{"hosted", false})
+				wantCode, wantReason := "POLICY_UNENFORCEABLE", "POLICY_UNENFORCEABLE"
+				if gate == "context" {
+					wantReason = "CONTEXT_MISSING"
+				}
+				if gate == "dispute" {
+					wantCode, wantReason = "OPEN_CONFLICT", "OPEN_CONFLICT"
+				}
+				requireCode(t, err, wantCode)
+				var denied *Error
+				if !errors.As(err, &denied) || denied.RefusalID == "" {
+					t.Fatalf("missing refusal: %v", err)
+				}
+				refusal, err := op.Refusal(ctx, denied.RefusalID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var found *CandidateEvaluation
+				for i := range refusal.Candidates {
+					if refusal.Candidates[i].RecordID == issued.RecordID {
+						found = &refusal.Candidates[i]
+					}
+				}
+				if found == nil || !found.Mandatory || found.Reason != wantReason {
+					t.Fatalf("known gate lost: want mandatory %s, got %+v", wantReason, found)
+				}
+				if refusal.TraceComplete {
+					t.Fatal("aborted scan reported complete")
+				}
+				if mode == "" && gate == "runtime" {
+					// A retry must preserve a previously retained v1 explanation,
+					// even though current compilation now knows more diagnostics.
+					legacy := refusal
+					legacy.ExplanationVersion = 1
+					legacy.Candidates[0].Reason = "EVALUATION_INCOMPLETE"
+					legacy.Candidates[0].Mandatory = false
+					if _, err := op.pool.Exec(ctx, `UPDATE cairn.refusal SET detail=$2 WHERE refusal_id=$1`, legacy.ID, legacy); err != nil {
+						t.Fatal(err)
+					}
+					_, err = op.Compile(ctx, req, Destination{"hosted", false})
+					var retried *Error
+					if !errors.As(err, &retried) || retried.RefusalID != legacy.ID {
+						t.Fatalf("legacy retry identity: %v", err)
+					}
+					stored, err := op.Refusal(ctx, legacy.ID)
+					if err != nil || !reflect.DeepEqual(stored, legacy) {
+						t.Fatalf("legacy explanation rewritten: %+v %v", stored, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestRefusalStopsAtFirstDisputedPolicy(t *testing.T) {
+	for _, mode := range []string{"", "index"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			op, root := testOperator(t)
+			repo := uuid.NewString()
+			for _, body := range []string{"Use the first policy.", "Use the other policy."} {
+				d := projectNote(repo)
+				d.Kind = "instruction"
+				d.Body = body
+				d.Sensitivity = "shareable"
+				if _, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: root.ID, PolicyKey: "same-policy", Mandatory: true, Reason: "Conflicting policy fixture"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := op.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", Mode: mode, AvailableTokens: 64000}, Destination{"hosted", false})
+			requireCode(t, err, "OPEN_CONFLICT")
+			var denied *Error
+			if !errors.As(err, &denied) {
+				t.Fatal(err)
+			}
+			refusal, err := op.Refusal(ctx, denied.RefusalID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(refusal.Candidates) != 1 || refusal.TraceComplete {
+				t.Fatalf("refusal invented evaluation of later positions: %+v", refusal)
+			}
+			for _, e := range refusal.Candidates {
+				if !e.Mandatory || e.Reason != "OPEN_CONFLICT" {
+					t.Fatalf("conflicting position was not labelled: %+v", e)
+				}
+			}
+		})
+	}
+}
+
+func TestRefusalMarksMandatoryCategoryLimitInsteadOfSelection(t *testing.T) {
+	ctx := context.Background()
+	op, root := testOperator(t)
+	repo := uuid.NewString()
+	rules := categoryRules()
+	rules.InstructionLimits.Security.MaxTokens = 5
+	if _, err := op.RevisePolicy(ctx, RevisePolicyRequest{RequestID: uuid.NewString(), Repo: repo, GrantID: root.ID, Rules: rules, Reason: "Bound required category fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	d := projectNote(repo)
+	d.Kind = "instruction"
+	d.Body = "界界"
+	d.Sensitivity = "shareable"
+	if _, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: d, GrantID: root.ID, Mandatory: true, Category: "security", PolicyKey: "category-limit", Reason: "Required category fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"", "index"} {
+		_, err := op.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", Mode: mode, AvailableTokens: 64000}, Destination{"hosted", false})
+		requireCode(t, err, "BUDGET_REFUSED")
+		var denied *Error
+		if !errors.As(err, &denied) {
+			t.Fatal(err)
+		}
+		refusal, err := op.Refusal(ctx, denied.RefusalID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(refusal.Candidates) != 1 || !refusal.Candidates[0].Mandatory || refusal.Candidates[0].Reason != "CATEGORY_BUDGET" {
+			t.Fatalf("known category refusal lost in %q: %+v", mode, refusal.Candidates)
 		}
 	}
 }
