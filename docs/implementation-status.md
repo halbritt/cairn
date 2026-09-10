@@ -17,9 +17,10 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `61627b3`, including reviewed failure
-signature retrieval, proposal version pins and quoted search. The database schema
-is at migration 033; the native OpenCode adapter is updated too.
+The installed CLI and API are clean `9f43b00`, including per-call native search
+context, reviewed failure signatures, proposal version pins and quoted search.
+The database schema remains at migration 033; the native OpenCode adapter is
+updated too.
 
 This snapshot assesses the source changes recorded below and the local installation
 on 2026-09-10. Feature reports below preserve their own verification dates and limits.
@@ -2692,3 +2693,33 @@ preserves that failure separately from the new behavior. No answering model or
 new task-benefit result is claimed. E1 and broader usefulness requirements remain
 partial. CI for preceding documentation commit `52e428b` completed successfully
 in run `34458204478`.
+
+
+### 2026-09-10 — Native search context installed and procedure updated
+
+Committed and pushed `9f43b00de9622793c04cb963e025cb02aab95f0c`. Clean CLI, API and
+project binaries share SHA-256
+`088380580d8d5317e55f26674ecab77b32b301c5eccd2d554bf461de857be44c`.
+The native OpenCode adapter matches source. API PID 1801136 serves the new build;
+PostgreSQL PID 163669, schema 033 and protected configuration/semantic-worker
+hashes are preserved. This change required no database migration.
+
+A fresh installed MCP facade exposes the context argument and retrieves the
+existing task-phase procedure under declared validation context. A subsequent
+search confirms the declaration did not carry forward. Installed native OpenCode
+also retrieves the same note with per-call context and its actual session scope.
+These are native capability checks without answering-model inference or production
+fixture notes; existing MCP processes still need restart for the new schema.
+
+Updated retained procedure `fa323deb-099a-4ced-aac5-b606a51e29a9` from version 2 to
+3 with the new interface and current source pointers. A fresh exact pull verifies
+its body while scope, sensitivity, kind, claim type and applicability are preserved.
+Earlier versions remain retained. Installation and maintenance receipts are in
+the [verification manifest](verification/search-context-2026-09-10.json).
+No additional task-value claim is made.
+
+[CI 34459553174](https://github.com/halbritt/cairn/actions/runs/34459553174)
+completed successfully for installed `9f43b00`: PostgreSQL/race, Python,
+static/build, use-report and authenticated CLI/compact startup checks all passed.
+The final local native check additionally verified all six per-call fields and
+OpenCode's binding/capability name mapping, with fixed-host conflicts refused.

@@ -54,3 +54,22 @@ Pincite final packet `pkt-5bad129a87ea04a6` has validated typed evidence and dec
 receipt with closed citation traces. Seven remaining interface/method-set and
 typed-nil obligations are retained as nonmaterial: no Go interface changes or
 typed-nil absence semantics are introduced.
+
+## Installation
+
+Clean `9f43b00` is installed in the CLI and API; the native OpenCode adapter matches
+source. Schema 033 and the PostgreSQL process are unchanged. Protected connection,
+identity and semantic-worker files retain their previous hashes.
+
+A fresh installed MCP facade exposes the new field, retrieves the existing
+phase procedure with declared validation context, and omits that declaration on
+the next call. Installed native OpenCode retrieves the same note using its actual
+session scope. The retained procedure was subsequently updated from version 2 to
+3 with this interface and source pointers; a fresh pull verifies its exact body
+and preserved metadata. No production fixture or answering-model trial was added.
+Existing MCP processes need restart to load the new tool schema.
+
+[Feature CI 34459553174](https://github.com/halbritt/cairn/actions/runs/34459553174)
+passed every job and step for installed `9f43b00`, including PostgreSQL/race,
+Python, static/build and authenticated CLI checks. Local verification additionally
+exercised actual native OpenCode tools and scripted sessions.

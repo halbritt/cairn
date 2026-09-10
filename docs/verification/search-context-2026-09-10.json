@@ -155,6 +155,242 @@
     {
       "path": "/tmp/cairn-search-context-citations-final.json",
       "sha256": "96d1f8a010137acca87d5a27031661f868021d928771c55307ab1a3a7606677d"
+    },
+    {
+      "path": "/tmp/cairn-search-context-deployment/preflight.json",
+      "sha256": "8a3b94fb9db0a38f65cd9a53cb67559e6950277554416c486a31a6410fd58678"
+    },
+    {
+      "path": "/tmp/cairn-search-context-deployment/installation.json",
+      "sha256": "3aedcdb8f51ae23dbc1fd73950008be6c8f3610fcc2b8fa3a42583ad53af7544"
+    },
+    {
+      "path": "/tmp/cairn-search-context-deployment/installed-check.json",
+      "sha256": "7ff18c4e03d496aa056843ba33221262ee4d3ff2e3b993e522f1403008498a66"
+    },
+    {
+      "path": "/tmp/cairn-search-context-deployment/procedure-update.json",
+      "sha256": "306131660c26177b15114429940e5987cb0958a8c64c152c4b7514b8d5c32d22"
+    },
+    {
+      "path": "/tmp/cairn-search-context-install.py",
+      "sha256": "be325381d0b736dc5beab353a0d18aeacff73e13ab153d08ce730744a7c19496"
+    },
+    {
+      "path": "/tmp/cairn-search-context-installed-check.py",
+      "sha256": "26ae2eb26aa5436e3923d61aac00a4372ef23b51c0dd37af867995ca615ae06e"
+    },
+    {
+      "path": "/tmp/cairn-search-context-deployment/ci.json",
+      "sha256": "f1c4bd37ee96f242e2601297357b19149839fa7cdaa9a01c9ea51742c5cf51f7"
     }
-  ]
+  ],
+  "installation": {
+    "commit": "9f43b00de9622793c04cb963e025cb02aab95f0c",
+    "before": {
+      "cairn-api.service": {
+        "MainPID": "1687910",
+        "ActiveState": "active",
+        "exe_sha256": "4abbca2242bfae4903c9974d8fdd4802bca13177299e3f0fac9c7468a926a20e"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+      "/home/halbritt/.local/share/cairn/identities.json": "4e38155909afe7c58886fc5f789128af8a7230e22a17a32bf615678dd6f38b5d",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "bb97a6690041a004c3385743b3b860394f635995d8b63781501900527b2793cd"
+    },
+    "migration_needed": false,
+    "after": {
+      "cairn-api.service": {
+        "MainPID": "1801136",
+        "ActiveState": "active",
+        "exe_sha256": "088380580d8d5317e55f26674ecab77b32b301c5eccd2d554bf461de857be44c"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "installed_sha256": "088380580d8d5317e55f26674ecab77b32b301c5eccd2d554bf461de857be44c",
+    "version": {
+      "schema": "cairn.build/1",
+      "go_version": "go1.25.0",
+      "module_version": "v0.0.0-20260910091432-9f43b00de962",
+      "vcs": "git",
+      "vcs_revision": "9f43b00de9622793c04cb963e025cb02aab95f0c",
+      "vcs_time": "2026-09-10T09:14:32Z",
+      "vcs_modified": false
+    },
+    "migration": 33,
+    "adapter_sha256": "3d3b60c826cd37406ebc31fa4bbd190f12f018a4ce41fefd546bdeb283f86ea5"
+  },
+  "installed_check": {
+    "source_commit": "9f43b00de9622793c04cb963e025cb02aab95f0c",
+    "facade": {
+      "name": "cairn",
+      "version": "9f43b00de9622793c04cb963e025cb02aab95f0c"
+    },
+    "mcp_context": {
+      "task_phase": "validation"
+    },
+    "native_context": {
+      "task_phase": "validation"
+    },
+    "mcp_receipt": "08b38da2-3b6b-40f6-804b-1dbb3d01a24c",
+    "native_receipt": "2768e323-7978-40a2-b0ec-a82e2f5f2b99",
+    "plain_receipt": "00638d89-e1ec-40af-9eb6-716b504933cc",
+    "context_did_not_carry": true,
+    "exact_existing_note_pull": true,
+    "existing_record_id": "fa323deb-099a-4ced-aac5-b606a51e29a9",
+    "existing_record_version": 2,
+    "native_session_scope": {
+      "repo": "/home/halbritt/git/cairn",
+      "task_id": "opencode/ses_f7565bef1ffeX3ofLgBRLqYsaf",
+      "run_id": "ses_f7565bef1ffeX3ofLgBRLqYsaf"
+    },
+    "answering_model": false,
+    "fixture_notes_created": false
+  },
+  "procedure_maintenance": {
+    "record_id": "fa323deb-099a-4ced-aac5-b606a51e29a9",
+    "previous_version": 2,
+    "current_version": 3,
+    "source_commit": "9f43b00de9622793c04cb963e025cb02aab95f0c",
+    "body_sha256": "76691b96428514f19357928c742cbb91e697ea4f40bcdd3dd14a93596d73db63",
+    "request_id": "04bad49b-0eea-407b-9676-0f89e87d84a1",
+    "receipt_id": "f7774ad7-0f1f-4457-a886-788f1a49286b",
+    "metadata_preserved": true,
+    "exact_fresh_pull": true
+  },
+  "ci": {
+    "run_id": 34459553174,
+    "source_commit": "9f43b00de9622793c04cb963e025cb02aab95f0c",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "completedAt": "2026-09-10T09:17:16Z",
+        "conclusion": "success",
+        "databaseId": 102813854888,
+        "name": "postgres",
+        "startedAt": "2026-09-10T09:14:40Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-09-10T09:14:42Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-09-10T09:14:41Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T09:14:57Z",
+            "conclusion": "success",
+            "name": "Initialize containers",
+            "number": 2,
+            "startedAt": "2026-09-10T09:14:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T09:14:58Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "number": 3,
+            "startedAt": "2026-09-10T09:14:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T09:15:10Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff",
+            "number": 4,
+            "startedAt": "2026-09-10T09:14:58Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T09:16:48Z",
+            "conclusion": "success",
+            "name": "Run go test -race -count=1 -p 1 ./...",
+            "number": 5,
+            "startedAt": "2026-09-10T09:15:10Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T09:16:58Z",
+            "conclusion": "success",
+            "name": "Run python3 -B -m unittest discover -s scripts -p 'test_*.py'",
+            "number": 6,
+            "startedAt": "2026-09-10T09:16:48Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T09:17:01Z",
+            "conclusion": "success",
+            "name": "Run make check build",
+            "number": 7,
+            "startedAt": "2026-09-10T09:16:58Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T09:17:02Z",
+            "conclusion": "success",
+            "name": "Run CAIRN_DATABASE_URL=\"$CAIRN_TEST_DATABASE_URL\" python3 scripts/check_use_report.py bin/cairn",
+            "number": 8,
+            "startedAt": "2026-09-10T09:17:01Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T09:17:13Z",
+            "conclusion": "success",
+            "name": "Check authenticated CLI and compact startup",
+            "number": 9,
+            "startedAt": "2026-09-10T09:17:02Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T09:17:13Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff",
+            "number": 16,
+            "startedAt": "2026-09-10T09:17:13Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T09:17:14Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "number": 17,
+            "startedAt": "2026-09-10T09:17:13Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T09:17:14Z",
+            "conclusion": "success",
+            "name": "Stop containers",
+            "number": 18,
+            "startedAt": "2026-09-10T09:17:14Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T09:17:14Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 19,
+            "startedAt": "2026-09-10T09:17:14Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/halbritt/cairn/actions/runs/34459553174/job/102813854888"
+      }
+    ]
+  }
 }
