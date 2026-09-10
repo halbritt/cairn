@@ -65,3 +65,27 @@ test-first feedback, preservation of historical behavior and reuse of the existi
 allocation owner. Four remaining interface obligations are nonmaterial: this
 feature introduces no Go interface or package dependency. Typed evidence and the
 decision receipt were schema-validated, and both consumption observations closed.
+
+
+## Local installation
+
+Installed clean `032b9c7` as CLI and API after an operational backup with its
+checkpoint/catalog. API PID 680757 runs the installed executable; PostgreSQL
+PID 163669, migrations 001–030, the semantic worker and connection settings remain.
+The installed native adapter matches the bundled source. Existing MCP processes
+retain their original tool schema; fresh conversations load the new binary.
+[Exact-source CI](https://github.com/halbritt/cairn/actions/runs/34430333159) passed.
+
+The live query's six-result unpaged response is unchanged. Ranked pages reach
+18 distinct lexical matches across four pages (5/5/5/3), with an exact body pull
+from a later page. The first paged response contains fewer entries because paging
+stops at the first candidate that requires another page; unpaged packing can skip
+that candidate and fit a smaller later entry.
+
+The real installed semantic worker reaches 20 distinct notes in four pages. Its
+model, algorithm and complete candidate-score digest match across all four calls.
+The first takes 15.558 seconds; later pages take 0.054/0.055/0.056 seconds through
+the existing vector cache. This does not add a latency optimization or assess
+which neighbours answer the question. No operational note was changed and no
+answering-model task was launched. Metadata and raw operational responses remain
+under `/tmp/cairn-search-pages-deployment/`; only selected metadata is in Git.

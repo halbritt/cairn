@@ -29,7 +29,7 @@ the current summary; do not replace the historical record.
 | Area | Implemented behavior | Details |
 | --- | --- | --- |
 | Ordinary memory | Authenticated capture of selected notes up to 64 KiB with room for JSON escaping, retained versions and attribution, repository/task/run scope, compare-and-swap edits, body-only corrections that preserve metadata, and authenticated retained-version inspection. | [Capture and use](../README.md), [ordinary revision](mcp.md#tools), [record history](record-history.md) |
-| Retrieval | Lexical search with optional kind selection, matching previews with source byte positions, bounded browsing with continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
+| Retrieval | Lexical search with optional kind selection, matching previews with source byte positions, ranked and browse continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
 | Semantic discovery | Optional local CPU scoring for vocabulary mismatches, after eligibility checks; bounded work and labelled lexical fallback. Historical recompilation uses retained scores. | [Semantic discovery](semantic-discovery.md) |
 | Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, citation-time digests and optional byte passages on qualified claim versions, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [precise citations](evidence-citations.md), [span verification](verification/evidence-spans-2026-09-09.md) |
 | Harness access | Five ordinary tools for search, body/evidence pulls, capture and edit through MCP; Codex conversation scope and native OpenCode session scope. OpenCode configuration generation and a bundled native-tool installer are shipped; Claude configuration and all five tools have scripted native-session verification with explicit scope. | [MCP](mcp.md), [OpenCode tools](opencode-tools.md) |
@@ -181,17 +181,13 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI: clean `397750b7ba886fc67dfb2159f8b2976e484bbc6b`, SHA-256
-  `bf680a75cf5165fc76ca6b7c842a564b3df24b5b5c7e7684e1065a2952fdb7bc`.
-  Explicitly empty capture pins refuse before an API request.
-  Ordinary capture now accepts explicit applicability through CLI/MCP and the
-  matching installed native OpenCode adapter. Fresh MCP processes load the new
-  tool schema; existing sessions retain their original process.
-- API remains clean `8f6864a0555097be6d99bb3ccd4592701f8c2316`, SHA-256
-  `1a83019ee4645662225778cf0bd7df690006943509ba7c1e4b7852337b450f07`, PID 430775.
-  It already supports all captured pins. PostgreSQL remains PID 163669; this
-  adapter-only extension required neither migration nor API restart. Both direct
-  readers support phase; earlier pre-phase binaries remain unsuitable for phase data.
+- Installed CLI and API: clean `032b9c7a6b135b11f38cc2ddc408a9518b5c5848`, SHA-256
+  `5b1123987348931eeb914907bf2e77bc78cd74b5688b10b969e82a4262e52005`; API PID 680757.
+  Ranked search pagination is available through CLI/MCP and the matching native
+  OpenCode adapter. Fresh MCP processes load the new optional-offset schema;
+  existing conversations retain their original process. Capture pins and phase
+  support remain. PostgreSQL remains PID 163669; no migration was required.
+  Earlier pre-phase binaries remain unsuitable for phase data.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -203,7 +199,7 @@ Live checks on 2026-09-09 found:
   Agent and observer roles remain separate. The trusted project's Codex MCP
   configuration exposes all five ordinary tools with conversation scope and
   optional startup. The installed native OpenCode adapter matches the current
-  capture-pins-capable source and retains its existing connection settings.
+  ranked-pagination source and retains its existing connection settings.
 - Optional semantic discovery uses the prepared local CPU model, batch size one
   and two ONNX threads, through the API-owned `worker-stream` launcher. The script
   SHA-256 is `80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9`
@@ -213,11 +209,14 @@ Live checks on 2026-09-09 found:
   took about 14 seconds. Candidate scores matched. No persistent cache, package
   update or independent service was added; the one-shot launcher remains available.
 
+The [ranked-page installation](verification/search-pages-2026-09-09.md#local-installation)
+records the current CLI/API and adapter, live continuation and exact-source CI.
 The [vector-cache installation](verification/semantic-vector-cache-2026-09-09.md#installed-live-behavior)
-records the current worker and observed cost. The [capture installation](verification/capture-pins-2026-09-09.md#local-installation)
-records the adapter and preceding CLI; its [empty-pins correction](verification/capture-pins-2026-09-09.md#correction-explicitly-empty-cli-pins)
-records the current CLI. The [phase installation](verification/task-phase-2026-09-09.md#local-installation)
-retains the API reader upgrade and preserved settings.
+records the current worker and its earlier cost comparison. The
+[capture installation](verification/capture-pins-2026-09-09.md#local-installation),
+[empty-pins correction](verification/capture-pins-2026-09-09.md#correction-explicitly-empty-cli-pins)
+and [phase installation](verification/task-phase-2026-09-09.md#local-installation)
+retain the preceding deployments and preserved settings.
 The [file-fingerprint installation](verification/run-artifact-evidence-2026-09-09.md#local-installation)
 retains its preceding CLI deployment and real build observation. The
 [applicability repair installation](verification/applicability-precedence-2026-09-09.md#local-installation)
@@ -1904,3 +1903,20 @@ freshness investigation exposed the navigation limit but its relevant note was
 already on the first page. No task rescue, better ranking or cumulative value
 is claimed. Runtime deployment is recorded separately below when verified.
 [Report](verification/search-pages-2026-09-09.md).
+
+
+### 2026-09-09 — Ranked-page installation and live continuation
+
+Installed clean `032b9c7` as CLI/API and the bundled native OpenCode adapter after
+an operational catalog-backed backup. API PID680757 runs the installed executable;
+PostgreSQL PID163669, migrations001–030, semantic worker d633c68 and connection
+settings remain. No operational note was changed. Exact-source CI34430333159 passed.
+
+The existing live query keeps its six-result unpaged response. Ranked pages reach
+18 distinct lexical matches across four pages (5/5/5/3), and a later-page body pull
+matches its indexed version and hash. Semantic pages reach20 distinct notes in
+four pages with an unchanged complete candidate-score digest:15.558seconds cold,
+then0.054/0.055/0.056seconds using the existing cache. These are navigation and
+runtime observations, not new relevance or answering-task evidence. Private local
+artifacts: /tmp/cairn-search-pages-deployment/. The verification report retains
+installation hashes, backup identity, limitations and CI state.
