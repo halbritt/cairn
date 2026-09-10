@@ -1982,7 +1982,7 @@ is claimed. Runtime deployment is recorded separately below when verified.
 
 Installed clean `032b9c7` as CLI/API and the bundled native OpenCode adapter after
 an operational catalog-backed backup. API PID680757 runs the installed executable;
-PostgreSQL PID 163669, migrations001–030, semantic worker d633c68 and connection
+PostgreSQL PID163669, migrations001–030, semantic worker d633c68 and connection
 settings remain. No operational note was changed. Exact-source CI34430333159 passed.
 
 The existing live query keeps its six-result unpaged response. Ranked pages reach
@@ -2476,3 +2476,18 @@ worker ready, and an exact pull plus matching byte span for the existing
 applicability-precedence note v1. No operational notes were rewritten. This is
 installation and retrieval evidence, not a completed model task or new value
 claim. CI 34451418062 remains in progress at this entry.
+
+
+### 2026-09-10 — Quoted search CI passed and history formatting restored
+
+[CI 34451418062](https://github.com/halbritt/cairn/actions/runs/34451418062)
+completed successfully for installed `7dcf3dc`. PostgreSQL/race tests, 40 Python
+tests, static/build checks and authenticated CLI/stdio workflows passed. Local
+native OpenCode and actual previous-binary compatibility checks are recorded in
+the feature report. E1's structured intent work and the broader task-value goal
+remain open.
+
+A spacing cleanup in deployment documentation also changed one older status line
+in `4683a29`. The history-preservation check detected it; the original line has
+been restored exactly. The check now confirms that the full history through
+`7dcf3dc` remains intact, followed by these deployment and CI additions.
