@@ -2221,3 +2221,13 @@ alongside ENOENT, with other errors and live descendants still rejected. Ten
 race-enabled repetitions and static checks pass; production worker code is
 unchanged. The ignored project `bin/cairn` was also refreshed to the installed
 clean e5ebcbd build to avoid leaving a documented old writer in the checkout.
+
+
+### 2026-09-09 — Ordinary citation follow-up CI passed
+
+[CI 34437354625](https://github.com/halbritt/cairn/actions/runs/34437354625) completed successfully for f9e4836, including full
+Go race coverage, 40 Python tests, static/build checks and authenticated CLI/stdio
+workflows. Production source is identical to installed e5ebcbd; the follow-up only
+changes the process-disappearance test and documentation. The earlier failed CI
+and its correction remain in this history. Native OpenCode verification remains
+the separately recorded successful local run.

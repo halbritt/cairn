@@ -221,7 +221,17 @@
       {
         "path": "/tmp/cairn-ordinary-citations-ci-repair-check.log",
         "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+      },
+      {
+        "path": "/tmp/cairn-ordinary-citations-deployment/ci-correction.json",
+        "sha256": "f0f05cf1ef53eaf28d0a05632d229ccd4cf5c107f799574dfc8169927913dc13"
       }
-    ]
+    ],
+    "successful_run": {
+      "conclusion": "success",
+      "headSha": "f9e4836f3697c67251ced593134b6f0647afc7da",
+      "status": "completed",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34437354625"
+    }
   }
 }

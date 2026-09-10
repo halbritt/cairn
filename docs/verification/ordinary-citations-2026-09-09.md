@@ -136,3 +136,10 @@ The ignored project `bin/cairn` was also an older build. It is now the same clea
 `e5ebcbd` executable as the installed CLI/API, so the documented project CLI does
 not accidentally edit away ordinary references. The previous binary is retained
 only in the task's deployment backup directory.
+
+
+[Follow-up CI](https://github.com/halbritt/cairn/actions/runs/34437354625) completed successfully for `f9e4836f3697c67251ced593134b6f0647afc7da`:
+the full Go race suite, 40 Python tests, static checks/build, CLI history and
+authenticated CLI/stdio workflows pass. This commit changes only the process test
+and documentation relative to installed `e5ebcbd`; production code is identical.
+The earlier failed CI observation remains above.
