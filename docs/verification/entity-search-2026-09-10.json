@@ -112,6 +112,107 @@
     {
       "path": "/tmp/cairn-entities-20260910/doctrine-verified.json",
       "sha256": "e0109512dbd6089e8eecf230c5cdb604a4a49750c2777b713043ead71a7c0e6a"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/deployment/installation.json",
+      "sha256": "2d5b3cfbc206c2dfe185550612fc829fb8d07150d2a21333d04187a12d8c04d3"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/deployment/adoption.json",
+      "sha256": "84b3c935861de61779e08873a19ce2cad946f464da393c323048c00bb1f41bed"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/deployment/codex/report.json",
+      "sha256": "0a041250e7de317e71d84e0f79d3cb0b9514c90600bdaadbdd8c7257189b2dc4"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/deployment/opencode-report.json",
+      "sha256": "fb51fa7179a9b79543984f98a2173fee3ad7f50d1f4fbc4bbe2950fcca61a4cc"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/ci.json",
+      "sha256": "d3c1ae7367448520dd2b2d1d4364807accb86d9c952fba4ac4d446b3bc367b3f"
     }
-  ]
+  ],
+  "source_commit": "3ff1fcd435121d5873f8890a2a5396ac5ed275d9",
+  "installation": {
+    "binary_sha256": "695b3fe7826a649dce3340544a6e8ec926369fe21c823faf690b17be6c3f9cdb",
+    "adapter_sha256": "9657accb96b84627ad50b1d51c25cfd8a99aaa997289c3bf4261ad6fceed4aa0",
+    "migration": 34,
+    "api_pid": "3062046",
+    "store_pid_unchanged": true,
+    "configuration_hashes_preserved": true,
+    "backup_sha256": "4044bebd88d8543e6126a54cd96f282c425e65f14a709110351ea80bc6e656e3"
+  },
+  "live_adoption": {
+    "record_id": "81751203-8768-49ee-bfce-895efb69889d",
+    "previous_version": 1,
+    "current_version": 2,
+    "body_sha256": "617555818bf48ce98cdfdfb3204c4cbf821685e6d718c1006c4ab96dd26374ca",
+    "body_and_other_metadata_preserved": true,
+    "entities": [
+      {
+        "kind": "file",
+        "name": "core/currentness.go"
+      },
+      {
+        "kind": "symbol",
+        "name": "core.applicabilityReason"
+      }
+    ],
+    "quoted_returned_entries": 5,
+    "entity_only_returned_entries": 1,
+    "exact_edit_retry": true,
+    "prior_body_retained": true,
+    "selection_receipt": "f7cf55f1-21f1-4244-9651-602036dd24d3",
+    "claim": "Explicit association lookup on an existing note; no incremental task-value claim"
+  },
+  "live_native": [
+    {
+      "codex_version": "codex-cli 0.153.4",
+      "thread_id": "01a08c70-56e4-79c1-9980-1c2d53a2b404",
+      "record_id": "81751203-8768-49ee-bfce-895efb69889d",
+      "version": 2,
+      "body_sha256": "617555818bf48ce98cdfdfb3204c4cbf821685e6d718c1006c4ab96dd26374ca",
+      "entities": [
+        {
+          "kind": "file",
+          "name": "core/currentness.go"
+        },
+        {
+          "kind": "symbol",
+          "name": "core.applicabilityReason"
+        }
+      ],
+      "project_configuration_used": true,
+      "mcp_overrides": false,
+      "model_turns": 0,
+      "ephemeral": true
+    },
+    {
+      "opencode_version": "1.18.21",
+      "record_id": "81751203-8768-49ee-bfce-895efb69889d",
+      "version": 2,
+      "body_sha256": "617555818bf48ce98cdfdfb3204c4cbf821685e6d718c1006c4ab96dd26374ca",
+      "entities": [
+        {
+          "kind": "file",
+          "name": "core/currentness.go"
+        },
+        {
+          "kind": "symbol",
+          "name": "core.applicabilityReason"
+        }
+      ],
+      "model_calls": 0,
+      "mode": "actual native debug tool execution, no answering model",
+      "adapter_sha256": "9657accb96b84627ad50b1d51c25cfd8a99aaa997289c3bf4261ad6fceed4aa0"
+    }
+  ],
+  "ci": {
+    "run": 34510287787,
+    "url": "https://github.com/halbritt/cairn/actions/runs/34510287787",
+    "conclusion": "success",
+    "all_steps": "success"
+  }
 }

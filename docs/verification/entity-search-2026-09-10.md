@@ -66,3 +66,26 @@ outside the repository. Pincite's preservation and risk-driven-test guidance
 informed the checks; its remaining modeling/interface obligations are explicitly
 nonmaterial to this bounded value-reference feature. They do not establish the
 larger goal's completion.
+
+
+## Local installation and use
+
+Clean `3ff1fcd` is installed in the CLI and running API, with migration 034 and
+the updated OpenCode adapter. A catalogued PostgreSQL backup preceded migration;
+the API restarted while the store process stayed in place. Existing connection,
+identity and semantic-worker configuration hashes are preserved.
+
+The ordinary hosted profile added associations to the existing applicability
+lesson as v2, preserving its body and other draft metadata. The earlier quoted
+lookup returned five previews; entity-only lookup returned this one note. The
+request retry and retained v1 body were checked. This illustrates explicit
+association filtering, with manual selection and maintenance still required.
+
+Fresh Codex 0.153.4 app-server/MCP access searched by file and actual OpenCode
+1.18.21 custom-tool access searched by symbol. Both pulled the same v2 source and
+body digest. The current project configuration and installed adapter were used;
+no answering-model turn was launched. Raw note bodies and operational receipts
+stay outside Git; the manifest records installation and check identities.
+
+GitHub Actions [run 34510287787](https://github.com/halbritt/cairn/actions/runs/34510287787)
+completed successfully for `3ff1fcd`; every job step was inspected.

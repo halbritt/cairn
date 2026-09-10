@@ -17,12 +17,13 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `72e7c24`, including a host-selected idle
+The installed CLI and API are clean `3ff1fcd`, including explicit versioned file
+and symbol associations, entity search intent, and a host-selected idle
 lifetime (five minutes here; the default remains thirty seconds), a
 twenty-five-second semantic worker budget, native retained history,
 argument Unicode validation, per-call search context, reviewed failure signatures,
 proposal version pins and quoted search.
-The database schema remains at migration 033; the native OpenCode adapter is
+The database schema is at migration 034; the native OpenCode adapter is
 updated too.
 
 This snapshot assesses the source changes recorded below and the local installation
@@ -53,6 +54,14 @@ task acceptance. Native conversation/session scope does not identify individual
 execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
+
+- **File and symbol associations distinguish deliberate links from mentions.**
+  Ordinary capture/search/edit/history now carry explicit versioned associations.
+  The existing applicability lesson is retrieved and pulled by its file in Codex
+  and its symbol in OpenCode, with identical source version and body hash.
+  Body-only edits preserve associations; scope, authority and historical replay
+  retain their boundaries. Automatic host context collection and task benefit
+  remain open. [Contract](entity-search.md), [verification and installation](verification/entity-search-2026-09-10.md).
 
 - **Spaced semantic follow-ups reuse cached vectors.** After a 35-second pause,
   a five-minute host lifetime reduced one follow-up from 24.851 to 0.063 seconds
@@ -3273,3 +3282,38 @@ intent collection, rename continuity or durable task-value acceptance. The
 fixture demonstrates the intended distinction, not representative retrieval
 quality or incremental model benefit. No answering-model task was run.
 See [contract](entity-search.md) and [checks, failures and limits](verification/entity-search-2026-09-10.md).
+
+
+### 2026-09-10 — Install entity retrieval and use it through both native harnesses
+
+Installed clean `3ff1fcd435121d5873f8890a2a5396ac5ed275d9` in the local CLI,
+project binary and running API. Migration 034 followed a catalogued database
+backup. The API was stopped for the upgrade and restarted as PID 3062046;
+PostgreSQL PID 163669 stayed unchanged. The updated native OpenCode adapter is
+installed. Existing Codex/OpenCode connection settings, identity configuration,
+semantic worker and five-minute host idle setting retain their prior hashes.
+Binary SHA-256: `695b3fe7826a649dce3340544a6e8ec926369fe21c823faf690b17be6c3f9cdb`.
+
+Used the ordinary hosted profile to associate the existing applicability lesson
+with `core/currentness.go` and `core.applicabilityReason`. This created v2 while
+preserving the complete body and all other supplied draft metadata. Exact edit
+retry returned the same version, and the v1 body remains readable without the new
+associations. The earlier quoted lookup returned five previews; explicit
+entity-only lookup returned the one associated note. These different queries
+illustrate the association contract, not comparative general retrieval quality.
+An initial live probe used flag syntax for JSON-only history; it was corrected
+and resumed using the retained edit request, without another note revision.
+
+Fresh Codex 0.153.4 app-server/MCP access using the project configuration searched
+by file; actual OpenCode 1.18.21 custom-tool access searched by symbol. Both pulled
+the same v2 source and unchanged body hash. Neither involved an answering-model
+turn. These establish installed access through two harnesses, not incremental
+model-task value or full E1 completion.
+
+Installation and selected operational notes remain private under
+`/tmp/cairn-entities-20260910/deployment/`. The repository retains the compact
+[verification manifest](verification/entity-search-2026-09-10.json) and report.
+
+GitHub Actions run `34510287787` completed successfully for `3ff1fcd`, including
+Go race tests, Python tests, static/build checks and authenticated CLI/startup
+verification. Every job step was inspected.
