@@ -597,6 +597,12 @@ pulled A note through the existing authenticated edit contract. This closes the
 MCP correction-interface gap exposed by the configuration procedure revision;
 independent agent review and automatic learning remain open.
 
+[Selected append updates](local-api.md#append-selected-guidance) add guidance to
+an active A note without reproducing its existing body. The same edit tool retains
+version checks, metadata and citation preservation, bounded bodies and exact
+retries. This addresses additive maintenance only; consolidation, contradiction
+review and demonstrated sustained task value remain separate work.
+
 An [operational note review](verification/operational-note-review-2026-09-09.md)
 corrected an ambiguous OpenCode permission example and updated both harness
 procedures with the deployed discovery options. Fresh native clients pulled the

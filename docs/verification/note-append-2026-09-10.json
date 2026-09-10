@@ -1,0 +1,105 @@
+{
+  "schema": "cairn.note-append-verification/1",
+  "date": "2026-09-10",
+  "baseline_commit": "eb2ed97139b37e1faeeb9e6b120907c4545fad34",
+  "migration": 34,
+  "new_mcp_tools": 0,
+  "model_runs": 0,
+  "operational_records_mutated": false,
+  "task_value": "Exact additive maintenance capability; independent downstream value and net cost unmeasured",
+  "checks": [
+    {
+      "path": "/tmp/cairn-note-append-20260910/api-red.log",
+      "sha256": "4200adc261183c2fb99b1afe05b04a04d9027aa97593793f6e4dc857bb557065"
+    },
+    {
+      "path": "/tmp/cairn-note-append-20260910/api-green.log",
+      "sha256": "353a84b1004d565381852b134afc9c14f7ed31d302346383149040e3b27c53c1"
+    },
+    {
+      "path": "/tmp/cairn-note-append-20260910/core.log",
+      "sha256": "01b2789f8d29f55030b8009cadb7d88322836fddddae1490e206da9ec184ee04"
+    },
+    {
+      "path": "/tmp/cairn-note-append-20260910/core-green.log",
+      "sha256": "9c071662bb3c18c209478f83f84550bed7fe8b09368322e60c7b44433ef8e41e"
+    },
+    {
+      "path": "/tmp/cairn-note-append-20260910/integration-fixture-failures.log",
+      "sha256": "8bac4765e2756a25ce9d04a3424c18ab99872413007b12d6ad84b2a56dcd01ab"
+    },
+    {
+      "path": "/tmp/cairn-note-append-20260910/integration-fixture-policy-failure.log",
+      "sha256": "ee2957c8a4117cce0274007f2e0e2ed5125bba54d4a481e9c495a0794a8e9cca"
+    },
+    {
+      "path": "/tmp/cairn-note-append-20260910/integration.log",
+      "sha256": "0a635c851faf3854cecc869e622ff8eaaaa0accee651e5543ce73b3e6fce8ef4"
+    },
+    {
+      "path": "/tmp/cairn-note-append-20260910/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-note-append-20260910/python.log",
+      "sha256": "aabd71d937b8701a2444c8c616166fcaeace6ac170f519ff55903534c166933c"
+    },
+    {
+      "path": "/tmp/cairn-note-append-20260910/native-stale-helper-failure.log",
+      "sha256": "4cb3a9005e1e9606b4eada2086d4770bbdff343b420bf290951296608354fc9c"
+    },
+    {
+      "path": "/tmp/cairn-note-append-20260910/native.log",
+      "sha256": "37fb6f01dce4ea2957ffa5d8505d7fe203bd04deafc83a6e31edfe46999cab33"
+    },
+    {
+      "path": "/tmp/cairn-note-append-20260910/decision-receipt.json",
+      "sha256": "efb087a9d3387378331a1ee49ba07f6cba743a07904aba4b4c20ad2c2f9e1ae7"
+    }
+  ],
+  "production_source_sha256": {
+    "core/revise.go": "7de61ce2534ff87a51a51db9b8ca53692b11a3669cd777c3b67b995a71fd0dc7",
+    "localapi/server.go": "6f54c92ea63c670047d252124d584647acb27abad98f71e001d92548ca6e70f5",
+    "localapi/request_limit.go": "b164606d4f54be58b7c63ec2df117e899661961871871b77264f3d9213f06ca3",
+    "cmd/cairn/commands.go": "111161491178088fd41304b6e58d39ac8270c205aceac6771a3eafebf53615f9",
+    "cmd/cairn/agent.go": "92f5ab4ebaed4e07759e571458989971af394ad4d31996467bfcb2a19f059b24",
+    "mcpapi/server.go": "d0dfd62e8a52dbd7e25fff4bd67d49b4130f60a1fd7f472dd8f39585dc3c0a41",
+    "integrations/opencode/cairn.ts": "4ab4712cbfd92d034aaa78aec7dffa0b9a8fd2baec103c1525966624944f28d3"
+  },
+  "doctrine": {
+    "packet_id": "pkt-60a6733bfe653db3",
+    "packet_sha256": "60a6733bfe653db35d8e413697e218a229b676c98f424acf7be6c6486bed906c",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "missing_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface is added or moved; callers use the existing concrete Store and API. A substitution boundary is outside this change."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface is added or moved; callers use the existing concrete Store and API. A substitution boundary is outside this change."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface is added or moved; callers use the existing concrete Store and API. A substitution boundary is outside this change."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface is added or moved; callers use the existing concrete Store and API. A substitution boundary is outside this change."
+      }
+    ],
+    "decision_receipt_validated": true,
+    "citation_loops_closed": true
+  }
+}

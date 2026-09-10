@@ -61,14 +61,14 @@ explicit token path is not replaced with the default token. The agent client
 never opens the database. Use the same request UUID for a transport retry. The
 server has bounded request bodies and deadlines; an HTTP write failure does not roll back a committed mutation.
 
-Encoded JSON limits are 512 KiB for ordinary `create`, `edit` and `revise`,
+Encoded JSON limits are 512 KiB for ordinary `create`, `edit`, `revise` and `append`,
 8 MiB for `evidence`, and 128 KiB for other API operations. The larger envelopes
 accommodate the existing 64 KiB decoded note and 1 MiB decoded evidence limits,
 including JSON escaping and metadata. They do not increase stored source sizes
 or retrieval budgets. The agent CLI, API client and server share these limits;
 the store still validates size, repository and sensitivity. `agent remember`
 uses `create`; native capture/edit tools use these same operations. Trusted local
-JSON `create`, `edit` and `revise` also accept 512 KiB envelopes.
+JSON `create`, `edit`, `revise` and `append` also accept 512 KiB envelopes.
 Update both API and CLI before sending larger requests. Existing accepted requests
 and their retry identities retain their behavior. Oversized envelopes, including
 excess trailing whitespace, are refused before a write or retry reservation.
@@ -135,7 +135,7 @@ Authenticated `version` takes `{}` and reports the running API executable withou
 reading repository data. `cairn agent ... version` also reports its own CLI build
 and needs no stdin request. [Build identity and limitations](build-identity.md).
 
-Operations: `create`, `edit`, `revise`, `cite`, `delete`, ordinary `supersede`, `compile`, `recompile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
+Operations: `create`, `edit`, `revise`, `append`, `cite`, `delete`, ordinary `supersede`, `compile`, `recompile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, `assessments`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `run-package`, `run-index`, `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
@@ -260,6 +260,43 @@ a new request based on an old version returns `VERSION_CONFLICT`. Read and
 reconcile before submitting another revision. Full `edit` remains available when
 changing other ordinary draft content is intentional. Upgrade the API and clients
 together before using `revise` or the native edit tools' body-only form.
+
+
+### Append selected guidance
+
+`POST /v1/append` accepts the same fields as `revise`, but `body` is a suffix.
+It adds those bytes verbatim to the expected current version, preserving the
+existing body, draft metadata and source citations. Supply separating whitespace
+in the suffix. The suffix must contain non-whitespace text and the combined body
+must fit 65,536 UTF-8 bytes. Overflow is refused without writing a version.
+
+The same JSON works through `cairn agent append` and operator `cairn append`.
+The native MCP and OpenCode `cairn_edit` tools use `append` instead of `body`
+to select this mode:
+
+```json
+{
+  "request_id": "NEW_REQUEST_UUID",
+  "record_id": "PULLED_RECORD_UUID",
+  "expected_version": 3,
+  "append": "\n\nAdditional source-checked guidance.\n"
+}
+```
+
+Supply exactly one of `body`, `append`, `draft` or `evidence_citations` to the
+native tool. The API returns only `record_id` and `version`; native tools also
+return the request ID. The old body is not echoed. Exact retries return the
+original revision even after later edits, without adding the suffix twice.
+A changed suffix under the same request UUID conflicts. A stale expected version
+requires a fresh read and reconciliation. Concurrent edits cannot silently replace
+one another. Only active ordinary A records can be appended to; scope, sensitivity
+and authority remain unchanged. Citations are retained, including degraded ones;
+an appended sentence does not acquire verified support from that preservation.
+
+Read the current note and check the addition against its guidance and sources.
+Use append for a selected additive update; use replacement for corrections or
+consolidation. Appending does not remove contradictions, obsolete guidance or
+redundancy. Upgrade the CLI, API and adapter together before using this mode.
 
 
 ### Ordinary source citations

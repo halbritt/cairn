@@ -109,6 +109,37 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		}
 		return json.RawMessage(body)
 	}
+	t.Run("append", func(t *testing.T) {
+		original := "Preserved instructions.\r\n日本語  "
+		var saved recordWriteResult
+		if err := json.Unmarshal(invoke("cairn_remember", map[string]any{"request_id": uuid.NewString(), "body": original, "shareable": true}, ""), &saved); err != nil {
+			t.Fatal(err)
+		}
+		suffix := "\n\nSelected addition.\n"
+		args := map[string]any{"request_id": uuid.NewString(), "record_id": saved.RecordID, "expected_version": 1, "append": suffix}
+		result := invoke("cairn_edit", args, "")
+		var revision recordWriteResult
+		if err := json.Unmarshal(result, &revision); err != nil || revision.Version != 2 || strings.Contains(string(result), "body") {
+			t.Fatalf("append response: %s %v", result, err)
+		}
+		if string(invoke("cairn_edit", args, "")) != string(result) {
+			t.Fatal("append retry changed")
+		}
+		got, err := op.Get(ctx, saved.RecordID)
+		if err != nil || got.Version != 2 || got.Body != original+suffix {
+			t.Fatalf("append bytes: %+v %v", got, err)
+		}
+		for _, field := range []string{"body", "draft", "evidence_citations"} {
+			args[field] = map[string]any{"body": "ambiguous", "draft": got.Draft, "evidence_citations": []core.EvidenceCitationRequest{}}[field]
+			invoke("cairn_edit", args, "supply exactly one")
+			delete(args, field)
+		}
+		args["append"] = 5
+		invoke("cairn_edit", args, "string")
+		if _, err := op.Delete(ctx, core.DeleteRequest{RequestID: uuid.NewString(), RecordID: saved.RecordID, ExpectedVersion: 2}); err != nil {
+			t.Fatal(err)
+		}
+	})
 	phaseNote := invoke("cairn_remember", map[string]any{
 		"request_id": uuid.NewString(), "body": "phaseguide: check the patch before delivery",
 		"kind": "procedure", "shareable": true, "pins": map[string]string{"task_phase": "validation"},

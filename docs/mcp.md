@@ -56,7 +56,7 @@ searches without a context object.
 | `cairn_pull` | Pass an entry's `pull_arguments` unchanged for the full body. Add `span: {offset: 0, length: 4096}` for a partial A/B source, or copy the entry's `summary_span` to read its exact preview source bytes. Use a new request UUID for each range. Reuse identical arguments for retries. Instructions require whole delivery. |
 | `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its full-object `expected_sha256`, and a retry `request_id`. Optional `span: {offset: 0, length: 4096}` selects at most that many bytes. Shares the body's expansion credits and bytes. |
 | `cairn_remember` | `body` and a stable UUID `request_id`; optional `kind`, `shareable` and explicit `pins`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |
-| `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and exactly one of `body`, a complete replacement `draft`, or `evidence_citations` to replace source references (`[]` clears them). Revises an active A note; text edits preserve citations. See [ordinary citations](evidence-citations.md#ordinary-notes). Returns identifiers without echoing the body. |
+| `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and exactly one of `body`, `append` (a verbatim suffix), a complete replacement `draft`, or `evidence_citations` to replace source references (`[]` clears them). Revises an active A note; text edits preserve citations. See [ordinary citations](evidence-citations.md#ordinary-notes). Returns identifiers without echoing the body. |
 | `cairn_history` | `record_id` with optional `limit`/`before_version` for retained metadata, or positive `version` for one exact body. Historical comparison only; no current eligibility or authority. Uses configured repository, authenticated destination and the tool output budget. See [retained history](record-history.md#native-tools). |
 
 When the vocabulary of a saved note is unknown, call `cairn_search` with
@@ -98,7 +98,10 @@ To correct a saved note, search and pull its current body first. For a text-only
 correction, call `cairn_edit` with `record_id`, `expected_version`, a stable
 `request_id` UUID and the new `body`. Cairn preserves kind, scope, sensitivity,
 pins, relations and delegation attribution from that exact version. The new
-version records the authenticated writer. Supply exactly one of `body` or `draft`.
+version records the authenticated writer. Supply exactly one of `body`, `append`, `draft` or `evidence_citations`.
+For a selected additive update, use `append` with the suffix and any separating
+whitespace; existing text is preserved. The combined body must fit 65,536 bytes.
+See [append selected guidance](local-api.md#append-selected-guidance).
 
 For a full replacement through `cairn_edit`,
 copy `kind`, `body`, `scope`, `claim_type` and any `sensitivity`, `pins`,

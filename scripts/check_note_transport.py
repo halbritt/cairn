@@ -35,7 +35,15 @@ def check_cli(binary, environment, client):
         stored = operator(binary, environment, 'get', record_id=note['record_id'])
         assert stored['body'] == revise['body'] and stored['scope'] == draft['scope']
         assert call('edit', edit) == edited
-        print(name + ' JSON create/edit/revise preserve maximum escaped note bodies and retries')
+        short = dict(revise, request_id=str(uuid.uuid4()), expected_version=3, body='Existing.\r\n日本語  ')
+        assert call('revise', short)['version'] == 4
+        suffix = dict(short, request_id=str(uuid.uuid4()), expected_version=4, body='\n' + '\x01' * (65536 - len(short['body'].encode()) - 1))
+        appended = call('append', suffix)
+        assert appended['version'] == 5 and call('append', suffix) == appended
+        assert set(appended) == {'record_id', 'version'}
+        stored = operator(binary, environment, 'get', record_id=note['record_id'])
+        assert stored['body'] == short['body'] + suffix['body'] and stored['scope'] == draft['scope']
+        print(name + ' JSON mutations preserve maximum escaped note bodies and append retries')
 
     previous = environment.get('CAIRN_PREVIOUS_BINARY')
     if previous:
@@ -71,6 +79,19 @@ def check_harness(invoke, binary, environment):
     assert invoke('cairn_edit', full)['version'] == 3
     assert operator(binary, environment, 'get', record_id=note['record_id'])['body'] == draft['body']
     assert invoke('cairn_edit', edit) == revised
+    check_append(invoke, binary, environment, note['scope']['repo'])
+
+
+def check_append(invoke, binary, environment, repo):
+    original = 'Existing instructions.\r\n日本語  '
+    saved = invoke('cairn_remember', dict(request_id=str(uuid.uuid4()), body=original, shareable=True))
+    request = dict(request_id=str(uuid.uuid4()), record_id=saved['record_id'], expected_version=1,
+                   append='\n\nSelected addition.\n')
+    result = invoke('cairn_edit', request)
+    assert result['version'] == 2 and invoke('cairn_edit', request) == result
+    assert set(result) == {'record_id', 'version', 'request_id'}
+    stored = operator(binary, environment, 'get', record_id=saved['record_id'])
+    assert stored['body'] == original + request['append'] and stored['scope']['repo'] == repo
 
 
 def check_opencode_session(opencode, output, connection, binary, environment):
@@ -86,6 +107,12 @@ def check_opencode_session(opencode, output, connection, binary, environment):
                 draft=dict(draft, body='&' * 65536))
     cases = [('large-capture', 'cairn_remember', capture), ('large-revise', 'cairn_edit', revise),
              ('large-edit', 'cairn_edit', edit), ('large-retry', 'cairn_edit', revise)]
+    append_seed = operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=draft))
+    append = dict(request_id=str(uuid.uuid4()), record_id=append_seed['record_id'], expected_version=1,
+                  append='\n\nSelected addition. 日本語\n')
+    cases.extend([('append-note', 'cairn_edit', append), ('append-retry', 'cairn_edit', append),
+                  ('adapter-append-ambiguous', 'cairn_edit', dict(append, body='conflicting replacement')),
+                  ('adapter-append-type', 'cairn_edit', dict(append, append=5))])
     marker = 'direction' + uuid.uuid4().hex
     decision = operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=dict(draft, kind='decision', body=marker)))
     operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=dict(draft, kind='procedure', body=marker + ': setup')))
@@ -94,6 +121,10 @@ def check_opencode_session(opencode, output, connection, binary, environment):
     cases.append(('adapter-kinds', 'cairn_search', dict(query=marker, kinds='decision')))
     report = check(opencode, output, connection=connection, extra_cases=cases)
     results = {name: json.loads(report['results'][name]) for name, _, _ in cases if not name.startswith('adapter-')}
+    assert results['append-note']['version'] == 2 and results['append-note'] == results['append-retry']
+    assert set(results['append-note']) == {'record_id', 'version', 'request_id'}
+    appended = operator(binary, environment, 'get', record_id=append_seed['record_id'])
+    assert appended['version'] == 2 and appended['body'] == draft['body'] + append['append']
     assert [e['record_id'] for e in results['filtered-search']['index']] == [decision['record_id']]
     assert results['filtered-search']['kinds'] == ['decision']
     assert results['retained-history']['historical'] and results['retained-history']['current_version'] == 3

@@ -26,6 +26,11 @@ context, reviewed failure signatures and quoted search. The host keeps its
 five-minute semantic idle lifetime and twenty-five-second worker budget.
 The database remains at migration 034.
 
+Source now supports [selected append updates](verification/note-append-2026-09-10.md)
+through the ordinary CLI/API and existing native edit tools. This preserves prior
+text exactly for additive maintenance. Installation is recorded separately below;
+independent downstream task benefit remains unmeasured.
+
 The [historical replay audit](verification/replay-requirements-2026-09-10.md)
 clarifies E3: retained-read-set recompilation works, including exclusion of later
 notes and instructions. A preserved real-run preflight reproduces its host seal.
@@ -3577,3 +3582,33 @@ step passed, including the UTC PostgreSQL race suite, Python tests, build/static
 checks, authenticated CLI/compact startup and OpenCode plugin checks. Production
 source hashes match the installed `3f17cf2` build; the correction changed tests and
 documentation only. The initial failed run remains recorded above.
+
+
+### 2026-09-10 — Selected additive note updates
+
+Added `Store.Append`, authenticated `/v1/append`, CLI `append` and the exclusive
+`append` argument on the existing MCP/OpenCode `cairn_edit` tool. The operation
+adds a caller-supplied suffix inside the existing serializable revision
+transaction; prior body bytes, draft metadata and citations remain. Exact retries
+return the original identifiers without adding twice, stale versions conflict,
+and the combined 65,536-byte limit refuses overflow without committing a version.
+This keeps six ordinary tools and schema 034. Replacement remains necessary for
+corrections and consolidation; additive updates still require source checking.
+
+The first API check failed for the absent endpoint, then passed. Targeted core
+checks and the full disposable PostgreSQL race/API/MCP suite pass, as do static
+checks and all 40 Python tests. Native OpenCode 1.18.21 passed the final direct
+and normal-session checks with scripted loopback responses and no inference.
+The checks cover exact suffixes, metadata/history, degraded citations, concurrent
+append/full-edit races, request conflicts, maximum escaped input, authority
+refusals and native argument validation. Prior-binary mutation retries remain
+unchanged. Early fixture failures and the native run using a previously loaded
+expected-error assertion remain recorded in the [verification report](verification/note-append-2026-09-10.md).
+
+This is an additive maintenance capability, prompted by observed rewrite omissions
+and a selected update to the existing history procedure. It does not solve
+consolidation or establish independent downstream task value or net savings.
+Installation and operational use are recorded separately when complete. Pincite
+packet `pkt-60a6733bfe653db3` has a validated decision receipt and closed citation
+traces; four interface-design obligations remain explicitly nonmaterial. All
+prior implementation history is preserved byte-for-byte.

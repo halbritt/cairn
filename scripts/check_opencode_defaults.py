@@ -143,7 +143,9 @@ def check(opencode, output, *, connection=None, extra_cases=()):
         assert json.loads(results[name]) == {'body': 'selected lesson', 'kind': 7}, (name, results[name])
     # Malformed calls must be refused whether or not a connection is configured.
     for name, _, _ in cases:
-        if name.startswith('adapter-'):
+        if name == 'adapter-append-ambiguous':
+            assert 'INVALID_REQUEST: supply exactly one of body, append, draft or evidence_citations' in results[name], (name, results[name])
+        elif name.startswith('adapter-'):
             assert 'INVALID_REQUEST: invalid arguments for Cairn tool' in results[name], (name, results[name])
     report = dict(schema='cairn.opencode-defaults-check/1', opencode_version=version,
                   opencode_sha256=hashlib.sha256(Path(opencode).read_bytes()).hexdigest(),
