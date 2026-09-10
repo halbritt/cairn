@@ -8,6 +8,7 @@ import (
 	"io"
 	"path/filepath"
 
+	"github.com/halbritt/cairn/internal/buildinfo"
 	"github.com/halbritt/cairn/localapi"
 )
 
@@ -49,7 +50,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, invalid("agent operation requires one JSON request on stdin")
 	}
 	switch operation {
-	case "remember", "search", "start", "pull", "pull-evidence", "run-package", "revise", "assessments", "history":
+	case "version", "remember", "search", "start", "pull", "pull-evidence", "run-package", "revise", "assessments", "history":
 	case "run", "run-status", "register-context", "check-evidence", "evidence-impact", "refusal", "index", "expand", "expand-evidence", "create", "edit", "delete", "compile", "get", "usage", "usage-coverage", "evidence", "spawn", "terminal", "task-state", "bind-run", "link-run-retrieval", "claim-run", "delivery", "outcome", "assess-run", "use-report", "run-report", "conflict", "conflicts", "supersede", "supersession", "preview-retract":
 	default:
 		return nil, invalid("unknown agent operation")
@@ -59,6 +60,17 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, err
 	}
 	defer client.Close()
+	if operation == "version" {
+		var server buildinfo.Info
+		if err := client.Call(ctx, "version", struct{}{}, &server); err != nil {
+			return nil, err
+		}
+		return struct {
+			Schema string         `json:"schema"`
+			Client buildinfo.Info `json:"client"`
+			Server buildinfo.Info `json:"server"`
+		}{"cairn.version/1", buildinfo.Read(), server}, nil
+	}
 	if operation == "remember" {
 		req, err := rememberRequest(f.Args()[1:], input)
 		if err != nil {

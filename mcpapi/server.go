@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/buildinfo"
 	"github.com/halbritt/cairn/localapi"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -101,7 +102,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 		pins := *config.Context
 		config.Context = &pins
 	}
-	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: "1"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: buildinfo.Read().Label()}, nil)
 	tools := memoryTools{client: client, config: config}
 	destructive := true
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_search", Description: "Search scoped memory with a query, or set browse=true without a query to inspect available topics. Browsing is bounded by the same budget and is not a complete inventory or relevance ranking. Read mandatory context in selected and inspect relevant index entries with cairn_pull using their complete pull_arguments. A notes are fallible; verify before relying on them. Search records exposure, not proven use."}, tools.search)

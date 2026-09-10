@@ -66,6 +66,12 @@ does not block work. Never substitute a local-destination profile when its resul
 will enter a hosted model, and do not provision credentials as part of routine
 retrieval.
 
+If remembered commands and the installed interface disagree, use `cairn version`
+and `cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" version`
+to distinguish CLI and running API builds. Fresh MCP initialization identifies
+the facade build. Missing VCS stamps mean unknown; revision equality does not
+prove capabilities or freshness. See `docs/build-identity.md`.
+
 Use native `cairn_remember` when available, or `agent remember` with the same
 profile, for explicitly selected, useful
 repository findings. Include source/verification context in the note, choose

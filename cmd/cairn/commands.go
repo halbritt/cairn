@@ -12,12 +12,14 @@ import (
 
 	"github.com/halbritt/cairn/artifacts"
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/buildinfo"
 	"github.com/halbritt/cairn/localapi"
 )
 
 const help = `Cairn: local memory for agents
 
 Everyday commands:
+  version | agent [--token-file FILE] [--socket PATH] version
   opencode-install --project DIRECTORY --socket PATH --token-file FILE --repo REPO [--replace]
   opencode-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--memory-only]
   codex-config --socket PATH --token-file FILE --repo REPO (--codex-thread | --task TASK --run RUN) [--required]
@@ -89,6 +91,12 @@ func databaseURL() (string, error) {
 	return uri.String(), nil
 }
 func run(ctx context.Context, args []string, input io.Reader) (any, error) {
+	if len(args) > 0 && args[0] == "version" {
+		if len(args) != 1 {
+			return nil, invalid("version takes no arguments")
+		}
+		return buildinfo.Read(), nil
+	}
 	if len(args) == 1 && (args[0] == "help" || args[0] == "--help") {
 		return help, nil
 	}

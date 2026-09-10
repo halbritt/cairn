@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/buildinfo"
 )
 
 type Identity struct {
@@ -92,6 +93,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	r = r.WithContext(ctx)
 	switch r.URL.Path {
+	case "/v1/version":
+		serveJSON(w, r, func(context.Context, struct{}) (buildinfo.Info, error) {
+			return buildinfo.Read(), nil
+		})
 	case "/v1/create":
 		serveJSON(w, r, c.store.Create)
 	case "/v1/edit":

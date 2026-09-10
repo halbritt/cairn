@@ -123,6 +123,10 @@ search/pull another writer's shareable note within the same authorized repositor
 
 ## API operations
 
+Authenticated `version` takes `{}` and reports the running API executable without
+reading repository data. `cairn agent ... version` also reports its own CLI build
+and needs no stdin request. [Build identity and limitations](build-identity.md).
+
 Operations: `create`, `edit`, `revise`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, `assessments`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,

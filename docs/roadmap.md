@@ -86,6 +86,13 @@ CLI fix, with corrected unknown/binding-quota assessments, but no transfer or
 completed model-task result. Use task-relevant memory in the next real build
 and verify actual tool contact before drawing a benefit conclusion.
 
+[Build diagnosis](build-identity.md) now reports CLI and authenticated API
+identities separately; MCP initialization identifies its own facade. This helps
+distinguish installation drift from remembered guidance without treating equal
+revisions as capability proof or different revisions as automatic staleness.
+Unknown stamps remain explicit. [Checks](verification/build-identity-2026-09-09.md)
+cover all provisioned profile types and existing stdio tool workflows.
+
 [Ordinary note transport](verification/note-transport-2026-09-09.md) now accepts
 maximum 64 KiB bodies even when JSON escaping exceeds the old envelope, through
 existing capture and edit interfaces. Overlimit refusal and previous mutation

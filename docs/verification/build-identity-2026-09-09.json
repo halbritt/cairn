@@ -1,0 +1,122 @@
+{
+  "schema": "cairn.build-identity-verification/1",
+  "baseline_commit": "9e8c4fb6e83b3ba4b7add0c80270a4cc9509ed21",
+  "checks": {
+    "static": true,
+    "go_python": true,
+    "python_tests": 40,
+    "disposable_pg_race_integration": true,
+    "stdio_mcp": true,
+    "profile_types": 4,
+    "older_api_failure_preserved": true,
+    "answering_model": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-793ce08ff845c498",
+    "packet_content_sha256": "793ce08ff845c4984285db6b1900d8201ef4eddd286688243d3dafdade020c65",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface introduced; a concrete metadata function serves existing consumers."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface introduced; a concrete metadata function serves existing consumers."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface introduced; a concrete metadata function serves existing consumers."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface introduced; a concrete metadata function serves existing consumers."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-build-identity-evidence-authority.json",
+      "sha256": "624eea21536aca7cc8dd2d087d05dceb04a9d1ca9621fb6ba83f2e55b9587016"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-evidence-implementation.json",
+      "sha256": "51f6c57d36dda69bd0e81e1205d9d5db18f04e95f338e05ad69639a414e7c750"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-evidence-compatibility.json",
+      "sha256": "f8e523cd89c3b31bceda19e5b9beba66588176838510d21e25da9901d4c9e144"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-evidence-tests.json",
+      "sha256": "eda3d51ae86d6f6e25a11dea03ca5aa4247a566e6aa40eaa613e7d12913e10ec"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-cli-red.log",
+      "sha256": "3369e20c3c8ef4d37e66d1f33e292ffa384404e4a283e856312d60b9647d9d1b"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-api-red.log",
+      "sha256": "711f98f3cad4622a1e3238409ee35a04c599decab4cbb30f3e6ffcbd7d6617d3"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-agent-red.log",
+      "sha256": "67e13487c7a5749e5a5934b5bb3023f76f052ddcbf9ea8c63aa55e1376d696b6"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-mcp-red.log",
+      "sha256": "85a12fdebcc8375b1e10afe4d594de0d1ecd0db3fc9aa206f174cac0e662b71c"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-target.log",
+      "sha256": "8bc985d6b96a3d32270eafe910609921bce3daf9c38fac9695606afb76421c0d"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-tests.log",
+      "sha256": "8403c345df21ddcef2ff49d72de3884b08bbc3727c6efb63e4783effb5bbe92a"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-integration.log",
+      "sha256": "b6bd4471dba730bc7303d9b0c12914953b0c0694f0f5e8f3e77a5af4e9c13256"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-older-api.json",
+      "sha256": "4f54d457e25f61ad2fd7cdd3b5b07a649abc7f393e601fa4dea2bb7cebd717f0"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-decision.json",
+      "sha256": "b335bd0c411c9ca45cab2774526f9bb0c77b1d03018280c325462067a6ad68b8"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-doctrine.json",
+      "sha256": "b7ba7f61438aa6c8f28142eebe84cd3df15f50c190317aa6f1821971b6b2f7f6"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-doctrine-final.json",
+      "sha256": "9245415152fbd8b5f1e1b79054215aad8f4253d193aff25cee91eae40a2b100d"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-citations.json",
+      "sha256": "e993ff56d5d1a9adf077cd714a675b7cdd19fc9ce4592e9d0a4bc86762cc9080"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-citations-final.json",
+      "sha256": "e08075a8c327280409f92ea4140e6283300552ba9c6e9360da4e5dc7785c2f3f"
+    }
+  ]
+}

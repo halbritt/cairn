@@ -62,6 +62,20 @@ try:
             raise AssertionError('API readiness deadline exceeded')
         time.sleep(.02)
     assert (root / 'api.sock').stat().st_mode & 0o777 == 0o600
+    # Build diagnosis reads no client database and retains separate endpoint identities.
+    diagnosis_env = dict(env, CAIRN_DATABASE_URL='not a database URL')
+    own_build = json.loads(subprocess.run([binary, 'version'], env=diagnosis_env,
+                           capture_output=True, text=True, check=True, timeout=5).stdout)['data']
+    for profile in ('agent.token', 'hosted-agent.token', 'observer.token', 'hosted.token'):
+        diagnosed = subprocess.run([binary, 'agent', '--socket', str(root / 'api.sock'),
+                                    '--token-file', str(root / profile), 'version'],
+                                   env=diagnosis_env, stdin=subprocess.DEVNULL,
+                                   capture_output=True, text=True, check=True, timeout=5)
+        versions = json.loads(diagnosed.stdout)['data']
+        assert versions['schema'] == 'cairn.version/1'
+        assert versions['client'] == versions['server'] == own_build
+        assert all(secret not in diagnosed.stdout for secret in (token, observer_token, hosted_token, hosted_agent_token))
+    print('Explicit version diagnosis reports both binaries without client database access or credentials')
     request = dict(request_id=str(uuid.uuid4()), draft=dict(
         kind='note', body='Synthetic socket lesson', claim_type='self',
         scope=dict(repo='fixture:socket', task_id='*', run_id='*')))

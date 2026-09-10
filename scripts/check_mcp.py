@@ -58,6 +58,15 @@ def session(binary, root, environment, extra_args=(), generated=False):
         initialized = request('initialize', dict(protocolVersion='2025-06-18', capabilities={},
                               clientInfo=dict(name='cairn-independent-stdio-check', version='1')))
         assert initialized['serverInfo']['name'] == 'cairn'
+        executable = json.loads(subprocess.run([binary, 'version'], env=env,
+                                 capture_output=True, text=True, check=True, timeout=5).stdout)['data']
+        revision = executable.get('vcs_revision')
+        if revision:
+            suffix = '-unknown' if executable['vcs_modified'] is None else '-modified' if executable['vcs_modified'] else ''
+            assert initialized['serverInfo']['version'] == revision + suffix
+        else:
+            assert initialized['serverInfo']['version'] == (executable.get('module_version') if executable.get('module_version') not in (None, '(devel)') else 'unknown')
+
         send(dict(method='notifications/initialized', params={}))
         names = {t['name'] for t in request('tools/list', {})['tools']}
         assert names == {'cairn_search', 'cairn_pull', 'cairn_pull_evidence', 'cairn_remember', 'cairn_edit'}, names

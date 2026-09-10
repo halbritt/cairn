@@ -46,6 +46,11 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Build diagnosis distinguishes CLI, API and facade versions.** Local
+  `version` needs no database; `agent version` reports client and server
+  independently. MCP initialization identifies its own binary. Unknown stamps
+  stay explicit. [Commands](build-identity.md), [checks](verification/build-identity-2026-09-09.md).
+
 - **Ranked search can continue through later matches.** Explicit `offset: 0`
   starts lexical or semantic pages; CLI, MCP and native OpenCode forward later
   `page.next_offset` values. Required instructions and budgets remain per page.
@@ -1920,3 +1925,21 @@ then0.054/0.055/0.056seconds using the existing cache. These are navigation and
 runtime observations, not new relevance or answering-task evidence. Private local
 artifacts: /tmp/cairn-search-pages-deployment/. The verification report retains
 installation hashes, backup identity, limitations and CI state.
+
+
+### 2026-09-09 — Executable build diagnosis
+
+Added local version inspection without configuration/database access and an
+explicit authenticated agent version command returning separate client/server
+identities. MCP initialization now names the loaded facade build instead of1.
+A shared internal whitelist exposes Go/module/VCS metadata, with nullable unknown
+modification state. Build flags, paths, dependencies and credentials stay out.
+No source revision is treated as proof of capability, correctness or note freshness.
+
+Initial CLI/API/agent/MCP checks reproduced missing diagnosis. Targeted tests,
+static checks,Go/40Python and full disposable PostgreSQL/race integration passed,
+including all four profile types and actual stdio tools. A candidate against the
+older installed API preserved NOT_FOUND rather than inventing a server identity.
+No native adapter, memory schema, retrieval seal or stored record changed from
+this feature. Installation is recorded separately after verification; task value
+remains unassessed. [Report](verification/build-identity-2026-09-09.md).
