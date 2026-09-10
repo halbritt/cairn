@@ -1,0 +1,211 @@
+{
+  "schema": "cairn.authenticated-recompile-verification/1",
+  "date": "2026-09-10",
+  "baseline_commit": "828ef6c4b059e5b48f0e43e1390ae029c4e4a762",
+  "change": "Authenticated owned historical receipt reconstruction with current destination privacy",
+  "migration": 34,
+  "new_mcp_tools": 0,
+  "operational_records_mutated": false,
+  "model_runs": 0,
+  "task_value": "Actual retained host inspection now possible; incremental task benefit unmeasured",
+  "recorded_run": {
+    "schema": "cairn.authenticated-recorded-recompile/1",
+    "binary_sha256": "50ad3ae816dd49d49f41ebe6d87d682e62162dc5fb7a47ae3464e366dce9bb9a",
+    "original_artifacts": {
+      "report.json": {
+        "path": "/tmp/cairn-observed-model-20260908-p/report.json",
+        "sha256": "07c7815882a9bd9db9156b801409cd95dd7e732fb6ea96125e974620a9d9b1e6"
+      },
+      "host-verification.json": {
+        "path": "/tmp/cairn-observed-model-20260908-p/host-verification.json",
+        "sha256": "41937fd4a27eb0b5bd28129f2e3192377c0fbe4445aeda675e6ef04322035653"
+      },
+      "hosted-relay.json": {
+        "path": "/tmp/cairn-observed-model-20260908-p/hosted-relay.json",
+        "sha256": "ed71e5684833cb6e97d977b66d421938c334363741b533523cc4419e128a21b3"
+      },
+      "cairn_h0.patch": {
+        "path": "/tmp/cairn-observed-model-20260908-p/cairn_h0.patch",
+        "sha256": "e17d0d447a10838cc631e3884075c3c8e7c9eb9a4b1141e6ef8d8c55cb1c9eb0"
+      },
+      "demand-review.json": {
+        "path": "/tmp/cairn-observed-model-20260908-p/demand-review.json",
+        "sha256": "19ea8455701176e5b33e1d905b0a8b2a46c4b626920e8d064b907c37e4a4dfd1"
+      },
+      "trial.dump": {
+        "path": "/tmp/cairn-observed-model-20260908-p/trial.dump",
+        "sha256": "c378f7c18db962573d6ad287e40dbbc1d848c3b1b264dd8ec2b0d00cd76e74c4"
+      },
+      "reviewed-trial.dump": {
+        "path": "/tmp/cairn-observed-model-20260908-p/reviewed-trial.dump",
+        "sha256": "ff2c80e54eca292c231212ac1ec243a3ad4ac19425cd69d4cea17b0cf245bd7a"
+      },
+      "cleanup.json": {
+        "path": "/tmp/cairn-observed-model-20260908-p/cleanup.json",
+        "sha256": "3616e56b4e6348a1e33e2565ecd18671b63bb0ee53194d7858dc2068400a914d"
+      }
+    },
+    "scenario_sha256": "9dc4ccd91bc896aeb30839afc32e1cdade95361e48a0640ec76296284944835d",
+    "model_runs": 0,
+    "operational_store_touched": false,
+    "run_receipt": "ad4f4fad-1400-425c-810b-b08d10513b58",
+    "preflight_receipt": "46664523-d2f6-42cf-8248-981c31b860d7",
+    "historical_revision": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af",
+    "availability": "post_review_recurrence",
+    "binary": {
+      "schema": "cairn.build/1",
+      "go_version": "go1.25.0",
+      "module_version": "v0.0.0-20260910193954-828ef6c4b059+dirty",
+      "vcs": "git",
+      "vcs_revision": "828ef6c4b059e5b48f0e43e1390ae029c4e4a762",
+      "vcs_time": "2026-09-10T19:39:54Z",
+      "vcs_modified": true
+    },
+    "foreign_receipt_refused": true,
+    "original_host_identity_used": true,
+    "identity_configuration_unchanged": true,
+    "collector_refused": true,
+    "historical_retry_exact": true,
+    "durable_tables_unchanged": true,
+    "durable_before": {
+      "retrieval_receipt": "e0624b1d496528c5bbb4e384024937770e494f8780dc1f60d99fe34b2f9066b7",
+      "retrieval_candidate": "a2e95b015632f4819aa3a87f4b77d9eab48c49730a0de42808068094218df3cf",
+      "record_use": "aa596da7b76344c63b191823d2fb8739528e0bd230a22b5b7e152f82ffee59c2",
+      "delivery_receipt": "a7c0c4a7bd0f0dc380b67bf8dc1bdd49e59e92c40b5e2e6bf570e5c074a310b7",
+      "run_outcome": "b1d322a11d8715e49596d94c4930b768b850381965bff6097730f4a30f63b50e",
+      "run_assessment": "40a4ea4157bbefe6dc837e20f54b12c843f80cb87a0b3b97a91a1dc6cf1e8f14"
+    },
+    "actual_host_recompiled": true,
+    "original_seal": "blake3:18fc491ed95a2a88460931e88a30a155315959390d2b2308e91cf4e7e7b091d6",
+    "semantic_schema": "cairn.semantic/3",
+    "ranking": "lexical-scope-recency/2",
+    "selected": [
+      {
+        "record_id": "0719eefe-ac9c-4f7c-93fd-f177334763da",
+        "version": 2,
+        "body_sha256": "9e53a27a5ef4ef6568605aeb31b966f51a2322982a62ec08a9696cadfd8d87d1"
+      }
+    ],
+    "later_lesson": "16a90b22-ae29-436c-a73f-343c7a2dc273",
+    "later_lesson_excluded": true,
+    "original_candidate_sets_equal": true,
+    "candidate_count": 1,
+    "timestamps": {
+      "run": "2026-09-08T05:52:28.235072-07:00",
+      "preflight": "2026-09-08T05:52:27.381963-07:00",
+      "later_lesson": "2026-09-08T06:12:53.488655-07:00",
+      "later_lesson_after_run": true
+    },
+    "qualification": [
+      {
+        "version": 2,
+        "evidence": [
+          {
+            "captured_at": "2026-09-08T05:52:27.348029-07:00",
+            "evidence_id": "73064120-d473-44ed-9cde-750b29dd55d8",
+            "digest_matches": true,
+            "existed_before_run": true
+          }
+        ],
+        "record_id": "0719eefe-ac9c-4f7c-93fd-f177334763da",
+        "written_at": "2026-09-08T05:52:27.354849-07:00",
+        "existed_before_run": true
+      }
+    ],
+    "direct_host_recompile": true,
+    "postcheck_candidate_sets_equal": true,
+    "original_artifacts_unchanged": true,
+    "disposable_cluster_removed": true
+  },
+  "checks": [
+    {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/api-red.log",
+      "sha256": "07d581d1aba6716903cfe16c1a199897d6eafefd3d16199a1a2998362e2e0dba"
+    },
+    {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/api-check.log",
+      "sha256": "d7d06ddd4fc9eef00d4a8172c76eae34d240f4d3f85959009b510db00acb42bd"
+    },
+    {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/core-check.log",
+      "sha256": "a23fd2c29861af21c87459ea85f06b0713eb383e6f9c387588f2319a06dc61b8"
+    },
+    {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/revocation.log",
+      "sha256": "5d4c3427a1a55ba01e774d36927823835a75e53201278ed017ba8920981361ef"
+    },
+    {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/integration.log",
+      "sha256": "79c2baa8bcc7cec3c0a85e9cde69d40c63bc9f19b338359fd4a484b340adefbe"
+    },
+    {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/check-recorded-run.py",
+      "sha256": "7ac937a5a39c755abbe955c226fc8a0a64ba5078d5525d0564ca7c21e397d535"
+    },
+    {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/recorded-run.json",
+      "sha256": "aebbc3ee29a76bfb5457ea6299ac797b54366b767d43427826634ace2a155c6e"
+    },
+    {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/recorded-run.log",
+      "sha256": "a1881c49a96bf89ee38443e04e90062f77c607f55c0c0529402e15a13b772835"
+    },
+    {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/doctrine.json",
+      "sha256": "1a9d24714c6c97270c41c47f81f0c6718a54e5c40fcee0d7c58f3f8aa4cad672"
+    },
+    {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/doctrine-evidence.json",
+      "sha256": "c495f41f70273e9f9d7e97c19c2bcf585e851ea9bf749e580a21c52e55aa4662"
+    },
+    {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/decision-receipt.json",
+      "sha256": "4f421236d7452e5fe10e29cd3e0f36095bb521ceb5514e952b8824a3f74c4563"
+    }
+  ],
+  "production_source_sha256": {
+    "core/recompile.go": "933ae61f84896f828876cef384279488247f5a4c7bab4f791d71b62ba77dc79a",
+    "localapi/server.go": "dc60670a1e269d1d491accb9b9b7c7f49b3e063ac8188afb64cc607a2ed12b76",
+    "cmd/cairn/agent.go": "72d26e00b52ea0fe213b69c9b8b8438ce79103c9ff17d724e3ead341c9500637"
+  },
+  "doctrine": {
+    "packet_id": "pkt-d95c8e9d819ddc26",
+    "packet_sha256": "d95c8e9d819ddc26be15a050ddfb9dea3ee4e95be4e94b02767bf2819283ccbb",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "missing_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or substitution boundary is added or relocated. This adds a concrete store method used directly by the existing API; consumer-interface design is outside the selected change."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or substitution boundary is added or relocated. This adds a concrete store method used directly by the existing API; consumer-interface design is outside the selected change."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or substitution boundary is added or relocated. This adds a concrete store method used directly by the existing API; consumer-interface design is outside the selected change."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or substitution boundary is added or relocated. This adds a concrete store method used directly by the existing API; consumer-interface design is outside the selected change."
+      }
+    ],
+    "decision_receipt_validated": true,
+    "citation_loops_closed": true
+  }
+}

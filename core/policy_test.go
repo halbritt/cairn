@@ -254,6 +254,10 @@ func TestPolicyRevocationBlocksFreshDeliveryAndAllowsExplicitReauthorization(t *
 	if err != nil || historical.Seal != index.Package.Seal {
 		t.Fatalf("revocation reinterpreted history: %v", err)
 	}
+	historical, err = host.RecompileForDestination(ctx, RecompileRequest{ReceiptID: index.Package.ReceiptID}, Destination{"local", true})
+	if err != nil || historical.Seal != index.Package.Seal {
+		t.Fatalf("destination-aware inspection revived or reinterpreted authority: %v", err)
+	}
 	retry, err := issuer.RevisePolicy(ctx, change)
 	if err != nil || retry.RevisionID != policy.RevisionID {
 		t.Fatalf("transport retry repeated policy mutation: %+v %v", retry, err)

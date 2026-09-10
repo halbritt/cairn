@@ -52,6 +52,10 @@ also bound mandatory and optional C instruction load when explicitly adopted.
 [Authenticated host runs](docs/authenticated-runner.md) use `cairn agent ... run`
 with a scoped observer token instead of direct database access.
 
+The same profile can [recompile its historical receipts](docs/currentness-and-replay.md#recompile-a-retained-read-set)
+with `cairn agent ... recompile`. Inspection preserves the original read set and
+seal while enforcing receipt ownership, current privacy and forgetting rules.
+
 ## Get started
 
 Use `cairn version` to identify the CLI; authenticated `cairn agent ... version`

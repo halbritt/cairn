@@ -21,6 +21,19 @@ type RecompileRequest struct {
 // versions. Its cutoff is the named receipt, not a PostgreSQL snapshot handle or
 // an arbitrary timestamp. It creates no new delivery authorization or exposure.
 func (s *Store) Recompile(ctx context.Context, req RecompileRequest) (Package, error) {
+	return s.recompile(ctx, req, nil)
+}
+
+// RecompileForDestination reconstructs an owned receipt for authenticated
+// inspection. It preserves historical eligibility while checking present privacy.
+func (s *Store) RecompileForDestination(ctx context.Context, req RecompileRequest, dest Destination) (Package, error) {
+	if (dest.Name != "local" && dest.Name != "hosted") || (dest.Name == "hosted" && dest.AllowLocal) {
+		return Package{}, failure("INVALID_REQUEST", "invalid historical destination")
+	}
+	return s.recompile(ctx, req, &dest)
+}
+
+func (s *Store) recompile(ctx context.Context, req RecompileRequest, dest *Destination) (Package, error) {
 	ctx = s.recoveryContext(ctx)
 	if len(req.Query) > 4096 {
 		return Package{}, failure("INVALID_REQUEST", "query exceeds limit")
@@ -34,8 +47,60 @@ func (s *Store) Recompile(ctx context.Context, req RecompileRequest) (Package, e
 	if err != nil {
 		return result, err
 	}
+	if dest != nil {
+		if err = recompileDestination(ctx, tx, result, *dest); err != nil {
+			return Package{}, err
+		}
+	}
 	return result, tx.Commit(ctx)
 }
+
+func recompileDestination(ctx context.Context, tx pgx.Tx, pkg Package, dest Destination) error {
+	if pkg.Semantic.Destination != dest {
+		return failure("AUTHORITY_DENIED", "historical package destination differs from the authenticated profile")
+	}
+	ids := make([]string, 0, len(pkg.Semantic.Selected)+len(pkg.Semantic.Index))
+	for _, entry := range pkg.Semantic.Selected {
+		ids = append(ids, entry.Record.RecordID)
+	}
+	for _, entry := range pkg.Semantic.Index {
+		ids = append(ids, entry.RecordID)
+	}
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	// Lock current identities against edits/forgetting through this inspection.
+	// Historical versions and eligibility remain those of the retained receipt.
+	rows, err := tx.Query(ctx, `SELECT m.sensitivity,m.lifecycle,v.repo
+ FROM cairn.memory_record m JOIN cairn.record_version v
+ ON v.record_id=m.record_id AND v.version=m.current_version
+ WHERE m.record_id=ANY($1::uuid[]) ORDER BY m.record_id FOR SHARE OF m`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var sensitivity, lifecycle, repo string
+		if err = rows.Scan(&sensitivity, &lifecycle, &repo); err != nil {
+			return err
+		}
+		if repo != pkg.Semantic.Scope.Repo || (!dest.AllowLocal && sensitivity != "shareable") {
+			return failure("AUTHORITY_DENIED", "historical package is outside current destination access")
+		}
+		if lifecycle == "tombstoned" {
+			return failure("PAYLOAD_UNAVAILABLE", "historical package contains forgotten memory")
+		}
+		count++
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	if count != len(ids) {
+		return failure("PAYLOAD_UNAVAILABLE", "historical package contains unavailable memory")
+	}
+	return nil
+}
+
 func historicalRecord(ctx context.Context, tx pgx.Tx, e *CandidateEvaluation) (Record, error) {
 	var deleted bool
 	if err := tx.QueryRow(ctx, `SELECT payload_deleted_by IS NOT NULL FROM cairn.record_version WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&deleted); err != nil && err != pgx.ErrNoRows {

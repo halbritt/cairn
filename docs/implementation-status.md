@@ -29,8 +29,9 @@ The database remains at migration 034.
 The [historical replay audit](verification/replay-requirements-2026-09-10.md)
 clarifies E3: retained-read-set recompilation works, including exclusion of later
 notes and instructions. A preserved real-run preflight reproduces its host seal.
-Direct authenticated host-receipt reconstruction and original Striatum incident
-availability remain open; this is not additional task-benefit evidence.
+[Authenticated host-receipt reconstruction](verification/authenticated-recompile-2026-09-10.md)
+now works with the original profile and current privacy checks. Original Striatum
+incident availability remains open; this is not additional task-benefit evidence.
 
 This snapshot assesses the source changes recorded below and the local installation
 on 2026-09-10. Feature reports below preserve their own verification dates and limits.
@@ -3497,3 +3498,43 @@ step passed, including the PostgreSQL race suite, Python tests, static/build
 checks, authenticated CLI/compact startup and OpenCode recent-file plugin checks.
 This corroborates the test/documentation change; the installed runtime is still
 `4df17af` and the historical evidence gaps above remain open.
+
+
+### 2026-09-10 — Authenticated historical receipt reconstruction
+
+Added `POST /v1/recompile` and `cairn agent ... recompile` for authenticated agents
+and observers to inspect their own retained receipts. The operation uses the
+original query/entity intent and returns `historical: true` with the exact
+package. It preserves caller/repository ownership and the original destination,
+checks current privacy for every returned body/index preview, and refuses forgotten
+content. The existing trusted core/local CLI interface, semantic schemas, six
+ordinary MCP tools and database migration 034 are unchanged.
+
+This addresses the preceding audit's concrete host-access gap. A disposable
+restore of the reviewed September 8 trial used its original observer token and
+identity configuration to reconstruct the actual host receipt, not just its
+matching preflight. The original seal, revision and selected record version/body
+digest reproduced; the later failure lesson stayed excluded. An identical retry
+was exact, while the collector and local operator were refused. All eight source
+artifact hashes, credential/configuration hashes and inspected receipt/candidate/
+use/delivery/outcome/assessment tables remained unchanged. The temporary API and
+database stopped. No model task ran or operational memory was edited.
+
+The first API regression failed because the endpoint was absent. It then passed
+with exact old selection after revision/new advice while current execution still
+refused stale context. Further core/API checks passed for agent/observer access,
+foreign owners, changed query, injected identity/destination, body/index privacy,
+destination mismatch and forgetting. Full disposable PostgreSQL race/API/MCP
+integration and `make check` passed; an additional focused check preserved
+historical reconstruction after policy revocation while execution remained
+refused. No new Go interface, service or recovery framework was added.
+
+E3/E4 remain partial: this is reconstruction of a recorded recurrence whose
+advice postdates the older Striatum incident. The rejected outcome and recurrence
+classification remain unchanged, and incremental task benefit is unmeasured.
+The [verification report](verification/authenticated-recompile-2026-09-10.md) and
+[metadata](verification/authenticated-recompile-2026-09-10.json) retain the evidence
+and limitations. Pincite packet `pkt-d95c8e9d819ddc26` has typed evidence, a
+validated decision receipt and closed citation traces; four Go-interface design
+obligations are recorded as nonmaterial. Installation is recorded separately
+below when complete. All prior implementation history is preserved byte-for-byte.

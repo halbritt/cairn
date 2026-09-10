@@ -164,6 +164,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			return c.store.Compile(ctx, req, c.destination)
 		})
+	case "/v1/recompile":
+		serveJSON(w, r, func(ctx context.Context, req core.RecompileRequest) (any, error) {
+			pkg, err := c.store.RecompileForDestination(ctx, req, c.destination)
+			return struct {
+				Historical bool         `json:"historical"`
+				Package    core.Package `json:"package"`
+			}{true, pkg}, err
+		})
 	case "/v1/run-index":
 		serveJSON(w, r, func(ctx context.Context, req core.RunPackageRequest) (core.IndexResult, error) {
 			return c.store.RunIndex(ctx, req, c.destination)

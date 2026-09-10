@@ -135,7 +135,7 @@ Authenticated `version` takes `{}` and reports the running API executable withou
 reading repository data. `cairn agent ... version` also reports its own CLI build
 and needs no stdin request. [Build identity and limitations](build-identity.md).
 
-Operations: `create`, `edit`, `revise`, `cite`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
+Operations: `create`, `edit`, `revise`, `cite`, `delete`, ordinary `supersede`, `compile`, `recompile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, `assessments`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `run-package`, `run-index`, `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
@@ -143,6 +143,10 @@ matching the corresponding core request. `get` takes `record_id`.
 `history` lists bounded retained version metadata or reads one exact body, under
 current repository/destination restrictions. See [record history](record-history.md)
 for paging and historical-inspection limits.
+`recompile` takes the original `receipt_id`, `query` and optional `entities`, with
+no request UUID. It returns a historical package only to the original caller and
+destination, subject to current privacy and forgetting checks. See
+[historical reconstruction](currentness-and-replay.md#recompile-a-retained-read-set).
 `assessments` takes `receipt_id` and returns the owner's full assessment versions
 in ascending order, including reasons and evidence IDs. The profile's repository
 and destination must match the receipt. It returns no evidence or package bodies;

@@ -151,9 +151,28 @@ fresh delivery. Its cutoff is the named retrieval's actual read set, not an
 arbitrary timestamp or a reusable PostgreSQL transaction handle.
 
 Receipt ownership still applies. The local CLI can recompile its own receipts;
-another channel's receipt returns `AUTHORITY_DENIED`. The authenticated API has
-no historical recompile operation. Its `run-package` operation checks eligibility
-for current execution and is not a substitute for historical inspection.
+another channel's receipt returns `AUTHORITY_DENIED`. Authenticated callers use
+their original agent or observer profile:
+
+```sh
+cairn agent --token-file /path/to/original-profile.token recompile < replay-request.json
+```
+
+`replay-request.json` contains the request above. The API returns
+`{"historical":true,"package":{...}}`, preserving the original package and seal.
+It requires the same destination as the retained receipt and checks current
+record privacy and repository access for every returned body or index preview.
+Restricted or forgotten content refuses the whole result; the server does not
+silently filter a sealed historical package. Corrections, expired handles and
+revoked execution authority do not themselves rewrite historical eligibility.
+Inspection returns no expansion handles or renewed credits. Query text remains
+transient, and the operation creates no new receipt, delivery or outcome row.
+
+The API's `run-package` operation still checks eligibility for current execution;
+historical inspection does not make an obsolete package launchable. The
+[authenticated reconstruction check](verification/authenticated-recompile-2026-09-10.md)
+uses the original observer profile from a retained real run. Older API builds
+without this operation return `NOT_FOUND`; update CLI/API together.
 
 Explanation version 2 retains body digests and the evidence/authority/attribution
 facts needed for eligible candidates. This avoids duplicating their bodies while
