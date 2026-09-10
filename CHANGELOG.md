@@ -6,8 +6,8 @@ changes by source-commit date; they are not numbered releases. The
 retains the complete chronology, including failed trials, corrections and
 superseded work.
 
-The latest recorded installation on 2026-09-10 has clean CLI `af43ac7` and API
-`4999caa`, at database migration 034. The CLI-only help repair requires no server
+The latest recorded installation on 2026-09-10 has clean CLI `7ce59a4` and API
+`4999caa`, at database migration 034. The CLI-only JSON pull addition requires no server
 upgrade. Later documentation commits do not change these builds. Check a particular
 installation with `cairn version`; use
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.

@@ -539,5 +539,134 @@
       "JSON reads stdin until EOF, like other JSON operations",
       "Twenty-five nonmaterial generic obligations retained"
     ]
+  },
+  "installation": {
+    "cli_revision": "7ce59a40a472803ff1b1af9b2f31fee3405293e3",
+    "api_revision": "4999caa458c71137b3c646730d49931ed8a6b10d",
+    "api_restarted": false,
+    "migration": 34,
+    "record_versions_before": {
+      "versions": 80,
+      "sha256": "c4a37d08e049e6d490fd42e06c6c92ba99d1d2254d72c2d322b93c89ba3a20b9"
+    },
+    "record_versions_after": {
+      "versions": 80,
+      "sha256": "c4a37d08e049e6d490fd42e06c6c92ba99d1d2254d72c2d322b93c89ba3a20b9"
+    },
+    "services_unchanged": true,
+    "cli_sha256": "c599e4aa5b2b7ca8a1d94e9b14e06116d2e1677a3998da5a8567ab6c604ca07f",
+    "installed_read": {
+      "record_id": "30681751-37ae-4c70-9543-3697f95d3fdc",
+      "version": 1,
+      "body_sha256": "ce957a3027dce0f09fa9654ff36ba6ce0f29826d802e92fe441fac43b8466111",
+      "cli_revision": "7ce59a40a472803ff1b1af9b2f31fee3405293e3",
+      "api_revision": "4999caa458c71137b3c646730d49931ed8a6b10d",
+      "json_pull": "OK",
+      "previous_expand_retry_identical": true,
+      "current_shell_retry_identical": true,
+      "json_retry_identical": true,
+      "credits_remaining": 3,
+      "model_task_benefit": "unmeasured"
+    },
+    "ci": {
+      "id": 34540128174,
+      "url": "https://github.com/halbritt/cairn/actions/runs/34540128174",
+      "head_sha": "7ce59a40a472803ff1b1af9b2f31fee3405293e3",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "name": "postgres",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Initialize containers",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run go test -race -count=1 -p 1 ./...",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run python3 -B -m unittest discover -s scripts -p 'test_*.py'",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run make check build",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run CAIRN_DATABASE_URL=\"$CAIRN_TEST_DATABASE_URL\" python3 scripts/check_use_report.py bin/cairn",
+              "conclusion": "success"
+            },
+            {
+              "name": "Check authenticated CLI and compact startup",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Stop containers",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "opencode-plugin",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run node scripts/check_opencode_recent_files.mjs",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ]
+    }
   }
 }

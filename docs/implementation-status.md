@@ -19,7 +19,9 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI is clean `af43ac7`; the API is clean `4999caa`. The CLI-only
+The installed CLI is clean `7ce59a4`; the API is clean `4999caa`.
+[Structured CLI pulls](verification/pull-json-2026-09-10.md) accept returned
+arguments directly as JSON while preserving shell forms and API checks. The
 [help repair](verification/harness-help-2026-09-10.md) prints harness setup flags
 without requiring a connection or an API upgrade. The OpenCode adapter supports
 explicit advisory-conflict retrieval, returning complete qualified competing
@@ -4025,3 +4027,20 @@ particular interaction failure does not establish net task benefit.
 [Verification and decision record](verification/pull-json-2026-09-10.md) also retain
 the ordinary live API comparison: new JSON pull and old expand returned identical
 responses. Operational note content was unchanged.
+
+
+### 2026-09-10 — Install structured CLI pulls after CI
+
+Clean CLI `7ce59a40a472803ff1b1af9b2f31fee3405293e3` is installed in the user's CLI location and the project binary.
+[CI run 34540128174](https://github.com/halbritt/cairn/actions/runs/34540128174) passed both jobs and all steps,
+including the full Go race suite, Python tests and authenticated API/MCP checks.
+The API remains clean `4999caa`; API and PostgreSQL PIDs and executable hashes
+were unchanged. Migration remains 034. Host settings, native adapter/plugin
+hashes and all 80 retained note-version payloads matched the pre-installation snapshot.
+The previous CLI and project binary were backed up before replacement.
+
+The installed CLI retrieved the current evaluation decision through JSON `pull`.
+The old CLI's `expand`, the current returned shell command and the JSON retry all
+returned the identical response with three credits remaining. This was an ordinary
+read, with no note-content mutation or model inference. The command mismatch is
+resolved; broader task benefit remains open. [Verification](verification/pull-json-2026-09-10.md).
