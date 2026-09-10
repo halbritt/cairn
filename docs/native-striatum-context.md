@@ -19,6 +19,46 @@ global flag before the verb. The review did not advance native contract acceptan
 
 ## Current implementation and next work
 
+### Shared RFC adoption check — 2026-09-10
+
+The live graph has an unfinished amendment on the same RFC 0004 identity that
+Cairn needs. Request 408565 targets `rfc-staged` for
+`review-conclusions-are-evidence-bound`. Its captured note matches request
+408483 and identifies that separate feature. Escalations 409639 and 409640
+report nine exhausted dispatch attempts and the resulting planning dead end.
+Those failures are not Cairn build trials or evidence against memory usefulness.
+
+The status projection alone names the shared RFC, so it is insufficient to
+attribute its work to Cairn. Read the retained request intent before acting.
+The [adoption check metadata](verification/native-adoption-2026-09-10.json)
+pins the relevant records without copying their private request bodies.
+Cairn's own opening request 408328 remains satisfied only at `captured`.
+No relevant acceptance candidate was queued in this observation; RFC 0007's
+Decision Record was listed as stale.
+
+Advance native adoption by first reconciling amendment sequencing on the shared
+RFC identity. Preserve the existing feature's intent and accepted semantics;
+its eventual stage acceptance cannot establish acceptance of Cairn's separate
+draft. The owning RFC 0004 and RFC 0007 amendments then need native stage
+production, review and personal acceptance, followed by generated successor
+Decisions. D0016.C1/C3/C13 exclude these RFC and Decision acceptances, and
+escalation resolution, from the standing agent delegation. The current Cairn
+task does not resolve or retry the other feature's escalations.
+
+After those Decisions are accepted, adopt the corresponding catalog/schema
+changes, verify the integrated tree, deploy through Striatum's existing
+transaction and exercise a meaningful native build. Both the source and deployed
+catalog inspected here retain `observation@1`/`build@3`; installing the merged
+code alone would leave native context disabled. The Driver is still clean
+`a6b1ae7`. Ordinary Codex/OpenCode task-value work can continue independently of
+this shared-RFC sequence.
+
+This check changed adoption guidance, not the graph, runtime or implementation.
+It did not diagnose the unrelated dispatch failures or establish a new task-value
+result. The next observation must refresh these graph facts before mutation.
+
+### Implemented boundaries
+
 | Boundary | Implemented evidence | Remaining work |
 | --- | --- | --- |
 | Acquisition | [Host capture](verification/native-capture-2026-09-08.md), merged to Striatum main at `5ea87ca`, compiles and confirms the exact observer-owned receipt. | The watch supports the existing body request described below; newer retrieval options need an explicit interface extension when a task needs them. |

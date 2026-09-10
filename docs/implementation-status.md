@@ -73,6 +73,11 @@ regressions and passes full repository and focused native race checks. Its
 accepted catalog remains `observation@1`/`build@3`; native adoption and real-build
 benefit remain open. The installed Driver and Cairn services were not upgraded.
 
+The [native adoption check](native-striatum-context.md#shared-rfc-adoption-check--2026-09-10)
+also found an unfinished, separate amendment on RFC 0004. Its request and
+escalations do not advance Cairn; the shared RFC requires sequencing before
+Cairn's proposed contracts can enter the accepted stages.
+
 ## Working capabilities
 
 | Area | Implemented behavior | Details |
@@ -4102,3 +4107,33 @@ These were ordinary reads with no model inference or operational note-content
 mutation. [Verification](verification/search-room-2026-09-10.md) records the
 installation and matching source/span hashes. Whole-task accounting and durable
 model-task benefit remain open.
+
+
+### 2026-09-10 — Reconcile native adoption with the shared RFC graph
+
+A completed live status read and selected retained ledger records distinguish
+Cairn's captured opening request 408328 from RFC 0004 staging request 408565.
+The latter carries the separate `review-conclusions-are-evidence-bound` intent
+from request 408483. Its nine horizon lapses and escalations 409639/409640 are
+not Cairn trials. An initial subject-name inference was corrected after reading
+the exact retained intent; no request, resolution or retry was issued.
+
+[Adoption guidance](native-striatum-context.md#shared-rfc-adoption-check--2026-09-10)
+now requires reconciliation of the shared RFC sequence before Cairn stage
+production and personal acceptance. No relevant acceptance candidate was queued;
+the live projection listed RFC 0007's Decision as stale. Source and installed
+catalogs retain observation@1/build@3, and installed Striatum remains clean
+a6b1ae7. Striatum main is 5848b23; its unrelated untracked file was preserved.
+The [check metadata](verification/native-adoption-2026-09-10.json) retains
+selected references and hashes; private request bodies remain outside Git.
+
+This is a correction to adoption planning, not a code change, diagnosis of the
+other feature's failures, native enablement or new usefulness evidence. Full
+implementation history is preserved. Ordinary task-value work remains available;
+the overall Cairn goal is active.
+
+The native-capture procedure was extended from v3 to v4 with the shared-RFC
+finding and source pointers. Retained-history reads verified that all earlier
+body bytes remain exact. The first append omitted the API's required repository
+and refused; the corrected request succeeded. This selected maintenance does
+not establish downstream benefit. No global Codex memory file was changed.

@@ -323,6 +323,13 @@ than the accepted usefulness features with those names.
 
 ### 2. Establish the observed use/outcome join
 
+The [2026-09-10 native adoption check](native-striatum-context.md#shared-rfc-adoption-check--2026-09-10)
+found a separate unfinished amendment on RFC 0004, which Cairn also needs.
+U1 adoption must reconcile that shared identity before issuing a Cairn amendment
+there. Its existing request and dispatch failures belong to the other feature.
+Preserve the owning RFC stage/Decision acceptance sequence; continue useful
+ordinary Codex/OpenCode tasks while native adoption is pending.
+
 Depends on capture repair and protected receipt boundaries. This is the first
 accepted usefulness milestone, before historical evaluation and generated demand.
 
