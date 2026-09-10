@@ -3489,3 +3489,11 @@ Pincite packet `pkt-7d3944f3e1e70a3d` includes typed evidence, a validated decis
 receipt and closed citation traces; 26 generic obligations remain explicitly
 nonmaterial to this documentation/test decision. The prior implementation history
 is preserved byte-for-byte.
+
+
+[CI 34521354667](https://github.com/halbritt/cairn/actions/runs/34521354667)
+completed successfully for audit source `e8bcf65`. Both jobs and every recorded
+step passed, including the PostgreSQL race suite, Python tests, static/build
+checks, authenticated CLI/compact startup and OpenCode recent-file plugin checks.
+This corroborates the test/documentation change; the installed runtime is still
+`4df17af` and the historical evidence gaps above remain open.

@@ -308,5 +308,20 @@
     ],
     "decision_receipt_validated": true,
     "citation_loops_closed": true
+  },
+  "ci": {
+    "source_commit": "e8bcf65a0bd0187e5b950c8811e2015bccece12a",
+    "run_id": 34521354667,
+    "url": "https://github.com/halbritt/cairn/actions/runs/34521354667",
+    "conclusion": "success",
+    "jobs": [
+      "postgres",
+      "opencode-plugin"
+    ],
+    "all_recorded_steps_succeeded": true,
+    "artifact": {
+      "path": "/tmp/cairn-replay-audit-20260910/ci.json",
+      "sha256": "05eed0a438b130e4b44640f28168fd52e8184622f75d718b88e487c0f2569899"
+    }
   }
 }
