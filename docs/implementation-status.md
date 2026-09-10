@@ -50,6 +50,12 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Native searches accept changing task context.** MCP and OpenCode can declare
+  context for one call when the host left those fields unset. Host-fixed values
+  remain enforced. This makes phase-restricted guidance reachable without changing
+  configuration between phases; task benefit remains unmeasured.
+  [Contract](search-context.md), [verification](verification/search-context-2026-09-10.md).
+
 - **Reviewed failure signatures can retrieve lessons.** An optional supplied digest
   finds the exact current lesson version linked by a reviewed failure, including
   on another task or harness. Hosted associations require explicit review sharing;
@@ -2659,3 +2665,30 @@ now favors ordinary task use before further signature feature work, while keepin
 qualitative, cumulative and indirect value admissible. E1/E4/D1/D2 remain partial.
 Pincite packet `pkt-1ddf7666ccf3178f` has validated evidence and decision receipt,
 closed citation traces and 15 explicitly nonmaterial outstanding obligations.
+
+
+### 2026-09-10 — Per-call context for native search
+
+MCP and native OpenCode searches now accept an optional context declaration for
+one call, using the existing revision/workspace/task-class/task-phase/binding/
+capability fields. Previously native capture could restrict a note to a phase,
+but native search could only use host configuration. The MCP regression and
+installed OpenCode adapter both rejected the additional argument before this
+change. The updated interfaces retrieve restricted guidance when supplied context
+matches and omit it when context is missing or different.
+
+Per-call values fill unset fields only; conflicting host-fixed values refuse
+before retrieval, without reserving the retry identity. Empty fields cannot erase
+configured values. Declarations do not carry into later calls, and exact retries
+retain their existing intent checks. Repository/session scope, destination,
+permissions, mandatory instructions and capture pins keep their existing owners.
+No store migration or ranking change is needed.
+
+Full disposable PostgreSQL/race, CLI/API, MCP, Go/40 Python and static checks pass.
+Native OpenCode tooling and scripted normal-session checks also pass after an
+initial timeout during the first existing capture call; its startup cause remains
+unknown. The [verification report](verification/search-context-2026-09-10.md)
+preserves that failure separately from the new behavior. No answering model or
+new task-benefit result is claimed. E1 and broader usefulness requirements remain
+partial. CI for preceding documentation commit `52e428b` completed successfully
+in run `34458204478`.

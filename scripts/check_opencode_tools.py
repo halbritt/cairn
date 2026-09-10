@@ -75,6 +75,26 @@ def check(binary, root, environment, opencode, claim, support):
         settings_path.write_text(json.dumps(dict(settings, context=context)))
         assert not invoke('search', dict(query=marker))['index']
     settings_path.write_text(json.dumps(settings))
+    declared = invoke('search', dict(query=marker, context={'task_phase': 'validation'}))
+    assert [e['record_id'] for e in declared['index']] == [saved['record_id']]
+    invoke('search', dict(query=marker, context={'task_phase': 'implementation'}), 'conflicts with configured context')
+    settings_path.write_text(json.dumps(dict(settings, context={})))
+    declared = invoke('search', dict(query=marker, context={'task_phase': 'validation'}))
+    assert [e['record_id'] for e in declared['index']] == [saved['record_id']]
+    assert invoke('pull', declared['index'][0]['pull_arguments'])['selection']['record']['pins'] == capture['pins']
+    assert not invoke('search', dict(query=marker))['index']
+    assert not invoke('search', dict(query=marker, context={'task_phase': 'implementation'}))['index']
+    for invalid in ({'task_phaze': 'validation'}, {'task_phase': 7}, {'task_phase': '*'}, {'revision': 'main'}, {'binding': 'wrong-field'}):
+        invoke('search', dict(query=marker, context=invalid), 'INVALID_REQUEST')
+    pins = dict(revision='a' * 40, workspace_sha256='b' * 64, task_class='repair',
+                task_phase='validation', binding_id='native-fixture', capability_id='source-review')
+    assert invoke('search', dict(query=marker, context=pins))['context'] == pins
+    fixed = {('binding' if k == 'binding_id' else 'capability' if k == 'capability_id' else k): v for k, v in pins.items()}
+    settings_path.write_text(json.dumps(dict(settings, context=fixed)))
+    assert invoke('search', dict(query=marker, context={}))['context'] == pins
+    for key in pins:
+        invoke('search', dict(query=marker, context={key: 'c' * len(pins[key])}), 'conflicts with configured context')
+    settings_path.write_text(json.dumps(settings))
     first = invoke('search', dict(query=marker))
     second = invoke('search', dict(query=marker))
 

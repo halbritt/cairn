@@ -1,0 +1,160 @@
+{
+  "schema": "cairn.search-context-verification/1",
+  "baseline_commit": "52e428b739caf777048268bad53c9c8b14ebade7",
+  "migration": null,
+  "checks": {
+    "disposable_postgres_race": true,
+    "go_tests": true,
+    "python_tests": 40,
+    "static": true,
+    "authenticated_cli": true,
+    "mcp_stdio": true,
+    "native_opencode_tools": true,
+    "scripted_opencode_session": true,
+    "native_opencode_version": "1.18.21",
+    "per_call_context_fields": 6,
+    "answering_model": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-5bad129a87ea04a6",
+    "packet_content_sha256": "5bad129a87ea04a6cfd2f2c341e3c3444786eec84d195dc3acb621f891984724",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or method set changes. The private merge helper returns a concrete context pointer and literal nil errors; it introduces no typed-nil interface absence."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or method set changes. The private merge helper returns a concrete context pointer and literal nil errors; it introduces no typed-nil interface absence."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or method set changes. The private merge helper returns a concrete context pointer and literal nil errors; it introduces no typed-nil interface absence."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or method set changes. The private merge helper returns a concrete context pointer and literal nil errors; it introduces no typed-nil interface absence."
+      },
+      {
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "caller nil checks and method use",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or method set changes. The private merge helper returns a concrete context pointer and literal nil errors; it introduces no typed-nil interface absence."
+      },
+      {
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "documented absence semantics",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or method set changes. The private merge helper returns a concrete context pointer and literal nil errors; it introduces no typed-nil interface absence."
+      },
+      {
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "dynamic type and dynamic value at the return",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or method set changes. The private merge helper returns a concrete context pointer and literal nil errors; it introduces no typed-nil interface absence."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-search-context-authority.json",
+      "sha256": "1729cbe889de9acfbab2e400fb9e4d09352c01e1ba6e6c38b280748e9e213e8e"
+    },
+    {
+      "path": "/tmp/cairn-search-context-contracts.json",
+      "sha256": "95aab9eebb9f7f4e8a09f6098f921ae061e068d2ffa304e88eddea77914e5de0"
+    },
+    {
+      "path": "/tmp/cairn-search-context-structure.json",
+      "sha256": "ee282add7137c3876c732c4f8f64e438f83b003387fd642b30ec73dd552d5442"
+    },
+    {
+      "path": "/tmp/cairn-search-context-tests.json",
+      "sha256": "59519045358518fdfdfeaf3e7434db4676d8e691b123f8fdb3802ec11e9b9cfd"
+    },
+    {
+      "path": "/tmp/cairn-search-context-review.json",
+      "sha256": "1469b35bc8707bb31df70992afab9b5398ec98d25f966c5698f0e177669df103"
+    },
+    {
+      "path": "/tmp/cairn-search-context-final.json",
+      "sha256": "5e5889ac7e07c595f8823cd84e8471533d9ccd6bf04cbdc07ccf144f0c37117e"
+    },
+    {
+      "path": "/tmp/cairn-search-context-red.log",
+      "sha256": "ea538bed4bc98ce1a580fb6fb5d2b5f1b423b7873f2ca2bcb8bbfb88dd02e10e"
+    },
+    {
+      "path": "/tmp/cairn-search-context-green.log",
+      "sha256": "a42d3c66ec4c4740afb7f8ec6270f1b5b7d34d10bfdacdc77b57155dd28c7d7c"
+    },
+    {
+      "path": "/tmp/cairn-search-context-installed-native-red.log",
+      "sha256": "cdf8414f7363732a6556bb70b77755a108e9ef1818e4b86e9c0a2e4007fa918e"
+    },
+    {
+      "path": "/tmp/cairn-search-context-native-red.log",
+      "sha256": "739d562474f63676008a5cf2bdf43f1427bbfe8d0445a5ec2566bac58f6f84d4"
+    },
+    {
+      "path": "/tmp/cairn-search-context-api.log",
+      "sha256": "0024fab4ecfeea6f2d425a7ef17411290cc3023c7e03f713180b0cfd7ca340cd"
+    },
+    {
+      "path": "/tmp/cairn-search-context-api-final.log",
+      "sha256": "77b06de5d6a32c0df1fea84f2a16334ad997995ce8760b62c483506fc7ad41e5"
+    },
+    {
+      "path": "/tmp/cairn-search-context-integration.log",
+      "sha256": "c9e7e911b93f8fc5d5bf79a03a1d929b34880138ad5601860dba99af213130ce"
+    },
+    {
+      "path": "/tmp/cairn-search-context-tests.log",
+      "sha256": "ce55e1d3ff92ff31f0605f4d40f814daea35c939b43a47e0ae23ce861d5796cf"
+    },
+    {
+      "path": "/tmp/cairn-search-context-check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-search-context-decision.json",
+      "sha256": "07d71226abce18c497ad3d60c35572e67b6514c8df13f5f53058b261c21b564d"
+    },
+    {
+      "path": "/tmp/cairn-search-context-doctrine.json",
+      "sha256": "67d8cd3eee521ef187d61918bcc309de52eab1aea23ee3452aa1aa5599e1b0b2"
+    },
+    {
+      "path": "/tmp/cairn-search-context-doctrine-verified.json",
+      "sha256": "fbc5445f3b3ef418e5fb4aa89934b21fbf99598abb44d6426e6990467ba58c7e"
+    },
+    {
+      "path": "/tmp/cairn-search-context-doctrine-final.json",
+      "sha256": "6e9165cb6ac38e25dd271240ddcda37b92634f9e95adbf4f3cc4e3dfc3a4256c"
+    },
+    {
+      "path": "/tmp/cairn-search-context-citations.json",
+      "sha256": "b07a83c7c40cf0561e5501e90a939f1eedc0354f2d8f7da8cca08ca01886089d"
+    },
+    {
+      "path": "/tmp/cairn-search-context-citations-verified.json",
+      "sha256": "19a6380ee04e077e1efeb9200b317c8c184ac0faf9b924a8734dc6929dd4f9e3"
+    },
+    {
+      "path": "/tmp/cairn-search-context-citations-final.json",
+      "sha256": "96d1f8a010137acca87d5a27031661f868021d928771c55307ab1a3a7606677d"
+    }
+  ]
+}

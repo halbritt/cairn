@@ -156,6 +156,10 @@ Connection settings are read for each call. Optional `context` keys are
 `revision`, `workspace_sha256`, `task_class`, `task_phase`, `binding` and `capability`; they map
 to the existing CLI search flags. These are host declarations, not attestations
 of the physical checkout. Pulls continue to use their original receipts.
+The search tool's optional [context argument](search-context.md) can fill fields
+left unset in those settings for one call. Conflicting configured values refuse
+before retrieval. Tool arguments use `binding_id` and `capability_id`; the settings
+file keeps its existing `binding` and `capability` keys.
 
 `tokens` defaults to 32,000, with the same 256–1,000,000 range as MCP. The adapter
 uses the conservative UTF-8 byte bound and refuses oversized results rather than

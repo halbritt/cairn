@@ -16,6 +16,12 @@ function validatedTool<Args extends ZodRawShape>(definition: Parameters<typeof t
   } })
 }
 
+const contextFields = {
+  revision: z.string().optional(), workspace_sha256: z.string().optional(),
+  task_class: z.string().optional(), task_phase: z.string().optional(),
+  binding_id: z.string().optional(), capability_id: z.string().optional(),
+}
+
 const absolutePath = z.string().refine(isAbsolute, "Use an absolute installation path")
 const settingsSchema = z.object({
   executable: absolutePath,
@@ -81,7 +87,7 @@ const writeResult = z.object({ record_id: z.string().uuid(), version: z.number()
 
 export const search = validatedTool({
   description: "Search repository memory in this OpenCode session with a query, or set browse=true without a query to inspect available topics. Browsing is bounded by the same budget, ordered by scope and recency, and is not a complete inventory or relevance ranking. Read mandatory selected context and pull relevant index entries using their complete pull_arguments. A notes are fallible; verify before applying them. Search records exposure, not proven use.",
-  args: { error_signature_sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional().describe("SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by a shareable operator review. May replace query text; cannot browse. Not proof of failure or correctness."), kinds: z.array(z.enum(["note", "observation", "claim", "lesson", "procedure", "decision", "preference", "instruction"])).max(8).optional().describe("Select any listed optional record label; empty means all. Required instructions always apply. Labels do not establish authority."), query: z.string().optional().describe("Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available."), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget."), request_id: z.string().uuid().optional() },
+  args: { context: z.object(contextFields).strict().optional().describe("Context declared for this search only. May fill fields the host left unset; conflicting configured values are refused. Observe actual task state first. Does not certify execution or change repository/session scope. Repeat the same context on later pages."), error_signature_sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional().describe("SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by a shareable operator review. May replace query text; cannot browse. Not proof of failure or correctness."), kinds: z.array(z.enum(["note", "observation", "claim", "lesson", "procedure", "decision", "preference", "instruction"])).max(8).optional().describe("Select any listed optional record label; empty means all. Required instructions always apply. Labels do not establish authority."), query: z.string().optional().describe("Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available."), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget."), request_id: z.string().uuid().optional() },
   async execute(args, context) {
     const query = args.query ?? ""
     if (args.semantic && args.browse) throw new Error("INVALID_REQUEST: semantic discovery cannot be combined with browsing")
@@ -95,8 +101,18 @@ export const search = validatedTool({
     }
     const command = ["search", "--repo", config.repo, "--task", "opencode/" + session, "--run", session, "--tokens", String(config.tokens)]
     if (args.request_id) command.push("--request-id", args.request_id)
+    const declared: Record<string, string | undefined> = { ...args.context }
     for (const [key, value] of Object.entries(config.context ?? {})) {
-      if (value !== undefined) command.push("--" + key.replaceAll("_", "-"), value)
+      if (!value) continue
+      const field = key === "binding" ? "binding_id" : key === "capability" ? "capability_id" : key
+      if (declared[field] && declared[field] !== value) {
+        throw new Error("INVALID_REQUEST: context." + field + " conflicts with configured context")
+      }
+      declared[field] = value
+    }
+    for (const [key, value] of Object.entries(declared)) {
+      const flag = key === "binding_id" ? "binding" : key === "capability_id" ? "capability" : key.replaceAll("_", "-")
+      if (value !== undefined) command.push("--" + flag, value)
     }
     for (const kind of args.kinds ?? []) command.push("--kind", kind)
     if (args.error_signature_sha256) command.push("--error-signature-sha256", args.error_signature_sha256)
@@ -136,9 +152,7 @@ export const remember = validatedTool({
   description: "Save explicitly selected reusable repository knowledge as ordinary A testimony across tasks and sessions. Include source and verification context; never raw sessions or secrets. Reuse the request UUID for retries. shareable permits hosted delivery; local is the default.",
   args: { request_id: z.string().uuid(), body: z.string().min(1), kind: z.string().optional().describe("Defaults to note"), shareable: z.boolean().optional(),
     pins: z.object({
-      revision: z.string().optional(), workspace_sha256: z.string().optional(),
-      task_class: z.string().optional(), task_phase: z.string().optional(),
-      binding_id: z.string().optional(), capability_id: z.string().optional(),
+      ...contextFields,
       valid_from: z.string().optional(), valid_until: z.string().optional(),
     }).strict().optional().describe("Explicit applicability restrictions; all must match. Omit for unpinned guidance. Never inherited from search context. Edits cannot change pins."),
   },

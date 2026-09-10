@@ -43,13 +43,14 @@ func (c Config) Validate() error {
 }
 
 type searchArgs struct {
-	ErrorSignature string   `json:"error_signature_sha256,omitempty" jsonschema:"Optional SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by an explicitly shareable operator review. Does not establish current failure or correctness. May replace the query; cannot browse. Semantic discovery still requires query text."`
-	Kinds          []string `json:"kinds,omitempty" jsonschema:"Optional labels: note, observation, claim, lesson, procedure, decision, preference, instruction. Matches any listed label; empty means all. Required instructions always apply. Labels do not establish authority."`
-	Semantic       bool     `json:"semantic,omitempty" jsonschema:"Optional semantic discovery for vocabulary mismatches. Requires a query, cannot browse. Similarity is not answer confidence; an unavailable backend returns labelled lexical fallback."`
-	Query          string   `json:"query,omitempty" jsonschema:"Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available. Omit when browse is true or a failure signature is supplied."`
-	Browse         bool     `json:"browse,omitempty" jsonschema:"Browse eligible memory without a query when its vocabulary is unknown. Results are bounded, ordered by scope and recency, and may omit older notes."`
-	Offset         *int     `json:"offset,omitempty" jsonschema:"Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget; restart if notes change."`
-	RequestID      string   `json:"request_id,omitempty" jsonschema:"Optional UUID for retrying the same search."`
+	Context        *core.ContextPins `json:"context,omitempty" jsonschema:"Context declared for this search only: revision, workspace_sha256, task_class, task_phase, binding_id, capability_id. May fill fields the host left unset; conflicts with configured values are refused. Observe actual task state before declaring it. This does not certify execution or change repository/session scope. Repeat the same context on later pages."`
+	ErrorSignature string            `json:"error_signature_sha256,omitempty" jsonschema:"Optional SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by an explicitly shareable operator review. Does not establish current failure or correctness. May replace the query; cannot browse. Semantic discovery still requires query text."`
+	Kinds          []string          `json:"kinds,omitempty" jsonschema:"Optional labels: note, observation, claim, lesson, procedure, decision, preference, instruction. Matches any listed label; empty means all. Required instructions always apply. Labels do not establish authority."`
+	Semantic       bool              `json:"semantic,omitempty" jsonschema:"Optional semantic discovery for vocabulary mismatches. Requires a query, cannot browse. Similarity is not answer confidence; an unavailable backend returns labelled lexical fallback."`
+	Query          string            `json:"query,omitempty" jsonschema:"Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available. Omit when browse is true or a failure signature is supplied."`
+	Browse         bool              `json:"browse,omitempty" jsonschema:"Browse eligible memory without a query when its vocabulary is unknown. Results are bounded, ordered by scope and recency, and may omit older notes."`
+	Offset         *int              `json:"offset,omitempty" jsonschema:"Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget; restart if notes change."`
+	RequestID      string            `json:"request_id,omitempty" jsonschema:"Optional UUID for retrying the same search."`
 }
 
 type rememberArgs struct {
@@ -152,13 +153,48 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 	if args.RequestID == "" {
 		args.RequestID = uuid.NewString()
 	}
+	declared, err := searchContext(t.config.Context, args.Context)
+	if err != nil {
+		return nil, nil, err
+	}
 	var index core.IndexResult
-	err := t.client.Call(ctx, "index", core.CompileRequest{ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: t.config.Context}, &index)
+	err = t.client.Call(ctx, "index", core.CompileRequest{ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: declared}, &index)
 	if err != nil {
 		return toolResult(nil, err, t.config.AvailableTokens)
 	}
 	view, err := presentSearch(index, args.RequestID)
 	return toolResult(view, err, t.config.AvailableTokens)
+}
+
+func searchContext(fixed, supplied *core.ContextPins) (*core.ContextPins, error) {
+	if supplied == nil {
+		return fixed, nil
+	}
+	merged := core.ContextPins{}
+	if fixed != nil {
+		merged = *fixed
+	}
+	for _, field := range []struct {
+		name   string
+		value  string
+		target *string
+	}{
+		{"revision", supplied.Revision, &merged.Revision},
+		{"workspace_sha256", supplied.WorkspaceSHA256, &merged.WorkspaceSHA256},
+		{"task_class", supplied.TaskClass, &merged.TaskClass},
+		{"task_phase", supplied.TaskPhase, &merged.TaskPhase},
+		{"binding_id", supplied.BindingID, &merged.BindingID},
+		{"capability_id", supplied.CapabilityID, &merged.CapabilityID},
+	} {
+		if field.value == "" {
+			continue
+		}
+		if *field.target != "" && *field.target != field.value {
+			return nil, fmt.Errorf("INVALID_REQUEST: context.%s conflicts with configured context", field.name)
+		}
+		*field.target = field.value
+	}
+	return &merged, nil
 }
 
 func (t memoryTools) pull(ctx context.Context, _ *mcp.CallToolRequest, args core.ExpandRequest) (*mcp.CallToolResult, any, error) {

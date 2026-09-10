@@ -435,6 +435,14 @@ instructions no longer block unrelated tasks; unknown applicability, private
 exclusion and historical decisions retain their contracts. E1 remains partial
 for its other context dimensions and broader task evidence.
 
+[Per-call native context](search-context.md) now lets MCP and OpenCode searches
+declare a phase, revision or other existing context field that the host left
+unset. This connects native capture of restricted notes to retrieval as a task
+changes, without restarting an unpinned facade. Fixed host values cannot be
+overridden; declarations do not carry into later calls. [Verification](verification/search-context-2026-09-10.md)
+covers applicability and existing tool boundaries. Automatic context observation
+and task benefit remain open.
+
 The [evidence capture transport repair](verification/evidence-limit-2026-09-09.md)
 allows authenticated clients to use the store's existing 1 MiB inline source limit,
 including heavily escaped JSON. Evidence alone has an 8 MiB encoded request cap;

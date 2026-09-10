@@ -33,19 +33,22 @@ supply `--revision` (immutable Git object ID), `--workspace-sha256`, `--task-cla
 server's lifetime and accompany every search. For example, append
 `--revision "$(git rev-parse HEAD)" --task-class repair` when launching from the
 intended checkout. They declare applicability; Cairn does not attest that the
-physical checkout matches them. Restart with updated declarations when the
-context changes. Invalid values produce the API's `INVALID_REQUEST` on search.
+physical checkout matches them. Restart with updated declarations when fixed
+context changes. A search's optional [context argument](search-context.md) can fill
+fields the host left unset without changing later calls. Invalid values produce
+the API's `INVALID_REQUEST` on search.
 
 A missing or mismatched required pin withholds an optional memory. A mandatory
 instruction requiring unavailable context can refuse the search with
 `POLICY_UNENFORCEABLE`. Model tool arguments cannot override these declarations.
-Leaving all five flags empty preserves searches without a context object.
+Leaving all context flags empty and omitting the per-call argument preserves
+searches without a context object.
 
 ## Tools
 
 | Tool | Inputs and behavior |
 | --- | --- |
-| `cairn_search` | A `query`, or `browse: true` without a query; optional retry `request_id`. Returns mandatory context plus a bounded index. Each entry has a complete `pull_arguments` object for the next call. |
+| `cairn_search` | A `query`, or `browse: true` without a query; optional retry `request_id` and per-call `context` for fields not fixed by the host. Returns mandatory context plus a bounded index. Each entry has a complete `pull_arguments` object for the next call. |
 | `cairn_pull` | Pass an entry's `pull_arguments` unchanged for the full body. Add `span: {offset: 0, length: 4096}` for a partial A/B source, or copy the entry's `summary_span` to read its exact preview source bytes. Use a new request UUID for each range. Reuse identical arguments for retries. Instructions require whole delivery. |
 | `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its full-object `expected_sha256`, and a retry `request_id`. Optional `span: {offset: 0, length: 4096}` selects at most that many bytes. Shares the body's expansion credits and bytes. |
 | `cairn_remember` | `body` and a stable UUID `request_id`; optional `kind`, `shareable` and explicit `pins`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |

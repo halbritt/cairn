@@ -46,6 +46,18 @@ def check(binary, root, environment, grant):
         view = tool('cairn_search', dict(query=query))
         assert not view['index'] and view['omitted']['CONTEXT_MISSING'] == 1, view
         assert 'context' not in view
+        request = dict(query=query, context=pins, request_id=str(uuid.uuid4()))
+        declared = tool('cairn_search', request)
+        assert declared['context'] == pins
+        assert [e['record_id'] for e in declared['index']] == [note['record_id']]
+        assert tool('cairn_search', request)['receipt_id'] == declared['receipt_id']
+        assert 'IDEMPOTENCY_CONFLICT' in tool('cairn_search', dict(request,
+            context=dict(pins, task_phase='implementation')), error=True)
+        changed = tool('cairn_search', dict(query=query, context=dict(pins, task_phase='implementation')))
+        assert not changed['index'] and changed['omitted']['CURRENTNESS_MISMATCH'] == 1
+        assert not tool('cairn_search', dict(query=query))['index'], 'per-call context leaked to next search'
+        for invalid in ({'task_phaze': 'validation'}, {'task_phase': 7}, {'task_phase': '*'}, {'revision': 'main'}):
+            assert tool('cairn_search', dict(query=query, context=invalid), error=True)
 
     with session(binary, root, environment, arguments(pins), generated=True) as tool:
         view = tool('cairn_search', dict(query=query))
@@ -59,7 +71,14 @@ def check(binary, root, environment, grant):
         fresh = tool('cairn_search', dict(query=query))
         revised = tool('cairn_pull', fresh['index'][0]['pull_arguments'])['selection']['record']
         assert revised['version'] == 2 and revised['pins'] == pins
-        assert 'additional' in tool('cairn_search', dict(query=query, context={}), error=True)
+        assert tool('cairn_search', dict(query=query, context={}))['context'] == pins
+        assert tool('cairn_search', dict(query=query, context=pins))['context'] == pins
+        for key in pins:
+            conflicting = dict(pins, **{key: 'c' * len(pins[key])})
+            retry = str(uuid.uuid4())
+            assert 'conflicts with configured context' in tool('cairn_search',
+                dict(query=query, context=conflicting, request_id=retry), error=True)
+            assert tool('cairn_search', dict(query=query, context=pins, request_id=retry))['context'] == pins
 
     for key in pins:
         mismatch = dict(pins, **{key: 'c' * len(pins[key])})
@@ -70,6 +89,8 @@ def check(binary, root, environment, grant):
         with session(binary, root, environment, arguments(missing)) as tool:
             view = tool('cairn_search', dict(query=query))
             assert not view['index'] and view['omitted']['CONTEXT_MISSING'] == 1, (key, view)
+            filled = tool('cairn_search', dict(query=query, context={key: pins[key]}))
+            assert filled['context'] == pins and len(filled['index']) == 1, (key, filled)
 
     invalid = dict(pins, revision='main')
     with session(binary, root, environment, arguments(invalid)) as tool:
@@ -81,8 +102,10 @@ def check(binary, root, environment, grant):
                            policy_key='mcp-currentness', reason='Disposable mandatory context fixture'))
     with session(binary, root, environment) as tool:
         assert 'POLICY_UNENFORCEABLE' in tool('cairn_search', dict(query=query), error=True)
+        declared = tool('cairn_search', dict(query=query, context=pins))
+        assert any(s['record']['record_id'] == instruction['record_id'] and s['mandatory'] for s in declared['selected'])
     with session(binary, root, environment, arguments(pins)) as tool:
         view = tool('cairn_search', dict(query=query))
         selected = next(s for s in view['selected'] if s['record']['record_id'] == instruction['record_id'])
         assert selected['mandatory'] and selected['record']['body'] == 'Use the declared build context.'
-    print('MCP startup pins select applicable bodies and mandatory context; missing, mismatched, invalid and tool overrides are refused')
+    print('MCP per-call context fills unset host fields without carrying forward; fixed context, retries, eligibility and mandatory context remain enforced')
