@@ -48,6 +48,16 @@ already running. [File capture checks](verification/file-evidence-capture-2026-0
 
 ## Construct a JSON capture request
 
+Serialized JSON requests must contain valid UTF-8 and correctly paired Unicode
+surrogate escapes. Cairn rejects inputs that Go's JSON decoder would otherwise
+replace with U+FFFD, before capturing bytes or reserving a request identity.
+Valid escaped surrogate pairs, literal backslashes and an explicitly supplied
+U+FFFD remain valid. The same check applies to other API/CLI JSON requests.
+It does not recover characters already changed by an upstream encoder or native
+SDK; use file mode or `body_base64` for arbitrary source bytes.
+[Unicode request checks](verification/json-unicode-integrity-2026-09-09.md).
+
+
 For binary files, encode the selected bytes as canonical padded standard base64
 (for example, Python's `base64.b64encode(data).decode("ascii")`). Do not decode
 arbitrary binary as UTF-8 or put replacement characters into `body`. An example

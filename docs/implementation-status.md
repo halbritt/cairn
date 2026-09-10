@@ -46,6 +46,11 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Malformed JSON Unicode refuses before capture.** Raw invalid UTF-8 and
+  lone surrogate escapes can no longer be silently replaced during request
+  decoding. Valid Unicode and binary capture remain supported.
+  [Verification](verification/json-unicode-integrity-2026-09-09.md).
+
 - **Selected files can be captured directly.** `agent evidence --file` and
   operator `capture-evidence --file` preserve exact bytes up to 1 MiB, with a
   chosen source label and local default. Existing JSON mode remains.
@@ -2098,3 +2103,31 @@ commands, source-label and sharing choices, exact retry rules and the distinctio
 between operator file and JSON limits. Earlier body and metadata remain; exact
 retry and fresh pull match c2f4a0938ca00aaca5b97ccf0ec80b3a312bc2209243ef9835f8b22415b0731f.
 CI 34434364680 is in_progress. Installation evidence: /tmp/cairn-file-capture-deployment/.
+
+
+CI completion: `34434364680` passed for exact selected-file implementation `57164ce`.
+
+
+### 2026-09-09 — Reject lossy Unicode before request decoding
+
+A raw API reproduction captured invalid UTF-8 JSON source text with HTTP200/OK:
+decoding had replaced bytes before core UTF-8 validation. Lone surrogate escapes
+had the same gap. Operator decoding and agent forwarding reproduced acceptance
+separately. A shared Unicode guard now rejects these serialized inputs before
+typed decoding or API send, retaining standard JSON/schema validation. The API
+still authenticates first and enforces the same bounded request envelopes.
+
+Valid UTF-8, paired escaped emoji, literal escaped backslashes, NUL escapes and
+explicit replacement characters remain valid. Refused API/CLI requests do not
+reserve capture IDs; valid retries retain exact source digests. The check cannot
+recover text already altered by an upstream serializer/SDK and does not repair
+historical captures. Specialized import/configuration paths are not claimed.
+
+Static checks, Go/40-Python tests and full disposable PostgreSQL/race integration
+pass, including actual malformed/valid Unicode CLI captures, maximum-size sources,
+selected files, ordinary notes and stdio MCP. A bounded fuzz run had 12,199 total
+executions, including skipped invalid UTF-8 inputs; it was not that many valid
+cases. Make check now includes internal package formatting. No schema, authority,
+sharing rule or native adapter changed. This repairs a verified capture defect;
+net task value remains unassessed. Installation is recorded separately.
+[Report](verification/json-unicode-integrity-2026-09-09.md).

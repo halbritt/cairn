@@ -728,6 +728,9 @@ are explicit. Other policy paths and refusal analytics remain open.
 [Evidence refresh](evidence-refresh.md) now records inline check generations and
 history, atomically invalidates affected impact previews, and blocks proposal
 conversion when selected evidence is unavailable. Historical gates remain frozen.
+[JSON Unicode validation](verification/json-unicode-integrity-2026-09-09.md)
+rejects serialized inputs that would otherwise capture replacement characters,
+before reserving request identity. Valid text and binary representations remain.
 [Selected-file capture](evidence-refresh.md#capture-a-selected-file) reads and encodes
 chosen regular files through the existing CLI capture operation, with a required
 source label and local default. It retains no automatic file locator or freshness

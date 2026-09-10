@@ -1,0 +1,207 @@
+{
+  "schema": "cairn.json-unicode-integrity-verification/1",
+  "baseline_commit": "b1814fe4cc91c8f533c54ad4fd34ac11c3c2e5f1",
+  "checks": {
+    "static": true,
+    "go_python": true,
+    "python_tests": 40,
+    "full_disposable_pg_race": true,
+    "stdio_mcp": true,
+    "raw_api_and_both_clis": true,
+    "fuzz_total_executions": 12199,
+    "fuzz_invalid_utf8_inputs_skipped": true,
+    "answering_model": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-3cda1b23048838c8",
+    "packet_content_sha256": "3cda1b23048838c8ae691e0fc445f2fe8c408b92b669713f0d60b28593e9a460",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "expert distinction of sameness over time",
+        "required_by": "domain-identity-entity",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "identity scenarios",
+        "required_by": "domain-identity-entity",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "identity source and comparison rules",
+        "required_by": "domain-identity-entity",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "lifecycle or reference consequences",
+        "required_by": "domain-identity-entity",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "authoritative examples",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "authoritative expert examples",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "feedback from implementation and usage",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "model expressed in executable behavior",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "terms whose meanings affect decisions",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "business differentiation and product lifespan",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "business-value and expert-access evidence",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "expert access and feedback cadence",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "recurring ambiguity, contradiction, or rule defect",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "team capacity to sustain the model",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new domain identity, domain modeling initiative or Go interface; existing request identity and storage remain."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-json-integrity-evidence-authority.json",
+      "sha256": "ffd48955a1be8399e8bef71ac730e855054b0e2830893af4df999b41031520d6"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-evidence-implementation.json",
+      "sha256": "9dc4162ede75fcaf07adbfd07d038087e49ba8b90e0ba8271cfb18521ce46d03"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-evidence-contracts.json",
+      "sha256": "2aaa139abe14db472bd9513cc6622ce283dd7f28b8c16dac08f8dff9bf483b9d"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-evidence-tests.json",
+      "sha256": "52e29c98f0bf69d4d08978b68fab1e4945597dcba4684e5b4ce488e9ec6f8937"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-red.log",
+      "sha256": "82b2e469bae3a14ee48ad71cef11a09d6b3e31fcf75abe79e04aa042bb85bc77"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-cli-red.log",
+      "sha256": "c244c0d32d34ad2625aabd78d1a3e04dc18ab8736baed5e2c8cba987e366874f"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-server-green.log",
+      "sha256": "2228cb636e61215d871e8cd2d2c708aa390a518922177f9b58251ca4836bbb54"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-cli-green.log",
+      "sha256": "8d2f6b06a6432a9dd4b88a3214c79ad0353f64a41a473bbe48ca84e3aadc9b0b"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-fuzz.log",
+      "sha256": "6e115b90f43a47d330826ce5fa6162b4ee14f3172e71ddc73669b4846ea3547f"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-tests.log",
+      "sha256": "09f285003c630651dec6f1c352a93f46299c1131d336afa491c231f67e06a20b"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-integration.log",
+      "sha256": "b202f5f444cb1d5b96e949ef1b60b43a805d8db9349a9cbe313f43c1c5c29388"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-go-decoder.txt",
+      "sha256": "d0de4b4da9492c38895ffd8bd851a5ad50c5a89de25484d4fa8284ede66c741a"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-decision.json",
+      "sha256": "03f77ac9ab45a4c4bcce6d4eb30d954da65b9b95dc52ef24fd578df76a213f58"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-doctrine.json",
+      "sha256": "74af574d73b1ae79442851770e6ba06b0cda84d86c6bdaab809f09be9bdbf0b4"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-doctrine-final.json",
+      "sha256": "1c1f907571cf09d6f6eefb6175a8f17f65900b59b2f53fa1d8cd85e16a45319a"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-citations.json",
+      "sha256": "b121c48d4dcdca369f8f569918e0eec55886a06fced196042e2300e5f4d2150f"
+    },
+    {
+      "path": "/tmp/cairn-json-integrity-citations-final.json",
+      "sha256": "ee12e317ba885055f3e7f0cbd0eb04639fc74ce62915f57993879e264028b4c5"
+    }
+  ]
+}

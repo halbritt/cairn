@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/jsontext"
 	"github.com/halbritt/cairn/runner"
 )
 
@@ -129,6 +130,9 @@ func decodeBounded(input io.Reader, target any, limit int64) error {
 			return errors.New("request exceeds 128 KiB")
 		}
 		return errors.New("request exceeds size limit")
+	}
+	if err := jsontext.CheckUnicode(body); err != nil {
+		return err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()

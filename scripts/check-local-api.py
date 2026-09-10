@@ -19,6 +19,7 @@ from check_mcp import check as check_mcp
 from check_mcp_currentness import check as check_mcp_currentness
 from check_retained_run import check as check_retained_run
 from check_binary_evidence import check as check_binary_evidence
+from check_json_unicode import check as check_json_unicode
 
 binary, home = sys.argv[1:]
 root = Path(home)
@@ -126,6 +127,7 @@ try:
 
     grant = evidence_call(['bootstrap'], dict(request_id=str(uuid.uuid4()),
                           reason='Bootstrap disposable evidence expansion fixture'))
+    check_json_unicode(binary, root, env, evidence_call)
     check_binary_evidence(binary, root, env, evidence_call, grant)
     support = evidence_call(['capture-evidence'], dict(request_id=str(uuid.uuid4()),
                             repo='fixture:socket', body='explicit supporting socket evidence',

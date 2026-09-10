@@ -1,5 +1,13 @@
 # Authenticated local access
 
+JSON request text must be valid UTF-8 with paired Unicode surrogate escapes.
+Malformed text that would decode with replacement characters returns
+`INVALID_REQUEST` before the operation runs. Valid pairs, literal backslashes
+and explicit U+FFFD characters are preserved. Authentication, body limits,
+unknown-field rejection and the one-request rule still apply.
+[Verification and limits](verification/json-unicode-integrity-2026-09-09.md).
+
+
 `cairn serve` exposes a Unix socket, mode 0600, in an owner-only directory.
 Identity comes from a bearer token whose SHA-256 digest is in an owner-only
 configuration file. Requests cannot choose principal, observer role or destination.

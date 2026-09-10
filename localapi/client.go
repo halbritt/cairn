@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/jsontext"
 )
 
 // Client uses a provisioned Unix API identity. Calls are never automatically
@@ -64,6 +65,9 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 	}
 	if limit := RequestBodyLimit(operation); int64(len(body)) > limit {
 		return &core.Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("request exceeds %d KiB", limit/1024)}
+	}
+	if err := jsontext.CheckUnicode(body); err != nil {
+		return &core.Error{Code: "INVALID_REQUEST", Message: err.Error()}
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://cairn/v1/"+operation, bytes.NewReader(body))
 	if err != nil {

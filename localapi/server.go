@@ -3,6 +3,7 @@
 package localapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
+	"github.com/halbritt/cairn/internal/jsontext"
 )
 
 type Identity struct {
@@ -279,7 +281,12 @@ func writeError(w http.ResponseWriter, status int, code, message string, refusal
 }
 func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(context.Context, Q) (R, error)) {
 	limit := RequestBodyLimit(strings.TrimPrefix(r.URL.Path, "/v1/"))
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	if err != nil || jsontext.CheckUnicode(body) != nil {
+		writeError(w, 400, "INVALID_REQUEST", "invalid bounded JSON request")
+		return
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	var req Q
 	if err := decoder.Decode(&req); err != nil {
