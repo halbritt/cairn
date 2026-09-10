@@ -83,3 +83,38 @@ func TestHistoricalRecompileFreezesEvidenceAndDetectsMissingInputs(t *testing.T)
 	_, err = op.Recompile(ctx, RecompileRequest{ReceiptID: original.ReceiptID, Query: req.Query})
 	requireCode(t, err, "INTEGRITY_FAILURE")
 }
+
+// A later recurrence can use newly captured advice. Recompiling the original
+// incident's receipt must never acquire that advice or a later required policy.
+func TestHistoricalRecompileExcludesLaterNotesAndInstructions(t *testing.T) {
+	ctx := context.Background()
+	op, root := testOperator(t)
+	repo := uuid.NewString()
+	originalNote, err := op.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", AvailableTokens: 64000}
+	original, err := op.Compile(ctx, req, Destination{"local", true})
+	if err != nil || len(original.Semantic.Selected) != 1 {
+		t.Fatalf("original read set: %+v %v", original, err)
+	}
+	later := projectNote(repo)
+	later.Body = "A preventing lesson written after the original incident"
+	if _, err = op.Create(ctx, CreateRequest{uuid.NewString(), later}); err != nil {
+		t.Fatal(err)
+	}
+	later.Kind, later.Body = "instruction", "A mandatory instruction issued after the original incident"
+	if _, err = op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: later, GrantID: root.ID, Mandatory: true, PolicyKey: "later-policy", Reason: "Test the historical cutoff"}); err != nil {
+		t.Fatal(err)
+	}
+	req.RequestID = uuid.NewString()
+	current, err := op.Compile(ctx, req, Destination{"local", true})
+	if err != nil || len(current.Semantic.Selected) != 3 {
+		t.Fatalf("later advice and required policy must affect a fresh recurrence: %+v %v", current, err)
+	}
+	historical, err := op.Recompile(ctx, RecompileRequest{ReceiptID: original.ReceiptID})
+	if err != nil || historical.Seal != original.Seal || len(historical.Semantic.Selected) != 1 || historical.Semantic.Selected[0].Record.RecordID != originalNote.RecordID {
+		t.Fatalf("later material leaked into the original read set: %+v %v", historical, err)
+	}
+}

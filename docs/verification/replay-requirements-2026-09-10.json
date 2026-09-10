@@ -1,0 +1,312 @@
+{
+  "schema": "cairn.replay-requirements-verification/1",
+  "date": "2026-09-10",
+  "baseline_commit": "64659de3095daabe0f1b7ef5f6ff1f3133d5b841",
+  "change": "Document E3 capability, temporal evidence and authenticated inspection gaps; add cutoff regression",
+  "runtime_changed": false,
+  "operational_store_touched": false,
+  "model_runs": 0,
+  "roadmap_status": {
+    "E3": "partial",
+    "E4": "partial"
+  },
+  "task_value": "Unmeasured; historical reconstruction and qualification evidence only",
+  "recorded_run": {
+    "schema": "cairn.recorded-run-cutoff/1",
+    "binary_sha256": "db72860bd5a0606a28cc08a42e34e9bb94586d1cbf7c547e24211d51a05d9b03",
+    "original_artifacts": {
+      "report.json": {
+        "path": "/tmp/cairn-observed-model-20260908-p/report.json",
+        "sha256": "07c7815882a9bd9db9156b801409cd95dd7e732fb6ea96125e974620a9d9b1e6"
+      },
+      "host-verification.json": {
+        "path": "/tmp/cairn-observed-model-20260908-p/host-verification.json",
+        "sha256": "41937fd4a27eb0b5bd28129f2e3192377c0fbe4445aeda675e6ef04322035653"
+      },
+      "hosted-relay.json": {
+        "path": "/tmp/cairn-observed-model-20260908-p/hosted-relay.json",
+        "sha256": "ed71e5684833cb6e97d977b66d421938c334363741b533523cc4419e128a21b3"
+      },
+      "cairn_h0.patch": {
+        "path": "/tmp/cairn-observed-model-20260908-p/cairn_h0.patch",
+        "sha256": "e17d0d447a10838cc631e3884075c3c8e7c9eb9a4b1141e6ef8d8c55cb1c9eb0"
+      },
+      "demand-review.json": {
+        "path": "/tmp/cairn-observed-model-20260908-p/demand-review.json",
+        "sha256": "19ea8455701176e5b33e1d905b0a8b2a46c4b626920e8d064b907c37e4a4dfd1"
+      },
+      "trial.dump": {
+        "path": "/tmp/cairn-observed-model-20260908-p/trial.dump",
+        "sha256": "c378f7c18db962573d6ad287e40dbbc1d848c3b1b264dd8ec2b0d00cd76e74c4"
+      },
+      "reviewed-trial.dump": {
+        "path": "/tmp/cairn-observed-model-20260908-p/reviewed-trial.dump",
+        "sha256": "ff2c80e54eca292c231212ac1ec243a3ad4ac19425cd69d4cea17b0cf245bd7a"
+      },
+      "cleanup.json": {
+        "path": "/tmp/cairn-observed-model-20260908-p/cleanup.json",
+        "sha256": "3616e56b4e6348a1e33e2565ecd18671b63bb0ee53194d7858dc2068400a914d"
+      }
+    },
+    "scenario_sha256": "9dc4ccd91bc896aeb30839afc32e1cdade95361e48a0640ec76296284944835d",
+    "model_runs": 0,
+    "operational_store_touched": false,
+    "run_receipt": "ad4f4fad-1400-425c-810b-b08d10513b58",
+    "preflight_receipt": "46664523-d2f6-42cf-8248-981c31b860d7",
+    "historical_revision": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af",
+    "availability": "post_review_recurrence",
+    "binary": {
+      "schema": "cairn.build/1",
+      "go_version": "go1.25.0",
+      "module_version": "v0.0.0-20260910191150-4df17afa97d2",
+      "vcs": "git",
+      "vcs_revision": "4df17afa97d2c3d457932ebb2bc7373f2d0fe83a",
+      "vcs_time": "2026-09-10T19:11:50Z",
+      "vcs_modified": false
+    },
+    "foreign_receipt_refused": true,
+    "preflight_recompiled": true,
+    "original_seal": "blake3:18fc491ed95a2a88460931e88a30a155315959390d2b2308e91cf4e7e7b091d6",
+    "semantic_schema": "cairn.semantic/3",
+    "ranking": "lexical-scope-recency/2",
+    "selected": [
+      {
+        "record_id": "0719eefe-ac9c-4f7c-93fd-f177334763da",
+        "version": 2,
+        "body_sha256": "9e53a27a5ef4ef6568605aeb31b966f51a2322982a62ec08a9696cadfd8d87d1"
+      }
+    ],
+    "later_lesson": "16a90b22-ae29-436c-a73f-343c7a2dc273",
+    "later_lesson_excluded": true,
+    "original_candidate_sets_equal": true,
+    "candidate_count": 1,
+    "timestamps": {
+      "run": "2026-09-08T05:52:28.235072-07:00",
+      "preflight": "2026-09-08T05:52:27.381963-07:00",
+      "later_lesson": "2026-09-08T06:12:53.488655-07:00",
+      "later_lesson_after_run": true
+    },
+    "qualification": [
+      {
+        "version": 2,
+        "evidence": [
+          {
+            "captured_at": "2026-09-08T05:52:27.348029-07:00",
+            "evidence_id": "73064120-d473-44ed-9cde-750b29dd55d8",
+            "digest_matches": true,
+            "existed_before_run": true
+          }
+        ],
+        "record_id": "0719eefe-ac9c-4f7c-93fd-f177334763da",
+        "written_at": "2026-09-08T05:52:27.354849-07:00",
+        "existed_before_run": true
+      }
+    ],
+    "direct_host_recompile": false,
+    "postcheck_candidate_sets_equal": true,
+    "original_artifacts_unchanged": true,
+    "disposable_cluster_removed": true
+  },
+  "checks": [
+    {
+      "path": "/tmp/cairn-replay-audit-20260910/targeted.log",
+      "sha256": "6c308776294a105b6cb60f7a97a9aa82f7817f374fc32a148a4f2a4c5f9b9278"
+    },
+    {
+      "path": "/tmp/cairn-replay-audit-20260910/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-replay-audit-20260910/check-recorded-run.py",
+      "sha256": "2ea8e18e97c76f02b99755530fd761fd70b7f6576833fb0685a2443867b51c0e"
+    },
+    {
+      "path": "/tmp/cairn-replay-audit-20260910/recorded-run.json",
+      "sha256": "c8c2550db6dbd40a323871468256051c7e78889b27a0d7c1ed1fa571a2922f5f"
+    },
+    {
+      "path": "/tmp/cairn-replay-audit-20260910/recorded-run.log",
+      "sha256": "adf6b30a99a26cdbbdb49a7d42dfb84755e4cf7394d05a27496e06dc42896dc5"
+    },
+    {
+      "path": "/tmp/cairn-replay-audit-20260910/doctrine.json",
+      "sha256": "0e45b1c6dd77c6950b244e189ea9b408aeefa9118aefa1acd30fa7d8fff48eca"
+    },
+    {
+      "path": "/tmp/cairn-replay-audit-20260910/doctrine-evidence.json",
+      "sha256": "c27627d9812cf773cd96f0331c92583695af4f1b731bc6bb8348db5d65f5f428"
+    },
+    {
+      "path": "/tmp/cairn-replay-audit-20260910/decision-receipt.json",
+      "sha256": "fe87bf9a3f108a318cb4e61fc1869ccebe6abf8465539341cc0c97dc1031269f"
+    }
+  ],
+  "doctrine": {
+    "packet_id": "pkt-7d3944f3e1e70a3d",
+    "packet_sha256": "7d3944f3e1e70a3d6a286d4e767775849898b6a3ad99fad60724ed0f87a75251",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "missing_obligations": [
+      {
+        "requirement": "causal explanation",
+        "required_by": "debugging-causal-repair",
+        "classification": "nonmaterial",
+        "reason": "No production defect or repair is claimed; observed access refusal matches the current contract. The audit selects documentation and a regression for an existing invariant."
+      },
+      {
+        "requirement": "changed path exercised after repair",
+        "required_by": "debugging-causal-repair",
+        "classification": "nonmaterial",
+        "reason": "No production defect or repair is claimed; observed access refusal matches the current contract. The audit selects documentation and a regression for an existing invariant."
+      },
+      {
+        "requirement": "failing reproduction before repair",
+        "required_by": "debugging-causal-repair",
+        "classification": "nonmaterial",
+        "reason": "No production defect or repair is claimed; observed access refusal matches the current contract. The audit selects documentation and a regression for an existing invariant."
+      },
+      {
+        "requirement": "first divergence",
+        "required_by": "debugging-causal-repair",
+        "classification": "nonmaterial",
+        "reason": "No production defect or repair is claimed; observed access refusal matches the current contract. The audit selects documentation and a regression for an existing invariant."
+      },
+      {
+        "requirement": "relevant regression evidence",
+        "required_by": "debugging-causal-repair",
+        "classification": "nonmaterial",
+        "reason": "No production defect or repair is claimed; observed access refusal matches the current contract. The audit selects documentation and a regression for an existing invariant."
+      },
+      {
+        "requirement": "discriminating checks",
+        "required_by": "debugging-hypothesis-led-investigation",
+        "classification": "nonmaterial",
+        "reason": "No production defect or repair is claimed; observed access refusal matches the current contract. The audit selects documentation and a regression for an existing invariant."
+      },
+      {
+        "requirement": "expected behavior and authority to observe",
+        "required_by": "debugging-hypothesis-led-investigation",
+        "classification": "nonmaterial",
+        "reason": "No production defect or repair is claimed; observed access refusal matches the current contract. The audit selects documentation and a regression for an existing invariant."
+      },
+      {
+        "requirement": "expected contract",
+        "required_by": "debugging-hypothesis-led-investigation",
+        "classification": "nonmaterial",
+        "reason": "No production defect or repair is claimed; observed access refusal matches the current contract. The audit selects documentation and a regression for an existing invariant."
+      },
+      {
+        "requirement": "hypothesis ledger",
+        "required_by": "debugging-hypothesis-led-investigation",
+        "classification": "nonmaterial",
+        "reason": "No production defect or repair is claimed; observed access refusal matches the current contract. The audit selects documentation and a regression for an existing invariant."
+      },
+      {
+        "requirement": "observations",
+        "required_by": "debugging-hypothesis-led-investigation",
+        "classification": "nonmaterial",
+        "reason": "No production defect or repair is claimed; observed access refusal matches the current contract. The audit selects documentation and a regression for an existing invariant."
+      },
+      {
+        "requirement": "stable reproduction or explicit inability",
+        "required_by": "debugging-hypothesis-led-investigation",
+        "classification": "nonmaterial",
+        "reason": "No production defect or repair is claimed; observed access refusal matches the current contract. The audit selects documentation and a regression for an existing invariant."
+      },
+      {
+        "requirement": "evidence-co-change",
+        "required_by": "task:repository-assessment",
+        "classification": "nonmaterial",
+        "reason": "No co-change, hotspot, architecture or maintainability inference is proposed."
+      },
+      {
+        "requirement": "bounded deadline and failure diagnostics",
+        "required_by": "testing-deterministic-async-observation",
+        "classification": "nonmaterial",
+        "reason": "No asynchronous behavior or synchronization change; the new test uses sequential completed store calls."
+      },
+      {
+        "requirement": "observable completion criterion",
+        "required_by": "testing-deterministic-async-observation",
+        "classification": "nonmaterial",
+        "reason": "No asynchronous behavior or synchronization change; the new test uses sequential completed store calls."
+      },
+      {
+        "requirement": "observable completion or progress contract",
+        "required_by": "testing-deterministic-async-observation",
+        "classification": "nonmaterial",
+        "reason": "No asynchronous behavior or synchronization change; the new test uses sequential completed store calls."
+      },
+      {
+        "requirement": "repeated or adversarial scheduling results",
+        "required_by": "testing-deterministic-async-observation",
+        "classification": "nonmaterial",
+        "reason": "No asynchronous behavior or synchronization change; the new test uses sequential completed store calls."
+      },
+      {
+        "requirement": "all mutation/creation paths and authority",
+        "required_by": "universal-explicit-invariants",
+        "classification": "nonmaterial",
+        "reason": "The audit does not certify every mutation path or close E3. It checks retained inputs and selected temporal regressions; existing behavior is unchanged."
+      },
+      {
+        "requirement": "actual caller needs",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial",
+        "reason": "No module, abstraction, caller interface or ownership restructuring is selected. Authenticated historical access is recorded as a gap, not designed or implemented in this audit."
+      },
+      {
+        "requirement": "caller needs and decision owner",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial",
+        "reason": "No module, abstraction, caller interface or ownership restructuring is selected. Authenticated historical access is recorded as a gap, not designed or implemented in this audit."
+      },
+      {
+        "requirement": "decision owner and volatility",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial",
+        "reason": "No module, abstraction, caller interface or ownership restructuring is selected. Authenticated historical access is recorded as a gap, not designed or implemented in this audit."
+      },
+      {
+        "requirement": "leaked knowledge or coordinated change",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial",
+        "reason": "No module, abstraction, caller interface or ownership restructuring is selected. Authenticated historical access is recorded as a gap, not designed or implemented in this audit."
+      },
+      {
+        "requirement": "material cost/failure semantics callers require",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial",
+        "reason": "No module, abstraction, caller interface or ownership restructuring is selected. Authenticated historical access is recorded as a gap, not designed or implemented in this audit."
+      },
+      {
+        "requirement": "knowledge and navigation required by callers/maintainers",
+        "required_by": "universal-local-reasoning",
+        "classification": "nonmaterial",
+        "reason": "No module, abstraction, caller interface or ownership restructuring is selected. Authenticated historical access is recorded as a gap, not designed or implemented in this audit."
+      },
+      {
+        "requirement": "representative change or use scenario",
+        "required_by": "universal-local-reasoning",
+        "classification": "nonmaterial",
+        "reason": "No module, abstraction, caller interface or ownership restructuring is selected. Authenticated historical access is recorded as a gap, not designed or implemented in this audit."
+      },
+      {
+        "requirement": "representative change scenario",
+        "required_by": "universal-local-reasoning",
+        "classification": "nonmaterial",
+        "reason": "No module, abstraction, caller interface or ownership restructuring is selected. Authenticated historical access is recorded as a gap, not designed or implemented in this audit."
+      },
+      {
+        "requirement": "state, invariant, and dependency ownership",
+        "required_by": "universal-local-reasoning",
+        "classification": "nonmaterial",
+        "reason": "No module, abstraction, caller interface or ownership restructuring is selected. Authenticated historical access is recorded as a gap, not designed or implemented in this audit."
+      }
+    ],
+    "decision_receipt_validated": true,
+    "citation_loops_closed": true
+  }
+}

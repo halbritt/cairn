@@ -35,7 +35,7 @@ applicability still refuses when the destination cannot receive the instruction.
 Private candidates remain absent from hosted packages, omission counts and
 candidate explanations. See the [regression verification](verification/private-policy-applicability-2026-09-08.md).
 
-Semantic schema `cairn.semantic/3` seals these context pins. Optional JSON/CBOR
+Context pins first appeared in semantic schema `cairn.semantic/3`. Optional JSON/CBOR
 fields preserve old v1/v2 decoding and seals. Legacy receipts remain historical;
 a current request after compiler-version changes needs a new request identity.
 
@@ -63,8 +63,10 @@ cairn agent --token-file ~/.local/share/cairn/hosted-agent.token search \
 The same `--task-phase` declaration is available on local `search`/`run`,
 authenticated `agent run`, compact `agent start`, `mcp` and the Codex, OpenCode
 and Claude configuration generators. `opencode-install` writes it as
-`context.task_phase`. MCP pins stay fixed for that server instance; changing a
-workflow phase requires a new declared context, not a fabricated observation.
+`context.task_phase`. Configured MCP pins stay fixed for that server instance.
+A search may supply
+[per-call context](search-context.md) for fields the host left unset; changing a
+workflow phase requires a new declaration, not a fabricated observation.
 Retained execution refuses a changed or omitted phase before binding or launch.
 Existing handles retain their original declared context and normal freshness
 checks; they do not observe later workflow changes.
@@ -135,12 +137,23 @@ Phase-pinned records require the reader upgrade described above.
 {"receipt_id":"RECEIPT_UUID","query":"the original query"}
 ```
 
-The query is transient and must reproduce the retained intent digest. The command
-loads the original considered versions and frozen eligibility facts, reads their
+The query is transient and must reproduce the retained intent digest. If the
+original search supplied entity hints, also repeat its `entities` array; see
+[entity search](entity-search.md). Scope, context, policy, purpose, budgets, ranking
+and advisory-conflict intent come from the retained receipt and cannot be
+redefined by this request. A missing original query cannot be recovered from its
+digest; saved-byte replay can still be available.
+
+The command loads the original considered versions and frozen eligibility facts, reads their
 retained bytes, recomputes lexical ranking and budget packing, and checks the
-result against the original seal. It creates no new exposure and cannot authorize
+result against the original seal. It writes no new exposure record and cannot authorize
 fresh delivery. Its cutoff is the named retrieval's actual read set, not an
 arbitrary timestamp or a reusable PostgreSQL transaction handle.
+
+Receipt ownership still applies. The local CLI can recompile its own receipts;
+another channel's receipt returns `AUTHORITY_DENIED`. The authenticated API has
+no historical recompile operation. Its `run-package` operation checks eligibility
+for current execution and is not a substitute for historical inspection.
 
 Explanation version 2 retains body digests and the evidence/authority/attribution
 facts needed for eligible candidates. This avoids duplicating their bodies while
@@ -154,13 +167,17 @@ This implements historical recompilation for read sets captured by this compiler
 It does not invent the missing past observation history of older receipts or
 establish measured usefulness on real incidents. Real-history evaluation must
 separately distinguish original-time availability from later recurrence scenarios.
+The [E3 audit](verification/replay-requirements-2026-09-10.md) identifies the
+implemented contracts and the remaining original-incident evidence gap.
+
+## Historical ranking profiles
 
 Lexical ranker v2 removes a fixed set of English function words. Domain tokens
 and negation are preserved. A nonempty query containing only those function words
 selects no optional advice and generates no blocked promotion demand. An explicitly
 empty query remains an unfiltered scoped browse.
 
-New retrievals use ranker v3. It also recognizes nonempty words separated by
+Historical ranker v3 recognizes nonempty words separated by
 underscores: `CAIRN_HOME` matches `cairn home` or `home`, while retaining the whole
 identifier as an additional exact-match term. Partial identifier matches can
 return more notes. Versions 1 and 2 retain their original behavior for historical

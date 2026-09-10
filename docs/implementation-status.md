@@ -26,6 +26,12 @@ context, reviewed failure signatures and quoted search. The host keeps its
 five-minute semantic idle lifetime and twenty-five-second worker budget.
 The database remains at migration 034.
 
+The [historical replay audit](verification/replay-requirements-2026-09-10.md)
+clarifies E3: retained-read-set recompilation works, including exclusion of later
+notes and instructions. A preserved real-run preflight reproduces its host seal.
+Direct authenticated host-receipt reconstruction and original Striatum incident
+availability remain open; this is not additional task-benefit evidence.
+
 This snapshot assesses the source changes recorded below and the local installation
 on 2026-09-10. Feature reports below preserve their own verification dates and limits.
 The [implementation history](#implementation-history) retains the earlier narrative
@@ -3440,3 +3446,46 @@ build, service and preservation evidence is in the
 [CI 34518961970](https://github.com/halbritt/cairn/actions/runs/34518961970)
 subsequently completed successfully for the installed source. Both jobs and every
 recorded step passed.
+
+
+### 2026-09-10 — Historical replay requirements and recorded-run check
+
+The E3 audit separates implemented retained-read-set reconstruction from the
+remaining historical evaluation and access requirements. Documentation now makes
+original query/entity intent, receipt ownership and missing-history limitations
+explicit. It also corrects stale wording about semantic schema 3, historical
+ranker v3 and per-call MCP context. Runtime code, migration 034, operational notes
+and the installed `4df17af` CLI/API remain unchanged.
+
+`TestHistoricalRecompileExcludesLaterNotesAndInstructions` verifies that a fresh
+compile receives a later note and mandatory instruction while an earlier receipt
+keeps its original selection and seal. The focused disposable PostgreSQL run also
+passed correction/evidence, policy revision/revocation, semantic-score, task-phase
+and advisory-conflict freshness checks. `make check` passed. These are regression
+and reconstruction results; no new failure repair or task-value gain is claimed.
+
+A separate disposable copy of the reviewed September 8 failed OpenCode trial
+verified all eight original artifact hashes before and after inspection. Its
+original operator preflight recompiled to the actual launched host package seal.
+Read-only inspection found identical frozen candidate sets, with the selected
+note and evidence captured before that recorded run. The lesson written after
+the failure stayed excluded. Direct CLI reconstruction of the host receipt
+returned `AUTHORITY_DENIED`, as required by receipt ownership; the authenticated
+API has no historical recompile route. No owner was changed or impersonated,
+model rerun or workspace recreated, and the disposable cluster was removed.
+
+This establishes reconstruction relative to that recorded recurrence, whose
+advice still postdates the older Striatum incident. E3/E4 remain partial. The
+roadmap now names the authenticated historical-reader gap alongside the missing
+original-incident evidence. A universal temporal store was not justified by this
+case. The ordinary hosted profile supplied the existing applicability lesson;
+its guidance agrees with current source, but that reuse adds no independent
+memory-benefit claim.
+
+The [audit report](verification/replay-requirements-2026-09-10.md) and
+[metadata](verification/replay-requirements-2026-09-10.json) retain source hashes,
+cutoff timestamps, selection identities, checks and private scratch locators.
+Pincite packet `pkt-7d3944f3e1e70a3d` includes typed evidence, a validated decision
+receipt and closed citation traces; 26 generic obligations remain explicitly
+nonmaterial to this documentation/test decision. The prior implementation history
+is preserved byte-for-byte.
