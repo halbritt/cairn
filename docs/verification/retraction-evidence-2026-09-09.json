@@ -118,6 +118,48 @@
     {
       "path": "/tmp/cairn-retraction-evidence-citations-final.json",
       "sha256": "354ee03091b4370d9b9f86adab6384b65f5cfc51051fa1bba231bfaa51c8b5d5"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-deployment/installation.json",
+      "sha256": "beec5b499c408f6288765db1f525ef3d0ea0981f37e9d1992dca970083c71464"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-deployment/installed-check.json",
+      "sha256": "47fcc2327651a33627dc28498e188f4e676fdedfaf83facf0c9783695163788f"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-deployment/ci.json",
+      "sha256": "476b3e6a48dadd441abb91d177571e812937388bdd47a6f1d2d5d866cb17c4cc"
     }
-  ]
+  ],
+  "installation": {
+    "commit": "5946c5dddac6bc1a3af600fdba87813d95a652c5",
+    "sha256": "8199eef737f073289048949fb281306a47a6bbf49d52f9d5575ece4fda76846b",
+    "api_pid": 1219742,
+    "postgres_pid": 163669,
+    "migration": false,
+    "configuration_preserved": true,
+    "installed_check": {
+      "record_id": "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+      "version": 9,
+      "lifecycle": "active",
+      "evidence_versions": 1,
+      "evidence_references": 2,
+      "exact_known_sources": true,
+      "citation_passages_preserved": true,
+      "local_api_matches_operator": true,
+      "client_database_access": false,
+      "hosted_inspection_refused": true,
+      "source_bodies_and_labels_absent": true,
+      "uses": 62,
+      "record_retired": false,
+      "api_preview_id": "aea5727f-f157-4174-9257-76cb149efda1",
+      "operator_preview_id": "56c47e2b-8b5c-4edb-b8d3-2248118dfa75"
+    },
+    "ci": {
+      "run_id": 34442784293,
+      "status": "completed",
+      "conclusion": "success"
+    }
+  }
 }

@@ -71,3 +71,28 @@ The clean full integration rerun passed, including Go race tests in disposable
 PostgreSQL and actual operator/authenticated CLI plus stdio workflows. The final
 static check passed after the dependency-state tests were added. No native adapter
 changed, so native model/provider tests were not repeated for this local preview.
+
+
+## Local installation
+
+Installed clean `5946c5d` as CLI/API and project `bin/cairn`; SHA-256
+`8199eef737f073289048949fb281306a47a6bbf49d52f9d5575ece4fda76846b`. API PID is 1219742; PostgreSQL remains PID 163669 with its original
+executable. Client/server identities and executable hashes match. Native adapter,
+semantic worker source, connection settings and identity configuration are
+unchanged. This is a binary update with no schema migration; previous CLI/API
+executables are retained outside Git for rollback.
+
+An installed preview of the existing evidence guide returns its two captured
+sources and exact citation passages on version 9, with 62 recorded uses. Operator
+and local authenticated CLI metadata match while the latter has no client database
+access. Hosted inspection refuses. The guide stays active at version 9; no
+operational record is retired or rewritten. Preview IDs and local evidence paths
+are retained in the machine-readable verification record. This checks useful
+inspection on real stored data; it does not measure review savings or task benefit.
+
+CI [34442784293](https://github.com/halbritt/cairn/actions/runs/34442784293)
+was in progress at installation. Its terminal result is recorded separately.
+
+CI completed successfully for `5946c5d`: Go race tests, 40 Python tests,
+static/build checks and authenticated CLI/stdio workflows all passed. The earlier
+in-progress installation checkpoint is retained for chronology.

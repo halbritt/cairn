@@ -17,8 +17,8 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI is clean `8dd9033`; the running API remains clean `20b7574`.
-The saved-task option uses the existing API contract and needs no restart.
+The installed CLI and API are clean `5946c5d`, including supporting evidence in
+required retirement previews. The database schema remains at migration 031.
 
 This snapshot assesses the source changes recorded below and the local installation
 on 2026-09-09. Feature reports below preserve their own verification dates and limits.
@@ -235,15 +235,14 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and project `bin/cairn`: clean `8dd90335333c68ae0363c4d02d764368c3925dbd`,
-  SHA-256 `6fb43362d5a3f40a97a05245ac3b88cdcf155d06428a1f2a58f9182d5f6ae723`.
-  API remains clean `20b7574cfc3015fc9007f97eaa82abbae234fb9b`, SHA-256
-  `8884576d7282f404d4269daf60e95aa901206828e976f0125762430a45fb9b55`; PID 1096559.
-  Version commands report both builds. Saved task files and early argv refusal
-  use the unchanged API contract. Observed compact index execution is installed
-  alongside ordinary source citations, Unicode validation, selected-file and binary
-  capture, ranked pages, capture pins and phase support. Migration 031 is applied. Existing MCP processes keep their loaded executable;
-  earlier pre-phase readers remain unsuitable for phase data.
+- Installed CLI/API and project `bin/cairn`: clean `5946c5dddac6bc1a3af600fdba87813d95a652c5`,
+  SHA-256 `8199eef737f073289048949fb281306a47a6bbf49d52f9d5575ece4fda76846b`; API PID 1219742.
+  Version commands report both builds. Supporting evidence is included in required
+  retirement previews, alongside saved task files, observed compact execution,
+  ordinary source citations, Unicode validation, file/binary capture, ranked pages,
+  capture pins and phase support. Migration 031 remains applied. Existing MCP
+  processes keep their loaded executable; earlier pre-phase readers remain
+  unsuitable for phase data.
 - Dedicated PostgreSQL **17.10**, with migrations **001–031** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -2383,3 +2382,26 @@ The clean full disposable PostgreSQL/race and CLI/stdio run passed after correct
 the CLI test helper. New and existing retraction, dependency, evidence-refresh,
 concurrency and conflict checks passed. The final static check passed. Installed
 builds remain CLI 8dd9033/API 20b7574 until the installation entry below.
+
+
+### 2026-09-09 — Retirement evidence preview installed
+
+Installed clean 5946c5d as CLI/API and project binary. API PID is 1219742;
+PostgreSQL PID 163669, native adapter, semantic worker source and configuration
+are unchanged. No schema migration occurred. An installed preview of the existing
+evidence guide reports its exact two source citations and passages, plus 62 uses.
+Local authenticated and operator results agree; hosted inspection refuses. The
+note remains active at v9, with no operational retirement or rewrite.
+
+CI 34442784293 was in progress at installation. Full local disposable integration,
+race, static and Go/Python checks passed. [Deployment](verification/retraction-evidence-2026-09-09.md#local-installation).
+
+
+### 2026-09-09 — Retirement evidence preview CI passed
+
+[CI 34442784293](https://github.com/halbritt/cairn/actions/runs/34442784293)
+completed successfully for installed 5946c5d, including Go race tests, 40 Python
+tests, static/build checks and authenticated CLI/stdio workflows. R3's requirement
+audit is recorded with the evidence inventory and existing transactional gates.
+This closes that bounded implementation item; durable task-value evidence and
+the remaining roadmap requirements stay open.
