@@ -17,7 +17,7 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `c5fa55a`. The OpenCode adapter supports
+The installed CLI and API are clean `96e8eae`. The OpenCode adapter supports
 explicit advisory-conflict retrieval, returning complete qualified competing
 positions through the existing search/pull tools. Default omission and binding
 refusals remain. It also retains optional recent-file hints, versioned file and
@@ -34,6 +34,11 @@ through the ordinary CLI/API and existing native edit tools. This preserves prio
 text exactly for additive maintenance. One selected update extended the saved
 history procedure without changing its earlier text; independent downstream task
 benefit remains unmeasured.
+
+[Exact passage correction](verification/note-replace-2026-09-10.md) is also
+installed through the existing edit tools: supply one unique `old_text` and its
+`new_text` to preserve the rest of the note. Stale or ambiguous edits refuse.
+This supports targeted maintenance alongside full-body edits and append.
 
 The [historical replay audit](verification/replay-requirements-2026-09-10.md)
 clarifies E3: retained-read-set recompilation works, including exclusion of later
@@ -3767,3 +3772,21 @@ mutation responses still retry through the new binary. Pincite packet
 `pkt-973a8ef54d989d3b` has a validated receipt and closed citation loops; 21
 nonmaterial domain-model/interface obligations remain recorded. Installation is
 pending below; the operational store has not been used for fixtures.
+
+
+### 2026-09-10 — Exact passage correction installation and CI
+
+
+[CI 34531223764](https://github.com/halbritt/cairn/actions/runs/34531223764)
+passed both jobs and every recorded step on clean `96e8eae875a85650b2547f680455c0ae24a93233`.
+Installed that source in the CLI and API after a store backup, together with the
+matching native OpenCode adapter. The API restarted at PID 3716773; PostgreSQL
+remained at PID 163669 and migration 034. All 78 retained record versions and
+their combined digest are unchanged. Credentials, host configuration, recent-file
+plugin and semantic-worker settings retain their prior hashes.
+
+A fresh installed MCP initialization advertises `replace` on the existing edit
+tool, with six ordinary tools still available. The facade, CLI and API report the
+installed source. No operational note was changed for verification. This records
+installation and the tested correction capability; downstream task benefit and
+net savings remain unmeasured.

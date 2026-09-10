@@ -72,3 +72,21 @@ Pincite packet `pkt-973a8ef54d989d3b` has a schema-validated decision receipt
 and three closed citation loops. Its 21 remaining domain-model and Go-interface
 obligations are nonmaterial to this change; the metadata retains each reason.
 No entity/lifecycle semantics or interface hierarchy is redesigned.
+
+
+## Installation and CI
+
+
+[CI 34531223764](https://github.com/halbritt/cairn/actions/runs/34531223764)
+passed both jobs and every recorded step on clean `96e8eae875a85650b2547f680455c0ae24a93233`.
+Installed that source in the CLI and API after a store backup, together with the
+matching native OpenCode adapter. The API restarted at PID 3716773; PostgreSQL
+remained at PID 163669 and migration 034. All 78 retained record versions and
+their combined digest are unchanged. Credentials, host configuration, recent-file
+plugin and semantic-worker settings retain their prior hashes.
+
+A fresh installed MCP initialization advertises `replace` on the existing edit
+tool, with six ordinary tools still available. The facade, CLI and API report the
+installed source. No operational note was changed for verification. This records
+installation and the tested correction capability; downstream task benefit and
+net savings remain unmeasured.
