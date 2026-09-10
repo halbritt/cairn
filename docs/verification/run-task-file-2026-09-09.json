@@ -122,6 +122,50 @@
     {
       "path": "/tmp/cairn-run-task-file-native-observed/report.json",
       "sha256": "60e57519c99b02ad5e365d6b800b0b4b45d03c2dea45d3201b26dec89cc4d04e"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-deployment/installation.json",
+      "sha256": "bba568485830420776f4d38974b0609c98763113e38e10c6ec4ba8d9883155d2"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-deployment/installed-check.json",
+      "sha256": "7ef0edc590742dd60bb8e2436dc545aaecb1936cf04d44f1fcb523880e6ff7f3"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-deployment/guide.json",
+      "sha256": "0d13993a162ee309dcdedf642c52c51cdc1cb95f90ec66d0bcf1e13efd343059"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-deployment/ci.json",
+      "sha256": "5efff5f2f03f4cdf3cf19e7fa0459c4ebbb022511714e105ac234a21ba708cc3"
     }
-  ]
+  ],
+  "installation": {
+    "commit": "8dd90335333c68ae0363c4d02d764368c3925dbd",
+    "cli_sha256": "6fb43362d5a3f40a97a05245ac3b88cdcf155d06428a1f2a58f9182d5f6ae723",
+    "api_commit": "20b7574cfc3015fc9007f97eaa82abbae234fb9b",
+    "api_pid": 1096559,
+    "postgres_pid": 163669,
+    "api_restarted": false,
+    "schema_changed": false,
+    "configuration_preserved": true,
+    "guide": {
+      "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+      "previous_version": 13,
+      "version": 14,
+      "body_sha256": "db723f004a2a433ec7ce328ae21f7920c6b086f775b6ea0001849fd6ec5bc618",
+      "previous_body_preserved": true,
+      "metadata_preserved": true,
+      "exact_retry": true,
+      "fresh_pull": true,
+      "receipt_id": "54a95120-0595-4c2d-9046-3326c380606f"
+    },
+    "receipt_id": "fea94509-1c81-4fee-a7f3-400b74f9fc12",
+    "outcome_id": "887675d9-dab9-4e0a-a020-04943abc684c",
+    "ci": {
+      "run_id": 34441584749,
+      "status": "completed",
+      "conclusion": "success"
+    }
+  }
 }

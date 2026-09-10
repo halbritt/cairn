@@ -64,3 +64,32 @@ preclaim refusal fails. Revisit input limits when an actual harness requires a
 different transport. Aggregate budgets across memory expansions, later searches
 and model turns remain open. No score, task assessment or causal memory-value
 claim follows from these checks.
+
+## Local installation
+
+Installed clean `8dd9033` as the CLI and ignored project `bin/cairn`.
+Executable SHA-256: `6fb43362d5a3f40a97a05245ac3b88cdcf155d06428a1f2a58f9182d5f6ae723`. The API remains clean
+`20b7574`, PID 1096559; PostgreSQL remains PID 163669. Executable hashes, native
+adapter, semantic worker, connection settings and identity configuration match
+preinstallation observations. No API restart or migration occurred. `agent version`
+reports the intentional client/server build difference.
+
+An installed retained-index run supplies a selected task file with CRLF and
+trailing blank lines, verifies its exact bytes in a real child, and pulls the
+existing OpenCode guide with the designated ordinary profile. Receipt:
+`fea94509-1c81-4fee-a7f3-400b74f9fc12`; separate process outcome:
+`887675d9-dab9-4e0a-a020-04943abc684c`. This reads an operational source before revising
+its instructions; it does not establish answering-model benefit.
+
+The OpenCode procedure `73537cbd-0ec3-4311-98c9-23e58a685b2f` is now v14.
+Its complete v13 body and metadata are preserved, with the observed file route
+appended. Exact revision retry and fresh ordinary retrieval pass. Body SHA-256:
+`db723f004a2a433ec7ce328ae21f7920c6b086f775b6ea0001849fd6ec5bc618`. Operational note bodies remain outside Git.
+
+CI run [34441584749](https://github.com/halbritt/cairn/actions/runs/34441584749)
+was still running when this installation was recorded. Local checks above passed;
+CI success is not yet claimed.
+
+CI completed successfully for `8dd9033`: Go race, 40 Python tests, static/build
+checks and authenticated CLI/stdio workflows all passed. The preceding in-progress
+checkpoint is retained for chronology; native OpenCode checks were run locally.

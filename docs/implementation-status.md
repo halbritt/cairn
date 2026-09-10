@@ -17,6 +17,9 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
+The installed CLI is clean `8dd9033`; the running API remains clean `20b7574`.
+The saved-task option uses the existing API contract and needs no restart.
+
 This snapshot assesses the source changes recorded below and the local installation
 on 2026-09-09. Feature reports below preserve their own verification dates and limits.
 The [implementation history](#implementation-history) retains the earlier narrative
@@ -227,9 +230,12 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and API: clean `20b7574cfc3015fc9007f97eaa82abbae234fb9b`, SHA-256
-  `8884576d7282f404d4269daf60e95aa901206828e976f0125762430a45fb9b55`; API PID 1096559.
-  The ignored project `bin/cairn` has the same bytes. Version commands report both builds. Observed compact index execution is installed
+- Installed CLI and project `bin/cairn`: clean `8dd90335333c68ae0363c4d02d764368c3925dbd`,
+  SHA-256 `6fb43362d5a3f40a97a05245ac3b88cdcf155d06428a1f2a58f9182d5f6ae723`.
+  API remains clean `20b7574cfc3015fc9007f97eaa82abbae234fb9b`, SHA-256
+  `8884576d7282f404d4269daf60e95aa901206828e976f0125762430a45fb9b55`; PID 1096559.
+  Version commands report both builds. Saved task files and early argv refusal
+  use the unchanged API contract. Observed compact index execution is installed
   alongside ordinary source citations, Unicode validation, selected-file and binary
   capture, ranked pages, capture pins and phase support. Migration 031 is applied. Existing MCP processes keep their loaded executable;
   earlier pre-phase readers remain unsuitable for phase data.
@@ -2314,3 +2320,27 @@ Native OpenCode 1.18.21 scripted allowed/denied/stale cases preserve a saved tas
 trailing line breaks. No answering-model call or task-benefit claim is involved.
 [Verification](verification/run-task-file-2026-09-09.md). The installed CLI remains
 20b7574 until the installation entry below; the API can remain on that build.
+
+
+### 2026-09-09 — Observed task-file CLI installed
+
+Installed clean 8dd9033 as the CLI and project binary, preserving API 20b7574
+(PID 1096559), PostgreSQL (PID 163669), native adapter, semantic worker and
+configuration. No API restart or schema migration was needed. An installed
+retained-index child verifies the exact selected task bytes and reads the current
+OpenCode procedure. The guide is now v14 with all v13 text/metadata preserved,
+plus the saved-task route and distinct limits. Exact retry and fresh retrieval pass.
+
+CI 34441584749 was in progress at this installation checkpoint. The local static,
+Go/Python, full disposable integration and scripted native checks passed. Source
+reads and process completion remain separate from task benefit. [Deployment](verification/run-task-file-2026-09-09.md#local-installation).
+
+
+### 2026-09-09 — Observed task-file CI passed
+
+[CI 34441584749](https://github.com/halbritt/cairn/actions/runs/34441584749)
+completed successfully for installed 8dd9033, including Go race tests, 40 Python
+tests, static/build checks and authenticated CLI/stdio workflows. Native OpenCode
+scripted checks remain the separately recorded successful local run. The API stays
+on compatible 20b7574. Aggregate task budgeting and convincing durable task-value
+evidence remain open; no broader completion is claimed.
