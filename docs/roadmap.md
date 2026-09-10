@@ -31,9 +31,9 @@ exact saved content in both modes. It leaves existing host configuration intact;
 native connection and setup capability do not establish a completed model task.
 
 The [native OpenCode adapter](opencode-tools.md) now uses actual custom-tool
-session context for search scope and the existing authenticated CLI for all five
-ordinary tools. CLI results now include structured pull arguments alongside shell
-commands. [Native verification](verification/opencode-tools-2026-09-09.md) covers
+session context for search scope and the existing authenticated CLI for all six
+ordinary tools, including retained history. CLI results include structured pull
+arguments alongside shell commands. [Native verification](verification/opencode-tools-2026-09-09.md) covers
 default local capture, exact body/evidence pulls, edits and refusals without a
 model call. The adapter is installed locally; its session grouping adds no
 observed-run authority or model-task benefit claim.
@@ -59,9 +59,11 @@ maintenance; it does not close X2's native resume/compaction interlocks or
 establish model-selected use.
 
 Cairn is now [enabled in this host's trusted Codex project](verification/codex-project-2026-09-09.md).
-Fresh native conversations discover all five ordinary tools from local project
-configuration and retrieve current notes without MCP overrides. Repository
-instructions prefer those tools when available. This closes the local adoption
+Fresh native conversations discover all six ordinary tools from local project
+configuration and retrieve current notes without MCP overrides. The
+[later history verification](verification/native-history-2026-09-10.md) covers
+the added `cairn_history` operation. Repository instructions prefer those tools
+when available. This closes the local adoption
 gap between temporary probes and normal project startup; durable task benefit
 and other hosts' adoption still require evidence.
 
@@ -309,7 +311,7 @@ an acceptance measure for task value.
 | U5 — usage ladder | partial | Preserve cited > expanded > behaviorally implicated > delivered-only, with inference method/version and observation coverage. Connect actual citation/expansion ingress; manual testimony does not prove use. Do not infer unknown H0 tool actions or benefit from delivery. Test coverage-aware reporting. |
 | U6 — completed tasks with open delegates | implemented/tested | Add task completion observations and detect still-open service-observed attempts at completion. Existing exact-attempt attribution/failure recovery stays intact. `UNFINISHED_RUN` is a separate wrapper-recovery hint. Test late terminal recovery and completed-task open attempts. |
 | U7 — Agy interface | partial | Inspect the actual Agy driver/tool/configuration contract and ship ordinary search, record/evidence pulls, selected capture and compare-and-swap edit through its supported native interface. Reuse Cairn's authenticated API and existing core gates. Provide repeatable setup and repository/task/run scope from observed host context, with explicit scope when native context is unavailable. Verify the installed Agy client can discover tools, retrieve exact saved versions across sessions, revise selected notes, and honor destination, stale-handle and version-conflict refusals. Then complete a real Agy task using relevant memory saved in another harness and retain its observed use and independently checked outcome. Record client version and unsupported lifecycle hooks; generic MCP compatibility or a scripted protocol test alone does not close the item. Owner request, 2026-09-09. |
-| U8 — Claude Code interface | partial | Inspect the installed Claude Code MCP/configuration and permission contract; provide repeatable project setup for Cairn's five ordinary tools. Preserve existing host settings and keep credentials outside the checkout. Use verified native session scope where supported, otherwise require explicit task/run scope. Verify actual discovery, search, exact record/evidence pulls, selected capture/edit, fresh-session reuse, destination refusal and stale-version/handle behavior. Then complete a real Claude task using memory from another harness and retain observed use with an independently checked outcome. Keep attempt attribution distinct from session grouping. Resume/compaction mediation remains X2; an MCP stanza or successful connection alone does not close U8. Owner request, 2026-09-09. |
+| U8 — Claude Code interface | partial | Inspect the installed Claude Code MCP/configuration and permission contract; provide repeatable project setup for Cairn's ordinary tools. Preserve existing host settings and keep credentials outside the checkout. Use verified native session scope where supported, otherwise require explicit task/run scope. Verify actual discovery, search, exact record/evidence pulls, selected capture/edit, fresh-session reuse, destination refusal and stale-version/handle behavior. Then complete a real Claude task using memory from another harness and retain observed use with an independently checked outcome. Keep attempt attribution distinct from session grouping. Resume/compaction mediation remains X2; an MCP stanza or successful connection alone does not close U8. Owner request, 2026-09-09. |
 
 The [Agy setup recipe](agy.md) reuses the existing MCP server with explicit
 repository/task/run arguments. Agy 1.2.0 registration, argument preservation and
@@ -318,17 +320,18 @@ user-wide; no automatic conversation scope or native tool execution is establish
 [Verification](verification/agy-configuration-2026-09-09.md) records the remaining
 U7 requirements. Further Agy work stays below task value in existing harnesses.
 
-The [Claude configuration generator](claude-code.md) supplies the existing five
-MCP tools with explicit task/run scope. Claude Code 2.1.265 accepted its output
+The [Claude configuration generator](claude-code.md) launches the current six-tool
+MCP server with explicit task/run scope. Claude Code 2.1.265 accepted its output
 and connected in an isolated native check; an independent MCP client retrieved
 exact revised content through that generated launch. Native model-selected use,
 reliable native session scope and a useful Claude task remain open under U8.
 This is the requested lower-priority setup work, not a new task-value result.
 A [native execution check](verification/claude-native-tools-2026-09-09.md) now
-verifies all five tools and correction/reuse across two scripted Claude sessions,
-including destination and permission/refusal behavior. It retains a corrected
-assumption about boolean-string coercion; no production fix was needed. A useful
-Claude task and model-selected use remain unverified.
+verifies the original five tools and correction/reuse across two scripted Claude
+sessions, including destination and permission/refusal behavior. It retains a corrected
+assumption about boolean-string coercion; no production fix was needed. Native
+Claude execution of the newer `cairn_history` tool, a useful Claude task and
+model-selected use remain unverified.
 
 The [observation join](use-outcome-loop.md) now associates each exposure with
 reduced delivery/usage streams, process outcome and versioned task assessments;

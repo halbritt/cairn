@@ -3644,3 +3644,21 @@ passed, including the UTC PostgreSQL race suite and OpenCode plugin verification
 Production hashes still match the installed build. This follow-up records results
 and installation only; the earlier failed fixtures and native check remain in
 the history and verification metadata.
+
+
+### 2026-09-10 — Current tool inventory documentation correction
+
+Corrected stale five-tool claims in the roadmap's current Codex/OpenCode and
+Claude-generator descriptions. The installed `664472c` facade advertises six
+ordinary tools, including `cairn_history`; generated Codex, Claude and OpenCode
+configurations launch that same command, and Codex's explicit allowlist contains
+all six. The installed edit schema also advertises the append argument. A
+read-only stdio initialization and tool-list check verified those claims without
+calling a memory tool, invoking a model or changing host settings. Verification
+script and result: `/tmp/cairn-tool-guide-20260910/check.py` and `result.json`.
+
+The individual setup guides already described history correctly. The roadmap now
+also distinguishes current availability from the historical Claude native check,
+which exercised the original five tools. Native Claude history remains unverified;
+this correction adds no harness execution or task-benefit evidence. Dated prior
+claims and all committed implementation history remain unchanged.
