@@ -57,6 +57,15 @@ outcome/assessment tables were unchanged. The temporary API stopped and the
 disposable cluster was removed. No model task ran, and no historical workspace
 was recreated.
 
+## CI assertion correction
+
+The first CI run failed in two new core tests under UTC. `reflect.DeepEqual`
+compared internal `time.Time` location pointers: a local reproduction showed equal
+instants and identical serialized packages despite different pointers. The tests
+now compare the complete serialized package, including identity and seal. They
+pass in both UTC and America/Los_Angeles. Production code is unchanged by this
+correction; the initial failed CI result remains in the metadata.
+
 ## Remaining evidence
 
 This reconstruction concerns the September 8 recurrence. Its advice still
@@ -75,3 +84,10 @@ Pincite packet `pkt-d95c8e9d819ddc26` records the typed evidence, validated deci
 receipt and closed citation traces. Four remaining interface-design obligations
 are nonmaterial: this change adds a concrete method and an API operation without
 introducing or relocating a Go interface.
+
+
+Clean source `3f17cf2` is installed as both CLI and API. A pre-install backup was
+retained, migration stayed at 034, and all 77 record versions and host settings
+were preserved. The installed ordinary hosted profile reconstructed an existing
+five-entry schema-13 index with its original seal. The metadata includes exact
+build, service, backup and preservation hashes.

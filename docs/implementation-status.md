@@ -17,7 +17,7 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `4df17af`. The OpenCode adapter supports
+The installed CLI and API are clean `3f17cf2`. The OpenCode adapter supports
 explicit advisory-conflict retrieval, returning complete qualified competing
 positions through the existing search/pull tools. Default omission and binding
 refusals remain. It also retains optional recent-file hints, versioned file and
@@ -3538,3 +3538,34 @@ and limitations. Pincite packet `pkt-d95c8e9d819ddc26` has typed evidence, a
 validated decision receipt and closed citation traces; four Go-interface design
 obligations are recorded as nonmaterial. Installation is recorded separately
 below when complete. All prior implementation history is preserved byte-for-byte.
+
+
+### 2026-09-10 — Authenticated reconstruction installation
+
+Installed clean source `3f17cf2959054666bd01e9112c8c2563497d96f9` as both the local
+CLI and API after backing up the operational store. The API restarted at PID
+3475969; the PostgreSQL service remained active and migration stayed at 034.
+All 77 retained record versions and their combined digest were unchanged, as were
+the identities, harness configuration, OpenCode adapter/recent-file plugin and
+semantic-worker settings. Exact hashes and backup provenance are retained in the
+[installation metadata](verification/authenticated-recompile-2026-09-10.json).
+
+Using the existing ordinary hosted profile, the installed command reconstructed
+its earlier receipt `9ae9d867-67b0-4bb9-8dac-3838117c7909`, preserving the original
+five-entry semantic-schema-13 index and seal. It created no new operational note
+or authority. This verifies the installed historical access path; it does not
+change the older recurrence outcome or establish incremental task benefit.
+
+
+### 2026-09-10 — UTC historical-package assertion correction
+
+[CI 34523060478](https://github.com/halbritt/cairn/actions/runs/34523060478)
+failed in two new core assertions while its OpenCode plugin job passed. A local
+UTC reproduction established equal timestamp instants and identical serialized
+packages, but different internal `time.Time` location pointers. The new tests
+had used `reflect.DeepEqual` on process-local representations. They now compare
+the complete serialized historical package, preserving checks of all returned
+fields and the seal. Targeted checks pass in UTC and America/Los_Angeles.
+Production code and the installed `3f17cf2` build remain unchanged. The failed CI
+log and reproduction are retained in the verification metadata; a corrected-source
+CI result is recorded separately when complete.

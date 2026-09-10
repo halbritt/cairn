@@ -1,7 +1,9 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -41,9 +43,10 @@ func TestRecompileDestinationProtectsBodiesAndPreviews(t *testing.T) {
 			}
 			replayReq := RecompileRequest{ReceiptID: original.ReceiptID}
 			got, err := op.RecompileForDestination(ctx, replayReq, dest)
-			if err != nil || !reflect.DeepEqual(got, original) {
-				t.Fatalf("original reconstruction: %+v %v", got, err)
+			if err != nil {
+				t.Fatal(err)
 			}
+			requireSameHistoricalPackage(t, got, original)
 			_, err = op.RecompileForDestination(ctx, replayReq, Destination{"local", true})
 			requireCode(t, err, "AUTHORITY_DENIED")
 			_, err = op.RecompileForDestination(ctx, replayReq, Destination{"hosted", true})
@@ -92,7 +95,24 @@ func TestRecompileDestinationCannotExportLocalReceipt(t *testing.T) {
 		t.Fatal("local receipt disclosed on refused export")
 	}
 	got, err = s.RecompileForDestination(ctx, req, Destination{"local", true})
-	if err != nil || !reflect.DeepEqual(got, original) {
-		t.Fatalf("local owner cannot inspect: %+v %v", got, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireSameHistoricalPackage(t, got, original)
+}
+
+// Compare the external package, not time.Time's process-local location pointers.
+func requireSameHistoricalPackage(t *testing.T, got, want Package) {
+	t.Helper()
+	actual, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(actual, expected) {
+		t.Fatalf("historical package changed: got %s; want %s", actual, expected)
 	}
 }
