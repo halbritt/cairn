@@ -17,7 +17,7 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `664472c`. The OpenCode adapter supports
+The installed CLI and API are clean `c5fa55a`. The OpenCode adapter supports
 explicit advisory-conflict retrieval, returning complete qualified competing
 positions through the existing search/pull tools. Default omission and binding
 refusals remain. It also retains optional recent-file hints, versioned file and
@@ -25,6 +25,9 @@ symbol associations, entity search, retained history, Unicode validation, per-ca
 context, reviewed failure signatures and quoted search. The host keeps its
 five-minute semantic idle lifetime and twenty-five-second worker budget.
 The database remains at migration 034.
+[Refusal diagnostics](verification/refusal-gates-2026-09-10.md) now retain known
+mandatory instruction gates before returning an error. Existing refusal histories
+remain unchanged, and traces still disclose their partial coverage.
 
 The installed system supports [selected append updates](verification/note-append-2026-09-10.md)
 through the ordinary CLI/API and existing native edit tools. This preserves prior
@@ -3694,3 +3697,28 @@ Pincite packet `pkt-0bf5356afef1acdc` has a validated decision receipt and close
 citation loops. Seven interface/nil-contract obligations remain nonmaterial.
 Installation is recorded separately when complete. All prior implementation
 history remains byte-for-byte intact.
+
+
+### 2026-09-10 — Refusal diagnostic installation
+
+Installed clean `c5fa55ad4b0b9c85eb6cb39c83acdac2412a8040` in the CLI and API after
+a store backup. The API restarted at PID 3655879 and its reported build matches
+the client. PostgreSQL stayed active at migration 034. All 78 retained record
+versions and their combined digest are unchanged, along with credentials,
+configuration, the OpenCode adapter/recent-file plugin and semantic-worker settings.
+No operational note or policy fixture was created for this fix. Source, backup,
+service and preservation hashes are retained in the [verification metadata](verification/refusal-gates-2026-09-10.json).
+The repaired diagnostic behavior was verified against disposable stores; no
+independent downstream task benefit or full R5 acceptance is claimed.
+
+
+### 2026-09-10 — Refusal API fixture in the CI database
+
+[CI 34528936872](https://github.com/halbritt/cairn/actions/runs/34528936872)
+failed in the new API test: CI shares one database across package suites, so the
+core suite's root was already installed. Local integration isolates each package
+and passed. The test now reuses the core suite's exact synthetic operator and
+bootstrap identity. A local UTC, race-enabled core→API sequence against the same
+disposable database passes, as do static checks. The production sources and
+installed `c5fa55a` build are unchanged. The failed CI and targeted correction
+remain recorded in the verification metadata; corrected-source CI follows.

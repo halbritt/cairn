@@ -3,6 +3,7 @@ package localapi_test
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/google/uuid"
@@ -10,11 +11,17 @@ import (
 )
 
 func TestAuthenticatedRefusalRetainsGateWithoutWideningAccess(t *testing.T) {
-	bootstrap := core.BootstrapRequest{RequestID: uuid.NewString(), Reason: "Install isolated refusal fixture authority"}
+	// CI shares the database with core tests; use their exact bootstrap identity.
+	bootstrap := core.BootstrapRequest{RequestID: "82bf5bce-dc6c-4d03-a49f-1677bdcc9a32", Reason: "Install synthetic test operator root"}
 	for _, destination := range []string{"local", "hosted"} {
 		t.Run(destination, func(t *testing.T) {
-			client, admin, repo, _ := authenticatedHost(t, "agent", destination, nil)
+			client, _, repo, _ := authenticatedHost(t, "agent", destination, nil)
 			ctx := context.Background()
+			admin, err := core.Open(ctx, os.Getenv("CAIRN_TEST_DATABASE_URL"), core.Channel{Principal: "operator:tests", Operator: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(admin.Close)
 			root, err := admin.Bootstrap(ctx, bootstrap)
 			if err != nil {
 				t.Fatal(err)
