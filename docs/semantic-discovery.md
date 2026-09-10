@@ -13,6 +13,12 @@ Native MCP and OpenCode use the existing `cairn_search` tool with
 scope remains supplied by the harness configuration. Read required `selected`
 context and pull relevant sources with their returned `pull_arguments`.
 
+Set `offset: 0` (CLI `--offset 0`) to request ranked pages, then follow
+`page.next_offset` with the same query and settings. Scoring still covers the
+complete eligible candidate set before paging. Every page has its own budget
+and reads current state; check `discovery.state` each time and restart if fallback
+changes the ordering. [Paging contract](index-and-pull.md#agent-commands-without-request-json).
+
 This is optional discovery, not answer confidence. It can return unrelated
 neighbours even when no note answers the question. Lexical search remains the
 default. Semantic discovery requires a nonempty query, cannot be combined with

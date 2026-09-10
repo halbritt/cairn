@@ -1,0 +1,132 @@
+{
+  "schema": "cairn.search-pages-verification/1",
+  "baseline_commit": "d8ff5690ba0b0d1a096b5fbe8ea55641c9809ef5",
+  "behavior": {
+    "opt_in": "offset=0",
+    "continuation": "page.next_offset",
+    "raw_request": "page_offset",
+    "schema": "cairn.semantic/11",
+    "offset_range": [
+      0,
+      10000
+    ],
+    "ranking_changed": false,
+    "snapshot_cursor": false,
+    "per_page_budget": true,
+    "mandatory_context_every_page": true,
+    "migration": false
+  },
+  "checks": {
+    "static": true,
+    "go_python": true,
+    "python_tests": 40,
+    "disposable_pg_race_integration": true,
+    "native_opencode": true,
+    "answering_model": false,
+    "final_core_checks": true
+  },
+  "doctrine": {
+    "packet_id": "pkt-20e4d66b311b2515",
+    "packet_content_sha256": "20e4d66b311b2515978a789aa180ef774a44dcbec5112727adfd29c48000c7f9",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or package dependency; existing concrete allocation owner is reused."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or package dependency; existing concrete allocation owner is reused."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or package dependency; existing concrete allocation owner is reused."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or package dependency; existing concrete allocation owner is reused."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-search-pages-evidence-authority.json",
+      "sha256": "3617920ad1c2182c9ba43c353dd517f618388be07115d2543a416115315361d1"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-evidence-contract.json",
+      "sha256": "e79f5c9612dc71ee63b208e8455945c71e163baeef6b01c84dd64b12dd912c5c"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-evidence-placement.json",
+      "sha256": "4e53f3bc5353692652480a86a8e276db410ee0b420f9633c3616f193a796be03"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-evidence-checks.json",
+      "sha256": "2c3140a6d0583ff72d7f474195450a89ba691b3ea22a243c9423dd654feca46e"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-red.log",
+      "sha256": "52f37ec4d9b72e858c8dbcf962c9e018d640b8ccfe9ce1f0d2535c65e361ec02"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-cli-red.log",
+      "sha256": "34885d8b7dffe25775d44b6a012388dd19d063e3ebdb2ab7609606f7bf3e61f0"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-mcp-red.log",
+      "sha256": "c9fc9759e664034bf58431a4aa032ebc626de0d1f2de859479dc2e4a72be7bed"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-native-red.log",
+      "sha256": "99a867181364ba8dbdb0273d14fcbe543a63989db450b5a16ff2afb5541c8e19"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-core-final.log",
+      "sha256": "9d64e3a7c5ba73f944055514807b38d0a1abd078b4e55d3e035ebfc9cae9549c"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-tests.log",
+      "sha256": "70d4941283bd09fd9e3e0a89b962f40f078a8977d26e2c2744221ecca0aed524"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-integration.log",
+      "sha256": "64fc263661c03ec05fa618af32b6106f43bf32a23f2192e5312792ada30d0c5e"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-decision.json",
+      "sha256": "e68c3883de45158bb75dd6d8ffdba9257f1b580cf0b0745822914114657957a3"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-doctrine.json",
+      "sha256": "ea9a6eef973fe4a8aeb55b3a8e2d97ba79a2b32f6aea2746e1539929f4119ca4"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-doctrine-final.json",
+      "sha256": "690d5de13e0a78cb990b350965798a3ff3498468975b556189c5cb396a853b28"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-citations.json",
+      "sha256": "8354ac8a4b3423962cae637c960194f1f864666e6b5faa3e296487cf1817f7f3"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-citations-final.json",
+      "sha256": "76c4901a3310615b35e69edd7880b4d218ab0722f9e47a95392bd278825a73b2"
+    }
+  ]
+}

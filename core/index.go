@@ -68,9 +68,18 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 	seen := map[string]bool{}
 	positions := map[string]int{}
 	optionalPosition, pageStopped := 0, false
-	if p.Browse != nil {
-		p.Browse = &BrowsePage{Offset: p.Browse.Offset}
-		p.Omitted["BROWSE_OFFSET"] = 0
+	page, offsetReason := p.Browse, "BROWSE_OFFSET"
+	if p.Page != nil {
+		page, offsetReason = p.Page, "PAGE_OFFSET"
+	}
+	if page != nil {
+		page = &BrowsePage{Offset: page.Offset}
+		if p.Page != nil {
+			p.Page = page
+		} else {
+			p.Browse = page
+		}
+		p.Omitted[offsetReason] = 0
 	}
 	for rank, c := range candidates {
 		e := evaluations[c.selection.Record.RecordID]
@@ -89,12 +98,12 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 			e.Reason = "SELECTED"
 			continue
 		}
-		if p.Browse != nil {
+		if page != nil {
 			positions[c.selection.Record.RecordID] = optionalPosition
 			optionalPosition++
-			if optionalPosition <= p.Browse.Offset {
-				e.Reason = "BROWSE_OFFSET"
-				p.Omitted["BROWSE_OFFSET"]++
+			if optionalPosition <= page.Offset {
+				e.Reason = offsetReason
+				p.Omitted[offsetReason]++
 				continue
 			}
 			if pageStopped {
@@ -104,7 +113,7 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 			}
 		}
 		entry := indexEntry(c.selection.Record)
-		if p.Schema == "cairn.semantic/8" || p.Schema == "cairn.semantic/9" || p.Schema == "cairn.semantic/10" {
+		if p.Schema == "cairn.semantic/8" || p.Schema == "cairn.semantic/9" || p.Schema == "cairn.semantic/10" || p.Schema == "cairn.semantic/11" {
 			var span ByteSpanRequest
 			entry.Summary, span = indexPreview(c.selection.Record.Body, query, p.Ranking)
 			if c.selection.Record.Class != "C" && span.Length > 0 {
@@ -130,9 +139,9 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 		if len(p.Index) >= 100 || optionalCost+cost > p.OptionalLimit {
 			e.Reason = "OPTIONAL_BUDGET"
 			p.Omitted["OPTIONAL_BUDGET"]++
-			if p.Browse != nil && cost <= p.OptionalLimit {
+			if page != nil && cost <= p.OptionalLimit {
 				position := positions[entry.RecordID]
-				p.Browse.NextOffset = &position
+				page.NextOffset = &position
 				pageStopped = true
 			}
 			continue
@@ -163,16 +172,16 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 			return p, failure("BUDGET_REFUSED", "mandatory bootstrap and index envelope exceed input room")
 		}
 		e := p.Index[len(p.Index)-1]
-		if p.Browse != nil {
+		if page != nil {
 			position := positions[e.RecordID]
-			p.Browse.NextOffset = &position
+			page.NextOffset = &position
 		}
 		evaluations[e.RecordID].Reason = "TOTAL_BUDGET"
 		p.Index = p.Index[:len(p.Index)-1]
 		p.Omitted["TOTAL_BUDGET"]++
 	}
-	if p.Browse != nil && p.Browse.NextOffset != nil && len(p.Index) == 0 {
-		return p, failure("BUDGET_REFUSED", "browse page cannot fit a preview; increase available input room")
+	if page != nil && page.NextOffset != nil && len(p.Index) == 0 {
+		return p, failure("BUDGET_REFUSED", "index page cannot fit a preview; increase available input room")
 	}
 	return p, nil
 }

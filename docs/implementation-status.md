@@ -46,6 +46,11 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Ranked search can continue through later matches.** Explicit `offset: 0`
+  starts lexical or semantic pages; CLI, MCP and native OpenCode forward later
+  `page.next_offset` values. Required instructions and budgets remain per page.
+  [Verification and limits](verification/search-pages-2026-09-09.md).
+
 - **Fixed BM25 screening is inconclusive.** On the reused public corpus it
   improves one top-three count but loses some first-place answers. Lexical v4
   remains; further work needs representative long-note failures rather than
@@ -1879,3 +1884,23 @@ assessment changed. Keep lexical v4; stop tuning these same questions and revisi
 on actual representative ranking failures. Qualitative and cumulative task value
 remain open and are not reduced to these rank counts.
 [Report and decision](verification/bm25-screen-2026-09-09.md).
+
+
+### 2026-09-09 — Ranked search continuation
+
+Added opt-in lexical and semantic search pages through CLI, MCP and native
+OpenCode. Explicit offset0 starts; page.next_offset continues with the same
+query/settings and a fresh request ID. The existing allocation code keeps
+required instructions and individual budgets, ranks before paging, and excludes
+private, wrong-phase and filtered candidates before page positions. Unpaged
+search and browse behavior remain. Schema11 retains ranked pages for replay;
+there is no database migration or multi-page snapshot.
+
+Initial core,CLI,MCP and native checks reproduced missing page behavior. Final
+static,Go/40Python,full disposable PostgreSQL/race and native checks passed;
+additional core phase/nonmatch/retry checks passed afterward. Full result order,
+exact pulls, retry conflicts and frozen-score replay are verified. The source-
+freshness investigation exposed the navigation limit but its relevant note was
+already on the first page. No task rescue, better ranking or cumulative value
+is claimed. Runtime deployment is recorded separately below when verified.
+[Report](verification/search-pages-2026-09-09.md).

@@ -46,7 +46,7 @@ type searchArgs struct {
 	Semantic  bool     `json:"semantic,omitempty" jsonschema:"Optional semantic discovery for vocabulary mismatches. Requires a query, cannot browse. Similarity is not answer confidence; an unavailable backend returns labelled lexical fallback."`
 	Query     string   `json:"query,omitempty" jsonschema:"Words describing the memory needed. Omit only when browse is true."`
 	Browse    bool     `json:"browse,omitempty" jsonschema:"Browse eligible memory without a query when its vocabulary is unknown. Results are bounded, ordered by scope and recency, and may omit older notes."`
-	Offset    int      `json:"offset,omitempty" jsonschema:"For browsing, pass the preceding result's browse.next_offset to continue with the same scope and budget. Default 0. Pages read current state; restart if notes change."`
+	Offset    *int     `json:"offset,omitempty" jsonschema:"Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget; restart if notes change."`
 	RequestID string   `json:"request_id,omitempty" jsonschema:"Optional UUID for retrying the same search."`
 }
 
@@ -124,13 +124,19 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 	if (args.Browse && args.Query != "") || (!args.Browse && strings.TrimSpace(args.Query) == "") {
 		return nil, nil, errors.New("search requires a nonempty query or browse=true without a query")
 	}
-	if args.Offset < 0 || args.Offset > 10000 || (!args.Browse && args.Offset != 0) {
-		return nil, nil, errors.New("offset must be 0-10000 and requires browse=true")
+	if args.Offset != nil && (*args.Offset < 0 || *args.Offset > 10000) {
+		return nil, nil, errors.New("offset must be 0-10000")
 	}
-	var browseOffset *int
+	var browseOffset, pageOffset *int
 	if args.Browse {
-		browseOffset = &args.Offset
+		browseOffset = args.Offset
+		if browseOffset == nil {
+			browseOffset = new(int)
+		}
+	} else {
+		pageOffset = args.Offset
 	}
+
 	scope := t.config.Scope
 	if t.config.CodexThread {
 		thread, _ := request.Params.Meta["threadId"].(string)
@@ -144,7 +150,7 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 		args.RequestID = uuid.NewString()
 	}
 	var index core.IndexResult
-	err := t.client.Call(ctx, "index", core.CompileRequest{Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: t.config.Context}, &index)
+	err := t.client.Call(ctx, "index", core.CompileRequest{Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: t.config.Context}, &index)
 	if err != nil {
 		return toolResult(nil, err, t.config.AvailableTokens)
 	}

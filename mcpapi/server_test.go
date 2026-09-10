@@ -160,11 +160,18 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	if len(browsed.Index) != 1 || browsed.Index[0].RecordID != record.RecordID || !reflect.DeepEqual(browsed.Selected, view.Selected) || browsed.Scope != view.Scope || browsed.Destination != view.Destination {
 		t.Fatalf("browse lost scope, destination, mandatory context or hosted filtering: %+v", browsed)
 	}
+	var searchPage searchResult
+	if err = json.Unmarshal(invoke("cairn_search", map[string]any{"query": "socketguide", "offset": 0}, ""), &searchPage); err != nil || searchPage.Page == nil || searchPage.Page.Offset != 0 || len(searchPage.Index) != 1 || !reflect.DeepEqual(searchPage.Selected, view.Selected) {
+		t.Fatalf("MCP ranked first page: %+v %v", searchPage, err)
+	}
 	var endPage searchResult
-	if err = json.Unmarshal(invoke("cairn_search", searchArgs{Browse: true, Offset: 1}, ""), &endPage); err != nil || endPage.Browse == nil || endPage.Browse.Offset != 1 || endPage.Browse.NextOffset != nil || len(endPage.Index) != 0 || !reflect.DeepEqual(endPage.Selected, view.Selected) {
+	if err = json.Unmarshal(invoke("cairn_search", map[string]any{"browse": true, "offset": 1}, ""), &endPage); err != nil || endPage.Browse == nil || endPage.Browse.Offset != 1 || endPage.Browse.NextOffset != nil || len(endPage.Index) != 0 || !reflect.DeepEqual(endPage.Selected, view.Selected) {
 		t.Fatalf("MCP page continuation: %+v %v", endPage, err)
 	}
-	for _, invalid := range []searchArgs{{Query: "socketguide", Offset: 1}, {Browse: true, Offset: -1}, {Browse: true, Offset: 10001}} {
+	if err = json.Unmarshal(invoke("cairn_search", map[string]any{"query": "socketguide", "offset": 1, "semantic": true}, ""), &searchPage); err != nil || searchPage.Page == nil || searchPage.Page.Offset != 1 || searchPage.Page.NextOffset != nil || len(searchPage.Index) != 0 || searchPage.Discovery.State != "unavailable" || !reflect.DeepEqual(searchPage.Selected, view.Selected) {
+		t.Fatalf("MCP ranked fallback end page: %+v %v", searchPage, err)
+	}
+	for _, invalid := range []map[string]any{{"query": "socketguide", "offset": -1}, {"browse": true, "offset": -1}, {"browse": true, "offset": 10001}} {
 		invoke("cairn_search", invalid, "offset must")
 	}
 	var expanded core.Expansion

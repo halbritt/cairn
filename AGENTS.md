@@ -33,6 +33,11 @@ query (CLI `--semantic`). Inspect `discovery.state`: unavailable semantic worker
 return labelled lexical fallback. Similarity does not establish that a source
 answers the question; pull and verify it. Keep ordinary lexical search for precise
 identifiers and use semantic discovery selectively because it adds CPU latency.
+To inspect more ranked matches, include `offset: 0` with the query (CLI
+`--offset 0`), then follow `page.next_offset` with the same query, semantic mode,
+kinds, scope and context. Each page has its own budget; account for combined
+context and restart if notes or semantic availability change. No offset keeps
+the existing unpaged behavior.
 If the saved vocabulary is unknown, use `cairn_search` with `{"browse": true}`
 and no query to inspect eligible previews, or add `--browse` to the CLI search
 below. Follow `browse.next_offset` with `offset: N` (CLI `--offset N`) to reach

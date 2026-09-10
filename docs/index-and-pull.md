@@ -21,6 +21,36 @@ observer override and does not use database credentials. Optional flags are
 `--tokens` (default 32000), `--request-id`, `--revision`, `--workspace-sha256`,
 `--task-class`, `--binding` and `--capability`.
 
+To continue beyond the first ranked results, opt in with `--offset 0`:
+
+```sh
+cairn agent --token-file /path/to/agent.token search \
+  --repo /path/to/repo --task TASK_ID --run RUN_ID \
+  --offset 0 'relevant query'
+```
+
+When `page.next_offset` is present, repeat the query with `--offset N` using that
+value. Keep the query, semantic mode, kinds, scope, context and budget unchanged;
+use a new request UUID for each page and preserve it for identical retries.
+Native tools accept `{"query":"relevant query","offset":0}` and then the returned
+offset. Raw `index` requests use `page_offset`. This works with lexical search
+and optional semantic discovery. Check `discovery.state` on every semantic page:
+fallback can change the ordering, so restart if the mode changes.
+
+Offsets address eligible optional candidates after full ranking, including
+candidates subsequently omitted during packing. Use the returned offset, not the
+number of previews. Each page reads current state; edits, captures or eligibility
+changes can shift positions. Restart if necessary and deduplicate records across
+pages. There is no retained multi-page snapshot. Required instructions appear on
+every page. Each page has its own retrieval and pull budget; the host must account
+for their combined context. Paging cannot recover a lexical vocabulary miss or
+make an oversized preview fit.
+
+Omitting `offset` keeps the existing unpaged search behavior. Ranked pages use
+semantic format v11 and `omitted.PAGE_OFFSET` for eligible candidates before the
+page. They require updated API and clients. Older binaries cannot reconstruct
+these receipts; current binaries retain historical unpaged and browse behavior.
+
 If a query misses because the saved vocabulary is unknown, inspect eligible
 topics explicitly:
 

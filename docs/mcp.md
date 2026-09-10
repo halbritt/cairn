@@ -71,6 +71,12 @@ current state rather than a retained snapshot, so new or edited notes can shift
 positions. [Paging details](index-and-pull.md#agent-commands-without-request-json)
 include limits and the raw API form.
 
+Ranked search can also continue: pass `{"query":"relevant words","offset":0}`
+to start, then use `page.next_offset` with the same query, semantic mode, kinds,
+scope and context. Omit `offset` for the existing unpaged behavior. Upgrade the
+API and MCP binary before using ranked pages. Every page has its own budget and
+reads current state; restart if notes or semantic availability change.
+
 With an ordinary agent profile, capture is A testimony. Select reusable knowledge
 with source/verification context; exclude raw sessions, private Council material
 and credentials. `shareable: true` explicitly permits hosted delivery. Default

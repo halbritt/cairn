@@ -23,6 +23,7 @@ import (
 type CompileRequest struct {
 	Kinds           []string     `json:"kinds,omitempty"`
 	Semantic        bool         `json:"semantic,omitempty"`
+	PageOffset      *int         `json:"page_offset,omitempty"`
 	BrowseOffset    *int         `json:"browse_offset,omitempty"`
 	Mode            string       `json:"mode,omitempty"`
 	Context         *ContextPins `json:"context,omitempty"`
@@ -50,6 +51,7 @@ type Selection struct {
 type SemanticPackage struct {
 	Kinds           []string          `json:"kinds,omitempty" cbor:"kinds,omitempty"`
 	Discovery       *DiscoveryRanking `json:"discovery,omitempty" cbor:"discovery,omitempty"`
+	Page            *BrowsePage       `json:"page,omitempty" cbor:"page,omitempty"`
 	Browse          *BrowsePage       `json:"browse,omitempty" cbor:"browse,omitempty"`
 	Mode            string            `json:"mode,omitempty"`
 	Index           []IndexEntry      `json:"index,omitempty"`
@@ -99,6 +101,9 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	}
 	if req.BrowseOffset != nil && (req.Mode != "index" || req.Query != "" || *req.BrowseOffset < 0 || *req.BrowseOffset > 10000) {
 		return Package{}, failure("INVALID_REQUEST", "browse_offset requires an empty-query index and an offset from 0 to 10000")
+	}
+	if req.PageOffset != nil && (req.Mode != "index" || req.Purpose != "context" || strings.TrimSpace(req.Query) == "" || req.BrowseOffset != nil || *req.PageOffset < 0 || *req.PageOffset > 10000) {
+		return Package{}, failure("INVALID_REQUEST", "page_offset requires a nonempty context index query and an offset from 0 to 10000, without browsing")
 	}
 	if err := req.Context.validate(); err != nil {
 		return Package{}, err
@@ -231,6 +236,10 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 		}
 		if req.BrowseOffset != nil {
 			p.Browse = &BrowsePage{Offset: *req.BrowseOffset}
+		}
+		if req.PageOffset != nil {
+			p.Schema = "cairn.semantic/11"
+			p.Page = &BrowsePage{Offset: *req.PageOffset}
 		}
 		if req.Semantic {
 			candidates, err = s.rankSemantic(ctx, req.Query, &p, candidates, evaluations)

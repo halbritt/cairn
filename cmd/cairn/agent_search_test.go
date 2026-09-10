@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -141,7 +142,17 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 	if req := <-requests; req.BrowseOffset == nil || *req.BrowseOffset != 6 {
 		t.Fatalf("browse continuation offset lost: %+v", req)
 	}
-	for _, tail := range [][]string{{"--semantic", "--browse"}, {}, {" "}, {"--browse", "unexpected query"}, {"--browse=false"}, {"--offset", "1", "query"}, {"--browse", "--offset", "-1"}, {"--browse", "--offset", "10001"}} {
+	for _, value := range []string{"0", "2"} {
+		_, err = run(context.Background(), append(append([]string{}, base...), "--offset", value, "query"), strings.NewReader(""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := <-requests
+		if req.PageOffset == nil || fmt.Sprint(*req.PageOffset) != value || req.BrowseOffset != nil || req.Query != "query" {
+			t.Fatalf("search page offset lost: %+v", req)
+		}
+	}
+	for _, tail := range [][]string{{"--semantic", "--browse"}, {}, {" "}, {"--browse", "unexpected query"}, {"--browse=false"}, {"--browse", "--offset", "-1"}, {"--browse", "--offset", "10001"}} {
 		_, err := run(context.Background(), append(append([]string{}, base...), tail...), strings.NewReader(""))
 		if core.Code(err) != "INVALID_REQUEST" {
 			t.Fatalf("invalid query/browse combination %q: %v", tail, err)

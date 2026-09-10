@@ -123,6 +123,13 @@ context. Every page repeats required instructions, and each page/pull consumes
 context in addition to prior calls. Pages read current state; edits and captures
 may shift positions. Update both the API service and CLI for paged browsing.
 
+For ranked continuation, start with `{"query":"relevant words","offset":0}`.
+Repeat with `page.next_offset`, preserving query, semantic mode, kinds, scope and
+context. Omit `offset` to keep unpaged behavior. Update the API, CLI and installed
+adapter together. Each page has its own budget and current-state ordering;
+restart if notes or semantic availability change. See the
+[complete paging contract](index-and-pull.md#agent-commands-without-request-json).
+
 For vocabulary mismatches, use `{"query":"storage?","semantic":true}` with
 the [optional local semantic backend](semantic-discovery.md). Inspect
 `discovery.state`; unavailable scoring produces labelled lexical fallback.

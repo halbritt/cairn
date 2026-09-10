@@ -445,6 +445,12 @@ tuning these questions; revisit length-aware ranking with actual long-note
 failures and relevance labels fixed before scoring. This does not establish or
 reject sustained task value.
 
+[Ranked search continuation](verification/search-pages-2026-09-09.md) now reaches
+later eligible matches through opt-in lexical and semantic pages in CLI, MCP and
+OpenCode. Required instructions, per-page budgets and historical replay remain;
+each page reads current state. This removes a navigation limitation without
+changing ranking or establishing task benefit.
+
 The [local semantic comparison](verification/semantic-retrieval-2026-09-09.md)
 recovers every labelled documentation answer within three results, including the
 lexical vocabulary misses. It also worsens some first-place answers and retrieves
