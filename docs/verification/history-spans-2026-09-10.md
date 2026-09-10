@@ -44,4 +44,25 @@ in passages. It does not search historical text for an unknown offset, establish
 that a fragment is sufficient context, or prove an independent task improvement.
 No operational note was changed for the implementation or fixtures. Broader task
 value, interpretation quality and net cost remain unmeasured. Installation and
-CI evidence are recorded separately below when complete.
+guidance maintenance are recorded below.
+
+## Installed build and guidance maintenance
+
+Installed clean `4999caa` in the CLI, API and bundled native OpenCode adapter after
+[both CI jobs passed](https://github.com/halbritt/cairn/actions/runs/34533931794).
+The API restarted; PostgreSQL stayed running at migration 034. A backup preceded
+the update, and all 78 retained versions, profile/configuration hashes, optional
+semantic settings and the recent-file plugin were unchanged by deployment.
+
+The installed ordinary hosted profile then read the earlier procedure's exact
+oversized-result passage with `span`. A selected replacement updated that guidance
+from v3 to v4 with the excerpt option and current source pointers. All unrelated
+text stayed byte-identical; a second historical excerpt returned the same v3
+passage after the correction. This one ordinary maintenance revision brings the
+retained-version count to 79; it is separate from the unchanged deployment snapshot.
+It records verified operating guidance, not an independent downstream task result.
+
+A fresh installed MCP session listed the span argument and returned the same v3
+passage. Its initial probe omitted the required socket flag; correcting that
+probe from the CLI contract resolved the startup refusal. Fresh ordinary search
+and full pull returned the corrected v4 procedure with the expected body hash.

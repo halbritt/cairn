@@ -6,7 +6,7 @@ changes by source-commit date; they are not numbered releases. The
 retains the complete chronology, including failed trials, corrections and
 superseded work.
 
-The latest recorded installation on 2026-09-10 is clean `96e8eae` in both the CLI
+The latest recorded installation on 2026-09-10 is clean `4999caa` in both the CLI
 and API, at database migration 034. Later documentation commits do not change that
 build. Check a particular installation with `cairn version`; use
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
@@ -15,7 +15,7 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 ## 2026-09-10
 
 - **Inspect a passage from a long earlier note.** [History excerpts](docs/record-history.md#read-a-passage-from-an-earlier-version)
-  add optional byte ranges to exact-version reads through CLI/API, MCP and native
+  (`4999caa`) add optional byte ranges to exact-version reads through CLI/API, MCP and native
   OpenCode. Results retain full-source identity and lossless selected bytes;
   current access rules and per-call output budgets still apply.
 - Documented [retiring obsolete advice](docs/ordinary-delete.md#retire-obsolete-advice-while-retaining-history)

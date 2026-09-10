@@ -19,7 +19,7 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `96e8eae`. The OpenCode adapter supports
+The installed CLI and API are clean `4999caa`. The OpenCode adapter supports
 explicit advisory-conflict retrieval, returning complete qualified competing
 positions through the existing search/pull tools. Default omission and binding
 refusals remain. It also retains optional recent-file hints, versioned file and
@@ -55,11 +55,10 @@ The [implementation history](#implementation-history) retains the earlier narrat
 and subsequent recorded changes, including failed trials and superseded work. Future updates should append dated history and corrections while refreshing
 the current summary; do not replace the historical record.
 
-Source now supports [historical byte excerpts](verification/history-spans-2026-09-10.md)
+The installed system supports [historical byte excerpts](verification/history-spans-2026-09-10.md)
 through the existing history tool. An agent can inspect selected earlier bytes
 within its current output room; whole-body behavior and current access checks
-remain. The installation snapshot above stays at its separately verified build
-until deployment is recorded. Downstream task value remains unmeasured.
+remain. Downstream task value remains unmeasured.
 
 ## Working capabilities
 
@@ -3864,3 +3863,29 @@ This improves historical inspection capability; independent downstream task valu
 and net cost remain unmeasured. Current instruction delivery still requires full
 bodies. All prior implementation history is preserved. The installation remains
 at its last recorded build until the separate deployment entry is appended.
+
+
+### 2026-09-10 — Historical excerpts installed and procedure corrected
+
+Installed clean `4999caa` after both jobs and all steps in
+[CI run 34533931794](https://github.com/halbritt/cairn/actions/runs/34533931794)
+passed. The CLI, running API and native OpenCode adapter match the tested source.
+PostgreSQL stayed running at migration 034; deployment preserved all 78 retained
+versions and the existing profiles, host settings, semantic configuration and
+recent-file plugin. The API alone restarted after a backup. The installation
+manifest is `/tmp/cairn-history-spans-20260910/deployment/installation.json`.
+
+Used the installed ordinary hosted profile to inspect the precise v3 passage in
+the saved history procedure that described oversized-output handling. An exact
+replacement revised it to v4 with the new excerpt option and source pointers,
+preserving all unrelated wording. Reading the same v3 span after the edit returned
+the identical earlier bytes and source hash. This selected maintenance action
+adds one retained revision (79 total after maintenance); it is separate from the
+unchanged deployment comparison. The note remains fallible guidance. No independent
+downstream model use or net task benefit is claimed. The prior implementation
+history, including the source-only state above, remains intact.
+
+A fresh installed MCP session also exposed and read the historical span. The
+first probe omitted the required socket flag; the corrected probe passed.
+Fresh ordinary search and pull returned the corrected v4 procedure and expected
+body hash. This verifies current guidance retrieval after maintenance.

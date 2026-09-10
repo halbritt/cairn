@@ -60,5 +60,61 @@
     ],
     "decision_receipt_validated": true,
     "citation_loops_closed": true
+  },
+  "installation": {
+    "source_commit": "4999caa458c71137b3c646730d49931ed8a6b10d",
+    "manifest": "/tmp/cairn-history-spans-20260910/deployment/installation.json",
+    "manifest_sha256": "273d8334d881d4440a97f03d1ef667671a05d285403e8790da150dba8744fe47",
+    "installed_sha256": "c642fd37490558acabf681832b470bee63638d918168f0fb2efedd9523f430e7",
+    "adapter_sha256": "47882fb9427901b730377f7ccd66ff8c0b3b68c69567ddb2f568fe53b1683492",
+    "store_pid": "163669",
+    "api_pid": "3781467",
+    "migration": 34,
+    "record_versions_before": {
+      "versions": 78,
+      "sha256": "83188cd8955bceb16bc88c71605930c40032c49d2c6fc89d31f0fd19e06d9aa3"
+    },
+    "record_versions_after": {
+      "versions": 78,
+      "sha256": "83188cd8955bceb16bc88c71605930c40032c49d2c6fc89d31f0fd19e06d9aa3"
+    },
+    "preserved_settings": true
+  },
+  "ci": {
+    "head": "4999caa458c71137b3c646730d49931ed8a6b10d",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34533931794",
+    "conclusion": "success",
+    "all_jobs_and_steps_passed": true
+  },
+  "subsequent_guidance_maintenance": {
+    "record_id": "cd6217ad-2f69-45f1-bcfb-a01066909855",
+    "before_version": 3,
+    "after_version": 4,
+    "before_bytes": 3413,
+    "after_bytes": 4109,
+    "before_sha256": "86176840c5d325ee13fbf07a60dc133d012795ac25ba2fcc17a72ef594ecc8fb",
+    "after_sha256": "3d3f9e19c6941d0347720eb464cff1c08322a8e400bc21556b816a763db11e22",
+    "earlier_passage_offset": 1275,
+    "earlier_passage_length": 144,
+    "unrelated_text_preserved": true,
+    "earlier_passage_unchanged_after_edit": true,
+    "source_build": "4999caa458c71137b3c646730d49931ed8a6b10d",
+    "independent_downstream_benefit": "unmeasured"
+  },
+  "installed_mcp_inspection": {
+    "build": "4999caa458c71137b3c646730d49931ed8a6b10d",
+    "tool_count": 6,
+    "history_span_schema_present": true,
+    "earlier_bytes_verified": true,
+    "current_version": 4,
+    "version_read": 3,
+    "model_inference_calls": 0,
+    "initial_probe_failure": "Probe omitted required --socket; corrected from cmd/cairn/mcp.go. No server mutation occurred."
+  },
+  "current_guidance_retrieval": {
+    "record_id": "cd6217ad-2f69-45f1-bcfb-a01066909855",
+    "version": 4,
+    "body_sha256": "3d3f9e19c6941d0347720eb464cff1c08322a8e400bc21556b816a763db11e22",
+    "current_search_and_pull_verified": true
   }
 }
