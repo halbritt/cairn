@@ -28,6 +28,13 @@ alongside technical procedures; consult their current source before applying the
 
 When the native Cairn MCP tools are available, use `cairn_search` and inspect
 relevant results with `cairn_pull`, passing their complete `pull_arguments`.
+When the task names a file, symbol or exact error text, put that known text in
+ASCII double quotes inside the query, for example
+`{"query":"repair review \"core/currentness.go\""}`. This prefers an exact body
+substring before other optional matches. It does not resolve file/entity identity,
+inspect the workspace, filter out all other results, or establish relevance from
+a filename mention. Pull the current note and check its guidance against source.
+See `docs/quoted-search.md` for syntax and limits.
 If lexical wording misses a likely topic, try `semantic: true` with the nonempty
 query (CLI `--semantic`). Inspect `discovery.state`: unavailable semantic workers
 return labelled lexical fallback. Similarity does not establish that a source

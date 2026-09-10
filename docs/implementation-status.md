@@ -3206,3 +3206,30 @@ one-second polling with no intervening semantic request. This verifies that the
 installed five-minute setting still releases the worker. Exact feature CI run
 34505340594 completed successfully; all job steps were inspected. These results
 are included in the same verification metadata.
+
+### 2026-09-10 — Connect existing filename search to the agent workflow
+
+Repository agent instructions now explain ASCII-double-quoted filename, symbol
+and exact-error lookup, with a complete native query example and the existing
+matching limits. They previously directed agents toward lexical or semantic
+search without explaining how to prefer a known source identifier. The change
+uses the already-installed quoted matcher; no new argument, ranking or store
+representation is introduced.
+
+Three actual hosted searches on installed `72e7c24` named `semantic/stream.go`,
+`core/currentness.go` and `scripts/check_mcp_currentness.py`. They returned,
+respectively, current worker guidance v9, the applicability-conjunction lesson v1
+and capture-applicability guidance v2 first. Each current body was pulled and its
+record/version/SHA-256 checked against the returned handle metadata; the guidance
+was read alongside current source. Search elapsed times were 0.034, 0.027 and
+0.028 seconds. This is an explicit lookup check, not a relevance benchmark or
+proof that a later agent will choose and apply the instruction.
+
+The accepted design separately calls for entity matching and file/symbol-touched
+triggers. Existing substring matching does not establish typed identity or observe
+workspace activity. E1 retains those open requirements. Adding a flag which only
+quotes a path would duplicate the tested interface without supplying either.
+Private searches, pulls and checked metadata are under
+`/tmp/cairn-file-context-20260910/`; no operational bodies enter Git. The agent
+example and documentation links were checked, and all prior implementation
+history is preserved. No answering-model task or new task-value result is claimed.
