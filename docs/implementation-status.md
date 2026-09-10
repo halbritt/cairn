@@ -214,10 +214,11 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and API: clean `463ccefb1f4b7a851527e1edff3febb4fb577252`, SHA-256
-  `3d377effdafd2bcb50ec1e293f45b6b91ef033d50efab2315faccc4b7b5b0455`; API PID 897597.
-  Version commands report both builds. Serialized Unicode validation, selected-
-  file and binary capture, ranked pages, capture pins and phase support are installed.
+- Installed CLI and API: clean `e5ebcbde400ac931bd7cbf39ba6be9eb94795110`, SHA-256
+  `0b8661c17816247a928b0971c7f3e2c1805fc3eab40b55b1401c6cdbd77dd9fe`; API PID 976089.
+  The ignored project `bin/cairn` has the same bytes. Version commands report both builds. Ordinary source citations and citation-
+  preserving edits are installed alongside Unicode validation, selected-file and
+  binary capture, ranked pages, capture pins and phase support.
   No migration was required. Existing MCP processes keep their loaded executable;
   earlier pre-phase readers remain unsuitable for phase data.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
@@ -231,7 +232,7 @@ Live checks on 2026-09-09 found:
   Agent and observer roles remain separate. The trusted project's Codex MCP
   configuration exposes all five ordinary tools with conversation scope and
   optional startup. The installed native OpenCode adapter matches the current
-  ranked-pagination source and retains its existing connection settings.
+  ordinary-citation source and retains its existing connection settings.
 - Optional semantic discovery uses the prepared local CPU model, batch size one
   and two ONNX threads, through the API-owned `worker-stream` launcher. The script
   SHA-256 is `80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9`
@@ -241,8 +242,10 @@ Live checks on 2026-09-09 found:
   took about 14 seconds. Candidate scores matched. No persistent cache, package
   update or independent service was added; the one-shot launcher remains available.
 
-The [Unicode repair installation](verification/json-unicode-integrity-2026-09-09.md#local-installation)
-records the current CLI/API. The
+The [ordinary-citation installation](verification/ordinary-citations-2026-09-09.md#local-installation)
+records the current CLI/API and native adapter. The
+[Unicode repair installation](verification/json-unicode-integrity-2026-09-09.md#local-installation)
+retains its preceding CLI/API. The
 [file-capture installation](verification/file-evidence-capture-2026-09-09.md#local-installation)
 retains its preceding CLI and preserved API. The
 [binary-capture installation](verification/binary-evidence-capture-2026-09-09.md#local-installation)
@@ -2190,3 +2193,31 @@ text edit, pulled exact cited passages, cleared current refs and refused changed
 retry intent and stale handles. Existing host permissions, sharing, session scope
 and maximum-body scripted checks pass. Default plugins are disabled only in the
 isolated test harness; no answering model or owner configuration was changed.
+
+
+### 2026-09-09 — Ordinary citations installed and source-linked guide verified
+
+Installed clean e5ebcbd as CLI/API and replaced the bundled native OpenCode
+adapter after an operational backup. Both version responses and API PID 976089
+match the new executable; PostgreSQL, schema, worker source, connection files and
+host permissions remain. Full final `make test-integration`, static checks and
+40 Python tests pass; the separately verified native OpenCode path also passes.
+
+Evidence guide 8a47da19-dd71-43b2-a4cc-9cef9d113c81 v7→v8 preserves the complete old body and adds
+the procedure, then v8→v9 attaches selected source passages from the two repository
+evidence documents. Exact retries and fresh installed MCP body/source pulls match.
+Guide SHA-256: 0ddcc688c09f238ff3ae3f3b985f4e45bc51b0a691833f5b1f3a53ee441df7e5. These are selected project sources, not synthetic
+captures or raw session content. This verifies usable source links, not downstream
+model task benefit. CI 34437060456 is failure.
+[Installation](verification/ordinary-citations-2026-09-09.md#local-installation).
+
+
+### 2026-09-09 — CI process-disappearance check corrected
+
+Implementation CI 34437060456 passed core/API/MCP/runner tests, then failed in an
+existing semantic worker test when `/proc/PID/stat` returned ESRCH after the
+process disappeared. Its test-only absence check now accepts that specific error
+alongside ENOENT, with other errors and live descendants still rejected. Ten
+race-enabled repetitions and static checks pass; production worker code is
+unchanged. The ignored project `bin/cairn` was also refreshed to the installed
+clean e5ebcbd build to avoid leaving a documented old writer in the checkout.

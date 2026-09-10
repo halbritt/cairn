@@ -159,5 +159,69 @@
       "path": "/tmp/cairn-ordinary-citations-native-diagnosis/without-defaults.stderr",
       "sha256": "cdf8414f7363732a6556bb70b77755a108e9ef1818e4b86e9c0a2e4007fa918e"
     }
-  ]
+  ],
+  "installation": {
+    "source_commit": "e5ebcbde400ac931bd7cbf39ba6be9eb94795110",
+    "cli_api_sha256": "0b8661c17816247a928b0971c7f3e2c1805fc3eab40b55b1401c6cdbd77dd9fe",
+    "api_pid": 976089,
+    "native_adapter_sha256": "657c4b64d70924d9cfa00270c929e141370c4b173675722d0a8a51c831758e65",
+    "migration": false,
+    "guide": {
+      "record_id": "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+      "previous_version": 7,
+      "version": 9,
+      "sha256": "0ddcc688c09f238ff3ae3f3b985f4e45bc51b0a691833f5b1f3a53ee441df7e5",
+      "source_count": 2,
+      "fresh_installed_mcp_passages_verified": true
+    },
+    "ci": {
+      "conclusion": "failure",
+      "headSha": "e5ebcbde400ac931bd7cbf39ba6be9eb94795110",
+      "status": "completed",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34437060456"
+    },
+    "artifacts": [
+      {
+        "path": "/tmp/cairn-ordinary-citations-deployment/installation.json",
+        "sha256": "3a47c161406e4a7ba0e3386caa44a0e52643434990753d0c60aa0ec4d68ad5b3"
+      },
+      {
+        "path": "/tmp/cairn-ordinary-citations-deployment/versions.json",
+        "sha256": "06cc160de1d1066ab2cdb8ce0ebc2b4aee2ef30f9b526b37f3da02556a3aee06"
+      },
+      {
+        "path": "/tmp/cairn-ordinary-citations-deployment/adapter-installation.json",
+        "sha256": "f71d1085d6698f0b84073560037662e309530b265c8427585790b126f80bae02"
+      },
+      {
+        "path": "/tmp/cairn-ordinary-citations-deployment/guidance.json",
+        "sha256": "5d5a4a3a423dd7e9354f1abe9d04991eb5d13789a3d6c3a7f2fb32923938b423"
+      },
+      {
+        "path": "/tmp/cairn-ordinary-citations-deployment/ci.json",
+        "sha256": "6d177dca9f340a6c5967ea76599c93f65c3a3596a931bb1e59b8daaac0169493"
+      }
+    ],
+    "project_cli_sha256": "0b8661c17816247a928b0971c7f3e2c1805fc3eab40b55b1401c6cdbd77dd9fe"
+  },
+  "ci_failure_followup": {
+    "failed_run": 34437060456,
+    "cause": "Existing TestStreamDeadlineTerminatesDescendants treated procfs ESRCH during process exit as failure.",
+    "change": "Test accepts errors.Is(err, syscall.ESRCH) as absent; other errors still fail and production worker is unchanged.",
+    "local_race_repetitions": 10,
+    "artifacts": [
+      {
+        "path": "/tmp/cairn-ordinary-citations-ci-failure.log",
+        "sha256": "113b2f9ac1912c96d96717dd3b4b9e4dbe2acdf904f1cdaeccf0c738a25aeb0b"
+      },
+      {
+        "path": "/tmp/cairn-ordinary-citations-process-test.log",
+        "sha256": "b2d88058800fb0519f1e7cd6b888b9eeb1ef03051265371da7278a78d1f1e06a"
+      },
+      {
+        "path": "/tmp/cairn-ordinary-citations-ci-repair-check.log",
+        "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+      }
+    ]
+  }
 }

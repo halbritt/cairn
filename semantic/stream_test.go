@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -197,7 +198,7 @@ func TestStreamDeadlineTerminatesDescendants(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		stat, err := os.ReadFile("/proc/" + pid + "/stat")
-		if os.IsNotExist(err) {
+		if os.IsNotExist(err) || errors.Is(err, syscall.ESRCH) {
 			break
 		}
 		if err != nil {

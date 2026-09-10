@@ -97,3 +97,42 @@ packet `pkt-5fd700d2453859cc` and evidence-attached packet
 no new Go interface or interface-valued absence contract was introduced. Existing
 transaction, evidence and edit owners contain the change. A decision receipt and
 consumption observations are retained with the verification metadata.
+
+
+## Local installation
+
+Installed clean `e5ebcbde400ac931bd7cbf39ba6be9eb94795110` as both CLI and running API after backup
+`/home/halbritt/.local/share/cairn/backups/cairn-20260910T042427-975873.dump` (SHA-256 `f4b962bfebaeaa81ca3a1ebedc03b5c160da74c19d7132bffd53ee8ea912d16f`).
+Both report the same build; API PID 976089 matches CLI SHA-256 `0b8661c17816247a928b0971c7f3e2c1805fc3eab40b55b1401c6cdbd77dd9fe`.
+The bundled native adapter matches source SHA-256 `657c4b64d70924d9cfa00270c929e141370c4b173675722d0a8a51c831758e65`.
+PostgreSQL PID 163669, semantic worker source and connection/configuration hashes
+remain unchanged. No migration or owner permission change was needed.
+
+The existing evidence guide 8a47da19-dd71-43b2-a4cc-9cef9d113c81 was revised v7→v8 with the
+ordinary citation procedure, preserving its complete previous body and metadata,
+then cited as v9 without another body change. Exact revision/citation/capture
+retries matched. The retained sources are the selected repository documents
+`docs/evidence-citations.md` and `docs/evidence-refresh.md` at this implementation
+commit, with citation passages of 3,508 and 2,189 bytes. A fresh installed stdio
+MCP session pulled the guide and both exact source passages through its normal
+hosted profile and shared budget. Guide SHA-256 is `0ddcc688c09f238ff3ae3f3b985f4e45bc51b0a691833f5b1f3a53ee441df7e5`.
+
+This is an operational source-link and retrieval check using selected project
+documentation. It does not establish model-selected use or task benefit.
+Deployment artifacts: `/tmp/cairn-ordinary-citations-deployment/`.
+[Exact implementation CI](https://github.com/halbritt/cairn/actions/runs/34437060456) is failure at this observation.
+
+
+### CI correction and remaining local binary
+
+CI 34437060456 passed the core, API, MCP and runner packages, then failed in the
+existing `TestStreamDeadlineTerminatesDescendants`: reading a disappearing
+`/proc/PID/stat` returned `ESRCH` (no such process), which its absence check did
+not accept. The test now treats that specific error as absence; other read errors
+remain failures and live descendants still fail the deadline. Ten race-enabled
+repetitions pass. Production worker code is unchanged.
+
+The ignored project `bin/cairn` was also an older build. It is now the same clean
+`e5ebcbd` executable as the installed CLI/API, so the documented project CLI does
+not accidentally edit away ordinary references. The previous binary is retained
+only in the task's deployment backup directory.
