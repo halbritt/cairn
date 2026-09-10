@@ -162,6 +162,148 @@
     {
       "path": "/tmp/cairn-vector-cache-api/residency-mutation.json",
       "sha256": "86b6d814ca1e378bad1d6958b44071b43775824ada701d61d6645c5a26f18724"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-deployment/installation.json",
+      "sha256": "95011caef3619eab4fb2283f5431bbfe18bf0e38fcc0e345d78df33e562936d2"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-deployment/live-comparison.json",
+      "sha256": "c2de0e8900e1be25061c6e62bd7d97248ea98c4eb02dcca902980b81697c10ce"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-deployment/process-check.json",
+      "sha256": "8433685b33ca83d570c809e9816d8080f66025a691d3c620c6d4d6830232234b"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-deployment/idle-check.json",
+      "sha256": "b56b9208b7afe0fcc84fc74c2008a670b5dca9d4d47d2f9d7a5ec0569af3f024"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-deployment/guidance-summary.json",
+      "sha256": "e8e51cae1cabe61d670bd02b0b5c1fe600a4a0e970d7a101e4deebb7c0fbe3a1"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-install.py",
+      "sha256": "6b7a734416155961d230d9785f849839999b643d0696d5dad89cbf96acddf37a"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-process-check.py",
+      "sha256": "4414f1c3f09776b2bdb795db3fe0c8611c7a5b1f91483428a5f5b2cdeb8c0b1f"
     }
-  ]
+  ],
+  "installation": {
+    "worker_source_commit": "d633c68b6bb00149e9ba8f34fd5665a3f637a391",
+    "worker_sha256": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+    "cli_sha256": "0bd5304706293ef967d2ddb55a4bf15ab03b5e56c561ee77ad5a974c429bd780",
+    "api_pid": "430775",
+    "api_sha256": "1a83019ee4645662225778cf0bd7df690006943509ba7c1e4b7852337b450f07",
+    "api_restarted": false,
+    "dependency_update": false,
+    "model_changed": false,
+    "adoption_check": {
+      "rows": [
+        {
+          "seconds": 14.231029282789677,
+          "worker_pids": [
+            "552005"
+          ],
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "8ee13d20f166560e0b51b4a8b16f421c0cee6785a75c8acc9d37498032be7324"
+          }
+        },
+        {
+          "seconds": 0.08294818690046668,
+          "worker_pids": [
+            "552005"
+          ],
+          "discovery": {
+            "state": "ready",
+            "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+            "algorithm": "bge-max-chunk/1",
+            "scores_sha256": "8ee13d20f166560e0b51b4a8b16f421c0cee6785a75c8acc9d37498032be7324"
+          }
+        }
+      ],
+      "method": "Union /proc/API/task/*/children: Go may spawn a child from a nonleader OS thread",
+      "same_worker_verified": true
+    },
+    "observation_correction": "Initial leader-thread-only child check was insufficient; its final assertion failed after retrieval passed. No process was restarted. All-thread child enumeration verifies current adoption and reuse."
+  },
+  "live_comparison": [
+    {
+      "seconds": 13.951864628121257,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "8ee13d20f166560e0b51b4a8b16f421c0cee6785a75c8acc9d37498032be7324"
+      },
+      "selected": [
+        "e2d3c2fd-92c1-42ce-8201-4348c94dfae1",
+        "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+        "104519b5-82cd-44b3-ba73-1def2ad42e8c",
+        "be11369a-4ae6-4600-9345-5ff36446d5ff",
+        "82fcfec8-474b-48fe-9a00-a36f59d34ac1"
+      ],
+      "worker_pids": []
+    },
+    {
+      "seconds": 0.06031095399521291,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "8ee13d20f166560e0b51b4a8b16f421c0cee6785a75c8acc9d37498032be7324"
+      },
+      "selected": [
+        "e2d3c2fd-92c1-42ce-8201-4348c94dfae1",
+        "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+        "104519b5-82cd-44b3-ba73-1def2ad42e8c",
+        "be11369a-4ae6-4600-9345-5ff36446d5ff",
+        "82fcfec8-474b-48fe-9a00-a36f59d34ac1"
+      ],
+      "worker_pids": []
+    },
+    {
+      "seconds": 0.06172755896113813,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "8ee13d20f166560e0b51b4a8b16f421c0cee6785a75c8acc9d37498032be7324"
+      },
+      "selected": [
+        "e2d3c2fd-92c1-42ce-8201-4348c94dfae1",
+        "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+        "104519b5-82cd-44b3-ba73-1def2ad42e8c",
+        "be11369a-4ae6-4600-9345-5ff36446d5ff",
+        "82fcfec8-474b-48fe-9a00-a36f59d34ac1"
+      ],
+      "worker_pids": []
+    }
+  ],
+  "idle_check": {
+    "worker_pid": "552005",
+    "live_at_check_start": false,
+    "exited": true,
+    "wait_seconds": 3.580097109079361e-05,
+    "method": "Poll the specific worker verified by all-thread enumeration; no restart or kill"
+  },
+  "guidance": {
+    "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+    "previous_version": 4,
+    "version": 5,
+    "body_sha256": "5b25497ad4a62d4267db13aaa34950cc9a637747f0eb9ba0a3819285a00d262e",
+    "exact_retry": true
+  },
+  "ci": {
+    "status": "completed",
+    "conclusion": "success",
+    "headSha": "d633c68b6bb00149e9ba8f34fd5665a3f637a391",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34426620798"
+  }
 }

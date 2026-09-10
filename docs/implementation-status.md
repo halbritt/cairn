@@ -189,13 +189,17 @@ Live checks on 2026-09-09 found:
   capture-pins-capable source and retains its existing connection settings.
 - Optional semantic discovery uses the prepared local CPU model, batch size one
   and two ONNX threads, through the API-owned `worker-stream` launcher. The script
-  SHA-256 is `290a93245909186c905708f328c276dc074232ef4fcd08c52f02ec56264a4fb5`.
-  A live child was reused for two hosted requests and then released after idle.
-  No persistent note-vector cache, package update or independent model service
-  was added. The one-shot launcher remains available.
+  SHA-256 is `80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9`
+  from worker source `d633c68`. It retains exact vectors for the last successfully
+  scored eligible note set within the existing worker lifetime. Live warm queries
+  took 0.060–0.083 seconds versus roughly 12.8 seconds before; cold requests still
+  took about 14 seconds. Candidate scores matched. No persistent cache, package
+  update or independent service was added; the one-shot launcher remains available.
 
-The [phase installation](verification/task-phase-2026-09-09.md#local-installation)
-records the current CLI/API, updated native adapter and preserved settings.
+The [vector-cache installation](verification/semantic-vector-cache-2026-09-09.md#installed-live-behavior)
+records the current worker and observed cost. The [capture installation](verification/capture-pins-2026-09-09.md#local-installation)
+records the current CLI/adapter; the [phase installation](verification/task-phase-2026-09-09.md#local-installation)
+retains the API reader upgrade and preserved settings.
 The [file-fingerprint installation](verification/run-artifact-evidence-2026-09-09.md#local-installation)
 retains its preceding CLI deployment and real build observation. The
 [applicability repair installation](verification/applicability-precedence-2026-09-09.md#local-installation)
@@ -215,6 +219,12 @@ or grooming timer is installed. Use the user services for the managed store's
 lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
+
+The vector-cache extension passed 13 complete real-model comparisons, six numerical
+tests, full Go/Python/static and disposable PostgreSQL/race checks with the real
+streaming worker. [Implementation CI](https://github.com/halbritt/cairn/actions/runs/34426620798)
+passed for `d633c68`. Installed warm queries preserved the complete candidate-score
+digest while avoiding repeated corpus embedding. [Report](verification/semantic-vector-cache-2026-09-09.md).
 
 The capture extension passed static/Go/Python and full disposable PostgreSQL/race
 integration, including actual native OpenCode tool execution. The installed CLI
@@ -1770,3 +1780,26 @@ fall from 1.85–2.29 to 0.034–0.044 seconds. A cold long-note pair was slower
 cold improvement is claimed. Retrieval latency is measured; sustained task benefit
 and independent answer-quality improvement remain open.
 [Report](verification/semantic-vector-cache-2026-09-09.md) retains decision and evidence.
+
+### 2026-09-09 — Vector-cache deployment and observed live cost
+
+Installed only the optional Python worker from `d633c68`; CLI `215ecbf`, API
+`8f6864a`/PID 430775, PostgreSQL PID 163669, model/dependencies and connection
+settings remain. Exact-source CI `34426620798` passed.
+
+The same live query returned identical candidate-score digests and selected IDs:
+12.736/12.745/12.911 seconds before; 13.952 seconds cold and 0.060/0.062 seconds
+warm after. An initial main-OS-thread-only child check missed the Go-spawned worker
+and failed its final assertion after all retrieval checks passed. Corrected the
+unsupported prior-exit metadata; no service restart or process kill followed.
+All-thread child enumeration verified PID 552005 across a second cold/warm pair
+(14.231/0.083 seconds). That process was absent at the later release check; exact
+idle-exit timing was not observed.
+
+Updated the existing performance note from v4 to v5, retaining earlier measurements
+under a historical label. Exact retry and fresh pull matched SHA-256
+`5b25497ad4a62d4267db13aaa34950cc9a637747f0eb9ba0a3819285a00d262e`.
+This occurred after the comparison. Operational bodies, deployment metadata and
+probe-correction evidence remain under `/tmp/cairn-vector-cache-deployment/`.
+Repeated retrieval cost improved; cold cost, independent answer quality and
+sustained task benefit remain separate open questions.

@@ -95,3 +95,34 @@ directory. It downloads nothing and uses no database. The six numerical unit tes
 need the optional NumPy dependency; run them in that prepared environment.
 For the real API check, set `CAIRN_SEMANTIC_STREAM_WORKER` to the candidate launcher
 and `CAIRN_SEMANTIC_STREAM_REPORT` to a new output directory for `make test-integration`.
+
+## Installed live behavior
+
+Worker source `d633c68b6bb00149e9ba8f34fd5665a3f637a391` is installed at
+`~/.local/share/cairn/semantic/semantic_rank.py`, SHA-256
+`80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9`.
+No dependency/model/configuration change, binary replacement or API restart was
+needed. CLI remains `215ecbf`, API `8f6864a`/PID 430775 and PostgreSQL PID 163669.
+
+Against the same live query and unchanged note set, the first updated request took
+13.952 seconds and two warm requests took 0.060 and 0.062 seconds. All candidate-score
+digests and selected record IDs matched the three 12.7–12.9-second baseline requests.
+This sequential before/after check is not an interleaved production latency study.
+
+The initial installation script then failed its worker-PID assertion: it read only
+`/proc/API_PID/task/API_PID/children`. A Go process can create children from other
+OS threads, so that check did not establish either prior worker exit or current
+reuse. The metadata corrects the unsupported prior-exit assertion. No restart or
+kill followed. Enumerating `/proc/API_PID/task/*/children` verified one worker,
+PID 552005, across a subsequent cold/warm pair (14.231/0.083 seconds), again with
+identical score digests. A later check found that exact worker had exited; it was
+already absent when that check began. This verifies eventual release, not its exact
+time. Disposable API tests separately exercised controlled shutdown.
+
+Updated the existing performance procedure `225ad6f4-87ab-41af-a19c-1d38b53232c3`
+from v4 to v5, preserving previous measurements under an explicit historical label.
+Exact retry and fresh pull matched the revised body. This maintenance happened
+after the latency comparison, so the measured candidate set was unchanged.
+[Implementation CI](https://github.com/halbritt/cairn/actions/runs/34426620798)
+passed for exact source `d633c68`. The general CI does not replace the separately
+executed prepared-model and real-worker checks above.
