@@ -3053,3 +3053,34 @@ private evidence under `/tmp/cairn-cold-cost/deployment/`. The previous binary i
 retained there. This closes the installation checkpoint above, while leaving
 cold inference cost, larger-corpus availability, ranking quality and demonstrated
 sustained task value open. The complete preceding implementation history is kept.
+
+### 2026-09-10 — Curate current worker guidance without erasing its history
+
+Ordinary worker guidance `225ad6f4-87ab-41af-a19c-1d38b53232c3` advanced v7→v8.
+Its current body now contains operating instructions and source pointers rather
+than multiple superseded experiment narratives. Cache contents and lifetime,
+current eligibility, input limits, numerical settings, request/client deadlines,
+cancellation and cleanup, update adoption, process inspection, and restrictions
+on repeating rejected experiments were checked against current source before
+editing. The known lookup title remains. The record's `lesson` label and all
+other metadata are preserved.
+
+The body decreased from 6,296 to 3,365 bytes, a reduction of 2,931 bytes (46.6%).
+This reduces the bytes needed for a whole current pull; it does not establish
+faster inference, better ranking or improved model-task quality. The old wording
+and measurements remain in exact retained v7 and the existing verification
+reports. Native MCP verified that complete historical body both before and after
+the edit, checked an identical edit retry, and pulled the exact current v8 body.
+Current body SHA-256 is
+`cb554748454149321d8bda93eeced21c925fe9b0f860b7a1990665eb2f1cf8c7`;
+retained v7 remains
+`99fce4e09c2939972b7460e013c50766ad79fa95572887c1f3eaf9a32e38e539`.
+
+This used the existing body-only edit and native history workflow on installed
+`a848e3c`. No new runtime, automatic groomer, benchmark or answering-model trial
+was introduced, and retired experiments were not reopened. Private before/after
+bodies, selected current-requirement/source mapping, source hashes and receipts
+are under `/tmp/cairn-guidance-curation/`. Its `result.json` SHA-256 is
+`36488377fda593e7aa8c4319e3e9fe93dd32ca9c139f500f6cd64ada2db4892e`.
+The complete preceding implementation history remains intact. This is selected
+maintenance with a measured context-size reduction; net task value is unmeasured.
