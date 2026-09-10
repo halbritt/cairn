@@ -11,6 +11,12 @@ repair. The [corrected comparison](verification/native-corrected-recurrence-2026
 retired that unchanged task and binding. Native delivery is observed; useful
 application in a completed build remains unestablished.
 
+A [live follow-up review](verification/retained-intent-review-2026-09-10.md)
+confirmed that the opening request remains satisfied at `captured`, main's catalog
+remains `observation@1`/`build@3`, and the installed Driver is clean `a6b1ae7`.
+Use `striatum --json status` for a machine-readable status read; `--json` is a
+global flag before the verb. The review did not advance native contract acceptance.
+
 ## Current implementation and next work
 
 | Boundary | Implemented evidence | Remaining work |

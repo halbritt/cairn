@@ -3932,3 +3932,32 @@ The database remains at migration 034. Installation evidence is retained in
 memory was revised and no model inference ran. This completes the observed help
 repair; setup-time savings and incremental memory benefit remain unmeasured.
 All prior implementation history is preserved.
+
+
+### 2026-09-10 — Retained intent and native integration review
+
+Applied the saved native-capture and prior retained-kind lessons to current source
+and live Striatum state. Main remains at `5ea87ca`, native integration at `ee8a463`,
+and the installed Driver at clean `a6b1ae7`. The original native request 408328 is
+satisfied at `captured`; main's catalog remains `observation@1`/`build@3`. This is
+opening-capture evidence, not acceptance of the proposed native contracts. The
+producer, consumer and supervisor already exist; the review adds none of them.
+
+Current Cairn source explicitly checks the newer retrieval fields before retained
+launch, including failure signatures, entities, semantic mode, page/browse
+positions and advisory-conflict intent. Expansion-reader equality and expiry are
+checked separately before index rendering reaches binding. Existing disposable
+PostgreSQL tests passed for exact retained execution, changed-context refusal,
+currentness rechecking, normalized kinds and observed index delivery. These focused
+checks did not enable the race detector; static field mapping is not an exhaustive
+behavioral matrix or full execution-acceptance proof. No missing current intent
+guard was found and no product/test repair was warranted.
+
+[The review](verification/retained-intent-review-2026-09-10.md) records scope,
+source hashes and limits. Initial inspection assumed the wrong position for
+Striatum's global JSON flag and tried unsupported ledger help; the corrected
+status read used `striatum --json status`. The unnecessary ledger reader completed
+normally. Receipt validation also caught a missing verification dependency, which
+was corrected. No graph mutation, deployment, operational-note revision or model
+inference occurred. Recalled guidance oriented this review; avoided rework and net
+task benefit remain unestablished. Earlier implementation history is preserved.
