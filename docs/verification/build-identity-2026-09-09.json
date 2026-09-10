@@ -117,6 +117,100 @@
     {
       "path": "/tmp/cairn-build-identity-citations-final.json",
       "sha256": "e08075a8c327280409f92ea4140e6283300552ba9c6e9360da4e5dc7785c2f3f"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-deployment/installation.json",
+      "sha256": "15b5951f44176448969858203cba362c12bf8076112d3820947a0c0d0fa66643"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-deployment/versions.json",
+      "sha256": "edfe0f810299dbee75dc96334acc836238b06481b73d0e0d4cb0bd4dce834c9b"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-deployment/unstamped-client.json",
+      "sha256": "44ef615c321cb1678ad2dfde8324d14ef0545b7b83ff7303b4d2f46469307e9b"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-deployment/mcp-initialization.json",
+      "sha256": "2d84371dde90e60eaf2c0c95928efcff6e3c2306acc45d959a2d5bf4b0dda97d"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-deployment/guidance.json",
+      "sha256": "7cef6723119a0b6e9876cfae7c6b1b07a5c7b6dfa686540b600babae4c0bb1ab"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-ci.json",
+      "sha256": "8e816ea76ea076c4924a48aa0806ff8c63955ac82f1108ef179128d5dd35d7bd"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-ci-current.json",
+      "sha256": "c91436895c459c1cdc1d50296ef5446e570ec07f41c83a87f8ea09ed1938cf43"
     }
-  ]
+  ],
+  "installation": {
+    "source_commit": "605be1a59b1e5ede65cc9a940df06cff0603167b",
+    "installed_sha256": "e73a06fe06c0983b3e88ab329f3a666fc0ef1336ea6e58447ef8662a6bd501dc",
+    "before": {
+      "cairn-api.service": {
+        "MainPID": "680757",
+        "ActiveState": "active",
+        "exe_sha256": "5b1123987348931eeb914907bf2e77bc78cd74b5688b10b969e82a4262e52005"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "after": {
+      "cairn-api.service": {
+        "MainPID": "736082",
+        "ActiveState": "active",
+        "exe_sha256": "e73a06fe06c0983b3e88ab329f3a666fc0ef1336ea6e58447ef8662a6bd501dc"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.opencode/tools/cairn.ts": "e0b2c2d4dba5a5daaec53f55643f2cbba34d459e1c0b013d97275c3232519ecd",
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "bb97a6690041a004c3385743b3b860394f635995d8b63781501900527b2793cd"
+    },
+    "backup": {
+      "path": "/home/halbritt/.local/share/cairn/backups/cairn-20260910T025650-734259.dump",
+      "sha256": "7855e8c031ab5957911624501ed1f5f5a88c31c2ab81a55353a9bb3b36bceb59"
+    },
+    "version": {
+      "schema": "cairn.build/1",
+      "go_version": "go1.25.0",
+      "module_version": "v0.0.0-20260910025625-605be1a59b1e",
+      "vcs": "git",
+      "vcs_revision": "605be1a59b1e5ede65cc9a940df06cff0603167b",
+      "vcs_time": "2026-09-10T02:56:25Z",
+      "vcs_modified": false
+    },
+    "separate_unstamped_client_verified": true,
+    "mcp_implementation_version": "605be1a59b1e5ede65cc9a940df06cff0603167b",
+    "migration": false
+  },
+  "guidance_correction": {
+    "record_id": "fa323deb-099a-4ced-aac5-b606a51e29a9",
+    "previous_version": 1,
+    "current_version": 2,
+    "body_sha256": "607c347f0a921fd0844f78243289c37c3e391c35657a1fc7b45f4a713ac53481",
+    "retry_exact": true,
+    "metadata_preserved": true,
+    "correction": "Qualify phase schema by ranked pagination; add explicit installed-build diagnosis."
+  },
+  "ci": {
+    "databaseId": 34431391693,
+    "status": "completed",
+    "conclusion": "success",
+    "headSha": "605be1a59b1e5ede65cc9a940df06cff0603167b"
+  }
 }

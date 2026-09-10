@@ -186,13 +186,14 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and API: clean `032b9c7a6b135b11f38cc2ddc408a9518b5c5848`, SHA-256
-  `5b1123987348931eeb914907bf2e77bc78cd74b5688b10b969e82a4262e52005`; API PID 680757.
-  Ranked search pagination is available through CLI/MCP and the matching native
-  OpenCode adapter. Fresh MCP processes load the new optional-offset schema;
-  existing conversations retain their original process. Capture pins and phase
-  support remain. PostgreSQL remains PID 163669; no migration was required.
-  Earlier pre-phase binaries remain unsuitable for phase data.
+- Installed CLI and API: clean `605be1a59b1e5ede65cc9a940df06cff0603167b`, SHA-256
+  `e73a06fe06c0983b3e88ab329f3a666fc0ef1336ea6e58447ef8662a6bd501dc`; API PID 736082.
+  `cairn version` and authenticated `agent version` report local and running
+  builds. A deliberately unstamped client remained unknown while correctly
+  identifying this stamped API; fresh MCP initialization named the facade build.
+  Ranked pagination, capture pins and phase support remain. PostgreSQL remains
+  PID 163669; no migration was required. Earlier pre-phase readers remain
+  unsuitable for phase data. Existing MCP processes keep their loaded executable.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -214,8 +215,10 @@ Live checks on 2026-09-09 found:
   took about 14 seconds. Candidate scores matched. No persistent cache, package
   update or independent service was added; the one-shot launcher remains available.
 
+The [build-diagnosis installation](verification/build-identity-2026-09-09.md#local-installation)
+records the current CLI/API and distinct stamped/unstamped observations.
 The [ranked-page installation](verification/search-pages-2026-09-09.md#local-installation)
-records the current CLI/API and adapter, live continuation and exact-source CI.
+records the unchanged adapter, preceding CLI/API, live continuation and CI.
 The [vector-cache installation](verification/semantic-vector-cache-2026-09-09.md#installed-live-behavior)
 records the current worker and its earlier cost comparison. The
 [capture installation](verification/capture-pins-2026-09-09.md#local-installation),
@@ -1943,3 +1946,25 @@ older installed API preserved NOT_FOUND rather than inventing a server identity.
 No native adapter, memory schema, retrieval seal or stored record changed from
 this feature. Installation is recorded separately after verification; task value
 remains unassessed. [Report](verification/build-identity-2026-09-09.md).
+
+
+### 2026-09-09 — Build diagnosis installed and phase guidance corrected
+
+Installed clean `605be1a` as CLI/API after an operational catalog-backed backup.
+API PID 736082 matches the installed executable; PostgreSQL PID 163669, migrations,
+semantic worker, native adapter and connection settings remain. The installed
+CLI and API independently report the same stamped build. A separate client built
+with -buildvcs=false reports unknown local VCS state and the actual stamped API;
+fresh MCP initialization reports the facade build. Exact-source CI 34431391693
+was still running at this deployment observation.
+
+Revised the existing phase procedure fa323deb-099a-4ced-aac5-b606a51e29a9 from v1
+to v2: schema 10 applies to unpaged phase requests, while ranked pages use schema 11.
+Added explicit build-diagnosis commands and their limits. Exact retry and fresh
+pull matched SHA-256
+607c347f0a921fd0844f78243289c37c3e391c35657a1fc7b45f4a713ac53481;
+metadata and earlier source context remain. This corrects guidance and verifies
+diagnosis, without asserting reduced task cost or cumulative memory value.
+Local deployment evidence: /tmp/cairn-build-identity-deployment/.
+
+CI completion: `34431391693` subsequently passed for exact implementation `605be1a`.

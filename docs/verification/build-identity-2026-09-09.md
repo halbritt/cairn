@@ -39,3 +39,25 @@ test-first feedback, compatibility and placement outside memory authority code.
 Typed evidence and the decision receipt passed schema validation; both consumption
 observations closed. Four remaining interface obligations are nonmaterial because
 no Go interface was introduced. Task value remains unassessed.
+
+
+## Local installation
+
+Installed clean `605be1a` as CLI/API after an operational backup with its catalog.
+The running API PID 736082 matches the installed executable's hash. PostgreSQL
+PID 163669, migrations 001–030, native adapter, semantic worker and connection
+settings are preserved. No database migration was required.
+
+The installed CLI and API report the same stamped build. A separate client built
+with `-buildvcs=false` reports unknown local VCS state while returning the actual
+stamped server identity. Fresh MCP initialization reports the facade revision.
+These checks distinguish the executables; they do not claim feature negotiation
+or cryptographic attestation. [Exact-source CI](https://github.com/halbritt/cairn/actions/runs/34431391693)
+passed for the installed implementation.
+
+The existing phase procedure was corrected from v1 to v2: ranked pages use schema
+11, while unpaged phase requests use schema 10. It now includes the explicit
+build-diagnosis commands. Exact retry and a fresh body pull matched the revised
+hash, with metadata preserved. The note remains ordinary testimony. Operational
+bodies and runtime probes stay under `/tmp/cairn-build-identity-deployment/`;
+selected hashes and version metadata are retained in the companion JSON.
