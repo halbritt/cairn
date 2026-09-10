@@ -438,6 +438,13 @@ questions. It also records a storage-location rank regression and continuing
 vocabulary misses. Ranker v4 retains historical v1–v3 behavior for recompilation;
 these development results do not close E4.
 
+The [fixed BM25 screen](verification/bm25-screen-2026-09-09.md) produced mixed
+ranks on that same reused workload: top-three counts 13/13 versus lexical 13/12,
+but first-place counts 10/10 versus 11/10. Production lexical v4 remains. Stop
+tuning these questions; revisit length-aware ranking with actual long-note
+failures and relevance labels fixed before scoring. This does not establish or
+reject sustained task value.
+
 The [local semantic comparison](verification/semantic-retrieval-2026-09-09.md)
 recovers every labelled documentation answer within three results, including the
 lexical vocabulary misses. It also worsens some first-place answers and retrieves

@@ -46,6 +46,11 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Fixed BM25 screening is inconclusive.** On the reused public corpus it
+  improves one top-three count but loses some first-place answers. Lexical v4
+  remains; further work needs representative long-note failures rather than
+  tuning these same questions. [Comparison](verification/bm25-screen-2026-09-09.md).
+
 - **Task-file guidance is now recoverable from saved procedures.** The existing
   OpenCode note now explains `--prompt-file` and newline preservation. A previously
   missed handoff question retrieves it first in lexical and semantic modes, with
@@ -1856,3 +1861,21 @@ Exact-source CI `34427884310` remains in progress; local static/Go/Python checks
 
 CI completion: `34427884310` subsequently passed for exact implementation `397750b`.
 This closes the pending CI observation above.
+
+
+### 2026-09-09 — Fixed BM25 screening remains inconclusive
+
+Compared a fixed length-normalized, term-frequency-aware candidate with lexical
+v4 on the unchanged twelve public passages and seventeen questions. Top-three
+counts are 13/13 versus 13/12; first-place counts are 10/10 versus 11/10. Storage
+vocabulary misses and irrelevant no-answer results remain. The corpus is reused
+development material and its short passages do not settle the long-note hypothesis.
+
+All 34 complete lexical baseline rankings match retained prior results; a second
+report is byte-identical, existing output refusal preserves artifacts, and
+`make check` passed. Added only the optional comparison script and documentation;
+no production scoring, schema, runtime, installed binary, memory record or task
+assessment changed. Keep lexical v4; stop tuning these same questions and revisit
+on actual representative ranking failures. Qualitative and cumulative task value
+remain open and are not reduced to these rank counts.
+[Report and decision](verification/bm25-screen-2026-09-09.md).
