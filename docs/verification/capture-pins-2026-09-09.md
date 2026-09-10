@@ -87,4 +87,4 @@ Installed clean CLI `397750b7ba886fc67dfb2159f8b2976e484bbc6b`, SHA-256
 Both empty forms return exit2/`INVALID_REQUEST` using a synthetic owner-only token
 and an absent isolated socket. The fixture token was removed afterward. API
 `8f6864a`/PID430775 and the `d633c68` semantic worker remain unchanged.
-[Repair CI](https://github.com/halbritt/cairn/actions/runs/34427884310) is still running for exact source `397750b`; local checks above passed.
+[Repair CI](https://github.com/halbritt/cairn/actions/runs/34427884310) passed for exact source `397750b`.

@@ -183,9 +183,9 @@
       "api_restarted": false
     },
     "ci": {
-      "conclusion": "",
+      "conclusion": "success",
       "headSha": "397750b7ba886fc67dfb2159f8b2976e484bbc6b",
-      "status": "in_progress",
+      "status": "completed",
       "url": "https://github.com/halbritt/cairn/actions/runs/34427884310"
     }
   }

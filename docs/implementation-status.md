@@ -1853,3 +1853,6 @@ refusal before capture. The fixture token was removed. API `8f6864a`/PID430775,
 PostgreSQL, native adapter/settings and semantic worker `d633c68` remain unchanged.
 Installation and refusal metadata: `/tmp/cairn-empty-pins-deployment/installation.json`.
 Exact-source CI `34427884310` remains in progress; local static/Go/Python checks passed.
+
+CI completion: `34427884310` subsequently passed for exact implementation `397750b`.
+This closes the pending CI observation above.
