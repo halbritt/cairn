@@ -2405,3 +2405,23 @@ tests, static/build checks and authenticated CLI/stdio workflows. R3's requireme
 audit is recorded with the evidence inventory and existing transactional gates.
 This closes that bounded implementation item; durable task-value evidence and
 the remaining roadmap requirements stay open.
+
+
+### 2026-09-09 — Current usefulness inventory reconciled with owner direction
+
+The linked usefulness inventory still presented a prospective controlled comparison
+as the next required step and omitted the later qualitative adapter-repair and
+cumulative-maintenance reviews. The current section now includes those cases,
+separates useful outcomes from judgments about memory's contribution, and applies
+the owner's broader standard for qualitative, indirect, delayed and cumulative
+value. The complete earlier inventory and trial plan remain under a historical
+heading, including their failures, measurements and unknowns. No task assessment
+was changed and no model cohort was rerun.
+
+README and roadmap links now lead readers to that current account. The stored
+owner decision on evaluation was retrieved and checked against the current
+roadmap while reconciling the documents. It supplied relevant direction, but the
+same instruction was available in conversation and source; no unique causal or
+net-benefit claim is made for this documentation repair. Claims were checked
+against the four case reports, and local links plus complete status/history
+preservation were verified. No runtime or installed binary changed.

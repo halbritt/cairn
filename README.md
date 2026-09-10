@@ -20,6 +20,12 @@ after an earlier run produced an unusable one. Both tasks have retrievals linked
 to observed host runs and separate task assessments. This is one accepted
 configuration task, with broader memory benefit still unproved.
 
+The [current task-value inventory](docs/verification/usefulness-status-2026-09-08.md)
+also includes a qualitative adapter-repair case and continuity through guidance
+maintenance. Value can accumulate across turns and tasks; a controlled single-turn
+comparison is not required for every useful observation. The reports preserve
+failures, alternative explanations and unknown net costs.
+
 [Claude Code setup](docs/claude-code.md) can generate the same ordinary MCP
 interface with explicit task/run scope. Native connection is verified; a completed
 Claude task using memory remains unverified.

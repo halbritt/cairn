@@ -70,10 +70,12 @@ supply existing revision/workspace/task-class/binding/capability pins at startup
 Public stdio checks verify matching retrieval and missing/mismatched withholding.
 This closes a facade capability gap; it adds no model-task benefit evidence.
 
-[Current usefulness evidence](verification/usefulness-status-2026-09-08.md) is
+[Current task-value evidence](verification/usefulness-status-2026-09-08.md) includes
 one exploratory avoided-regression case, a real failure-to-lesson loop, an
-operational note transfer and one accepted configuration follow-up after a
-procedure revision. No baseline advantage or durable task improvement
+operational note transfer, one accepted configuration follow-up after a
+procedure revision, a qualitative adapter-repair case and cumulative recovery of
+lost guidance. The inventory distinguishes current evaluation guidance from its
+retained historical comparison plan. No baseline advantage or durable task improvement
 across harnesses is established. Prioritize a real
 accepted task, retrieval quality and transfer evidence. Further recovery
 engineering is deferred for this experimental stage unless an observed problem

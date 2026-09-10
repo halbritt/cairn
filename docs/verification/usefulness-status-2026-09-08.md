@@ -1,4 +1,68 @@
-# Demonstrated usefulness, 2026-09-08
+# Task-value evidence — updated 2026-09-09
+
+Cairn has supported useful, bounded outcomes: knowledge transferred between
+harnesses, a working configuration after a procedure correction, and recovery of
+instructions lost during maintenance. Recalled guidance also plausibly helped an
+investigation that fixed a real adapter defect. These are evidence of local value;
+consistent net benefit across coding tasks and harnesses remains unestablished.
+
+My assessment as the Cairn coding agent is that these cases justify continued use
+on meaningful work. They do not justify treating added features, successful tool
+calls or a larger verification suite as evidence of better task results. This is
+an explicitly qualified judgment, not a new owner acceptance or a causal estimate.
+
+## Current cases and their meaning
+
+| Case | Useful outcome and memory's role | Limits |
+| --- | --- | --- |
+| [Cross-harness knowledge transfer](mcp-2026-09-08.md) | OpenCode retrieved a note captured in a Codex session and correctly answered three storage questions with its source. This is an observed transfer of selected operational knowledge. | No comparison establishes an advantage over direct context or documentation, and this was not a coding task. |
+| [Configuration correction and reuse](mcp-host-use-2026-09-08.md) | A fresh run pulled a corrected procedure and generated a configuration that the actual OpenCode client connected successfully. The earlier configuration failed that check. | One accepted configuration follow-up; the coding agent curated the correction. The exploratory sequence does not isolate memory from ordinary iteration. |
+| [Adapter repair with recalled guidance](value-case-validation-2026-09-09.md) | During investigation of a retrieved argument-handling lesson, a validation defect was reproduced and repaired. | The repair is verified; the lesson's contribution to directing the investigation is plausible. The investigator's existing context and direct source review are alternative explanations. |
+| [Continuity through maintenance and correction](cumulative-maintenance-value-2026-09-09.md) | Retained prior versions exposed instructions lost during consolidation, and the current guides were corrected. | Concrete continuity alongside self-created rework. Original documentation also contained the instructions; net savings and downstream benefit are unknown. |
+
+These cases differ in task, method and strength of attribution. They are not
+independent replications or inputs to an aggregate success score. The individual
+reports retain source pointers, failures and limits. In particular, the first
+configuration failure and the maintenance omissions remain part of the evidence.
+
+The broader question is whether normal use repeatedly improves decisions,
+preserves constraints, reduces rediscovery or avoids mistakes enough to justify
+retrieval and maintenance costs. That evidence can accumulate over turns, sessions
+and related tasks. A missing single-turn counterfactual does not make a useful
+outcome worthless; a verified outcome alone does not establish memory's added
+contribution. No general reduction in recurring coding failures or durable net
+advantage is established by the current cases.
+
+## How the next work should add evidence
+
+The [owner's current evaluation direction](../roadmap.md#assess-task-value-without-narrowing-it-to-an-evaluator)
+governs this inventory. Choose a task because its outcome matters, use the existing
+memory interfaces as appropriate, and retain a concise source-linked observation
+when guidance changes a decision, preserves a constraint, exposes an error or proves
+unhelpful. Include the relevant prior context, alternative sources, corrections
+and maintenance effort when judging the contribution. Ordinary implementation
+work can qualify; it need not be a newly staged benchmark or another repository.
+
+Use prospective checks or controlled comparisons when they answer a material
+question about the work. They are not prerequisites for every qualitative,
+indirect, delayed or cumulative value claim. Do not require each retrieval to
+produce an isolated win, or make a mechanically scored task the definition of
+value. Existing task assessments keep their original meaning and history.
+
+The previous fixed repair/model cohorts remain retired from the active sequence.
+Further platform work should address an observed obstacle or an accepted
+requirement, with its implementation result reported separately from task benefit.
+Codex and OpenCode are sufficient for the next cross-harness value work; extra
+adapters remain lower priority. Broader requirements stay on the [roadmap](../roadmap.md).
+
+## Earlier inventory and trial plan — retained history
+
+The following inventory and proposed next comparison were written before the
+owner's broader value clarification and the two qualitative reviews above.
+Their results and unknowns are preserved. The old “next priority” paragraph is a
+historical trial plan, not a requirement that new value evidence use a prospective
+controlled comparison. Current work follows the guidance above. Timings and
+implementation limits below describe their original observation intervals.
 
 Cairn has not yet demonstrated durable benefit across tasks and harnesses. Most
 completed roadmap work establishes a usable implementation and protects its
