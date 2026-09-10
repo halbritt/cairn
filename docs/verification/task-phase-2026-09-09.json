@@ -301,6 +301,103 @@
     {
       "path": "/tmp/cairn-phase-evidence-compatibility.json",
       "sha256": "f185190e73845b355f0941281dd63dee9aebfe8bbd961c75c1436cdf8ca3a7a6"
+    },
+    {
+      "path": "/tmp/cairn-phase-ci.json",
+      "sha256": "ad72aa642e5b659967b9ce0a8f080d3c83c8860013f6ed5476d8f56949679f91"
+    },
+    {
+      "path": "/tmp/cairn-phase-backup.log",
+      "sha256": "d5a29a49d4910899a57448bd13c40e69f30168b44b499e11296885f243a75899"
+    },
+    {
+      "path": "/tmp/cairn-phase-deployment/installation.json",
+      "sha256": "f1620ea8a515f0a20c7217e33b8741d3c32e96d3b55b9ee8e9478f63a9b581c4"
+    },
+    {
+      "path": "/tmp/cairn-phase-deployment/build-info.txt",
+      "sha256": "8e13e8e414858740b1dba1df8740672478d18aed57c328d8609fdf0821a75cf9"
+    },
+    {
+      "path": "/tmp/cairn-phase-deployment/search.json",
+      "sha256": "8dac1d512ca2b59063ac830bae848a8673e18c104621588d776e797105023bab"
+    },
+    {
+      "path": "/tmp/cairn-phase-deployment/applicability-pull.json",
+      "sha256": "91ee9885fde96fd98dfb7494b640620921fa12fef32e158a550289973d52568e"
+    },
+    {
+      "path": "/tmp/cairn-phase-deployment/procedure-summary.json",
+      "sha256": "56097bb6d9dc976ac8726f224900fd14ae98e2791120abf1ba11bace612db11e"
+    },
+    {
+      "path": "/tmp/cairn-phase-deployment/prior-phase-guides.json",
+      "sha256": "6b11904e536800b7b76387a5c2081dc65561425d55af821f1740d481785fc3ae"
+    },
+    {
+      "path": "/tmp/cairn-phase-deployment/procedure-capture.json",
+      "sha256": "1a8bd6ce2fc044a146deab6e3cf8a5593a3edd68059e741e1829e425e5bcbabc"
+    },
+    {
+      "path": "/tmp/cairn-phase-deployment/procedure-retry.json",
+      "sha256": "1a8bd6ce2fc044a146deab6e3cf8a5593a3edd68059e741e1829e425e5bcbabc"
+    },
+    {
+      "path": "/tmp/cairn-phase-deployment/procedure-search.json",
+      "sha256": "d2ab089900267fdddfa80af6c619f5b647e34bcc456bae3e60677694eae27c66"
+    },
+    {
+      "path": "/tmp/cairn-phase-deployment/procedure-pull.json",
+      "sha256": "91ff788e05ff17d76f22f9d23d4ff3846e6eea86b250c5e5c4cd3af97231507f"
     }
-  ]
+  ],
+  "installation": {
+    "source_commit": "8f6864a0555097be6d99bb3ccd4592701f8c2316",
+    "installed_sha256": "1a83019ee4645662225778cf0bd7df690006943509ba7c1e4b7852337b450f07",
+    "clean_build": true,
+    "services": {
+      "cairn-api.service": {
+        "MainPID": "430775",
+        "ActiveState": "active",
+        "exe_sha256": "1a83019ee4645662225778cf0bd7df690006943509ba7c1e4b7852337b450f07"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "settings_sha256": {
+      ".opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      ".codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "bb97a6690041a004c3385743b3b860394f635995d8b63781501900527b2793cd"
+    },
+    "adapter_sha256": "c43baaa6e1183724797f97a78c0057de0d13ea380073ed9322b2790258185886",
+    "backup": {
+      "path": "/home/halbritt/.local/share/cairn/backups/cairn-20260910T010417-428403.dump",
+      "sha256": "15e3cfee53dcc799972a2d6b863e24e8cd5059f53e2ec54f0a57e9a1950cb24b"
+    },
+    "migration_needed": false
+  },
+  "procedure": {
+    "record_id": "fa323deb-099a-4ced-aac5-b606a51e29a9",
+    "version": 1,
+    "body_sha256": "248bf05731fd3d3ce55b11f093dc38f9bc8f07d47175e6c118c788fa3bdbb0ae",
+    "exact_retry": true,
+    "fresh_pull_matches": true
+  },
+  "ci": {
+    "databaseId": 34423942112,
+    "headSha": "8f6864a0555097be6d99bb3ccd4592701f8c2316",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34423942112"
+  },
+  "live_phase_search": {
+    "semantic_state": "ready",
+    "schema": "cairn.semantic/10",
+    "phase": "validation",
+    "applicability_lesson_version": 1,
+    "exact_body_verified": true
+  }
 }

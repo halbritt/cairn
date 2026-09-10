@@ -65,3 +65,26 @@ Phases are declared labels, not observed lifecycle events or workflow controls.
 They do not replace retrieval purpose, task class, scope or authority checks.
 Existing handles retain their original declared context and normal freshness
 rules; they do not automatically follow a changing task phase.
+
+## Local installation
+
+Installed clean `8f6864a0555097be6d99bb3ccd4592701f8c2316` as CLI and API, SHA-256
+`1a83019ee4645662225778cf0bd7df690006943509ba7c1e4b7852337b450f07`.
+A catalog-backed backup preceded the upgrade. API PID 430775 runs the new reader;
+PostgreSQL remains PID 163669 with no migration. Prior CLI/API executables and
+adapter bytes are retained outside the repository.
+
+The native OpenCode adapter was updated while its connection settings, the Codex
+configuration and semantic-worker service settings retained their exact hashes.
+A live ordinary hosted semantic search declared phase `validation`, returned schema
+10 with ready discovery and retrieved the exact prior applicability lesson body.
+No operational phase-pinned fixture was created. A selected ordinary procedure
+now explains usage, phase semantics and the reader upgrade requirement; its exact
+capture retry and fresh search/pull were verified. It carries no instruction
+force or task-acceptance claim.
+
+[Exact-source CI 34423942112](https://github.com/halbritt/cairn/actions/runs/34423942112)
+passed every step, including PostgreSQL/race and the authenticated CLI fixture.
+The JSON report retains deployment and selected-note identities without committing
+operational bodies. This installs the capability and makes its usage recoverable;
+no answering-model task or incremental memory benefit was assessed.

@@ -153,17 +153,12 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI: clean `c3256deea8eb8a3d0c4ca4d18318a2f5130e684e`, SHA-256
-  `62fad55faeec6f4dc220402cd8a7f9d51a30b6b35b6bf6b14f0c202ade7d782a`.
-  It adds selected-file fingerprint capture through the existing observer API.
-  A real clean build produced the same 21,809,277 bytes; stored manifest and
-  exact capture retry were verified.
-- Running API: clean `63f63ed4f1c08abc2e05b68e9ff4ea2ea1f69e9d`, SHA-256
-  `210c90cdac5515fa71a668470683c6488e7d4ddc0c780139e04b55d3425c1ca5`, PID 191214.
-  It includes applicability precedence and optional streaming model reuse.
-  PostgreSQL remains PID 163669; neither service needed a restart or migration
-  for the CLI extension. Compact startup, task-file input, history and
-  retained-kind controls remain installed.
+- Installed CLI and running API: clean `8f6864a0555097be6d99bb3ccd4592701f8c2316`,
+  SHA-256 `1a83019ee4645662225778cf0bd7df690006943509ba7c1e4b7852337b450f07`.
+  API PID 430775 now applies declared task-phase constraints. Both database
+  readers were upgraded after a backup; PostgreSQL remains PID 163669 with no
+  migration. Compact startup, task-file input, history, retained-kind checks,
+  selected-file fingerprints and optional streaming model reuse remain installed.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -183,10 +178,12 @@ Live checks on 2026-09-09 found:
   No persistent note-vector cache, package update or independent model service
   was added. The one-shot launcher remains available.
 
+The [phase installation](verification/task-phase-2026-09-09.md#local-installation)
+records the current CLI/API, updated native adapter and preserved settings.
 The [file-fingerprint installation](verification/run-artifact-evidence-2026-09-09.md#local-installation)
-records the current CLI and its real build observation. The
+retains its preceding CLI deployment and real build observation. The
 [applicability repair installation](verification/applicability-precedence-2026-09-09.md#local-installation)
-records the running API and preceding CLI. The [task-file installation](verification/start-task-file-2026-09-09.md#local-installation)
+retains the preceding API deployment. The [task-file installation](verification/start-task-file-2026-09-09.md#local-installation)
 retains its preceding CLI deployment. The [compact-start installation](verification/compact-start-2026-09-09.md#local-installation-and-ci-correction)
 retains its preceding deployment and preserved API/configuration. The
 [resident-worker installation](verification/semantic-residency-2026-09-09.md#local-installation)
@@ -202,6 +199,14 @@ or grooming timer is installed. Use the user services for the managed store's
 lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
+
+The installed phase extension passed local Go/Python/static checks and full
+PostgreSQL/race integration, with scripted native OpenCode forwarding. Existing
+body/index/browse/filtered packages remain identical in old/new retry and replay
+checks. [Exact-source CI `8f6864a`](https://github.com/halbritt/cairn/actions/runs/34423942112)
+passed every step. Live phase-aware hosted semantic retrieval preserved the saved
+applicability lesson; the new usage procedure was captured and freshly retrieved.
+[Report and reader-version limit](verification/task-phase-2026-09-09.md).
 
 The installed selected-file extension passed local static checks, Go/Python tests
 and full disposable PostgreSQL/race integration. [Exact-source CI `c3256de`](https://github.com/halbritt/cairn/actions/runs/34421756291)
@@ -1671,3 +1676,19 @@ limits. The saved applicability lesson informed the preserved mismatch/unknown
 boundary; no model task or incremental memory benefit was assessed. E1 remains
 partial for entities/files/error signatures and broader currentness intent.
 All previous implementation history is preserved.
+
+### 2026-09-09 — deploy task phases and retain usage guidance
+
+Installed clean `8f6864a` as CLI/API after a catalog-backed backup; API PID 430775
+replaces 191214 and PostgreSQL remains 163669. The native OpenCode adapter now
+accepts phase settings; connection, Codex and semantic-worker settings were
+preserved. No migration was needed. Both installed database readers understand
+new phase constraints; old readers remain unsuitable for phase-pinned data.
+
+Live hosted semantic retrieval with declared validation phase returned schema 10,
+ready discovery and the exact applicability lesson. A selected ordinary usage
+procedure records phase semantics, commands and the upgrade requirement; capture
+retry and fresh retrieval matched. Exact-source CI 34423942112 passed all steps.
+The [deployment report](verification/task-phase-2026-09-09.md#local-installation)
+retains hashes and bounded claims. No model task or memory-value judgment is
+inferred. All prior implementation history remains intact.
