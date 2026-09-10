@@ -66,7 +66,8 @@ bin/cairn run-report "$PWD"
 The example wraps `cat`, so you can inspect the exact input without a model or
 provider credentials. The repository defaults to the current directory. Notes
 created by `remember` apply to all tasks and runs in that repository; empty scope
-bindings are never treated as wildcards.
+bindings are never treated as wildcards. Optional [capture pins](docs/currentness-and-replay.md#saving-guidance-with-explicit-applicability)
+narrow when a saved note applies.
 
 The default database and run artifacts live under `~/.local/share/cairn`.
 `CAIRN_HOME` changes that directory. `CAIRN_DATABASE_URL` selects an existing

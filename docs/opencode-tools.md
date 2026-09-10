@@ -94,6 +94,10 @@ a system hook or change OpenCode permissions.
 
 ## Scope and behavior
 
+Capture accepts explicit [applicability pins](currentness-and-replay.md#saving-guidance-with-explicit-applicability),
+including task phase and validity. Search settings are never automatically copied
+into a saved note.
+
 Search uses the configured repository, task `opencode/<sessionID>` and run
 `<sessionID>`. This groups a conversation, including multiple turns, and is not
 an execution-attempt identity or observed outcome. Missing/invalid native session

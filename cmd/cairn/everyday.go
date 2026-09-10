@@ -43,8 +43,18 @@ func rememberRequest(args []string, input io.Reader) (core.CreateRequest, error)
 	task := f.String("task", "*", "task scope")
 	run := f.String("run", "*", "run scope")
 	request := f.String("request-id", uuid.NewString(), "retry identity")
+	pinsJSON := f.String("pins", "", "explicit applicability JSON object; omitted means unpinned")
 	if err := f.Parse(args); err != nil {
 		return core.CreateRequest{}, invalid(err.Error())
+	}
+	var pins *core.Applicability
+	if *pinsJSON != "" {
+		if err := decode(strings.NewReader(*pinsJSON), &pins); err != nil {
+			return core.CreateRequest{}, invalid(err.Error())
+		}
+		if pins == nil {
+			return core.CreateRequest{}, invalid("pins must be a JSON object")
+		}
 	}
 	body := strings.Join(f.Args(), " ")
 	if *fromStdin {
@@ -64,7 +74,7 @@ func rememberRequest(args []string, input io.Reader) (core.CreateRequest, error)
 	if *share {
 		sensitivity = "shareable"
 	}
-	return core.CreateRequest{RequestID: *request, Draft: core.Draft{Kind: *kind, Body: body, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, ClaimType: "self", Sensitivity: sensitivity}}, nil
+	return core.CreateRequest{RequestID: *request, Draft: core.Draft{Kind: *kind, Body: body, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Pins: pins, ClaimType: "self", Sensitivity: sensitivity}}, nil
 }
 func search(ctx context.Context, s *core.Store, args []string) (core.Package, error) {
 	var kinds []string

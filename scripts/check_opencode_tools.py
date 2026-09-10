@@ -47,20 +47,28 @@ def check(binary, root, environment, opencode, claim, support):
 
     marker = 'nativeopencode' + uuid.uuid4().hex
     capture = dict(request_id=str(uuid.uuid4()), body='Earlier setup context. ' * 30 + marker + ': selected lesson $(literal)',
-                   kind='lesson', shareable=True)
+                   kind='lesson', shareable=True, pins=dict(task_phase='validation'))
     saved = invoke('remember', capture)
     assert set(saved) == {'record_id', 'version', 'request_id'} and saved['version'] == 1
     assert invoke('remember', capture) == saved
     invoke('remember', dict(capture, body='different payload'), 'IDEMPOTENCY_CONFLICT')
+    invoke('remember', dict(capture, pins=dict(task_phase='implementation')), 'IDEMPOTENCY_CONFLICT')
     local_args = dict(request_id=str(uuid.uuid4()), body=capture['body'])
     for invalid in ({'shareable': 'false'}, {'shareable': 0}, {'shareable': None},
-                    {'kind': 7}, {'body': [capture['body']]}, {'unexpected': True}):
+                    {'kind': 7}, {'body': [capture['body']]}, {'unexpected': True},
+                    {'pins': {'task_phaze': 'validation'}}, {'pins': {'task_phase': 7}},
+                    {'pins': {'task_phase': '*'}}, {'pins': None}):
         invoke('remember', dict(local_args, **invalid), 'INVALID_REQUEST')
     # The refused calls did not reserve the UUID or create a different draft.
     local = invoke('remember', local_args)
     local_record = json.loads(subprocess.run([binary, 'get', local['record_id']], env=environment,
                              capture_output=True, text=True, check=True, timeout=15).stdout)['data']
     assert local_record['kind'] == 'note' and local_record['sensitivity'] == 'local'
+    assert not local_record.get('pins'), local_record
+    for context in ({}, {'task_phase': 'implementation'}):
+        settings_path.write_text(json.dumps(dict(settings, context=context)))
+        assert not invoke('search', dict(query=marker))['index']
+    settings_path.write_text(json.dumps(settings))
     first = invoke('search', dict(query=marker))
     second = invoke('search', dict(query=marker))
 
@@ -96,6 +104,7 @@ def check(binary, root, environment, opencode, claim, support):
     assert invoke('pull', pull) == expanded
     record = expanded['selection']['record']
     assert record['body'] == capture['body'] and record['class'] == 'A'
+    assert record['pins'] == capture['pins']
     assert record['witness'] == 'testimony' and record['observed_writer'] == 'agent:hosted-capture'
     location = first['index'][0]['summary_span']
     assert location['offset'] > 160
@@ -132,7 +141,7 @@ def check(binary, root, environment, opencode, claim, support):
     fresh_body = invoke('search', dict(query=marker))
     revised_record = invoke('pull', fresh_body['index'][0]['pull_arguments'])['selection']['record']
     assert revised_record['body'] == body_edit['body'] and revised_record['version'] == 3
-    for field in ('kind', 'scope', 'sensitivity', 'claim_type'):
+    for field in ('kind', 'scope', 'sensitivity', 'claim_type', 'pins'):
         assert revised_record[field] == current[field]
     evidence_view = invoke('search', dict(query='socket'))
     claim_entry = next(entry for entry in evidence_view['index'] if entry['record_id'] == claim['record_id'])

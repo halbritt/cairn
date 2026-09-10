@@ -71,13 +71,16 @@ func TestAgentRememberUsesAuthenticatedCreate(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	result, err := run(context.Background(), append(args, "remember", "--repo", scope.Repo, "--kind", "lesson", "--shareable", "--request-id", requestID, body), strings.NewReader(""))
+	result, err := run(context.Background(), append(args, "remember", "--repo", scope.Repo, "--kind", "lesson", "--shareable", "--pins", `{"task_phase":"validation"}`, "--request-id", requestID, body), strings.NewReader(""))
 	if err != nil {
 		t.Fatal(err)
 	}
 	req := <-observed
 	if req.RequestID != requestID || req.Draft.Scope != scope || req.Draft.Body != body || req.Draft.Kind != "lesson" || req.Draft.Sensitivity != "shareable" || req.Draft.ClaimType != "self" {
 		t.Fatalf("capture changed note or intent: %+v", req)
+	}
+	if req.Draft.Pins == nil || req.Draft.Pins.TaskPhase != "validation" {
+		t.Fatalf("capture lost pins: %+v", req.Draft.Pins)
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
@@ -116,6 +119,27 @@ func TestAgentRememberReadsStdinExactly(t *testing.T) {
 	}
 	if _, err := uuid.Parse(req.RequestID); err != nil {
 		t.Fatalf("missing default retry UUID: %v", err)
+	}
+}
+
+func TestRememberExplicitPins(t *testing.T) {
+	args := []string{"--pins", `{"task_phase":"validation","task_class":"repair","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","valid_until":"2030-01-01T00:00:00Z"}`, "selected guidance"}
+	req, err := rememberRequest(args, strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Draft.Pins == nil || req.Draft.Pins.TaskPhase != "validation" || req.Draft.Pins.TaskClass != "repair" || req.Draft.Pins.Revision != strings.Repeat("a", 40) || req.Draft.Pins.ValidUntil == nil {
+		t.Fatalf("lost capture constraints: %+v", req.Draft.Pins)
+	}
+	plain, err := rememberRequest([]string{"selected guidance"}, strings.NewReader(""))
+	if err != nil || plain.Draft.Pins != nil {
+		t.Fatalf("default capture gained pins: %+v %v", plain, err)
+	}
+	for _, pins := range []string{`null`, `{"task_phaze":"validation"}`, `{"task_phase":7}`, `{} {}`, `{"valid_until":"tomorrow"}`} {
+		_, err := rememberRequest([]string{"--pins", pins, "note"}, strings.NewReader(""))
+		if core.Code(err) != "INVALID_REQUEST" {
+			t.Fatalf("invalid pins %s: %v", pins, err)
+		}
 	}
 }
 

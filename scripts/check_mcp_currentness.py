@@ -27,7 +27,21 @@ def check(binary, root, environment, grant):
     draft = dict(kind='note', body=query + ': procedure for this exact build context',
                  claim_type='self', sensitivity='shareable', pins=pins,
                  scope=dict(repo='fixture:socket', task_id='mcp-integration', run_id='*'))
-    note = operator('create', dict(request_id=str(uuid.uuid4()), draft=draft))
+    capture = dict(request_id=str(uuid.uuid4()), body=draft['body'], pins=pins,
+                   kind='procedure', shareable=True)
+    with session(binary, root, environment, arguments(pins)) as tool:
+        note = tool('cairn_remember', capture)
+        assert tool('cairn_remember', capture) == note
+        assert 'IDEMPOTENCY_CONFLICT' in tool('cairn_remember',
+            dict(capture, pins=dict(pins, task_phase='implementation')), error=True)
+        for invalid_pins in (dict(task_phaze='validation'), dict(task_phase=7), dict(task_phase='*')):
+            assert tool('cairn_remember', dict(capture, request_id=str(uuid.uuid4()),
+                        pins=invalid_pins), error=True)
+        plain = tool('cairn_remember', dict(request_id=str(uuid.uuid4()),
+                     body='Unpinned capture stays reusable', shareable=True))
+        stored = json.loads(subprocess.run([binary, 'get', plain['record_id']],
+            env=environment, capture_output=True, text=True, check=True).stdout)['data']
+        assert not stored.get('pins'), stored
     with session(binary, root, environment) as tool:
         view = tool('cairn_search', dict(query=query))
         assert not view['index'] and view['omitted']['CONTEXT_MISSING'] == 1, view
@@ -39,6 +53,12 @@ def check(binary, root, environment, grant):
         assert [entry['record_id'] for entry in view['index']] == [note['record_id']], view
         pulled = tool('cairn_pull', view['index'][0]['pull_arguments'])
         assert pulled['selection']['record']['body'] == draft['body'], pulled
+        assert pulled['selection']['record']['pins'] == pins, pulled
+        tool('cairn_edit', dict(request_id=str(uuid.uuid4()), record_id=note['record_id'],
+             expected_version=1, body=draft['body'] + ' Updated verification.'))
+        fresh = tool('cairn_search', dict(query=query))
+        revised = tool('cairn_pull', fresh['index'][0]['pull_arguments'])['selection']['record']
+        assert revised['version'] == 2 and revised['pins'] == pins
         assert 'additional' in tool('cairn_search', dict(query=query, context={}), error=True)
 
     for key in pins:

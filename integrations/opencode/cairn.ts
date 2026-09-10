@@ -131,12 +131,19 @@ export const pull_evidence = validatedTool({
 
 export const remember = validatedTool({
   description: "Save explicitly selected reusable repository knowledge as ordinary A testimony across tasks and sessions. Include source and verification context; never raw sessions or secrets. Reuse the request UUID for retries. shareable permits hosted delivery; local is the default.",
-  args: { request_id: z.string().uuid(), body: z.string().min(1), kind: z.string().optional().describe("Defaults to note"), shareable: z.boolean().optional() },
+  args: { request_id: z.string().uuid(), body: z.string().min(1), kind: z.string().optional().describe("Defaults to note"), shareable: z.boolean().optional(),
+    pins: z.object({
+      revision: z.string().optional(), workspace_sha256: z.string().optional(),
+      task_class: z.string().optional(), task_phase: z.string().optional(),
+      binding_id: z.string().optional(), capability_id: z.string().optional(),
+      valid_from: z.string().optional(), valid_until: z.string().optional(),
+    }).strict().optional().describe("Explicit applicability restrictions; all must match. Omit for unpinned guidance. Never inherited from search context. Edits cannot change pins."),
+  },
   async execute(args, context) {
     const config = await settings("remember", context)
     const result = await call(config, context, ["create"], { request_id: args.request_id, draft: {
       kind: args.kind ?? "note", body: args.body, scope: { repo: config.repo, task_id: "*", run_id: "*" },
-      sensitivity: args.shareable ? "shareable" : "local", claim_type: "self",
+      sensitivity: args.shareable ? "shareable" : "local", claim_type: "self", pins: args.pins,
     } })
     return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
   },

@@ -46,6 +46,12 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Ordinary capture accepts explicit applicability.** CLI `--pins` JSON and native
+  `cairn_remember` can save phase, revision and other existing restrictions. Omitted
+  pins remain unpinned even under a constrained search context. Public MCP and native
+  OpenCode verify retries, constrained retrieval and revision preservation.
+  [Verification](verification/capture-pins-2026-09-09.md).
+
 - **Guidance can be constrained to a task phase.** `--task-phase` distinguishes
   implementation and validation within the same task class. Phase matching covers
   ordinary and mandatory retrieval, inherited restrictions, retained execution
@@ -1692,3 +1698,18 @@ retry and fresh retrieval matched. Exact-source CI 34423942112 passed all steps.
 The [deployment report](verification/task-phase-2026-09-09.md#local-installation)
 retains hashes and bounded claims. No model task or memory-value judgment is
 inferred. All prior implementation history remains intact.
+
+### 2026-09-09 — Explicit applicability through ordinary capture
+
+Closed the gap between raw Create's applicability and ordinary CLI/MCP/OpenCode
+capture. `remember --pins` and the native optional `pins` object forward selected
+restrictions through the existing store. Search context is never inherited, local
+sharing remains the default, and ordinary edits preserve applicability.
+
+Red tests reproduced unknown CLI flag, MCP additional-property refusal and native
+OpenCode argument refusal. Static/Go/Python and disposable PostgreSQL/race checks
+passed, including native fresh-session capture/retrieval, missing/mismatched phase,
+unchanged default capture, retries and revision preservation. CLI forwarding was
+also checked after the full run. No answering-model task or value assessment was
+performed. E1 remains partial; this is practical access to existing constraints.
+[Report](verification/capture-pins-2026-09-09.md) retains evidence and decision pointers.

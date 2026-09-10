@@ -1,0 +1,72 @@
+{
+  "schema": "cairn.capture-pins-verification/1",
+  "date": "2026-09-09",
+  "baseline": "98e9c6551540867a4fa315c750fda39719d8cab8",
+  "result": "verified capability; no answering-model task or memory benefit assessment",
+  "checks": {
+    "check": 0,
+    "test": 0,
+    "integration": 0,
+    "final_cli": 0
+  },
+  "native_client": "OpenCode 1.18.21",
+  "doctrine": {
+    "packet_id": "pkt-313fca60e546c77f",
+    "content_sha256": "313fca60e546c77fc0987fd74f0bc1fa1d069aba8f60206481fd23cc2d213fc6",
+    "missing_nonmaterial": 6
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-capture-red-cli.log",
+      "sha256": "744f6056249025eb15932f2f148b49f24374bfc77227dd6e04c0e0af92288168"
+    },
+    {
+      "path": "/tmp/cairn-capture-red-mcp.log",
+      "sha256": "776f12b05f73205f8219cdb6dc2da1607b637f90989f52a16ef22e4fc1776fc0"
+    },
+    {
+      "path": "/tmp/cairn-capture-red-native.log",
+      "sha256": "82cd0f2ad489722dcf50e355ec195ecfb6150e487c2d292415a997425453d868"
+    },
+    {
+      "path": "/tmp/cairn-capture-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-capture-tests.log",
+      "sha256": "a22b8666ee35c7b1a133521e81b0e8fa9166e332fda8919f8723be24d52f6bd8"
+    },
+    {
+      "path": "/tmp/cairn-capture-integration.log",
+      "sha256": "5d46021792b9082e6b446f6402f7ea0caefef57697dd0f1ac2164d5bf62da429"
+    },
+    {
+      "path": "/tmp/cairn-capture-cli-final.log",
+      "sha256": "ebaab794582719e244e1d748f34f32ed74a7e49cda58d00a318367c061ba0eca"
+    },
+    {
+      "path": "/tmp/cairn-capture-doctrine.json",
+      "sha256": "b6c93c411c2dc8facbe9ad7d1af009f0447ee0aa1d8954ddb0d9207c129b725a"
+    },
+    {
+      "path": "/tmp/cairn-capture-doctrine-final.json",
+      "sha256": "62ccc9c4cd941866019c98e6a9d4b3918fd5a712a90776a4821789e08e315e49"
+    },
+    {
+      "path": "/tmp/cairn-capture-decision.json",
+      "sha256": "3c2b08203a272ff67dd1144efdaf2080b250d204ecb41e0e0ed2c10ee3014dce"
+    },
+    {
+      "path": "/tmp/cairn-capture-unmet.json",
+      "sha256": "2000ebf666b55fe278b516c57e4e56bd5f37438e8847d0a7beceedb24f6e1b2a"
+    },
+    {
+      "path": "/tmp/cairn-capture-citations-doctrine.json",
+      "sha256": "06a88a831daec8628c13ada245544a36fb3402e7bb5c5038383dce9cbc9e7a36"
+    },
+    {
+      "path": "/tmp/cairn-capture-citations-doctrine-final.json",
+      "sha256": "215a17a10ec9cb95ef79eab532a758fe037d8ba085b408eca34d4019a089d013"
+    }
+  ]
+}

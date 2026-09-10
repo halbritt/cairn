@@ -51,10 +51,11 @@ type searchArgs struct {
 }
 
 type rememberArgs struct {
-	RequestID string `json:"request_id" jsonschema:"A UUID chosen before capture; reuse exactly for retries of this note."`
-	Body      string `json:"body" jsonschema:"Selected reusable knowledge with source and verification context. Never raw sessions or secrets."`
-	Kind      string `json:"kind,omitempty" jsonschema:"Ordinary record kind; defaults to note."`
-	Shareable bool   `json:"shareable,omitempty" jsonschema:"Explicitly allow this content to reach hosted models. Default false keeps it local."`
+	Pins      *core.Applicability `json:"pins,omitempty" jsonschema:"Explicit applicability restrictions. Omit for reusable unpinned guidance. Never inherited from search context. All supplied pins must match; edits cannot change them."`
+	RequestID string              `json:"request_id" jsonschema:"A UUID chosen before capture; reuse exactly for retries of this note."`
+	Body      string              `json:"body" jsonschema:"Selected reusable knowledge with source and verification context. Never raw sessions or secrets."`
+	Kind      string              `json:"kind,omitempty" jsonschema:"Ordinary record kind; defaults to note."`
+	Shareable bool                `json:"shareable,omitempty" jsonschema:"Explicitly allow this content to reach hosted models. Default false keeps it local."`
 }
 
 type editArgs struct {
@@ -172,7 +173,7 @@ func (t memoryTools) remember(ctx context.Context, _ *mcp.CallToolRequest, args 
 		sensitivity = "shareable"
 	}
 	var result core.Record
-	err := t.client.Call(ctx, "create", core.CreateRequest{RequestID: args.RequestID, Draft: core.Draft{Kind: args.Kind, Body: args.Body, Scope: core.Scope{Repo: t.config.Scope.Repo, TaskID: "*", RunID: "*"}, Sensitivity: sensitivity, ClaimType: "self"}}, &result)
+	err := t.client.Call(ctx, "create", core.CreateRequest{RequestID: args.RequestID, Draft: core.Draft{Kind: args.Kind, Body: args.Body, Scope: core.Scope{Repo: t.config.Scope.Repo, TaskID: "*", RunID: "*"}, Pins: args.Pins, Sensitivity: sensitivity, ClaimType: "self"}}, &result)
 	// Capture returns only its identifier and retry key; do not echo a large or
 	// local-only body into the harness after the write has already committed.
 	return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)

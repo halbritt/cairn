@@ -92,6 +92,35 @@ version retained in each receipt. The [retrieval comparison](verification/questi
 records the measured improvements and regressions. Reusing a compile request ID
 across a ranking upgrade returns `STALE_PACKAGE`; use a new ID for current context.
 
+## Saving guidance with explicit applicability
+
+Ordinary `cairn_remember` accepts an optional `pins` object in MCP and the native
+OpenCode tools. Both `cairn remember` and `cairn agent ... remember` accept the
+same object as `--pins` JSON. For example:
+
+```sh
+cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" remember \
+  --repo "$HOME/git/cairn" --kind procedure --shareable \
+  --pins '{"task_phase":"validation"}' \
+  'When validating applicability changes, check matching, missing and mismatched context.'
+```
+
+Supply only restrictions needed for the selected guidance. Supported fields are
+`revision`, `workspace_sha256`, `task_class`, `task_phase`, `binding_id`,
+`capability_id`, `valid_from` and `valid_until`. Time values use RFC 3339 timestamps.
+All supplied restrictions apply together and use the existing store validation;
+unknown fields and invalid values are refused. These are applicability declarations,
+not evidence that a physical workspace matches them.
+
+Omitted pins remain absent even when the harness has declared a phase or revision
+for search. Native capture retains repository-wide task/run scope; CLI callers
+can select narrower `--task` and `--run` scope separately. Sharing defaults to local.
+
+Retry with the same request UUID and identical pins and body. Changing pins under
+the same UUID is an idempotency conflict. Ordinary edits preserve pins, including
+body-only revisions; a differently applicable note requires a new selected capture.
+Phase-pinned records require the reader upgrade described above.
+
 ## Recompile a retained read set
 
 `cairn recompile` accepts:
