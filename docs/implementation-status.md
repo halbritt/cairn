@@ -17,8 +17,9 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `97816e9`, including proposal conversion
-version pins and quoted exact-text search. The database schema is at migration 032.
+The installed CLI and API are clean `61627b3`, including reviewed failure
+signature retrieval, proposal version pins and quoted search. The database schema
+is at migration 033; the native OpenCode adapter is updated too.
 
 This snapshot assesses the source changes recorded below and the local installation
 on 2026-09-10. Feature reports below preserve their own verification dates and limits.
@@ -53,7 +54,7 @@ execution attempts or automatically associate retrieval with a host outcome.
   finds the exact current lesson version linked by a reviewed failure, including
   on another task or harness. Hosted associations require explicit review sharing;
   currentness and destination gates, historical replay and retained-run intent are
-  verified. Source is ready; installation is recorded below when complete.
+  verified and installed.
   [Contract](failure-signature-search.md),
   [verification](verification/failure-signature-search-2026-09-10.md).
 
@@ -2596,3 +2597,29 @@ synthetic conversion or answering-model trial was added. This completes a bounde
 structured-intent capability, not E1/D1/D2 or proof of task value. Pincite packet
 `pkt-e1505300c9e82e37` has validated typed evidence and decision receipt with closed
 citation trace. Eight nonmaterial asynchronous/interface obligations remain named.
+
+
+### 2026-09-10 — Failure signature retrieval installed
+
+Committed and pushed `61627b3d17f96c95515b1ce6c8e0d3377096d214`. Clean CLI, API
+and project binaries now share SHA-256
+`4abbca2242bfae4903c9974d8fdd4802bca13177299e3f0fac9c7468a926a20e`.
+Migration 033 followed the standard backup and a readable dump-catalog check;
+API PID 1687910 serves the new build. PostgreSQL PID 163669 and protected
+configuration/semantic source hashes are preserved. The deployed native OpenCode
+adapter matches source.
+
+Live hosted search verifies signature schema/profile and ordinary quoted fallback
+to the existing applicability lesson, followed by an exact pull. The supplied
+unmatched probe digest is not a failure observation. The store still has zero
+proposals and reviews; no synthetic conversion was introduced. A fresh MCP facade
+identifies the clean build and exposes the new field. The first live facade probe
+omitted its required socket flag; the corrected script passes. Existing facade
+processes still require restart to load the upgraded binary.
+
+[Installation evidence](verification/failure-signature-search-2026-09-10.json)
+retains identities, backup, protected hashes and retrieval receipts. Local full
+PostgreSQL/race, static, CLI/MCP and native-tool checks pass. Hosted CI run
+`34456197141` completed successfully for the feature commit: PostgreSQL/race,
+Python, static/build, report and authenticated CLI/compact startup steps all passed.
+No additional task-benefit claim is made.

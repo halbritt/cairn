@@ -75,3 +75,29 @@ nonmaterial to this change: no asynchronous workflow or recovery protocol and no
 Go interface/substitution boundary is introduced. Existing synchronous retry,
 replay and delivery behavior was checked separately. The manifest records the
 individual classifications, packet identity and local artifact hashes.
+
+
+## Local installation
+
+Clean `61627b3d17f96c95515b1ce6c8e0d3377096d214` is installed in the CLI, API and
+project binary. SHA-256:
+`4abbca2242bfae4903c9974d8fdd4802bca13177299e3f0fac9c7468a926a20e`.
+Migration 033 followed the standard store backup. Its checksum and readable
+restore catalog are retained; this is not a full restore test.
+API PID 1687910 serves the new build. PostgreSQL PID 163669, connection settings,
+identities and semantic worker source remain unchanged. The native OpenCode
+adapter matches the committed source.
+
+Live hosted retrieval verifies schema 12/profile 6 for an explicitly unmatched
+probe digest, ordinary quoted fallback to the existing applicability lesson, and
+an exact body pull. Signature-only search returns no optional entries. The probe
+is not a failure assessment. The operational store remains at zero proposals,
+reviews and shared reviews. A freshly started MCP facade identifies the clean
+source commit and advertises `error_signature_sha256`. Its first inspection script
+omitted the mandatory socket argument; the corrected probe passes. Existing
+long-running facade processes need a restart before using the new field.
+
+Hosted CI run [34456197141](https://github.com/halbritt/cairn/actions/runs/34456197141)
+completed successfully for the feature commit. PostgreSQL/race tests, Python
+tests, static/build checks, reports and authenticated CLI/compact startup checks
+all passed. This does not add task-benefit evidence.
