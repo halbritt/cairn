@@ -45,7 +45,7 @@ func renderRunIndex(index core.IndexResult, req Request) (string, error) {
 		return "", err
 	}
 	input := prefix + string(body) + "\nTASK\n" + req.Prompt
-	if len(input) > 131071 {
+	if len(input) > MaxArgumentBytes {
 		return "", &core.Error{Code: "BUDGET_REFUSED", Message: "compact memory and task exceed initial input limit"}
 	}
 	return input, nil

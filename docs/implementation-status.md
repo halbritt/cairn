@@ -46,6 +46,12 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Observed runs accept saved task files.** `run --prompt-file` preserves exact
+  text through fresh and retained body/index delivery, with an explicit retrieval
+  query kept separate. Oversized argv input refuses before consuming a launch.
+  [Contract](authenticated-runner.md#read-a-saved-task),
+  [verification](verification/run-task-file-2026-09-09.md).
+
 - **Observed runs can deliver compact indexes.** Fresh and retained execution
   supplies previews and direct pull arguments to ordinary harness tools while
   the observer keeps receipt and outcome ownership. Native OpenCode allowed,
@@ -2284,3 +2290,27 @@ PostgreSQL/race and CLI/stdio checks also pass; native OpenCode scripted deliver
 verification is recorded separately. Neither successful source reads nor process
 completion establishes task benefit. Aggregate task budgeting and broader goal
 requirements remain open. [Deployment and evidence](verification/observed-index-2026-09-09.md#local-installation).
+
+
+### 2026-09-09 — Saved task files for observed execution
+
+Added `--prompt-file` to operator and authenticated observer runs, reusing the
+bounded regular-file reader from ordinary startup. Fresh and retained body/index
+runs preserve UTF-8, CRLF, literal shell characters and trailing newlines. The
+file's task text remains separate from retrieval intent: omitted query means
+empty query, while existing inline defaults remain. Relative paths use CLI cwd;
+child `--dir` can differ. Invalid, nonregular or oversized files refuse before
+retrieval; symlinks to regular files work.
+
+The 128 KiB boundary test exposed an existing failure: a valid maximum-size task
+plus memory exceeded Linux's single-argument limit only after launch was claimed.
+The runner now refuses combined argv input over 131,071 bytes before binding.
+The same retained body receipt then succeeds through stdin. Index delivery keeps
+its existing combined limit for both carriers. No API or schema change is needed.
+
+Static checks, Go tests, 40 Python tests, full disposable PostgreSQL/race and
+CLI/stdio checks pass. The final API rerun includes operator and symlink coverage.
+Native OpenCode 1.18.21 scripted allowed/denied/stale cases preserve a saved task's
+trailing line breaks. No answering-model call or task-benefit claim is involved.
+[Verification](verification/run-task-file-2026-09-09.md). The installed CLI remains
+20b7574 until the installation entry below; the API can remain on that build.

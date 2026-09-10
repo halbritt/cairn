@@ -93,9 +93,15 @@ def check(binary, root, environment, opencode, fixture, observed=False):
         env.update(OPENCODE_CONFIG=str(config_path), OPENCODE_DISABLE_AUTOUPDATE='true',
                    OPENCODE_DISABLE_MODELS_FETCH='true', OPENCODE_DISABLE_DEFAULT_PLUGINS='true', CAIRN_DATABASE_URL='host=/absent-start-native dbname=denied')
         launch = list(fixture['start'])
+        expected_prompt = fixture['prompt']
         if observed:
             launch[launch.index('start')] = 'run'
             launch[launch.index('--token-file')+1] = str(root / 'hosted.token')
+            expected_prompt += '\r\n\n'
+            task_file = work / 'selected task.md'
+            task_file.write_bytes(expected_prompt.encode())
+            position = launch.index('--prompt')
+            launch[position:position+2] = ['--prompt-file', str(task_file)]
             launch += ['--index', '--expansion-reader', 'agent:hosted-capture',
                        '--destination', 'hosted', '--dir', str(work), '--timeout', '45s']
         thread.start()
@@ -118,7 +124,7 @@ def check(binary, root, environment, opencode, fixture, observed=False):
         if isinstance(text, list):
             text = '\n'.join(p['text'] for p in text if p['type'] == 'text')
         view, prompt = memory_input(text)
-        assert prompt == fixture['prompt']
+        assert prompt == expected_prompt
         assert view['scope'] == fixture['scope'] and len(text.encode()) <= 16000
         assert any(s['record']['record_id'] == fixture['required_record_id'] and s['mandatory'] for s in view['selected'])
         assert fixture['body'] not in text and fixture['local_record_id'] not in text

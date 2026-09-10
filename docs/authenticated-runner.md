@@ -54,6 +54,45 @@ Use repeatable `--artifact LABEL=PATH` to [fingerprint selected task files](run-
 after the process stops. The manifest retains labels, sizes and digests, with
 local sensitivity by default. Task assessment remains separate.
 
+## Read a saved task
+
+Use `--prompt-file path/to/task.md` in place of `--prompt` for either
+`cairn agent run` or `cairn run`. This works with fresh and retained body packages
+and observed indexes. For example, replace the prompt in the command above with:
+
+```sh
+--prompt-file docs/tasks/storage-review.md --query 'storage tests'
+```
+
+The file must be regular, nonblank UTF-8 without NUL bytes, at most 131,072 bytes.
+Symlinks to regular files are accepted. Relative paths resolve from the CLI's
+working directory; `--dir` selects the child's working directory. Cairn preserves
+CRLF, Unicode and trailing newlines without shell expansion. Supplying both task
+flags refuses, even if the inline prompt is empty. Invalid files refuse before
+memory retrieval or launch binding.
+
+File input defaults to an empty retrieval query. Choose `--query` explicitly, or
+use `--browse` with index mode; Cairn does not implicitly send the task file's
+contents or path to the memory API. Existing inline prompt query defaults remain.
+Retained execution still requires matching retrieval intent. The task text is
+forwarded to the child and included in the delivery digest; `context.txt` retains
+only the canonical memory package. This option does not capture task evidence.
+
+| Delivery | Input limits |
+| --- | --- |
+| Body package through stdin | Task up to 131,072 bytes; memory has its separate compiler budget. |
+| Body package through argv | Task limit above, plus combined memory, separator and task at most 131,071 bytes. |
+| Observed index through either carrier | Combined guidance, index and task at most 131,071 bytes; initial memory also has its compiler budget. |
+
+Oversized combined argv input now refuses before binding or claiming the launch.
+An unused retained body receipt can therefore be retried through stdin. The check
+bounds the argument Cairn adds; other command arguments and environment limits
+can still cause process creation to fail. These are initial delivery limits, not
+aggregate accounting across later searches, expansions and model turns.
+
+The file option and argv preflight require a CLI update only. They use the
+existing API and database contracts. [Verification](verification/run-task-file-2026-09-09.md).
+
 ## Custody and failures
 
 Before claiming a launch, Cairn [rechecks the retained memory](launch-freshness.md)

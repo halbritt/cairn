@@ -117,7 +117,8 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 	repo := f.String("repo", defaultRepo(), "repository identity")
 	directory := f.String("dir", defaultRepo(), "working directory")
 	prompt := f.String("prompt", "", "task prompt")
-	query := f.String("query", "", "retrieval query (default prompt for fresh compilation)")
+	promptFile := f.String("prompt-file", "", "read task text from a regular UTF-8 file instead of --prompt")
+	query := f.String("query", "", "retrieval query (defaults to inline prompt for fresh compilation; file input stays separate)")
 	semantic := f.Bool("semantic", false, "optional semantic index discovery")
 	browse := f.Bool("browse", false, "browse an index without a query")
 	offset := f.Int("offset", 0, "explicit ranked or browse page offset")
@@ -147,7 +148,10 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 		return runner.Result{}, invalid("run requires -- COMMAND ARGS...")
 	}
 	retainedRequested := false
+	var hasPrompt, hasFile bool
 	f.Visit(func(fl *flag.Flag) {
+		hasPrompt = hasPrompt || fl.Name == "prompt"
+		hasFile = hasFile || fl.Name == "prompt-file"
 		if fl.Name == "receipt-id" || fl.Name == "seal" {
 			retainedRequested = true
 		}
@@ -155,7 +159,21 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 	if retainedRequested && (*receipt == "" || *seal == "") {
 		return runner.Result{}, invalid("retained execution requires both --receipt-id and --seal")
 	}
-	if *query == "" && !retainedRequested && !*browse {
+	if hasPrompt && hasFile {
+		return runner.Result{}, invalid("run accepts only one of --prompt or --prompt-file")
+	}
+	if hasFile {
+		text, err := readTaskFile(*promptFile, runner.MaxPromptBytes)
+		if err != nil {
+			return runner.Result{}, err
+		}
+		if strings.TrimSpace(text) == "" || !utf8.ValidString(text) || strings.ContainsRune(text, 0) {
+			return runner.Result{}, invalid("task file must contain nonempty UTF-8 without NUL bytes")
+		}
+		*prompt = text
+	}
+	// A selected task file goes to the child, never implicitly to the memory API.
+	if *query == "" && !retainedRequested && !*browse && !hasFile {
 		*query = *prompt
 	}
 	command := f.Args()

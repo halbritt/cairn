@@ -24,6 +24,12 @@ import (
 	"github.com/halbritt/cairn/core"
 )
 
+// MaxPromptBytes bounds task input separately from the memory package.
+const MaxPromptBytes = 131072
+
+// MaxArgumentBytes leaves space for the NUL in Linux's 128 KiB argument limit.
+const MaxArgumentBytes = 131071
+
 type Request struct {
 	IndexTools            *IndexTools
 	AttemptID             string
@@ -91,7 +97,7 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	} else if req.Compile.Mode != "" || req.IndexTools != nil || req.Compile.ExpansionReader != "" {
 		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "expansion reader and tools require index execution"}
 	}
-	if len(req.Command) == 0 || (req.Carrier != "stdin" && req.Carrier != "argv") || req.Timeout <= 0 || req.Timeout > time.Hour || len(req.Prompt) > 131072 {
+	if len(req.Command) == 0 || (req.Carrier != "stdin" && req.Carrier != "argv") || req.Timeout <= 0 || req.Timeout > time.Hour || len(req.Prompt) > MaxPromptBytes {
 		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "invalid command, carrier, timeout or prompt"}
 	}
 	taskClass, bindingID, capabilityID := req.TaskClass, req.BindingID, req.CapabilityID
@@ -153,6 +159,9 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	}
 	if err != nil {
 		return result, err
+	}
+	if req.Carrier == "argv" && len(input) > MaxArgumentBytes {
+		return result, &core.Error{Code: "BUDGET_REFUSED", Message: "combined memory and task exceed the argument limit; use stdin or reduce input"}
 	}
 	encodedCommand, err := json.Marshal(req.Command)
 	if err != nil {

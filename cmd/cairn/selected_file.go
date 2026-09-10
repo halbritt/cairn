@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"syscall"
+
+	"github.com/halbritt/cairn/core"
 )
 
 // Callers request their limit plus one byte to detect overflow without reading
@@ -27,4 +29,15 @@ func readRegularFilePrefix(path string, maximum int) ([]byte, error) {
 		return nil, fmt.Errorf("read selected file: %w", err)
 	}
 	return body, nil
+}
+
+func readTaskFile(path string, limit int) (string, error) {
+	body, err := readRegularFilePrefix(path, limit+1)
+	if err != nil {
+		return "", err
+	}
+	if len(body) > limit {
+		return "", &core.Error{Code: "BUDGET_REFUSED", Message: "task file exceeds input limit"}
+	}
+	return string(body), nil
 }

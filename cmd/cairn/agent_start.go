@@ -118,7 +118,7 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 	}
 	// A single Linux argv element includes a terminating NUL and cannot exceed
 	// 128 KiB. Refuse before retrieval rather than losing the task at exec.
-	if *tokens < 256 || *tokens > 131071 {
+	if *tokens < 256 || *tokens > runner.MaxArgumentBytes {
 		return agentStartPlan{}, invalid("startup input room must be between 256 and 131071 bytes")
 	}
 	var hasPrompt, hasFile bool
@@ -130,7 +130,7 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 		return agentStartPlan{}, invalid("start requires exactly one of --prompt or --prompt-file")
 	}
 	if hasFile {
-		text, err := readStartupTask(*promptFile, *tokens)
+		text, err := readTaskFile(*promptFile, *tokens)
 		if err != nil {
 			return agentStartPlan{}, err
 		}
@@ -187,15 +187,4 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 		plan.argv = append(plan.argv, input)
 	}
 	return plan, nil
-}
-
-func readStartupTask(path string, limit int) (string, error) {
-	body, err := readRegularFilePrefix(path, limit+1)
-	if err != nil {
-		return "", err
-	}
-	if len(body) > limit {
-		return "", &core.Error{Code: "BUDGET_REFUSED", Message: "task file exceeds startup input room"}
-	}
-	return string(body), nil
 }

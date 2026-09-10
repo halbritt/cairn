@@ -1,0 +1,127 @@
+{
+  "schema": "cairn.run-task-file-verification/1",
+  "baseline_commit": "552a2b25ee92ddf6abf9ccf14f679088de2f5fd5",
+  "checks": {
+    "static": true,
+    "go_tests": true,
+    "python_tests": 40,
+    "disposable_pg_race": true,
+    "cli_stdio": true,
+    "final_api_operator_symlink": true,
+    "native_opencode_scripted": true,
+    "opencode_version": "1.18.21",
+    "answering_model": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-25398162c7472b18",
+    "packet_content_sha256": "25398162c7472b18bafeacf1cf5d03be02366eee653a1874569c920c060c8015",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface, method set, substitution or interface ownership changes; this task adds CLI input and reuses a concrete file reader."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface, method set, substitution or interface ownership changes; this task adds CLI input and reuses a concrete file reader."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface, method set, substitution or interface ownership changes; this task adds CLI input and reuses a concrete file reader."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface, method set, substitution or interface ownership changes; this task adds CLI input and reuses a concrete file reader."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-run-task-file-evidence-authority.json",
+      "sha256": "e708952ae0f47188d6f262ebee31af0888abd97ba47043e9ae6f905f58611ba8"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-evidence-structure.json",
+      "sha256": "ffc8d419fd394336d33c352b7e5e3dd7f1c406d0606a26ab4cbfb505b0202882"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-evidence-contract.json",
+      "sha256": "c7da4091dbf2905e6c7d85dfcd3f187eb33359ab4dd27027cfddcd57be6af5ab"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-evidence-tests.json",
+      "sha256": "9861f4a9853592d13d9ae52f8c14f57a1bb88c4f2811acad285ef3fcfdec45c6"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-red.log",
+      "sha256": "08ecb94beb2b4abb639c8467fc9bd4f1660c22a84be2f11b15ba5d387fa8a8d0"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-green.log",
+      "sha256": "d904e55fe0ad88cca3a08536fec8dfc554bbda0897b8ad49018a60414cb85e73"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-argv-red.log",
+      "sha256": "7e13758ab00dc5faece31fdbb2a267ed3d1db67e0ecf700592ab4559d581f661"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-argv-green.log",
+      "sha256": "d904e55fe0ad88cca3a08536fec8dfc554bbda0897b8ad49018a60414cb85e73"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-tests.log",
+      "sha256": "94fa23827e7b81c5742205b1e1296f57e512df889bde3541cf07f22354b3ec6e"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-integration.log",
+      "sha256": "ea04c0c87f76aa6a07f48aa130c617c84999cc4f2e6f8e88cc6d4e3e86052740"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-api-final.log",
+      "sha256": "d904e55fe0ad88cca3a08536fec8dfc554bbda0897b8ad49018a60414cb85e73"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-decision.json",
+      "sha256": "60fd2a1f92326d557a4d5406f2f62d3253f9fafa8defc6a15b5e3dfc9371d10b"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-doctrine.json",
+      "sha256": "2e46abd953be3c5a9989f2aabd18548ef4feb9b745405d4b2cefd5452b6f3c2e"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-doctrine-final.json",
+      "sha256": "347bf71c18ce280aa7f4fa04a98f30ca82c5d1cd56ddadd07659a9d62bf56492"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-citations.json",
+      "sha256": "af07d192edc0b3a6b2cafd86bf5c71f87f2ed970961c01a4cf8cdedecad5b316"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-citations-final.json",
+      "sha256": "346c271359f766ac8594ce18aea15ce0dc3539d2ec314666eca15536ee173224"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-native/report.json",
+      "sha256": "84a5a37c4d0c2da3e6a9fb026991bded53eab42d9f865890c0b254ff30963e10"
+    },
+    {
+      "path": "/tmp/cairn-run-task-file-native-observed/report.json",
+      "sha256": "60e57519c99b02ad5e365d6b800b0b4b45d03c2dea45d3201b26dec89cc4d04e"
+    }
+  ]
+}

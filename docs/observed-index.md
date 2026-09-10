@@ -28,6 +28,12 @@ keep that ordinary profile; do not give them observer credentials. Tool names
 must refer to tools already installed and permitted in the harness. Cairn checks
 the declaration's syntax; the native harness controls tool permissions.
 
+For a saved specification, replace `--prompt` with `--prompt-file task.md` and
+keep the explicit `--query`. The file's bytes, including trailing newlines, go
+to the child; they do not implicitly become the retrieval query. Both fresh and
+retained runs support this. The [saved-task contract](authenticated-runner.md#read-a-saved-task)
+describes file validation, path resolution and initial delivery limits.
+
 Use stdin for OpenCode 1.18.21 to preserve literal JSON. Other commands may use
 `--carrier argv`, which appends one literal argument. The child receives the
 same index presentation as explicit `agent start`: full mandatory `selected`
