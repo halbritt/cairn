@@ -88,16 +88,23 @@ func applicabilityReason(p *Applicability, context *ContextPins, now time.Time) 
 	if context != nil {
 		actual = *context
 	}
+	missing := false
 	for _, pair := range [][2]string{{p.Revision, actual.Revision}, {p.WorkspaceSHA256, actual.WorkspaceSHA256}, {p.TaskClass, actual.TaskClass}, {p.BindingID, actual.BindingID}, {p.CapabilityID, actual.CapabilityID}} {
 		if pair[0] == "" {
 			continue
 		}
 		if pair[1] == "" {
-			return "CONTEXT_MISSING"
+			missing = true
+			continue
 		}
 		if pair[0] != pair[1] {
 			return "CURRENTNESS_MISMATCH"
 		}
+	}
+	// Pins form a conjunction: any known mismatch rules out applicability,
+	// even when another pin is unknown.
+	if missing {
+		return "CONTEXT_MISSING"
 	}
 	return ""
 }

@@ -413,6 +413,12 @@ native ingress, full task acceptance or general usefulness.
 
 ### 3. Make retrieval current and evaluate real history
 
+A [currentness repair](verification/applicability-precedence-2026-09-09.md) prevents
+an earlier missing pin from masking a known mismatch in a later pin. Inapplicable
+instructions no longer block unrelated tasks; unknown applicability, private
+exclusion and historical decisions retain their contracts. E1 remains partial
+for its other context dimensions and broader task evidence.
+
 The [evidence capture transport repair](verification/evidence-limit-2026-09-09.md)
 allows authenticated clients to use the store's existing 1 MiB inline source limit,
 including heavily escaped JSON. Evidence alone has an 8 MiB encoded request cap;

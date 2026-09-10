@@ -136,6 +136,11 @@ func TestHostedPolicyApplicabilityBoundaries(t *testing.T) {
 		{"task_mismatch", &Applicability{TaskClass: "build"}, &ContextPins{TaskClass: "review"}, false},
 		{"binding_mismatch", &Applicability{BindingID: "old"}, &ContextPins{BindingID: "new"}, false},
 		{"capability_mismatch", &Applicability{CapabilityID: "old"}, &ContextPins{CapabilityID: "new"}, false},
+		{"missing_revision_task_mismatch", &Applicability{Revision: strings.Repeat("a", 40), TaskClass: "build"}, &ContextPins{TaskClass: "review"}, false},
+		{"missing_workspace_binding_mismatch", &Applicability{WorkspaceSHA256: strings.Repeat("a", 64), BindingID: "old"}, &ContextPins{BindingID: "new"}, false},
+		{"missing_binding_capability_mismatch", &Applicability{BindingID: "old", CapabilityID: "old"}, &ContextPins{CapabilityID: "new"}, false},
+		{"revision_mismatch_missing_task", &Applicability{Revision: strings.Repeat("a", 40), TaskClass: "build"}, &ContextPins{Revision: strings.Repeat("b", 40)}, false},
+		{"missing_revision_matching_task", &Applicability{Revision: strings.Repeat("a", 40), TaskClass: "build"}, &ContextPins{TaskClass: "build"}, true},
 		{"task_missing", &Applicability{TaskClass: "build"}, &ContextPins{}, true},
 		{"task_match", &Applicability{TaskClass: "build"}, &ContextPins{TaskClass: "build"}, true},
 		{"unconstrained", nil, nil, true},
@@ -185,6 +190,43 @@ func TestHostedPolicyApplicabilityBoundaries(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMandatoryApplicabilityMismatchDominatesMissingContext(t *testing.T) {
+	ctx := context.Background()
+	op, root := testOperator(t)
+	repo := uuid.NewString()
+	draft := projectNote(repo)
+	draft.Sensitivity, draft.Kind = "shareable", "instruction"
+	draft.Pins = &Applicability{Revision: strings.Repeat("a", 40), TaskClass: "build"}
+	instruction, err := op.Issue(ctx, IssueRequest{RequestID: uuid.NewString(), Draft: draft, GrantID: root.ID,
+		Mandatory: true, PolicyKey: "build-only", Reason: "Require this instruction only for builds at the pinned revision"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"", "index"} {
+		for _, taskClass := range []string{"review", "build", ""} {
+			req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"},
+				Context: &ContextPins{TaskClass: taskClass}, Purpose: "context", AvailableTokens: 64000, Mode: mode}
+			p, err := op.Compile(ctx, req, Destination{"hosted", false})
+			if taskClass != "review" {
+				requireCode(t, err, "POLICY_UNENFORCEABLE")
+				continue
+			}
+			if err != nil || len(p.Semantic.Selected) != 0 || len(p.Semantic.Index) != 0 ||
+				p.Semantic.Omitted["CURRENTNESS_MISMATCH"] != 1 || p.Semantic.Omitted["CONTEXT_MISSING"] != 0 {
+				t.Fatalf("inapplicable instruction blocked review or wrong omission: %+v %v", p, err)
+			}
+			explanation, err := op.Explain(ctx, p.ReceiptID)
+			if err != nil || len(explanation.Candidates) != 1 || explanation.Candidates[0].RecordID != instruction.RecordID || explanation.Candidates[0].Reason != "CURRENTNESS_MISMATCH" {
+				t.Fatalf("incorrect applicability explanation: %+v %v", explanation, err)
+			}
+			replay, err := op.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID})
+			if err != nil || replay.Seal != p.Seal {
+				t.Fatalf("applicability replay changed: %v", err)
+			}
+		}
 	}
 }
 

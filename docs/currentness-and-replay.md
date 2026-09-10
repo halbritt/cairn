@@ -14,6 +14,20 @@ constraints; matching them does not certify physical workspace state. `search`
 and `run` accept revision/workspace/task-class/binding/capability flags. The wrapper
 uses one consistent tuple for compilation and run metadata.
 
+Pins are conjunctive: any known mismatch makes a record inapplicable, even when
+another pin is missing. For example, a record pinned to revision A and task class
+`build` does not apply to a declared `review` task with no revision supplied.
+If the task class matches and the revision is missing, applicability remains
+unknown; a mandatory instruction still refuses. Validity exclusions take
+precedence. Private inapplicable instructions stay outside hosted bodies,
+omission counts and candidate explanations.
+
+The [precedence repair](verification/applicability-precedence-2026-09-09.md)
+corrects an earlier field-order dependency. Historical recompilation retains the
+original omission reason and seal. If a fresh compile would now produce a
+different package for an old request ID, it returns `STALE_PACKAGE`; use a new
+request ID to retrieve under the corrected rule.
+
 Hosted compilation checks applicability before refusing delivery of a private
 mandatory instruction. An expired, not-yet-effective or context-mismatched
 instruction does not block that run. Matching, unconstrained or unknown

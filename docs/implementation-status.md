@@ -46,6 +46,12 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Known applicability mismatches take precedence over missing pins.** An
+  instruction pinned to a build at revision A no longer blocks a review merely
+  because revision is absent. Truly unknown applicability still refuses; private
+  exclusions and historical replay remain intact.
+  [Repair](verification/applicability-precedence-2026-09-09.md).
+
 - **Explicit compact startup is implemented.** `cairn agent start` preloads an
   ordinary hosted index and task through stdin or argv, then replaces itself
   with the harness. Native OpenCode stdin delivery, direct pulls, permission
@@ -1545,3 +1551,21 @@ cf66e1c/PID 4121278. Exact-source CI 34418879903 passed all steps, including
 PostgreSQL/race and authenticated startup. The task-file report and metadata
 retain installation bytes and verification evidence. The current summary now
 names this CLI separately from the running API; prior history remains intact.
+
+### 2026-09-09 — repair missing-context precedence in retrieval
+
+Source inspection found that the first missing context pin returned before a
+later mismatch could establish inapplicability. PostgreSQL regressions reproduced
+false mandatory-policy refusals for both private and shareable instructions.
+The existing applicability function now defers its missing result until all
+possible known mismatches have been checked. Validity and unknown-context refusal
+retain their contracts; private metadata remains excluded from hosted retrieval.
+
+Full disposable PostgreSQL/race integration, Go/Python tests and static checks
+passed. An old/new binary comparison verified the repaired review request,
+continued refusal for genuinely unknown applicability, identical old body/index
+recompilation and `STALE_PACKAGE` on a changed fresh retry. No history/schema
+migration or new pin was needed. The [report](verification/applicability-precedence-2026-09-09.md)
+retains failed baselines and interpretation limits. This is a verified retrieval
+repair; neither a model task nor memory's incremental contribution was assessed.
+All earlier implementation history remains intact.
