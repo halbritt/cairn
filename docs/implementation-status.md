@@ -147,12 +147,17 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and running API: clean `63f63ed4f1c08abc2e05b68e9ff4ea2ea1f69e9d`,
-  with SHA-256 `210c90cdac5515fa71a668470683c6488e7d4ddc0c780139e04b55d3425c1ca5`.
-  API PID 191214 includes the applicability precedence repair and retains
-  optional streaming model reuse. PostgreSQL remains PID 163669; no schema
-  migration accompanied the update. CLI compact startup, task-file input, history
-  and retained-kind controls remain installed.
+- Installed CLI: clean `c3256deea8eb8a3d0c4ca4d18318a2f5130e684e`, SHA-256
+  `62fad55faeec6f4dc220402cd8a7f9d51a30b6b35b6bf6b14f0c202ade7d782a`.
+  It adds selected-file fingerprint capture through the existing observer API.
+  A real clean build produced the same 21,809,277 bytes; stored manifest and
+  exact capture retry were verified.
+- Running API: clean `63f63ed4f1c08abc2e05b68e9ff4ea2ea1f69e9d`, SHA-256
+  `210c90cdac5515fa71a668470683c6488e7d4ddc0c780139e04b55d3425c1ca5`, PID 191214.
+  It includes applicability precedence and optional streaming model reuse.
+  PostgreSQL remains PID 163669; neither service needed a restart or migration
+  for the CLI extension. Compact startup, task-file input, history and
+  retained-kind controls remain installed.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -172,8 +177,10 @@ Live checks on 2026-09-09 found:
   No persistent note-vector cache, package update or independent model service
   was added. The one-shot launcher remains available.
 
-The [applicability repair installation](verification/applicability-precedence-2026-09-09.md#local-installation)
-records the current CLI/API. The [task-file installation](verification/start-task-file-2026-09-09.md#local-installation)
+The [file-fingerprint installation](verification/run-artifact-evidence-2026-09-09.md#local-installation)
+records the current CLI and its real build observation. The
+[applicability repair installation](verification/applicability-precedence-2026-09-09.md#local-installation)
+records the running API and preceding CLI. The [task-file installation](verification/start-task-file-2026-09-09.md#local-installation)
 retains its preceding CLI deployment. The [compact-start installation](verification/compact-start-2026-09-09.md#local-installation-and-ci-correction)
 retains its preceding deployment and preserved API/configuration. The
 [resident-worker installation](verification/semantic-residency-2026-09-09.md#local-installation)
@@ -189,6 +196,12 @@ or grooming timer is installed. Use the user services for the managed store's
 lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
+
+The installed selected-file extension passed local static checks, Go/Python tests
+and full disposable PostgreSQL/race integration. [Exact-source CI `c3256de`](https://github.com/halbritt/cairn/actions/runs/34421756291)
+passed every step. A real clean build through the installed observer runner matched
+the installed executable; stored manifest and idempotent capture retry were checked
+against the unchanged API. [Report](verification/run-artifact-evidence-2026-09-09.md).
 
 The installed applicability repair passed full disposable PostgreSQL/race
 integration, all Go and 34 Python tests, vet/format and an old/new binary replay
@@ -1613,3 +1626,17 @@ records PostgreSQL/race, real authenticated API and privacy/retry checks. A fixt
 assessment can reference the evidence while fingerprint capture itself leaves task
 outcome unknown. U2 remains partial for convincing native-task value evidence;
 qualitative and cumulative review retains its place. All prior history is preserved.
+
+### 2026-09-09 — install selected-file capture and observe a real build
+
+Installed clean CLI `c3256de`; the API stays `63f63ed`/PID 191214 and PostgreSQL
+stays PID 163669. A real Cairn build through the observer runner produced the same
+21,809,277-byte executable as the installed CLI. Stored metadata identified those
+bytes and the observed run; replaying the exact capture request returned its
+original evidence ID. The manifest remained local and no assessment was inferred.
+
+Exact-source CI 34421756291 passed all steps. The [verification report](verification/run-artifact-evidence-2026-09-09.md#local-installation)
+retains installation digests and checked metadata pointers. No model task or memory
+benefit is claimed; the compiler does not consume the supplied guidance. The current
+installation summary now distinguishes CLI and API versions. All prior history is
+preserved.

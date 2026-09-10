@@ -64,3 +64,25 @@ The reader checks size and modification time around streaming reads. Concurrent
 writers can still invalidate a snapshot interpretation. The five-second finish
 context cannot promise interruption of a blocked filesystem syscall. Selected
 files remain caller-owned and are not retained or removed by Cairn.
+
+## Local installation
+
+Installed clean CLI `c3256deea8eb8a3d0c4ca4d18318a2f5130e684e`, SHA-256
+`62fad55faeec6f4dc220402cd8a7f9d51a30b6b35b6bf6b14f0c202ade7d782a`.
+The existing API remains `63f63ed`, PID 191214; PostgreSQL remains PID 163669.
+Their executable digests are unchanged. No service restart or migration was needed.
+
+The installed observer runner launched a real `go build` of the clean source with
+one explicitly selected executable. The 21,809,277-byte output matched the installed
+CLI exactly. Independent stored-evidence inspection matched the manifest to the
+file, receipt and outcome; an exact request retry returned the same evidence ID.
+The manifest remained local. Private metadata under
+`/tmp/cairn-run-artifacts-deployment` is pinned in the JSON report; no binary or
+operational evidence body is committed.
+
+The compiler does not use the supplied memory. This verifies an installed build
+and fingerprint workflow, with memory contribution unassessed.
+
+[Exact-source CI 34421756291](https://github.com/halbritt/cairn/actions/runs/34421756291)
+passed every step, including PostgreSQL/race, Go/Python, static checks and the
+real authenticated CLI fixture.

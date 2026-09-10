@@ -141,6 +141,71 @@
     {
       "path": "/tmp/cairn-run-artifacts-evidence-consumers-runtime.json",
       "sha256": "a43224766f549f3f88c981cce1c12923a95f56551d2e045c257659cfee91176c"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-ci.json",
+      "sha256": "f571dd8d4c769c73339bc997dbfccf82ba5610dfc800f6fd4a00aa40269a42d3"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-deployment/installation.json",
+      "sha256": "087332a798f67b208007e140a084f13a0fdd8e07279e20ccaf80c7d52b82f50e"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-deployment/observed-build-summary.json",
+      "sha256": "583cd3ba0e405baf8ccb935ba4420d30463f3083f5cdafcd6521ebc9aa537d4e"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-deployment/stored-evidence.json",
+      "sha256": "061770fcfae9d39c4687b73808fab6dc441059393790499622b4b59ef43e6cde"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-deployment/capture-retry.json",
+      "sha256": "760832bef527ffdc6ec215d02f0787189c58af07cfff32e5dcde3dd07985c8ec"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-deployment/build-info.txt",
+      "sha256": "6de4fb70354740f49d01bac8cf0889b5d698e3c53d0107b771e4bef0a18042ec"
+    },
+    {
+      "path": "/tmp/cairn-run-artifacts-deployment/observed-build-info.txt",
+      "sha256": "171f45796fa04a6a7c0f115c4636eca4fb08d28b25c888502d5da4161d331b08"
     }
-  ]
+  ],
+  "installation": {
+    "source_commit": "c3256deea8eb8a3d0c4ca4d18318a2f5130e684e",
+    "installed_sha256": "62fad55faeec6f4dc220402cd8a7f9d51a30b6b35b6bf6b14f0c202ade7d782a",
+    "bytes": 21809277,
+    "clean_build": true,
+    "previous_binary": "/tmp/cairn-run-artifacts-deployment/previous-cairn",
+    "api_restart": false,
+    "services": {
+      "cairn-api.service": {
+        "MainPID": "191214",
+        "ActiveState": "active",
+        "exe_sha256": "210c90cdac5515fa71a668470683c6488e7d4ddc0c780139e04b55d3425c1ca5"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "observed_build": {
+      "bytes": 21809277,
+      "sha256": "62fad55faeec6f4dc220402cd8a7f9d51a30b6b35b6bf6b14f0c202ade7d782a",
+      "clean_build": true,
+      "matched_installed": true,
+      "stored_manifest_verified": true,
+      "retry_same_evidence_id": true,
+      "native_model_task": false,
+      "memory_benefit_assessed": false
+    }
+  },
+  "ci": {
+    "databaseId": 34421756291,
+    "headSha": "c3256deea8eb8a3d0c4ca4d18318a2f5130e684e",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34421756291"
+  }
 }
