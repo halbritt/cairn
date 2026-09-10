@@ -38,7 +38,7 @@ binary. MCP tests exercise the authenticated tool, compact response and exclusiv
 edit modes. The real OpenCode 1.18.21 client also passed both direct tool checks and a
 normal session with scripted loopback responses, including append/retry, compact
 output, ambiguous-mode refusal and invalid suffix types. No model inference was
-used. Installation is recorded below when complete.
+used. Installation and the selected maintenance use are recorded below.
 
 Early tests had invalid fixtures: a shareable note referenced a local source,
 qualifying evidence was local, and an instruction omitted its required policy
@@ -67,3 +67,34 @@ alternatives, delegated authority and reopening conditions. All three retrieval
 citation loops are closed. Four Go-interface obligations remain nonmaterial:
 this change adds no interface or substitution boundary. The original packet and
 typed observations remain private under `/tmp/cairn-note-append-20260910`.
+
+## Installation and selected maintenance
+
+Installed clean `664472c4288f937bdd2819d0c36ca334c36eb2fe` as the CLI and API,
+with the matching OpenCode adapter. The API restarted at PID 3598568 after a
+store backup. PostgreSQL stayed running at migration 034. The installation
+preserved all 77 record versions, credentials, harness configuration, recent-file
+plugin and semantic-worker settings. Source/build hashes and the backup pointer
+are in the verification metadata.
+
+The existing history procedure was missing the separately verified authenticated
+receipt-recompile command. After reading its full current body and checking the
+source documentation, a native OpenCode tool call appended a selected 756-byte
+paragraph describing that command and its limits. The operation used the ordinary
+hosted API profile and exact installed adapter bytes in an isolated client
+workspace; no model inference was used. It advanced version 2 to 3, from 2,657 to
+3,413 bytes. The complete earlier prefix, metadata and retained version-2 body
+matched exactly. Repeating the request returned the same identifiers and did not
+append twice. All 77 previous record versions still match their prior digest;
+there are now 78 retained versions.
+
+This completed a source-checked procedure update without reproducing its old body
+in the mutation input. The operator could also have used a full replacement.
+The case is maintenance of Cairn's own guidance, without an independently observed
+downstream outcome. The added prose makes later reading longer, and this report
+does not establish positive net cost or general memory benefit.
+
+[CI 34526655526](https://github.com/halbritt/cairn/actions/runs/34526655526)
+passed for installed source `664472c`. Both jobs and every recorded step passed,
+including the UTC PostgreSQL race suite and OpenCode plugin verification. Current
+production source hashes match that tested and installed build.

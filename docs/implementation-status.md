@@ -17,7 +17,7 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `3f17cf2`. The OpenCode adapter supports
+The installed CLI and API are clean `664472c`. The OpenCode adapter supports
 explicit advisory-conflict retrieval, returning complete qualified competing
 positions through the existing search/pull tools. Default omission and binding
 refusals remain. It also retains optional recent-file hints, versioned file and
@@ -26,10 +26,11 @@ context, reviewed failure signatures and quoted search. The host keeps its
 five-minute semantic idle lifetime and twenty-five-second worker budget.
 The database remains at migration 034.
 
-Source now supports [selected append updates](verification/note-append-2026-09-10.md)
+The installed system supports [selected append updates](verification/note-append-2026-09-10.md)
 through the ordinary CLI/API and existing native edit tools. This preserves prior
-text exactly for additive maintenance. Installation is recorded separately below;
-independent downstream task benefit remains unmeasured.
+text exactly for additive maintenance. One selected update extended the saved
+history procedure without changing its earlier text; independent downstream task
+benefit remains unmeasured.
 
 The [historical replay audit](verification/replay-requirements-2026-09-10.md)
 clarifies E3: retained-read-set recompilation works, including exclusion of later
@@ -3612,3 +3613,34 @@ Installation and operational use are recorded separately when complete. Pincite
 packet `pkt-60a6733bfe653db3` has a validated decision receipt and closed citation
 traces; four interface-design obligations remain explicitly nonmaterial. All
 prior implementation history is preserved byte-for-byte.
+
+
+### 2026-09-10 — Append installation and procedure maintenance
+
+Installed clean `664472c4288f937bdd2819d0c36ca334c36eb2fe` as the CLI/API and
+matching native OpenCode adapter after a store backup. The API restarted at PID
+3598568; PostgreSQL stayed active at migration 034. All 77 retained versions and
+their combined digest were preserved, along with credentials, configuration,
+recent-file plugin and semantic-worker settings.
+
+A native OpenCode edit then appended selected, source-checked receipt-recompile
+guidance to the existing history procedure, advancing v2 to v3. Its earlier
+2,657-byte body is an exact prefix of the new 3,413-byte body; metadata and the
+retained v2 body are unchanged. An identical retry returned the same result
+without a second append. All 77 earlier versions still match the pre-installation
+digest; one selected update brings the retained count to 78. The call used the
+ordinary hosted profile and exact installed adapter bytes in an isolated client
+workspace, without model inference.
+
+This completes an additive maintenance task without rewriting the old text in the
+mutation input. It is self-maintenance, with no independently observed downstream
+outcome or net savings claim. The [report and metadata](verification/note-append-2026-09-10.md)
+retain exact hashes and route details. Earlier implementation history is unchanged.
+
+
+[CI 34526655526](https://github.com/halbritt/cairn/actions/runs/34526655526)
+passed on installed append source `664472c`. Both jobs and all recorded steps
+passed, including the UTC PostgreSQL race suite and OpenCode plugin verification.
+Production hashes still match the installed build. This follow-up records results
+and installation only; the earlier failed fixtures and native check remain in
+the history and verification metadata.
