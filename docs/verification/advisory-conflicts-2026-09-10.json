@@ -235,5 +235,184 @@
         "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
       }
     ]
+  },
+  "source_commit": "4df17afa97d2c3d457932ebb2bc7373f2d0fe83a",
+  "installation": {
+    "commit": "4df17afa97d2c3d457932ebb2bc7373f2d0fe83a",
+    "before": {
+      "cairn-api.service": {
+        "MainPID": "3062046",
+        "ActiveState": "active",
+        "exe_sha256": "695b3fe7826a649dce3340544a6e8ec926369fe21c823faf690b17be6c3f9cdb"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "after": {
+      "cairn-api.service": {
+        "MainPID": "3338966",
+        "ActiveState": "active",
+        "exe_sha256": "db72860bd5a0606a28cc08a42e34e9bb94586d1cbf7c547e24211d51a05d9b03"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "version_pair": {
+      "schema": "cairn.version/1",
+      "client": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260910191150-4df17afa97d2",
+        "vcs": "git",
+        "vcs_revision": "4df17afa97d2c3d457932ebb2bc7373f2d0fe83a",
+        "vcs_time": "2026-09-10T19:11:50Z",
+        "vcs_modified": false
+      },
+      "server": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260910191150-4df17afa97d2",
+        "vcs": "git",
+        "vcs_revision": "4df17afa97d2c3d457932ebb2bc7373f2d0fe83a",
+        "vcs_time": "2026-09-10T19:11:50Z",
+        "vcs_modified": false
+      }
+    },
+    "installed_sha256": "db72860bd5a0606a28cc08a42e34e9bb94586d1cbf7c547e24211d51a05d9b03",
+    "adapter_sha256": "ff10697cc1dcde11a8e2a62b068538166846c06355ffcd987fc24dd75c84aa56",
+    "plugin_sha256": "7b30fe4c636abbc25f360fb445425b27347d0b79127e0767bfd8db514728f4b0",
+    "migration": 34,
+    "api_restarted": true,
+    "record_versions_before": {
+      "versions": 77,
+      "sha256": "7baa02a0c48b1104e2f70dabc8113477e380aa97d967d48bb62c9e60b33bb634"
+    },
+    "record_versions_after": {
+      "versions": 77,
+      "sha256": "7baa02a0c48b1104e2f70dabc8113477e380aa97d967d48bb62c9e60b33bb634"
+    },
+    "hosted_search": {
+      "source_schema": "cairn.semantic/14",
+      "receipt_id": "b068ed57-f267-464d-a2af-f8a06359d096",
+      "record_id": "81751203-8768-49ee-bfce-895efb69889d",
+      "version": 2,
+      "body_sha256": "617555818bf48ce98cdfdfb3204c4cbf821685e6d718c1006c4ab96dd26374ca"
+    },
+    "preserved_configuration_hashes": {
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "0fc3226320370f8db9b214e4ba042bed802347b450a2481b2e9a87b13b46b8a3",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+      "/home/halbritt/.local/share/cairn/identities.json": "4e38155909afe7c58886fc5f789128af8a7230e22a17a32bf615678dd6f38b5d",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb",
+      "/home/halbritt/.config/opencode/opencode.json": "d207573666654ade4f08e9daf54da70567e4031d183ef108ff24756fbed5879f"
+    },
+    "backup_sha256": "dcc458b322f3d968b28bfb6274efa1423d55fe64a24cea20243574a5649b6e04",
+    "manifest_sha256": "f3df54a309ab77cfc9738085028f8b6891ad79d1fd95eafd670b75f5f839262d"
+  },
+  "ci": {
+    "run_id": 34518961970,
+    "url": "https://github.com/halbritt/cairn/actions/runs/34518961970",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "postgres",
+        "conclusion": "success",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Initialize containers",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run go test -race -count=1 -p 1 ./...",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run python3 -B -m unittest discover -s scripts -p 'test_*.py'",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run make check build",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run CAIRN_DATABASE_URL=\"$CAIRN_TEST_DATABASE_URL\" python3 scripts/check_use_report.py bin/cairn",
+            "conclusion": "success"
+          },
+          {
+            "name": "Check authenticated CLI and compact startup",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "conclusion": "success"
+          },
+          {
+            "name": "Stop containers",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "name": "opencode-plugin",
+        "conclusion": "success",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run node scripts/check_opencode_recent_files.mjs",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      }
+    ]
   }
 }

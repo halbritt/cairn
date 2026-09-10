@@ -17,15 +17,14 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI is clean `670cf19` and its OpenCode adapter/plugin now support
-optional recent-file hints. The API remains clean `3ff1fcd`, including explicit
-versioned file and symbol associations, entity search intent, and a host-selected idle
-lifetime (five minutes here; the default remains thirty seconds), a
-twenty-five-second semantic worker budget, native retained history,
-argument Unicode validation, per-call search context, reviewed failure signatures,
-proposal version pins and quoted search.
-The database schema is at migration 034; the native OpenCode adapter is
-updated too.
+The installed CLI and API are clean `4df17af`. The OpenCode adapter supports
+explicit advisory-conflict retrieval, returning complete qualified competing
+positions through the existing search/pull tools. Default omission and binding
+refusals remain. It also retains optional recent-file hints, versioned file and
+symbol associations, entity search, retained history, Unicode validation, per-call
+context, reviewed failure signatures and quoted search. The host keeps its
+five-minute semantic idle lifetime and twenty-five-second worker budget.
+The database remains at migration 034.
 
 This snapshot assesses the source changes recorded below and the local installation
 on 2026-09-10. Feature reports below preserve their own verification dates and limits.
@@ -58,8 +57,8 @@ execution attempts or automatically associate retrieval with a host outcome.
 [Qualified advisory conflict delivery](advisory-conflicts.md) is implemented and
 verified through the core, MCP and native OpenCode tools. Explicit requests return
 complete competing positions with currentness and privacy checks; default omission
-and binding refusals remain. Installation of this source update is pending; the
-builds named above remain the live baseline. Task benefit is unmeasured.
+and binding refusals remain. Clean `4df17af` is installed in the CLI, API and adapter. Task benefit is
+unmeasured.
 
 [OpenCode guidance is separated by workflow](verification/procedure-maintenance-2026-09-09.md#2026-09-10--separate-ordinary-tools-from-harness-launch-instructions):
 the current setup/tool note is 9,270 bytes, while launcher instructions have a
@@ -3418,3 +3417,26 @@ This is implemented retrieval behavior, not evidence of incremental task value.
 Richer interested-party resolution and acted-under-conflict outcomes remain L2
 work. The source checkpoint precedes installation; the previous installed CLI
 670cf19/API3ff1fcd remain the baseline until a subsequent installation entry.
+
+
+### 2026-09-10 — install advisory retrieval without changing stored notes
+
+Installed clean `4df17afa97d2c3d457932ebb2bc7373f2d0fe83a` in the local CLI,
+project binary and API, and updated the installed OpenCode adapter. A current
+backup preceded replacement. The API restarted as PID 3338966; PostgreSQL remained
+PID 163669 and migration 034. Record-version count and content/metadata digest
+matched before and after. Credentials, semantic worker/configuration, Codex and
+OpenCode configuration and the recent-file plugin hashes were preserved.
+
+The installed authenticated hosted profile accepted advisory intent and returned
+semantic schema 14 while retrieving the existing applicability guide
+81751203-8768-49ee-bfce-895efb69889d v2. Its full pulled body still had SHA-256
+617555818bf48ce98cdfdfb3204c4cbf821685e6d718c1006c4ab96dd26374ca.
+This verifies the installed ordinary route, not a real disputed task benefit;
+no operational conflict or memory body was created, edited or resolved. Exact
+build, service and preservation evidence is in the
+[verification record](verification/advisory-conflicts-2026-09-10.json).
+
+[CI 34518961970](https://github.com/halbritt/cairn/actions/runs/34518961970)
+subsequently completed successfully for the installed source. Both jobs and every
+recorded step passed.

@@ -90,3 +90,25 @@ requirement and rationale is retained in the [verification record](advisory-conf
 Private check logs and provenance are under
 `/tmp/cairn-advisory-conflicts-20260910/`. Their checksums are recorded in the
 verification JSON. These are verification records, not task-value acceptance.
+
+
+## Local installation
+
+Clean source `4df17afa97d2c3d457932ebb2bc7373f2d0fe83a` is installed in both CLI
+locations and the running API; the installed OpenCode adapter matches source.
+A current backup preceded replacement. The API restarted as PID 3338966, while
+PostgreSQL remained PID 163669 on migration 034. No migration command ran.
+All stored record versions retained their count and digest. Credential, host,
+semantic-worker, Codex/OpenCode configuration and recent-file plugin hashes
+remained unchanged.
+
+The installed hosted profile searched with explicit advisory intent and file
+association `core/currentness.go`, received schema 14 and pulled the existing
+applicability guide v2 with its unchanged SHA-256. No operational conflict was
+created or resolved, and no operational note was changed. The installation
+manifest is retained privately; selected build and preservation evidence is in
+the verification JSON.
+
+[CI for the installed source](https://github.com/halbritt/cairn/actions/runs/34518961970)
+completed successfully. Both PostgreSQL and plugin jobs, including every recorded
+step, were inspected.
