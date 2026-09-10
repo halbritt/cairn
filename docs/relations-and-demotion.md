@@ -36,12 +36,39 @@ retained versions of the logical record. It refuses beyond 1,000 reachable
 versions instead of assuming a partial traversal is complete. These are explicit
 links; Cairn does not infer undeclared derivations from similar text.
 
-Retraction previews now list those affected versions and their retained uses.
-The cap is 1,000 versions and 1,000 uses. A fingerprint of the dependency set,
+Retraction previews list those affected versions, their supporting evidence and
+their retained uses. The cap is 1,000 versions, 1,000 evidence references and
+1,000 uses. A fingerprint of the dependency set,
 current lifecycle/version and exposure generations rejects a preview after new
 links, dependent edits or dependent exposures. Old preview tokens issued before
 migration 013 must be refreshed. This does not certify that a person reviewed
 the preview or accepted the impact.
+
+`supporting_evidence` groups references by exact `record_id` and `version`.
+It includes historical links after a later version clears or replaces them,
+plus support on known transitive dependents. Each entry uses the existing evidence
+metadata: source UUID, citation-time digest and passages when present, witness,
+integrity state, and last persisted check generation/time. Retained inline bytes
+are checked through the same reader used for compilation; neither source truth
+nor upstream freshness is inferred. Captured bodies and source labels are excluded.
+An empty array means no supporting references in the affected set; absence of the
+field identifies an older preview response.
+
+Each version-to-source link counts toward the evidence limit, including references
+to a source shared by several versions. The complete link count is checked before
+loading source bodies. Overflow refuses without issuing a preview token; there
+is no silently truncated authorization preview. The whole operation has a
+30-second deadline, including direct CLI/core callers. These limits also apply
+to `preview-delete`, which uses the same impact inventory.
+
+Operator inspection uses `cairn preview-retract RECORD_UUID`. An authenticated
+local profile can use `agent preview-retract` with JSON `record_id`; hosted
+profiles remain refused. A preview grants no mutation authority. Evidence refresh
+through `check-evidence` advances affected record generations and invalidates an
+older token. Ordinary version edits and new relations still invalidate it too.
+Existing tokens keep their original lifetime; obtain a fresh preview to inspect
+the new evidence inventory. No schema migration is required, but the API must be
+updated for authenticated responses. [Verification](verification/retraction-evidence-2026-09-09.md).
 
 The standalone `impact` command remains a paginated direct-use inspection.
 `preview-retract` supplies the broader known-relation analysis required before a

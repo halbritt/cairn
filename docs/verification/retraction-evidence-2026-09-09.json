@@ -1,0 +1,123 @@
+{
+  "schema": "cairn.retraction-evidence-verification/1",
+  "baseline_commit": "78b7bd6f8fcc4ec2879b5e343e264e4f5a6edcde",
+  "checks": {
+    "static": true,
+    "go_tests": true,
+    "python_tests": 40,
+    "disposable_pg_race": true,
+    "operator_and_local_cli": true,
+    "hosted_inspection_refused": true,
+    "reference_limit": 1000,
+    "overflow_reference_count": 1001,
+    "answering_model": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-1b471dad09e5270a",
+    "packet_content_sha256": "1b471dad09e5270a64e2be7688886187d9e18b85b5319176e5d550b742c9dccd",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or method set changes; existing concrete core output gains supporting metadata. No substitution contract is introduced."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or method set changes; existing concrete core output gains supporting metadata. No substitution contract is introduced."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or method set changes; existing concrete core output gains supporting metadata. No substitution contract is introduced."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or method set changes; existing concrete core output gains supporting metadata. No substitution contract is introduced."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-retraction-evidence-record-authority.json",
+      "sha256": "c62dca068b14d75d2ff7eaa30e4bc83cfe6b8f883580750bec627257adc1fb0d"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-record-structure.json",
+      "sha256": "346f63a49370bd44e11289934f62049f50d303be4993c2fc698343f6180649c0"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-record-contract.json",
+      "sha256": "d21d230f88dd22e31ec62901e6f9c9912fb0b16ec6f2ba18ee333b2c92b24ac2"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-record-tests.json",
+      "sha256": "812f9a18baff846aec28c7454adb3a4846151ff7cf17eb6b8eb99b8589bf5529"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-red.log",
+      "sha256": "e2ae80cdf7739afe6ada53ddf516f76f90821b74bfd4b14db730025a4190eaf6"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-red-behavior.log",
+      "sha256": "364038053066413eb9294850090debb45d8f682a61eaa0864962294524acc08f"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-green.log",
+      "sha256": "2dca1cc5840ad843d0a71a9d70765cbc620171906b069ba404013751337c7ded"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-boundaries.log",
+      "sha256": "782a9fb026e98767af916cd7d891ea35921f729aa4af9c585425a6ce0e3b3ffc"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-dependencies.log",
+      "sha256": "afe4100d67120361701d82b1fdafb0e12d9c5d5e471eab635bafb55c2d024cb4"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-integration.log",
+      "sha256": "af4afd791e9a457ba01b2f4545a3e4409a2866f9e9c338bf6907c2ca63c0e681"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-integration-final.log",
+      "sha256": "489f0a9b7f4632bf9d018bb422a7b9b2e31d6b2e0dc59b3cbd15e8b04ebc9b90"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-check-final.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-tests.log",
+      "sha256": "f8c887ece8b3ac359adb63d9847e6c97dadcbc1ad15a37fb81e10ed0fe093cf7"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-decision.json",
+      "sha256": "d7502bb54d588c04ed13a2b8db522bce9b7b063e991c38dcba1ec25cf9106732"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-doctrine.json",
+      "sha256": "25c6f7d62651eea0dfd73ba81f76364283a0aa62adce57ed54d11ea301e0e023"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-doctrine-final.json",
+      "sha256": "20516327e2e3e0a4d6e25db3a1c91876cfe5a0907c72242a02a8f6625f4744e5"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-citations.json",
+      "sha256": "4df18b6edd3d9d84d4fb77722dca84e1ca2f92d38aadc5995c3d5e2433062b58"
+    },
+    {
+      "path": "/tmp/cairn-retraction-evidence-citations-final.json",
+      "sha256": "354ee03091b4370d9b9f86adab6384b65f5cfc51051fa1bba231bfaa51c8b5d5"
+    }
+  ]
+}

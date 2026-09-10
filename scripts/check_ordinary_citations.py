@@ -54,3 +54,19 @@ def check_cli(binary, root, environment, call):
     # DB access above cannot silently select a direct-store path.
     assert call(['cite'], clear)['version'] == 3
     assert call(['cite'], clear)['version'] == 3
+    # Retirement review retains the source link on v2 after current v3 clears it.
+    local = ['agent', '--socket', str(root / 'api.sock'), '--token-file', str(root / 'agent.token')]
+    preview = call([*local, 'preview-retract'], dict(record_id=note['record_id']), env)
+    supporting = preview['supporting_evidence']
+    assert len(supporting) == 1 and supporting[0]['record_id'] == note['record_id']
+    assert supporting[0]['version'] == 2 and supporting[0]['evidence'][0]['evidence_id'] == support['evidence_id']
+    assert supporting[0]['evidence'][0]['state'] == 'resolvable'
+    assert supporting[0]['evidence'][0]['citation']['sha256'] == support['sha256']
+    assert 'selected CLI citation source' not in json.dumps(preview)
+    direct = call(['preview-retract', note['record_id']], {})
+    assert direct['supporting_evidence'] == supporting
+    refused = subprocess.run([binary, *command, 'preview-retract'], input=json.dumps(dict(record_id=note['record_id'])),
+                             env=env, capture_output=True, text=True, timeout=10)
+    assert refused.returncode != 0 and json.loads(refused.stdout)['status'] == 'AUTHORITY_DENIED'
+    assert support['evidence_id'] not in refused.stdout
+    print('Local CLI/API retirement previews retain historical supporting citations; hosted inspection refuses')

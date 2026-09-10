@@ -12,14 +12,22 @@ import (
 )
 
 type RetractionPreview struct {
-	DeletionTargets []DeletionTarget   `json:"deletion_targets,omitempty"`
-	Dependents      []RecordVersionRef `json:"dependents"`
-	PreviewID       string             `json:"preview_id"`
-	RecordID        string             `json:"record_id"`
-	Version         int                `json:"version"`
-	ExpiresAt       time.Time          `json:"expires_at"`
-	Uses            []Impact           `json:"uses"`
-	Coverage        string             `json:"coverage"`
+	SupportingEvidence []RecordSupportingEvidence `json:"supporting_evidence"`
+	DeletionTargets    []DeletionTarget           `json:"deletion_targets,omitempty"`
+	Dependents         []RecordVersionRef         `json:"dependents"`
+	PreviewID          string                     `json:"preview_id"`
+	RecordID           string                     `json:"record_id"`
+	Version            int                        `json:"version"`
+	ExpiresAt          time.Time                  `json:"expires_at"`
+	Uses               []Impact                   `json:"uses"`
+	Coverage           string                     `json:"coverage"`
+}
+
+// RecordSupportingEvidence keeps each citation attached to its exact retained
+// version. Evidence metadata excludes captured source bodies and labels.
+type RecordSupportingEvidence struct {
+	RecordVersionRef
+	Evidence []Evidence `json:"evidence"`
 }
 
 // PreviewRetraction covers retained versions, explicit versioned dependencies
@@ -33,6 +41,8 @@ func (s *Store) previewRetraction(ctx context.Context, recordID string, deletion
 	if err := validID(recordID); err != nil {
 		return RetractionPreview{}, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
 	if err != nil {
 		return RetractionPreview{}, err
@@ -103,7 +113,7 @@ func (s *Store) previewRetractionTx(ctx context.Context, tx pgx.Tx, recordID str
 	if record.Lifecycle == "tombstoned" || (!deletion && record.Lifecycle != "active") {
 		return RetractionPreview{}, failure("VERSION_CONFLICT", "record is already inactive")
 	}
-	result := RetractionPreview{PreviewID: uuid.NewString(), RecordID: recordID, Version: record.Version, Uses: []Impact{}, Coverage: "Retained versions, known versioned relation dependents and their exposures; at most 1000 versions and 1000 uses. Unknown derivations and unmanaged evidence dependencies are not inferred."}
+	result := RetractionPreview{PreviewID: uuid.NewString(), RecordID: recordID, Version: record.Version, Uses: []Impact{}, Coverage: "Retained versions, known versioned relation dependents, their supporting evidence and recorded exposures; at most 1000 versions, 1000 evidence references and 1000 uses. Evidence metadata checks retained inline bytes, not source truth or upstream freshness. Unknown derivations and unmanaged dependencies are not inferred."}
 	var generation int64
 	if err = tx.QueryRow(ctx, `SELECT use_generation FROM cairn.memory_record WHERE record_id=$1`, recordID).Scan(&generation); err != nil {
 		return result, err
@@ -138,6 +148,10 @@ func (s *Store) previewRetractionTx(ctx context.Context, tx pgx.Tx, recordID str
 	if len(result.Uses) > 1000 {
 		return RetractionPreview{}, failure("BUDGET_REFUSED", "retraction impact exceeds 1000 uses; no preview token issued")
 	}
+	result.SupportingEvidence, err = previewSupportingEvidence(ctx, tx, result.Dependents)
+	if err != nil {
+		return RetractionPreview{}, err
+	}
 	var inventoryDigest []byte
 	if deletion {
 		result.DeletionTargets, err = deletionInventory(ctx, tx, recordID, result.Dependents)
@@ -152,6 +166,41 @@ func (s *Store) previewRetractionTx(ctx context.Context, tx pgx.Tx, recordID str
 	err = tx.QueryRow(ctx, `INSERT INTO cairn.retraction_preview(preview_id,record_id,version,use_generation,dependency_digest,deletion_inventory_digest) VALUES($1,$2,$3,$4,$5,$6) RETURNING expires_at`, result.PreviewID, recordID, record.Version, generation, dependencyDigest, inventoryDigest).Scan(&result.ExpiresAt)
 	if err != nil {
 		return result, err
+	}
+	return result, nil
+}
+
+func previewSupportingEvidence(ctx context.Context, tx pgx.Tx, refs []RecordVersionRef) ([]RecordSupportingEvidence, error) {
+	// Count links before loading any captured bodies for their integrity check.
+	// One shared source cited by two versions counts twice: both citations matter.
+	rows, err := tx.Query(ctx, `SELECT e.record_id::text,e.version,count(*)
+ FROM cairn.evidence_ref e JOIN jsonb_to_recordset($1) AS d(record_id uuid,version integer)
+ ON d.record_id=e.record_id AND d.version=e.version
+ GROUP BY e.record_id,e.version ORDER BY e.record_id,e.version`, refs)
+	if err != nil {
+		return nil, err
+	}
+	total := int64(0)
+	versions, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RecordVersionRef, error) {
+		var ref RecordVersionRef
+		var count int64
+		err := row.Scan(&ref.RecordID, &ref.Version, &count)
+		total += count
+		return ref, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if total > 1000 {
+		return nil, failure("BUDGET_REFUSED", "retraction impact exceeds 1000 evidence references; no preview token issued")
+	}
+	result := make([]RecordSupportingEvidence, 0, len(versions))
+	for _, ref := range versions {
+		evidence, err := supportingEvidence(ctx, tx, ref.RecordID, ref.Version)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, RecordSupportingEvidence{ref, evidence})
 	}
 	return result, nil
 }

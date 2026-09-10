@@ -49,6 +49,11 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Retraction previews include supporting evidence.** Protected local inspection
+  now shows source identities, exact citation metadata and integrity state for
+  affected retained versions. Complete inventories remain bounded, with no
+  preview token on overflow. [Requirement audit](verification/retraction-evidence-2026-09-09.md).
+
 - **Observed runs accept saved task files.** `run --prompt-file` preserves exact
   text through fresh and retained body/index delivery, with an explicit retrieval
   query kept separate. Oversized argv input refuses before consuming a launch.
@@ -2344,3 +2349,37 @@ tests, static/build checks and authenticated CLI/stdio workflows. Native OpenCod
 scripted checks remain the separately recorded successful local run. The API stays
 on compatible 20b7574. Aggregate task budgeting and convincing durable task-value
 evidence remain open; no broader completion is claimed.
+
+
+### 2026-09-09 — Supporting evidence in required retirement previews
+
+Audited R3 against the accepted source and current code. Required caller-owned
+previews, retained/transitive uses, stale version/dependency/exposure checks and
+concurrent compile/retraction protection already existed. The preview omitted
+supporting evidence, despite the roadmap requirement. Added version-grouped source
+metadata through the existing evidence reader, including historical citations
+removed from later versions, exact byte passages and current integrity state.
+Source bodies and labels stay out of the response; hosted inspection remains refused.
+
+The whole preview now has a 30-second deadline and a 1,000-evidence-reference cap
+alongside existing version/use caps. Counts precede body reads; 1,001 references
+refuse without returning or committing a token. Existing preview tokens keep their
+original lifetime, so request a fresh preview for the new inventory. No migration
+or new endpoint is required. R3 is recorded as implemented/tested for known,
+versioned dependencies; unknown derivations and broader lifecycle work remain open.
+
+Retained failures: the first new test used a Record variable for Cite's Revision
+result; after that fixture correction the behavioral test exposed missing preview
+evidence. The first full integration run passed Go race checks and then found a
+missing payload argument in the new CLI test helper. That fixture was corrected.
+Focused boundary/dependency checks, static checks and Go plus 40 Python tests pass;
+the clean full rerun and installation are recorded below. No operational memory
+was retired. [Audit, contract and checks](verification/retraction-evidence-2026-09-09.md).
+
+
+### 2026-09-09 — Retirement preview integration passed
+
+The clean full disposable PostgreSQL/race and CLI/stdio run passed after correcting
+the CLI test helper. New and existing retraction, dependency, evidence-refresh,
+concurrency and conflict checks passed. The final static check passed. Installed
+builds remain CLI 8dd9033/API 20b7574 until the installation entry below.
