@@ -65,3 +65,32 @@ corpus `corpus-2026-07-12-a11702cc9217` and doctrine
 are under `/tmp/cairn-observed-index-*`. Remaining generic nil-interface and
 performance obligations are explicitly nonmaterial to this feature; no new
 interface-valued absence contract or performance claim is introduced.
+
+
+## Local installation
+
+Installed clean `20b7574cfc3015fc9007f97eaa82abbae234fb9b` as CLI, API and ignored
+project `bin/cairn` after a dedicated-store backup. SHA-256:
+`8884576d7282f404d4269daf60e95aa901206828e976f0125762430a45fb9b55`.
+Migration 031 is applied. API PID 1096559 matches the installed binary; PostgreSQL
+PID 163669, adapter bytes, credential configuration, Codex/OpenCode settings and
+semantic worker source remain unchanged. Version responses match client/server.
+
+An installed retained-index run read the existing OpenCode guide v12 through its
+designated ordinary profile: receipt `63a8e554-cc5f-4b01-8559-e8366b51acc1`,
+body SHA-256 `694dd8d524e1454b3ff1988a78e92908fe2ff7537dcc691312b7d0876f0f33bb`,
+6,707 bytes, with three credits remaining. Process completion is retained as
+outcome `f4b1536e-2a36-4f21-ae91-930fc0d61079`. This checks the installed route;
+it is not a model task or a task-benefit result.
+
+The same selected procedure, `73537cbd-0ec3-4311-98c9-23e58a685b2f`, is now v13.
+Its complete prior body and metadata are preserved; an addition explains the
+observed route, differing budget semantics and unchanged ordinary-start contract.
+Exact revision retry and a fresh ordinary-profile pull pass. New body SHA-256:
+`3ef6529f65fa1cfdc03d786e964f0987b20860db6e515887af459b77a145ee01`.
+No raw note body or operational index is committed.
+
+[CI 34439862896](https://github.com/halbritt/cairn/actions/runs/34439862896)
+passed for the installed source, including Go/race, 40 Python tests, static/build
+checks and authenticated CLI/stdio workflows. Native OpenCode verification is
+the separately recorded local scripted-provider run.

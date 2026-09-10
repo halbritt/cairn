@@ -221,14 +221,13 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and API: clean `e5ebcbde400ac931bd7cbf39ba6be9eb94795110`, SHA-256
-  `0b8661c17816247a928b0971c7f3e2c1805fc3eab40b55b1401c6cdbd77dd9fe`; API PID 976089.
-  The ignored project `bin/cairn` has the same bytes. Version commands report both builds. Ordinary source citations and citation-
-  preserving edits are installed alongside Unicode validation, selected-file and
-  binary capture, ranked pages, capture pins and phase support.
-  No migration was required. Existing MCP processes keep their loaded executable;
+- Installed CLI and API: clean `20b7574cfc3015fc9007f97eaa82abbae234fb9b`, SHA-256
+  `8884576d7282f404d4269daf60e95aa901206828e976f0125762430a45fb9b55`; API PID 1096559.
+  The ignored project `bin/cairn` has the same bytes. Version commands report both builds. Observed compact index execution is installed
+  alongside ordinary source citations, Unicode validation, selected-file and binary
+  capture, ranked pages, capture pins and phase support. Migration 031 is applied. Existing MCP processes keep their loaded executable;
   earlier pre-phase readers remain unsuitable for phase data.
-- Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
+- Dedicated PostgreSQL **17.10**, with migrations **001–031** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
   retention accounting.
@@ -249,8 +248,10 @@ Live checks on 2026-09-09 found:
   took about 14 seconds. Candidate scores matched. No persistent cache, package
   update or independent service was added; the one-shot launcher remains available.
 
-The [ordinary-citation installation](verification/ordinary-citations-2026-09-09.md#local-installation)
-records the current CLI/API and native adapter. The
+The [observed-index installation](verification/observed-index-2026-09-09.md#local-installation)
+records the current CLI/API and preserved configuration. The
+[ordinary-citation installation](verification/ordinary-citations-2026-09-09.md#local-installation)
+retains its preceding CLI/API and the unchanged native adapter. The
 [Unicode repair installation](verification/json-unicode-integrity-2026-09-09.md#local-installation)
 retains its preceding CLI/API. The
 [file-capture installation](verification/file-evidence-capture-2026-09-09.md#local-installation)
@@ -2266,3 +2267,20 @@ main/tool contact, and a test-report variable shadowing error. The role gate was
 preserved, the report corrected, and clean final checks passed. The native
 timeout's cause remains unknown. [Full verification](verification/observed-index-2026-09-09.md).
 The existing installed build remains e5ebcbd until the installation entry below.
+
+
+### 2026-09-09 — Observed index installed and CI passed
+
+Installed clean 20b7574 as CLI/API and project `bin/cairn` after backup, applying
+migration 031. Client/server build identities and executable hashes match;
+PostgreSQL PID 163669, adapter bytes, configuration and semantic worker source
+remain unchanged. API PID is 1096559. An installed retained-index run reads the
+existing OpenCode procedure through an ordinary profile and retains its separate
+process outcome. The guide is now v13, preserving the full v12 body and metadata
+while adding the observed route. Exact retry and fresh retrieval pass.
+
+CI 34439862896 succeeded for the installed source. Full local disposable
+PostgreSQL/race and CLI/stdio checks also pass; native OpenCode scripted delivery
+verification is recorded separately. Neither successful source reads nor process
+completion establishes task benefit. Aggregate task budgeting and broader goal
+requirements remain open. [Deployment and evidence](verification/observed-index-2026-09-09.md#local-installation).
