@@ -107,7 +107,7 @@ func TestStriatumHistoryRecurrenceCoverage(t *testing.T) {
 		if len(c.Selected) > 0 {
 			hits++
 		}
-		replay, err := op.Recompile(ctx, RecompileRequest{p.ReceiptID, query})
+		replay, err := op.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID, Query: query})
 		if err != nil || replay.Seal != p.Seal {
 			t.Fatalf("native query recompile: %v", err)
 		}

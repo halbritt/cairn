@@ -81,7 +81,7 @@ func TestSupersessionPreservesHistoryAndIndependentReplacement(t *testing.T) {
 	if err != nil || len(fresh.Semantic.Selected) != 1 || fresh.Semantic.Selected[0].Record.RecordID != replacement.RecordID {
 		t.Fatalf("fresh: %+v %v", fresh, err)
 	}
-	history, err := op.Recompile(ctx, RecompileRequest{before.ReceiptID, query.Query})
+	history, err := op.Recompile(ctx, RecompileRequest{ReceiptID: before.ReceiptID, Query: query.Query})
 	if err != nil || history.Seal != before.Seal {
 		t.Fatalf("history rewritten: %v", err)
 	}

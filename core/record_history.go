@@ -18,17 +18,18 @@ type RecordHistoryRequest struct {
 }
 
 type HistoricalVersion struct {
-	Version          int       `json:"version"`
-	Class            string    `json:"class"`
-	Kind             string    `json:"kind"`
-	Scope            Scope     `json:"scope"`
-	ObservedWriter   string    `json:"observed_writer"`
-	Witness          string    `json:"witness"`
-	WrittenAt        time.Time `json:"written_at"`
-	PayloadAvailable bool      `json:"payload_available"`
-	BodySHA256       string    `json:"body_sha256,omitempty"`
-	BodyBytes        int       `json:"body_bytes,omitempty"`
-	Body             *string   `json:"body,omitempty"`
+	Entities         []EntityRef `json:"entities,omitempty"`
+	Version          int         `json:"version"`
+	Class            string      `json:"class"`
+	Kind             string      `json:"kind"`
+	Scope            Scope       `json:"scope"`
+	ObservedWriter   string      `json:"observed_writer"`
+	Witness          string      `json:"witness"`
+	WrittenAt        time.Time   `json:"written_at"`
+	PayloadAvailable bool        `json:"payload_available"`
+	BodySHA256       string      `json:"body_sha256,omitempty"`
+	BodyBytes        int         `json:"body_bytes,omitempty"`
+	Body             *string     `json:"body,omitempty"`
 }
 
 type RecordHistory struct {
@@ -126,6 +127,12 @@ func (s *Store) History(ctx context.Context, req RecordHistoryRequest, dest Dest
 	rows.Close()
 	if req.Version > 0 && len(result.Versions) == 0 {
 		return RecordHistory{}, failure("NOT_FOUND", "retained record version not found")
+	}
+	if req.Version > 0 {
+		result.Versions[0].Entities, err = readEntities(ctx, tx, id, req.Version)
+		if err != nil {
+			return RecordHistory{}, err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return RecordHistory{}, err

@@ -143,6 +143,19 @@ func TestRememberExplicitPins(t *testing.T) {
 	}
 }
 
+func TestRememberExplicitEntities(t *testing.T) {
+	req, err := rememberRequest([]string{"--entity-file", "core/currentness.go", "--entity-symbol", "core.applicabilityReason", "selected guidance"}, strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(req.Draft.Entities) != 2 || req.Draft.Entities[0] != (core.EntityRef{Kind: "file", Name: "core/currentness.go"}) || req.Draft.Entities[1].Kind != "symbol" {
+		t.Fatalf("lost associations: %+v", req.Draft.Entities)
+	}
+	if _, err = rememberRequest([]string{"--entity-file", "../outside", "note"}, strings.NewReader("")); core.Code(err) != "INVALID_REQUEST" {
+		t.Fatalf("invalid relative identity accepted: %v", err)
+	}
+}
+
 func TestAgentRememberRejectsInvalidInputBeforeCapture(t *testing.T) {
 	args := agentCaptureAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("invalid capture reached the API")

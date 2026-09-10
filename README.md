@@ -88,6 +88,11 @@ script. Use `CAIRN_PG_BIN` to select PostgreSQL binaries when necessary.
 captured with `agent evidence --file PATH --source LABEL` without preparing JSON.
 Capture remains local by default and preserves the selected bytes.
 
+[Explicit file and symbol associations](docs/entity-search.md) support retrieval by
+a chosen repository-relative file or qualified symbol, including when a note body
+does not name it. Capture and search accept `--entity-file` / `--entity-symbol`
+through the CLI and `entities` through ordinary native tools.
+
 [Quoted search](docs/quoted-search.md) prefers a known path, identifier or error
 message in the existing query field while retaining broader lexical matches.
 

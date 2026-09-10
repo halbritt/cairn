@@ -15,6 +15,7 @@ func TestForgetExcludesCopiesBeforePurgeAndKeepsUseHistory(t *testing.T) {
 	repo := uuid.NewString()
 	create := CreateRequest{uuid.NewString(), projectNote(repo)}
 	create.Draft.Body = "fixture_error deletion_canary_" + uuid.NewString()
+	create.Draft.Entities = []EntityRef{{Kind: "file", Name: "private/canary.go"}}
 	r, err := s.Create(ctx, create)
 	if err != nil {
 		t.Fatal(err)
@@ -42,7 +43,7 @@ func TestForgetExcludesCopiesBeforePurgeAndKeepsUseHistory(t *testing.T) {
 	requireCode(t, err, "PAYLOAD_UNAVAILABLE")
 	_, err = s.Replay(ctx, pkg.ReceiptID)
 	requireCode(t, err, "PAYLOAD_UNAVAILABLE")
-	_, err = s.Recompile(ctx, RecompileRequest{pkg.ReceiptID, "fixture_error"})
+	_, err = s.Recompile(ctx, RecompileRequest{ReceiptID: pkg.ReceiptID, Query: "fixture_error"})
 	requireCode(t, err, "PAYLOAD_UNAVAILABLE")
 	compile.RequestID = uuid.NewString()
 	fresh, err := s.Compile(ctx, compile, Destination{"local", true})
@@ -60,6 +61,13 @@ func TestForgetExcludesCopiesBeforePurgeAndKeepsUseHistory(t *testing.T) {
 	purged, err := s.PurgeDeletion(ctx, deletion.DeletionID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	var remaining int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.record_entities WHERE record_id=$1`, r.RecordID).Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining != 0 {
+		t.Fatal("purge retained sensitive entity associations")
 	}
 	if purged.State != "limited" {
 		t.Fatalf("external and storage residuals must remain explicit: %+v", purged)

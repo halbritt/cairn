@@ -40,7 +40,7 @@ func TestIdentifierWordsRetrieveSpecificNote(t *testing.T) {
 			if first != r.RecordID {
 				t.Fatalf("query %q mode %q did not prefer the identifier note: %+v", query, mode, p.Semantic)
 			}
-			replayed, err := s.Recompile(ctx, RecompileRequest{p.ReceiptID, query})
+			replayed, err := s.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID, Query: query})
 			if err != nil || replayed.Seal != p.Seal {
 				t.Fatalf("identifier retrieval did not recompile: %v", err)
 			}

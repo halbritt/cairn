@@ -51,7 +51,7 @@ func TestQuestionWordsDoNotSupplyRelevance(t *testing.T) {
 			if foundNote != test.wantNote || !foundMandatory {
 				t.Errorf("mode=%q query=%q: optional note=%t, required instruction=%t", mode, test.query, foundNote, foundMandatory)
 			}
-			recompiled, err := op.Recompile(ctx, RecompileRequest{p.ReceiptID, test.query})
+			recompiled, err := op.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID, Query: test.query})
 			if err != nil || recompiled.Seal != p.Seal {
 				t.Fatalf("mode=%q query=%q: recompile: %v", mode, test.query, err)
 			}

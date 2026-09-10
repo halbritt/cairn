@@ -313,6 +313,9 @@ func (s *Store) purgeDatabaseEffect(ctx context.Context, id string, effect Delet
 	switch effect.TargetType {
 	case "db_record_bodies":
 		_, err = tx.Exec(ctx, `UPDATE cairn.record_version SET body='' WHERE record_id=$1 AND payload_deleted_by=$2`, effect.TargetID, id)
+		if err == nil {
+			_, err = tx.Exec(ctx, `DELETE FROM cairn.record_entities e USING cairn.record_version v WHERE e.record_id=v.record_id AND e.version=v.version AND v.record_id=$1 AND v.payload_deleted_by=$2`, effect.TargetID, id)
+		}
 	case "db_retrieval_package":
 		_, err = tx.Exec(ctx, `UPDATE cairn.retrieval_receipt SET semantic_body=NULL WHERE receipt_id=$1 AND payload_deleted_by IS NOT NULL`, effect.TargetID)
 	case "db_mutation_responses":

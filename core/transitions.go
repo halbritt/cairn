@@ -110,6 +110,7 @@ func (s *Store) Issue(ctx context.Context, req IssueRequest) (Record, error) {
 	if err := ordinary.validate(); err != nil {
 		return Record{}, err
 	}
+	req.Draft.Entities = ordinary.Entities
 	if req.Draft.ClaimType != "self" || strings.TrimSpace(req.PolicyKey) == "" || len(req.PolicyKey) > 128 {
 		return Record{}, failure("INVALID_REQUEST", "direct authority requires self authoring and a bounded policy_key")
 	}

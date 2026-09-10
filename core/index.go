@@ -17,13 +17,14 @@ import (
 )
 
 type IndexEntry struct {
-	Category   string `json:"category,omitempty" cbor:"category,omitempty"`
-	RecordID   string `json:"record_id"`
-	Version    int    `json:"version"`
-	Class      string `json:"class"`
-	Kind       string `json:"kind"`
-	Summary    string `json:"summary"`
-	BodySHA256 string `json:"body_sha256"`
+	Entities   []EntityRef `json:"entities,omitempty" cbor:"entities,omitempty"`
+	Category   string      `json:"category,omitempty" cbor:"category,omitempty"`
+	RecordID   string      `json:"record_id"`
+	Version    int         `json:"version"`
+	Class      string      `json:"class"`
+	Kind       string      `json:"kind"`
+	Summary    string      `json:"summary"`
+	BodySHA256 string      `json:"body_sha256"`
 	// SummarySpan excludes the summary's synthetic omission markers.
 	SummarySpan *ByteSpanRequest `json:"summary_span,omitempty" cbor:"summary_span,omitempty"`
 }
@@ -58,7 +59,7 @@ func indexEntry(r Record) IndexEntry {
 		}
 	}
 	sum := sha256.Sum256([]byte(r.Body))
-	return IndexEntry{RecordID: r.RecordID, Version: r.Version, Class: r.Class, Kind: r.Kind, Summary: summary, BodySHA256: hex.EncodeToString(sum[:])}
+	return IndexEntry{Entities: r.Entities, RecordID: r.RecordID, Version: r.Version, Class: r.Class, Kind: r.Kind, Summary: summary, BodySHA256: hex.EncodeToString(sum[:])}
 }
 func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation, query string) (SemanticPackage, error) {
 	sortCandidates(candidates)
@@ -114,7 +115,7 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 			}
 		}
 		entry := indexEntry(c.selection.Record)
-		if p.Schema == "cairn.semantic/8" || p.Schema == "cairn.semantic/9" || p.Schema == "cairn.semantic/10" || p.Schema == "cairn.semantic/11" || p.Schema == "cairn.semantic/12" {
+		if p.Schema == "cairn.semantic/8" || p.Schema == "cairn.semantic/9" || p.Schema == "cairn.semantic/10" || p.Schema == "cairn.semantic/11" || p.Schema == "cairn.semantic/12" || p.Schema == "cairn.semantic/13" {
 			var span ByteSpanRequest
 			entry.Summary, span = indexPreview(c.selection.Record.Body, query, p.Ranking)
 			if c.selection.Record.Class != "C" && span.Length > 0 {
@@ -157,6 +158,7 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 		seen[entry.BodySHA256] = true
 		e.Reason = "INDEXED"
 	}
+	p = withEntitySchema(p)
 	for {
 		if len(p.Index) == 0 && len(p.Selected) == 0 {
 			p.Status = "SCOPE_EMPTY"

@@ -68,7 +68,7 @@ func TestHistoricalRecompileFreezesEvidenceAndDetectsMissingInputs(t *testing.T)
 	if _, err = op.pool.Exec(ctx, `UPDATE cairn.evidence SET state='dangling' WHERE evidence_id=$1`, evidence.ID); err != nil {
 		t.Fatal(err)
 	}
-	historical, err := op.Recompile(ctx, RecompileRequest{original.ReceiptID, req.Query})
+	historical, err := op.Recompile(ctx, RecompileRequest{ReceiptID: original.ReceiptID, Query: req.Query})
 	if err != nil || historical.Seal != original.Seal {
 		t.Fatalf("future evidence state entered old read set: %v", err)
 	}
@@ -80,6 +80,6 @@ func TestHistoricalRecompileFreezesEvidenceAndDetectsMissingInputs(t *testing.T)
 	if _, err = op.pool.Exec(ctx, `UPDATE cairn.record_version SET body='corrupt retained version' WHERE record_id=$1 AND version=2`, record.RecordID); err != nil {
 		t.Fatal(err)
 	}
-	_, err = op.Recompile(ctx, RecompileRequest{original.ReceiptID, req.Query})
+	_, err = op.Recompile(ctx, RecompileRequest{ReceiptID: original.ReceiptID, Query: req.Query})
 	requireCode(t, err, "INTEGRITY_FAILURE")
 }

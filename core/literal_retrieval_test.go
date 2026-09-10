@@ -40,7 +40,7 @@ func TestQuotedFileMatchPrecedesLexicalOverlap(t *testing.T) {
 		if len(ids) != 2 || ids[0] != exact.RecordID || ids[1] != lexical.RecordID {
 			t.Fatalf("mode %q: wanted exact path before lexical fallback, got %v", mode, ids)
 		}
-		replayed, err := s.Recompile(ctx, RecompileRequest{p.ReceiptID, query})
+		replayed, err := s.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID, Query: query})
 		if err != nil || replayed.Seal != p.Seal {
 			t.Fatalf("quoted intent did not recompile: %v", err)
 		}
@@ -73,7 +73,7 @@ func TestQuotedMatchPreviewShowsExactSourceSpan(t *testing.T) {
 	if !strings.Contains(entry.Summary, note.Body[span.Offset:span.Offset+span.Length]) || len(entry.Summary) > 160 {
 		t.Fatal("preview does not preserve bounded source bytes")
 	}
-	replayed, err := s.Recompile(ctx, RecompileRequest{p.ReceiptID, query})
+	replayed, err := s.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID, Query: query})
 	if err != nil || replayed.Seal != p.Seal {
 		t.Fatalf("preview did not recompile: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestQuotedMatchingPreservesGatesAndSemanticFallback(t *testing.T) {
 			t.Fatal("replay invoked scorer")
 			return SemanticRankResult{}, nil
 		}
-		replayed, err := s.Recompile(ctx, RecompileRequest{p.ReceiptID, req.Query})
+		replayed, err := s.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID, Query: req.Query})
 		if err != nil || replayed.Seal != p.Seal {
 			t.Fatalf("%s replay: %v", mode, err)
 		}
@@ -208,7 +208,7 @@ func TestQuotedPreferencesAreBoundedAndDoNotMultiplyMatches(t *testing.T) {
 		if len(selected) != 2 || selected[0].Record.RecordID != later.RecordID || selected[1].Record.RecordID != earlier.RecordID {
 			t.Fatalf("query %q lost lexical fallback or changed equal-match tiebreak: %+v", query, selected)
 		}
-		replayed, err := s.Recompile(ctx, RecompileRequest{p.ReceiptID, query})
+		replayed, err := s.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID, Query: query})
 		if err != nil || replayed.Seal != p.Seal {
 			t.Fatal(query, err)
 		}
@@ -264,7 +264,7 @@ func TestQuotedLiteralSourcesRetainExactBytesAndLivePullChecks(t *testing.T) {
 				requireCode(t, err, "STALE_HANDLE")
 			}
 		}
-		replayed, err := s.Recompile(ctx, RecompileRequest{index.Package.ReceiptID, query})
+		replayed, err := s.Recompile(ctx, RecompileRequest{ReceiptID: index.Package.ReceiptID, Query: query})
 		if err != nil || replayed.Seal != index.Package.Seal {
 			t.Fatalf("literal history changed after edit: %v", err)
 		}

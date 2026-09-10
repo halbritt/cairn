@@ -22,6 +22,8 @@ const contextFields = {
   binding_id: z.string().optional(), capability_id: z.string().optional(),
 }
 
+const entities = z.array(z.object({ kind: z.enum(["file", "symbol"]), name: z.string().min(1) }).strict()).max(16).optional().describe("Explicit file or symbol associations. File names are canonical repository-relative paths; symbols are qualified labels. Names are case-sensitive; no alias or rename resolution. Fallible relevance metadata, never authority or observed workspace state.")
+
 const absolutePath = z.string().refine(isAbsolute, "Use an absolute installation path")
 const settingsSchema = z.object({
   executable: absolutePath,
@@ -92,12 +94,12 @@ const writeResult = z.object({ record_id: z.string().uuid(), version: z.number()
 
 export const search = validatedTool({
   description: "Search repository memory in this OpenCode session with a query, or set browse=true without a query to inspect available topics. Browsing is bounded by the same budget, ordered by scope and recency, and is not a complete inventory or relevance ranking. Read mandatory selected context and pull relevant index entries using their complete pull_arguments. A notes are fallible; verify before applying them. Search records exposure, not proven use.",
-  args: { context: z.object(contextFields).strict().optional().describe("Context declared for this search only. May fill fields the host left unset; conflicting configured values are refused. Observe actual task state first. Does not certify execution or change repository/session scope. Repeat the same context on later pages."), error_signature_sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional().describe("SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by a shareable operator review. May replace query text; cannot browse. Not proof of failure or correctness."), kinds: z.array(z.enum(["note", "observation", "claim", "lesson", "procedure", "decision", "preference", "instruction"])).max(8).optional().describe("Select any listed optional record label; empty means all. Required instructions always apply. Labels do not establish authority."), query: z.string().optional().describe("Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available."), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget."), request_id: z.string().uuid().optional() },
+  args: { entities, context: z.object(contextFields).strict().optional().describe("Context declared for this search only. May fill fields the host left unset; conflicting configured values are refused. Observe actual task state first. Does not certify execution or change repository/session scope. Repeat the same context on later pages."), error_signature_sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional().describe("SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by a shareable operator review. May replace query text; cannot browse. Not proof of failure or correctness."), kinds: z.array(z.enum(["note", "observation", "claim", "lesson", "procedure", "decision", "preference", "instruction"])).max(8).optional().describe("Select any listed optional record label; empty means all. Required instructions always apply. Labels do not establish authority."), query: z.string().optional().describe("Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available."), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget."), request_id: z.string().uuid().optional() },
   async execute(args, context) {
     const query = args.query ?? ""
     if (args.semantic && args.browse) throw new Error("INVALID_REQUEST: semantic discovery cannot be combined with browsing")
-    if ((args.browse && (query !== "" || args.error_signature_sha256)) || (!args.browse && query.trim() === "" && !args.error_signature_sha256)) {
-      throw new Error("INVALID_REQUEST: search requires a query, error_signature_sha256, or browse=true without either")
+    if ((args.browse && (query !== "" || args.error_signature_sha256 || args.entities?.length)) || (!args.browse && query.trim() === "" && !args.error_signature_sha256 && !args.entities?.length)) {
+      throw new Error("INVALID_REQUEST: search requires a query, entities, error_signature_sha256, or browse=true without search hints")
     }
     const config = await settings("search", context)
     const session = context.sessionID
@@ -119,6 +121,7 @@ export const search = validatedTool({
       const flag = key === "binding_id" ? "binding" : key === "capability_id" ? "capability" : key.replaceAll("_", "-")
       if (value !== undefined) command.push("--" + flag, value)
     }
+    for (const entity of args.entities ?? []) command.push("--entity-" + entity.kind, entity.name)
     for (const kind of args.kinds ?? []) command.push("--kind", kind)
     if (args.error_signature_sha256) command.push("--error-signature-sha256", args.error_signature_sha256)
     if (args.semantic) command.push("--semantic")
@@ -166,7 +169,7 @@ export const pull_evidence = validatedTool({
 
 export const remember = validatedTool({
   description: "Save explicitly selected reusable repository knowledge as ordinary A testimony across tasks and sessions. Include source and verification context; never raw sessions or secrets. Reuse the request UUID for retries. shareable permits hosted delivery; local is the default.",
-  args: { request_id: z.string().uuid(), body: z.string().min(1), kind: z.string().optional().describe("Defaults to note"), shareable: z.boolean().optional(),
+  args: { entities, request_id: z.string().uuid(), body: z.string().min(1), kind: z.string().optional().describe("Defaults to note"), shareable: z.boolean().optional(),
     pins: z.object({
       ...contextFields,
       valid_from: z.string().optional(), valid_until: z.string().optional(),
@@ -176,14 +179,14 @@ export const remember = validatedTool({
     const config = await settings("remember", context)
     const result = await call(config, context, ["create"], { request_id: args.request_id, draft: {
       kind: args.kind ?? "note", body: args.body, scope: { repo: config.repo, task_id: "*", run_id: "*" },
-      sensitivity: args.shareable ? "shareable" : "local", claim_type: "self", pins: args.pins,
+      sensitivity: args.shareable ? "shareable" : "local", claim_type: "self", pins: args.pins, entities: args.entities,
     } })
     return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
   },
 })
 
 export const edit = validatedTool({
-  description: "Revise a pulled active A note. Supply exactly one of body (text only), draft (complete replacement), or evidence_citations (replace source references; [] clears them). Text edits preserve citations; earlier versions retain their sources. Citations require captured source IDs and full-source digests and remain testimony, not qualification. Supply its ID, expected version, and a new request UUID. Preserve scope, sensitivity, pins, relations and attribution. Reuse exact arguments for retries; VERSION_CONFLICT needs fresh search/pull and reconciliation. Returns identifiers without echoing the body.",
+  description: "Revise a pulled active A note. Supply exactly one of body (text only), draft (complete replacement), or evidence_citations (replace source references; [] clears them). Text edits preserve citations; earlier versions retain their sources. Citations require captured source IDs and full-source digests and remain testimony, not qualification. Supply its ID, expected version, and a new request UUID. Preserve scope, sensitivity, pins, entities, relations and attribution except deliberately changed associations. Reuse exact arguments for retries; VERSION_CONFLICT needs fresh search/pull and reconciliation. Returns identifiers without echoing the body.",
   args: { request_id: z.string().uuid(), record_id: z.string().uuid(), expected_version: z.number().int().positive(), body: z.string().min(1).optional(), draft: z.record(z.string(), z.unknown()).optional(),
     evidence_citations: z.array(z.object({ evidence_id: z.string().uuid(), expected_sha256: z.string().regex(/^[a-f0-9]{64}$/),
       spans: z.array(z.object({ offset: z.number().int().min(0), length: z.number().int().positive() }).strict()).max(32).optional(),

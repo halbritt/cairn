@@ -112,6 +112,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	phaseNote := invoke("cairn_remember", map[string]any{
 		"request_id": uuid.NewString(), "body": "phaseguide: check the patch before delivery",
 		"kind": "procedure", "shareable": true, "pins": map[string]string{"task_phase": "validation"},
+		"entities": []map[string]string{{"kind": "file", "name": "core/currentness.go"}},
 	}, "")
 	var phaseIdentity recordWriteResult
 	if err = json.Unmarshal(phaseNote, &phaseIdentity); err != nil {
@@ -128,6 +129,15 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		t.Fatalf("per-call phase did not find applicable guidance: %s", phaseResult)
 	}
 	invoke("cairn_pull", phaseView.Index[0].PullArguments, "")
+	entityResult := invoke("cairn_search", map[string]any{
+		"entities": []map[string]string{{"kind": "file", "name": "core/currentness.go"}}, "context": map[string]string{"task_phase": "validation"},
+	}, "")
+	if err = json.Unmarshal(entityResult, &phaseView); err != nil {
+		t.Fatal(err)
+	}
+	if len(phaseView.Index) != 1 || phaseView.Index[0].RecordID != phaseIdentity.RecordID || len(phaseView.Index[0].Entities) != 1 {
+		t.Fatalf("entity-only search lost association: %s", entityResult)
+	}
 	args := rememberArgs{RequestID: uuid.NewString(), Body: "socketguide: verified API connection instructions.\nUnicode 日本語 and literal $(command).", Kind: "lesson", Shareable: true}
 	saved := invoke("cairn_remember", args, "")
 	if string(saved) != string(invoke("cairn_remember", args, "")) {
@@ -162,7 +172,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		t.Fatalf("search: %s", viewBytes)
 	}
 	for _, invalid := range []searchArgs{{}, {Query: " "}, {Browse: true, Query: "socketguide"}, {Browse: true, ErrorSignature: strings.Repeat("b", 64)}} {
-		invoke("cairn_search", invalid, "query, error_signature_sha256, or browse=true")
+		invoke("cairn_search", invalid, "query, entities, error_signature_sha256, or browse=true")
 	}
 	var browsed searchResult
 	var fallback searchResult

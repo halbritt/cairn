@@ -320,13 +320,23 @@ func (s *Store) editVersionWithCitations(ctx context.Context, tx pgx.Tx, req Edi
 }
 
 func insertVersion(ctx context.Context, tx pgx.Tx, id string, version int, draft Draft) (Record, error) {
-	_, err := tx.Exec(ctx, `INSERT INTO cairn.record_version(record_id,version,kind,body,repo,task_id,run_id,attributed_producer,attempt_id,result_ref,claim_type,version_class)
+	var err error
+	draft.Entities, err = NormalizeEntities(draft.Entities)
+	if err != nil {
+		return Record{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.record_version(record_id,version,kind,body,repo,task_id,run_id,attributed_producer,attempt_id,result_ref,claim_type,version_class)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,$10,$11,(SELECT class FROM cairn.memory_record WHERE record_id=$1))`, id, version, draft.Kind, draft.Body, draft.Scope.Repo, draft.Scope.TaskID, draft.Scope.RunID, draft.AttributedProducer, draft.AttemptID, draft.ResultRef, draft.ClaimType)
 	if err != nil {
 		return Record{}, err
 	}
 	if draft.Pins != nil {
 		if _, err = tx.Exec(ctx, `INSERT INTO cairn.record_applicability(record_id,version,pins) VALUES($1,$2,$3)`, id, version, draft.Pins); err != nil {
+			return Record{}, err
+		}
+	}
+	if len(draft.Entities) > 0 {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.record_entities(record_id,version,entities) VALUES($1,$2,$3)`, id, version, draft.Entities); err != nil {
 			return Record{}, err
 		}
 	}
@@ -367,6 +377,9 @@ func readRecord(ctx context.Context, tx pgx.Tx, id string) (Record, error) {
 	}
 	if err == nil {
 		r.Relations, err = readRelations(ctx, tx, id, r.Version)
+	}
+	if err == nil {
+		r.Entities, err = readEntities(ctx, tx, id, r.Version)
 	}
 	r.Draft.Sensitivity = r.Sensitivity
 	return r, err

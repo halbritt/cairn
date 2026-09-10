@@ -10,6 +10,7 @@ import (
 // CandidateEvaluation contains features, never query text or candidate bodies.
 // Rank is the one-based eligible ordering before packing; zero means unranked.
 type CandidateEvaluation struct {
+	EntityMatch       bool            `json:"entity_match,omitempty"`
 	FailureMatch      *FailureMatch   `json:"failure_match,omitempty"`
 	ExactTextMatch    bool            `json:"exact_text_match,omitempty"`
 	SemanticScore     *int            `json:"semantic_score,omitempty"`
@@ -75,6 +76,7 @@ func omissionCensus() map[string]int {
 // Frozen gate facts reference immutable record versions; raw evidence and query
 // bytes are not duplicated here. These facts are for historical inspection only.
 type CandidateFacts struct {
+	EntitiesSHA256   *string    `json:"entities_sha256,omitempty"`
 	Category         string     `json:"category,omitempty"`
 	BodySHA256       string     `json:"body_sha256"`
 	Sensitivity      string     `json:"sensitivity"`

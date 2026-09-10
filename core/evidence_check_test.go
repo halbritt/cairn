@@ -49,7 +49,7 @@ func TestEvidenceRefreshPersistsGenerationAndInvalidatesPreview(t *testing.T) {
 	if err != nil || changed.Generation != 2 || changed.State != "divergent" {
 		t.Fatalf("changed evidence: %+v %v", changed, err)
 	}
-	replay, err := op.Recompile(ctx, RecompileRequest{historical.ReceiptID, query.Query})
+	replay, err := op.Recompile(ctx, RecompileRequest{ReceiptID: historical.ReceiptID, Query: query.Query})
 	if err != nil || replay.Seal != historical.Seal {
 		t.Fatalf("refresh rewrote historical gate: %v", err)
 	}

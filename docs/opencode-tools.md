@@ -1,5 +1,9 @@
 # Native OpenCode tools
 
+[File and symbol associations](entity-search.md) are explicit versioned metadata.
+Native capture and search accept `entities`; body-only edits preserve them, full
+draft edits can replace them, and exact-version history reads expose them.
+
 The [native tool adapter](../integrations/opencode/cairn.ts) gives OpenCode
 session-scoped search, body/evidence pulls and ordinary note maintenance through
 the existing authenticated Cairn CLI. It uses OpenCode's `context.sessionID`;

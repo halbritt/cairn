@@ -64,7 +64,7 @@ func TestBrowsePagesReachOlderNotesWithoutSkippingMandatoryContext(t *testing.T)
 			}
 			seen[entry.RecordID] = true
 		}
-		replay, err := op.Recompile(ctx, RecompileRequest{index.Package.ReceiptID, ""})
+		replay, err := op.Recompile(ctx, RecompileRequest{ReceiptID: index.Package.ReceiptID, Query: ""})
 		if err != nil || replay.Seal != index.Package.Seal {
 			t.Fatalf("page replay: %v", err)
 		}

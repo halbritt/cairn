@@ -1,0 +1,117 @@
+{
+  "schema": "cairn.entity-verification/1",
+  "date": "2026-09-10",
+  "baseline_commit": "a44893031185f29d047162a9895058aeab111780",
+  "migration": 34,
+  "previous_binary_commit": "72e7c243ae211acc3c04b4520e5bb4d5676200e6",
+  "native_opencode": "1.18.21",
+  "checks": {
+    "disposable_pg_race_integration": "passed",
+    "previous_binary_replay": "passed",
+    "cli_mcp_native_opencode": "passed",
+    "static": "passed",
+    "python_tests": 40,
+    "answering_model_calls": 0
+  },
+  "doctrine": {
+    "packet_id": "pkt-63f7b04a49f09486",
+    "packet_content_sha256": "63f7b04a49f09486673eb9715a924d3e06246f05e9ed68aa53b5c125adccac86",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "unmet_obligations": [
+      {
+        "requirement": "expert distinction of sameness over time",
+        "classification": "nonmaterial to explicit versioned association capability",
+        "reason": "This feature supplies explicit value references with fixed comparison rules. It makes no persistent identity or rename-continuity claim."
+      },
+      {
+        "requirement": "business differentiation and product lifespan",
+        "classification": "nonmaterial to explicit versioned association capability",
+        "reason": "No rich domain-model investment is selected. Durable task benefit remains unestablished and open in the roadmap."
+      },
+      {
+        "requirement": "business-value and expert-access evidence",
+        "classification": "nonmaterial to explicit versioned association capability",
+        "reason": "The selected scope implements the accepted missing retrieval capability; no quantified business value or expert-maintained entity model is claimed."
+      },
+      {
+        "requirement": "expert access and feedback cadence",
+        "classification": "nonmaterial to explicit versioned association capability",
+        "reason": "The owner delegated implementation choices. Automatic identity resolution and a sustained expert modeling program are not selected."
+      },
+      {
+        "requirement": "team capacity to sustain the model",
+        "classification": "nonmaterial to explicit versioned association capability",
+        "reason": "No separate entity lifecycle or model-maintenance organization is introduced; references use existing note versions."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "classification": "nonmaterial to explicit versioned association capability",
+        "reason": "No Go interface or dependency inversion is introduced. Existing concrete clients consume optional fields."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-entities-20260910/integration-complete.log",
+      "sha256": "c9e2494e9cab35c04219443a6e1284a0af69354aceae9767457f3d54ed5d071b"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/native-verified.log",
+      "sha256": "a3a1a6a61413eec772baab6960b05d783bf746a62567bc11f295bf192906e31b"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/check-final.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/python.log",
+      "sha256": "4ddf5e85a595df06d7546f204f73349ca6f98303a4782f49c9f9276aa7ccf0a9"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/storage-red.log",
+      "sha256": "4d0f2b99299ab380048bb3c5f755020933f161b0e66f2293c120d0c53cc6a0b0"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/retrieval-red.log",
+      "sha256": "490b8410365173b93c613b240f3c1adbc6d711a940071fa90c5635160b9ce31e"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/replay-red.log",
+      "sha256": "d7a34eb16f5b91d4c53f7164ea83e74ab8fc54657557a2320b955002bf20ff79"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/modes-red.log",
+      "sha256": "a7370df98a691c3f5e6d08dfa07a0064aab048b5227a5504b670f34c3b679818"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/history-red.log",
+      "sha256": "a3e179cc28f449c209532b68d85439547340647d4cc45bc00f881a310d5c49b9"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/retained-red.log",
+      "sha256": "07074fa08de707914b684d3f5df59b372aef055553c5456f7b586b0ecf2f0573"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/purge-red.log",
+      "sha256": "d06a564b233a022cf3c9154d5ad446af70faaa534df5db692afa7d0601e277c3"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/combined-red.log",
+      "sha256": "4a2287c0124cc9bfb06813529589cf02f38c47b04b8802908f2c0b112634149b"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/demand-red.log",
+      "sha256": "7e3a6bf3f0ce1ef1d50a782ea6506a9d8bf380ad9c072e5ddfa9241187cec877"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/decision-receipt.json",
+      "sha256": "3e002c7a5762034bba3bfe76cc4302705adf439f22bab853e1d227c468efc4a6"
+    },
+    {
+      "path": "/tmp/cairn-entities-20260910/doctrine-verified.json",
+      "sha256": "e0109512dbd6089e8eecf230c5cdb604a4a49750c2777b713043ead71a7c0e6a"
+    }
+  ]
+}

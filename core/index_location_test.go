@@ -60,7 +60,7 @@ func TestIndexPreviewLocationSupportsBoundedPull(t *testing.T) {
 	if _, err := s.Expand(ctx, pull, Destination{"local", true}); err == nil || !strings.Contains(err.Error(), "STALE_HANDLE") {
 		t.Fatalf("cached located pull survived revision: %v", err)
 	}
-	recompiled, err := s.Recompile(ctx, RecompileRequest{index.Package.ReceiptID, req.Query})
+	recompiled, err := s.Recompile(ctx, RecompileRequest{ReceiptID: index.Package.ReceiptID, Query: req.Query})
 	if err != nil || recompiled.Seal != index.Package.Seal {
 		t.Fatalf("historical location changed after edit: %+v, %v", recompiled, err)
 	}

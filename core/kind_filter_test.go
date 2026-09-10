@@ -146,7 +146,7 @@ func TestKindFilterFindsDirectionAndPreservesRequiredContext(t *testing.T) {
 					break
 				}
 			}
-			historical, err := s.Recompile(ctx, RecompileRequest{pkg.ReceiptID, req.Query})
+			historical, err := s.Recompile(ctx, RecompileRequest{ReceiptID: pkg.ReceiptID, Query: req.Query})
 			if err != nil || historical.Seal != pkg.Seal {
 				t.Fatalf("historical filtered selection: %v", err)
 			}

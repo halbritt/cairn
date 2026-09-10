@@ -9,6 +9,7 @@ from check_ordinary_citations import check_harness as check_citations
 from check_note_transport import check_harness
 from check_failure_retrieval import check_harness as check_failure_signatures
 from check_literal_retrieval import check_harness as check_literals
+from check_entities import check_harness as check_entities
 from check_native_history import check as check_history
 
 
@@ -159,6 +160,7 @@ def check(binary, root, environment, claim, support):
         assert tool('cairn_pull', selected['index'][0]['pull_arguments'])['selection']['record']['kind'] == 'decision'
         assert 'INVALID_REQUEST' in tool('cairn_search', dict(query=query, kinds=['unknown']), error=True)
         check_harness(tool, binary, environment)
+        check_entities(tool)
         check_literals(tool)
         check_failure_signatures(tool, binary, environment)
     with session(binary, root, environment, generated=True) as tool:

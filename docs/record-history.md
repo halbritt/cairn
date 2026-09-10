@@ -1,5 +1,9 @@
 # Inspect retained record history
 
+[File and symbol associations](entity-search.md) are explicit versioned metadata.
+Native capture and search accept `entities`; body-only edits preserve them, full
+draft edits can replace them, and exact-version history reads expose them.
+
 Use history to compare a saved procedure with its earlier wording, inspect who
 wrote each version, or review a correction across sessions. The existing record
 versions stay in PostgreSQL; this read does not create another archive.

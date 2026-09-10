@@ -20,6 +20,7 @@ type agentSearchView = indexview.View
 func agentSearch(ctx context.Context, client *localapi.Client, args []string, socket, tokenFile string) (agentSearchView, error) {
 	var kinds []string
 	f := flags("agent search")
+	entities := entityFlags(f)
 	repo := f.String("repo", defaultRepo(), "repository identity")
 	f.Func("kind", "optional record kind; repeat for multiple labels (required instructions always apply)", func(value string) error { kinds = append(kinds, value); return nil })
 	task := f.String("task", "", "host task identity (required)")
@@ -46,8 +47,8 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	if strings.TrimSpace(*task) == "" || strings.TrimSpace(*run) == "" || *task == "*" || *run == "*" {
 		return agentSearchView{}, invalid("agent search requires explicit --task and --run")
 	}
-	if (*browse && (query != "" || *signature != "")) || (!*browse && strings.TrimSpace(query) == "" && *signature == "") {
-		return agentSearchView{}, invalid("agent search requires a query, --error-signature-sha256, or --browse without either")
+	if (*browse && (query != "" || *signature != "" || len(*entities) > 0)) || (!*browse && strings.TrimSpace(query) == "" && *signature == "" && len(*entities) == 0) {
+		return agentSearchView{}, invalid("agent search requires a query, entity hints, --error-signature-sha256, or --browse without search hints")
 	}
 	if *offset < 0 || *offset > 10000 {
 		return agentSearchView{}, invalid("offset must be 0-10000")
@@ -75,7 +76,7 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 		return agentSearchView{}, err
 	}
 	var result core.IndexResult
-	if err = client.Call(ctx, "index", core.CompileRequest{ErrorSignature: *signature, Kinds: kinds, RequestID: *request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *semantic,
+	if err = client.Call(ctx, "index", core.CompileRequest{Entities: *entities, ErrorSignature: *signature, Kinds: kinds, RequestID: *request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *semantic,
 		Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: query, Purpose: "context", AvailableTokens: *tokens,
 		Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability}}, &result); err != nil {
 		return agentSearchView{}, err

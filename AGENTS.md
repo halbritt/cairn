@@ -28,6 +28,11 @@ alongside technical procedures; consult their current source before applying the
 
 When the native Cairn MCP tools are available, use `cairn_search` and inspect
 relevant results with `cairn_pull`, passing their complete `pull_arguments`.
+When prior notes have explicit file or symbol associations, supply `entities`
+on `cairn_search` (CLI `--entity-file` / `--entity-symbol`) to prefer those notes.
+Entity-only search requires an association; if none is found, use ordinary text
+search. Associations are fallible and never certify a workspace observation.
+See `docs/entity-search.md`.
 When the task names a file, symbol or exact error text, put that known text in
 ASCII double quotes inside the query, for example
 `{"query":"repair review \"core/currentness.go\""}`. This prefers an exact body

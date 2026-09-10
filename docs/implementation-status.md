@@ -3233,3 +3233,43 @@ Private searches, pulls and checked metadata are under
 `/tmp/cairn-file-context-20260910/`; no operational bodies enter Git. The agent
 example and documentation links were checked, and all prior implementation
 history is preserved. No answering-model task or new task-value result is claimed.
+
+
+### 2026-09-10 — Add explicit versioned file and symbol associations
+
+Implemented explicit `entities` on note capture/edit and retrieval, using exact
+kind/name overlap within existing repository and applicability gates. File names
+are canonical relative paths; symbols are opaque qualified labels. No filesystem
+observation, alias/rename resolution or authority is inferred. Ordinary CLI,
+MCP and native OpenCode expose capture and search hints; indexes, pulls and exact
+history show saved associations. Body-only edits preserve them; complete draft
+edits replace them as a new version. Migration 034 stores associations by record
+and version, with ordinary deletion and payload purge accounting.
+
+A supplied entity match can retrieve a note whose body omits the filename and
+rank it ahead of an incidental body mention. Entity-only queries and ranked pages
+are supported; text queries retain broader candidates. Exact entity and reviewed
+failure matches share the first optional relevance tier, followed by existing
+text/scope/recency behavior. Semantic discovery and lexical fallback retain the
+same preference. Mandatory instructions and consequential-use gates remain.
+
+Historical replay retains normalized query and version-association digests;
+retained execution checks entity intent before binding. Verification found and
+fixed missing history metadata, ignored retained hints, unpurged associations,
+mixed failure/entity ordering, unrelated schema changes, and replay of old readers
+that had ignored newer metadata. An early test used invalid revision labels and
+an MCP assertion retained old error wording; those were fixture corrections.
+
+Full disposable PostgreSQL/race/API/MCP integration, static checks and forty
+Python tests pass. Authenticated CLI and actual OpenCode 1.18.21 custom-tool
+checks cover capture/search/pull/body edit/full-draft change/history. An actual
+prior 72e7c24 binary's receipts and cached responses reproduce under the new
+reader. Native checks precede only the final consequential-demand accounting
+change; final full integration covers that change.
+
+The source capability is verified; installation is recorded separately below.
+This closes the explicit typed-association portion of E1, not automatic host
+intent collection, rename continuity or durable task-value acceptance. The
+fixture demonstrates the intended distinction, not representative retrieval
+quality or incremental model benefit. No answering-model task was run.
+See [contract](entity-search.md) and [checks, failures and limits](verification/entity-search-2026-09-10.md).

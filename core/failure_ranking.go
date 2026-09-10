@@ -63,7 +63,7 @@ func validateFrozenFailure(ctx context.Context, tx pgx.Tx, p SemanticPackage, e 
 	invalid := func() error {
 		return failure("INTEGRITY_FAILURE", "historical failure review does not match the candidate")
 	}
-	if !hasFailureRanking(p.Ranking) || e.Facts == nil || e.Mandatory || validID(e.FailureMatch.ProposalID) != nil || e.FailureMatch.ReviewVersion < 2 {
+	if (!hasFailureRanking(p.Ranking) && !hasEntityRanking(p.Ranking)) || e.Facts == nil || e.Mandatory || validID(e.FailureMatch.ProposalID) != nil || e.FailureMatch.ReviewVersion < 2 {
 		return invalid()
 	}
 	var valid bool

@@ -78,7 +78,7 @@ func TestSemanticDiscoveryUsesEligibleNotesAndFrozenScores(t *testing.T) {
 		t.Fatal("historical recompile invoked model")
 		return SemanticRankResult{}, nil
 	}
-	replay, err := s.Recompile(ctx, RecompileRequest{p.ReceiptID, req.Query})
+	replay, err := s.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID, Query: req.Query})
 	if err != nil || replay.Seal != p.Seal {
 		t.Fatalf("recompile: %v", err)
 	}
@@ -100,14 +100,14 @@ func TestSemanticDiscoveryUsesEligibleNotesAndFrozenScores(t *testing.T) {
 	pull.RequestID = uuid.NewString()
 	_, err = s.Expand(ctx, pull, Destination{"hosted", false})
 	requireCode(t, err, "STALE_HANDLE")
-	replay, err = s.Recompile(ctx, RecompileRequest{p.ReceiptID, req.Query})
+	replay, err = s.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID, Query: req.Query})
 	if err != nil || replay.Seal != p.Seal {
 		t.Fatalf("recompile after source edit: %v", err)
 	}
 	if _, err = s.pool.Exec(ctx, `UPDATE cairn.retrieval_candidate SET detail=jsonb_set(detail,'{semantic_score}','500000') WHERE receipt_id=$1 AND record_id=$2`, p.ReceiptID, want.RecordID); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Recompile(ctx, RecompileRequest{p.ReceiptID, req.Query})
+	_, err = s.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID, Query: req.Query})
 	requireCode(t, err, "INTEGRITY_FAILURE")
 }
 
@@ -144,7 +144,7 @@ func TestSemanticFailureFallsBackWithoutChangingLexicalSelection(t *testing.T) {
 			if index.Package.Semantic.Status != "DEGRADED_NO_EMBEDDINGS" || index.Package.Semantic.Discovery.State != state || len(index.Package.Semantic.Index) != want || index.Package.Semantic.Ranking != "lexical-scope-recency/4" {
 				t.Fatalf("fallback: %+v", index)
 			}
-			replay, err := s.Recompile(ctx, RecompileRequest{index.Package.ReceiptID, query})
+			replay, err := s.Recompile(ctx, RecompileRequest{ReceiptID: index.Package.ReceiptID, Query: query})
 			if err != nil || replay.Seal != index.Package.Seal {
 				t.Fatalf("fallback replay: %v", err)
 			}

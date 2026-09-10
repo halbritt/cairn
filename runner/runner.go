@@ -87,6 +87,10 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 		return Result{}, err
 	}
 	req.Compile.Kinds = kinds
+	entityIntent, err := core.EntityIntentSHA256(req.Compile.Entities)
+	if err != nil {
+		return Result{}, err
+	}
 	if req.Compile.Mode == "index" {
 		if req.IndexTools == nil || req.Compile.ExpansionReader == "" || !utf8.ValidString(req.Prompt) || strings.ContainsRune(req.Prompt, 0) {
 			return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "observed index execution requires expansion_reader and existing pull/search tools"}
@@ -143,7 +147,7 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 			pkg.Semantic.Destination != req.Destination || pkg.Semantic.Scope != req.Compile.Scope ||
 			pkg.Semantic.Context == nil || *pkg.Semantic.Context != pins || pkg.Semantic.Query != query || pkg.Semantic.ErrorSignature != strings.ToLower(req.Compile.ErrorSignature) ||
 			pkg.Semantic.Purpose != req.Compile.Purpose || pkg.Semantic.AvailableTokens != req.Compile.AvailableTokens ||
-			!slices.Equal(pkg.Semantic.Kinds, req.Compile.Kinds) ||
+			!slices.Equal(pkg.Semantic.Kinds, req.Compile.Kinds) || pkg.Semantic.EntitiesSHA256 != entityIntent ||
 			!sameIndexOffset(pkg.Semantic.Browse, req.Compile.BrowseOffset) || !sameIndexOffset(pkg.Semantic.Page, req.Compile.PageOffset) ||
 			(pkg.Semantic.Discovery != nil) != req.Compile.Semantic {
 			return result, &core.Error{Code: "INVALID_REQUEST", Message: "retained package must match the receipt, seal, scope, query, failure signature, context, purpose, kinds and memory budget of this run"}

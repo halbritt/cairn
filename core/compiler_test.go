@@ -303,7 +303,7 @@ func TestCommonWordsDoNotCreateRelevanceOrBlockedDemand(t *testing.T) {
 	if err != nil || len(p.Semantic.Selected) != 0 {
 		t.Fatalf("common words created relevance: %+v %v", p, err)
 	}
-	replayed, err := s.Recompile(ctx, RecompileRequest{p.ReceiptID, req.Query})
+	replayed, err := s.Recompile(ctx, RecompileRequest{ReceiptID: p.ReceiptID, Query: req.Query})
 	if err != nil || replayed.Seal != p.Seal {
 		t.Fatalf("common-word omission did not recompile: %v", err)
 	}

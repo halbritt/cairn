@@ -43,6 +43,7 @@ func (c Config) Validate() error {
 }
 
 type searchArgs struct {
+	Entities       []core.EntityRef  `json:"entities,omitempty" jsonschema:"Explicit file or symbol retrieval hints within this repository, at most 16. File names are canonical relative paths; symbol names are qualified labels. Exact kind and case-sensitive name overlap prefers associated notes. May replace query text; cannot browse. Hints do not establish scope, authority or observed workspace state. Repeat on later pages."`
 	Context        *core.ContextPins `json:"context,omitempty" jsonschema:"Context declared for this search only: revision, workspace_sha256, task_class, task_phase, binding_id, capability_id. May fill fields the host left unset; conflicts with configured values are refused. Observe actual task state before declaring it. This does not certify execution or change repository/session scope. Repeat the same context on later pages."`
 	ErrorSignature string            `json:"error_signature_sha256,omitempty" jsonschema:"Optional SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by an explicitly shareable operator review. Does not establish current failure or correctness. May replace the query; cannot browse. Semantic discovery still requires query text."`
 	Kinds          []string          `json:"kinds,omitempty" jsonschema:"Optional labels: note, observation, claim, lesson, procedure, decision, preference, instruction. Matches any listed label; empty means all. Required instructions always apply. Labels do not establish authority."`
@@ -54,6 +55,7 @@ type searchArgs struct {
 }
 
 type rememberArgs struct {
+	Entities  []core.EntityRef    `json:"entities,omitempty" jsonschema:"Explicit file or symbol associations, at most 16. File names are canonical repository-relative paths; symbols are qualified labels. Omit when unknown. Fallible relevance metadata, never inherited from search context."`
 	Pins      *core.Applicability `json:"pins,omitempty" jsonschema:"Explicit applicability restrictions. Omit for reusable unpinned guidance. Never inherited from search context. All supplied pins must match; edits cannot change them."`
 	RequestID string              `json:"request_id" jsonschema:"A UUID chosen before capture; reuse exactly for retries of this note."`
 	Body      string              `json:"body" jsonschema:"Selected reusable knowledge with source and verification context. Never raw sessions or secrets."`
@@ -120,7 +122,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull", Description: "Pull a memory body using complete pull_arguments from cairn_search. Optional span selects byte offset and maximum length for a partial A/B source; bytes and hashes appear in span with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers. Instructions require a whole pull. Use a new request UUID for a different range. A stale handle requires a fresh search. Shares the receipt's expansion budget. Read the complete note before replacing its body."}, tools.pull)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull_evidence", Description: "Pull evidence referenced by an expanded memory, using its evidence ID and full-object expected SHA256 plus the original receipt and handle. Optional span selects byte offset and maximum length, clipped at EOF; selected bytes and their checksum appear in span. Reuse a request UUID only for identical retries. Shares the same expansion budget."}, tools.pullEvidence)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_remember", Description: "Save an explicitly selected reusable repository note as ordinary A testimony, applicable across tasks and runs. Does not promote claims or grant authority. Choose shareable only for content suitable for hosted models; default local notes will not appear in hosted searches. Preserve the request UUID when retrying."}, tools.remember)
-	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: new(bool)}, Name: "cairn_edit", Description: "Revise a previously pulled active Class A note. Supply its record_id and expected_version, a new request_id UUID, and body to change only the text while preserving all stored metadata. Alternatively supply the complete replacement draft or evidence_citations to replace source references ([] clears them). Supply exactly one of body, draft or evidence_citations. Text edits preserve citations and earlier versions retain their sources. Citations remain testimony, not qualification. For a full draft, copy kind, scope, pins, sensitivity, relations and attribution fields from the pulled record; change only the intended content. Scope and sensitivity changes and privileged records are refused. The authenticated writer is recorded. Retry with exactly the same arguments; VERSION_CONFLICT requires a fresh search/pull and reconciliation, not blind overwrite. Returns identifiers without echoing the body."}, tools.edit)
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: new(bool)}, Name: "cairn_edit", Description: "Revise a previously pulled active Class A note. Supply its record_id and expected_version, a new request_id UUID, and body to change only the text while preserving all stored metadata. Alternatively supply the complete replacement draft or evidence_citations to replace source references ([] clears them). Supply exactly one of body, draft or evidence_citations. Text edits preserve citations and earlier versions retain their sources. Citations remain testimony, not qualification. For a full draft, copy kind, scope, pins, entities, sensitivity, relations and attribution fields from the pulled record; change only the intended content. Scope and sensitivity changes and privileged records are refused. The authenticated writer is recorded. Retry with exactly the same arguments; VERSION_CONFLICT requires a fresh search/pull and reconciliation, not blind overwrite. Returns identifiers without echoing the body."}, tools.edit)
 	return server, nil
 }
 
@@ -133,8 +135,8 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 	if args.Semantic && args.Browse {
 		return nil, nil, fmt.Errorf("semantic discovery cannot be combined with browsing")
 	}
-	if (args.Browse && (args.Query != "" || args.ErrorSignature != "")) || (!args.Browse && strings.TrimSpace(args.Query) == "" && args.ErrorSignature == "") {
-		return nil, nil, errors.New("search requires a query, error_signature_sha256, or browse=true without either")
+	if (args.Browse && (args.Query != "" || args.ErrorSignature != "" || len(args.Entities) > 0)) || (!args.Browse && strings.TrimSpace(args.Query) == "" && args.ErrorSignature == "" && len(args.Entities) == 0) {
+		return nil, nil, errors.New("search requires a query, entities, error_signature_sha256, or browse=true without search hints")
 	}
 	if args.Offset != nil && (*args.Offset < 0 || *args.Offset > 10000) {
 		return nil, nil, errors.New("offset must be 0-10000")
@@ -166,7 +168,7 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 		return nil, nil, err
 	}
 	var index core.IndexResult
-	err = t.client.Call(ctx, "index", core.CompileRequest{ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: declared}, &index)
+	err = t.client.Call(ctx, "index", core.CompileRequest{Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: declared}, &index)
 	if err != nil {
 		return toolResult(nil, err, t.config.AvailableTokens)
 	}
@@ -232,7 +234,7 @@ func (t memoryTools) remember(ctx context.Context, _ *mcp.CallToolRequest, args 
 		sensitivity = "shareable"
 	}
 	var result core.Record
-	err := t.client.Call(ctx, "create", core.CreateRequest{RequestID: args.RequestID, Draft: core.Draft{Kind: args.Kind, Body: args.Body, Scope: core.Scope{Repo: t.config.Scope.Repo, TaskID: "*", RunID: "*"}, Pins: args.Pins, Sensitivity: sensitivity, ClaimType: "self"}}, &result)
+	err := t.client.Call(ctx, "create", core.CreateRequest{RequestID: args.RequestID, Draft: core.Draft{Entities: args.Entities, Kind: args.Kind, Body: args.Body, Scope: core.Scope{Repo: t.config.Scope.Repo, TaskID: "*", RunID: "*"}, Pins: args.Pins, Sensitivity: sensitivity, ClaimType: "self"}}, &result)
 	// Capture returns only its identifier and retry key; do not echo a large or
 	// local-only body into the harness after the write has already committed.
 	return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)

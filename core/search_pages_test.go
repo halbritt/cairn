@@ -134,7 +134,7 @@ func checkSearchPages(t *testing.T, semantic bool) {
 			actual = append(actual, entry.RecordID)
 		}
 		beforeReplay := calls
-		replay, err := op.Recompile(ctx, RecompileRequest{index.Package.ReceiptID, "procedure"})
+		replay, err := op.Recompile(ctx, RecompileRequest{ReceiptID: index.Package.ReceiptID, Query: "procedure"})
 		if err != nil || replay.Seal != index.Package.Seal || calls != beforeReplay {
 			t.Fatalf("page replay: %v", err)
 		}

@@ -68,7 +68,7 @@ func TestIndexMatchingPreviewKeepsExactPullAndHistoricalVersion(t *testing.T) {
 	if _, err := s.Edit(ctx, EditRequest{uuid.NewString(), note.RecordID, note.Version, draft}); err != nil {
 		t.Fatal(err)
 	}
-	recompiled, err := s.Recompile(ctx, RecompileRequest{index.Package.ReceiptID, req.Query})
+	recompiled, err := s.Recompile(ctx, RecompileRequest{ReceiptID: index.Package.ReceiptID, Query: req.Query})
 	if err != nil || recompiled.Seal != index.Package.Seal {
 		t.Fatalf("historical preview changed after edit: %+v, %v", recompiled, err)
 	}

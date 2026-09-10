@@ -41,7 +41,7 @@ func TestDemotionPreservesConsumedBAndHasNoAuthorityEvent(t *testing.T) {
 	if err != nil || len(live.Semantic.Selected) != 0 {
 		t.Fatal("demoted A remained consequential")
 	}
-	historical, err := op.Recompile(ctx, RecompileRequest{pkg.ReceiptID, query.Query})
+	historical, err := op.Recompile(ctx, RecompileRequest{ReceiptID: pkg.ReceiptID, Query: query.Query})
 	if err != nil || historical.Seal != pkg.Seal || historical.Semantic.Selected[0].Record.Class != "B" {
 		t.Fatalf("consumed B was rewritten: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestHistoricalRelationsSurviveLaterEditsAndDemotionRequiresGrant(t *testing
 	if _, err = op.Edit(ctx, EditRequest{uuid.NewString(), cited.RecordID, 1, d}); err != nil {
 		t.Fatal(err)
 	}
-	replay, err := op.Recompile(ctx, RecompileRequest{original.ReceiptID, request.Query})
+	replay, err := op.Recompile(ctx, RecompileRequest{ReceiptID: original.ReceiptID, Query: request.Query})
 	if err != nil || replay.Seal != original.Seal || len(replay.Semantic.Selected[0].Record.Relations) != 1 {
 		t.Fatalf("historical citation changed: %v", err)
 	}

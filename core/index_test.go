@@ -30,7 +30,7 @@ func TestIndexPullIsBoundedScopedAndChecksCurrentVersion(t *testing.T) {
 	if strings.Contains(index.Package.Semantic.Index[0].Summary, strings.Repeat("explicit selected body ", 20)) {
 		t.Fatal("full body entered index")
 	}
-	replay, err := op.Recompile(ctx, RecompileRequest{index.Package.ReceiptID, req.Query})
+	replay, err := op.Recompile(ctx, RecompileRequest{ReceiptID: index.Package.ReceiptID, Query: req.Query})
 	if err != nil || replay.Seal != index.Package.Seal {
 		t.Fatalf("index historical recompile: %v", err)
 	}

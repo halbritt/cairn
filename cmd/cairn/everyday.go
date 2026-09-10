@@ -36,6 +36,7 @@ func remember(ctx context.Context, s *core.Store, args []string, input io.Reader
 }
 func rememberRequest(args []string, input io.Reader) (core.CreateRequest, error) {
 	f := flags("remember")
+	entities := entityFlags(f)
 	fromStdin := f.Bool("stdin", false, "read note text from stdin instead of arguments")
 	repo := f.String("repo", defaultRepo(), "repository identity")
 	kind := f.String("kind", "note", "record kind")
@@ -76,11 +77,12 @@ func rememberRequest(args []string, input io.Reader) (core.CreateRequest, error)
 	if *share {
 		sensitivity = "shareable"
 	}
-	return core.CreateRequest{RequestID: *request, Draft: core.Draft{Kind: *kind, Body: body, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Pins: pins, ClaimType: "self", Sensitivity: sensitivity}}, nil
+	return core.CreateRequest{RequestID: *request, Draft: core.Draft{Entities: *entities, Kind: *kind, Body: body, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Pins: pins, ClaimType: "self", Sensitivity: sensitivity}}, nil
 }
 func search(ctx context.Context, s *core.Store, args []string) (core.Package, error) {
 	var kinds []string
 	f := flags("search")
+	entities := entityFlags(f)
 	signature := f.String("error-signature-sha256", "", "optional reviewed failure signature (SHA-256); a retrieval hint, not observed failure")
 
 	repo := f.String("repo", defaultRepo(), "repository identity")
@@ -99,11 +101,12 @@ func search(ctx context.Context, s *core.Store, args []string) (core.Package, er
 	if err := f.Parse(args); err != nil {
 		return core.Package{}, invalid(err.Error())
 	}
-	return s.Compile(ctx, core.CompileRequest{ErrorSignature: *signature, Kinds: kinds, Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability}, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: strings.Join(f.Args(), " "), Purpose: *purpose, AvailableTokens: *tokens}, core.Destination{Name: *dest, AllowLocal: *dest == "local"})
+	return s.Compile(ctx, core.CompileRequest{Entities: *entities, ErrorSignature: *signature, Kinds: kinds, Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability}, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: strings.Join(f.Args(), " "), Purpose: *purpose, AvailableTokens: *tokens}, core.Destination{Name: *dest, AllowLocal: *dest == "local"})
 }
 func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result, error) {
 	var kinds []string
 	f := flags("run")
+	entities := entityFlags(f)
 	var outputs []runner.OutputArtifact
 	f.Func("artifact", "fingerprint a selected file after the process: LABEL=PATH (repeat, at most 16)", func(value string) error {
 		label, path, ok := strings.Cut(value, "=")
@@ -176,7 +179,7 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 		*prompt = text
 	}
 	// A selected task file goes to the child, never implicitly to the memory API.
-	if *query == "" && !retainedRequested && !*browse && !hasFile && *signature == "" {
+	if *query == "" && !retainedRequested && !*browse && !hasFile && *signature == "" && len(*entities) == 0 {
 		*query = *prompt
 	}
 	command := f.Args()
@@ -187,7 +190,7 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 	if err != nil {
 		return runner.Result{}, err
 	}
-	req := runner.Request{AttemptID: *attempt, Compile: core.CompileRequest{ErrorSignature: *signature, Kinds: kinds, RequestID: *request, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: *query, Purpose: "context", AvailableTokens: *tokens}, Destination: core.Destination{Name: *dest, AllowLocal: *dest == "local"}, Command: command, Directory: *directory, Carrier: *carrier, Prompt: *prompt, Timeout: *timeout, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability, Revision: *revision, WorkspaceSHA256: *workspace, ArtifactDirectory: filepath.Join(artifacts, "runs")}
+	req := runner.Request{AttemptID: *attempt, Compile: core.CompileRequest{Entities: *entities, ErrorSignature: *signature, Kinds: kinds, RequestID: *request, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: *query, Purpose: "context", AvailableTokens: *tokens}, Destination: core.Destination{Name: *dest, AllowLocal: *dest == "local"}, Command: command, Directory: *directory, Carrier: *carrier, Prompt: *prompt, Timeout: *timeout, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability, Revision: *revision, WorkspaceSHA256: *workspace, ArtifactDirectory: filepath.Join(artifacts, "runs")}
 	if *index {
 		req.Compile.Mode = "index"
 	}

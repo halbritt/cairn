@@ -63,6 +63,7 @@ func (s *Store) checkRepo(repo string) error {
 }
 
 type Draft struct {
+	Entities           []EntityRef      `json:"entities,omitempty" cbor:"entities,omitempty"`
 	Relations          []RecordRelation `json:"relations,omitempty"`
 	Pins               *Applicability   `json:"pins,omitempty"`
 	Sensitivity        string           `json:"sensitivity,omitempty"`
@@ -75,7 +76,12 @@ type Draft struct {
 	ClaimType          string           `json:"claim_type"`
 }
 
-func (d Draft) validate() error {
+func (d *Draft) validate() error {
+	var err error
+	d.Entities, err = NormalizeEntities(d.Entities)
+	if err != nil {
+		return err
+	}
 	if err := validateRelations(d.Relations); err != nil {
 		return err
 	}

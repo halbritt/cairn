@@ -21,6 +21,7 @@ import (
 )
 
 type CompileRequest struct {
+	Entities        []EntityRef  `json:"entities,omitempty"`
 	ErrorSignature  string       `json:"error_signature_sha256,omitempty"`
 	ExpansionReader string       `json:"expansion_reader,omitempty"`
 	Kinds           []string     `json:"kinds,omitempty"`
@@ -51,6 +52,7 @@ type Selection struct {
 	Reason    string     `json:"reason"`
 }
 type SemanticPackage struct {
+	EntitiesSHA256  string            `json:"entities_sha256,omitempty" cbor:"entities_sha256,omitempty"`
 	ErrorSignature  string            `json:"error_signature_sha256,omitempty" cbor:"error_signature_sha256,omitempty"`
 	Kinds           []string          `json:"kinds,omitempty" cbor:"kinds,omitempty"`
 	Discovery       *DiscoveryRanking `json:"discovery,omitempty" cbor:"discovery,omitempty"`
@@ -104,6 +106,13 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	}
 	req.ErrorSignature = strings.ToLower(req.ErrorSignature)
 	var err error
+	req.Entities, err = NormalizeEntities(req.Entities)
+	if err != nil {
+		return Package{}, err
+	}
+	if len(req.Entities) > 0 && req.BrowseOffset != nil {
+		return Package{}, failure("INVALID_REQUEST", "entity search cannot be combined with browsing")
+	}
 	req.Kinds, err = NormalizeKinds(req.Kinds)
 	if err != nil {
 		return Package{}, err
@@ -117,8 +126,8 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	if req.BrowseOffset != nil && (req.Mode != "index" || req.Query != "" || *req.BrowseOffset < 0 || *req.BrowseOffset > 10000) {
 		return Package{}, failure("INVALID_REQUEST", "browse_offset requires an empty-query index and an offset from 0 to 10000")
 	}
-	if req.PageOffset != nil && (req.Mode != "index" || req.Purpose != "context" || (strings.TrimSpace(req.Query) == "" && req.ErrorSignature == "") || req.BrowseOffset != nil || *req.PageOffset < 0 || *req.PageOffset > 10000) {
-		return Package{}, failure("INVALID_REQUEST", "page_offset requires a context index query or failure signature and an offset from 0 to 10000, without browsing")
+	if req.PageOffset != nil && (req.Mode != "index" || req.Purpose != "context" || (strings.TrimSpace(req.Query) == "" && req.ErrorSignature == "" && len(req.Entities) == 0) || req.BrowseOffset != nil || *req.PageOffset < 0 || *req.PageOffset > 10000) {
+		return Package{}, failure("INVALID_REQUEST", "page_offset requires a context index query, entity hints or failure signature and an offset from 0 to 10000, without browsing")
 	}
 	if err := req.Context.validate(); err != nil {
 		return Package{}, err
@@ -234,6 +243,7 @@ func sealPackage(semantic SemanticPackage) ([]byte, string, error) {
 }
 
 type candidate struct {
+	identity    bool
 	literal     bool
 	failure     bool
 	selection   Selection
@@ -248,14 +258,14 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	if req.Mode == "index" {
 		p.Mode = "index"
-		if len(req.Kinds) == 0 && p.Schema != "cairn.semantic/10" && req.ErrorSignature == "" {
+		if len(req.Kinds) == 0 && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/13" && req.ErrorSignature == "" {
 			p.Schema = "cairn.semantic/8"
 		}
 		if req.BrowseOffset != nil {
 			p.Browse = &BrowsePage{Offset: *req.BrowseOffset}
 		}
 		if req.PageOffset != nil {
-			if req.ErrorSignature == "" {
+			if req.ErrorSignature == "" && p.Schema != "cairn.semantic/13" {
 				p.Schema = "cairn.semantic/11"
 			}
 			p.Page = &BrowsePage{Offset: *req.PageOffset}
@@ -291,6 +301,12 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		p.ErrorSignature = req.ErrorSignature
 		p.Ranking = "lexical-scope-recency/6"
 		p.Omitted["NO_FAILURE_MATCH"] = 0
+	}
+	if len(req.Entities) > 0 {
+		p.Schema = "cairn.semantic/13"
+		p.EntitiesSHA256 = entitiesDigest(req.Entities)
+		p.Ranking = "lexical-scope-recency/7"
+		p.Omitted["NO_ENTITY_MATCH"] = 0
 	}
 	policy, err := policySnapshot(ctx, tx, req.Scope.Repo)
 	if err != nil {
@@ -398,7 +414,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		}
 		evaluation.Mandatory = selection.Mandatory
 		evaluation.Reason = reason
-		evaluation.EscalationBlocked = reason == "CLASS_NOT_CONSEQUENTIAL" && (strings.TrimSpace(req.Query) == "" || score > 0 || matches[id] != nil)
+		evaluation.EscalationBlocked = reason == "CLASS_NOT_CONSEQUENTIAL" && (strings.TrimSpace(req.Query) == "" || score > 0 || matches[id] != nil || matchesEntities(record.Entities, req.Entities))
 		if reason != "" {
 			p.Omitted[reason]++
 			continue
@@ -418,7 +434,10 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		}
 
 		digest := sha256.Sum256([]byte(record.Body))
-		evaluation.Facts = &CandidateFacts{Category: selection.Category, BodySHA256: hex.EncodeToString(digest[:]), Sensitivity: record.Sensitivity, AttributionState: record.AttributionState, Evidence: selection.Evidence, Authority: selection.Authority}
+		associationDigest := entitiesDigest(record.Entities)
+		evaluation.Facts = &CandidateFacts{EntitiesSHA256: &associationDigest, Category: selection.Category, BodySHA256: hex.EncodeToString(digest[:]), Sensitivity: record.Sensitivity, AttributionState: record.AttributionState, Evidence: selection.Evidence, Authority: selection.Authority}
+		entity := !selection.Mandatory && matchesEntities(record.Entities, req.Entities)
+		evaluation.EntityMatch = entity
 		literal := !selection.Mandatory && matchesLiteral(record.Body, literals)
 		evaluation.ExactTextMatch = literal
 		if !selection.Mandatory {
@@ -430,18 +449,23 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			p.Omitted["KIND_FILTERED"]++
 			continue
 		}
-		selection.Reason = failureReason(literalReason(fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity), literal), failureMatch)
-		if req.ErrorSignature != "" && strings.TrimSpace(req.Query) == "" && !selection.Mandatory && !failureMatch {
+		selection.Reason = entityReason(failureReason(literalReason(fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity), literal), failureMatch), entity)
+		if len(req.Entities) > 0 && strings.TrimSpace(req.Query) == "" && !selection.Mandatory && !entity && !failureMatch {
+			evaluation.Reason = "NO_ENTITY_MATCH"
+			p.Omitted["NO_ENTITY_MATCH"]++
+			continue
+		}
+		if len(req.Entities) == 0 && req.ErrorSignature != "" && strings.TrimSpace(req.Query) == "" && !selection.Mandatory && !failureMatch {
 			evaluation.Reason = "NO_FAILURE_MATCH"
 			p.Omitted["NO_FAILURE_MATCH"]++
 			continue
 		}
-		if !req.Semantic && !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 && !literal && !failureMatch {
+		if !req.Semantic && !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 && !literal && !failureMatch && !entity {
 			evaluation.Reason = "NO_LEXICAL_MATCH"
 			p.Omitted["NO_LEXICAL_MATCH"]++
 			continue
 		}
-		candidates = append(candidates, candidate{literal, failureMatch, selection, score, specificity})
+		candidates = append(candidates, candidate{hasEntityRanking(p.Ranking) && (entity || failureMatch), literal, failureMatch, selection, score, specificity})
 	}
 	return p, candidates, nil
 }
@@ -486,6 +510,7 @@ func packCandidates(p SemanticPackage, candidates []candidate, evaluations map[s
 	if len(p.Selected) == 0 {
 		p.Status = "SCOPE_EMPTY"
 	}
+	p = withEntitySchema(p)
 	for {
 		rendered, err := (Package{Semantic: p}).Render()
 		if err != nil {
@@ -722,7 +747,13 @@ func sortCandidates(candidates []candidate) {
 			}
 			return 1
 		}
-		if (a.literal || a.failure) != (b.literal || b.failure) {
+		if a.identity != b.identity {
+			if a.identity {
+				return -1
+			}
+			return 1
+		}
+		if !a.identity && (a.literal || a.failure) != (b.literal || b.failure) {
 			if a.literal || a.failure {
 				return -1
 			}

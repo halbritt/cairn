@@ -1,5 +1,9 @@
 # MCP memory tools
 
+[File and symbol associations](entity-search.md) are explicit versioned metadata.
+Native capture and search accept `entities`; body-only edits preserve them, full
+draft edits can replace them, and exact-version history reads expose them.
+
 `cairn mcp` runs a local stdio MCP server for harnesses that support MCP tools.
 It connects to the existing authenticated Unix API. PostgreSQL credentials are
 unnecessary in the harness process. The host supplies explicit connection paths

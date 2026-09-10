@@ -109,7 +109,7 @@ func TestFailureSignatureAssociationRequiresExplicitHostedSharing(t *testing.T) 
 	if err != nil || len(after.Package.Semantic.Index) != 1 {
 		t.Fatalf("explicitly shared association unavailable: %+v %v", after, err)
 	}
-	_, err = s.Recompile(ctx, RecompileRequest{after.Package.ReceiptID, req.Query})
+	_, err = s.Recompile(ctx, RecompileRequest{ReceiptID: after.Package.ReceiptID, Query: req.Query})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestFailureSignatureFreshSearchTracksReviewAndLessonVersions(t *testing.T) 
 		t.Fatalf("reopened association still matches: %+v %v", current, err)
 	}
 	for _, index := range []IndexResult{original, current} {
-		if replay, err := s.Recompile(ctx, RecompileRequest{index.Package.ReceiptID, ""}); err != nil || replay.Seal != index.Package.Seal {
+		if replay, err := s.Recompile(ctx, RecompileRequest{ReceiptID: index.Package.ReceiptID, Query: ""}); err != nil || replay.Seal != index.Package.Seal {
 			t.Fatalf("reopened history: %v", err)
 		}
 	}
@@ -160,7 +160,7 @@ func TestFailureSignatureFreshSearchTracksReviewAndLessonVersions(t *testing.T) 
 	if err != nil || len(current.Package.Semantic.Index) != 0 {
 		t.Fatalf("review pin moved to new lesson: %+v %v", current, err)
 	}
-	_, err = s.Recompile(ctx, RecompileRequest{original.Package.ReceiptID, ""})
+	_, err = s.Recompile(ctx, RecompileRequest{ReceiptID: original.Package.ReceiptID, Query: ""})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestFailureSignaturePreservesEligibilityAndSemanticFallback(t *testing.T) {
 					t.Fatalf("lost ordinary fallback: %v", ids)
 				}
 			}
-			if replay, err := s.Recompile(ctx, RecompileRequest{pkg.ReceiptID, req.Query}); err != nil || replay.Seal != pkg.Seal {
+			if replay, err := s.Recompile(ctx, RecompileRequest{ReceiptID: pkg.ReceiptID, Query: req.Query}); err != nil || replay.Seal != pkg.Seal {
 				t.Fatalf("recompile: %v", err)
 			}
 		})
@@ -294,7 +294,7 @@ func TestFailureSignaturePreservesEligibilityAndSemanticFallback(t *testing.T) {
 		if strings.Contains(string(encoded), n.RecordID) || strings.Contains(string(encoded), d.Body) {
 			t.Fatal("signature bypassed visibility or pins")
 		}
-		if _, err = s.Recompile(ctx, RecompileRequest{pkg.ReceiptID, ""}); err != nil {
+		if _, err = s.Recompile(ctx, RecompileRequest{ReceiptID: pkg.ReceiptID, Query: ""}); err != nil {
 			t.Fatal(err)
 		}
 	}

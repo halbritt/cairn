@@ -109,7 +109,9 @@ func (s *Store) rankSemantic(ctx context.Context, query string, p *SemanticPacka
 			if valid {
 				identity.ScoresSHA256 = scoreDigest(result.Scores)
 				p.Discovery = identity
-				if hasFailureRanking(p.Ranking) {
+				if hasEntityRanking(p.Ranking) {
+					p.Ranking = "semantic-scope-recency/4"
+				} else if hasFailureRanking(p.Ranking) {
 					p.Ranking = "semantic-scope-recency/3"
 				} else if hasLiteralRanking(p.Ranking) {
 					p.Ranking = "semantic-scope-recency/2"
@@ -124,7 +126,7 @@ func (s *Store) rankSemantic(ctx context.Context, query string, p *SemanticPacka
 					score := scores[c.selection.Record.RecordID].Score
 					c.score = score
 					evaluations[c.selection.Record.RecordID].SemanticScore = &score
-					c.selection.Reason = failureReason(literalReason(semanticReason(score, c.specificity), c.literal), c.failure)
+					c.selection.Reason = entityReason(failureReason(literalReason(semanticReason(score, c.specificity), c.literal), c.failure), evaluations[c.selection.Record.RecordID].EntityMatch)
 				}
 				return candidates, nil
 			}
@@ -134,7 +136,7 @@ func (s *Store) rankSemantic(ctx context.Context, query string, p *SemanticPacka
 	// route. No partial semantic ordering or unvalidated model result survives.
 	kept := candidates[:0]
 	for _, c := range candidates {
-		if !c.selection.Mandatory && c.score == 0 && !c.literal && !c.failure {
+		if !c.selection.Mandatory && c.score == 0 && !c.literal && !c.failure && !c.identity {
 			evaluations[c.selection.Record.RecordID].Reason = "NO_LEXICAL_MATCH"
 			p.Omitted["NO_LEXICAL_MATCH"]++
 			continue
@@ -157,8 +159,8 @@ func discoveryStatus(p SemanticPackage) SemanticPackage {
 
 func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*CandidateEvaluation, query string) error {
 	invalid := func() error { return failure("INTEGRITY_FAILURE", "historical semantic ranking metadata is invalid") }
-	if p.Schema != "cairn.semantic/7" && ((p.Schema != "cairn.semantic/8" && p.Schema != "cairn.semantic/9" && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/11" && p.Schema != "cairn.semantic/12") || p.Discovery == nil) {
-		if p.Discovery != nil || p.Ranking == "semantic-scope-recency/1" || p.Ranking == "semantic-scope-recency/2" || p.Ranking == "semantic-scope-recency/3" {
+	if p.Schema != "cairn.semantic/7" && ((p.Schema != "cairn.semantic/8" && p.Schema != "cairn.semantic/9" && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/11" && p.Schema != "cairn.semantic/12" && p.Schema != "cairn.semantic/13") || p.Discovery == nil) {
+		if p.Discovery != nil || p.Ranking == "semantic-scope-recency/1" || p.Ranking == "semantic-scope-recency/2" || p.Ranking == "semantic-scope-recency/3" || p.Ranking == "semantic-scope-recency/4" {
 			return invalid()
 		}
 		for _, e := range evaluations {
@@ -176,7 +178,7 @@ func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*Candidat
 		if d.State != "unavailable" && d.State != "not_needed" && d.State != "invalid_result" {
 			return invalid()
 		}
-		if *d != (DiscoveryRanking{State: d.State}) || (p.Ranking != "lexical-scope-recency/4" && p.Ranking != "lexical-scope-recency/5" && p.Ranking != "lexical-scope-recency/6") {
+		if *d != (DiscoveryRanking{State: d.State}) || (p.Ranking != "lexical-scope-recency/4" && p.Ranking != "lexical-scope-recency/5" && p.Ranking != "lexical-scope-recency/6" && p.Ranking != "lexical-scope-recency/7") {
 			return invalid()
 		}
 		for _, e := range evaluations {
@@ -186,7 +188,7 @@ func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*Candidat
 		}
 		return nil
 	}
-	if (p.Ranking != "semantic-scope-recency/1" && p.Ranking != "semantic-scope-recency/2" && p.Ranking != "semantic-scope-recency/3") || !semanticIdentityValid(d) {
+	if (p.Ranking != "semantic-scope-recency/1" && p.Ranking != "semantic-scope-recency/2" && p.Ranking != "semantic-scope-recency/3" && p.Ranking != "semantic-scope-recency/4") || !semanticIdentityValid(d) {
 		return invalid()
 	}
 	scores := []SemanticScore{}
