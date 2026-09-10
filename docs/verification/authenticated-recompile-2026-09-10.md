@@ -91,3 +91,8 @@ retained, migration stayed at 034, and all 77 record versions and host settings
 were preserved. The installed ordinary hosted profile reconstructed an existing
 five-entry schema-13 index with its original seal. The metadata includes exact
 build, service, backup and preservation hashes.
+
+
+[CI 34523528107](https://github.com/halbritt/cairn/actions/runs/34523528107)
+passed both jobs and every recorded step after the assertion correction. The
+corrected source's production hashes match the installed build.

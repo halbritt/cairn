@@ -3569,3 +3569,11 @@ fields and the seal. Targeted checks pass in UTC and America/Los_Angeles.
 Production code and the installed `3f17cf2` build remain unchanged. The failed CI
 log and reproduction are retained in the verification metadata; a corrected-source
 CI result is recorded separately when complete.
+
+
+[CI 34523528107](https://github.com/halbritt/cairn/actions/runs/34523528107)
+completed successfully on corrected source `8732b91`. Both jobs and every recorded
+step passed, including the UTC PostgreSQL race suite, Python tests, build/static
+checks, authenticated CLI/compact startup and OpenCode plugin checks. Production
+source hashes match the installed `3f17cf2` build; the correction changed tests and
+documentation only. The initial failed run remains recorded above.

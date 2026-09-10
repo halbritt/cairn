@@ -323,5 +323,20 @@
     "conclusion": "failure",
     "cause": "New core tests compared time.Time location pointers with reflect.DeepEqual. UTC reproduced equal instants and serialized packages with unequal internal pointers.",
     "correction": "Tests now compare complete serialized packages; production code unchanged."
+  },
+  "ci": {
+    "source_commit": "8732b9195ae0660b3703123f79dcb66e5157f7b7",
+    "run_id": 34523528107,
+    "url": "https://github.com/halbritt/cairn/actions/runs/34523528107",
+    "conclusion": "success",
+    "jobs": [
+      "postgres",
+      "opencode-plugin"
+    ],
+    "all_recorded_steps_succeeded": true,
+    "artifact": {
+      "path": "/tmp/cairn-authenticated-recompile-20260910/ci-fixed.json",
+      "sha256": "75ec51975402981b1e802d4726d168f1cc5f72a4a3d362f9d527ac7396342c39"
+    }
   }
 }
