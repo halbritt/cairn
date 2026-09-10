@@ -52,7 +52,7 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 	f.StringVar(&settings.Repo, "repo", "", "canonical repository identity (required)")
 	f.IntVar(&settings.Tokens, "tokens", 32000, "memory input room per tool result")
 	pins := map[string]*string{}
-	for _, name := range []string{"revision", "workspace-sha256", "task-class", "binding", "capability"} {
+	for _, name := range []string{"revision", "workspace-sha256", "task-class", "task-phase", "binding", "capability"} {
 		pins[name] = f.String(name, "", "declared context pin; validated by the API on retrieval")
 	}
 	if err := f.Parse(args); err != nil {

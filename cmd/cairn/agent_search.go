@@ -49,6 +49,7 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	revision := f.String("revision", "", "declared repository revision")
 	workspace := f.String("workspace-sha256", "", "workspace digest")
 	taskClass := f.String("task-class", "", "task category")
+	taskPhase := f.String("task-phase", "", "declared task phase (exact label)")
 	binding := f.String("binding", "", "binding identity")
 	capability := f.String("capability", "", "capability identity")
 	if err := f.Parse(args); err != nil {
@@ -86,7 +87,7 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	var result core.IndexResult
 	if err = client.Call(ctx, "index", core.CompileRequest{Kinds: kinds, RequestID: *request, BrowseOffset: browseOffset, Semantic: *semantic,
 		Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: query, Purpose: "context", AvailableTokens: *tokens,
-		Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability}}, &result); err != nil {
+		Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability}}, &result); err != nil {
 		return agentSearchView{}, err
 	}
 	return presentAgentSearch(result, *request, []string{executable, "agent", "--socket", socket, "--token-file", tokenFile}, *tokens)

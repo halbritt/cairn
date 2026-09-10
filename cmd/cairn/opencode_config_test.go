@@ -19,7 +19,7 @@ func TestOpenCodeConfigPreservesArgumentsWithoutCredentials(t *testing.T) {
 	args := []string{"--socket", socket, "--token-file", token, "--repo", "repo:fixture",
 		"--task", "task 'quoted'\nsecond line", "--run", "--literal-run", "--tokens", "64000",
 		"--revision", strings.Repeat("a", 40), "--workspace-sha256", strings.Repeat("b", 64),
-		"--task-class", "configuration", "--binding", "binding; literal", "--capability", "native"}
+		"--task-class", "configuration", "--task-phase", "validation", "--binding", "binding; literal", "--capability", "native"}
 	for _, memoryOnly := range []bool{false, true} {
 		invocation := append([]string{}, args...)
 		if memoryOnly {

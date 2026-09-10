@@ -47,7 +47,7 @@ out of Git and start a fresh OpenCode session to load the installed tools. Upgra
 the API separately when a new tool feature requires it.
 
 Use `--tokens` to set memory room (default 32,000). Optional `--revision`,
-`--workspace-sha256`, `--task-class`, `--binding` and `--capability` flags populate
+`--workspace-sha256`, `--task-class`, `--task-phase`, `--binding` and `--capability` flags populate
 the existing declared context settings; the API validates them on retrieval.
 There are no task/run flags because native OpenCode supplies session scope.
 
@@ -142,7 +142,7 @@ boolean; the string `"false"` is refused with `INVALID_REQUEST` instead of being
 treated as permission to share. Omitted `shareable` still keeps a note local.
 
 Connection settings are read for each call. Optional `context` keys are
-`revision`, `workspace_sha256`, `task_class`, `binding` and `capability`; they map
+`revision`, `workspace_sha256`, `task_class`, `task_phase`, `binding` and `capability`; they map
 to the existing CLI search flags. These are host declarations, not attestations
 of the physical checkout. Pulls continue to use their original receipts.
 

@@ -77,6 +77,7 @@ func search(ctx context.Context, s *core.Store, args []string) (core.Package, er
 	revision := f.String("revision", "", "Git object ID")
 	workspace := f.String("workspace-sha256", "", "workspace digest")
 	taskClass := f.String("task-class", "", "task category")
+	taskPhase := f.String("task-phase", "", "declared task phase (exact label)")
 	binding := f.String("binding", "", "binding identity")
 	capability := f.String("capability", "", "capability identity")
 	task := f.String("task", "interactive", "task pin")
@@ -84,7 +85,7 @@ func search(ctx context.Context, s *core.Store, args []string) (core.Package, er
 	if err := f.Parse(args); err != nil {
 		return core.Package{}, invalid(err.Error())
 	}
-	return s.Compile(ctx, core.CompileRequest{Kinds: kinds, Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability}, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: strings.Join(f.Args(), " "), Purpose: *purpose, AvailableTokens: *tokens}, core.Destination{Name: *dest, AllowLocal: *dest == "local"})
+	return s.Compile(ctx, core.CompileRequest{Kinds: kinds, Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability}, RequestID: uuid.NewString(), Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: strings.Join(f.Args(), " "), Purpose: *purpose, AvailableTokens: *tokens}, core.Destination{Name: *dest, AllowLocal: *dest == "local"})
 }
 func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result, error) {
 	var kinds []string
@@ -112,6 +113,7 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 	tokens := f.Int("tokens", 32000, "available input room reserved for memory")
 	timeout := f.Duration("timeout", 10*time.Minute, "process timeout")
 	taskClass := f.String("task-class", "unknown", "comparable task category")
+	taskPhase := f.String("task-phase", "", "declared task phase (exact label)")
 	binding := f.String("binding", "", "execution binding identity")
 	capability := f.String("capability", "unknown", "capability identity; distinct from binding")
 	revision := f.String("revision", "", "declared repository revision")
@@ -145,7 +147,7 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 	if err != nil {
 		return runner.Result{}, err
 	}
-	req := runner.Request{AttemptID: *attempt, Compile: core.CompileRequest{Kinds: kinds, RequestID: *request, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: *query, Purpose: "context", AvailableTokens: *tokens}, Destination: core.Destination{Name: *dest, AllowLocal: *dest == "local"}, Command: command, Directory: *directory, Carrier: *carrier, Prompt: *prompt, Timeout: *timeout, TaskClass: *taskClass, BindingID: *binding, CapabilityID: *capability, Revision: *revision, WorkspaceSHA256: *workspace, ArtifactDirectory: filepath.Join(artifacts, "runs")}
+	req := runner.Request{AttemptID: *attempt, Compile: core.CompileRequest{Kinds: kinds, RequestID: *request, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: *query, Purpose: "context", AvailableTokens: *tokens}, Destination: core.Destination{Name: *dest, AllowLocal: *dest == "local"}, Command: command, Directory: *directory, Carrier: *carrier, Prompt: *prompt, Timeout: *timeout, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability, Revision: *revision, WorkspaceSHA256: *workspace, ArtifactDirectory: filepath.Join(artifacts, "runs")}
 	req.OutputArtifacts, req.ShareArtifactEvidence = outputs, *shareArtifacts
 	if retainedRequested {
 		req.Retained = &core.RunPackageRequest{ReceiptID: *receipt, Seal: *seal}

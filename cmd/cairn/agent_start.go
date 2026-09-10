@@ -100,6 +100,7 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 	f.StringVar(&pins.Revision, "revision", "", "declared repository revision")
 	f.StringVar(&pins.WorkspaceSHA256, "workspace-sha256", "", "declared workspace digest")
 	f.StringVar(&pins.TaskClass, "task-class", "", "task category")
+	f.StringVar(&pins.TaskPhase, "task-phase", "", "declared task phase (exact label)")
 	f.StringVar(&pins.BindingID, "binding", "", "binding identity")
 	f.StringVar(&pins.CapabilityID, "capability", "", "capability identity")
 	if err := f.Parse(args); err != nil {

@@ -34,6 +34,7 @@ type Request struct {
 	Prompt                string
 	Timeout               time.Duration
 	TaskClass             string
+	TaskPhase             string
 	BindingID             string
 	CapabilityID          string
 	Revision              string
@@ -92,7 +93,7 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	if capabilityID == "" {
 		capabilityID = "unknown"
 	}
-	pins := core.ContextPins{Revision: req.Revision, WorkspaceSHA256: req.WorkspaceSHA256, TaskClass: taskClass, BindingID: bindingID, CapabilityID: capabilityID}
+	pins := core.ContextPins{Revision: req.Revision, WorkspaceSHA256: req.WorkspaceSHA256, TaskClass: taskClass, TaskPhase: req.TaskPhase, BindingID: bindingID, CapabilityID: capabilityID}
 	if req.Compile.Context != nil && *req.Compile.Context != pins {
 		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "compile context must match declared run metadata"}
 	}

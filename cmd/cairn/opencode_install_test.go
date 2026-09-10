@@ -27,7 +27,7 @@ func TestOpenCodeInstallWorksOfflineAndPreservesHostPolicy(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "opencode.json"), policy, 0600); err != nil {
 		t.Fatal(err)
 	}
-	args := append(installArgs(project), "--tokens", "64000", "--revision", strings.Repeat("a", 40), "--workspace-sha256", strings.Repeat("b", 64), "--task-class", "build", "--binding", "host; literal", "--capability", "native")
+	args := append(installArgs(project), "--tokens", "64000", "--revision", strings.Repeat("a", 40), "--workspace-sha256", strings.Repeat("b", 64), "--task-class", "build", "--task-phase", "validation", "--binding", "host; literal", "--capability", "native")
 	value, err := run(context.Background(), append([]string{"opencode-install"}, args...), strings.NewReader(""))
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestOpenCodeInstallWorksOfflineAndPreservesHostPolicy(t *testing.T) {
 	if settings.Executable != executable || settings.Socket != wantSocket || settings.TokenFile != wantToken || settings.Repo != "repo:installation" || settings.Tokens != 64000 {
 		t.Fatalf("configuration changed literal paths or identity: %s", config)
 	}
-	if !reflect.DeepEqual(settings.Context, map[string]string{"revision": strings.Repeat("a", 40), "workspace_sha256": strings.Repeat("b", 64), "task_class": "build", "binding": "host; literal", "capability": "native"}) {
+	if !reflect.DeepEqual(settings.Context, map[string]string{"revision": strings.Repeat("a", 40), "workspace_sha256": strings.Repeat("b", 64), "task_class": "build", "task_phase": "validation", "binding": "host; literal", "capability": "native"}) {
 		t.Fatal(settings.Context)
 	}
 	adapter, err := os.ReadFile(filepath.Join(project, ".opencode/tools/cairn.ts"))

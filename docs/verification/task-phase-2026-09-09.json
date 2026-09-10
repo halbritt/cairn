@@ -1,0 +1,306 @@
+{
+  "schema": "cairn.task-phase-verification/1",
+  "date": "2026-09-09",
+  "baseline_commit": "68935e38a0bfb1c1d559ed463b73daf149893c99",
+  "verification": {
+    "command": "make check && make test && make test-integration",
+    "exit_code": 0,
+    "native_opencode_without_model": true,
+    "disposable_database": true,
+    "memory_benefit_assessed": false
+  },
+  "compatibility": {
+    "old_binary_sha256": "62fad55faeec6f4dc220402cd8a7f9d51a30b6b35b6bf6b14f0c202ade7d782a",
+    "new_binary_sha256": "b90193b0826cdbd870fd09647404b5567cae218f5a531205be5d2f61e60f16dd",
+    "legacy": [
+      {
+        "mode": "body",
+        "schema": "cairn.semantic/3",
+        "seal": "blake3:019a1387dfa31d2973f46c6957fdd749e44d1e0b217efdf6553c17bdb0d37f2d",
+        "retry_identical": true,
+        "recompile_identical": true
+      },
+      {
+        "mode": "index",
+        "schema": "cairn.semantic/8",
+        "seal": "blake3:09b227194bc4ab4fe3fd792db72b374c3fe7c3a25cf21d6acb636c41b15971db",
+        "retry_identical": true,
+        "recompile_identical": true
+      },
+      {
+        "mode": "browse",
+        "schema": "cairn.semantic/8",
+        "seal": "blake3:fc9897e8a4c52993a249443652b17bb44eaee2b04c127fd334722010dee4d92b",
+        "retry_identical": true,
+        "recompile_identical": true
+      },
+      {
+        "mode": "filtered",
+        "schema": "cairn.semantic/9",
+        "seal": "blake3:20cffcd27400cd54ca5f9b998b9bb48f74c2ca0954dd7b0060e59354dce8517a",
+        "retry_identical": true,
+        "recompile_identical": true
+      }
+    ],
+    "new_phase": {
+      "schema": "cairn.semantic/10",
+      "old_recompile_status": "INTEGRITY_FAILURE",
+      "old_run_package_status": "INTEGRITY_FAILURE"
+    },
+    "reader_upgrade_requirement": {
+      "old_fresh_reader_ignores_new_phase": true,
+      "new_reader_without_phase_omits": true,
+      "all_database_readers_must_upgrade": true
+    }
+  },
+  "doctrine": {
+    "packet_id": "pkt-9b72696627e416a9",
+    "packet_sha256": "9b72696627e416a9a882585476a541901fa00d9f547b24646755713a134e41ef",
+    "initial_packet": "pkt-acec3eaa8355244a",
+    "initial_sha256": "acec3eaa8355244abbbbea89e4a93630120a6c384754bc4352a3d1d26447e734",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "doctrine": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "used_concepts": [
+      "universal-repository-contract-precedence",
+      "testing-test-first-feedback",
+      "universal-preserve-behavior-by-default",
+      "universal-separate-semantic-structural-change"
+    ],
+    "unmet_obligations": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-713ab09c719e8c83",
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "business completion and temporal requirements",
+        "status": "missing",
+        "material": false,
+        "rationale": "Phase is a declared scalar, not an asynchronous lifecycle or workflow; no queue, new event or recovery behavior changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-79b9d8f1dd407e9a",
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "delivery, ordering, and idempotency contract",
+        "status": "missing",
+        "material": false,
+        "rationale": "Phase is a declared scalar, not an asynchronous lifecycle or workflow; no queue, new event or recovery behavior changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-78b797e82c483735",
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "queue and end-to-end observability",
+        "status": "missing",
+        "material": false,
+        "rationale": "Phase is a declared scalar, not an asynchronous lifecycle or workflow; no queue, new event or recovery behavior changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-c278e7f4f8269016",
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "recovery owner",
+        "status": "missing",
+        "material": false,
+        "rationale": "Phase is a declared scalar, not an asynchronous lifecycle or workflow; no queue, new event or recovery behavior changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-14f2852f2ab5e06b",
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "retry, replay, reconciliation, and recovery owner",
+        "status": "missing",
+        "material": false,
+        "rationale": "Phase is a declared scalar, not an asynchronous lifecycle or workflow; no queue, new event or recovery behavior changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-997671713848dcc2",
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "workflow completion semantics",
+        "status": "missing",
+        "material": false,
+        "rationale": "Phase is a declared scalar, not an asynchronous lifecycle or workflow; no queue, new event or recovery behavior changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "material": false,
+        "rationale": "No interface, method set or package ownership is changed. Existing in-repository consumers compile; no external embedding compatibility claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "material": false,
+        "rationale": "No interface, method set or package ownership is changed. Existing in-repository consumers compile; no external embedding compatibility claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "material": false,
+        "rationale": "No interface, method set or package ownership is changed. Existing in-repository consumers compile; no external embedding compatibility claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "material": false,
+        "rationale": "No interface, method set or package ownership is changed. Existing in-repository consumers compile; no external embedding compatibility claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-095417932798e5dc",
+        "required_by": "go-semantics-before-performance-constructs",
+        "requirement": "causal profile and representative benchmark for speed claims",
+        "status": "missing",
+        "material": false,
+        "rationale": "No performance claim or pointer/generic representation optimization is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-eacec749cf3603b8",
+        "required_by": "go-semantics-before-performance-constructs",
+        "requirement": "escape or build analysis when relevant",
+        "status": "missing",
+        "material": false,
+        "rationale": "No performance claim or pointer/generic representation optimization is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-34f332d7c8d58602",
+        "required_by": "universal-earned-abstraction",
+        "requirement": "coherent shared meaning or real boundary pressure",
+        "status": "missing",
+        "material": false,
+        "rationale": "No new abstraction is introduced; the feature extends existing pin owners and routes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-1f5510fe08dd0c03",
+        "required_by": "universal-earned-abstraction",
+        "requirement": "hidden decision and net cost comparison",
+        "status": "missing",
+        "material": false,
+        "rationale": "No new abstraction is introduced; the feature extends existing pin owners and routes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ec0bebeb749e3fa9",
+        "required_by": "universal-no-change-option",
+        "requirement": "actual current cost/risk or absence within a stated interval",
+        "status": "missing",
+        "material": false,
+        "rationale": "E1 authorizes the phase dimension; current cost saving and memory-task benefit are unmeasured and unclaimed."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-phase-before.log",
+      "sha256": "aac58f84fcdaa3c77c59ddde9f59046be2a04e3dc25090dbbdb9fa7e7580c64e"
+    },
+    {
+      "path": "/tmp/cairn-phase-schema-before.log",
+      "sha256": "8efecf6ff813376e2b45117e3669afc349a89bfd0d0a653c966ce789a019d29d"
+    },
+    {
+      "path": "/tmp/cairn-phase-cli-before.log",
+      "sha256": "170466332e23357a5e891eeb0238eb815f8961ed6cf9354c8aa09368cac13909"
+    },
+    {
+      "path": "/tmp/cairn-phase-derivation-before.log",
+      "sha256": "d93f12dd0a53efb28e8a34a37fa421201342c62cb81023263c8baa62be81593d"
+    },
+    {
+      "path": "/tmp/cairn-phase-check-final.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-phase-tests-final.log",
+      "sha256": "1b9e1976c600d6b55c99d453c1fd65b8bc7b8c1e9735afcf97238d71bb845183"
+    },
+    {
+      "path": "/tmp/cairn-phase-integration-final.log",
+      "sha256": "913862e1e4d365955917147f8b9780bb4950cfab9505e96ef787dd530fbe7c06"
+    },
+    {
+      "path": "/tmp/cairn-phase-integration.log",
+      "sha256": "30b883431309b6c5e5ed2a286f3af431b5a67d5a5d37884679c118c45b69e256"
+    },
+    {
+      "path": "/tmp/cairn-phase-compat/report.json",
+      "sha256": "5c5a4194720b5310e580d28f4e228d97b9110c8e12eec7dbe3752cf62eeacf1d"
+    },
+    {
+      "path": "/tmp/cairn-phase-compat.log",
+      "sha256": "70164bda5a1711d08fcdd217c8cd0ceea0547b155dfcb47020e3b77c81f7e7fb"
+    },
+    {
+      "path": "/tmp/cairn-phase-compat.py",
+      "sha256": "41b66f9135abd0486f8da3feb32b5b9ee876fcdf8287dc26237e1ba517ecc7eb"
+    },
+    {
+      "path": "/tmp/cairn-phase-compat.sh",
+      "sha256": "ea224b1ae45825a157489d9db07b546f5dc9d68b4e097b9655c9c64a7218a385"
+    },
+    {
+      "path": "/tmp/cairn-phase-runtime-before.json",
+      "sha256": "fc12da894ab265a6a885a384955f7f60945bd98511647816667d9ef9be75e56b"
+    },
+    {
+      "path": "/tmp/cairn-phase-doctrine.json",
+      "sha256": "d0848064f092f11de866a89ad985c195fe98c7273c69b3dbde09202dfbbc4f8e"
+    },
+    {
+      "path": "/tmp/cairn-phase-doctrine-final.json",
+      "sha256": "b52a16dec9d3d6f3d5a2fdd009690024705c852e8e229e5db5a5c224c3dc44bb"
+    },
+    {
+      "path": "/tmp/cairn-phase-decision.json",
+      "sha256": "4adf1d53ad86bbacdbd8c31e1008aeb55e62e910f50b79f73de55de786b07c61"
+    },
+    {
+      "path": "/tmp/cairn-phase-unmet.json",
+      "sha256": "38c2ff87cadf50355abf4310891815b8bed164993e0135814e196db9ab4c9a57"
+    },
+    {
+      "path": "/tmp/cairn-phase-citation-initial.json",
+      "sha256": "21642a2bf39e8e55188e674b20ecc6122a9b5aee7e9ff5ac2f81b7da782f4444"
+    },
+    {
+      "path": "/tmp/cairn-phase-citation-final.json",
+      "sha256": "e41a76174b9fb6e7ed12d965d724b5fc24123cde116cc7985b41e5ee7ba1aa50"
+    },
+    {
+      "path": "/tmp/cairn-phase-evidence-authority.json",
+      "sha256": "7b4c01db387e3505154f0be65f015e1e4b88881763fe46a718925618435c7212"
+    },
+    {
+      "path": "/tmp/cairn-phase-evidence-contract.json",
+      "sha256": "d34edde56f28e496634571f049195504e299f0324c25298031b00c843a390e20"
+    },
+    {
+      "path": "/tmp/cairn-phase-evidence-source.json",
+      "sha256": "d88919693325836a1d463d04811fd0b5169309873818cf3330d60f86c98affc7"
+    },
+    {
+      "path": "/tmp/cairn-phase-evidence-tests.json",
+      "sha256": "d2b61499a0f89795f8589fa75c31f6912ac256fb52a22ed02abdc1f8ee24929d"
+    },
+    {
+      "path": "/tmp/cairn-phase-evidence-compatibility.json",
+      "sha256": "f185190e73845b355f0941281dd63dee9aebfe8bbd961c75c1436cdf8ca3a7a6"
+    }
+  ]
+}

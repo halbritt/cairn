@@ -197,7 +197,7 @@ func applicabilityContains(parent, child *Applicability) bool {
 	if child == nil {
 		child = &Applicability{}
 	}
-	for _, pair := range [][2]string{{parent.Revision, child.Revision}, {parent.WorkspaceSHA256, child.WorkspaceSHA256}, {parent.TaskClass, child.TaskClass}, {parent.BindingID, child.BindingID}, {parent.CapabilityID, child.CapabilityID}} {
+	for _, pair := range [][2]string{{parent.Revision, child.Revision}, {parent.WorkspaceSHA256, child.WorkspaceSHA256}, {parent.TaskClass, child.TaskClass}, {parent.TaskPhase, child.TaskPhase}, {parent.BindingID, child.BindingID}, {parent.CapabilityID, child.CapabilityID}} {
 		if pair[0] != "" && pair[0] != pair[1] {
 			return false
 		}

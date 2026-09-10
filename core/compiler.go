@@ -226,7 +226,7 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	if req.Mode == "index" {
 		p.Mode = "index"
-		if len(req.Kinds) == 0 {
+		if len(req.Kinds) == 0 && p.Schema != "cairn.semantic/10" {
 			p.Schema = "cairn.semantic/8"
 		}
 		if req.BrowseOffset != nil {
@@ -250,6 +250,9 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 	if len(req.Kinds) > 0 {
 		p.Kinds = req.Kinds
 		p.Schema = "cairn.semantic/9"
+	}
+	if req.Context != nil && req.Context.TaskPhase != "" {
+		p.Schema = "cairn.semantic/10"
 	}
 	policy, err := policySnapshot(ctx, tx, req.Scope.Repo)
 	if err != nil {

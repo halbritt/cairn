@@ -19,7 +19,7 @@ def check(binary, root, environment):
     scope = dict(repo='fixture:socket', task_id='retained-cli', run_id=str(uuid.uuid4()))
     draft = dict(kind='note', body='Retained CLI instruction fixture', claim_type='self', scope=scope)
     call(agent, 'create', dict(request_id=str(uuid.uuid4()), draft=draft))
-    context = dict(task_class='build', binding_id='retained-cli', capability_id='shell')
+    context = dict(task_class='build', task_phase='validation', binding_id='retained-cli', capability_id='shell')
     request = dict(request_id=str(uuid.uuid4()), scope=scope, query='retained', purpose='context',
                    available_tokens=32000, context=context, kinds=['note', 'decision'])
     package = call(observer, 'compile', request)
@@ -31,14 +31,14 @@ def check(binary, root, environment):
     args = observer + ['run', '--repo', scope['repo'], '--task', scope['task_id'],
                        '--run', scope['run_id'], '--request-id', request['request_id'],
                        '--query', request['query'], '--prompt', 'Use the pinned package',
-                       '--task-class', context['task_class'], '--binding', context['binding_id'],
+                       '--task-class', context['task_class'], '--task-phase', context['task_phase'], '--binding', context['binding_id'],
                        '--capability', context['capability_id'], '--receipt-id', package['receipt_id'],
                        '--seal', package['seal']]
     unfiltered_args = args
     args = args + ['--kind', 'decision', '--kind', 'note', '--kind', 'decision']
     # Flag pairing and intent mismatch must fail before the valid execution.
     for bad_args in [unfiltered_args, unfiltered_args[:-2], args + ['--query', 'different'],
-                     args + ['--kind', 'unknown'],
+                     args + ['--kind', 'unknown'], args + ['--task-phase', 'implementation'], args + ['--task-phase', ''],
                      args + ['--receipt-id', '', '--seal', '']]:
         refused = subprocess.run(bad_args + ['--', '/bin/cat'], env=env, text=True,
                                  capture_output=True, timeout=10)

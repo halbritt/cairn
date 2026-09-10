@@ -24,7 +24,7 @@ checks. Start a new server with the host's actual task/run IDs for a new task;
 reusing an example's IDs combines observations under that declared scope.
 
 For memories restricted to a particular build or task context, the host can also
-supply `--revision` (immutable Git object ID), `--workspace-sha256`, `--task-class`,
+supply `--revision` (immutable Git object ID), `--workspace-sha256`, `--task-class`, `--task-phase`,
 `--binding`, and `--capability`. These optional declarations stay fixed for the
 server's lifetime and accompany every search. For example, append
 `--revision "$(git rev-parse HEAD)" --task-class repair` when launching from the

@@ -8,6 +8,7 @@ import (
 // ContextPins are declared by the caller/embedding host. Matching them does not
 // certify the repository's physical state; the CLI can observe Git pins locally.
 type ContextPins struct {
+	TaskPhase       string `json:"task_phase,omitempty" cbor:"task_phase,omitempty"`
 	Revision        string `json:"revision,omitempty"`
 	WorkspaceSHA256 string `json:"workspace_sha256,omitempty"`
 	TaskClass       string `json:"task_class,omitempty"`
@@ -15,6 +16,7 @@ type ContextPins struct {
 	CapabilityID    string `json:"capability_id,omitempty"`
 }
 type Applicability struct {
+	TaskPhase       string     `json:"task_phase,omitempty" cbor:"task_phase,omitempty"`
 	Revision        string     `json:"revision,omitempty"`
 	WorkspaceSHA256 string     `json:"workspace_sha256,omitempty"`
 	TaskClass       string     `json:"task_class,omitempty"`
@@ -34,7 +36,7 @@ func (p *ContextPins) validate() error {
 	if p.WorkspaceSHA256 != "" && !digestValid(p.WorkspaceSHA256) {
 		return failure("INVALID_REQUEST", "invalid workspace digest")
 	}
-	for _, v := range []string{p.TaskClass, p.BindingID, p.CapabilityID} {
+	for _, v := range []string{p.TaskClass, p.TaskPhase, p.BindingID, p.CapabilityID} {
 		if len(v) > 256 || v == "*" {
 			return failure("INVALID_REQUEST", "invalid context label")
 		}
@@ -56,7 +58,7 @@ func (p *Applicability) validate() error {
 	if p == nil {
 		return nil
 	}
-	if err := (&ContextPins{p.Revision, p.WorkspaceSHA256, p.TaskClass, p.BindingID, p.CapabilityID}).validate(); err != nil {
+	if err := (&ContextPins{Revision: p.Revision, WorkspaceSHA256: p.WorkspaceSHA256, TaskClass: p.TaskClass, TaskPhase: p.TaskPhase, BindingID: p.BindingID, CapabilityID: p.CapabilityID}).validate(); err != nil {
 		return err
 	}
 	if p.ValidFrom != nil && p.ValidUntil != nil && !p.ValidFrom.Before(*p.ValidUntil) {
@@ -74,7 +76,7 @@ func sameApplicability(a, b *Applicability) bool {
 		}
 		return x.Equal(*y)
 	}
-	return a.Revision == b.Revision && a.WorkspaceSHA256 == b.WorkspaceSHA256 && a.TaskClass == b.TaskClass && a.BindingID == b.BindingID && a.CapabilityID == b.CapabilityID && sameTime(a.ValidFrom, b.ValidFrom) && sameTime(a.ValidUntil, b.ValidUntil)
+	return a.Revision == b.Revision && a.WorkspaceSHA256 == b.WorkspaceSHA256 && a.TaskClass == b.TaskClass && a.TaskPhase == b.TaskPhase && a.BindingID == b.BindingID && a.CapabilityID == b.CapabilityID && sameTime(a.ValidFrom, b.ValidFrom) && sameTime(a.ValidUntil, b.ValidUntil)
 }
 
 func applicabilityReason(p *Applicability, context *ContextPins, now time.Time) string {
@@ -89,7 +91,7 @@ func applicabilityReason(p *Applicability, context *ContextPins, now time.Time) 
 		actual = *context
 	}
 	missing := false
-	for _, pair := range [][2]string{{p.Revision, actual.Revision}, {p.WorkspaceSHA256, actual.WorkspaceSHA256}, {p.TaskClass, actual.TaskClass}, {p.BindingID, actual.BindingID}, {p.CapabilityID, actual.CapabilityID}} {
+	for _, pair := range [][2]string{{p.Revision, actual.Revision}, {p.WorkspaceSHA256, actual.WorkspaceSHA256}, {p.TaskClass, actual.TaskClass}, {p.TaskPhase, actual.TaskPhase}, {p.BindingID, actual.BindingID}, {p.CapabilityID, actual.CapabilityID}} {
 		if pair[0] == "" {
 			continue
 		}
@@ -115,7 +117,7 @@ func applicabilityOverlaps(a, b *Applicability) bool {
 	if a == nil || b == nil {
 		return true
 	}
-	for _, pair := range [][2]string{{a.Revision, b.Revision}, {a.WorkspaceSHA256, b.WorkspaceSHA256}, {a.TaskClass, b.TaskClass}, {a.BindingID, b.BindingID}, {a.CapabilityID, b.CapabilityID}} {
+	for _, pair := range [][2]string{{a.Revision, b.Revision}, {a.WorkspaceSHA256, b.WorkspaceSHA256}, {a.TaskClass, b.TaskClass}, {a.TaskPhase, b.TaskPhase}, {a.BindingID, b.BindingID}, {a.CapabilityID, b.CapabilityID}} {
 		if pair[0] != "" && pair[1] != "" && pair[0] != pair[1] {
 			return false
 		}

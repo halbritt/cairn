@@ -74,12 +74,12 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 	requestID := uuid.NewString()
 	result, err := run(context.Background(), []string{"agent", "--socket", socket, "--token-file", tokenFile,
 		"search", "--repo", scope.Repo, "--task", scope.TaskID, "--run", scope.RunID, "--request-id", requestID,
-		"--revision", "fixture-revision", "fixture query"}, strings.NewReader(""))
+		"--revision", "fixture-revision", "--task-phase", "validation", "fixture query"}, strings.NewReader(""))
 	if err != nil {
 		t.Fatal(err)
 	}
 	req := <-requests
-	if req.Scope != scope || req.RequestID != requestID || req.Query != "fixture query" || req.AvailableTokens != 32000 || req.Context.Revision != "fixture-revision" {
+	if req.Scope != scope || req.RequestID != requestID || req.Query != "fixture query" || req.AvailableTokens != 32000 || req.Context.Revision != "fixture-revision" || req.Context.TaskPhase != "validation" {
 		t.Fatalf("request changed: %+v", req)
 	}
 	encoded, err := json.Marshal(result)

@@ -45,6 +45,7 @@ def check(binary, root, environment, grant):
     start = [*agent, 'start', '--repo', scope['repo'], '--task', scope['task_id'], '--run', scope['run_id'],
              '--query', marker, '--prompt', prompt, '--tokens', '8192', '--pull-tool', 'cairn_pull',
              '--search-tool', 'cairn_search']
+    start += ['--task-phase', 'validation']
     inspect = "import os,sys,json; print(json.dumps(dict(pid=os.getpid(),args=sys.argv[1:],stdin=sys.stdin.buffer.read().decode('utf-8'),env={k:v for k,v in os.environ.items() if k.startswith('CAIRN_') or k in ('PGPASSWORD','PGPASSFILE','PGSERVICEFILE')})))"
     literal = 'one argument with spaces; $(not-executed)'
     child = subprocess.Popen([*start, '--', sys.executable, '-c', inspect, literal], env=env,
@@ -63,6 +64,7 @@ def check(binary, root, environment, grant):
     initial = observed['args'][-1]
     view, actual_prompt = memory_input(initial)
     assert actual_prompt == prompt and len(initial.encode()) <= 8192
+    assert view['context']['task_phase'] == 'validation' and view['source_schema'] == 'cairn.semantic/10'
     assert view['scope'] == scope and view['destination'] == dict(name='hosted', allow_local=False)
     assert [e['record_id'] for e in view['index']] == [saved['record_id']]
     assert any(s['record']['record_id'] == required['record_id'] and s['mandatory'] for s in view['selected'])

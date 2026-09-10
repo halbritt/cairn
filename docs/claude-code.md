@@ -42,7 +42,7 @@ The output uses [Claude's documented MCP format](https://code.claude.com/docs/en
 
 The generator resolves executable/socket/token paths to absolute paths without
 reading credentials or connecting to Cairn. `--tokens` and the existing MCP
-revision/workspace/task-class/binding/capability flags are forwarded. Paths,
+revision/workspace/task-class/task-phase/binding/capability flags are forwarded. Paths,
 quotes and whitespace are JSON encoded. Arguments must be UTF-8 and cannot
 contain `${`, because Claude would interpret that syntax as environment-variable
 expansion and potentially change a path or declared scope. Resolve such values

@@ -52,7 +52,7 @@ For unfamiliar vocabulary, replace `--query ...` with `--browse`. Optional repea
 `--kind` flags narrow labels while retaining required instructions. `--semantic`
 can accompany a nonempty query, using the existing optional semantic backend and
 labelled lexical fallback. It cannot accompany browsing. The existing `--revision`,
-`--workspace-sha256`, `--task-class`, `--binding` and `--capability` declarations are
+`--workspace-sha256`, `--task-class`, `--task-phase`, `--binding` and `--capability` declarations are
 also accepted. They describe context; they do not inspect the workspace themselves.
 
 ## Budget and lifecycle

@@ -11,6 +11,7 @@ import (
 
 func TestClaudeConfigPreservesLaunchArguments(t *testing.T) {
 	args := []string{"--socket", "socket with space", "--token-file", "token\"file", "--repo", "repo", "--task", "repair", "--run", "attempt", "--tokens", "64000", "--revision", "0123456789012345678901234567890123456789", "--task-class", "repair", "--binding", "native", "--capability", "declared", "--workspace-sha256", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	args = append(args, "--task-phase", "validation")
 	var out bytes.Buffer
 	if err := writeClaudeConfig(&out, args, "bin/cairn"); err != nil {
 		t.Fatal(err)
@@ -23,7 +24,7 @@ func TestClaudeConfigPreservesLaunchArguments(t *testing.T) {
 	executable, _ := filepath.Abs("bin/cairn")
 	socket, _ := filepath.Abs(args[1])
 	token, _ := filepath.Abs(args[3])
-	want := []string{"mcp", "--socket", socket, "--token-file", token, "--repo", "repo", "--task", "repair", "--run", "attempt", "--tokens", "64000", "--revision", args[13], "--workspace-sha256", args[21], "--task-class", "repair", "--binding", "native", "--capability", "declared"}
+	want := []string{"mcp", "--socket", socket, "--token-file", token, "--repo", "repo", "--task", "repair", "--run", "attempt", "--tokens", "64000", "--revision", args[13], "--workspace-sha256", args[21], "--task-class", "repair", "--task-phase", "validation", "--binding", "native", "--capability", "declared"}
 	if len(config.Servers) != 1 || server.Type != "stdio" || server.Command != executable || !reflect.DeepEqual(server.Args, want) {
 		t.Fatalf("generated launch changes configured arguments: %+v", config)
 	}

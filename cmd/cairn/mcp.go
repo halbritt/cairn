@@ -28,6 +28,7 @@ func mcpFlags(f *flag.FlagSet) *mcpOptions {
 	f.StringVar(&o.pins.Revision, "revision", "", "declared repository revision")
 	f.StringVar(&o.pins.WorkspaceSHA256, "workspace-sha256", "", "declared workspace digest")
 	f.StringVar(&o.pins.TaskClass, "task-class", "", "task category")
+	f.StringVar(&o.pins.TaskPhase, "task-phase", "", "declared task phase (exact label)")
 	f.StringVar(&o.pins.BindingID, "binding", "", "binding identity")
 	f.StringVar(&o.pins.CapabilityID, "capability", "", "capability identity")
 	return o

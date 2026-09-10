@@ -12,7 +12,7 @@ def check(binary, root, environment, opencode, claim, support):
     work.mkdir()
     installed = subprocess.run([binary, 'opencode-install', '--project', str(work),
         '--socket', str(root / 'api.sock'), '--token-file', str(root / 'hosted-agent.token'),
-        '--repo', 'fixture:socket', '--tokens', '64000'], env=environment, capture_output=True,
+        '--repo', 'fixture:socket', '--tokens', '64000', '--task-phase', 'validation'], env=environment, capture_output=True,
         text=True, check=True, timeout=15)
     assert json.loads(installed.stdout)['ok'] is True
     settings_path = work / '.opencode/cairn.json'
@@ -71,6 +71,7 @@ def check(binary, root, environment, opencode, claim, support):
     invoke('search', dict(browse=True, semantic=True), 'cannot be combined')
     assert first['schema'] == 'cairn.opencode-search/1'
     for view in (first, second):
+        assert view['context']['task_phase'] == 'validation' and view['source_schema'] == 'cairn.semantic/10'
         assert view['scope']['repo'] == settings['repo']
         assert view['scope']['task_id'] == 'opencode/' + view['scope']['run_id']
         assert view['scope']['run_id'].startswith('ses_')

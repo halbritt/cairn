@@ -15,10 +15,10 @@ def check(binary, root, environment, grant):
 
     query = 'pinnedmcp' + uuid.uuid4().hex
     pins = dict(revision='a' * 40, workspace_sha256='b' * 64,
-                task_class='repair', binding_id='fixture-binding',
+                task_class='repair', task_phase='validation', binding_id='fixture-binding',
                 capability_id='fixture-capability')
     flags = dict(revision='--revision', workspace_sha256='--workspace-sha256',
-                 task_class='--task-class', binding_id='--binding',
+                 task_class='--task-class', task_phase='--task-phase', binding_id='--binding',
                  capability_id='--capability')
 
     def arguments(context):

@@ -356,7 +356,7 @@ func TestScopeAuthorizationDetectsNewInstructionOverlap(t *testing.T) {
 func TestScopeAuthorizationRefusalsAreAtomic(t *testing.T) {
 	for _, scenario := range []struct{ name, code string }{
 		{"unknown pins", "INVALID_REQUEST"}, {"stale version", "VERSION_CONFLICT"}, {"wrong actor", "AUTHORITY_DENIED"},
-		{"task move", "AUTHORITY_DENIED"}, {"repository move", "AUTHORITY_DENIED"}, {"narrower pins", "AUTHORITY_DENIED"},
+		{"task move", "AUTHORITY_DENIED"}, {"repository move", "AUTHORITY_DENIED"}, {"narrower pins", "AUTHORITY_DENIED"}, {"narrower phase", "AUTHORITY_DENIED"},
 		{"no expansion", "INVALID_REQUEST"}, {"missing preview", "IMPACT_PREVIEW_REQUIRED"}, {"new exposure", "STALE_PREVIEW"},
 		{"degraded evidence", "EVIDENCE_UNAVAILABLE"}, {"narrow relation", "AUTHORITY_DENIED"}, {"open conflict", "OPEN_CONFLICT"},
 	} {
@@ -402,6 +402,8 @@ func TestScopeAuthorizationRefusalsAreAtomic(t *testing.T) {
 				req.Scope.Repo = uuid.NewString()
 			case "narrower pins":
 				req.Pins.TaskClass = "build"
+			case "narrower phase":
+				req.Pins.TaskPhase = "validation"
 			case "no expansion":
 				req.Scope = record.Scope
 			case "missing preview":

@@ -1,7 +1,7 @@
 # Currentness and historical recompilation
 
 An ordinary record may include `draft.pins`: `revision` (immutable Git object ID),
-`workspace_sha256`, `task_class`, `binding_id`, `capability_id`, `valid_from` and
+`workspace_sha256`, `task_class`, `task_phase`, `binding_id`, `capability_id`, `valid_from` and
 `valid_until`. Unspecified constraints are unpinned. Ordinary edits and B
 corrections cannot remove or change these constraints; explicit
 [scope authorization](scope-authorization.md) can expand applicability through a
@@ -11,7 +11,7 @@ Compile requests supply matching `context` labels. Missing context, mismatch and
 outside-validity omissions have fixed census buckets. A mandatory applicable C
 instruction cannot be skipped by omitting required context. These are declared
 constraints; matching them does not certify physical workspace state. `search`
-and `run` accept revision/workspace/task-class/binding/capability flags. The wrapper
+and `run` accept revision/workspace/task-class/task-phase/binding/capability flags. The wrapper
 uses one consistent tuple for compilation and run metadata.
 
 Pins are conjunctive: any known mismatch makes a record inapplicable, even when
@@ -38,6 +38,53 @@ candidate explanations. See the [regression verification](verification/private-p
 Semantic schema `cairn.semantic/3` seals these context pins. Optional JSON/CBOR
 fields preserve old v1/v2 decoding and seals. Legacy receipts remain historical;
 a current request after compiler-version changes needs a new request identity.
+
+## Declared task phases
+
+`task_phase` narrows guidance within a task class. For example, a procedure with
+`draft.pins` set to `{"task_class":"repair","task_phase":"validation"}` applies
+to the validation phase of a repair. A request declaring `implementation` omits
+it; a request without phase context cannot establish applicability. Omitting phase
+cannot bypass a mandatory instruction. Different known phases do not create an
+applicability overlap for otherwise conflicting instructions.
+
+The phase is an exact, case-sensitive label, at most 256 bytes. Empty means no
+constraint on a record and unspecified context on a request; `*` is refused.
+`implementation` and `validation` are examples, not an enum. The host supplies the
+label; Cairn neither advances a workflow nor certifies its actual phase. Retrieval
+`purpose` retains its separate authority/read-gate meaning.
+
+```sh
+cairn agent --token-file ~/.local/share/cairn/hosted-agent.token search \
+  --repo "$PWD" --task repair-task --run validation-run \
+  --task-class repair --task-phase validation 'storage checks'
+```
+
+The same `--task-phase` declaration is available on local `search`/`run`,
+authenticated `agent run`, compact `agent start`, `mcp` and the Codex, OpenCode
+and Claude configuration generators. `opencode-install` writes it as
+`context.task_phase`. MCP pins stay fixed for that server instance; changing a
+workflow phase requires a new declared context, not a fabricated observation.
+Retained execution refuses a changed or omitted phase before binding or launch.
+Existing handles retain their original declared context and normal freshness
+checks; they do not observe later workflow changes.
+
+Ordinary edits cannot remove or change phase pins. Derived guidance must preserve
+its source's phase restriction; authorized scope expansion uses the existing
+explicit review path. No new authority grant or promotion rule is introduced.
+
+Requests with a nonempty phase use `cairn.semantic/10`, including body, index,
+browse, kind-filtered and semantic-discovery retrieval. Requests without a phase
+keep their previous schema and retry representation. The optional CBOR field is
+omitted when empty, preserving old receipt seals and historical recompilation.
+
+Upgrade every database reader before creating phase-pinned records. Older direct
+database readers ignore the new JSON constraint and are unsuitable for those
+records; replacing only the CLI while leaving an old API running is insufficient.
+Older binaries also cannot execute or recompile a new phase-bearing receipt.
+No database migration is needed, but reverting a reader alone after writing new
+constraints is unsupported. The [phase verification](verification/task-phase-2026-09-09.md)
+records both preserved old packages and this reader-version limit.
 
 New retrievals use `lexical-scope-recency/4`, which also filters fixed question
 framing words from lexical matches. Historical recompilation uses the ranking

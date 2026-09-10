@@ -34,7 +34,7 @@ class CodexConfigTest(unittest.TestCase):
         task = 'task "\n[mcp_servers.injected]\ncommand = "bad"\n' + controls
         run = '--literal-run\\\U0001f9ed'
         pins = ['--revision', 'a' * 40, '--workspace-sha256', 'b' * 64,
-                '--task-class', 'configuration', '--binding', 'b; literal',
+                '--task-class', 'configuration', '--task-phase', 'validation', '--binding', 'b; literal',
                 '--capability', 'native']
         args = ['--socket', socket, '--token-file', token, '--repo', 'repo:fixture',
                 '--task', task, '--run', run, '--tokens', '64000', *pins]

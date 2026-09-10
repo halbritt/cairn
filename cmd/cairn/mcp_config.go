@@ -24,7 +24,7 @@ func (o *mcpOptions) command(executable string) ([]string, error) {
 	}
 	command = append(command, "--tokens", strconv.Itoa(o.config.AvailableTokens))
 	for _, pin := range [][2]string{{"--revision", o.pins.Revision}, {"--workspace-sha256", o.pins.WorkspaceSHA256},
-		{"--task-class", o.pins.TaskClass}, {"--binding", o.pins.BindingID}, {"--capability", o.pins.CapabilityID}} {
+		{"--task-class", o.pins.TaskClass}, {"--task-phase", o.pins.TaskPhase}, {"--binding", o.pins.BindingID}, {"--capability", o.pins.CapabilityID}} {
 		if pin[1] != "" {
 			command = append(command, pin[0], pin[1])
 		}

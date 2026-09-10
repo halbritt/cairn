@@ -46,6 +46,12 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Guidance can be constrained to a task phase.** `--task-phase` distinguishes
+  implementation and validation within the same task class. Phase matching covers
+  ordinary and mandatory retrieval, inherited restrictions, retained execution
+  and existing harness configuration paths. [Contract](currentness-and-replay.md#declared-task-phases),
+  [verification and reader upgrade](verification/task-phase-2026-09-09.md).
+
 - **Selected task files can be fingerprinted.** The runner captures labels, sizes
   and SHA-256 after the process outcome through existing observer evidence. File
   contents and actual paths stay out of the manifest; local is the default.
@@ -1640,3 +1646,28 @@ retains installation digests and checked metadata pointers. No model task or mem
 benefit is claimed; the compiler does not consume the supplied guidance. The current
 installation summary now distinguishes CLI and API versions. All prior history is
 preserved.
+
+### 2026-09-09 — add declared task-phase applicability
+
+Added `task_phase` to record constraints and caller context, with `--task-phase`
+through local/authenticated search and runs, compact startup, MCP, configuration
+generators and native OpenCode settings. Matching is exact within the existing
+conjunction. Unknown mandatory applicability still refuses; derived guidance,
+ordinary edits, overlap and authorized expansion retain phase restrictions.
+Requests declaring a phase use semantic schema 10; requests without one retain
+previous schemas and retry representations.
+
+Public store and CLI tests first reproduced missing phase selection/forwarding.
+A follow-up derivation test caught a missed containment comparison in the new
+implementation and verified its correction. Full disposable PostgreSQL/race,
+Go/Python and static checks passed, with real CLI/API/MCP and scripted native
+OpenCode phase forwarding. Old/new binaries preserve existing body/index/browse/
+filtered packages and refuse old-reader execution of new sealed phase packages.
+Older direct database readers ignore new phase constraints, so the deployment
+requires upgrading all readers before those constraints are used.
+
+The [verification](verification/task-phase-2026-09-09.md) retains the evidence and
+limits. The saved applicability lesson informed the preserved mismatch/unknown
+boundary; no model task or incremental memory benefit was assessed. E1 remains
+partial for entities/files/error signatures and broader currentness intent.
+All previous implementation history is preserved.

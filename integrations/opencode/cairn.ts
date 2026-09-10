@@ -27,6 +27,7 @@ const settingsSchema = z.object({
     revision: z.string().optional(),
     workspace_sha256: z.string().optional(),
     task_class: z.string().optional(),
+    task_phase: z.string().optional(),
     binding: z.string().optional(),
     capability: z.string().optional(),
   }).strict().optional(),
