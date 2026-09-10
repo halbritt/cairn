@@ -17,9 +17,9 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `6c48411`, including native argument Unicode
-validation, per-call search context, reviewed failure signatures, proposal version
-pins and quoted search.
+The installed CLI and API are clean `9b888e1`, including native retained history,
+argument Unicode validation, per-call search context, reviewed failure signatures,
+proposal version pins and quoted search.
 The database schema remains at migration 033; the native OpenCode adapter is
 updated too.
 
@@ -2833,3 +2833,34 @@ native history and normal-session large capture remain under test. The corrected
 complete native suite passed. No answering model or production fixture capture ran.
 The [report](verification/native-history-2026-09-10.md) retains this maintenance cost,
 recalled procedure, implementation evidence and unestablished net task benefit.
+
+
+### 2026-09-10 — Native history installed and actual guidance compared
+
+Committed and pushed `9b888e11c601d07c67e4cc1a2b5e0a9fffed04a2`. Installed
+CLI/API and project binaries share SHA-256
+`f94524c68502c4a86f4c1297ee12e7a309db6521728362c9c4636525c4593d49`.
+API PID 1965492 serves that build. PostgreSQL PID 163669 and schema 033 are unchanged.
+The native adapter matches source. Added only `cairn_history` to the project's
+Codex enabled-tool list; connection, identity and semantic-worker configuration
+were preserved. No global OpenCode permission edit was made.
+
+A fresh native Codex 0.153.4 client discovered all six tools from actual project
+configuration and inspected validation lesson versions 2/3. Native OpenCode 1.18.21
+with only history allowed returned identical responses. Exact source hashes match;
+the 2,964-byte current body preserves the complete 1,935-byte earlier body and
+appends the verified Unicode finding. No lost wording or new correction emerged
+from this comparison, and no independent answering-model task was run.
+
+Revised history procedure `cd6217ad-2f69-45f1-bcfb-a01066909855` from version 1 to 2,
+replacing the obsolete native-access limitation and recording the repeated large
+debug-input fixture failure and correct test route. Fresh search/pull verifies its
+body and preserved metadata. The [manifest](verification/native-history-2026-09-10.json)
+retains installation, configuration and native-review evidence. This extends
+ordinary access without establishing a new model-task benefit or closing the
+broader usefulness requirements.
+
+[CI 34464102538](https://github.com/halbritt/cairn/actions/runs/34464102538)
+passed for `9b888e1`: PostgreSQL/race, Python, static/build, use-report and
+authenticated CLI/compact startup steps all completed successfully. Native
+Codex/OpenCode checks are the separate local observations described above.

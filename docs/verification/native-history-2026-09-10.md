@@ -53,3 +53,33 @@ remain unverified or incomplete.
 
 [Metadata](native-history-2026-09-10.json) retains source, failure, check and decision
 pointers. Installation and actual retained-guidance review are recorded separately.
+
+## Installation and actual guidance comparison
+
+Installed clean `9b888e11c601d07c67e4cc1a2b5e0a9fffed04a2` in the CLI/API and
+native adapter. PostgreSQL remains at schema 033. The project Codex allowlist now
+includes `cairn_history`; other parsed configuration is unchanged. The existing
+OpenCode permissions were not edited.
+
+A fresh Codex 0.153.4 app-server client loaded the actual project configuration,
+discovered six tools and read validation lesson
+`104519b5-82cd-44b3-ba73-1def2ad42e8c` versions 2 and 3. Native OpenCode 1.18.21,
+with only history allowed and no shell tool, read identical history responses.
+The two bodies are 1,935 and 2,964 UTF-8 bytes. Their reported source digests match
+the returned text. The later body preserves the complete earlier wording and
+appends the prior turn's Unicode finding and source pointers.
+
+This completed the intended comparison using existing retained guidance. No
+missing earlier wording or new correction was found in that append. Direct native
+client calls are not independent model-selected use, and this comparison alone
+does not establish an efficiency gain or net task benefit.
+
+The saved history procedure was revised from version 1 to 2 to replace the obsolete
+CLI-only limitation, describe native access and preserve the known large-debug-input
+failure and correct test route. Fresh ordinary search/pull verifies the body and
+unchanged metadata. Earlier versions remain retained. The metadata manifest records
+build, configuration, client comparison and guide-update identities.
+
+[CI 34464102538](https://github.com/halbritt/cairn/actions/runs/34464102538)
+passed PostgreSQL/race, Python, static/build, use-report and authenticated CLI
+checks for the installed commit. Native client checks ran locally.
