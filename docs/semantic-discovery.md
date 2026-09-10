@@ -46,8 +46,17 @@ cairn serve --semantic-stream-command "$HOME/.local/share/cairn/semantic/worker-
 
 Choose one command mode. The streaming worker starts on the first eligible query
 and exits after 30 seconds without scoring work. It occupies about 208 MiB in the
-local experiment while loaded. Every request still embeds its current eligible
-notes; no note-vector cache is kept. Cold requests pay model initialization.
+local experiment while loaded. The prepared worker now reuses exact note vectors
+from its last successfully scored request. Only body hashes and vectors are retained;
+query text, note text and record IDs are not cached. Notes absent from the next
+successful request are dropped. Changed bodies are embedded again, and all current
+eligibility checks still run before the worker receives candidates.
+
+The existing 64-note/128-chunk limits apply to cache hits too. At most 128 vectors
+are retained (192 KiB of vector payload with the installed float32 model, plus map
+overhead). The cache dies with the worker after idle release, failure or shutdown;
+it is not persistent storage or secure allocator erasure. Cold requests still pay
+model initialization and note embedding. [Comparison and limits](verification/semantic-vector-cache-2026-09-09.md).
 Existing custom one-shot workers continue to use `--semantic-command`.
 
 Use the printed path if `CAIRN_HOME` is customized. A systemd installation must

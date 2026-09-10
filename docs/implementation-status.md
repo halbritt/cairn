@@ -46,6 +46,12 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Repeated semantic scoring reuses exact note vectors.** A bounded cache within
+  the existing worker avoids re-embedding unchanged eligible notes. Thirteen
+  real-model responses match the baseline; six warm queries take 0.034–0.044 seconds
+  versus 1.85–2.29 seconds. Current API edits/exclusions and cleanup pass.
+  [Comparison and limits](verification/semantic-vector-cache-2026-09-09.md).
+
 - **Ordinary capture accepts explicit applicability.** CLI `--pins` JSON and native
   `cairn_remember` can save phase, revision and other existing restrictions. Omitted
   pins remain unpinned even under a constrained search context. Public MCP and native
@@ -1746,3 +1752,21 @@ matching and broader real-history usefulness remain open.
 
 Exact implementation CI `34425510304` passed for `215ecbf`; the subsequent update
 records deployment/evidence and corrects roadmap prose only.
+
+### 2026-09-09 — Bounded reuse of semantic note vectors
+
+Three live repeated hosted queries took 12.736/12.745/12.911 seconds with identical
+score digests. The existing worker re-embedded all eligible notes each time. Added
+a cache inside Scorer for exact body-hash vectors from the last successful request;
+no persistent store, new service or schema. Current candidate gates still run and
+cache hits still count toward the 128-chunk limit. Existing 30-second idle release
+bounds lifetime; this does not claim allocator erasure.
+
+A failing numerical test reproduced repeated embedding. Six final numerical tests,
+static/Go/40Python tests and full disposable PostgreSQL/race integration passed,
+including the actual streaming model, current edits/exclusions and worker shutdown.
+All thirteen real-model comparisons preserve full scoring responses. Six warm pairs
+fall from 1.85–2.29 to 0.034–0.044 seconds. A cold long-note pair was slower and no
+cold improvement is claimed. Retrieval latency is measured; sustained task benefit
+and independent answer-quality improvement remain open.
+[Report](verification/semantic-vector-cache-2026-09-09.md) retains decision and evidence.

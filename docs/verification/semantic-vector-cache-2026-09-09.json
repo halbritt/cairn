@@ -1,0 +1,167 @@
+{
+  "schema": "cairn.semantic-vector-cache-verification/1",
+  "date": "2026-09-09",
+  "source_baseline": "629a9d0a9bd7c4679a842803973215b245ec16ec",
+  "worker_sha256": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+  "checks": {
+    "check": 0,
+    "test": 0,
+    "prepared_numerical_tests": 0,
+    "integration_with_real_worker": 0,
+    "real_model_comparison": 0
+  },
+  "doctrine": {
+    "packet_id": "pkt-f24c51266237ee6c",
+    "content_sha256": "f24c51266237ee6c08c78ee40a8547b8187f9ff459ae292bdec3b34164fefda2",
+    "missing_obligations": []
+  },
+  "environment": {
+    "python": "3.11.15",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "cpu_count": 12,
+    "packages": {
+      "fastembed": "0.8.0",
+      "onnxruntime": "1.29.0",
+      "numpy": "2.4.6",
+      "tokenizers": "0.23.2"
+    },
+    "threads": 2,
+    "batch_size": 1,
+    "worker_timeout_seconds": 20,
+    "idle_release_seconds": 30
+  },
+  "comparison": {
+    "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+    "comparisons": 13,
+    "complete_responses_equal": true,
+    "warm_target_met": true,
+    "max_retained_vector_bytes": 18432
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-vector-cache-baseline-worker.py",
+      "sha256": "290a93245909186c905708f328c276dc074232ef4fcd08c52f02ec56264a4fb5"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-environment.json",
+      "sha256": "5565e956fd443ddf809cb34e1584579582190e06b085876ad732f72b581a4afa"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-red.log",
+      "sha256": "e3bcb2dc8ce338f17d97878c396f2dc5cf299f049ac5948cc10b1dec075fb87c"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-tests.log",
+      "sha256": "e9dbc1a31936475165af55356b566005547a03914ab93e4739e4aa9949799201"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-all-tests.log",
+      "sha256": "1a39cb0fccfa9e0c885e3b2922184aae91b5743f9222e06eb257abd19edfe8d3"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-integration.log",
+      "sha256": "66cc102feb4f58da71c40df7a2421a6966d135d83f3d214d359cf7fcbf6659c2"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-doctrine.json",
+      "sha256": "add12b2835261a7337baa817ae95d5f2e3b43bba7316483a710ee7d496a90d91"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-doctrine-final.json",
+      "sha256": "103878c72b2f83f8e7bdd33ce17eb5ab345d3f20bc66d78804afe48033a85d88"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-decision.json",
+      "sha256": "b54e4fec87bd1b00c1212b067ee2288e713533d7d3e4d91833fd7225618c9beb"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-citations-doctrine.json",
+      "sha256": "b7bab15ca7070dc4b4fa0fbaa635715f9ecab6c049bdde729f56e880e730588d"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-citations-doctrine-final.json",
+      "sha256": "f5cacd84369a8d234e7c033de6f3fa0e885c4852d87fec778ee64fdd805f4a9d"
+    },
+    {
+      "path": "/tmp/cairn-semantic-cache-baseline.json",
+      "sha256": "f4e8cc7600ebfc90b0c7c099ef9662d6c1b84ab463a6ed4f77e983528930b6f2"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/warm-5-responses.json",
+      "sha256": "a53fefa268ec9a7eb4f857faf4628201b090338ac07dcd361346f7e2520a3452"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/warm-2-responses.json",
+      "sha256": "f4b3244b18469cd416102132dada11d2cc89da996bb9713a8b98822453e289aa"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/reintroduced-reordered-responses.json",
+      "sha256": "7b9b262bab8f68043df3a766499263f3aa7041d2eecbdd77f906856cfc1bd884"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/cold-responses.json",
+      "sha256": "cec7090ce5de07f670e1f9c53b85f3f2d92e61bae4fed6827ae018eb7bddf51a"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/long-cold-responses.json",
+      "sha256": "9a0b076d63ea6f32f3a6cb4036b6cf9d9ac1e9fd0cf409c50e7a8216b4f98c29"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/long-warm-responses.json",
+      "sha256": "7eb290ae44d41c091d9a0d11a0a9c2f3db47269ab161958977c63398ebe40461"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/duplicate-responses.json",
+      "sha256": "2b1081f864611028c189c9e2d2264027204f2dd8d1a0fa09beb3ef6e722a17b0"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/removed-responses.json",
+      "sha256": "b7b54bc0d42ae0d406138c21cf7386a11a91d9718ae4dfecbcbc5bb36ecc33e3"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/warm-3-responses.json",
+      "sha256": "5954b5ad4690cc18edd345dd8020ab74ecf25188df750ab1a7dadb400388e882"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/measurements.json",
+      "sha256": "dd2cd07acd502c843c4c7b4364af07c3a4c7f0f773b00b7a7492edc9fcae1f21"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/warm-0-responses.json",
+      "sha256": "8b7505eb2ea9706265a02b10b2a86a55199166ef0b5b696ca2571d24d15c79a7"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/warm-1-responses.json",
+      "sha256": "1441c8683dca8de2b7ba64bd004d538292f3aa0b3dbd6670a77c9a04beb859b6"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/plan.json",
+      "sha256": "daa6313c00e71d49db08e59c5a64ba9fdbe192937bdf4b3d42a151930fc4f87f"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/changed-responses.json",
+      "sha256": "06b29225f3436163ddd8ecc94c817745c812133d7b9fe6bd067a4b4bb4b96ec9"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/warm-4-responses.json",
+      "sha256": "e1fb93ced1ec94ab4ae1136488da0079798ba36a6c35a0447d7f969db6c6fe1c"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-real/summary.json",
+      "sha256": "89ec47cea8383a4330c80c0de456a14f63d086d3d1fc007428df0063e85bab08"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-api/report.json",
+      "sha256": "f5f09fe3ee83686cb25df3953d6f087b6f39b4b6cd23ba3d01f76fe60b00c410"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-api/residency-mutation.json",
+      "sha256": "86b6d814ca1e378bad1d6958b44071b43775824ada701d61d6645c5a26f18724"
+    }
+  ]
+}

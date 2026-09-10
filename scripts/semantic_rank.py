@@ -67,6 +67,7 @@ class Scorer:
         self.tokenizer = tokenizer
         self.model_hash = model_hash
         self.np = np
+        self.note_vectors = {}
 
     def score(self, request):
         np = self.np
@@ -74,19 +75,32 @@ class Scorer:
         question = PREFIX + query
         if len(self.tokenizer.encode(question).ids) > 512:
             raise ValueError("query exceeds model input limit")
-        passages, owners = [], []
+        passages, owners, parts = [], [], []
         for index, note in enumerate(notes):
-            for chunk in chunks(self.tokenizer, note["body"]):
-                if len(passages) == 128:
+            cached = self.note_vectors.get(note["body_sha256"])
+            if cached is None:
+                start = len(passages) + 1
+                for chunk in chunks(self.tokenizer, note["body"]):
+                    if len(owners) == 128:
+                        raise ValueError("semantic chunk budget exceeded")
+                    if len(self.tokenizer.encode(chunk).ids) > 512:
+                        raise ValueError("decoded chunk exceeds model input limit")
+                    passages.append(chunk)
+                    owners.append(index)
+                parts.append(slice(start, len(passages) + 1))
+            else:
+                if len(owners) + len(cached) > 128:
                     raise ValueError("semantic chunk budget exceeded")
-                if len(self.tokenizer.encode(chunk).ids) > 512:
-                    raise ValueError("decoded chunk exceeds model input limit")
-                passages.append(chunk)
-                owners.append(index)
+                owners.extend([index] * len(cached))
+                parts.append(cached)
         # Single-passage batches avoid padding shorter passages to their neighbours.
-        vectors = np.array(list(self.model.embed([question] + passages, batch_size=BATCH_SIZE)))
-        if vectors.shape != (len(passages) + 1, 384) or not np.isfinite(vectors).all():
+        embedded = np.array(list(self.model.embed([question] + passages, batch_size=BATCH_SIZE)))
+        if embedded.shape != (len(passages) + 1, 384) or not np.isfinite(embedded).all():
             raise ValueError("invalid model embeddings")
+        parts = [embedded[part] if isinstance(part, slice) else part for part in parts]
+        # Reconstruct the original matrix before normalization and scoring so
+        # cache hits preserve the same numerical path as cold requests.
+        vectors = np.concatenate([embedded[:1]] + parts)
         norms = np.linalg.norm(vectors, axis=1, keepdims=True)
         if (norms == 0).any():
             raise ValueError("empty model embedding")
@@ -99,6 +113,9 @@ class Scorer:
             dict(record_id=n["record_id"], version=n["version"], body_sha256=n["body_sha256"],
                  score=round(max(-1.0, min(1.0, scores[i])) * 1_000_000))
             for i, n in enumerate(notes)])
+        # Retain only this request's eligible bodies, without text or record IDs.
+        # Copies avoid keeping unrelated query/miss vectors through array views.
+        self.note_vectors = {n["body_sha256"]: part.copy() for n, part in zip(notes, parts)}
         return result
 
 

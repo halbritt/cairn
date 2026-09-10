@@ -469,7 +469,14 @@ per-request cancellation and labelled fallback. One-shot custom workers remain
 supported. Six paired API requests saved 0.56–0.83 seconds with matching candidate
 score digests; real-worker tests verify current edits, retirement and local-only
 exclusions. This closes that bounded implementation checkpoint, not task-value
-evaluation or performance at larger scale. No note-vector cache was added.
+evaluation or performance at larger scale. That checkpoint retained no note-vector cache.
+
+[Bounded vector reuse](verification/semantic-vector-cache-2026-09-09.md) now avoids
+re-embedding unchanged eligible notes while that worker lives. Thirteen real-model
+comparisons preserve complete scores; six warm queries drop from 1.85–2.29 seconds
+to 0.034–0.044 seconds on the public 12-note workload. Current edits/exclusions and
+worker cleanup pass the real API checks. This reduces repeated retrieval cost; it
+does not establish better answers or sustained task benefit.
 
 [Explicit browsing](verification/browse-2026-09-09.md) now exposes the existing
 empty-query index through the agent CLI, MCP and native OpenCode. It provides
