@@ -2864,3 +2864,37 @@ broader usefulness requirements.
 passed for `9b888e1`: PostgreSQL/race, Python, static/build, use-report and
 authenticated CLI/compact startup steps all completed successfully. Native
 Codex/OpenCode checks are the separate local observations described above.
+
+
+### 2026-09-10 — Setup guidance corrected after interface changes
+
+Reviewed the retained Codex v8 and OpenCode v14 setup procedures against installed
+`9b888e1`, the generators and current search/history contracts. Both omitted native
+history and the task-phase flag. Their context wording also omitted per-call
+fill of host-unset fields; the OpenCode procedure incorrectly required restarting
+a session to pick up changed connection settings.
+
+Corrected Codex procedure `be11369a-4ae6-4600-9345-5ff36446d5ff` to version 9 and
+OpenCode procedure `73537cbd-0ec3-4311-98c9-23e58a685b2f` to version 15 through the
+native MCP tools. The revised passages distinguish fixed MCP startup values from
+per-call declarations and OpenCode's per-call settings read, include history and
+explicit capture pins, and clarify that `opencode-config --memory-only` enables
+only search/body pull. Existing browse continuation, semantic prerequisites,
+source checks, capture/edit rules and the longer observed-run/task-file guidance
+remain intact.
+
+Native history verified exact old and revised bodies; fresh current pulls and
+exact edit retries passed. Reversing the five/six intended text substitutions
+reconstructs each original body exactly. All record fields except body, version
+and write timestamp are unchanged. The current Codex generator and native installer
+also verified history availability and task-phase forwarding in isolated output.
+No production configuration or binary was changed.
+
+The combined bodies grew from 13,711 to 16,894 UTF-8 bytes. This is correction and
+upkeep of memory after product changes, not an observed improvement in a later
+model task; the extra reading and maintenance cost remains part of the evidence.
+Private before/after bodies, requests and checks are under
+`/tmp/cairn-setup-guidance-review/`. Its `result.json` SHA-256 is
+`1ebb721a2acddad0e0ec20b209714d63f3921edcaab4c01d495d053d4fd145fe`.
+Current public contracts remain [search context](search-context.md) and
+[native history](record-history.md#native-tools).
