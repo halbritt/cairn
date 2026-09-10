@@ -55,6 +55,15 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+[Optional recent-file hints](recent-file-hints.md) now let OpenCode collect
+successful native text-file reads for fresh ordinary searches. The native
+five-case check retrieved and pulled associated guidance without an explicit
+filename hint, preserved retry intent after another read, and enforced both
+global and repository-specific permission denials. Capture remains explicit.
+This is retrieval capability evidence; sustained task benefit remains open.
+The source includes `opencode-install --recent-files`; local adoption is pending.
+
+
 - **File and symbol associations distinguish deliberate links from mentions.**
   Ordinary capture/search/edit/history now carry explicit versioned associations.
   The existing applicability lesson is retrieved and pulled by its file in Codex
@@ -317,74 +326,30 @@ those distinctions and the negative evidence.
 
 ## Current local installation
 
-Live checks on 2026-09-09 found:
+Live checks on 2026-09-10 found:
 
-- Installed CLI/API and project `bin/cairn`: clean `5946c5dddac6bc1a3af600fdba87813d95a652c5`,
-  SHA-256 `8199eef737f073289048949fb281306a47a6bbf49d52f9d5575ece4fda76846b`; API PID 1219742.
-  Version commands report both builds. Supporting evidence is included in required
-  retirement previews, alongside saved task files, observed compact execution,
-  ordinary source citations, Unicode validation, file/binary capture, ranked pages,
-  capture pins and phase support. Migration 031 remains applied. Existing MCP
-  processes keep their loaded executable; earlier pre-phase readers remain
-  unsuitable for phase data.
-- Dedicated PostgreSQL **17.10**, with migrations **001–031** applied. Data and
-  socket remain under `~/.local/share/cairn`; captured evidence and canonical
-  packages are in PostgreSQL, while run-directory context copies need separate
-  retention accounting.
-- `cairn-api.service` is enabled and active. Its required `cairn-store.service`
-  is active and starts as a dependency; the store unit itself is not enabled.
-  The API executable was verified through its running process.
-- A scoped ordinary hosted-agent profile supports routine repository use.
-  Agent and observer roles remain separate. The trusted project's Codex MCP
-  configuration exposes the ordinary tools with conversation scope and
-  optional startup. The installed native OpenCode adapter matches the current
-  ordinary-citation source and retains its existing connection settings.
-- Optional semantic discovery uses the prepared local CPU model, batch size one
-  and two ONNX threads, through the API-owned `worker-stream` launcher. The script
-  SHA-256 is `80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9`
-  from worker source `d633c68`. It retains exact vectors for the last successfully
-  scored eligible note set within the existing worker lifetime. Live warm queries
-  took 0.060–0.083 seconds versus roughly 12.8 seconds before; cold requests still
-  took about 14 seconds. Candidate scores matched. No persistent cache, package
-  update or independent service was added; the one-shot launcher remains available.
+- Installed CLI/API and project `bin/cairn`: clean `3ff1fcd`, including explicit
+  versioned file/symbol associations. API PID **3062046** remains active.
+  [Entity installation evidence](verification/entity-search-2026-09-10.md)
+  records the build, schema and native Codex/OpenCode retrievals.
+- Dedicated PostgreSQL **17.10**, migrations **001–034**, PID **163669**.
+  The store and API services are active. Data and sockets remain under
+  `~/.local/share/cairn`; tests use separate disposable clusters.
+- The ordinary hosted-agent profile, Codex configuration, native OpenCode
+  connection settings and semantic worker configuration remain in place.
+  Native OpenCode uses conversation scope and the six ordinary tools. Existing
+  processes keep their loaded adapters and executable builds.
+- The semantic worker retains its host-selected five-minute idle lifetime and
+  twenty-five-second deadline. The earlier [vector-cache comparison](verification/semantic-vector-cache-2026-09-09.md)
+  and [idle-lifetime installation](verification/semantic-idle-2026-09-10.md)
+  retain their own measured scope; those results are not a fresh performance
+  benchmark of this snapshot.
+- The optional recent-file plugin is implemented and verified against a
+  disposable API; local installation has not yet been performed in this snapshot.
 
-The [observed-index installation](verification/observed-index-2026-09-09.md#local-installation)
-records the current CLI/API and preserved configuration. The
-[ordinary-citation installation](verification/ordinary-citations-2026-09-09.md#local-installation)
-retains its preceding CLI/API and the unchanged native adapter. The
-[Unicode repair installation](verification/json-unicode-integrity-2026-09-09.md#local-installation)
-retains its preceding CLI/API. The
-[file-capture installation](verification/file-evidence-capture-2026-09-09.md#local-installation)
-retains its preceding CLI and preserved API. The
-[binary-capture installation](verification/binary-evidence-capture-2026-09-09.md#local-installation)
-retains its preceding API and CLI deployment. The
-[build-diagnosis installation](verification/build-identity-2026-09-09.md#local-installation)
-retains its preceding CLI/API and distinct stamped/unstamped observations.
-The [ranked-page installation](verification/search-pages-2026-09-09.md#local-installation)
-records the unchanged adapter, preceding CLI/API, live continuation and CI.
-The [vector-cache installation](verification/semantic-vector-cache-2026-09-09.md#installed-live-behavior)
-records the current worker and its earlier cost comparison. The
-[capture installation](verification/capture-pins-2026-09-09.md#local-installation),
-[empty-pins correction](verification/capture-pins-2026-09-09.md#correction-explicitly-empty-cli-pins)
-and [phase installation](verification/task-phase-2026-09-09.md#local-installation)
-retain the preceding deployments and preserved settings.
-The [file-fingerprint installation](verification/run-artifact-evidence-2026-09-09.md#local-installation)
-retains its preceding CLI deployment and real build observation. The
-[applicability repair installation](verification/applicability-precedence-2026-09-09.md#local-installation)
-retains the preceding API deployment. The [task-file installation](verification/start-task-file-2026-09-09.md#local-installation)
-retains its preceding CLI deployment. The [compact-start installation](verification/compact-start-2026-09-09.md#local-installation-and-ci-correction)
-retains its preceding deployment and preserved API/configuration. The
-[resident-worker installation](verification/semantic-residency-2026-09-09.md#local-installation)
-retains the API, worker and idle-release checks. Earlier [use-history CLI](verification/use-history-cli-2026-09-09.md#cli-installation),
-[retained-kind repair](verification/retained-kinds-2026-09-09.md#cli-installation-and-retained-guidance)
-and [kind-filter](verification/kind-filter-2026-09-09.md#local-installation)
-reports retain their deployment evidence.
-Earlier [Claude setup](verification/claude-config-2026-09-09.md#local-installation) and
-[note-transport](verification/note-transport-2026-09-09.md#local-deployment)
-reports retain their deployment history. Installation
-paths and credentials stay outside Git. No automatic backup rotation, pruning
-or grooming timer is installed. Use the user services for the managed store's
-lifecycle; standalone scripts also support isolated/manual installations.
+Earlier deployment details remain in the dated verification reports and complete
+implementation history below. The summary above replaces the stale September 9
+installation summary; it does not revise that historical evidence.
 
 ## Verification coverage
 
@@ -3317,3 +3282,34 @@ Installation and selected operational notes remain private under
 GitHub Actions run `34510287787` completed successfully for `3ff1fcd`, including
 Go race tests, Python tests, static/build checks and authenticated CLI/startup
 verification. Every job step was inspected.
+
+### 2026-09-10 — optional native recent-file intent
+
+Implemented an opt-in OpenCode plugin for successful native text-file reads.
+It keeps at most 16 relative file names per session and 128 sessions, with
+15-minute per-file expiration checked on hook activity. It adds hints only to
+fresh first searches without explicit entities or request IDs. Explicit empty
+hints disable collection, retries/pages preserve caller intent, and capture
+never inherits the observed names. Ordinary tools retain permission checks;
+no system hook fetch, file body cache, symbol inference or store migration was
+added. `opencode-install --recent-files` installs the bundled plugin and retains
+the existing default installation and custom-file preflight rules.
+
+Native OpenCode 1.18.21 with a scripted loopback provider and disposable Cairn
+API passed five cases: no-plugin baseline, successful retrieval/pull with the
+plugin, global search denial, repository-specific permission denial, and denied
+read. The enabled case preserved an original receipt after another read and
+captured an unassociated note. Contract and installer checks, full disposable
+PostgreSQL/race integration, static checks and 40 Python tests passed. No
+answering-model inference or durable task-value claim was added.
+
+The initial missing-capability tests failed before implementation. Two denial
+assertions were corrected to actual host error semantics. One subsequent native
+startup timed out before tool output; its cause remains unknown and its evidence
+is retained. A complete rerun passed without raising the deadline. See
+[the verification report](verification/recent-file-hints-2026-09-10.md).
+
+The current installation summary was also refreshed: its older September 9
+build and migration claims had become stale while later installation evidence
+accumulated elsewhere in this document. All prior implementation history is
+preserved verbatim. The plugin is not yet installed in this source snapshot.

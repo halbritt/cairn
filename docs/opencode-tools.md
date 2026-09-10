@@ -55,6 +55,12 @@ Use `--tokens` to set memory room (default 32,000). Optional `--revision`,
 the existing declared context settings; the API validates them on retrieval.
 There are no task/run flags because native OpenCode supplies session scope.
 
+Optional `--recent-files` also installs a plugin that turns recent successful
+file reads into hints for fresh searches. See [recent file hints](recent-file-hints.md)
+for explicit overrides, retry/page handling, retention and disabling it. Omission
+leaves any existing plugin untouched. Search results expose `query_entities`;
+copy it into `entities` on retries and later pages.
+
 The installed connection file has this shape and can also be maintained manually:
 
 ```json

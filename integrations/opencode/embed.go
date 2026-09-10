@@ -7,3 +7,8 @@ import _ "embed"
 var adapter string
 
 func Adapter() string { return adapter }
+
+//go:embed recent-files.ts
+var recentFiles string
+
+func RecentFiles() string { return recentFiles }

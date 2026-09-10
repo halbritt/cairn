@@ -93,6 +93,10 @@ a chosen repository-relative file or qualified symbol, including when a note bod
 does not name it. Capture and search accept `--entity-file` / `--entity-symbol`
 through the CLI and `entities` through ordinary native tools.
 
+OpenCode can optionally [collect recent file hints](docs/recent-file-hints.md)
+for subsequent searches with `opencode-install --recent-files`. The normal
+tool permissions still govern retrieval.
+
 [Quoted search](docs/quoted-search.md) prefers a known path, identifier or error
 message in the existing query field while retaining broader lexical matches.
 

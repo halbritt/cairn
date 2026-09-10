@@ -11,9 +11,11 @@ from check_literal_retrieval import check_harness as check_literals
 from check_entities import check_harness as check_entities
 from check_opencode_unicode import check as check_unicode
 from check_native_history import check as check_history
+from check_recent_file_session import check as check_recent_files
 
 
 def check(binary, root, environment, opencode, claim, support):
+    check_recent_files(binary, root, environment, opencode)
     work = root / 'opencode-tools'
     work.mkdir()
     installed = subprocess.run([binary, 'opencode-install', '--project', str(work),

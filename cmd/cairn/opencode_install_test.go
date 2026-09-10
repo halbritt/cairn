@@ -146,3 +146,61 @@ func TestOpenCodeInstallInvalidArgumentsHaveNoEffects(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenCodeInstallRecentFilesIsOptIn(t *testing.T) {
+	project := t.TempDir()
+	args := installArgs(project)
+	plugin := filepath.Join(project, ".opencode/plugins/cairn-recent-files.ts")
+	if _, err := installOpenCode(args, "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Dir(plugin)); !os.IsNotExist(err) {
+		t.Fatal("default installation created plugin directory", err)
+	}
+	result, err := installOpenCode(append(args, "--recent-files"), "/cairn")
+	if err != nil || len(result.Files) != 3 {
+		t.Fatal("opt-in plugin installation failed", result, err)
+	}
+	content, err := os.ReadFile(plugin)
+	if err != nil || len(content) == 0 {
+		t.Fatal("plugin missing", err)
+	}
+	if err := os.WriteFile(plugin, []byte("custom plugin"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Omission is not an uninstall or an implicit upgrade of a custom plugin.
+	if _, err := installOpenCode(args, "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := installOpenCode(append(args, "--recent-files"), "/cairn"); core.Code(err) != "INVALID_REQUEST" {
+		t.Fatal("differing plugin accepted without replacement", err)
+	}
+	if _, err := installOpenCode(append(args, "--recent-files", "--replace"), "/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	current, err := os.ReadFile(plugin)
+	if err != nil || string(current) != string(content) {
+		t.Fatal("plugin replacement differs", err)
+	}
+}
+
+func TestOpenCodeInstallRecentFilesRefusesPluginSymlinks(t *testing.T) {
+	for _, target := range []string{".opencode/plugins", ".opencode/plugins/cairn-recent-files.ts"} {
+		t.Run(target, func(t *testing.T) {
+			project, outside := t.TempDir(), t.TempDir()
+			path := filepath.Join(project, target)
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, path); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := installOpenCode(append(installArgs(project), "--recent-files", "--replace"), "/cairn"); core.Code(err) != "INVALID_REQUEST" {
+				t.Fatal("plugin symlink accepted", err)
+			}
+			if _, err := os.Stat(filepath.Join(project, ".opencode/cairn.json")); !os.IsNotExist(err) {
+				t.Fatal("configuration written before plugin destination check", err)
+			}
+		})
+	}
+}

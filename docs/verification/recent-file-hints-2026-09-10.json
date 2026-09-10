@@ -1,0 +1,85 @@
+{
+  "schema": "cairn.recent-file-verification/1",
+  "date": "2026-09-10",
+  "baseline_commit": "8606d34e07ae9a61724ee7a33ce2a32f74213b24",
+  "native_opencode": "1.18.21",
+  "checks": {
+    "disposable_pg_race_integration": "passed",
+    "native_cases": 5,
+    "python_tests": 40,
+    "plugin_contracts": "passed",
+    "installer": "passed",
+    "static": "passed",
+    "answering_model_calls": 0,
+    "full_native_tools": "passed"
+  },
+  "doctrine": {
+    "packet_id": "pkt-13875aa281866175",
+    "packet_content_sha256": "13875aa2818661753020c9f418bd1d930544654eec7f5bfd07de9ae870b44e62",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "unmet_obligations": [
+      {
+        "requirement": "co-change where available",
+        "classification": "nonmaterial",
+        "reason": "No duplication consolidation, shared harness abstraction or change-frequency claim is selected. Current host ownership and accepted missing capability determine placement."
+      },
+      {
+        "requirement": "recurring change evidence when available",
+        "classification": "nonmaterial",
+        "reason": "No duplication consolidation, shared harness abstraction or change-frequency claim is selected. Current host ownership and accepted missing capability determine placement."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/integration.log",
+      "sha256": "09251aa56c7ee7e2569b5880d510891d62fc4903f54dbcc3b40947009b4f003b"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/python.log",
+      "sha256": "5130e247d00c299f77daa96f864ac36bcc19b66f0fd4b162c2b665a0f37b7260"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/install-green.log",
+      "sha256": "d6ae065621b30e9b4e15381032f94e16022e43e7337cda744e72a7506f7c60ff"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/plugin-green.log",
+      "sha256": "8c1ea67d6a59dea51922d3e059040ff7fd05b7536991b41c33ac533733565fe5"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/native-case-evidence/report.json",
+      "sha256": "3afcc2699f3546c70777d109e60f66cdf7f0844800d2496053c86543ad8916d0"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/decision-receipt.json",
+      "sha256": "75ff7588b2ac01aafe4e9fc683d25e97ddb0ef5e78ab040bcab11111f83a3544"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/doctrine-evidence.json",
+      "sha256": "5218f079e3caf6b8075a8d1c6a7f002568b4aa25abc13e2d5dabd5d224c9ef54"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/native.log",
+      "sha256": "c7b4549a608968351a99a7571beaf264bcdc5c552b356a5f19ee6d0484b7750b"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/native-final.log",
+      "sha256": "51c5e01998e35c3bc1cdc6dc481012fa26a097570955aaa4d5905d8155290086"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/native-verified.log",
+      "sha256": "a90ede760ee468a0ae6f73a8ef6a402ed91c88c179693f2abe7faf167e217fd3"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/native-complete.log",
+      "sha256": "4b116a8925cb3103deccf26bccf30d68ff87486d6c6c8733d28f73b232cea83d"
+    }
+  ]
+}
