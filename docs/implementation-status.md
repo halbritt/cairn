@@ -4137,3 +4137,22 @@ finding and source pointers. Retained-history reads verified that all earlier
 body bytes remain exact. The first append omitted the API's required repository
 and refused; the corrected request succeeded. This selected maintenance does
 not establish downstream benefit. No global Codex memory file was changed.
+
+
+### 2026-09-10 — Select one task or run in outcome reports
+
+Added exact `--task`/`--run` selection to `use-report`, `run-report` and `runs`.
+The authenticated requests accept optional `task_id`/`run_id`. Existing report
+queries apply the filters before pagination, preserving record/policy filters,
+linked retrievals, corrected assessments, zero-memory executions and unknowns.
+This supports cumulative task review without repository-wide history scans;
+no value score, report permission or database migration was added.
+
+Both new scope tests failed against the previous behavior. Full disposable
+`make test-integration` and `make check` passed, including an actual CLI selection
+among two child executions and 102 earlier exposure rows. The API checks preserve
+hosted and foreign-repository denial. An initial fixture omitted its required
+observed exit code and was corrected. [Verification](verification/report-scope-2026-09-10.md)
+retains the scope and limitations. No operational note was edited in this turn;
+no model-task or measured review-cost improvement is claimed. Installation will
+follow CI. U4's broader recurrence and task-value requirements remain open.

@@ -381,6 +381,11 @@ The [use-history CLI](verification/use-history-cli-2026-09-09.md) now exposes th
 core's existing page and record controls, reaching later exposure rows beyond
 the default oldest-first 100-row page. It preserves unknown observations and
 does not supply missing recurrence/resolution analysis or task-value evidence.
+Both reports now support [exact task/run filters](use-outcome-loop.md#follow-one-task-across-runs)
+before pagination. This lets a reviewer follow related runs and exposures without
+scanning unrelated repository history. It preserves assessment corrections,
+linked retrievals and unknown outcomes; U4's broader recurrence analysis and
+task-value evidence remain open.
 The
 [run report](use-outcome-loop.md#inspect-runs-including-no-memory-baselines)
 also includes zero-memory baselines and claims without outcomes, with separate

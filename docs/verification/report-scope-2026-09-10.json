@@ -1,0 +1,163 @@
+{
+  "date": "2026-09-10",
+  "baseline_commit": "a074a555d9b7bbf4f6ea8d3a799e1d3978548e38",
+  "checks": {
+    "use-red.log": {
+      "path": "/tmp/cairn-report-scope-20260910/use-red.log",
+      "sha256": "6f6f696694ebc8827e51995ed2deb519ee0bf9fc5355ef09d74588162ff894c3"
+    },
+    "run-red.log": {
+      "path": "/tmp/cairn-report-scope-20260910/run-red.log",
+      "sha256": "ca680ca85b7e0afc2e58d567ef90ef3c8513b9e967991f78455c9a59a8599df5"
+    },
+    "use-green.log": {
+      "path": "/tmp/cairn-report-scope-20260910/use-green.log",
+      "sha256": "d5ef7e454912b69273357fad71d0e8e3a68070fc91cc003449c1e29f63f48607"
+    },
+    "reports-green.log": {
+      "path": "/tmp/cairn-report-scope-20260910/reports-green.log",
+      "sha256": "d485934af105d3681d286151498ead57424374a1562af0311e640659b665387e"
+    },
+    "api-target.log": {
+      "path": "/tmp/cairn-report-scope-20260910/api-target.log",
+      "sha256": "3209f40b7302274e410afd5601a507ca56454ae0c4052bf450375210bc9c4548"
+    },
+    "api-corrected.log": {
+      "path": "/tmp/cairn-report-scope-20260910/api-corrected.log",
+      "sha256": "f938cf18ce33c1fe403837d43d15717e913d47cd67b8c3eec1225c6a83f04f0d"
+    },
+    "integration.log": {
+      "path": "/tmp/cairn-report-scope-20260910/integration.log",
+      "sha256": "ab54f3cfce5a7d1ebaadba70c6d4af9730c7996a85fbf1125bf5501e1b35d0ed"
+    },
+    "check.log": {
+      "path": "/tmp/cairn-report-scope-20260910/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    }
+  },
+  "scope": "Exact declared task/run filters; no migration, new report access or value score",
+  "limits": [
+    "No model task or task-benefit claim",
+    "Rows retain unknown observations and assessment corrections",
+    "Independent page snapshots and existing local-profile access remain"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-7dccf205bc7b14cd",
+    "packet_content_sha256": "7dccf205bc7b14cd8ebec4049cb8e6543ca8a160486c47f2a11206a26e0c0af9",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "receipt": "/tmp/cairn-report-scope-20260910/decision-receipt.json",
+    "receipt_sha256": "8106a24ee57bc223c041bfc99f3efb16da815f4c4e1ea5ff1680cf1db4ba2fa1",
+    "unmet_obligations": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No new interface, method set or dependency direction; existing concrete report owners remain."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No new interface, method set or dependency direction; existing concrete report owners remain."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No new interface, method set or dependency direction; existing concrete report owners remain."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No new interface, method set or dependency direction; existing concrete report owners remain."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-59b5c0f0f6ce0429",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "caller nil checks and method use",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No new interface return or nil contract; existing return/error handling is unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-27f0f91281da2f0e",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "documented absence semantics",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No new interface return or nil contract; existing return/error handling is unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-902e6d5b9ae03361",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "dynamic type and dynamic value at the return",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No new interface return or nil contract; existing return/error handling is unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-cd337302ff4e3887",
+        "required_by": "operations-least-privilege",
+        "requirement": "container base-image provenance and rebuild cadence",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No service account, socket, network role or container change; existing profile/repository guards are retained and exercised."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-57e08db84a659066",
+        "required_by": "operations-least-privilege",
+        "requirement": "listen-address configuration per socket",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No service account, socket, network role or container change; existing profile/repository guards are retained and exercised."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b8219b0cb4bada18",
+        "required_by": "operations-least-privilege",
+        "requirement": "network roles of each host interface",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No service account, socket, network role or container change; existing profile/repository guards are retained and exercised."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-e5423bbe44e314db",
+        "required_by": "operations-least-privilege",
+        "requirement": "per-application account with enumerated privileges",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No service account, socket, network role or container change; existing profile/repository guards are retained and exercised."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-497fda375694c92c",
+        "required_by": "operations-least-privilege",
+        "requirement": "process and interface inventory",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No service account, socket, network role or container change; existing profile/repository guards are retained and exercised."
+      }
+    ]
+  }
+}

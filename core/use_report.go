@@ -10,6 +10,8 @@ import (
 type UseReportRequest struct {
 	Repo     string `json:"repo"`
 	RecordID string `json:"record_id,omitempty"`
+	TaskID   string `json:"task_id,omitempty"`
+	RunID    string `json:"run_id,omitempty"`
 	Limit    int    `json:"limit"`
 	Offset   int    `json:"offset"`
 }
@@ -85,7 +87,8 @@ func (s *Store) UseReport(ctx context.Context, req UseReportRequest) (UseReport,
  LEFT JOIN LATERAL (SELECT signal,witness,method FROM cairn.usage_observation WHERE receipt_id=u.receipt_id AND record_id=u.record_id AND version=u.version ORDER BY CASE signal WHEN 'cited' THEN 3 WHEN 'expanded' THEN 2 ELSE 1 END DESC,observed_at DESC,observation_id DESC LIMIT 1) g ON true
  LEFT JOIN LATERAL (SELECT coverage FROM cairn.usage_coverage WHERE receipt_id=u.receipt_id ORDER BY sequence DESC LIMIT 1) c ON true
  WHERE r.scope->>'repo'=$1 AND ($2='' OR u.record_id::text=$2)
- ORDER BY u.used_at,u.receipt_id,u.record_id,u.version LIMIT $3 OFFSET $4`, req.Repo, req.RecordID, req.Limit+1, req.Offset)
+ AND ($5='' OR r.scope->>'task_id'=$5) AND ($6='' OR r.scope->>'run_id'=$6)
+ ORDER BY u.used_at,u.receipt_id,u.record_id,u.version LIMIT $3 OFFSET $4`, req.Repo, req.RecordID, req.Limit+1, req.Offset, req.TaskID, req.RunID)
 	if err != nil {
 		return UseReport{}, err
 	}

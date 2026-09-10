@@ -16,6 +16,7 @@ service has explicitly recorded complete usage coverage. Generic H0 wrappers
 leave coverage unknown. There is no automatic behavior-inference engine.
 
 `core.UseReport` accepts `repo`, optional `record_id`, `limit` (1–200) and `offset`.
+Optional `task_id` and `run_id` narrow the retained receipt scope.
 The report includes pagination metadata. It is an observational join, not a causal
 benefit score or a completed recurrence evaluation. Exposures never increase rank.
 
@@ -43,7 +44,7 @@ Use `assessments` on the appropriate receipt to inspect the reasons and evidence
 behind an outcome; aggregate rows do not contain that narrative.
 
 The existing authenticated `agent use-report` accepts JSON containing `repo`,
-`record_id` (optional), `limit` and `offset`. This protected report requires a
+optional `record_id`, `task_id` and `run_id`, plus `limit` and `offset`. This protected report requires a
 provisioned local profile; hosted profiles remain denied. CLI pagination adds
 no permission or new exposure of private data. Its [verification](verification/use-history-cli-2026-09-09.md)
 uses a disposable history beyond the default page.
@@ -110,8 +111,38 @@ including index pointers; it does not establish delivery, use or benefit.
 The default page holds 100 rows; limits are 1–200. Follow `more` and
 `next_offset` for additional pages. Each page has its own database snapshot;
 concurrent new receipts can change later offset pages. `core.RunReport` and the
-local-profile-only `run-report` agent endpoint accept `repo`, `limit`, `offset`.
+local-profile-only `run-report` agent endpoint accept `repo`, `limit`, `offset`,
+and optional `task_id` and `run_id`.
 No raw command, task, query, output or evidence body is added to this report.
+
+## Follow one task across runs
+
+Both reports accept exact task and run filters, applied before pagination:
+
+```sh
+cairn run-report --task TASK_ID /path/to/repo
+cairn use-report --task TASK_ID /path/to/repo
+cairn use-report --task TASK_ID --run RUN_ID --record RECORD_UUID /path/to/repo
+```
+
+Replace the placeholders with retained scope labels and a record UUID. Task-only
+selection includes matching runs across the repository; adding `--run` narrows
+that task. A run filter can also be used alone, across tasks. Neither label is
+an independently verified execution identity. Strings match exactly, including
+case, spaces and literal `*`; omitted or empty filters leave that dimension
+unrestricted. Record and policy filters remain conjunctive with scope filters.
+
+Keep the same filters on subsequent pages; offsets count matching rows. A missing
+match returns an empty page. Linked retrievals keep their source receipt and
+usage while joining their host outcome; association already requires equal
+repository/task/run scope. Run reports retain zero-memory executions and exclude
+pure retrievals. Read assessment history for qualitative reasons and corrections;
+scope filtering does not infer benefit or compare task quality.
+
+Authenticated JSON requests use `task_id` and `run_id` on the existing protected
+report endpoints. Update the API before sending these fields to an older server;
+no database migration is required. Hosted profiles remain denied. The local
+operator CLI requires the updated executable.
 
 The [reviewed recurrence report check](verification/run-report-2026-09-08.json)
 reads the original M/N/O trial stores without changing their reports or
@@ -119,7 +150,8 @@ assessments. It returns exactly one row for each run: zero exposures and rejecte
 task outcome for M, zero exposures and unknown task outcome for N, and one
 exposure and unknown task outcome for O. All retain assessment version 2.
 
-Clean commit `9c65d324c105d4bb4a0c4b4db53b6881300f1057` is installed locally after
+The initial run-report implementation at clean commit
+`9c65d324c105d4bb4a0c4b4db53b6881300f1057` was installed locally after
 a backup and [passing CI](https://github.com/halbritt/cairn/actions/runs/34189273876).
 The installed CLI and authenticated API return identical reports. Operational
 record versions retain their previous digest; no migration beyond 020 is needed.

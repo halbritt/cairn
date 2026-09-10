@@ -15,6 +15,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Review one task across runs.** `use-report` and `run-report` accept exact
+  `--task` and `--run` filters before pagination, including their authenticated
+  JSON equivalents. [Usage](docs/use-outcome-loop.md#follow-one-task-across-runs).
+  Existing report access and outcome interpretation remain; update the CLI/API,
+  with no database migration.
+
 - **Lower the room for one native search.** MCP and OpenCode `cairn_search`
   accept `available_tokens` beneath the configured host ceiling. Defaults and
   mandatory-context checks remain; changed room needs a new search request ID.

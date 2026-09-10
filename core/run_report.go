@@ -10,6 +10,8 @@ import (
 type RunReportRequest struct {
 	Repo           string `json:"repo"`
 	PolicyRevision string `json:"policy_revision,omitempty"`
+	TaskID         string `json:"task_id,omitempty"`
+	RunID          string `json:"run_id,omitempty"`
 	Limit          int    `json:"limit"`
 	Offset         int    `json:"offset"`
 }
@@ -80,7 +82,8 @@ func (s *Store) RunReport(ctx context.Context, req RunReportRequest) (RunReport,
  LEFT JOIN LATERAL (SELECT * FROM cairn.run_assessment WHERE receipt_id=r.receipt_id ORDER BY version DESC LIMIT 1) a ON true
  WHERE r.scope->>'repo'=$1 AND (r.launch_claimed OR o.receipt_id IS NOT NULL)
  AND ($4='' OR COALESCE(p.revision_id::text,'local-loop/1')=$4)
- ORDER BY r.created_at,r.receipt_id LIMIT $2 OFFSET $3`, req.Repo, req.Limit+1, req.Offset, req.PolicyRevision)
+ AND ($5='' OR r.scope->>'task_id'=$5) AND ($6='' OR r.scope->>'run_id'=$6)
+ ORDER BY r.created_at,r.receipt_id LIMIT $2 OFFSET $3`, req.Repo, req.Limit+1, req.Offset, req.PolicyRevision, req.TaskID, req.RunID)
 	if err != nil {
 		return RunReport{}, err
 	}

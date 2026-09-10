@@ -50,6 +50,26 @@ def check(binary):
         call(['use-report', *args], expected='INVALID_REQUEST')
     print('CLI pages reach every exposure and record-filtered history without inventing usage or outcomes')
 
+    selected = None
+    for task in ['unrelated task', 'review task']:
+        result = subprocess.run([binary, 'run', '--repo', repo, '--task', task,
+                                 '--run', 'attempt', '--', '/bin/true'],
+                                env=os.environ, capture_output=True, text=True, timeout=15)
+        assert result.returncode == 0, result.stderr
+        if task == 'review task':
+            selected = json.loads(result.stderr)['data']['receipt_id']
+    for operation in ['use-report', 'run-report', 'runs']:
+        report = call([operation, '--task', 'review task', '--run', 'attempt', repo])
+        assert {row['receipt_id'] for row in report['rows']} == {selected}, report
+        assert len(report['rows']) == (2 if operation == 'use-report' else 1)
+        assert all(row['task_outcome'] == 'unknown' for row in report['rows'])
+        assert not report['more']
+        assert call([operation, '--task', 'review task', '--run', 'absent', repo])['rows'] == []
+    matching = call(['use-report', '--task', 'history-review', '--run', 'fixture',
+                     '--record', records[0], '--limit', '200', repo])
+    assert {row['receipt_id'] for row in matching['rows']} == receipts
+    print('Task/run filters select one observed execution and its exposures among unrelated history')
+
 
 if __name__ == '__main__':
     check(sys.argv[1])

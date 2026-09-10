@@ -223,25 +223,29 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		limit := f.Int("limit", 100, "maximum exposure rows (1-200)")
 		offset := f.Int("offset", 0, "exposure rows to skip")
 		record := f.String("record", "", "filter by record UUID across retained versions")
+		task := f.String("task", "", "filter by exact task ID")
+		run := f.String("run", "", "filter by exact run ID")
 		if err := f.Parse(args[1:]); err != nil {
 			return nil, invalid(err.Error())
 		}
 		if f.NArg() != 1 {
 			return nil, invalid("use-report requires one repository")
 		}
-		return store.UseReport(ctx, core.UseReportRequest{Repo: f.Arg(0), RecordID: *record, Limit: *limit, Offset: *offset})
+		return store.UseReport(ctx, core.UseReportRequest{Repo: f.Arg(0), RecordID: *record, TaskID: *task, RunID: *run, Limit: *limit, Offset: *offset})
 	case "run-report", "runs":
 		f := flags("run-report")
 		limit := f.Int("limit", 100, "maximum rows (1-200)")
 		offset := f.Int("offset", 0, "rows to skip")
 		policy := f.String("policy-rev", "", "filter by policy revision UUID or local-loop/1")
+		task := f.String("task", "", "filter by exact task ID")
+		run := f.String("run", "", "filter by exact run ID")
 		if err := f.Parse(args[1:]); err != nil {
 			return nil, invalid(err.Error())
 		}
 		if f.NArg() != 1 {
 			return nil, invalid("run-report requires one repository")
 		}
-		return store.RunReport(ctx, core.RunReportRequest{Repo: f.Arg(0), PolicyRevision: *policy, Limit: *limit, Offset: *offset})
+		return store.RunReport(ctx, core.RunReportRequest{Repo: f.Arg(0), PolicyRevision: *policy, TaskID: *task, RunID: *run, Limit: *limit, Offset: *offset})
 	case "run-status":
 		if len(args) != 2 {
 			return nil, invalid("run-status requires a receipt UUID")

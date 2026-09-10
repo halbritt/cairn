@@ -68,7 +68,7 @@ func TestDynamicRetrievalJoinsHostOutcomeWithoutAnotherExecution(t *testing.T) {
 	}
 	check := func(outcome string, version int) {
 		t.Helper()
-		report, err := host.UseReport(ctx, UseReportRequest{Repo: scope.Repo, Limit: 100})
+		report, err := host.UseReport(ctx, UseReportRequest{Repo: scope.Repo, TaskID: scope.TaskID, RunID: scope.RunID, Limit: 100})
 		if err != nil || len(report.Rows) != 1 {
 			t.Fatalf("exposure population: %+v %v", report, err)
 		}
@@ -78,7 +78,7 @@ func TestDynamicRetrievalJoinsHostOutcomeWithoutAnotherExecution(t *testing.T) {
 			row.AssessmentVersion != version || row.Usage != "expanded" || row.TaskClass != "repair" {
 			t.Fatalf("lost source or host outcome: %+v", row)
 		}
-		runs, err := host.RunReport(ctx, RunReportRequest{Repo: scope.Repo, Limit: 100})
+		runs, err := host.RunReport(ctx, RunReportRequest{Repo: scope.Repo, TaskID: scope.TaskID, RunID: scope.RunID, Limit: 100})
 		if err != nil || len(runs.Rows) != 1 || runs.Rows[0].ReceiptID != run.ReceiptID || runs.Rows[0].ExposureRows != 1 || runs.Rows[0].LinkedRetrievals != 1 {
 			t.Fatalf("retrieval counted as another execution or exposure lost: %+v %v", runs, err)
 		}

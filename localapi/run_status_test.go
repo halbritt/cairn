@@ -105,3 +105,47 @@ func TestRunStatusEnforcesOwnerAndRepository(t *testing.T) {
 		}
 	}
 }
+
+func TestReportScopeFiltersKeepProtectedAccess(t *testing.T) {
+	for _, destination := range []string{"local", "hosted"} {
+		t.Run(destination, func(t *testing.T) {
+			client, _, repo, _ := authenticatedHost(t, "observer", destination, nil)
+			ctx := context.Background()
+			var selected string
+			for _, task := range []string{"other", "selected"} {
+				p, err := client.Compile(ctx, core.CompileRequest{RequestID: uuid.NewString(), Scope: core.Scope{Repo: repo, TaskID: task, RunID: "run"}, Purpose: "context", AvailableTokens: 32000}, core.Destination{Name: destination, AllowLocal: destination == "local"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				zero := 0
+				if _, err = client.RecordOutcome(ctx, core.OutcomeRequest{RequestID: uuid.NewString(), ReceiptID: p.ReceiptID, ProcessState: "exited", ExitCode: &zero, StdoutSHA256: strings.Repeat("a", 64), StderrSHA256: strings.Repeat("b", 64)}); err != nil {
+					t.Fatal(err)
+				}
+				selected = p.ReceiptID
+			}
+			for _, operation := range []string{"use-report", "run-report"} {
+				req := map[string]any{"repo": repo, "task_id": "selected", "run_id": "run", "limit": 1}
+				var report struct {
+					Rows []struct {
+						ReceiptID string `json:"receipt_id"`
+					} `json:"rows"`
+					More bool `json:"more"`
+				}
+				err := client.Call(ctx, operation, req, &report)
+				if destination == "hosted" {
+					if core.Code(err) != "AUTHORITY_DENIED" {
+						t.Fatalf("%s widened hosted access: %v", operation, err)
+					}
+					continue
+				}
+				if err != nil || len(report.Rows) != 1 || report.Rows[0].ReceiptID != selected || report.More {
+					t.Fatalf("%s ignored JSON scope filter: %+v %v", operation, report, err)
+				}
+				req["repo"] = uuid.NewString()
+				if err := client.Call(ctx, operation, req, &report); core.Code(err) != "AUTHORITY_DENIED" {
+					t.Fatalf("%s crossed repository: %v", operation, err)
+				}
+			}
+		})
+	}
+}
