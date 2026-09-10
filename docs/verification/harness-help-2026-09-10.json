@@ -13,7 +13,8 @@
     "/tmp/cairn-harness-help-20260910/check.log": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029",
     "/tmp/cairn-harness-help-20260910/cli-green.log": "7eb2df808f324f19f76500df52b3060c0aa893290bfcfc7f49d9c507fdbc945a",
     "/tmp/cairn-harness-help-20260910/config-compatibility.json": "b9303c90df309c39e48f8d45eaf24580e796b716ad9e9fc9273271a5713af862",
-    "/tmp/cairn-harness-help-20260910/decision-receipt.json": "e3210a33b07a828df2c5650a38fbb46ce94cfc510c7a88d427459a7dcf847326"
+    "/tmp/cairn-harness-help-20260910/decision-receipt.json": "e3210a33b07a828df2c5650a38fbb46ce94cfc510c7a88d427459a7dcf847326",
+    "/tmp/cairn-harness-help-20260910/installed-help.log": "7eb2df808f324f19f76500df52b3060c0aa893290bfcfc7f49d9c507fdbc945a"
   },
   "production_source_sha256": {
     "cmd/cairn/harness_help.go": "1c46559afc807e309e52de02af0c08aafc685f00b50b52c36a361fe834029aaf",
@@ -76,5 +77,29 @@
     ],
     "decision_receipt_validated": true,
     "citation_loops_closed": true
+  },
+  "installation": {
+    "source_commit": "af43ac75f3af4442cee290de516ece348f17826f",
+    "manifest": "/tmp/cairn-harness-help-20260910/deployment/installation.json",
+    "manifest_sha256": "893db0076ce40e3945d390ddee56d2dbed7dc86eb694a04cf535296311264bfa",
+    "cli_sha256": "da5faf26a48418685a43daec365d24abd4d0bf4dc2c7e17d32c306596e644907",
+    "api_commit": "4999caa458c71137b3c646730d49931ed8a6b10d",
+    "services_unchanged": true,
+    "record_versions_before": {
+      "versions": 79,
+      "sha256": "fb2984f992fe853691ced3de9b6237981ce66dc154e968f50926096fcb862ee8"
+    },
+    "record_versions_after": {
+      "versions": 79,
+      "sha256": "fb2984f992fe853691ced3de9b6237981ce66dc154e968f50926096fcb862ee8"
+    },
+    "migration": 34,
+    "preserved_settings": true
+  },
+  "ci": {
+    "head": "af43ac75f3af4442cee290de516ece348f17826f",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34535253230",
+    "conclusion": "success",
+    "all_jobs_and_steps_passed": true
   }
 }

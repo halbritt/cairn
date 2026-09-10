@@ -6,16 +6,18 @@ changes by source-commit date; they are not numbered releases. The
 retains the complete chronology, including failed trials, corrections and
 superseded work.
 
-The latest recorded installation on 2026-09-10 is clean `4999caa` in both the CLI
-and API, at database migration 034. Later documentation commits do not change that
-build. Check a particular installation with `cairn version`; use
+The latest recorded installation on 2026-09-10 has clean CLI `af43ac7` and API
+`4999caa`, at database migration 034. The CLI-only help repair requires no server
+upgrade. Later documentation commits do not change these builds. Check a particular
+installation with `cairn version`; use
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
 See [build identity](docs/build-identity.md) for unstamped builds and MCP processes.
 
 ## 2026-09-10
 
 - **Discover harness setup flags offline.** `mcp`, `opencode-config`, `codex-config`
-  and `claude-config` now print useful `--help`/`-h` output and exit successfully.
+  and `claude-config` now print useful `--help`/`-h` output and exit successfully
+  (`af43ac7`).
   [Command help](docs/mcp.md#command-help) uses the registered flags and needs no
   credentials, running API or database.
 

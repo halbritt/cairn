@@ -19,7 +19,9 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `4999caa`. The OpenCode adapter supports
+The installed CLI is clean `af43ac7`; the API is clean `4999caa`. The CLI-only
+[help repair](verification/harness-help-2026-09-10.md) prints harness setup flags
+without requiring a connection or an API upgrade. The OpenCode adapter supports
 explicit advisory-conflict retrieval, returning complete qualified competing
 positions through the existing search/pull tools. Default omission and binding
 refusals remain. It also retains optional recent-file hints, versioned file and
@@ -3912,3 +3914,21 @@ select work in the existing interfaces; incremental memory benefit and setup-tim
 savings remain unmeasured. No model inference, operational-note mutation or storage
 change occurred. Installation remains at the separately recorded build until the
 CLI deployment entry is appended. All earlier history is preserved.
+
+
+### 2026-09-10 — Harness help installed without restarting services
+
+Installed clean CLI `af43ac7` after [CI run 34535253230](https://github.com/halbritt/cairn/actions/runs/34535253230)
+passed both jobs and every step. This includes PostgreSQL/race, Python, static,
+configuration and authenticated CLI/MCP integration checks. The installed CLI
+passes the offline help check for all four commands and both help spellings.
+The project binary matches it, and the previous binary is retained for reversal.
+
+The API stays on clean `4999caa`: help is handled by the CLI before API access,
+so no server upgrade or restart was needed. Both API/PostgreSQL processes,
+configuration, native adapter/plugin and all 79 retained versions stayed unchanged.
+The database remains at migration 034. Installation evidence is retained in
+`/tmp/cairn-harness-help-20260910/deployment/installation.json`. No operational
+memory was revised and no model inference ran. This completes the observed help
+repair; setup-time savings and incremental memory benefit remain unmeasured.
+All prior implementation history is preserved.

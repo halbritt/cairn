@@ -38,4 +38,15 @@ direction informed the choice to address a concrete problem using the existing
 harnesses. The defect and its fix are verified; memory's incremental contribution,
 setup-time savings and broader task benefit are not measured. No model inference,
 operational-note change or database migration was needed. This CLI-only change
-requires no API restart; installation and CI are recorded separately when complete.
+requires no API restart.
+
+
+## Installation
+
+Installed clean CLI `af43ac7` after [CI run 34535253230](https://github.com/halbritt/cairn/actions/runs/34535253230)
+passed both jobs and every step, including PostgreSQL/race and authenticated CLI/MCP
+integration. The installed binary passes the offline help check. The API continues
+running clean `4999caa`; this change affects help before any API request and needs
+no server upgrade. Both service processes, adapter/plugin hashes, configuration
+and all 79 retained record versions were preserved. The former CLI binary is saved
+beside the installation manifest for reversal.
