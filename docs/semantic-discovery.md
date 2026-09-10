@@ -129,7 +129,9 @@ Unfiltered index requests, including semantic discovery, use `cairn.semantic/8`;
 requests with kind filters use `cairn.semantic/9`. Both carry
 [preview source positions](index-and-pull.md#index-and-expansion-contract).
 Semantic requests predating preview positions retain `cairn.semantic/7`. Successful scoring uses
-`semantic-scope-recency/1`; fallback retains lexical v4. The sealed package pins
+`semantic-scope-recency/1` for unquoted queries; fallback retains lexical v4.
+[Quoted queries](quoted-search.md) use semantic v2 or lexical v5, preferring exact
+text matches before the corresponding score. The sealed package pins
 the model fingerprint, scoring algorithm and digest of all optional candidate
 scores. Protected candidate facts retain those scores. Historical recompilation
 uses the frozen values and source versions, never the current model. A changed

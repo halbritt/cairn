@@ -1,0 +1,248 @@
+{
+  "schema": "cairn.quoted-search-verification/1",
+  "baseline_commit": "cc0d5f3f45bbe99df186b1b32d7e3f553da90465",
+  "previous_binary_commit": "5946c5dddac6bc1a3af600fdba87813d95a652c5",
+  "checks": {
+    "static": true,
+    "go_tests": true,
+    "python_tests": 40,
+    "disposable_pg_race": true,
+    "actual_previous_binary": true,
+    "cli_api": true,
+    "stdio": true,
+    "native_opencode_tools": true,
+    "answering_model": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-0043519a7387403a",
+    "packet_content_sha256": "0043519a7387403adcdbf8a7903bb9f074fbd87e49ab85cf4b09d62354b8e2ca",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "business completion and temporal requirements",
+        "classification": "nonmaterial",
+        "reason": "No asynchronous workflow, queue, delivery or recovery changes. Historical ranking and current retry behavior are covered directly by existing receipt contracts and actual prior-binary checks."
+      },
+      {
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "delivery, ordering, and idempotency contract",
+        "classification": "nonmaterial",
+        "reason": "No asynchronous workflow, queue, delivery or recovery changes. Historical ranking and current retry behavior are covered directly by existing receipt contracts and actual prior-binary checks."
+      },
+      {
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "queue and end-to-end observability",
+        "classification": "nonmaterial",
+        "reason": "No asynchronous workflow, queue, delivery or recovery changes. Historical ranking and current retry behavior are covered directly by existing receipt contracts and actual prior-binary checks."
+      },
+      {
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "recovery owner",
+        "classification": "nonmaterial",
+        "reason": "No asynchronous workflow, queue, delivery or recovery changes. Historical ranking and current retry behavior are covered directly by existing receipt contracts and actual prior-binary checks."
+      },
+      {
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "retry, replay, reconciliation, and recovery owner",
+        "classification": "nonmaterial",
+        "reason": "No asynchronous workflow, queue, delivery or recovery changes. Historical ranking and current retry behavior are covered directly by existing receipt contracts and actual prior-binary checks."
+      },
+      {
+        "required_by": "architecture-event-temporal-semantics",
+        "requirement": "workflow completion semantics",
+        "classification": "nonmaterial",
+        "reason": "No asynchronous workflow, queue, delivery or recovery changes. Historical ranking and current retry behavior are covered directly by existing receipt contracts and actual prior-binary checks."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "classification": "nonmaterial",
+        "reason": "No Go interface, method set, package boundary or substitute implementation is introduced."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "classification": "nonmaterial",
+        "reason": "No Go interface, method set, package boundary or substitute implementation is introduced."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "classification": "nonmaterial",
+        "reason": "No Go interface, method set, package boundary or substitute implementation is introduced."
+      },
+      {
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "classification": "nonmaterial",
+        "reason": "No Go interface, method set, package boundary or substitute implementation is introduced."
+      },
+      {
+        "required_by": "performance-algorithm-and-work-first",
+        "requirement": "profile contribution and input distribution/scale",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-algorithm-and-work-first",
+        "requirement": "representative empirical comparison",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-measurable-objective",
+        "requirement": "accepted workload and operation boundary",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-measurable-objective",
+        "requirement": "authority to inspect the target and identify the objective owner",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-measurable-objective",
+        "requirement": "environment, input distribution and scale, concurrency, and success/failure population",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-measurable-objective",
+        "requirement": "latency percentile, throughput, CPU, memory, I/O, network, cost, or other metric with a target",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-measurable-objective",
+        "requirement": "owner for the objective and any quality tradeoff",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-metric-semantics",
+        "requirement": "access to instrumentation definition or benchmark harness",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-metric-semantics",
+        "requirement": "instrumentation definition and configuration",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-metric-semantics",
+        "requirement": "instrumentation overhead and data-loss limits",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-metric-semantics",
+        "requirement": "sanity check against actual runtime behavior",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-metric-semantics",
+        "requirement": "unit, aggregation window, population, and sampling behavior",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-profile-causal-bottleneck",
+        "requirement": "direct versus cumulative contribution and concurrency boundary analysis",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-profile-causal-bottleneck",
+        "requirement": "profile type and sampling/granularity semantics",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-profile-causal-bottleneck",
+        "requirement": "representative workload, version, and profile interval",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      },
+      {
+        "required_by": "performance-profile-causal-bottleneck",
+        "requirement": "reproducibility or independent corroboration",
+        "classification": "nonmaterial",
+        "reason": "No latency, throughput, resource improvement or production ranking-quality claim. Bounded matching is verified; representative performance work remains outside this feature conclusion."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-intent-matching-authority.json",
+      "sha256": "b585841d54802784aaa52c2fed5890b598982ae7fbc8d00b817b350e3931dba3"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-contracts.json",
+      "sha256": "22a8aac2f12c7a6fbe81d0ca137ac867c6a8c47642927478d6a640d290b31382"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-structure.json",
+      "sha256": "4d8bd0117dce900099b57e0326ff62440ff0bec8222b978106dac1af23598622"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-tests.json",
+      "sha256": "3ad3c2b219b834a99c71dc2edd0ce90a4f8e335fd63599b8c7a7d2ac36c37779"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-review.json",
+      "sha256": "a17774ed621acbed900a252ee7ed047e154f62b404e6c1130f0a9c4732fa8c74"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-red.log",
+      "sha256": "818f8a302bd10b92c3b469ef1bb1318401cb4ad05b76451f21bcb2b701a68be9"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-preview-red.log",
+      "sha256": "2e129a66499b0afc27ec88e4b692a99573c6101d5764dc9ab9899dd7ebe02fe8"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-integration.log",
+      "sha256": "d996b6b45dd6143b06feb9d6d0671e245bbef519af54f77de9882f2dd6ddc47e"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-source-check.log",
+      "sha256": "9d415cfb726367525f7f81bd028d623ba0c88c3c898cf534d14c694c45985177"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-tests.log",
+      "sha256": "4b7cd98c93e6c490a84c6810066b852c18141ebe31a0a928266aacfb072c82e5"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-decision.json",
+      "sha256": "a0b61bb964236124a40c5094b42c5a4550b46a6f6d91c9351831f45e4f83015a"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-doctrine.json",
+      "sha256": "d055f939c5f28436461c524ca24acaaa0aa6d58bd76a3f1ddc525c41545c5446"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-doctrine-final.json",
+      "sha256": "ceee18f02dead87fc7c7b719824189d72e19b2f28534eb065597aad94684ae4a"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-citations.json",
+      "sha256": "05c1c7521ed743c8dedcda3083181a9eb7a2e0d4399c10afa3f84f14574def73"
+    },
+    {
+      "path": "/tmp/cairn-intent-matching-citations-final.json",
+      "sha256": "233d6b2110d5dbf2220ef8cc5f6e9606c6f8d2d16733de2a6e25b5ddeed1cb91"
+    }
+  ]
+}

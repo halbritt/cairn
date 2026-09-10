@@ -45,7 +45,7 @@ func (c Config) Validate() error {
 type searchArgs struct {
 	Kinds     []string `json:"kinds,omitempty" jsonschema:"Optional labels: note, observation, claim, lesson, procedure, decision, preference, instruction. Matches any listed label; empty means all. Required instructions always apply. Labels do not establish authority."`
 	Semantic  bool     `json:"semantic,omitempty" jsonschema:"Optional semantic discovery for vocabulary mismatches. Requires a query, cannot browse. Similarity is not answer confidence; an unavailable backend returns labelled lexical fallback."`
-	Query     string   `json:"query,omitempty" jsonschema:"Words describing the memory needed. Omit only when browse is true."`
+	Query     string   `json:"query,omitempty" jsonschema:"Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available. Omit only when browse is true."`
 	Browse    bool     `json:"browse,omitempty" jsonschema:"Browse eligible memory without a query when its vocabulary is unknown. Results are bounded, ordered by scope and recency, and may omit older notes."`
 	Offset    *int     `json:"offset,omitempty" jsonschema:"Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget; restart if notes change."`
 	RequestID string   `json:"request_id,omitempty" jsonschema:"Optional UUID for retrying the same search."`

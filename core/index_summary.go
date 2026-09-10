@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -16,6 +17,11 @@ func indexPreview(body, query, ranking string) (string, ByteSpanRequest) {
 	const limit = 160
 	prefix := body[:utf8Prefix(body, limit)]
 	span := ByteSpanRequest{Length: len(prefix)}
+	if hasLiteralRanking(ranking) && len(body) > limit {
+		if preview, matchedSpan, ok := literalPreview(body, queryLiterals(query)); ok {
+			return preview, matchedSpan
+		}
+	}
 	terms := rankingTerms(query, ranking)
 	if len(body) <= limit || len(terms) == 0 {
 		return prefix, span
@@ -114,4 +120,35 @@ func utf8Prefix(text string, limit int) int {
 		end--
 	}
 	return end
+}
+
+// Show the earliest literal occurrence; offsets always address the original body.
+func literalPreview(body string, literals []string) (string, ByteSpanRequest, bool) {
+	position, size := len(body), 0
+	for _, literal := range literals {
+		at := strings.Index(body, literal)
+		if at >= 0 && at < position {
+			position, size = at, len(literal)
+		}
+	}
+	if size == 0 {
+		return "", ByteSpanRequest{}, false
+	}
+	if position+size <= utf8Prefix(body, 160) {
+		end := utf8Prefix(body, 160)
+		return body[:end], ByteSpanRequest{Length: end}, true
+	}
+	start := max(0, position-min(40, max(0, 154-size)))
+	for start < position && !utf8.RuneStart(body[start]) {
+		start++
+	}
+	end := start + utf8Prefix(body[start:], 154)
+	preview := body[start:end]
+	if start > 0 {
+		preview = "..." + preview
+	}
+	if end < len(body) {
+		preview += "..."
+	}
+	return preview, ByteSpanRequest{Offset: start, Length: end - start}, true
 }

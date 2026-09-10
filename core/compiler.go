@@ -228,6 +228,7 @@ func sealPackage(semantic SemanticPackage) ([]byte, string, error) {
 }
 
 type candidate struct {
+	literal     bool
 	selection   Selection
 	score       int
 	specificity int
@@ -265,6 +266,10 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation) (SemanticPackage, []candidate, error) {
 	queryDigest := sha256.Sum256([]byte(req.Query))
 	p := SemanticPackage{Context: req.Context, Schema: "cairn.semantic/3", Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/4", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
+	literals := queryLiterals(req.Query)
+	if len(literals) > 0 {
+		p.Ranking = "lexical-scope-recency/5"
+	}
 	if len(req.Kinds) > 0 {
 		p.Kinds = req.Kinds
 		p.Schema = "cairn.semantic/9"
@@ -395,18 +400,20 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 
 		digest := sha256.Sum256([]byte(record.Body))
 		evaluation.Facts = &CandidateFacts{Category: selection.Category, BodySHA256: hex.EncodeToString(digest[:]), Sensitivity: record.Sensitivity, AttributionState: record.AttributionState, Evidence: selection.Evidence, Authority: selection.Authority}
+		literal := !selection.Mandatory && matchesLiteral(record.Body, literals)
+		evaluation.ExactTextMatch = literal
 		if !kindAllowed(req.Kinds, selection) {
 			evaluation.Reason = "KIND_FILTERED"
 			p.Omitted["KIND_FILTERED"]++
 			continue
 		}
-		selection.Reason = fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity)
-		if !req.Semantic && !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 {
+		selection.Reason = literalReason(fmt.Sprintf("lexical matches=%d; scope specificity=%d", score, specificity), literal)
+		if !req.Semantic && !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 && !literal {
 			evaluation.Reason = "NO_LEXICAL_MATCH"
 			p.Omitted["NO_LEXICAL_MATCH"]++
 			continue
 		}
-		candidates = append(candidates, candidate{selection, score, specificity})
+		candidates = append(candidates, candidate{literal, selection, score, specificity})
 	}
 	return p, candidates, nil
 }
@@ -653,7 +660,7 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 // retaining the whole identifier for exact matches. Version 4 also excludes
 // question framing words. Negation and obligation words remain meaningful.
 func rankingTerms(text, version string) map[string]bool {
-	if version == "semantic-scope-recency/1" {
+	if version == "semantic-scope-recency/1" || hasLiteralRanking(version) {
 		version = "lexical-scope-recency/4"
 	}
 	terms := lexical(text)
@@ -683,6 +690,12 @@ func sortCandidates(candidates []candidate) {
 	slices.SortFunc(candidates, func(a, b candidate) int {
 		if a.selection.Mandatory != b.selection.Mandatory {
 			if a.selection.Mandatory {
+				return -1
+			}
+			return 1
+		}
+		if a.literal != b.literal {
+			if a.literal {
 				return -1
 			}
 			return 1

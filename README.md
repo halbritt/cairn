@@ -88,6 +88,9 @@ script. Use `CAIRN_PG_BIN` to select PostgreSQL binaries when necessary.
 captured with `agent evidence --file PATH --source LABEL` without preparing JSON.
 Capture remains local by default and preserves the selected bytes.
 
+[Quoted search](docs/quoted-search.md) prefers a known path, identifier or error
+message in the existing query field while retaining broader lexical matches.
+
 [Optional semantic discovery](docs/semantic-discovery.md) adds `--semantic` to
 authenticated agent search and `semantic: true` to native search tools. It can
 find notes using different vocabulary; the separately prepared local CPU worker

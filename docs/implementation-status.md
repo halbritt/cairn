@@ -1,4 +1,4 @@
-# Implementation status — 2026-09-09
+# Implementation status — 2026-09-10
 
 Cairn is a usable local alpha for explicitly selected agent memory. It stores
 versioned notes and supporting evidence, makes them available through CLI,
@@ -21,7 +21,7 @@ The installed CLI and API are clean `5946c5d`, including supporting evidence in
 required retirement previews. The database schema remains at migration 031.
 
 This snapshot assesses the source changes recorded below and the local installation
-on 2026-09-09. Feature reports below preserve their own verification dates and limits.
+on 2026-09-10. Feature reports below preserve their own verification dates and limits.
 The [implementation history](#implementation-history) retains the earlier narrative
 and every committed change through `95ef2ed`, including failed trials and superseded
 work. Future updates should append dated history and corrections while refreshing
@@ -48,6 +48,12 @@ task acceptance. Native conversation/session scope does not identify individual
 execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
+
+- **Quoted search prefers exact text.** Known paths, identifiers and error messages
+  can be quoted in existing queries. Matching source previews, lexical/semantic
+  fallback and old receipt behavior are verified through CLI, MCP and native
+  OpenCode. This source change is awaiting installation; E1 remains partial.
+  [Contract](quoted-search.md), [verification](verification/quoted-search-2026-09-10.md).
 
 - **Retraction previews include supporting evidence.** Protected local inspection
   now shows source identities, exact citation metadata and integrity state for
@@ -2425,3 +2431,34 @@ same instruction was available in conversation and source; no unique causal or
 net-benefit claim is made for this documentation repair. Claims were checked
 against the four case reports, and local links plus complete status/history
 preservation were verified. No runtime or installed binary changed.
+
+
+### 2026-09-10 — Exact quoted text in memory search
+
+Implemented a bounded, case-sensitive literal preference in the existing query
+field. A known path or error phrase now precedes broader lexical overlap among
+eligible optional notes, including semantic discovery and its lexical fallback.
+Previews expose the earliest matching source passage. Required instructions,
+currentness, destination, kind and budget gates remain in force. Quotes are soft
+preferences; unmatched lexical notes remain available. Raw query text is still
+represented by its existing digest in retained receipts.
+
+The first database reproduction failed because token overlap outranked an exact
+path. A second failed because the preview hid that path; both now pass. Further
+checks cover zero lexical terms, bounded and duplicate hints, case-sensitive
+files/errors/digests, UTF-8 spans, stale pulls and historical replay after edits.
+Full disposable PostgreSQL/race, CLI/API, independent stdio, actual native
+OpenCode tools, static checks, Go tests and 40 Python tests pass. The final added
+source/edit tests passed separately with the race detector. Actual clean5946c5d
+receipts recompile unchanged; current retries whose package changes correctly
+refuse STALE_PACKAGE. No answering model was invoked.
+
+The implementation initially considered hard error-signature pins, then rejected
+that interpretation after reading accepted section15.4: those matches belong in
+optional relevance after eligibility. Explicit stored matching metadata was also
+considered; existing note text and query fields support this first usable step
+without retagging notes. Structured entity/file/error metadata and automatic host
+intent remain open under E1. An operational path query already ranked correctly
+before this change, so the fixture improvement is not presented as a production
+incident repair or established task benefit. Details and evidence are retained in
+the quoted-search verification report. Installation is pending at this entry.

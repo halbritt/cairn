@@ -20,6 +20,7 @@ from check_mcp_currentness import check as check_mcp_currentness
 from check_retained_run import check as check_retained_run
 from check_observed_index import check as check_observed_index
 from check_run_task_file import check as check_run_task_file
+from check_literal_retrieval import check_cli as check_literal_retrieval
 from check_binary_evidence import check as check_binary_evidence
 from check_json_unicode import check as check_json_unicode
 from check_ordinary_citations import check_cli as check_ordinary_citations
@@ -136,6 +137,7 @@ try:
                             repo='fixture:socket', body='explicit supporting socket evidence',
                             source='synthetic socket evidence capture', sensitivity='shareable'))
     check_ordinary_citations(binary, root, env, evidence_call)
+    check_literal_retrieval(binary, root, env)
     claim = evidence_call(['agent', 'create'], dict(request_id=str(uuid.uuid4()), draft=dict(
                           kind='note', body='Shareable socket evidence lesson', claim_type='self',
                           sensitivity='shareable', scope=dict(repo='fixture:socket', task_id='*', run_id='*'))))

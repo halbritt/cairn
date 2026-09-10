@@ -86,11 +86,15 @@ No database migration is needed, but reverting a reader alone after writing new
 constraints is unsupported. The [phase verification](verification/task-phase-2026-09-09.md)
 records both preserved old packages and this reader-version limit.
 
-New retrievals use `lexical-scope-recency/4`, which also filters fixed question
+Unquoted lexical retrievals use `lexical-scope-recency/4`, which also filters fixed question
 framing words from lexical matches. Historical recompilation uses the ranking
 version retained in each receipt. The [retrieval comparison](verification/question-words-2026-09-08.md)
 records the measured improvements and regressions. Reusing a compile request ID
 across a ranking upgrade returns `STALE_PACKAGE`; use a new ID for current context.
+
+[Quoted search](quoted-search.md) adds a soft exact-text preference for known
+identifiers, paths and error messages. It changes optional relevance after
+eligibility, without adding applicability pins.
 
 ## Saving guidance with explicit applicability
 
