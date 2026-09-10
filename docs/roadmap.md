@@ -213,6 +213,13 @@ A retained-version follow-up found missing browse arguments and semantic setup
 prerequisites and restored them. This qualifies the original preservation claim:
 smaller notes still need review for lost instructions, and upkeep has a cost.
 
+A [later topic separation](verification/procedure-maintenance-2026-09-09.md#2026-09-10--separate-ordinary-tools-from-harness-launch-instructions)
+moved the accumulated OpenCode launcher instructions verbatim into a separate
+file-associated procedure. Ordinary-tool reads now retrieve a smaller note;
+reading both procedures costs more. Exact old/current bodies preserve all original
+passages, including the previously lost instructions. This is manual upkeep;
+it adds no task-value acceptance or automated grooming claim.
+
 A [cumulative maintenance review](verification/cumulative-maintenance-value-2026-09-09.md)
 follows the contiguous consolidation → history access → correction → preview
 location sequence. It supports a concrete continuity case and retains the

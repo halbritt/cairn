@@ -1,0 +1,115 @@
+{
+  "schema": "cairn.guide-partition/1",
+  "before_version": 16,
+  "before_bytes": 14087,
+  "records": [
+    {
+      "name": "main",
+      "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+      "version": 17,
+      "body_bytes": 9270,
+      "body_sha256": "2c05940d406c43264be9667c75dd5875b41c1c0ef874f18edb45b6c6bbbade54",
+      "scope": {
+        "repo": "/home/halbritt/git/cairn",
+        "task_id": "*",
+        "run_id": "*"
+      },
+      "entities": [
+        {
+          "kind": "file",
+          "name": "cmd/cairn/opencode_install.go"
+        },
+        {
+          "kind": "file",
+          "name": "integrations/opencode/cairn.ts"
+        },
+        {
+          "kind": "file",
+          "name": "integrations/opencode/recent-files.ts"
+        }
+      ],
+      "receipt_id": "ffef1238-6cbb-43ed-9d3a-87785a915bad"
+    },
+    {
+      "name": "launcher",
+      "record_id": "8ab6f87a-ff0d-46f2-9ae3-4f4c0cfa033c",
+      "version": 1,
+      "body_bytes": 6229,
+      "body_sha256": "0aba18437b0ee7a05d5711437c7db2ad9ddcb5efa87c818513a82329a50f819d",
+      "scope": {
+        "repo": "/home/halbritt/git/cairn",
+        "task_id": "*",
+        "run_id": "*"
+      },
+      "entities": [
+        {
+          "kind": "file",
+          "name": "cmd/cairn/agent_start.go"
+        },
+        {
+          "kind": "file",
+          "name": "runner/index.go"
+        }
+      ],
+      "receipt_id": "f236afc2-e3eb-402c-a7b0-29c12d6e8d07"
+    }
+  ],
+  "all_original_content_retained": true,
+  "old_version_retained": true,
+  "parent_metadata_preserved": true,
+  "exact_write_retries": true,
+  "new_model_calls": 0,
+  "retained_segments": [
+    {
+      "old_byte_start": 0,
+      "old_byte_end": 6359,
+      "destination": "main",
+      "sha256": "9ab5a2cf1512f7de5ce0e69732cf3d3d0412939406149af9b3539f36e3d71fb0"
+    },
+    {
+      "old_byte_start": 6359,
+      "old_byte_end": 11743,
+      "destination": "launcher",
+      "sha256": "23b2ea6663b6b7903ced89211546e22ba2a6900a9ff1639c15f9b37013999065"
+    },
+    {
+      "old_byte_start": 11743,
+      "old_byte_end": 14087,
+      "destination": "main",
+      "sha256": "06e268f523422894bbcdba9cf8a64e679244424bfdf7259481d308d399f8716a"
+    }
+  ],
+  "previously_lost_instructions_preserved": true,
+  "combined_bytes": 15499,
+  "combined_increase_bytes": 1412,
+  "setup_only_reduction_bytes": 4817,
+  "setup_only_reduction_percent": 34.2,
+  "method": "Ordinary selected-note capture/revision, exact retries, fresh entity search/pull and exact prior-version history; no fixtures, model calls or service changes",
+  "interpretation": "Separates two workflows without dropping original text. Setup-only pulls are smaller; reading both notes costs more. No net task benefit or avoided failure is established.",
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-guide-maintenance-20260910/before-pull.json",
+      "sha256": "4839ecac6832bdd90981efa34864046fb9b61537a2c403a3e34575d21df4b226"
+    },
+    {
+      "path": "/tmp/cairn-guide-maintenance-20260910/main-pull.json",
+      "sha256": "2b75bccbd73e74db6861c541d4d5b60e5603c8800ff670b56cfdcbb2388b4696"
+    },
+    {
+      "path": "/tmp/cairn-guide-maintenance-20260910/launcher-pull.json",
+      "sha256": "2ae6b1b5be22e4be9b13654f802b5ae30f048cc447650cbbc9d4ce30dd53a9e4"
+    },
+    {
+      "path": "/tmp/cairn-guide-maintenance-20260910/history-v16.json",
+      "sha256": "2ae4807f374dfb08cb522a15db86d883e4f8e72a64f46d9ae06328375c0934cb"
+    },
+    {
+      "path": "/tmp/cairn-guide-maintenance-20260910/partition.json",
+      "sha256": "0a9520c5ddae7302f0eb5e9f730f933de03a92cfc9ff0cdabba3b27e249e5fa1"
+    },
+    {
+      "path": "/tmp/cairn-guide-maintenance-20260910/request-ids.json",
+      "sha256": "67fba15a85bac096b53d759eb9f2b0b5a9a45568e034683a537e6c4276ef39de"
+    }
+  ]
+}

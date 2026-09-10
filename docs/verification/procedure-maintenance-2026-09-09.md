@@ -101,3 +101,44 @@ consolidation and is unchanged. This follow-up found and repaired lost guidance;
 it did not observe a failed downstream task caused by the omissions or establish
 improved comprehension or net task benefit. It also supplies contrary evidence
 to assuming that shorter guidance necessarily preserves its practical value.
+
+## 2026-09-10 — separate ordinary tools from harness launch instructions
+
+OpenCode's procedure had grown to **14,087 bytes** at v16 as startup, observed
+execution, saved-task input and recent-file guidance accumulated. This pass
+moved its **5,384-byte launcher section verbatim** into a separate procedure.
+The existing note keeps ordinary setup, tool use and recent-file hints, with a
+pointer to retrieve the launcher procedure. No original passage was discarded
+or rewritten.
+
+| Current procedure | Version | Body bytes | File association for retrieval |
+| --- | --- | --- | --- |
+| OpenCode setup and ordinary tools | v17 | 9,270 | `integrations/opencode/cairn.ts` |
+| OpenCode harness startup and observed execution | v1 | 6,229 | `cmd/cairn/agent_start.go` |
+
+The launcher note also has an association with `runner/index.go`. The existing
+setup note retains all its previous associations and other metadata. Its pointer
+uses an explicit file-entity search so the launcher can be found without relying
+on a new title's lexical ranking. Scope and shareable A testimony remain the
+ordinary repository contract; these associations confer no authority.
+
+Fresh ordinary searches and full pulls returned both intended notes. Exact write
+retries returned the original results, and ordinary history returned the complete
+v16 body. The comparison used those returned bodies: the original prefix and
+suffix remain in the setup note, and the intervening section remains in the
+launcher. The previously lost `offset=N` browsing argument and semantic-worker
+prerequisite remain in the setup note. The launcher's same-principal preload,
+observer-designated reader, saved-task and different input-budget rules remain
+intact. Current parsers and launcher code were inspected for those contracts.
+The [partition record](guide-partition-2026-09-10.json) retains byte ranges, hashes,
+version identities and private evidence pointers; operational bodies stay outside
+the checkout.
+
+A setup-only full pull is **4,817 bytes (34.2%) smaller**. Pulling both current
+procedures costs **1,412 bytes more** than the former combined body because they
+now have separate context and navigation text. These are body-byte comparisons,
+not token, latency, comprehension or task-value measurements. Historical storage
+also grows when notes are revised. No answering-model task, avoided failure,
+net benefit or automated grooming result is established by this maintenance.
+No software, configuration or service was changed; software tests and native
+client conformance were not repeated for these selected-note edits.

@@ -56,6 +56,13 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+[OpenCode guidance is separated by workflow](verification/procedure-maintenance-2026-09-09.md#2026-09-10--separate-ordinary-tools-from-harness-launch-instructions):
+the current setup/tool note is 9,270 bytes, while launcher instructions have a
+separate 6,229-byte procedure. Every original passage remains verbatim in a
+current note and the former v16 body remains in history. Setup-only pulls are
+34.2% smaller; pulling both costs 1,412 bytes more. Task benefit remains unmeasured.
+
+
 [Optional recent-file hints](recent-file-hints.md) now let OpenCode collect
 successful native text-file reads for fresh ordinary searches. The native
 five-case check retrieved and pulled associated guidance without an explicit
@@ -3349,3 +3356,27 @@ not evidence of a completed model task or net durable benefit. See
 Feature CI **34513401855** passed at `670cf19`; both jobs and every step were
 inspected. The Node plugin contract job and existing PostgreSQL/race, Python,
 static/build and authenticated CLI/startup checks succeeded.
+
+### 2026-09-10 — separate retained OpenCode guidance by workflow
+
+The ordinary OpenCode procedure had accumulated 14,087 bytes at v16. Its
+5,384-byte section about explicit preload, observed compact execution and
+saved-task input was moved verbatim into a separate procedure. The original
+note advanced to v17 (9,270 bytes), retaining its other text, metadata and file
+associations plus a pointer to the launcher note. The new launcher procedure is
+v1 (6,229 bytes), associated with `cmd/cairn/agent_start.go` and `runner/index.go`.
+No original passage was dropped or rewritten, and v16 remains in ordinary history.
+
+Ordinary file-entity searches and full pulls returned both new current bodies.
+Exact capture/revision retries were idempotent. Comparison of returned current
+and historical bodies verified every original segment, including the browse
+`offset=N` and semantic-worker prerequisite previously lost in an earlier
+consolidation. Current launcher code was inspected for the preserved input and
+reader contracts. Software, services and configuration were unchanged.
+
+Setup-only body delivery is 4,817 bytes (34.2%) smaller. Reading both notes costs
+1,412 bytes more, and historical storage grows. These are byte measurements and
+an editorial workflow choice, not proof of better model decisions, an avoided
+failure, net savings or durable task benefit. No new model calls or automated
+grooming were introduced. See [the maintained procedure report](verification/procedure-maintenance-2026-09-09.md#2026-09-10--separate-ordinary-tools-from-harness-launch-instructions)
+and its exact partition evidence. All prior implementation history is preserved.
