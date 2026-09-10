@@ -17,6 +17,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/artifacts"
@@ -24,6 +25,7 @@ import (
 )
 
 type Request struct {
+	IndexTools            *IndexTools
 	AttemptID             string
 	Compile               core.CompileRequest
 	Retained              *core.RunPackageRequest
@@ -59,7 +61,9 @@ type Result struct {
 type Store interface {
 	artifacts.ContextRegistrar
 	Compile(context.Context, core.CompileRequest, core.Destination) (core.Package, error)
+	Index(context.Context, core.CompileRequest, core.Destination) (core.IndexResult, error)
 	RunPackage(context.Context, core.RunPackageRequest, core.Destination) (core.Package, error)
+	RunIndex(context.Context, core.RunPackageRequest, core.Destination) (core.IndexResult, error)
 	BindRun(context.Context, core.RunBindingRequest) (core.Observation, error)
 	ClaimRun(context.Context, string) error
 	RecordDelivery(context.Context, core.DeliveryRequest) (core.Observation, error)
@@ -77,8 +81,15 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 		return Result{}, err
 	}
 	req.Compile.Kinds = kinds
-	if req.Compile.Mode != "" {
-		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "H0 requires body compilation; index pull needs a host tool route"}
+	if req.Compile.Mode == "index" {
+		if req.IndexTools == nil || req.Compile.ExpansionReader == "" || !utf8.ValidString(req.Prompt) || strings.ContainsRune(req.Prompt, 0) {
+			return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "observed index execution requires expansion_reader and existing pull/search tools"}
+		}
+		if _, err := req.IndexTools.Guidance(); err != nil {
+			return Result{}, err
+		}
+	} else if req.Compile.Mode != "" || req.IndexTools != nil || req.Compile.ExpansionReader != "" {
+		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "expansion reader and tools require index execution"}
 	}
 	if len(req.Command) == 0 || (req.Carrier != "stdin" && req.Carrier != "argv") || req.Timeout <= 0 || req.Timeout > time.Hour || len(req.Prompt) > 131072 {
 		return Result{}, &core.Error{Code: "INVALID_REQUEST", Message: "invalid command, carrier, timeout or prompt"}
@@ -99,7 +110,15 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	}
 	req.Compile.Context = &pins
 	var pkg core.Package
-	if req.Retained == nil {
+	var index core.IndexResult
+	if req.Compile.Mode == "index" {
+		if req.Retained == nil {
+			index, err = store.Index(ctx, req.Compile, req.Destination)
+		} else {
+			index, err = store.RunIndex(ctx, *req.Retained, req.Destination)
+		}
+		pkg = index.Package
+	} else if req.Retained == nil {
 		pkg, err = store.Compile(ctx, req.Compile, req.Destination)
 	} else {
 		pkg, err = store.RunPackage(ctx, *req.Retained, req.Destination)
@@ -114,13 +133,26 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 			digest := sha256.Sum256([]byte(query))
 			query = "sha256:" + hex.EncodeToString(digest[:])
 		}
-		if pkg.ReceiptID != req.Retained.ReceiptID || pkg.Seal != req.Retained.Seal || pkg.Semantic.Mode != "" ||
+		if pkg.ReceiptID != req.Retained.ReceiptID || pkg.Seal != req.Retained.Seal || pkg.Semantic.Mode != req.Compile.Mode ||
 			pkg.Semantic.Destination != req.Destination || pkg.Semantic.Scope != req.Compile.Scope ||
 			pkg.Semantic.Context == nil || *pkg.Semantic.Context != pins || pkg.Semantic.Query != query ||
 			pkg.Semantic.Purpose != req.Compile.Purpose || pkg.Semantic.AvailableTokens != req.Compile.AvailableTokens ||
-			!slices.Equal(pkg.Semantic.Kinds, req.Compile.Kinds) {
+			!slices.Equal(pkg.Semantic.Kinds, req.Compile.Kinds) ||
+			!sameIndexOffset(pkg.Semantic.Browse, req.Compile.BrowseOffset) || !sameIndexOffset(pkg.Semantic.Page, req.Compile.PageOffset) ||
+			(pkg.Semantic.Discovery != nil) != req.Compile.Semantic {
 			return result, &core.Error{Code: "INVALID_REQUEST", Message: "retained package must match the receipt, seal, scope, query, context, purpose, kinds and memory budget of this run"}
 		}
+	}
+	var input string
+	if req.Compile.Mode == "index" {
+		input, err = renderRunIndex(index, req)
+	} else {
+		var rendered string
+		rendered, err = pkg.Render()
+		input = rendered + "\nTASK\n" + req.Prompt
+	}
+	if err != nil {
+		return result, err
 	}
 	encodedCommand, err := json.Marshal(req.Command)
 	if err != nil {
@@ -138,11 +170,6 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	if err != nil {
 		return prelaunchFailure(store, result, err)
 	}
-	rendered, err := pkg.Render()
-	if err != nil {
-		return prelaunchFailure(store, result, err)
-	}
-	input := rendered + "\nTASK\n" + req.Prompt
 	digest := sha256.Sum256([]byte(input))
 	delivery := core.DeliveryRequest{RequestID: uuid.NewString(), ReceiptID: pkg.ReceiptID, Adapter: filepath.Base(req.Command[0]) + "/process-h0", Carrier: req.Carrier, Assurance: "unknown", RenderedSHA256: hex.EncodeToString(digest[:]), BlindSpots: "Native memory influence is not isolated. No internal tools, compaction, model contact, instruction compliance or task acceptance observed."}
 	// Persist launch intent before any process can execute. A crash afterward is
@@ -166,6 +193,9 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	outHash, errHash := sha256.New(), sha256.New()
 	command.Stdout = io.MultiWriter(stdout, outHash)
 	command.Stderr = io.MultiWriter(stderr, errHash)
+	if req.Compile.Mode == "index" && !index.ExpiresAt.After(time.Now()) {
+		return prelaunchFailure(store, result, &core.Error{Code: "STALE_HANDLE", Message: "index expired during launch preparation"})
+	}
 	started := time.Now()
 	startErr := command.Start()
 	var waitErr, deliveryErr error

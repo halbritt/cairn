@@ -46,6 +46,13 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Observed runs can deliver compact indexes.** Fresh and retained execution
+  supplies previews and direct pull arguments to ordinary harness tools while
+  the observer keeps receipt and outcome ownership. Native OpenCode allowed,
+  denied and stale-source cases passed with a scripted provider. Aggregate task
+  budgeting and task benefit remain open. [Contract](observed-index.md),
+  [verification](verification/observed-index-2026-09-09.md).
+
 - **Ordinary notes can retain exact source citations.** Explicit citation updates
   preserve earlier versions; text edits retain references and current pulls expose
   exact captured passages. Notes remain A testimony. Upgrade writers together.
@@ -2231,3 +2238,31 @@ workflows. Production source is identical to installed e5ebcbd; the follow-up on
 changes the process-disappearance test and documentation. The earlier failed CI
 and its correction remain in this history. Native OpenCode verification remains
 the separately recorded successful local run.
+
+
+### 2026-09-09 — Observed compact index execution
+
+Implemented the E2 observed/retained index route. An observer can designate one
+ordinary expansion reader when creating an index. The authenticated API checks
+that reader's configured repository and destination. Pulls reuse current source,
+mandatory-context, expiry, payload and shared-budget checks; receipt inspection,
+binding, launch and outcomes remain owner-only. Migration 031 adds the nullable
+reader field without changing semantic seals. New `run-index` loading preserves
+handles, expiry and remaining allowance instead of recompiling.
+
+`run --index` supplies the shared compact presentation through stdin or argv with
+explicit existing pull/search tool names. Retained reader, semantic/browse/page
+intent, kinds and other context must match. Initial memory input is bounded;
+combined initial memory/task input also has a 131,071-byte limit. Full PostgreSQL
+race integration, CLI/stdio workflows, static checks and 40 Python tests pass.
+Real CLI children pull a note and cited source with ordinary credentials, retaining
+separate process outcomes. Native OpenCode 1.18.21 scripted-provider checks pass
+allowed, denied and stale cases for both ordinary startup and observed execution.
+No answering-model benefit or task acceptance is claimed.
+
+Retained failures: the initial authority/runner refusals and missing retained API,
+an incorrectly chosen non-observing test fixture, a native startup timeout before
+main/tool contact, and a test-report variable shadowing error. The role gate was
+preserved, the report corrected, and clean final checks passed. The native
+timeout's cause remains unknown. [Full verification](verification/observed-index-2026-09-09.md).
+The existing installed build remains e5ebcbd until the installation entry below.

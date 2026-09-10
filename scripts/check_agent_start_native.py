@@ -10,8 +10,10 @@ import uuid
 from check_agent_start import memory_input
 
 
-def check(binary, root, environment, opencode, fixture):
+def check(binary, root, environment, opencode, fixture, observed=False):
     output = Path(os.environ.get('CAIRN_OPENCODE_START_REPORT', str(root / 'opencode-start')))
+    if observed:
+        output = output.with_name(output.name + "-observed")
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     cases = []
     for case in ('allowed', 'denied', 'stale'):
@@ -89,12 +91,18 @@ def check(binary, root, environment, opencode, fixture):
         config_path = work / 'opencode.json'
         config_path.write_text(json.dumps(config))
         env.update(OPENCODE_CONFIG=str(config_path), OPENCODE_DISABLE_AUTOUPDATE='true',
-                   OPENCODE_DISABLE_MODELS_FETCH='true', CAIRN_DATABASE_URL='host=/absent-start-native dbname=denied')
+                   OPENCODE_DISABLE_MODELS_FETCH='true', OPENCODE_DISABLE_DEFAULT_PLUGINS='true', CAIRN_DATABASE_URL='host=/absent-start-native dbname=denied')
+        launch = list(fixture['start'])
+        if observed:
+            launch[launch.index('start')] = 'run'
+            launch[launch.index('--token-file')+1] = str(root / 'hosted.token')
+            launch += ['--index', '--expansion-reader', 'agent:hosted-capture',
+                       '--destination', 'hosted', '--dir', str(work), '--timeout', '45s']
         thread.start()
         try:
             with (work / 'stdout.jsonl').open('w') as stdout, (work / 'stderr.log').open('w') as stderr:
-                result = subprocess.run([*fixture['start'], '--', opencode, 'run', '--format', 'json',
-                                         '--model', 'fixture/probe'], cwd=work, env=env,
+                command = [*launch, '--', opencode, 'run', '--format', 'json', '--model', 'fixture/probe']
+                result = subprocess.run(command, cwd=work, env=env,
                                         stdout=stdout, stderr=stderr, timeout=60)
         finally:
             server.shutdown()
@@ -123,11 +131,22 @@ def check(binary, root, environment, opencode, fixture):
             assert len(results) == 1 and 'STALE_HANDLE' in results[0]['content']
         else:
             assert results == []
+        if observed:
+            lines = (work / 'stderr.log').read_text().splitlines()
+            run_result = json.loads(lines[-1])['data']
+            assert run_result['receipt_id'] == view['receipt_id'] and run_result['process_state'] == 'exited'
+            assert run_result['exit_code'] == 0 and run_result['outcome_id']
+            status = subprocess.run([binary, 'agent', '--socket', str(root / 'api.sock'),
+                '--token-file', str(root / 'hosted.token'), 'run-status'],
+                input=json.dumps(dict(receipt_id=view['receipt_id'])), env=environment,
+                capture_output=True, text=True, timeout=15, check=True)
+            status = json.loads(status.stdout)['data']
+            assert status['launch_claimed'] and status['outcome']['observation_id'] == run_result['outcome_id']
         cases.append(dict(case=case, native_exit_code=result.returncode, main_requests=len(main),
                           tool_results=len(results), startup_bytes=len(text.encode()),
                           receipt_id=view['receipt_id'], scoped_mandatory_context_preserved=True))
     report = dict(opencode_version=subprocess.check_output([opencode, '--version'], text=True).strip(),
-                  model_inference_calls=0, cases=cases)
+                  model_inference_calls=0, observed_execution=observed, cases=cases)
     (output / 'report.json').write_text(json.dumps(report, indent=2)+'\n')
     print('Native OpenCode startup delivers the initial index, supports a direct body pull, preserves tool denial and refuses a stale source; no inference')
     return report

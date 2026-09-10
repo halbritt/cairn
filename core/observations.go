@@ -88,6 +88,9 @@ func (s *Store) claimRunOnce(ctx context.Context, id string) error {
 	if err = receiptPayloadAvailable(ctx, tx, id); err != nil {
 		return err
 	}
+	if err = indexSessionCurrent(ctx, tx, id); err != nil {
+		return err
+	}
 	if err = s.receiptSelectionCurrent(ctx, tx, id); err != nil {
 		return err
 	}

@@ -30,14 +30,21 @@ type client struct {
 	store       *core.Store
 	destination core.Destination
 }
-type Server struct{ clients map[[32]byte]client }
+type expansionReader struct {
+	repo        string
+	destination core.Destination
+}
+type Server struct {
+	clients map[[32]byte]client
+	readers map[string]expansionReader
+}
 
 func New(ctx context.Context, dsn string, identities []Identity) (*Server, error) {
 	return NewWithSemanticRanker(ctx, dsn, identities, nil)
 }
 
 func NewWithSemanticRanker(ctx context.Context, dsn string, identities []Identity, ranker core.SemanticRanker) (*Server, error) {
-	s := &Server{clients: map[[32]byte]client{}}
+	s := &Server{clients: map[[32]byte]client{}, readers: map[string]expansionReader{}}
 	fail := func(err error) (*Server, error) { s.Close(); return nil, err }
 	invalid := func() (*Server, error) {
 		return fail(&core.Error{Code: "INVALID_REQUEST", Message: "invalid or duplicate local API identity configuration"})
@@ -66,6 +73,9 @@ func NewWithSemanticRanker(ctx context.Context, dsn string, identities []Identit
 			return fail(err)
 		}
 		s.clients[key] = client{store, core.Destination{Name: identity.Destination, AllowLocal: identity.Destination == "local"}}
+		if identity.Role == "agent" {
+			s.readers[identity.Principal] = expansionReader{identity.Repo, s.clients[key].destination}
+		}
 		principals[identity.Principal] = true
 	}
 	return s, nil
@@ -134,6 +144,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	case "/v1/index":
 		serveJSON(w, r, func(ctx context.Context, req core.CompileRequest) (core.IndexResult, error) {
+			if err := s.checkExpansionReader(req, c.destination); err != nil {
+				return core.IndexResult{}, err
+			}
 			return c.store.Index(ctx, req, c.destination)
 		})
 	case "/v1/expand":
@@ -146,7 +159,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	case "/v1/compile":
 		serveJSON(w, r, func(ctx context.Context, req core.CompileRequest) (core.Package, error) {
+			if err := s.checkExpansionReader(req, c.destination); err != nil {
+				return core.Package{}, err
+			}
 			return c.store.Compile(ctx, req, c.destination)
+		})
+	case "/v1/run-index":
+		serveJSON(w, r, func(ctx context.Context, req core.RunPackageRequest) (core.IndexResult, error) {
+			return c.store.RunIndex(ctx, req, c.destination)
 		})
 	case "/v1/run-package":
 		serveJSON(w, r, func(ctx context.Context, req core.RunPackageRequest) (core.Package, error) {
@@ -259,6 +279,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, 404, "NOT_FOUND", "unknown endpoint")
 	}
+}
+
+func (s *Server) checkExpansionReader(req core.CompileRequest, dest core.Destination) error {
+	if req.ExpansionReader == "" {
+		return nil
+	}
+	reader, ok := s.readers[req.ExpansionReader]
+	if !ok || reader.repo != req.Scope.Repo || reader.destination != dest {
+		return &core.Error{Code: "AUTHORITY_DENIED", Message: "expansion reader must be a configured ordinary profile with the same repository and destination"}
+	}
+	return nil
 }
 
 type recordRequest struct {

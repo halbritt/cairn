@@ -18,6 +18,7 @@ from check_agent_remember import check as check_agent_remember
 from check_mcp import check as check_mcp
 from check_mcp_currentness import check as check_mcp_currentness
 from check_retained_run import check as check_retained_run
+from check_observed_index import check as check_observed_index
 from check_binary_evidence import check as check_binary_evidence
 from check_json_unicode import check as check_json_unicode
 from check_ordinary_citations import check_cli as check_ordinary_citations
@@ -283,11 +284,14 @@ try:
     print('Authenticated host CLI records process outcomes without database access and preserves output/exit semantics')
     check_run_retrieval(binary, root, client_env, record)
     check_retained_run(binary, root, client_env)
+    check_observed_index(binary, root, client_env)
     check_agent_search(binary, root, env, grant, claim, support)
     startup_fixture = check_agent_start(binary, root, env, grant)
     if os.environ.get('CAIRN_OPENCODE_START_BINARY'):
         from check_agent_start_native import check as check_agent_start_native
         check_agent_start_native(binary, root, env, os.environ['CAIRN_OPENCODE_START_BINARY'], startup_fixture)
+        observed_fixture = dict(startup_fixture, body=startup_fixture['body']+' Revised after startup.')
+        check_agent_start_native(binary, root, env, os.environ['CAIRN_OPENCODE_START_BINARY'], observed_fixture, observed=True)
     check_agent_remember(binary, root, env)
     check_mcp(binary, root, env, claim, support)
     check_mcp_currentness(binary, root, env, grant)

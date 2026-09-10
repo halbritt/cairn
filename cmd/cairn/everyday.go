@@ -118,6 +118,13 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 	directory := f.String("dir", defaultRepo(), "working directory")
 	prompt := f.String("prompt", "", "task prompt")
 	query := f.String("query", "", "retrieval query (default prompt for fresh compilation)")
+	semantic := f.Bool("semantic", false, "optional semantic index discovery")
+	browse := f.Bool("browse", false, "browse an index without a query")
+	offset := f.Int("offset", 0, "explicit ranked or browse page offset")
+	index := f.Bool("index", false, "deliver compact context with declared native pull tools")
+	reader := f.String("expansion-reader", "", "configured ordinary principal for index pulls")
+	pullTool := f.String("pull-tool", "", "existing harness pull tool name")
+	searchTool := f.String("search-tool", "", "existing harness search tool name")
 	receipt := f.String("receipt-id", "", "execute this retained receipt instead of compiling")
 	seal := f.String("seal", "", "expected seal of the retained receipt")
 	carrier := f.String("carrier", "stdin", "input carrier")
@@ -148,7 +155,7 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 	if retainedRequested && (*receipt == "" || *seal == "") {
 		return runner.Result{}, invalid("retained execution requires both --receipt-id and --seal")
 	}
-	if *query == "" && !retainedRequested {
+	if *query == "" && !retainedRequested && !*browse {
 		*query = *prompt
 	}
 	command := f.Args()
@@ -160,6 +167,23 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 		return runner.Result{}, err
 	}
 	req := runner.Request{AttemptID: *attempt, Compile: core.CompileRequest{Kinds: kinds, RequestID: *request, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: *query, Purpose: "context", AvailableTokens: *tokens}, Destination: core.Destination{Name: *dest, AllowLocal: *dest == "local"}, Command: command, Directory: *directory, Carrier: *carrier, Prompt: *prompt, Timeout: *timeout, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability, Revision: *revision, WorkspaceSHA256: *workspace, ArtifactDirectory: filepath.Join(artifacts, "runs")}
+	if *index {
+		req.Compile.Mode = "index"
+	}
+	req.Compile.Semantic = *semantic
+	if *browse {
+		req.Compile.BrowseOffset = offset
+	} else {
+		f.Visit(func(fl *flag.Flag) {
+			if fl.Name == "offset" {
+				req.Compile.PageOffset = offset
+			}
+		})
+	}
+	req.Compile.ExpansionReader = *reader
+	if *pullTool != "" || *searchTool != "" {
+		req.IndexTools = &runner.IndexTools{Pull: *pullTool, Search: *searchTool}
+	}
 	req.OutputArtifacts, req.ShareArtifactEvidence = outputs, *shareArtifacts
 	if retainedRequested {
 		req.Retained = &core.RunPackageRequest{ReceiptID: *receipt, Seal: *seal}

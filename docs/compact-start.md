@@ -101,7 +101,8 @@ erasure. Unsupported kernels refuse without a disk fallback.
 Cairn adds no outcome/acceptance claim.
 Each invocation starts a new command; it is not an idempotent execution or recovery
 interface. Use the [authenticated observer runner](authenticated-runner.md) when
-host observations are required; that runner still requires body packages.
+host observations are required. Its [explicit index mode](observed-index.md)
+keeps observer ownership while designating an ordinary reader for pulls.
 
 Invalid intent, an unavailable executable, insufficient room, API refusal or a
 local-only destination prevents execution. Preparation errors use the normal

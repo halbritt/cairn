@@ -138,7 +138,7 @@ and needs no stdin request. [Build identity and limitations](build-identity.md).
 Operations: `create`, `edit`, `revise`, `cite`, `delete`, ordinary `supersede`, `compile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, `assessments`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
-`claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
+`run-package`, `run-index`, `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`.
 `history` lists bounded retained version metadata or reads one exact body, under
 current repository/destination restrictions. See [record history](record-history.md)
@@ -150,7 +150,10 @@ an owned receipt with no assessments returns `[]`. See the
 [review path](use-outcome-loop.md#qualitative-and-cumulative-review) for use and limits.
 The [expansion contract](index-and-pull.md) binds
 body/evidence pulls to an indexed version and one shared session budget. `compile` takes
-no destination field; the configured profile owns that decision. A hosted profile
+no destination field; the configured profile owns that decision. An observer may
+designate a configured ordinary `expansion_reader` when creating an index.
+The [observed index contract](observed-index.md) preserves receipt ownership and
+requires matching repository and destination. A hosted profile
 cannot use the protected `use-report` or `run-report` endpoints. The server checks repository scope
 at the store boundary as well as endpoint authorization. SIGTERM shuts down
 requests and removes the owned socket; a second listener cannot replace it.

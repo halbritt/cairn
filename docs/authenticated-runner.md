@@ -41,9 +41,10 @@ recompiling, while preserving the same launch and outcome checks.
 OpenCode still requires `--destination hosted`, even when its current provider
 is local. The API profile must also be configured `hosted`. The wrapper compares
 the compiled destination against the declared run destination before launch;
-it cannot turn a local-profile package into hosted input. Use `--carrier argv`
-when invoking OpenCode's positional prompt route. See the existing harness probe
-and trial reports for the tested OpenCode versions and their limitations.
+it cannot turn a local-profile package into hosted input. For OpenCode 1.18.21,
+use `--carrier stdin` to preserve literal JSON. The positional prompt route adds
+quotes and escapes. [Observed index mode](observed-index.md) supplies bounded
+previews with ordinary-profile pulls; body compilation remains the default.
 
 The existing [command and delivery digests](use-outcome-loop.md#command-and-delivery-digests)
 identify different parts of the invocation. The command digest excludes the

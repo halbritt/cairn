@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -78,8 +76,6 @@ func startupInput(input string) (*os.File, error) {
 	return file, nil
 }
 
-var nativeToolName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,127}$`)
-
 func prepareAgentStart(ctx context.Context, client *localapi.Client, args []string) (agentStartPlan, error) {
 	f := flags("agent start")
 	repo := f.String("repo", defaultRepo(), "canonical repository identity")
@@ -112,9 +108,11 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 	if *carrier != "argv" && *carrier != "stdin" {
 		return agentStartPlan{}, invalid("startup carrier must be argv or stdin")
 	}
-	if !nativeToolName.MatchString(*pullTool) || !nativeToolName.MatchString(*searchTool) || *pullTool == *searchTool {
-		return agentStartPlan{}, invalid("start requires distinct configured --pull-tool and --search-tool names")
+	prefix, err := (runner.IndexTools{Pull: *pullTool, Search: *searchTool}).Guidance()
+	if err != nil {
+		return agentStartPlan{}, err
 	}
+
 	if (*browse && (*query != "" || *semantic)) || (!*browse && strings.TrimSpace(*query) == "") {
 		return agentStartPlan{}, invalid("start requires --query or --browse; semantic search cannot accompany browsing")
 	}
@@ -151,7 +149,7 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 	if err != nil {
 		return agentStartPlan{}, invalid("startup executable is unavailable")
 	}
-	prefix := fmt.Sprintf("CAIRN MEMORY\nScoped reference context follows. Ordinary A notes and previews are fallible; verify relevant sources. Read required selected context. To read an optional source, call %s with its complete pull_arguments. Respect tool permissions. If a handle is stale or its budget is exhausted, use %s for a fresh search. This launcher supplies initial context; it does not establish task success.\n", *pullTool, *searchTool)
+
 	suffix := "\nTASK\n" + *prompt
 	room := *tokens - len(prefix) - len(suffix)
 	if room < 256 {

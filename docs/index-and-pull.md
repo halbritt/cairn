@@ -2,8 +2,9 @@
 
 `cairn index` accepts the same JSON scope, query, context pins and budget as
 `compile`. The authenticated agent API exposes `index`, `expand` and `expand-evidence` with its
-configured destination. This is an explicit tool route; the H0 process wrapper
-continues to compile full context before launch and refuses index mode.
+configured destination. The [observed index runner](observed-index.md) can supply
+an initial index and designate one ordinary reader for its existing tool route.
+Body compilation remains the default for the process wrapper.
 
 ## Agent commands without request JSON
 

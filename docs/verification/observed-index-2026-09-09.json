@@ -1,0 +1,164 @@
+{
+  "schema": "cairn.observed-index-verification/1",
+  "baseline_commit": "d6f3104888d88b8d747ad046c6e153e1f83dcad5",
+  "checks": {
+    "static": true,
+    "full_disposable_pg_race": true,
+    "python_tests": 40,
+    "stdio_mcp": true,
+    "real_child_body_source_pulls": true,
+    "native_opencode_scripted": true,
+    "opencode_version": "1.18.21",
+    "answering_model": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-79ae4d0db9c1674a",
+    "packet_content_sha256": "79ae4d0db9c1674a31307d1f4a358c48102ea90e06b291feadc92bb4f9f5c801",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "caller nil checks and method use",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No new interface return or absence contract; existing required Store parameter semantics remain."
+      },
+      {
+        "requirement": "documented absence semantics",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No new interface return or absence contract; existing required Store parameter semantics remain."
+      },
+      {
+        "requirement": "dynamic type and dynamic value at the return",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No new interface return or absence contract; existing required Store parameter semantics remain."
+      },
+      {
+        "requirement": "workload evidence for optimization",
+        "required_by": "implementation-representation-fit",
+        "classification": "nonmaterial",
+        "reason": "No performance optimization or workload-speed claim."
+      },
+      {
+        "requirement": "before/after checks of non-target resources and quality",
+        "required_by": "performance-semantic-preservation",
+        "classification": "nonmaterial",
+        "reason": "No non-target resource or quality improvement is claimed; installation preservation is verified separately after deployment."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-observed-index-evidence-authority.json",
+      "sha256": "4e5e3a28a37be82cf4d3dc9aede0e98281d717057f5ed2565178938774198060"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-evidence-structure.json",
+      "sha256": "68fc3b2ed6e0d9291d090599acbec4433d8297709ce35c594e1f4cb6885c6b3c"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-evidence-contract.json",
+      "sha256": "3a09af74c3af2b52c3e3dd3baaf8a8c9dc07846c8a7f352fcbe8d2655bced7d2"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-evidence-tests.json",
+      "sha256": "b7afbc11efce7a34abfcc8236e13451049a8d8ebbe2a95b4128bed2e1c1bcbb3"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-evidence-interfaces.json",
+      "sha256": "ee190cb8c03c0cec16e83fcf6885ead2d634c60f2b8a653abdfa749df287c2ee"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-red.log",
+      "sha256": "fbfa005919ac19f4dea727d74ae8a5e6d03d27c12799931fda17d012db3c0e11"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-green.log",
+      "sha256": "afe4100d67120361701d82b1fdafb0e12d9c5d5e471eab635bafb55c2d024cb4"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-retained-red.log",
+      "sha256": "c55c31d27a433e9b6342e0aa836f3c435c3e26408ae327bc78f0732917a6916d"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-retained-green.log",
+      "sha256": "6f53a9a0a855f5b19885e957595fe06021951d7f53b4cb23f907b7d3c584718d"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-api-red.log",
+      "sha256": "f8894a8b96ec810fe770d28adb71f2b060c8ef4d17567e13c89c2570adafdaba"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-api-green.log",
+      "sha256": "5db65b0dae5e1fb7854f3aa3ae216c1af58621266e0fb8f5ad9e5997aa4389ab"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-runner-red.log",
+      "sha256": "c3aa80b06547d6b4889aa6a6072f24173dd8336d9acd7172311b839dded5f3a7"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-runner-green.log",
+      "sha256": "bc14c514ab77df81ec11d8c0e724ddd623fcae19dcd33de3e789198f9f1391c1"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-authority.log",
+      "sha256": "9ca137ccef1d23ffc49e31da3b4cc2b9c1212cf3817fde3d90ef34ce97bd40ac"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-check-final.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-unit.log",
+      "sha256": "0abefbfed1f9f6a32eabe03e4bd5fccf471284a9e40d411fdad7f73aed3c1d2b"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-integration-complete.log",
+      "sha256": "79a45fa9817534c32e96a3e6cbf8bd7545820adcf51ac8cd84d048e0c2c0d110"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-native.log",
+      "sha256": "00538bde0c3c95d750a3010676816ae4407567dda64b9fe87cd6efb6d48bc9bd"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-native-traced.log",
+      "sha256": "2b7c66fa5b7ade0c085c27e273bd17fb08689adfd022c30dc80468c5321393f3"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-native-final.log",
+      "sha256": "483024d468ad93d61ed8f60c880c631fa87235b1bc5434e8a316afdb3ad4c1f9"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-decision.json",
+      "sha256": "18bd31be634820bbae52aed094446bcdc91c35b177d7b8119d8e33bcfa027232"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-doctrine.json",
+      "sha256": "d9378fb354e29a9a0796ea602fef14cef330ff752a0caf74f238dce868fe2489"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-doctrine-final.json",
+      "sha256": "64243464271825fd796af7288311ff9e65c65dcc3548f2386c93d2bf3bea6eb4"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-citations.json",
+      "sha256": "f1537b7d5f7465d888caf1cecae92109627fb421d0454894d9c3ebac9986f1df"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-citations-final.json",
+      "sha256": "4cedc5312f4a82cecb1bdbd9ba5720366c70cc7e07b96f0c0fbd83b1175d61f1"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-native-final/report.json",
+      "sha256": "708ac8107e461c2050f19c51bddc05dd0a4b39c9e338345580476454016b21f4"
+    },
+    {
+      "path": "/tmp/cairn-observed-index-native-final-observed/report.json",
+      "sha256": "8febe2b8fa4bd3f4046ecaa0e5b3426e5a3a9c6593dfdf4b0b1f6c7110cf519f"
+    }
+  ]
+}

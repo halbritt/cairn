@@ -41,6 +41,7 @@ type IndexHandle struct {
 	Handle   string `json:"handle"`
 }
 type IndexResult struct {
+	ExpansionReader  string        `json:"expansion_reader,omitempty"`
 	Package          Package       `json:"package"`
 	Handles          []IndexHandle `json:"handles"`
 	ExpiresAt        time.Time     `json:"expires_at"`
@@ -185,13 +186,13 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 	}
 	return p, nil
 }
-func createIndexSession(ctx context.Context, tx pgx.Tx, id string, p SemanticPackage) error {
+func createIndexSession(ctx context.Context, tx pgx.Tx, id string, p SemanticPackage, reader string) error {
 	rendered, err := (Package{Semantic: p}).Render()
 	if err != nil {
 		return err
 	}
 	budget := min(24000, max(0, p.AvailableTokens-len(rendered)-160*len(p.Index)-512))
-	if _, err = tx.Exec(ctx, `INSERT INTO cairn.index_session(receipt_id,remaining_bytes) VALUES($1,$2)`, id, budget); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO cairn.index_session(receipt_id,remaining_bytes,expansion_reader) VALUES($1,$2,NULLIF($3,''))`, id, budget, reader); err != nil {
 		return err
 	}
 	// Match the compiler's stable lifecycle lock order, independent of rank.
@@ -211,7 +212,7 @@ func (s *Store) Index(ctx context.Context, req CompileRequest, dest Destination)
 	if err != nil {
 		return IndexResult{}, err
 	}
-	result := IndexResult{Package: p, Handles: []IndexHandle{}}
+	result := IndexResult{}
 	tx, err := s.begin(ctx)
 	if err != nil {
 		return result, err
@@ -223,7 +224,16 @@ func (s *Store) Index(ctx context.Context, req CompileRequest, dest Destination)
 	if err = receiptDeliveryCurrent(ctx, tx, p.ReceiptID); err != nil {
 		return result, err
 	}
-	if err = tx.QueryRow(ctx, `SELECT expires_at,credits,remaining_bytes FROM cairn.index_session WHERE receipt_id=$1`, p.ReceiptID).Scan(&result.ExpiresAt, &result.CreditsRemaining, &result.BytesRemaining); err != nil {
+	result, err = readIndex(ctx, tx, p)
+	if err != nil {
+		return result, err
+	}
+	return result, tx.Commit(ctx)
+}
+
+func readIndex(ctx context.Context, tx pgx.Tx, p Package) (IndexResult, error) {
+	result := IndexResult{Package: p, Handles: []IndexHandle{}}
+	if err := tx.QueryRow(ctx, `SELECT expires_at,credits,remaining_bytes,COALESCE(expansion_reader,'') FROM cairn.index_session WHERE receipt_id=$1`, p.ReceiptID).Scan(&result.ExpiresAt, &result.CreditsRemaining, &result.BytesRemaining, &result.ExpansionReader); err != nil {
 		return result, err
 	}
 	rows, err := tx.Query(ctx, `SELECT record_id::text,version,handle::text FROM cairn.index_handle WHERE receipt_id=$1 ORDER BY record_id`, p.ReceiptID)
@@ -238,7 +248,7 @@ func (s *Store) Index(ctx context.Context, req CompileRequest, dest Destination)
 	if err != nil {
 		return result, err
 	}
-	return result, tx.Commit(ctx)
+	return result, nil
 }
 
 type ExpandRequest struct {
@@ -270,7 +280,7 @@ type expansionState struct {
 func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandRequest, dest Destination, state *expansionState) error {
 	var selection Selection
 	var credits, remaining int
-	if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
+	if err := s.expansionAccess(ctx, tx, req.ReceiptID); err != nil {
 		return err
 	}
 	if err := receiptDeliveryCurrent(ctx, tx, req.ReceiptID); err != nil {
@@ -354,6 +364,28 @@ func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandReque
 	selection.Reason = "indexed record; current eligibility revalidated"
 	*state = expansionState{selection, credits, remaining}
 	return nil
+}
+
+// A designated ordinary reader can expand this index, but receipt ownership
+// and all observation, inspection and execution operations remain unchanged.
+func (s *Store) expansionAccess(ctx context.Context, tx pgx.Tx, id string) error {
+	if err := validID(id); err != nil {
+		return err
+	}
+	var owner, repo, reader string
+	err := tx.QueryRow(ctx, `SELECT r.caller,r.scope->>'repo',COALESCE(i.expansion_reader,'')
+		FROM cairn.retrieval_receipt r LEFT JOIN cairn.index_session i USING(receipt_id)
+		WHERE r.receipt_id=$1`, id).Scan(&owner, &repo, &reader)
+	if err == pgx.ErrNoRows {
+		return failure("NOT_FOUND", "receipt not found")
+	}
+	if err != nil {
+		return err
+	}
+	if owner != s.channel.Principal && (reader != s.channel.Principal || s.channel.Instrumented || s.channel.Operator) {
+		return failure("AUTHORITY_DENIED", "receipt does not authorize this expansion reader")
+	}
+	return s.checkRepo(repo)
 }
 
 func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination) (Expansion, error) {
@@ -454,4 +486,21 @@ func (s *Store) InvalidateHandles(ctx context.Context, req InvalidateHandlesRequ
 		tag, err := tx.Exec(ctx, `UPDATE cairn.index_session SET expires_at=clock_timestamp() WHERE expires_at>clock_timestamp()`)
 		return InvalidatedHandles{tag.RowsAffected()}, err
 	})
+}
+
+// Missing sessions are body packages. Every index receipt has a session created
+// in its compilation transaction; expiry also prevents a new launch claim.
+func indexSessionCurrent(ctx context.Context, tx pgx.Tx, id string) error {
+	var expired bool
+	err := tx.QueryRow(ctx, `SELECT expires_at<=clock_timestamp() FROM cairn.index_session WHERE receipt_id=$1`, id).Scan(&expired)
+	if err == pgx.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if expired {
+		return failure("STALE_HANDLE", "index expired; retrieve a fresh index")
+	}
+	return nil
 }

@@ -49,7 +49,8 @@ and `localapi.Client.RunPackage` provide the retained read. The Unix operation i
 It checks observer role, receipt ownership, repository, authenticated destination,
 semantic integrity and current eligibility. Loading is a read: it creates no
 new receipt, binding or launch claim. Index packages require a tool route and
-are refused by this body-execution path.
+are refused by this body-execution path. Use [observed index execution](observed-index.md)
+with `--index` and `run-index` for their existing native pull route.
 
 A wrong seal returns `INTEGRITY_FAILURE`; wrong owner/role/destination returns
 `AUTHORITY_DENIED`; mismatched run declarations return `INVALID_REQUEST`.

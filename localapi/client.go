@@ -124,6 +124,28 @@ func (c *Client) BindRun(ctx context.Context, req core.RunBindingRequest) (resul
 	return
 }
 
+func (c *Client) Index(ctx context.Context, req core.CompileRequest, dest core.Destination) (core.IndexResult, error) {
+	var result core.IndexResult
+	if err := c.Call(ctx, "index", req, &result); err != nil {
+		return core.IndexResult{}, err
+	}
+	if result.Package.Semantic.Destination != dest {
+		return core.IndexResult{}, &core.Error{Code: "AUTHORITY_DENIED", Message: "run destination differs from the authenticated API profile"}
+	}
+	return result, nil
+}
+
+func (c *Client) RunIndex(ctx context.Context, req core.RunPackageRequest, dest core.Destination) (core.IndexResult, error) {
+	var result core.IndexResult
+	if err := c.Call(ctx, "run-index", req, &result); err != nil {
+		return core.IndexResult{}, err
+	}
+	if result.Package.Semantic.Destination != dest {
+		return core.IndexResult{}, &core.Error{Code: "AUTHORITY_DENIED", Message: "run destination differs from the authenticated API profile"}
+	}
+	return result, nil
+}
+
 func (c *Client) RunPackage(ctx context.Context, req core.RunPackageRequest, dest core.Destination) (core.Package, error) {
 	var result core.Package
 	if err := c.Call(ctx, "run-package", req, &result); err != nil {

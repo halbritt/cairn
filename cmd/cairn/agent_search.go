@@ -7,32 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/indexview"
 	"github.com/halbritt/cairn/localapi"
 )
 
-type agentSearchEntry struct {
-	core.IndexEntry
-	PullCommand   string             `json:"pull_command,omitempty"`
-	PullArguments core.ExpandRequest `json:"pull_arguments"`
-}
-
-// This view preserves semantic fields but is not itself a sealed package.
-type agentSearchView struct {
-	core.SemanticPackage
-	Schema           string             `json:"schema"`
-	Index            []agentSearchEntry `json:"index"`
-	SourceSchema     string             `json:"source_schema"`
-	SourceSeal       string             `json:"source_seal"`
-	ReceiptID        string             `json:"receipt_id"`
-	RequestID        string             `json:"request_id"`
-	ExpiresAt        time.Time          `json:"expires_at"`
-	CreditsRemaining int                `json:"credits_remaining"`
-	BytesRemaining   int                `json:"bytes_remaining"`
-}
+type agentSearchEntry = indexview.Entry
+type agentSearchView = indexview.View
 
 func agentSearch(ctx context.Context, client *localapi.Client, args []string, socket, tokenFile string) (agentSearchView, error) {
 	var kinds []string
@@ -100,56 +83,10 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 }
 
 func presentAgentSearch(result core.IndexResult, request string, command []string, room int) (agentSearchView, error) {
-	view := agentSearchView{SemanticPackage: result.Package.Semantic, Schema: "cairn.agent-search/1",
-		SourceSchema: result.Package.Semantic.Schema, SourceSeal: result.Package.Seal, ReceiptID: result.Package.ReceiptID,
-		RequestID: request, Index: []agentSearchEntry{}, ExpiresAt: result.ExpiresAt,
-		CreditsRemaining: result.CreditsRemaining, BytesRemaining: result.BytesRemaining}
-	type versionKey struct {
-		record  string
-		version int
-	}
-	handles := make(map[versionKey]string, len(result.Handles))
-	for _, handle := range result.Handles {
-		key := versionKey{handle.RecordID, handle.Version}
-		if _, exists := handles[key]; exists || handle.Handle == "" {
-			return agentSearchView{}, invalid("index response has duplicate or empty handles")
-		}
-		handles[key] = handle.Handle
-	}
-	for _, entry := range result.Package.Semantic.Index {
-		handle, exists := handles[versionKey{entry.RecordID, entry.Version}]
-		if !exists {
-			return agentSearchView{}, invalid("index response has no handle for a record version")
-		}
-		pull := core.ExpandRequest{RequestID: uuid.NewString(), ReceiptID: result.Package.ReceiptID, Handle: handle}
-		var pullCommand string
-		if len(command) != 0 {
-			argv := append(append([]string{}, command...), "pull", "--request-id", pull.RequestID, pull.ReceiptID, pull.Handle)
-			pullCommand = shellCommand(argv)
-		}
-		view.Index = append(view.Index, agentSearchEntry{entry, pullCommand, pull})
-	}
-	encoded, err := json.Marshal(response{Schema: "cairn.response/1", OK: true, Status: "OK", Data: view})
-	if err != nil {
-		return agentSearchView{}, err
-	}
-	if len(encoded)+1 > room {
-		return agentSearchView{}, &core.Error{Code: "BUDGET_REFUSED", Message: "search response with pull commands exceeds input room; shorten socket/token paths or increase --tokens"}
-	}
-	return view, nil
+	return indexview.Present(result, request, command, room)
 }
 
-func shellCommand(args []string) string {
-	words := make([]string, len(args))
-	for i, word := range args {
-		if word != "" && strings.Trim(word, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-/.:@=") == "" {
-			words[i] = word
-		} else {
-			words[i] = "'" + strings.ReplaceAll(word, "'", "'\"'\"'") + "'"
-		}
-	}
-	return strings.Join(words, " ")
-}
+func shellCommand(args []string) string { return indexview.ShellCommand(args) }
 
 func agentPull(ctx context.Context, client *localapi.Client, operation string, args []string) (json.RawMessage, error) {
 	f := flags("agent " + operation)

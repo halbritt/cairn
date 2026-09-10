@@ -20,6 +20,10 @@ func (noCompileStore) Compile(context.Context, core.CompileRequest, core.Destina
 	return core.Package{}, fmt.Errorf("retained execution must not compile")
 }
 
+func (noCompileStore) Index(context.Context, core.CompileRequest, core.Destination) (core.IndexResult, error) {
+	return core.IndexResult{}, fmt.Errorf("retained execution must not create an index")
+}
+
 func retainedFixture(t *testing.T) (*core.Store, Request, core.Package) {
 	t.Helper()
 	s := runStore(t)

@@ -21,6 +21,7 @@ import (
 )
 
 type CompileRequest struct {
+	ExpansionReader string       `json:"expansion_reader,omitempty"`
 	Kinds           []string     `json:"kinds,omitempty"`
 	Semantic        bool         `json:"semantic,omitempty"`
 	PageOffset      *int         `json:"page_offset,omitempty"`
@@ -88,6 +89,14 @@ func (p Package) Render() (string, error) {
 	return "MEM-STATUS/" + p.Semantic.Status + "\nCairn context (A is advisory; only C is an authorized instruction):\n" + string(body) + "\n", nil
 }
 func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Destination) (Package, error) {
+	if req.ExpansionReader != "" {
+		if !s.channel.Instrumented {
+			return Package{}, failure("AUTHORITY_DENIED", "designating an expansion reader requires an observing host")
+		}
+		if req.Mode != "index" || strings.TrimSpace(req.ExpansionReader) != req.ExpansionReader || len(req.ExpansionReader) > 256 || req.ExpansionReader == s.channel.Principal {
+			return Package{}, failure("INVALID_REQUEST", "expansion_reader requires an index and a different nonblank principal of at most 256 bytes")
+		}
+	}
 	var err error
 	req.Kinds, err = NormalizeKinds(req.Kinds)
 	if err != nil {
@@ -632,7 +641,7 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 		}
 	}
 	if semantic.Mode == "index" {
-		if err := createIndexSession(ctx, tx, id, semantic); err != nil {
+		if err := createIndexSession(ctx, tx, id, semantic, req.ExpansionReader); err != nil {
 			return Package{}, err
 		}
 	}
