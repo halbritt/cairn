@@ -86,3 +86,12 @@ core followed by API against one disposable database passes with the race detect
 static checks pass. Production source and installed `c5fa55a` are unchanged.
 The initial failed CI result remains in the metadata; corrected-source CI is
 recorded separately when complete.
+
+
+[Corrected CI 34529414559](https://github.com/halbritt/cairn/actions/runs/34529414559)
+passed on `3ad6e134320c882e6c5cc86e1f0c598d56aa27c0`. Both jobs and every
+recorded step passed, including the shared-database PostgreSQL race suite,
+Python checks, static checks, authenticated CLI checks and OpenCode plugin check.
+The tested production source matches installed `c5fa55a`; the intervening commit
+changes only the API fixture and documentation. The CLI and API still report the
+clean installed build. The initial CI failure remains in the history and metadata.

@@ -3722,3 +3722,15 @@ bootstrap identity. A local UTC, race-enabled core→API sequence against the sa
 disposable database passes, as do static checks. The production sources and
 installed `c5fa55a` build are unchanged. The failed CI and targeted correction
 remain recorded in the verification metadata; corrected-source CI follows.
+
+
+### 2026-09-10 — Refusal diagnostic CI completion
+
+
+[Corrected CI 34529414559](https://github.com/halbritt/cairn/actions/runs/34529414559)
+passed on `3ad6e134320c882e6c5cc86e1f0c598d56aa27c0`. Both jobs and every
+recorded step passed, including the shared-database PostgreSQL race suite,
+Python checks, static checks, authenticated CLI checks and OpenCode plugin check.
+The tested production source matches installed `c5fa55a`; the intervening commit
+changes only the API fixture and documentation. The CLI and API still report the
+clean installed build. The initial CI failure remains in the history and metadata.
