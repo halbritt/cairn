@@ -43,5 +43,21 @@ or Go-interface work. Pincite's validated release is
 `d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f`.
 
 This verifies control over retrieval room. It does not establish better decisions,
-lower total task cost or durable cross-harness task benefit. Installation follows
-successful CI; the API and database require no upgrade.
+lower total task cost or durable cross-harness task benefit. The API and database
+require no upgrade.
+
+
+## Installation
+
+Clean CLI/MCP `f405aeb9c388ceb40e4d95d994b9130dd04e906d` and its bundled native
+OpenCode adapter were installed
+after [CI run 34541726630](https://github.com/halbritt/cairn/actions/runs/34541726630) passed both jobs and every step.
+API `4999caa` and PostgreSQL kept their process IDs and executable hashes.
+Migration 034, host settings, recent-file plugin and all
+80 retained note-version payloads were unchanged. Previous binaries and adapter are backed up.
+
+Actual Codex and OpenCode clients loaded the installed change and read the same
+154-byte passage from startup procedure v1 with 8,000-byte room. Their source and
+span hashes match. Both reject room above the host ceiling, keep identical pull
+retries and use the configured 32,000-byte default on a later search. These checks
+performed no model inference and changed no operational note content.

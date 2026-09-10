@@ -172,5 +172,81 @@
     "Whole-task budgeting remains open",
     "No model inference in native checks",
     "Initial Codex probe overclaimed equality of regenerated pull UUIDs; corrected comparison passed"
-  ]
+  ],
+  "installation": {
+    "cli_revision": "f405aeb9c388ceb40e4d95d994b9130dd04e906d",
+    "api_revision": "4999caa458c71137b3c646730d49931ed8a6b10d",
+    "cli_sha256": "678c78ace8cd19ff03822c01a49dba8ca089828fccc44eeaf13e16aa85a85541",
+    "adapter_sha256": "02dc935a5bdfe67516ebc88587abe655b2022f53a503922cbc4b1c1e21682985",
+    "api_restarted": false,
+    "migration": 34,
+    "services_unchanged": true,
+    "record_versions_before": {
+      "versions": 80,
+      "sha256": "c4a37d08e049e6d490fd42e06c6c92ba99d1d2254d72c2d322b93c89ba3a20b9"
+    },
+    "record_versions_after": {
+      "versions": 80,
+      "sha256": "c4a37d08e049e6d490fd42e06c6c92ba99d1d2254d72c2d322b93c89ba3a20b9"
+    },
+    "codex": {
+      "codex_version": "codex-cli 0.153.4",
+      "record_id": "8ab6f87a-ff0d-46f2-9ae3-4f4c0cfa033c",
+      "version": 1,
+      "body_sha256": "0aba18437b0ee7a05d5711437c7db2ad9ddcb5efa87c818513a82329a50f819d",
+      "span": {
+        "offset": 4292,
+        "length": 154
+      },
+      "span_sha256": "867b2cd7beb05292313e290f9adc44523f0e05605a2d819470a6ab61c8462b3c",
+      "available_tokens": 8000,
+      "optional_limit": 800,
+      "bytes_remaining": 5915,
+      "default_available_tokens": 32000,
+      "search_receipt_and_budget_retry_identical": true,
+      "pull_retry_identical": true,
+      "changed_room_refused": true,
+      "above_host_ceiling_refused": true,
+      "model_turns_started": 0
+    },
+    "opencode": {
+      "opencode_version": "1.18.21",
+      "record_id": "8ab6f87a-ff0d-46f2-9ae3-4f4c0cfa033c",
+      "version": 1,
+      "body_sha256": "0aba18437b0ee7a05d5711437c7db2ad9ddcb5efa87c818513a82329a50f819d",
+      "span": {
+        "offset": 4292,
+        "length": 154
+      },
+      "span_sha256": "867b2cd7beb05292313e290f9adc44523f0e05605a2d819470a6ab61c8462b3c",
+      "available_tokens": 8000,
+      "optional_limit": 800,
+      "bytes_remaining": 5911,
+      "default_available_tokens": 32000,
+      "pull_retry_identical": true,
+      "above_host_ceiling_refused": true,
+      "model_inference_calls": 0,
+      "adapter_sha256": "02dc935a5bdfe67516ebc88587abe655b2022f53a503922cbc4b1c1e21682985"
+    },
+    "ci": {
+      "id": 34541726630,
+      "url": "https://github.com/halbritt/cairn/actions/runs/34541726630",
+      "head_sha": "f405aeb9c388ceb40e4d95d994b9130dd04e906d",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "name": "opencode-plugin",
+          "conclusion": "success",
+          "steps": 7,
+          "all_steps_passed": true
+        },
+        {
+          "name": "postgres",
+          "conclusion": "success",
+          "steps": 13,
+          "all_steps_passed": true
+        }
+      ]
+    }
+  }
 }

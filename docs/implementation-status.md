@@ -19,7 +19,10 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI is clean `7ce59a4`; the API is clean `4999caa`.
+The installed CLI is clean `f405aeb`; the API is clean `4999caa`.
+[Native search room](search-room.md) is installed in MCP and OpenCode: a search
+can request a smaller allowance beneath its configured ceiling. Whole-task context
+accounting remains open.
 [Structured CLI pulls](verification/pull-json-2026-09-10.md) accept returned
 arguments directly as JSON while preserving shell forms and API checks. The
 [help repair](verification/harness-help-2026-09-10.md) prints harness setup flags
@@ -4078,3 +4081,24 @@ UUID. This is a CLI/MCP and adapter addition with no core, API or schema change.
 corrected evidence and limits. Installation will be recorded after CI. Native
 checks performed no model inference or operational note-content mutation;
 incremental task benefit remains unmeasured.
+
+
+### 2026-09-10 — Install native search room after CI
+
+Clean CLI/MCP `f405aeb9c388ceb40e4d95d994b9130dd04e906d` and its native OpenCode adapter are installed.
+[CI run 34541726630](https://github.com/halbritt/cairn/actions/runs/34541726630) passed both jobs and all steps,
+including the full Go race suite, Python tests and authenticated CLI/API/MCP checks.
+API `4999caa`, PostgreSQL, migration 034, host configuration and the recent-file
+plugin remained unchanged. The installation snapshot preserved all
+80 retained note-version payloads. Previous binaries and the adapter were backed up.
+
+Installed Codex 0.153.4 and OpenCode 1.18.21 each retrieved
+exactly the same 154-byte passage from startup procedure
+`8ab6f87a-ff0d-46f2-9ae3-4f4c0cfa033c` v1 with 8,000-byte room and
+an 800-byte optional index allowance. Both preserved pull retries, rejected values
+above the host ceiling and returned to the 32,000-byte default on the next search.
+Codex also verified changed-room search retry refusal through its real MCP client.
+These were ordinary reads with no model inference or operational note-content
+mutation. [Verification](verification/search-room-2026-09-10.md) records the
+installation and matching source/span hashes. Whole-task accounting and durable
+model-task benefit remain open.
