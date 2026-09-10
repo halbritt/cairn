@@ -192,22 +192,9 @@ func prepareAgentStart(ctx context.Context, client *localapi.Client, args []stri
 }
 
 func readStartupTask(path string, limit int) (string, error) {
-	// Nonblocking open lets us reject a FIFO without waiting for a writer.
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	body, err := readRegularFilePrefix(path, limit+1)
 	if err != nil {
-		return "", fmt.Errorf("open startup task: %w", err)
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return "", fmt.Errorf("inspect startup task: %w", err)
-	}
-	if !info.Mode().IsRegular() {
-		return "", invalid("--prompt-file requires a regular file")
-	}
-	body, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
-	if err != nil {
-		return "", fmt.Errorf("read startup task: %w", err)
+		return "", err
 	}
 	if len(body) > limit {
 		return "", &core.Error{Code: "BUDGET_REFUSED", Message: "task file exceeds startup input room"}

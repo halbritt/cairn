@@ -46,6 +46,12 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Selected files can be captured directly.** `agent evidence --file` and
+  operator `capture-evidence --file` preserve exact bytes up to 1 MiB, with a
+  chosen source label and local default. Existing JSON mode remains.
+  [Commands](evidence-refresh.md#capture-a-selected-file),
+  [checks](verification/file-evidence-capture-2026-09-09.md).
+
 - **Binary evidence has an explicit capture path.** API and CLI accept canonical
   base64 without changing decoded source bytes or the 1 MiB limit. Existing text
   retries remain compatible. [Contract](evidence-refresh.md),
@@ -2045,3 +2051,32 @@ capture/citation authority. Exact retry and fresh pull match SHA-256
 The guide records retrieval after discovery; no memory-caused discovery or task
 benefit is asserted. CI 34433568208 was still running at installation observation.
 Deployment evidence: /tmp/cairn-binary-capture-deployment/.
+
+
+CI completion: `34433568208` passed for exact binary-capture implementation `386eae1`.
+
+
+### 2026-09-09 — Selected-file evidence capture
+
+Added `agent evidence --file PATH --source LABEL` and the equivalent operator
+`capture-evidence` flags. Both read a chosen regular file, preserve 1 byte–1 MiB
+exactly through canonical base64, default to local sensitivity and retain only
+the chosen source label, without an implicit path. Explicit sharing and stable
+request UUIDs use existing capture semantics; changed files under a committed
+UUID conflict. Stdin JSON remains available when no flags are supplied. Operator
+file mode reaches the full source limit without changing its JSON envelope cap.
+
+File capture and task-file startup share bounded regular-file reading; startup
+keeps its distinct UTF-8/NUL/nonblank and budget rules. The initial agent test
+failed on argument refusal. The first full integration passed Go/race but exposed
+an operator dispatch omission: the generic argument guard ran before file parsing.
+The corrected handler runs before that guard. Final disposable CLI/API integration
+passes both 1 MiB file paths, retained bytes, labels, sharing, retries and changed-
+file conflicts, plus existing JSON binary capture and stdio MCP. Final static/CLI
+race checks and the earlier Go/40-Python suite pass. The failed run is retained.
+
+Saved evidence guidance was retrieved before implementation and informed encoding,
+limits and retry rules; current code and conversation also supplied those facts.
+This removes manual JSON preparation but does not establish net task benefit.
+No API/core schema or native adapter changed. Installation is recorded separately.
+[Report](verification/file-evidence-capture-2026-09-09.md).

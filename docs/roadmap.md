@@ -728,7 +728,10 @@ are explicit. Other policy paths and refusal analytics remain open.
 [Evidence refresh](evidence-refresh.md) now records inline check generations and
 history, atomically invalidates affected impact previews, and blocks proposal
 conversion when selected evidence is unavailable. Historical gates remain frozen.
-[Explicit binary capture](evidence-refresh.md) now preserves arbitrary source bytes
+[Selected-file capture](evidence-refresh.md#capture-a-selected-file) reads and encodes
+chosen regular files through the existing CLI capture operation, with a required
+source label and local default. It retains no automatic file locator or freshness
+claim. [Explicit binary capture](evidence-refresh.md) preserves arbitrary source bytes
 through API/CLI base64 input, including retry identity and the decoded 1 MiB limit.
 Managed artifacts, scheduled checks, source-span constraints and deletion remain open.
 

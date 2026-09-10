@@ -45,7 +45,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, invalid("agent requires an API operation and JSON on stdin")
 	}
 	operation := f.Arg(0)
-	commandArgs := operation == "remember" || operation == "run" || operation == "start" || operation == "search" || operation == "pull" || operation == "pull-evidence"
+	commandArgs := operation == "evidence" || operation == "remember" || operation == "run" || operation == "start" || operation == "search" || operation == "pull" || operation == "pull-evidence"
 	if !commandArgs && f.NArg() != 1 {
 		return nil, invalid("agent operation requires one JSON request on stdin")
 	}
@@ -70,6 +70,17 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 			Client buildinfo.Info `json:"client"`
 			Server buildinfo.Info `json:"server"`
 		}{"cairn.version/1", buildinfo.Read(), server}, nil
+	}
+	if operation == "evidence" && f.NArg() > 1 {
+		req, err := evidenceFileRequest(f.Args()[1:])
+		if err != nil {
+			return nil, err
+		}
+		var result json.RawMessage
+		if err := client.Call(ctx, "evidence", req, &result); err != nil {
+			return nil, err
+		}
+		return result, nil
 	}
 	if operation == "remember" {
 		req, err := rememberRequest(f.Args()[1:], input)

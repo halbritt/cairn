@@ -9,6 +9,27 @@ import uuid
 def check(binary, root, env, call, grant):
     profile = ['agent', '--token-file', str(root / 'hosted-agent.token')]
     client_env = dict(env, CAIRN_DATABASE_URL='host=/nonexistent-binary-client dbname=denied')
+    selected_file = root / 'local file with spaces.bin'
+    selected_bytes = bytes(range(256)) * 4096
+    for prefix, operation, sharing in [(profile, 'evidence', []), ([], 'capture-evidence', ['--shareable'])]:
+        selected_file.write_bytes(selected_bytes)
+        request_id = str(uuid.uuid4())
+        command = [*prefix, operation, '--file', str(selected_file), '--source', 'chosen file source',
+                   '--repo', 'fixture:socket', '--request-id', request_id, *sharing]
+        file_env = client_env if prefix else env
+        saved = call(command, {}, file_env)
+        assert saved['sha256'] == hashlib.sha256(selected_bytes).hexdigest()
+        assert call(command, {}, file_env) == saved
+        document = call(['evidence', saved['evidence_id']], {})
+        assert base64.b64decode(document['body_base64']) == selected_bytes
+        assert document['source'] == 'chosen file source'
+        assert document['sensitivity'] == ('shareable' if sharing else 'local')
+        assert str(selected_file) not in json.dumps(document)
+        selected_file.write_bytes(b'changed selected file')
+        changed = subprocess.run([binary, *command], env=file_env, stdin=subprocess.DEVNULL,
+                                 capture_output=True, text=True, timeout=10)
+        assert changed.returncode != 0 and json.loads(changed.stdout)['status'] == 'IDEMPOTENCY_CONFLICT'
+    print('Selected file capture preserves exact 1 MiB bytes, labels, sharing and retries through both CLIs; changed files refuse')
     body = bytes(range(256)) * 4
     request = dict(request_id=str(uuid.uuid4()), repo='fixture:socket',
                    body_base64=base64.b64encode(body).decode('ascii'),

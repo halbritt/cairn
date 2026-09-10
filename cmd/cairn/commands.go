@@ -26,6 +26,8 @@ Everyday commands:
   claude-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N]
   mcp --socket PATH --token-file FILE --repo REPO (--task TASK --run RUN | --codex-thread) [--tokens N]
   agent [--token-file FILE] [--socket PATH] OPERATION < request.json
+  agent [--token-file FILE] [--socket PATH] evidence --file PATH --source LABEL [--repo REPO] [--shareable] [--request-id UUID]
+  capture-evidence --file PATH --source LABEL [--repo REPO] [--shareable] [--request-id UUID]
   agent [--token-file FILE] [--socket PATH] search --task TASK --run RUN [--repo REPO] [--kind KIND ...] (QUERY | --browse)
   agent [--token-file FILE] [--socket PATH] start --task TASK --run RUN --query QUERY --prompt TASK --pull-tool NAME --search-tool NAME -- COMMAND ARGS...
   agent [--token-file FILE] [--socket PATH] pull [--request-id UUID] RECEIPT_UUID HANDLE_UUID
@@ -137,6 +139,14 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	switch args[0] {
+	case "capture-evidence":
+		if len(args) > 1 {
+			req, err := evidenceFileRequest(args[1:])
+			if err != nil {
+				return nil, err
+			}
+			return store.CaptureEvidence(ctx, req)
+		}
 	case "recovery-export", "recovery-inspect":
 		if len(args) != 2 {
 			return nil, invalid("recovery command requires one file path")

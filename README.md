@@ -78,6 +78,10 @@ The default database and run artifacts live under `~/.local/share/cairn`.
 **dedicated Cairn database** for the CLI; it does not redirect the local-store
 script. Use `CAIRN_PG_BIN` to select PostgreSQL binaries when necessary.
 
+[Selected evidence files](docs/evidence-refresh.md#capture-a-selected-file) can be
+captured with `agent evidence --file PATH --source LABEL` without preparing JSON.
+Capture remains local by default and preserves the selected bytes.
+
 [Optional semantic discovery](docs/semantic-discovery.md) adds `--semantic` to
 authenticated agent search and `semantic: true` to native search tools. It can
 find notes using different vocabulary; the separately prepared local CPU worker
