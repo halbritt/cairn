@@ -153,7 +153,7 @@ func TestStreamCancellationBusyAndOwnerShutdown(t *testing.T) {
 }
 
 func TestStreamReleasesIdleChild(t *testing.T) {
-	rank, stop, err := streamCommand(context.Background(), streamWorker(t), 30*time.Millisecond)
+	rank, stop, err := StreamCommandWithIdleTimeout(context.Background(), streamWorker(t), 30*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,5 +267,18 @@ func TestStreamCancellationUnblocksRequestWrite(t *testing.T) {
 	}
 	if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
 		t.Fatalf("blocked child survived: %v", err)
+	}
+}
+
+func TestStreamRejectsNonpositiveIdleTimeout(t *testing.T) {
+	path := streamWorker(t)
+	for _, idle := range []time.Duration{0, -time.Second} {
+		_, stop, err := StreamCommandWithIdleTimeout(context.Background(), path, idle)
+		if stop != nil {
+			stop()
+		}
+		if err == nil || !strings.Contains(err.Error(), "idle timeout must be positive") {
+			t.Fatalf("idle %v: %v", idle, err)
+		}
 	}
 }

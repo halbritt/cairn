@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/localapi"
 	"github.com/halbritt/cairn/semantic"
@@ -26,6 +27,7 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	socket := f.String("socket", filepath.Join(directory, "api.sock"), "private Unix socket")
 	semanticCommand := f.String("semantic-command", "", "optional absolute local CPU scoring executable")
 	semanticStreamCommand := f.String("semantic-stream-command", "", "optional absolute reusable local CPU scoring executable")
+	semanticIdle := f.Duration("semantic-idle-timeout", 30*time.Second, "positive idle lifetime for the reusable semantic worker")
 	if err = f.Parse(args); err != nil {
 		return invalid(err.Error())
 	}
@@ -34,6 +36,18 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	}
 	if *semanticCommand != "" && *semanticStreamCommand != "" {
 		return invalid("choose one semantic command mode")
+	}
+	idleConfigured := false
+	f.Visit(func(option *flag.Flag) {
+		if option.Name == "semantic-idle-timeout" {
+			idleConfigured = true
+		}
+	})
+	if idleConfigured && *semanticStreamCommand == "" {
+		return invalid("semantic-idle-timeout requires --semantic-stream-command")
+	}
+	if *semanticIdle <= 0 {
+		return invalid("semantic idle timeout must be positive")
 	}
 	info, err := os.Lstat(*config)
 	if err != nil {
@@ -67,7 +81,7 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	}
 	if *semanticStreamCommand != "" {
 		var closeWorker func()
-		ranker, closeWorker, err = semantic.StreamCommand(ctx, *semanticStreamCommand)
+		ranker, closeWorker, err = semantic.StreamCommandWithIdleTimeout(ctx, *semanticStreamCommand, *semanticIdle)
 		if err != nil {
 			return err
 		}

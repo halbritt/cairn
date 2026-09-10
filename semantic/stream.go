@@ -38,10 +38,15 @@ type streamWorkerProcess struct {
 // Requests never queue behind another caller. Idle workers are released after
 // 30 seconds. Existing one-shot executables must use Command instead.
 func StreamCommand(owner context.Context, path string) (core.SemanticRanker, func(), error) {
-	return streamCommand(owner, path, 30*time.Second)
+	return StreamCommandWithIdleTimeout(owner, path, 30*time.Second)
 }
 
-func streamCommand(owner context.Context, path string, idle time.Duration) (core.SemanticRanker, func(), error) {
+// StreamCommandWithIdleTimeout sets how long the host retains an unused worker.
+// The request deadline and cache eligibility rules are unchanged.
+func StreamCommandWithIdleTimeout(owner context.Context, path string, idle time.Duration) (core.SemanticRanker, func(), error) {
+	if idle <= 0 {
+		return nil, nil, fmt.Errorf("semantic worker idle timeout must be positive")
+	}
 	if err := validateCommand(path); err != nil {
 		return nil, nil, err
 	}

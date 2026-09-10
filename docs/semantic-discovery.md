@@ -51,8 +51,26 @@ cairn serve --semantic-stream-command "$HOME/.local/share/cairn/semantic/worker-
 ```
 
 Choose one command mode. The streaming worker starts on the first eligible query
-and exits after 30 seconds without scoring work. It occupies about 208 MiB in the
-local experiment while loaded. The prepared worker now reuses exact note vectors
+and by default exits after 30 seconds without scoring work. Hosts with spaced
+follow-up searches can retain the same loaded model and vector cache longer:
+
+```sh
+cairn serve --semantic-stream-command "$HOME/.local/share/cairn/semantic/worker-stream" \
+  --semantic-idle-timeout 5m
+```
+
+`--semantic-idle-timeout` accepts a positive Go duration and requires streaming
+mode. Zero and negative durations refuse; they do not mean unlimited retention.
+The interval starts after a completed scoring request and resets after each
+successful request. The request deadline remains 25 seconds, and cancellation,
+failure and shutdown still discard the worker. Choose the lifetime for the host's
+memory budget and query spacing: longer retention avoids re-embedding unchanged
+notes but keeps the model and vectors resident between requests. It does not
+improve cold scoring or guarantee that the next eligible set will hit the cache.
+The library's `semantic.StreamCommand` retains the 30-second default;
+`semantic.StreamCommandWithIdleTimeout` lets its host choose a positive interval.
+
+The worker occupied about 208 MiB in the original local experiment while loaded. The prepared worker now reuses exact note vectors
 from its last successfully scored request. Only body hashes and vectors are retained;
 query text, note text and record IDs are not cached. Notes absent from the next
 successful request are dropped. Changed bodies are embedded again, and all current

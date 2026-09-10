@@ -3125,3 +3125,37 @@ acceptance. No Striatum source, live graph, installed binary or configuration wa
 changed. The unrelated untracked `cmd_test.go` in Striatum main was left intact.
 Documentation claims and links were checked against source and retained reports;
 the complete preceding implementation history is preserved.
+
+### 2026-09-10 — Let the host retain semantic vectors across spaced follow-ups
+
+`serve --semantic-idle-timeout DURATION` now selects a positive idle lifetime for
+an explicitly configured streaming worker. The existing default remains 30 seconds;
+the library exposes the same choice through `StreamCommandWithIdleTimeout` while
+preserving `StreamCommand`. A nonpositive interval or an idle option without
+streaming mode refuses. Request deadlines, busy fallback, eligibility, score
+validation, model identity, cache contents and cleanup behavior remain unchanged.
+The [semantic guide](semantic-discovery.md#local-backend) explains the memory and
+latency tradeoff and a five-minute host configuration.
+
+The actual installed baseline, `a848e3c`, served two identical current-corpus
+semantic searches separated by 35 seconds after the first response. Both began
+with no API-owned worker and returned identical source pins and complete score
+digests. The first took 20.696 seconds and the follow-up 24.851 seconds. Loaded
+worker RSS was about 220 MiB. This reproduces the repeated cold-work cost across
+an idle gap; it is one pair on a shared host, not a service latency distribution.
+The fixed comparison plan requires the candidate follow-up below half the baseline
+wall time, identical full discovery/source pins and worker RSS below 300 MiB.
+
+The public idle-release test initially failed to compile without the new entry
+point, then passed through it. Nonpositive library intervals and misplaced CLI
+options each failed before their validation was added. Disposable PostgreSQL/race
+integration and static checks passed. A later CLI test additionally checks that
+nonpositive durations return `INVALID_REQUEST` before opening service state;
+its affected-package race rerun is recorded with the installation follow-up.
+The complete previous implementation history is preserved.
+
+Private baseline responses, the frozen plan, probe and check logs are under
+`/tmp/cairn-semantic-idle-20260910/`. The selected next step is a reversible
+five-minute configuration trial on this host after the final checks, preserving
+worker/model files and other host settings. Candidate performance, installation
+and retained task benefit are not established by this source checkpoint.
