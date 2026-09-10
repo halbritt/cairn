@@ -56,3 +56,18 @@ source/dependent lifecycle. Capturing bytes does not establish source truth,
 relevance, currentness, promotion or task benefit. Selected source bodies and raw
 operational memory remain outside Git. [Metadata](binary-evidence-capture-2026-09-09.json)
 retains verification and decision provenance. Installation is recorded separately.
+
+## Local installation
+
+Installed clean `386eae14cb1ad4d44e6bd61a56601217c14d4fe4` as CLI and API, SHA-256
+`332601448045c160ca95c88de27100a6bcf9104e6bfb120403d0f609a68d8260`. API PID 825681 and the installed CLI
+report the same revision. PostgreSQL, migrations, semantic worker, native adapter
+and connection settings remain unchanged. A catalog-backed operational backup
+preceded replacement. No synthetic binary source was captured in the live store.
+
+The existing evidence guide was revised v4→v5 with the new input and compatibility
+rules; earlier body and metadata remain. An identical mutation retry and fresh
+ordinary search/pull verified its exact bytes. This retains useful instructions
+for future work; it does not establish a downstream task benefit. CI 34433568208
+was still running at deployment observation. Deployment and guidance identities
+are retained in the companion metadata.

@@ -197,12 +197,12 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI and API: clean `605be1a59b1e5ede65cc9a940df06cff0603167b`, SHA-256
-  `e73a06fe06c0983b3e88ab329f3a666fc0ef1336ea6e58447ef8662a6bd501dc`; API PID 736082.
+- Installed CLI and API: clean `386eae14cb1ad4d44e6bd61a56601217c14d4fe4`, SHA-256
+  `332601448045c160ca95c88de27100a6bcf9104e6bfb120403d0f609a68d8260`; API PID 825681.
   `cairn version` and authenticated `agent version` report local and running
-  builds. A deliberately unstamped client remained unknown while correctly
-  identifying this stamped API; fresh MCP initialization named the facade build.
-  Ranked pagination, capture pins and phase support remain. PostgreSQL remains
+  builds. Explicit binary evidence input is installed; ranked pagination,
+  capture pins and phase support remain. Earlier stamped/unstamped and MCP
+  initialization checks are retained in the build-diagnosis report. PostgreSQL remains
   PID 163669; no migration was required. Earlier pre-phase readers remain
   unsuitable for phase data. Existing MCP processes keep their loaded executable.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
@@ -226,8 +226,10 @@ Live checks on 2026-09-09 found:
   took about 14 seconds. Candidate scores matched. No persistent cache, package
   update or independent service was added; the one-shot launcher remains available.
 
-The [build-diagnosis installation](verification/build-identity-2026-09-09.md#local-installation)
-records the current CLI/API and distinct stamped/unstamped observations.
+The [binary-capture installation](verification/binary-evidence-capture-2026-09-09.md#local-installation)
+records the current CLI/API and updated evidence guide. The
+[build-diagnosis installation](verification/build-identity-2026-09-09.md#local-installation)
+retains its preceding CLI/API and distinct stamped/unstamped observations.
 The [ranked-page installation](verification/search-pages-2026-09-09.md#local-installation)
 records the unchanged adapter, preceding CLI/API, live continuation and CI.
 The [vector-cache installation](verification/semantic-vector-cache-2026-09-09.md#installed-live-behavior)
@@ -2025,3 +2027,21 @@ unchanged and no model task ran. The saved evidence guide was retrieved after
 source discovery to preserve related constraints, not credited with finding the
 gap. L4 and durable task value remain partial. Installation is recorded separately.
 [Report](verification/binary-evidence-capture-2026-09-09.md).
+
+
+### 2026-09-09 — Binary evidence capture installed and guidance retained
+
+Installed clean `386eae1` as CLI/API after an operational backup.
+Both report that build, and running API PID 825681 matches the installed bytes.
+PostgreSQL PID 163669, schema, semantic worker, native adapter and connection
+settings remain unchanged. No synthetic binary evidence was added to the operational
+store; exact source capture/pull was verified in disposable integration.
+
+Revised evidence guide 8a47da19-dd71-43b2-a4cc-9cef9d113c81 from v4 to v5, preserving
+its earlier body and metadata. It now describes explicit binary input, decoded and
+encoded limits, retry representation, direct Go invalid-text refusal and unchanged
+capture/citation authority. Exact retry and fresh pull match SHA-256
+35cfeec5023e2a6b5851205f6c71aa5b45f23826c546a174f4d7506832f707b8.
+The guide records retrieval after discovery; no memory-caused discovery or task
+benefit is asserted. CI 34433568208 was still running at installation observation.
+Deployment evidence: /tmp/cairn-binary-capture-deployment/.
