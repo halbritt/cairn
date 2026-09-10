@@ -171,8 +171,9 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI: clean `215ecbf1e893afc530c31b9f773b243d851ccac3`, SHA-256
-  `0bd5304706293ef967d2ddb55a4bf15ab03b5e56c561ee77ad5a974c429bd780`.
+- Installed CLI: clean `397750b7ba886fc67dfb2159f8b2976e484bbc6b`, SHA-256
+  `bf680a75cf5165fc76ca6b7c842a564b3df24b5b5c7e7684e1065a2952fdb7bc`.
+  Explicitly empty capture pins refuse before an API request.
   Ordinary capture now accepts explicit applicability through CLI/MCP and the
   matching installed native OpenCode adapter. Fresh MCP processes load the new
   tool schema; existing sessions retain their original process.
@@ -204,7 +205,8 @@ Live checks on 2026-09-09 found:
 
 The [vector-cache installation](verification/semantic-vector-cache-2026-09-09.md#installed-live-behavior)
 records the current worker and observed cost. The [capture installation](verification/capture-pins-2026-09-09.md#local-installation)
-records the current CLI/adapter; the [phase installation](verification/task-phase-2026-09-09.md#local-installation)
+records the adapter and preceding CLI; its [empty-pins correction](verification/capture-pins-2026-09-09.md#correction-explicitly-empty-cli-pins)
+records the current CLI. The [phase installation](verification/task-phase-2026-09-09.md#local-installation)
 retains the API reader upgrade and preserved settings.
 The [file-fingerprint installation](verification/run-artifact-evidence-2026-09-09.md#local-installation)
 retains its preceding CLI deployment and real build observation. The
@@ -1842,3 +1844,12 @@ current source. Targeted tests first failed on accepted empty input and observed
 API contact; they now pass, along with static/Go/40 Python and final CLI package
 checks. Store rules and API behavior do not change. No task-value assessment or
 new note was added. [Correction and evidence](verification/capture-pins-2026-09-09.md#correction-explicitly-empty-cli-pins).
+
+### 2026-09-09 — Empty-pins CLI installation
+
+Installed clean `397750b` as CLI. Against an isolated absent socket and a temporary
+synthetic owner-only token, both empty forms return exit2/`INVALID_REQUEST`, confirming
+refusal before capture. The fixture token was removed. API `8f6864a`/PID430775,
+PostgreSQL, native adapter/settings and semantic worker `d633c68` remain unchanged.
+Installation and refusal metadata: `/tmp/cairn-empty-pins-deployment/installation.json`.
+Exact-source CI `34427884310` remains in progress; local static/Go/Python checks passed.

@@ -145,6 +145,48 @@
         "path": "/tmp/cairn-empty-pins-guidance-pull.json",
         "sha256": "9a519469187519bb4bc5a356c830202da6d1485758c25a1666162547edf7e7e1"
       }
-    ]
+    ],
+    "installation": {
+      "source_commit": "397750b7ba886fc67dfb2159f8b2976e484bbc6b",
+      "cli_sha256": "bf680a75cf5165fc76ca6b7c842a564b3df24b5b5c7e7684e1065a2952fdb7bc",
+      "clean_build": true,
+      "api_pid": "430775",
+      "api_sha256": "1a83019ee4645662225778cf0bd7df690006943509ba7c1e4b7852337b450f07",
+      "worker_sha256": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+      "installed_refusals": [
+        {
+          "arguments": [
+            "--pins",
+            ""
+          ],
+          "exit_code": 2,
+          "response": {
+            "schema": "cairn.response/1",
+            "ok": false,
+            "status": "INVALID_REQUEST",
+            "message": "INVALID_REQUEST: EOF"
+          }
+        },
+        {
+          "arguments": [
+            "--pins="
+          ],
+          "exit_code": 2,
+          "response": {
+            "schema": "cairn.response/1",
+            "ok": false,
+            "status": "INVALID_REQUEST",
+            "message": "INVALID_REQUEST: EOF"
+          }
+        }
+      ],
+      "api_restarted": false
+    },
+    "ci": {
+      "conclusion": "",
+      "headSha": "397750b7ba886fc67dfb2159f8b2976e484bbc6b",
+      "status": "in_progress",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34427884310"
+    }
   }
 }
