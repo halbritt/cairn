@@ -58,7 +58,7 @@ func streamCommand(owner context.Context, path string, idle time.Duration) (core
 		default:
 			return core.SemanticRankResult{}, fmt.Errorf("semantic worker busy")
 		}
-		ctx, stop := context.WithTimeout(ctx, 20*time.Second)
+		ctx, stop := context.WithTimeout(ctx, workerTimeout)
 		defer stop()
 		job := streamJob{ctx: ctx, request: request, reply: make(chan streamReply, 1)}
 		select {

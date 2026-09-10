@@ -2951,3 +2951,54 @@ inputs, responses, scripts and receipts are retained under
 configuration, schema or default changed. The next material investigation is
 cold semantic cost on current notes. The full preceding implementation history
 is preserved.
+
+### 2026-09-10 — Profile cold scoring; allow the current corpus to finish
+
+Source following `a9a4b1c` changes both semantic worker transports from a twenty-
+second deadline to a shared twenty-five-second budget. OpenCode remains at thirty
+seconds and the API client/server at thirty-five. Earlier cancellation, busy
+fallback, output bounds, group cleanup and thirty-second idle release remain.
+The installed build is still `9b888e1` at this pre-deployment checkpoint.
+
+The current twenty-note corpus was retained through ordinary hosted retrieval:
+58,353 body bytes and fifty chunks, within existing size limits. Setup took
+0.433 seconds; a profiled score took 20.412 seconds, with 20.321 cumulative seconds
+in ONNX inference. A fresh actual API search returned unavailable lexical fallback
+after 20.056 seconds. This narrows the investigation to inference work; it does
+not prove the exact cause of every earlier fallback.
+
+A fixed candidate grouped passages by length into batches of four and restored
+original order before scoring. Three alternating fresh-process pairs preserved
+every source-bound integer score. Baseline wall times were
+23.889/21.051/21.904 seconds; candidate times were 21.400/20.948/21.612.
+Median paired speedup was 1.014×, below the pre-run 1.25× target, and peak RSS rose
+from about 220 to 305 MiB. Every candidate exceeded twenty seconds. The candidate
+was rejected without tuning; worker Python, model, chunking, batching, thread
+count and score identity stay unchanged. This is a new current-note workload,
+not a rerun of the retired documentation/thread-count cohort.
+
+The separate availability adjustment permits up to five seconds more work and
+waiting rather than improving inference speed. Both actual transport regressions
+first refused a twenty-one-second response, then passed with the new budget.
+The unchanged real worker completed the retained corpus through the new one-shot
+transport in 20.294 seconds and the stream in 20.118 seconds, followed by a
+0.033-second repeated stream request. Complete results, including every source
+identity/hash/version, integer score and model identity, matched the profiled
+baseline. Existing semantic race/cancellation/cleanup checks, full disposable
+PostgreSQL integration and Go race suites, forty Python tests and static checks
+passed. Native deployment verification remains the next step at this checkpoint.
+
+The live fallback also exposed a maintenance cost: the previous worker-guidance
+update copied the exact setup query, causing that general performance note to
+rank ahead of the setup procedures. Current guidance needs correction while the
+full diagnostic case remains in verification history. The initial profiling script
+also shadowed Python's standard `profile` module; it was renamed before successful
+measurement. Neither cost is omitted from the record.
+
+[Verification](verification/semantic-deadline-2026-09-10.md) and
+[metadata](verification/semantic-deadline-2026-09-10.json) retain the measurements,
+tradeoffs and private artifact hashes under `/tmp/cairn-cold-cost/`. Doctrine
+packet `pkt-ba3bab962ec3ebec`, typed evidence and a validated decision receipt
+separate the rejected optimization from the availability decision. Broader
+workload/environment evidence remains missing; no general speedup, service
+percentile, answering-model acceptance or net memory benefit is claimed.

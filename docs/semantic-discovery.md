@@ -101,7 +101,8 @@ Each invocation is bounded to 64 optional notes, one MiB of note bodies and 128
 windows. Queries and decoded windows must fit the model's 512-token input. The
 worker uses two CPU threads. One invocation runs at a time per API process;
 another concurrent semantic request falls back immediately. Workers have a
-20-second deadline, within the API's existing request deadline, and a 64 KiB
+25-second deadline, leaving five seconds before the native OpenCode client's
+30-second timeout and ten before the API client's 35-second timeout, and a 64 KiB
 output limit. Cancellation terminates the worker process group.
 Streaming mode has the same per-request deadline, busy refusal and output cap.
 The API closes pipes and reaps the group on cancellation, malformed responses or

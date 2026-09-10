@@ -486,6 +486,14 @@ twenty-note corpus returns lexical fallback and a separate worker run takes
 is unconfirmed. Investigate current cold semantic cost before changing ranking
 or timeout defaults; retain full notes, eligibility and score semantics.
 
+The [cold-workload follow-up](verification/semantic-deadline-2026-09-10.md)
+finds inference dominates the current fifty-chunk corpus. A fixed batching
+candidate preserves scores but misses its target and increases memory, so it is
+rejected. A separate twenty-five-second worker budget lets the unchanged model
+finish that corpus through both transports while remaining below native/API
+outer deadlines. This allows five seconds more work and waiting; it does not
+reduce inference cost or establish task benefit. Larger-corpus cost remains open.
+
 [Ranked search continuation](verification/search-pages-2026-09-09.md) now reaches
 later eligible matches through opt-in lexical and semantic pages in CLI, MCP and
 OpenCode. Required instructions, per-page budgets and historical replay remain;

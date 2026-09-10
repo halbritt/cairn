@@ -17,6 +17,9 @@ import (
 	"github.com/halbritt/cairn/core"
 )
 
+// Leave time to deliver fallback before native clients' 30-second deadline.
+const workerTimeout = 25 * time.Second
+
 type boundedOutput struct{ buffer bytes.Buffer }
 
 func (b *boundedOutput) Write(p []byte) (int, error) {
@@ -40,7 +43,7 @@ func Command(path string) (core.SemanticRanker, error) {
 		default:
 			return core.SemanticRankResult{}, fmt.Errorf("semantic worker busy")
 		}
-		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, workerTimeout)
 		defer cancel()
 		input, err := json.Marshal(req)
 		if err != nil {
