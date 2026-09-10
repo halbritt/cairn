@@ -568,6 +568,13 @@ access. Current repository/destination and deletion restrictions remain; histori
 inspection supplies no current authority. This supports selected maintenance and
 does not close cutoff-recompilation or task-value requirements.
 
+The same history read is now available as `cairn_history` through MCP and native
+OpenCode, so comparing earlier guidance does not require shell access. The facade
+fixes repository scope, preserves historical labels and applies its output budget.
+Current search/pull and edit-version checks remain separate. The
+[native history verification](verification/native-history-2026-09-10.md) records
+capability and a review of existing guidance; no new model-task benefit is claimed.
+
 [Preview source positions](verification/preview-locations-2026-09-09.md) now connect
 matching A/B previews to existing bounded body pulls. Agents can request the
 identified passage without guessing its offset or first reading the whole note.

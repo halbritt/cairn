@@ -61,6 +61,13 @@ type rememberArgs struct {
 	Shareable bool                `json:"shareable,omitempty" jsonschema:"Explicitly allow this content to reach hosted models. Default false keeps it local."`
 }
 
+type historyArgs struct {
+	RecordID      string `json:"record_id"`
+	Version       int    `json:"version,omitempty" jsonschema:"Positive version for one exact body. Omit or zero for metadata pages."`
+	BeforeVersion int    `json:"before_version,omitempty" jsonschema:"Exclusive metadata cursor from next_before_version."`
+	Limit         int    `json:"limit,omitempty" jsonschema:"Metadata page size, maximum 100. Omitted or zero defaults to 20."`
+}
+
 type editArgs struct {
 	EvidenceCitations *[]core.EvidenceCitationRequest `json:"evidence_citations,omitempty" jsonschema:"Replace source citations only; explicit empty list clears current references. Supply exactly one of body, draft or evidence_citations. Requires captured source IDs and full-source digests. Citations remain testimony, not qualification."`
 	RequestID         string                          `json:"request_id"`
@@ -108,6 +115,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: buildinfo.Read().Label()}, nil)
 	tools := memoryTools{client: client, config: config}
 	destructive := true
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_history", Description: "Inspect retained versions of a known record for comparison. Omit version to list newest-first metadata (limit defaults to 20, maximum 100); follow next_before_version as before_version. Supply a positive version for one exact body, without nonzero paging fields. Results are historical, not current eligibility or authority; pull the current note before editing. The authenticated profile controls repository and destination; forgotten or excluded payloads refuse. No request UUID or expansion handle is needed. This read has its own output budget and does not spend index expansion credits; budget combined context across calls."}, tools.history)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_search", Description: "Search scoped memory with a query, or set browse=true without a query to inspect available topics. Browsing is bounded by the same budget and is not a complete inventory or relevance ranking. Read mandatory context in selected and inspect relevant index entries with cairn_pull using their complete pull_arguments. A notes are fallible; verify before relying on them. Search records exposure, not proven use."}, tools.search)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull", Description: "Pull a memory body using complete pull_arguments from cairn_search. Optional span selects byte offset and maximum length for a partial A/B source; bytes and hashes appear in span with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers. Instructions require a whole pull. Use a new request UUID for a different range. A stale handle requires a fresh search. Shares the receipt's expansion budget. Read the complete note before replacing its body."}, tools.pull)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull_evidence", Description: "Pull evidence referenced by an expanded memory, using its evidence ID and full-object expected SHA256 plus the original receipt and handle. Optional span selects byte offset and maximum length, clipped at EOF; selected bytes and their checksum appear in span. Reuse a request UUID only for identical retries. Shares the same expansion budget."}, tools.pullEvidence)
@@ -200,6 +208,12 @@ func searchContext(fixed, supplied *core.ContextPins) (*core.ContextPins, error)
 func (t memoryTools) pull(ctx context.Context, _ *mcp.CallToolRequest, args core.ExpandRequest) (*mcp.CallToolResult, any, error) {
 	var result core.Expansion
 	err := t.client.Call(ctx, "expand", args, &result)
+	return toolResult(result, err, t.config.AvailableTokens)
+}
+
+func (t memoryTools) history(ctx context.Context, _ *mcp.CallToolRequest, args historyArgs) (*mcp.CallToolResult, any, error) {
+	var result core.RecordHistory
+	err := t.client.Call(ctx, "history", core.RecordHistoryRequest{RecordID: args.RecordID, Repo: t.config.Scope.Repo, Version: args.Version, BeforeVersion: args.BeforeVersion, Limit: args.Limit}, &result)
 	return toolResult(result, err, t.config.AvailableTokens)
 }
 

@@ -57,6 +57,8 @@ def check(opencode, output, *, connection=None, extra_cases=()):
         ('adapter-pull', 'cairn_pull', {'request_id': 'invalid'}),
         ('adapter-evidence', 'cairn_pull_evidence', {'expected_sha256': 'invalid'}),
         ('adapter-edit', 'cairn_edit', {'draft': []}),
+        ('adapter-history', 'cairn_history', {'record_id': 7}),
+        ('adapter-history-repo', 'cairn_history', {'record_id': 'e7cb56d4-3c24-47a9-8705-c694f036130d', 'repo': 'outside'}),
     ]
     cases.extend(extra_cases)
     requests = []

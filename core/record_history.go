@@ -11,6 +11,7 @@ import (
 // Version and paging are separate modes; BeforeVersion is an exclusive cursor.
 type RecordHistoryRequest struct {
 	RecordID      string `json:"record_id"`
+	Repo          string `json:"repo,omitempty"`
 	Version       int    `json:"version,omitempty"`
 	BeforeVersion int    `json:"before_version,omitempty"`
 	Limit         int    `json:"limit,omitempty"`
@@ -78,6 +79,9 @@ func (s *Store) History(ctx context.Context, req RecordHistoryRequest, dest Dest
 	}
 	if err = s.checkRepo(current.Scope.Repo); err != nil {
 		return RecordHistory{}, err
+	}
+	if req.Repo != "" && current.Scope.Repo != req.Repo {
+		return RecordHistory{}, failure("AUTHORITY_DENIED", "record is outside the requested repository")
 	}
 	if !dest.AllowLocal && current.Sensitivity != "shareable" {
 		return RecordHistory{}, failure("NOT_FOUND", "record not found")

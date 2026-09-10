@@ -53,6 +53,7 @@ searches without a context object.
 | `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its full-object `expected_sha256`, and a retry `request_id`. Optional `span: {offset: 0, length: 4096}` selects at most that many bytes. Shares the body's expansion credits and bytes. |
 | `cairn_remember` | `body` and a stable UUID `request_id`; optional `kind`, `shareable` and explicit `pins`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |
 | `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and exactly one of `body`, a complete replacement `draft`, or `evidence_citations` to replace source references (`[]` clears them). Revises an active A note; text edits preserve citations. See [ordinary citations](evidence-citations.md#ordinary-notes). Returns identifiers without echoing the body. |
+| `cairn_history` | `record_id` with optional `limit`/`before_version` for retained metadata, or positive `version` for one exact body. Historical comparison only; no current eligibility or authority. Uses configured repository, authenticated destination and the tool output budget. See [retained history](record-history.md#native-tools). |
 
 When the vocabulary of a saved note is unknown, call `cairn_search` with
 `{"browse": true}` to inspect available topics, then pull relevant entries or
@@ -102,9 +103,9 @@ the returned record into `draft`. Change the intended content and use the pulled
 record's ID and version. Keep source and verification context in the correction.
 Do not copy output fields such as `class`, `attribution_state`, `observed_writer`
 or `written_at` into the draft; the store owns these. Editing records the authenticated writer and
-retains the earlier version. The [authenticated history command](record-history.md)
-can inspect retained versions for comparison through the CLI/API; it is separate
-from the five native tools and does not replace pulling the current note before editing.
+retains the earlier version. Use [cairn_history](record-history.md#native-tools)
+to compare retained versions without shell access. The CLI/API command remains
+available. Neither replaces pulling the current note before editing.
 
 Retry with the exact same request ID and arguments. A new request using an old
 version returns `VERSION_CONFLICT`: search and pull again, reconcile the other
@@ -189,7 +190,7 @@ args = [
 ]
 enabled_tools = [
   "cairn_search", "cairn_pull", "cairn_pull_evidence",
-  "cairn_remember", "cairn_edit",
+  "cairn_remember", "cairn_edit", "cairn_history",
 ]
 required = false
 startup_timeout_sec = 15

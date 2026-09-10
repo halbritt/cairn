@@ -9,6 +9,7 @@ from check_ordinary_citations import check_harness as check_citations
 from check_note_transport import check_harness
 from check_failure_retrieval import check_harness as check_failure_signatures
 from check_literal_retrieval import check_harness as check_literals
+from check_native_history import check as check_history
 
 
 @contextmanager
@@ -72,7 +73,7 @@ def session(binary, root, environment, extra_args=(), generated=False):
 
         send(dict(method='notifications/initialized', params={}))
         names = {t['name'] for t in request('tools/list', {})['tools']}
-        assert names == {'cairn_search', 'cairn_pull', 'cairn_pull_evidence', 'cairn_remember', 'cairn_edit'}, names
+        assert names == {'cairn_search', 'cairn_pull', 'cairn_pull_evidence', 'cairn_remember', 'cairn_edit', 'cairn_history'}, names
         yield tool
     finally:
         process.stdin.close()
@@ -93,6 +94,7 @@ def check(binary, root, environment, claim, support):
             if error:
                 assert error in result, result
             return result
+        check_history(citation_tool)
         check_citations(citation_tool, support)
         invalid = tool('cairn_remember', dict(request_id=str(uuid.uuid4()), body='Invalid direct MCP boolean', shareable='false'), error=True)
         assert 'validating' in invalid and 'boolean' in invalid, invalid

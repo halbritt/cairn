@@ -43,8 +43,35 @@ the current compare-and-swap input.
 The library method is `Store.History(ctx, RecordHistoryRequest, Destination)`.
 The Unix API exposes `POST /v1/history` through `Client.Call`; the direct local
 operator command `cairn history` accepts the same request JSON. API readers need
-no database credentials. The existing five MCP/OpenCode tools are unchanged;
-history is available through the CLI/API rather than a new native tool.
+no database credentials. An optional `repo` in CLI/API requests also requires
+the record to belong to that repository; it cannot widen profile authorization.
+
+## Native tools
+
+MCP and native OpenCode expose `cairn_history` with the same `record_id`,
+`version`, `before_version` and `limit` arguments. For example, after obtaining a
+record ID through search or capture:
+
+```json
+{"record_id":"RECORD_UUID","limit":1}
+```
+
+Read the returned version metadata, then supply the desired positive `version`
+without paging fields to inspect its exact body. The tools fix `repo` from host
+configuration and refuse caller overrides. OpenCode checks its `cairn_history`
+permission. The read requires neither a request UUID nor an index handle.
+
+Update the CLI/API, facade binary/native adapter and any explicit tool allowlist first.
+The Codex configuration generator includes the new tool; existing configuration
+is not rewritten automatically. Old facades report an unknown tool; old APIs
+reject the native request's additional repository constraint. Existing CLI/API
+history requests without that optional field keep their behavior.
+
+Each result must fit the host's configured memory room, including the serialized
+MCP envelope where applicable. An oversized result returns `BUDGET_REFUSED`
+without a saved read receipt. Reduce the metadata page size or obtain sufficient
+host-approved room for an exact body; the tools do not silently truncate it.
+Historical inspection does not replace current search/pull before an edit.
 
 ## Access and meaning
 

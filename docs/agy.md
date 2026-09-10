@@ -45,7 +45,7 @@ running session reloaded its tools. Session reload and permission behavior still
 need native verification. No owner registration was made during this work.
 
 The expected tools are Cairn's existing `cairn_search`, `cairn_pull`,
-`cairn_pull_evidence`, `cairn_remember` and `cairn_edit`. Their
+`cairn_pull_evidence`, `cairn_remember`, `cairn_edit` and `cairn_history`. Their
 [MCP contract](mcp.md#tools) retains ordinary testimony, explicit sharing,
 compare-and-swap editing, currentness checks and bounded pulls. The Agy runtime
 must still be shown to discover and execute these tools with its own permissions;

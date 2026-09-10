@@ -1,0 +1,180 @@
+{
+  "schema": "cairn.native-history-verification/1",
+  "baseline_commit": "b2fb01e",
+  "checks": {
+    "postgres_race_integration": "passed",
+    "mcp": "passed",
+    "native_opencode": "passed after correcting large debug fixture setup",
+    "normal_opencode_session": "passed",
+    "go_and_40_python_tests": "passed",
+    "static": "passed",
+    "answering_model_calls": 0
+  },
+  "failures": [
+    "Missing native tool before implementation",
+    "Initial implementation omitted configured repository constraint",
+    "Large debug capture returned unparsable stdout; an earlier report had already documented this route limitation"
+  ],
+  "memory": {
+    "record_id": "cd6217ad-2f69-45f1-bcfb-a01066909855",
+    "version": 1,
+    "role": "Retained procedure confirmed CLI/API history semantics and native access gap; earlier debug-input failure was not consulted before first fixture"
+  },
+  "doctrine": {
+    "packet_id": "pkt-5c60382e99963ecc",
+    "packet_content_sha256": "5c60382e99963eccf3997988e43c923b87fb8fd27df770e45ac08e22c896bddc",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "unmet_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or nil/absence contract; existing concrete request/result types and shared toolResult path are reused."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or nil/absence contract; existing concrete request/result types and shared toolResult path are reused."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or nil/absence contract; existing concrete request/result types and shared toolResult path are reused."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or nil/absence contract; existing concrete request/result types and shared toolResult path are reused."
+      },
+      {
+        "requirement": "caller nil checks and method use",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or nil/absence contract; existing concrete request/result types and shared toolResult path are reused."
+      },
+      {
+        "requirement": "documented absence semantics",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or nil/absence contract; existing concrete request/result types and shared toolResult path are reused."
+      },
+      {
+        "requirement": "dynamic type and dynamic value at the return",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or nil/absence contract; existing concrete request/result types and shared toolResult path are reused."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-native-history-authority.json",
+      "sha256": "da38b6ee586c14a49685eed06abee702b6249c7a4688855304d2db89639c996a"
+    },
+    {
+      "path": "/tmp/cairn-native-history-contracts.json",
+      "sha256": "67c6100433f8383d18d41d95e9d146eac245dd9b687ab96e390da079c29ee6cc"
+    },
+    {
+      "path": "/tmp/cairn-native-history-source.json",
+      "sha256": "43f66aaf0930b80d69440f8752d3b2b0f998fab6da3d614b39a0b3dfe787ed61"
+    },
+    {
+      "path": "/tmp/cairn-native-history-evidence.json",
+      "sha256": "28fadf039ddda0e9a54acb6e0433bc9e9242c3af9b3430267ec6f527fc3aca15"
+    },
+    {
+      "path": "/tmp/cairn-native-history-decision.json",
+      "sha256": "81c1acb0881317dd389f4b1748289ef2735c63fdad64a7e959c9b188ced6b290"
+    },
+    {
+      "path": "/tmp/cairn-native-history-verification.json",
+      "sha256": "f9fd9fa29fdefb5e617e63bac536a5722e1d9c98519daa5d70f1c38f2eeaced2"
+    },
+    {
+      "path": "/tmp/cairn-native-history-evidence.py",
+      "sha256": "cc6ff8aecc7d821406c461c8c86e6835208600e0cce8bfee519afd9f281568d2"
+    },
+    {
+      "path": "/tmp/cairn-native-history-final-evidence.py",
+      "sha256": "3a55e55f49a74eedd90fce88597a98f12cfb44ba46662fca149c20d8db48c07d"
+    },
+    {
+      "path": "/tmp/cairn-native-history-decision-receipt.json",
+      "sha256": "5ffd7e3b4d2f93d80fddc2dc7198f9a32e9d9316f6e9b0c6d5947743ab14c863"
+    },
+    {
+      "path": "/tmp/cairn-native-history-doctrine.json",
+      "sha256": "ff2a78ca508c2c7ab55f9aee9b6e73b0a51fc84fd0dbea07267c86ae1331af1f"
+    },
+    {
+      "path": "/tmp/cairn-native-history-doctrine-verified.json",
+      "sha256": "f927016341026664dcbbbeb2725184b74580a1a12ac545d9591f99ba7df54deb"
+    },
+    {
+      "path": "/tmp/cairn-native-history-doctrine-final.json",
+      "sha256": "4601e63dccfe19ee2a438d25111288065b7d29f88a62be18a8c92164272d27fb"
+    },
+    {
+      "path": "/tmp/cairn-native-history-citations.json",
+      "sha256": "e324d94bf6458c55ca2f8756078464b29d114e9f61b08a132914960010ba2915"
+    },
+    {
+      "path": "/tmp/cairn-native-history-citations-verified.json",
+      "sha256": "5df89b267c9167f30043fdf459d23143d02c176d3f40ece1669cf1891468156d"
+    },
+    {
+      "path": "/tmp/cairn-native-history-citations-final.json",
+      "sha256": "7c316de122ad610766d66b4b685c4451e345aa4f5352a2f9aca3e43365681469"
+    },
+    {
+      "path": "/tmp/cairn-native-history-red.log",
+      "sha256": "8e79d652891cc44fb89a0632dd4ae520d8d0bbaea049346a4739b4a1e035bca9"
+    },
+    {
+      "path": "/tmp/cairn-native-history-green.log",
+      "sha256": "85aaea10ed74b4fefa71426b4994721e024f88e24ff44a1782e2a21a3ccf05ee"
+    },
+    {
+      "path": "/tmp/cairn-native-history-repo-red.log",
+      "sha256": "282c6081e21c4ce03e2af2b61dff72e262d9d6bcbc89f1ce88bdf75e67d0a99f"
+    },
+    {
+      "path": "/tmp/cairn-native-history-repo-green.log",
+      "sha256": "58d43cc3bdea68474142afcd11391d154e34b04a40e7f1c682df7695d41c0144"
+    },
+    {
+      "path": "/tmp/cairn-native-history-integration.log",
+      "sha256": "01aefdc42ca7acea8d9eff8731bbd920b82dc65cb00f172f31edea1034bdd3fd"
+    },
+    {
+      "path": "/tmp/cairn-native-history-native.log",
+      "sha256": "ed2f01028f1c8b51c5b438d0db78e6ab9126bc7b74be390e322c87dc163c3830"
+    },
+    {
+      "path": "/tmp/cairn-native-history-native-final.log",
+      "sha256": "b3a3b6171323d23d29e3f2c731a06d9bc89ad010804f2d1d62aef4bee8acfcb5"
+    },
+    {
+      "path": "/tmp/cairn-native-history-mcp-final.log",
+      "sha256": "0aae34ab9bf4558c4708c01014aef51f44687f9e401a9a1fd46cbc08ff517503"
+    },
+    {
+      "path": "/tmp/cairn-native-history-defaults.log",
+      "sha256": "5257cff570e22bdfbe5fecdc02a99ee337039662a7226142e64b7191c3131e15"
+    },
+    {
+      "path": "/tmp/cairn-native-history-check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-native-history-tests.log",
+      "sha256": "b9a9b6db0e95c79cd4ee4e560d96773911f0df4695ec87c514da39c4fdc93830"
+    }
+  ]
+}

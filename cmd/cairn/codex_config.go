@@ -39,7 +39,7 @@ func writeCodexConfig(out io.Writer, args []string, executable string) error {
 	_, err = fmt.Fprintf(out, `[mcp_servers.cairn]
 command = %s
 args = [%s]
-enabled_tools = ["cairn_search", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_edit"]
+enabled_tools = ["cairn_search", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_edit", "cairn_history"]
 required = %t
 startup_timeout_sec = 15
 `, quoted[0], strings.Join(quoted[1:], ", "), *required)

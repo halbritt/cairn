@@ -38,7 +38,7 @@ the current summary; do not replace the historical record.
 | Retrieval | Lexical search with optional kind selection, matching previews with source byte positions, ranked and browse continuation, currentness and destination filtering, mandatory context, and whole or explicit partial A/B body pulls with live checks on retries. | [Index and pull](index-and-pull.md) |
 | Semantic discovery | Optional local CPU scoring for vocabulary mismatches, after eligibility checks; bounded work and labelled lexical fallback. Historical recompilation uses retained scores. | [Semantic discovery](semantic-discovery.md) |
 | Supporting evidence | Explicit capture of up to 1 MiB, SHA-256 verification, lossless binary inspection, persisted check generations, citation-time digests and optional byte passages on qualified claims and ordinary note versions, and whole-object or byte-span pulls through existing indexed handles and budgets. | [Evidence refresh](evidence-refresh.md), [precise citations](evidence-citations.md), [span verification](verification/evidence-spans-2026-09-09.md) |
-| Harness access | Five ordinary tools for search, body/evidence pulls, capture and edit through MCP; Codex conversation scope and native OpenCode session scope. OpenCode configuration generation and a bundled native-tool installer are shipped; Claude configuration and all five tools have scripted native-session verification with explicit scope. | [MCP](mcp.md), [OpenCode tools](opencode-tools.md) |
+| Harness access | Six ordinary tools for search, body/evidence pulls, capture, edit and retained history through MCP; Codex conversation scope and native OpenCode session scope. OpenCode configuration generation and a bundled native-tool installer are shipped; Claude configuration and the original five tools have scripted native-session verification with explicit scope; native Claude history remains unverified. | [MCP](mcp.md), [OpenCode tools](opencode-tools.md) |
 | Host execution | Authenticated observer access, compiled or exact retained-package execution, freshness checks before launch, process observations and separately versioned task assessments. Hosts can associate agent retrievals with observed runs. | [Authenticated runner](authenticated-runner.md), [retained execution](retained-execution.md), [use/outcome join](use-outcome-loop.md) |
 | Inspection and review | Historical replay/recompilation, record and evidence impact, versioned relation paths, use/run reports, conflict inspection, bounded refusal diagnostics and evidence-attached failure review groups. | [Evidence impact](evidence-impact.md), [refusals](refusals.md), [demand review](demand-review.md) |
 | Authority and lifecycle | Operator grants/revocation, independent B promotion and correction, C instructions, guarded retraction, B→A demotion, supersession, scope authorization, governed policy revisions and instruction category limits. | [Relations and demotion](relations-and-demotion.md), [supersession](supersession.md), [scope authorization](scope-authorization.md), [policy](governed-policy.md) |
@@ -51,6 +51,13 @@ task acceptance. Native conversation/session scope does not identify individual
 execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
+
+- **Retained versions are readable through native tools.** `cairn_history` exposes
+  existing metadata pages and exact historical bodies in MCP and OpenCode.
+  Repository, destination and output limits remain enforced; earlier wording
+  does not replace current retrieval or the version required for an edit.
+  [Contract](record-history.md#native-tools),
+  [verification](verification/native-history-2026-09-10.md).
 
 - **Native argument transport preserves supplied text.** OpenCode now refuses
   malformed Unicode before it can become a different query or context label.
@@ -296,7 +303,7 @@ Live checks on 2026-09-09 found:
   The API executable was verified through its running process.
 - A scoped ordinary hosted-agent profile supports routine repository use.
   Agent and observer roles remain separate. The trusted project's Codex MCP
-  configuration exposes all five ordinary tools with conversation scope and
+  configuration exposes the ordinary tools with conversation scope and
   optional startup. The installed native OpenCode adapter matches the current
   ordinary-citation source and retains its existing connection settings.
 - Optional semantic discovery uses the prepared local CPU model, batch size one
@@ -2799,3 +2806,30 @@ installation, native-check and lesson-update receipts.
 completed successfully for `6c48411`: PostgreSQL/race, Python, static/build,
 use-report and authenticated CLI/compact startup steps all passed. Native
 OpenCode verification is the separate completed local check recorded above.
+
+
+### 2026-09-10 — Retained history through native tools
+
+Added `cairn_history` to MCP and native OpenCode using the existing authenticated
+history read. Native-only callers can list retained version metadata and inspect
+one exact earlier body without constructing CLI JSON. Historical labels and original
+hashes remain visible; current pull/edit and version checks retain their meanings.
+The Codex generator includes the new read tool. Existing allowlists require an
+explicit update; native Claude/Agy execution of history is not claimed.
+
+The API accepts an optional repository constraint, supplied from facade configuration.
+A test exposed its omission in the first implementation; the corrected store check
+refuses mismatched repository configuration within the read snapshot. There is no
+migration or new stored state. Destination, deletion and output limits remain.
+Full PostgreSQL/race, Go/40 Python, static and final MCP checks passed. Native checks
+cover old bodies/digests, stable paging through an append, local-only exclusion,
+invalid requests, output limits, stale edits and permission/repository refusals.
+A scripted normal OpenCode session separately reads prior wording after edits.
+
+The first native suite failed parsing debug output for a 64 KiB capture, repeating
+a limitation already recorded in the note-transport report. That source was consulted
+after the failure. The one large history-budget fixture now uses operator CLI setup;
+native history and normal-session large capture remain under test. The corrected
+complete native suite passed. No answering model or production fixture capture ran.
+The [report](verification/native-history-2026-09-10.md) retains this maintenance cost,
+recalled procedure, implementation evidence and unestablished net task benefit.

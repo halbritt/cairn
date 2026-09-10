@@ -1,9 +1,11 @@
 # Claude Code memory access
 
 `cairn claude-config` generates the Claude Code MCP configuration for Cairn's
-existing five ordinary tools: search, body/evidence pull, capture and edit.
-Claude Code 2.1.265 has accepted the generated entry and executed all five tools
-in scripted native sessions. Native model-selected tool use and task benefit
+ordinary tools: search, body/evidence pull, capture, edit and retained history.
+Claude Code 2.1.265 has accepted the generated entry and executed search,
+body/evidence pull, capture and edit in scripted native sessions. The newer
+`cairn_history` operation has MCP/OpenCode coverage; native Claude execution of
+that operation remains unverified. Model-selected tool use and task benefit
 remain unverified.
 
 Generate a configuration for the intended task and execution:

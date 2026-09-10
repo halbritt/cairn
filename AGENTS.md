@@ -80,6 +80,12 @@ repository findings. Include source/verification context in the note, choose
 raw sessions, private Council content, credentials or workspace dumps; ordinary
 capture does not confer authority or prove task success.
 
+When comparing revisions, `cairn_history` lists retained metadata or reads one
+exact earlier body using a known record ID. CLI/API `agent history` remains
+available. Historical wording and class do not establish current eligibility or
+authority; pull the current note before editing. Budget combined context across
+history reads as well as searches and pulls. See `docs/record-history.md`.
+
 When an owner clarification materially changes priorities, evaluation or a recurring
 workflow, retain a concise selected `decision` or `preference` with its date and a
 pointer to the updated repository source. Check for an existing note first and

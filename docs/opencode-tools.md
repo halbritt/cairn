@@ -75,10 +75,15 @@ the tool; OpenCode runs it. On updates, copy the new adapter together with the
 matching Cairn CLI. Search refuses a CLI result without structured pull arguments.
 
 The names are `cairn_search`, `cairn_pull`, `cairn_pull_evidence`,
-`cairn_remember` and `cairn_edit`. OpenCode's tool permissions apply, including
+`cairn_remember`, `cairn_edit` and `cairn_history`. OpenCode's tool permissions apply, including
 explicit requests through the native permission context. Choose permissions for
 the intended task. These names differ from the `cairn_cairn_*` MCP names; an
 existing MCP-only permission entry does not automatically allow native tools.
+
+Use [cairn_history](record-history.md#native-tools) to compare earlier wording
+without shell access. It reads retained metadata or an exact historical body;
+it does not authorize current use or replace pulling the current note before
+editing. Explicit tool allowlists need the additional read permission.
 
 The installer does not add automatic startup retrieval. An isolated
 [OpenCode 1.18.21 hook check](verification/opencode-startup-hook-2026-09-09.md)

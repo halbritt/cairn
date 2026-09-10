@@ -90,11 +90,14 @@ def check_opencode_session(opencode, output, connection, binary, environment):
     decision = operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=dict(draft, kind='decision', body=marker)))
     operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=dict(draft, kind='procedure', body=marker + ': setup')))
     cases.append(('filtered-search', 'cairn_search', dict(query=marker, kinds=['decision'])))
+    cases.append(('retained-history', 'cairn_history', dict(record_id=seed['record_id'], version=1)))
     cases.append(('adapter-kinds', 'cairn_search', dict(query=marker, kinds='decision')))
     report = check(opencode, output, connection=connection, extra_cases=cases)
     results = {name: json.loads(report['results'][name]) for name, _, _ in cases if not name.startswith('adapter-')}
     assert [e['record_id'] for e in results['filtered-search']['index']] == [decision['record_id']]
     assert results['filtered-search']['kinds'] == ['decision']
+    assert results['retained-history']['historical'] and results['retained-history']['current_version'] == 3
+    assert results['retained-history']['versions'][0]['body'] == draft['body']
     assert results['large-revise']['version'] == 2 and results['large-edit']['version'] == 3
     assert results['large-retry'] == results['large-revise']
     captured = operator(binary, environment, 'get', record_id=results['large-capture']['record_id'])

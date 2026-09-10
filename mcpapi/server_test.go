@@ -91,7 +91,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	if !reflect.DeepEqual(names, []string{"cairn_edit", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_search"}) {
+	if !reflect.DeepEqual(names, []string{"cairn_edit", "cairn_history", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_search"}) {
 		t.Fatal(names)
 	}
 	invoke := func(name string, args any, wantError string) json.RawMessage {
@@ -307,6 +307,14 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	if err != nil || updatedBody.Version != 2 || updatedBody.Body != newBody || updatedBody.Scope != bodyOnly.Scope || updatedBody.Sensitivity != bodyOnly.Sensitivity {
 		t.Fatalf("body-only revision: %+v %v", updatedBody, err)
 	}
+	var history core.RecordHistory
+	if err := json.Unmarshal(invoke("cairn_history", core.RecordHistoryRequest{RecordID: bodyOnly.RecordID, Version: 1}, ""), &history); err != nil {
+		t.Fatal(err)
+	}
+	if !history.Historical || history.CurrentVersion != 2 || len(history.Versions) != 1 || history.Versions[0].Body == nil || *history.Versions[0].Body != bodyOnly.Body {
+		t.Fatalf("history did not preserve the prior wording: %+v", history)
+	}
+	invoke("cairn_history", map[string]any{"record_id": bodyOnly.RecordID, "repo": repo}, "additional")
 	revise.RequestID = uuid.NewString()
 	invoke("cairn_edit", revise, "VERSION_CONFLICT")
 	revise.Draft = &bodyOnly.Draft
@@ -349,6 +357,10 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	denied, err := connect(t, ctx, outside).CallTool(ctx, &mcp.CallToolParams{Name: "cairn_search", Arguments: searchArgs{Query: "socketguide"}})
 	if err != nil || !denied.IsError || !strings.Contains(denied.Content[0].(*mcp.TextContent).Text, "AUTHORITY_DENIED") {
 		t.Fatalf("outside scope: %+v %v", denied, err)
+	}
+	denied, err = connect(t, ctx, outside).CallTool(ctx, &mcp.CallToolParams{Name: "cairn_history", Arguments: core.RecordHistoryRequest{RecordID: bodyOnly.RecordID}})
+	if err != nil || !denied.IsError || !strings.Contains(denied.Content[0].(*mcp.TextContent).Text, "AUTHORITY_DENIED") {
+		t.Fatalf("history ignored configured repository: %+v %v", denied, err)
 	}
 }
 

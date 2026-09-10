@@ -5,10 +5,11 @@ import subprocess
 import uuid
 
 from check_ordinary_citations import check_harness as check_citations
-from check_note_transport import check_opencode_session
+from check_note_transport import check_opencode_session, operator
 from check_failure_retrieval import check_harness as check_failure_signatures
 from check_literal_retrieval import check_harness as check_literals
 from check_opencode_unicode import check as check_unicode
+from check_native_history import check as check_history
 
 
 def check(binary, root, environment, opencode, claim, support):
@@ -26,7 +27,7 @@ def check(binary, root, environment, opencode, claim, support):
         'npm': '@ai-sdk/openai-compatible', 'name': 'No-model fixture',
         'options': {'baseURL': 'http://127.0.0.1:1/v1', 'apiKey': 'unused'},
         'models': {'probe': {'name': 'Probe'}}}}, permission={'*': 'deny'})
-    for name in ('search', 'pull', 'pull_evidence', 'remember', 'edit'):
+    for name in ('search', 'pull', 'pull_evidence', 'remember', 'edit', 'history'):
         config['permission']['cairn_' + name] = 'allow'
     config_path = work / 'opencode.json'
     config_path.write_text(json.dumps(config))
@@ -50,6 +51,12 @@ def check(binary, root, environment, opencode, claim, support):
         return json.loads(json.loads(result.stdout)['result']['output'])
 
     check_unicode(invoke, opencode, root / 'opencode-unicode', settings_path, settings)
+    # Large debug input produced incomplete stdout; normal-session capture is
+    # checked below. Seed this output-budget fixture through the operator CLI.
+    large_history = operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=dict(
+        kind='note', body='z' * 65536, scope=dict(repo='fixture:socket', task_id='*', run_id='*'),
+        sensitivity='shareable', claim_type='self')))
+    check_history(invoke, large_history['record_id'])
     check_citations(invoke, support)
     check_literals(lambda name, args: invoke(name.removeprefix("cairn_"), args))
     check_failure_signatures(lambda name, args: invoke(name.removeprefix("cairn_"), args), binary, environment)
@@ -200,8 +207,11 @@ def check(binary, root, environment, opencode, claim, support):
     check_opencode_session(opencode, root / 'opencode-note-limit', settings, binary, environment)
     settings_path.write_text(json.dumps(dict(settings, repo='outside-fixture')))
     invoke('search', dict(query=marker), 'AUTHORITY_DENIED')
+    invoke('history', dict(record_id=record['record_id']), 'AUTHORITY_DENIED')
     settings_path.write_text(json.dumps(settings))
     config['permission']['cairn_search'] = 'deny'
+    config['permission']['cairn_history'] = 'deny'
     config_path.write_text(json.dumps(config))
     invoke('search', dict(query=marker), 'disabled')
+    invoke('history', dict(record_id=record['record_id']), 'disabled')
     print('Native OpenCode session scope, validated capture/edit, exact body/evidence pulls, retries, hosted filtering and permission/refusal paths pass without model calls')

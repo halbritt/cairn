@@ -134,6 +134,17 @@ export const search = validatedTool({
   },
 })
 
+export const history = validatedTool({
+  description: "Inspect retained versions of a known record for comparison. Omit version for newest-first metadata; follow next_before_version as before_version. Supply a positive version for one exact body, without nonzero paging fields. Historical text and class do not establish current eligibility or authority; pull the current note before editing. The authenticated profile controls repository and destination; forgotten or excluded payloads refuse. No request UUID or expansion handle is needed. This read has its own output budget and does not spend index expansion credits; budget combined context across calls.",
+  args: { record_id: z.string().uuid(), version: z.number().int().min(0).max(2147483647).optional(),
+    before_version: z.number().int().min(0).max(2147483647).optional(),
+    limit: z.number().int().min(0).max(100).optional().describe("Metadata page size; omitted or zero means 20") },
+  async execute(args, context) {
+    const config = await settings("history", context)
+    return render(await call(config, context, ["history"], { ...args, repo: config.repo }), config)
+  },
+})
+
 export const pull = validatedTool({
   description: "Pull a memory body using its complete pull_arguments. Optional span selects byte offset and maximum length for a partial A/B source; selected bytes and hashes appear in span, with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers. Instructions require a whole pull. Use a new request UUID for a different range. STALE_HANDLE requires a fresh search. Shares the original receipt's expansion budget. Read the complete note before replacing its body.",
   args: { ...pullArgs, span: z.object({ offset: z.number().int().min(0).max(65535), length: z.number().int().min(1).max(65536) }).strict().optional() },
