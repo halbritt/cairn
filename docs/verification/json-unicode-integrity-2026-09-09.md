@@ -47,7 +47,8 @@ replacement performed by an upstream serializer or native SDK. Go callers must
 use explicit base64 for arbitrary bytes, and a caller intentionally supplying
 U+FFFD is not rejected. Specialized import/configuration decoders outside these
 request paths are not claimed as covered. Historical altered captures are not
-automatically identified or repaired.
+automatically identified or repaired. Malformed legacy requests now refuse on
+retry too; the guard runs before the operation and its idempotency lookup.
 
 The saved evidence guide was pulled before implementation and retained the prior
 binary-input constraint; current source and previous conversation also informed
@@ -57,3 +58,15 @@ lifecycle work and durable task value remain open.
 
 [Metadata](json-unicode-integrity-2026-09-09.json) retains failures, completed
 checks and decision provenance. Installation is recorded separately.
+
+## Local installation
+
+Installed CLI/API `463ccefb1f4b7a851527e1edff3febb4fb577252`, SHA-256
+`3d377effdafd2bcb50ec1e293f45b6b91ef033d50efab2315faccc4b7b5b0455`. Both version responses agree; running
+API PID 897597 matches the installed binary. An operational catalog-backed backup
+preceded replacement. PostgreSQL, migrations, semantic worker, native adapter and
+connection settings are unchanged. Synthetic captures remained in disposable tests.
+
+The existing evidence guide was revised v6→v7, preserving its earlier body and
+metadata. Exact mutation retry and fresh ordinary pull verify the selected update.
+CI 34435235516 is in_progress. Companion metadata retains build, backup and guide identities.

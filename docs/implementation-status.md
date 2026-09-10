@@ -208,14 +208,12 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI: clean `57164ce4f5f6782c1b115257afc1afc0a2ac8994`, SHA-256
-  `c9309a9eef2fa509ef2276e09240efc76909bc40313b5016ab7f4fe9a570130a`. Direct selected-file capture is installed.
-- Running API: clean `386eae14cb1ad4d44e6bd61a56601217c14d4fe4`, SHA-256
-  `332601448045c160ca95c88de27100a6bcf9104e6bfb120403d0f609a68d8260`; PID 825681.
-  The CLI update needs no API restart. Local and authenticated version commands
-  distinguish these builds. Binary capture, ranked pages, capture pins and phase
-  support remain. No migration was required. Existing MCP processes keep their
-  loaded executable; earlier pre-phase readers remain unsuitable for phase data.
+- Installed CLI and API: clean `463ccefb1f4b7a851527e1edff3febb4fb577252`, SHA-256
+  `3d377effdafd2bcb50ec1e293f45b6b91ef033d50efab2315faccc4b7b5b0455`; API PID 897597.
+  Version commands report both builds. Serialized Unicode validation, selected-
+  file and binary capture, ranked pages, capture pins and phase support are installed.
+  No migration was required. Existing MCP processes keep their loaded executable;
+  earlier pre-phase readers remain unsuitable for phase data.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -237,10 +235,12 @@ Live checks on 2026-09-09 found:
   took about 14 seconds. Candidate scores matched. No persistent cache, package
   update or independent service was added; the one-shot launcher remains available.
 
-The [file-capture installation](verification/file-evidence-capture-2026-09-09.md#local-installation)
-records the current CLI and preserved API. The
+The [Unicode repair installation](verification/json-unicode-integrity-2026-09-09.md#local-installation)
+records the current CLI/API. The
+[file-capture installation](verification/file-evidence-capture-2026-09-09.md#local-installation)
+retains its preceding CLI and preserved API. The
 [binary-capture installation](verification/binary-evidence-capture-2026-09-09.md#local-installation)
-retains the current API and preceding CLI deployment. The
+retains its preceding API and CLI deployment. The
 [build-diagnosis installation](verification/build-identity-2026-09-09.md#local-installation)
 retains its preceding CLI/API and distinct stamped/unstamped observations.
 The [ranked-page installation](verification/search-pages-2026-09-09.md#local-installation)
@@ -2131,3 +2131,18 @@ cases. Make check now includes internal package formatting. No schema, authority
 sharing rule or native adapter changed. This repairs a verified capture defect;
 net task value remains unassessed. Installation is recorded separately.
 [Report](verification/json-unicode-integrity-2026-09-09.md).
+
+
+### 2026-09-09 — Unicode request repair installed and guide retained
+
+Installed clean `463ccef` as CLI/API after an operational backup.
+Both version responses identify that build, and API PID 897597 matches the installed
+bytes. PostgreSQL PID 163669, schema, semantic worker, native adapter and connection
+settings remain unchanged. Malformed/successful capture tests ran only against
+disposable stores; no synthetic source was captured in the operational store.
+
+Evidence guide 8a47da19-dd71-43b2-a4cc-9cef9d113c81 was revised v6→v7 with the
+serialized Unicode rule, valid-input preservation, upstream transformation limits
+and refusal of malformed legacy retries. Earlier body and metadata remain. Exact
+retry and fresh pull match c3a17d08e2e6811be75b8d054c72443d7db443225042cc58d700b3a2c9648dc9.
+CI 34435235516 is in_progress. Deployment evidence: /tmp/cairn-json-integrity-deployment/.
