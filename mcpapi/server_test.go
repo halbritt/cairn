@@ -109,6 +109,49 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		}
 		return json.RawMessage(body)
 	}
+	t.Run("search room", func(t *testing.T) {
+		invoke := func(args any, wantError string) json.RawMessage {
+			t.Helper()
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_search", Arguments: args})
+			if err != nil || len(result.Content) != 1 {
+				t.Fatalf("search: %+v %v", result, err)
+			}
+			body := result.Content[0].(*mcp.TextContent).Text
+			if result.IsError != (wantError != "") || (wantError != "" && !strings.Contains(body, wantError)) {
+				t.Fatalf("search: %s", body)
+			}
+			return json.RawMessage(body)
+		}
+		args := map[string]any{"query": "room", "available_tokens": 8000, "request_id": uuid.NewString()}
+		var small searchResult
+		body := invoke(args, "")
+		if err := json.Unmarshal(body, &small); err != nil || small.AvailableTokens != 8000 || len(body) > 8000 {
+			t.Fatalf("per-call input room ignored: %s %v", body, err)
+		}
+		if len(small.Selected) != 1 || small.Selected[0].Record.RecordID != mandatory.RecordID {
+			t.Fatal("smaller room dropped mandatory context")
+		}
+		var repeated searchResult
+		if err := json.Unmarshal(invoke(args, ""), &repeated); err != nil || repeated.ReceiptID != small.ReceiptID || repeated.SourceSeal != small.SourceSeal || repeated.AvailableTokens != small.AvailableTokens || repeated.BytesRemaining != small.BytesRemaining {
+			t.Fatal("search retry changed its receipt or room")
+		}
+		args["available_tokens"] = 9000
+		invoke(args, "IDEMPOTENCY_CONFLICT")
+		delete(args, "available_tokens")
+		invoke(args, "IDEMPOTENCY_CONFLICT")
+		var fresh searchResult
+		if err := json.Unmarshal(invoke(map[string]any{"query": "room"}, ""), &fresh); err != nil || fresh.AvailableTokens != 64000 {
+			t.Fatalf("per-call room leaked into default: %+v %v", fresh, err)
+		}
+		for _, invalid := range []any{0, -1, 255, 64001, 1000001, 300.5, "8000", true} {
+			args["request_id"], args["available_tokens"] = uuid.NewString(), invalid
+			invoke(args, "available_tokens")
+			args["available_tokens"] = 8000
+			invoke(args, "") // Invalid input did not reserve this request UUID.
+		}
+		args["request_id"], args["available_tokens"] = uuid.NewString(), 256
+		invoke(args, "BUDGET_REFUSED")
+	})
 	t.Run("append", func(t *testing.T) {
 		original := "Preserved instructions.\r\n日本語  "
 		var saved recordWriteResult

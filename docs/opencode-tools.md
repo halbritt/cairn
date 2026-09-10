@@ -118,6 +118,10 @@ alone does not identify the cause of a stalled tool call.
 
 ## Scope and behavior
 
+Search accepts [`available_tokens`](search-room.md) to lower its input room for
+one call beneath the configured `tokens` ceiling. Omission keeps the configured
+default; repeat the allowance on retries and pages.
+
 Capture accepts explicit [applicability pins](currentness-and-replay.md#saving-guidance-with-explicit-applicability),
 including task phase and validity. Search settings are never automatically copied
 into a saved note.

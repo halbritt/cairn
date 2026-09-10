@@ -15,6 +15,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Lower the room for one native search.** MCP and OpenCode `cairn_search`
+  accept `available_tokens` beneath the configured host ceiling. Defaults and
+  mandatory-context checks remain; changed room needs a new search request ID.
+  [Usage and limits](docs/search-room.md). Update the CLI/MCP executable and
+  native OpenCode adapter; no API upgrade is required.
+
 - **Use structured pull arguments directly.** `agent pull` and `agent pull-evidence`
   now accept JSON on stdin when no trailing arguments are supplied. The shell
   forms, retry IDs and existing API expansion checks are preserved.

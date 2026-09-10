@@ -30,6 +30,13 @@ mismatch encountered during native integration; shell/JSON retries and stale
 handle refusal are verified against the real API. This is access usability,
 not additional evidence of a completed model task or cross-harness benefit.
 
+[Per-search native input room](search-room.md) lets a caller lower the allowance
+for an individual MCP or OpenCode search beneath its configured host ceiling.
+The existing receipt then bounds its expansions. This addresses a native
+interface gap; E2's whole-task accounting still needs actual host context usage,
+including retained conversation, generation and compaction. Declared task/run
+labels and a sum of API receipts do not establish that remaining context.
+
 The [harness command help repair](verification/harness-help-2026-09-10.md) now exposes
 registered setup flags offline for MCP and all three configuration generators.
 It resolves a failed help request from installation work; broader ingress and

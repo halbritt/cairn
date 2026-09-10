@@ -4044,3 +4044,37 @@ The old CLI's `expand`, the current returned shell command and the JSON retry al
 returned the identical response with three credits remaining. This was an ordinary
 read, with no note-content mutation or model inference. The command mismatch is
 resolved; broader task benefit remains open. [Verification](verification/pull-json-2026-09-10.md).
+
+
+### 2026-09-10 — Expose smaller per-search room in native tools
+
+MCP and native OpenCode `cairn_search` accept optional `available_tokens`, from
+256 through the configured host ceiling. The effective room reaches the existing
+compiler and final presentation check; omitted arguments retain current defaults.
+Changed room is changed retry intent, and later calls do not inherit a prior
+call's allowance. The existing receipt still owns expansion credits and bytes.
+[Usage](search-room.md) records the failure and retry behavior.
+
+This began as an investigation of E2's aggregate-context gap. Existing receipts
+already bound their own spending, while the native search interface exposed only
+fixed startup/configuration room. The saved startup procedure v1 and current
+source distinguish initial startup/runner allowances from aggregate task context.
+This interface extension improves caller control without asserting observed
+remaining context. Whole-task accounting across retained conversation, generation,
+tool schemas and compaction remains open; no global budget ledger was added.
+
+Both old native interfaces rejected the parameter. The changed MCP/store race
+checks and full disposable API/MCP/native OpenCode suite pass, including smaller
+room, exact pulls, retries, mandatory refusal and default preservation. Actual
+Codex 0.153.4 retrieved the saved procedure's 154-byte passage with 8,000-byte
+room. Its initial probe incorrectly expected regenerated pull UUIDs to match;
+comparing the retained receipt, handles and budget corrected that test assumption.
+The production retrieval implementation did not need a retry repair.
+
+`make check` and CLI race tests pass. The OpenCode output-budget error drops advice
+to retry with a changed room under the same UUID; the changed search needs a new
+UUID. This is a CLI/MCP and adapter addition with no core, API or schema change.
+[Verification](verification/search-room-2026-09-10.md) retains the failed probe,
+corrected evidence and limits. Installation will be recorded after CI. Native
+checks performed no model inference or operational note-content mutation;
+incremental task benefit remains unmeasured.

@@ -113,6 +113,20 @@ def check(binary, root, environment, opencode, claim, support):
     first = invoke('search', dict(query=marker))
     second = invoke('search', dict(query=marker))
 
+    limited = invoke('search', dict(query=marker, available_tokens=8000))
+    assert limited['available_tokens'] == 8000 and limited['optional_limit'] == 800
+    assert len(json.dumps(limited, ensure_ascii=False, separators=(',', ':')).encode()) <= 8000
+    assert limited['bytes_remaining'] < 8000
+    assert [entry['record_id'] for entry in limited['index']] == [saved['record_id']]
+    limited_pull = invoke('pull', limited['index'][0]['pull_arguments'])
+    assert limited_pull['selection']['record']['body'] == capture['body']
+    assert invoke('pull', limited['index'][0]['pull_arguments']) == limited_pull
+    assert invoke('search', dict(query=marker))['available_tokens'] == settings['tokens']
+    for invalid in (0, -1, 255, 64001, 1000001, 300.5, '8000', True, None):
+        invoke('search', dict(query=marker, available_tokens=invalid), 'INVALID_REQUEST')
+    invoke('search', dict(query=marker, available_tokens=256), 'BUDGET_REFUSED')
+    print('Native OpenCode searches honor smaller per-call room, preserve defaults, and share bounded pull retries')
+
     fallback = invoke('search', dict(query=marker, semantic=True))
     assert fallback['status'] == 'DEGRADED_NO_EMBEDDINGS'
     assert fallback['discovery']['state'] == 'unavailable'

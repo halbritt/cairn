@@ -48,6 +48,10 @@ instruction requiring unavailable context can refuse the search with
 Leaving all context flags empty and omitting the per-call argument preserves
 searches without a context object.
 
+For a smaller allowance on one search, supply
+[`available_tokens`](search-room.md). It may lower the startup `--tokens` ceiling
+without changing subsequent calls. Repeat the allowance on retries and pages.
+
 ## Command help
 
 Inspect the installed connection and configuration flags without credentials or a

@@ -43,6 +43,7 @@ func (c Config) Validate() error {
 }
 
 type searchArgs struct {
+	AvailableTokens   *int              `json:"available_tokens,omitempty" jsonschema:"Optional memory input room for this search, in conservative UTF-8 bytes. At least 256 and no greater than the configured host ceiling. Omit for the host default. Repeat on retries and pages; changed room requires a new request UUID. Does not measure or enforce whole-conversation context usage."`
 	AdvisoryConflicts bool              `json:"advisory_conflicts,omitempty" jsonschema:"Opt in to qualified competing advisory positions. All positions must be eligible together; otherwise the whole group is omitted. Pulling a marked position returns its complete competing positions under the shared budget. Repeat on retries and later pages. Does not resolve disagreement or change authority."`
 	Entities          []core.EntityRef  `json:"entities,omitempty" jsonschema:"Explicit file or symbol retrieval hints within this repository, at most 16. File names are canonical relative paths; symbol names are qualified labels. Exact kind and case-sensitive name overlap prefers associated notes. May replace query text; cannot browse. Hints do not establish scope, authority or observed workspace state. Repeat on later pages."`
 	Context           *core.ContextPins `json:"context,omitempty" jsonschema:"Context declared for this search only: revision, workspace_sha256, task_class, task_phase, binding_id, capability_id. May fill fields the host left unset; conflicts with configured values are refused. Observe actual task state before declaring it. This does not certify execution or change repository/session scope. Repeat the same context on later pages."`
@@ -141,6 +142,13 @@ type memoryTools struct {
 }
 
 func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {
+	room := t.config.AvailableTokens
+	if args.AvailableTokens != nil {
+		if *args.AvailableTokens < 256 || *args.AvailableTokens > room {
+			return nil, nil, fmt.Errorf("INVALID_REQUEST: available_tokens must be between 256 and configured ceiling %d", room)
+		}
+		room = *args.AvailableTokens
+	}
 	if args.Semantic && args.Browse {
 		return nil, nil, fmt.Errorf("semantic discovery cannot be combined with browsing")
 	}
@@ -177,12 +185,12 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 		return nil, nil, err
 	}
 	var index core.IndexResult
-	err = t.client.Call(ctx, "index", core.CompileRequest{AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: t.config.AvailableTokens, Context: declared}, &index)
+	err = t.client.Call(ctx, "index", core.CompileRequest{AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: room, Context: declared}, &index)
 	if err != nil {
-		return toolResult(nil, err, t.config.AvailableTokens)
+		return toolResult(nil, err, room)
 	}
 	view, err := presentSearch(index, args.RequestID)
-	return toolResult(view, err, t.config.AvailableTokens)
+	return toolResult(view, err, room)
 }
 
 func searchContext(fixed, supplied *core.ContextPins) (*core.ContextPins, error) {

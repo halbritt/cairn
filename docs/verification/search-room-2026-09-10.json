@@ -1,0 +1,176 @@
+{
+  "schema": "cairn.search-room-verification/1",
+  "date": "2026-09-10",
+  "doctrine": {
+    "packet_id": "pkt-38206ac1ff63b9db",
+    "packet_content_sha256": "38206ac1ff63b9db46c1d45ce322db02b7394549eba667100bd20f8cdd5ba6ce",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "decision_receipt": {
+    "locator": "/tmp/cairn-search-room-20260910/decision-receipt.json",
+    "sha256": "8918868a3f787f82c9ea90134c053b13283c905d141b5867e10eb14e9dd137ba"
+  },
+  "unmet_obligations": [
+    {
+      "requirement": "expert distinction of sameness over time",
+      "required_by": "domain-identity-entity",
+      "classification": "nonmaterial",
+      "reason": "No domain entity, identity source or lifecycle changes; receipt identity is the existing API contract."
+    },
+    {
+      "requirement": "identity scenarios",
+      "required_by": "domain-identity-entity",
+      "classification": "nonmaterial",
+      "reason": "No domain entity, identity source or lifecycle changes; receipt identity is the existing API contract."
+    },
+    {
+      "requirement": "identity source and comparison rules",
+      "required_by": "domain-identity-entity",
+      "classification": "nonmaterial",
+      "reason": "No domain entity, identity source or lifecycle changes; receipt identity is the existing API contract."
+    },
+    {
+      "requirement": "lifecycle or reference consequences",
+      "required_by": "domain-identity-entity",
+      "classification": "nonmaterial",
+      "reason": "No domain entity, identity source or lifecycle changes; receipt identity is the existing API contract."
+    },
+    {
+      "requirement": "authoritative examples",
+      "required_by": "domain-language-model-loop",
+      "classification": "nonmaterial",
+      "reason": "Existing input-room terms and units are retained; no broader domain-language model is proposed."
+    },
+    {
+      "requirement": "authoritative expert examples",
+      "required_by": "domain-language-model-loop",
+      "classification": "nonmaterial",
+      "reason": "Existing input-room terms and units are retained; no broader domain-language model is proposed."
+    },
+    {
+      "requirement": "feedback from implementation and usage",
+      "required_by": "domain-language-model-loop",
+      "classification": "nonmaterial",
+      "reason": "Existing input-room terms and units are retained; no broader domain-language model is proposed."
+    },
+    {
+      "requirement": "model expressed in executable behavior",
+      "required_by": "domain-language-model-loop",
+      "classification": "nonmaterial",
+      "reason": "Existing input-room terms and units are retained; no broader domain-language model is proposed."
+    },
+    {
+      "requirement": "terms whose meanings affect decisions",
+      "required_by": "domain-language-model-loop",
+      "classification": "nonmaterial",
+      "reason": "Existing input-room terms and units are retained; no broader domain-language model is proposed."
+    },
+    {
+      "requirement": "business differentiation and product lifespan",
+      "required_by": "domain-modeling-investment-gate",
+      "classification": "nonmaterial",
+      "reason": "No investment in a new domain model, team process or expert program is proposed."
+    },
+    {
+      "requirement": "business-value and expert-access evidence",
+      "required_by": "domain-modeling-investment-gate",
+      "classification": "nonmaterial",
+      "reason": "No investment in a new domain model, team process or expert program is proposed."
+    },
+    {
+      "requirement": "expert access and feedback cadence",
+      "required_by": "domain-modeling-investment-gate",
+      "classification": "nonmaterial",
+      "reason": "No investment in a new domain model, team process or expert program is proposed."
+    },
+    {
+      "requirement": "recurring ambiguity, contradiction, or rule defect",
+      "required_by": "domain-modeling-investment-gate",
+      "classification": "nonmaterial",
+      "reason": "No investment in a new domain model, team process or expert program is proposed."
+    },
+    {
+      "requirement": "team capacity to sustain the model",
+      "required_by": "domain-modeling-investment-gate",
+      "classification": "nonmaterial",
+      "reason": "No investment in a new domain model, team process or expert program is proposed."
+    },
+    {
+      "requirement": "Go method-set and import-direction compatibility",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "reason": "No Go interface or dependency direction is introduced."
+    },
+    {
+      "requirement": "current consumer call sets and ownership",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "reason": "No Go interface or dependency direction is introduced."
+    },
+    {
+      "requirement": "current consumer inventory",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "reason": "No Go interface or dependency direction is introduced."
+    },
+    {
+      "requirement": "observed substitution, volatility, or cross-boundary pressure",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "reason": "No Go interface or dependency direction is introduced."
+    }
+  ],
+  "checks": {
+    "red.log": {
+      "locator": "/tmp/cairn-search-room-20260910/red.log",
+      "sha256": "a1ff5b5c1121aad64da16ec1e74a2152e8a3a2cb965ccb426ef28916d26db64c"
+    },
+    "opencode-red.log": {
+      "locator": "/tmp/cairn-search-room-20260910/opencode-red.log",
+      "sha256": "84859a5fea60612c2e3ee839a2032d1fc2e55ca8db5b95fc5830fc7275f6fdc3"
+    },
+    "mcp-final.log": {
+      "locator": "/tmp/cairn-search-room-20260910/mcp-final.log",
+      "sha256": "c2c7f3bc8bfc23fc33fdb95cfd334532a1ce12efc6c09e42b7560649a66e8e21"
+    },
+    "api-native.log": {
+      "locator": "/tmp/cairn-search-room-20260910/api-native.log",
+      "sha256": "6157cda6c0a949e27b91287c81f21fa6a2ce7de67a0fd3a123c3afa1d7f93a56"
+    },
+    "check.log": {
+      "locator": "/tmp/cairn-search-room-20260910/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    "cli-tests.log": {
+      "locator": "/tmp/cairn-search-room-20260910/cli-tests.log",
+      "sha256": "b6ead8585949422071ca48447fe8ed1c3866458aa091db380df265e9f1d2a7f1"
+    }
+  },
+  "codex_prototype": {
+    "codex_version": "codex-cli 0.153.4",
+    "record_id": "8ab6f87a-ff0d-46f2-9ae3-4f4c0cfa033c",
+    "version": 1,
+    "body_sha256": "0aba18437b0ee7a05d5711437c7db2ad9ddcb5efa87c818513a82329a50f819d",
+    "span": {
+      "offset": 4292,
+      "length": 154
+    },
+    "span_sha256": "867b2cd7beb05292313e290f9adc44523f0e05605a2d819470a6ab61c8462b3c",
+    "available_tokens": 8000,
+    "optional_limit": 800,
+    "bytes_remaining": 5915,
+    "default_available_tokens": 32000,
+    "search_receipt_and_budget_retry_identical": true,
+    "pull_retry_identical": true,
+    "changed_room_refused": true,
+    "above_host_ceiling_refused": true,
+    "model_turns_started": 0
+  },
+  "limits": [
+    "Whole-task budgeting remains open",
+    "No model inference in native checks",
+    "Initial Codex probe overclaimed equality of regenerated pull UUIDs; corrected comparison passed"
+  ]
+}
