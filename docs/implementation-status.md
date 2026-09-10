@@ -17,8 +17,9 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `3ff1fcd`, including explicit versioned file
-and symbol associations, entity search intent, and a host-selected idle
+The installed CLI is clean `670cf19` and its OpenCode adapter/plugin now support
+optional recent-file hints. The API remains clean `3ff1fcd`, including explicit
+versioned file and symbol associations, entity search intent, and a host-selected idle
 lifetime (five minutes here; the default remains thirty seconds), a
 twenty-five-second semantic worker budget, native retained history,
 argument Unicode validation, per-call search context, reviewed failure signatures,
@@ -61,7 +62,9 @@ five-case check retrieved and pulled associated guidance without an explicit
 filename hint, preserved retry intent after another read, and enforced both
 global and repository-specific permission denials. Capture remains explicit.
 This is retrieval capability evidence; sustained task benefit remains open.
-The source includes `opencode-install --recent-files`; local adoption is pending.
+The feature is installed locally at `670cf19`. A native read of
+`core/currentness.go` followed by empty-argument search pulled the existing
+applicability guide through the ordinary hosted profile.
 
 
 - **File and symbol associations distinguish deliberate links from mentions.**
@@ -328,8 +331,9 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-10 found:
 
-- Installed CLI/API and project `bin/cairn`: clean `3ff1fcd`, including explicit
-  versioned file/symbol associations. API PID **3062046** remains active.
+- Installed CLI and project `bin/cairn`: clean `670cf19`; native adapter and
+  optional recent-file plugin match that build. API **3ff1fcd**, PID **3062046**,
+  remains active without a restart; its existing entity support is sufficient.
   [Entity installation evidence](verification/entity-search-2026-09-10.md)
   records the build, schema and native Codex/OpenCode retrievals.
 - Dedicated PostgreSQL **17.10**, migrations **001–034**, PID **163669**.
@@ -344,8 +348,10 @@ Live checks on 2026-09-10 found:
   and [idle-lifetime installation](verification/semantic-idle-2026-09-10.md)
   retain their own measured scope; those results are not a fresh performance
   benchmark of this snapshot.
-- The optional recent-file plugin is implemented and verified against a
-  disposable API; local installation has not yet been performed in this snapshot.
+- The optional recent-file plugin is installed in this project. Native OpenCode
+  1.18.21 read a real repository file and retrieved/pulled its existing associated
+  note without an explicit query or filename hint. Configuration hashes and
+  API/store processes were preserved. See [installed evidence](verification/recent-file-hints-2026-09-10.md#local-installation).
 
 Earlier deployment details remain in the dated verification reports and complete
 implementation history below. The summary above replaces the stale September 9
@@ -3313,3 +3319,33 @@ The current installation summary was also refreshed: its older September 9
 build and migration claims had become stale while later installation evidence
 accumulated elsewhere in this document. All prior implementation history is
 preserved verbatim. The plugin is not yet installed in this source snapshot.
+
+### 2026-09-10 — recent-file intent installed and existing guidance retrieved
+
+Installed clean CLI `670cf19`, its matching native adapter, and the opt-in
+recent-file plugin in this project. API `3ff1fcd` and PostgreSQL retained their
+processes and executable identities; schema034 and all recorded connection,
+credential, host permission and semantic configuration hashes were preserved.
+No service restart or database migration was required.
+
+An actual native OpenCode1.18.21 session in the real repository read
+`core/currentness.go`, called `cairn_search` with empty arguments, then pulled the
+existing applicability guide v2 through the ordinary hosted profile. Its body
+hash matched the previously stored guide. Four main scripted provider requests
+were used, with no answering-model inference. The first installation probe had
+used an absolute read allow-pattern; OpenCode checks a worktree-relative path,
+so that read was correctly refused. Correcting the probe to permit only
+`core/currentness.go` exercised the intended allowed path. Product and global
+host permissions were unchanged.
+
+The OpenCode procedure advanced from v15 to v16 with the new installation,
+permissions, override and continuation guidance. It gained deliberate file
+associations to the native adapter, plugin and installer; exact edit retry,
+ordinary file retrieval/pull and retained v15 body were checked. Its other draft
+metadata remains unchanged. This is maintained guidance and working retrieval,
+not evidence of a completed model task or net durable benefit. See
+[the installed report](verification/recent-file-hints-2026-09-10.md#local-installation).
+
+Feature CI **34513401855** passed at `670cf19`; both jobs and every step were
+inspected. The Node plugin contract job and existing PostgreSQL/race, Python,
+static/build and authenticated CLI/startup checks succeeded.

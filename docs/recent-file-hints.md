@@ -82,6 +82,9 @@ Shell reads, language-server activity and inferred symbols are not collected.
 The hook never fetches memory. Retrieval passes through the existing native
 `cairn_search` tool and its permission callback. This avoids the permission gap
 found in the earlier [system-prompt hook investigation](verification/opencode-startup-hook-2026-09-09.md).
+For a file-specific read permission in OpenCode 1.18.21, use the worktree-relative
+name, such as `core/currentness.go`; the read argument itself may be absolute.
+An absolute-only allow pattern did not permit that read in the installed check.
 
 The [verification report](verification/recent-file-hints-2026-09-10.md) records
 the actual native path and its limits. Automatic intent in other harnesses and

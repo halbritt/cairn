@@ -81,3 +81,40 @@ preservation and retention review. Its remaining co-change/recurring-change
 obligations are nonmaterial to this host-specific capability: no shared harness
 abstraction, duplication consolidation or frequency-based design claim was
 selected. The manifest retains the packet identity and explicit limits.
+
+## Local installation
+
+Installed CLI **670cf19** and its matching adapter/plugin. The API stayed on
+**3ff1fcd**, PID **3062046**, and PostgreSQL stayed at PID **163669**, schema034.
+No restart or migration was needed. Recorded connection, identity, host
+permission and semantic configuration hashes were preserved.
+
+A native OpenCode1.18.21 session in the actual Cairn repository read
+`core/currentness.go`, called `cairn_search` with no arguments and pulled the
+existing applicability guide **v2**. Its body SHA-256 remained
+`617555818bf48ce98cdfdfb3204c4cbf821685e6d718c1006c4ab96dd26374ca`.
+The returned `query_entities` contained the relative file name. The route used
+the ordinary hosted-agent profile, four main scripted provider requests and no
+answering-model inference. No synthetic fixture notes were written to the
+operational store.
+
+The first installed probe supplied an absolute read allow-pattern. The pinned
+read implementation checks the worktree-relative path, so the read was refused
+and supplied no hint. The probe was corrected to allow only
+`core/currentness.go`; global host permissions and product code were unchanged.
+The failed attempt and successful rerun are retained separately.
+
+The existing OpenCode procedure advanced **v15 → v16**, adding setup, explicit
+override, retry/page and read-permission guidance. It is deliberately associated
+with the adapter, plugin and installer source files. Ordinary entity retrieval
+and pull returned the new version, exact edit retry was idempotent, and history
+retained the earlier body. Other draft metadata was preserved. The manifest
+retains exact identities and hashes without copying operational note bodies.
+
+These installation checks show that the feature reaches existing useful notes.
+They do not establish that an answering agent applied the guidance or improved
+its task outcome. Observe ordinary work before expanding automatic collection.
+
+[Feature CI](https://github.com/halbritt/cairn/actions/runs/34513401855) passed
+for `670cf19`, including the Node plugin contract check, PostgreSQL/race suite,
+Python checks, build/static checks and authenticated CLI/startup verification.
