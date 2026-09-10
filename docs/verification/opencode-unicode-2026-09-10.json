@@ -139,6 +139,67 @@
     {
       "path": "/tmp/cairn-context-unicode-tests.log",
       "sha256": "fce973f05188d52368b31bcd4aae35e5505db90fc0e219353b3b758b8937eab4"
+    },
+    {
+      "path": "/tmp/cairn-native-unicode-deployment/preflight.json",
+      "sha256": "2c8c908b6d0c44091cc7cc99e291dd911467f86e77ac6df52472925e09c7b5d5"
+    },
+    {
+      "path": "/tmp/cairn-native-unicode-deployment/installation.json",
+      "sha256": "5fddba933019caa7850dc43273b0a60f7daf13137a1abbcf4b224dffbfb02d75"
+    },
+    {
+      "path": "/tmp/cairn-native-unicode-deployment/installed-check.json",
+      "sha256": "d82a2d55583dbb854e6cc5c157389530d0cf760cc55ad362e643303954bb47d4"
+    },
+    {
+      "path": "/tmp/cairn-native-unicode-deployment/lesson-update.json",
+      "sha256": "484f00637477830695b294f74be837912886cb64f5669b2733a0e186a5c69c94"
+    },
+    {
+      "path": "/tmp/cairn-native-unicode-ci-state.json",
+      "sha256": "fa2d024c5ff3c0c63fb39f9380cea9b0a337333c5cbd137cf539c1a7cd3c9e88"
     }
-  ]
+  ],
+  "deployment": {
+    "commit": "6c48411991b55cd766fcb2c738b4750445c04b98",
+    "installed_sha256": "46af962e0d036bbf0b1fd084e2f997a03939757c44854f8e42eac1edc492912d",
+    "api_pid": "1894822",
+    "postgres_pid": "163669",
+    "migration": 33,
+    "adapter_sha256": "81237fdda36dee94f2733318195b806a781ee5cb5a62b5543c8c64aee81245ab",
+    "protected_configuration_preserved": true,
+    "installed_native_check": {
+      "schema": "cairn.native-unicode-installed-check/1",
+      "adapter_sha256": "81237fdda36dee94f2733318195b806a781ee5cb5a62b5543c8c64aee81245ab",
+      "invalid_query_refused": true,
+      "valid_query_reuses_refused_request": true,
+      "request_id": "2b5985d5-ed44-4cc3-9e83-1ee3f2f0d763",
+      "receipt_id": "8b91caef-c5ea-4221-a798-96d58ee890b8",
+      "scope": {
+        "repo": "/home/halbritt/git/cairn",
+        "task_id": "opencode/ses_f754c0de1ffeeMEwBliJiQ4gTL",
+        "run_id": "ses_f754c0de1ffeeMEwBliJiQ4gTL"
+      },
+      "retrieved_validation_lesson": true,
+      "model_calls": 0,
+      "fixture_notes_created": 0
+    },
+    "retained_lesson_update": {
+      "record_id": "104519b5-82cd-44b3-ba73-1def2ad42e8c",
+      "from_version": 2,
+      "to_version": 3,
+      "request_id": "64ba6f53-9008-4d3e-9fb0-99e39d74cb87",
+      "receipt_id": "40426c5d-774d-49c4-9dbc-4c8110a7c25b",
+      "body_sha256": "ce672b1e53835ff7cf8bd81c0ef1e3d7cc1cbe7190b2e89d1fa5d6ab70155843",
+      "metadata_preserved": true,
+      "exact_retry": true
+    }
+  },
+  "ci": {
+    "run_id": 34462181728,
+    "commit": "6c48411991b55cd766fcb2c738b4750445c04b98",
+    "conclusion": "success",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34462181728"
+  }
 }

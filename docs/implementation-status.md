@@ -17,8 +17,9 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `9f43b00`, including per-call native search
-context, reviewed failure signatures, proposal version pins and quoted search.
+The installed CLI and API are clean `6c48411`, including native argument Unicode
+validation, per-call search context, reviewed failure signatures, proposal version
+pins and quoted search.
 The database schema remains at migration 033; the native OpenCode adapter is
 updated too.
 
@@ -2775,3 +2776,26 @@ failed reproduction, verification and Pincite decision receipt. This is a verifi
 repair during memory-guided work; it does not establish independent model benefit,
 time savings or net task value. Other upstream serializers remain outside the
 claim. The full prior implementation history remains intact.
+
+
+### 2026-09-10 — Native Unicode repair installed and guidance retained
+
+Committed and pushed `6c48411991b55cd766fcb2c738b4750445c04b98`. Clean installed
+CLI/API and project binaries share SHA-256
+`46af962e0d036bbf0b1fd084e2f997a03939757c44854f8e42eac1edc492912d`.
+API PID 1894822 serves that build. PostgreSQL PID 163669, schema 033, native
+connection settings, identities and semantic-worker configuration are preserved.
+The installed native adapter matches the committed source.
+
+An actual hosted-profile native search refuses a malformed query, then retrieves
+the existing validation lesson with the refused request UUID. Updated that lesson
+`104519b5-82cd-44b3-ba73-1def2ad42e8c` from version 2 to 3 with the new findings and
+source pointers. Exact retry and fresh pull preserve the selected body and prior
+metadata. No answering model or fixture-note capture was used. The
+[verification manifest](verification/opencode-unicode-2026-09-10.json) retains
+installation, native-check and lesson-update receipts.
+
+[CI 34462181728](https://github.com/halbritt/cairn/actions/runs/34462181728)
+completed successfully for `6c48411`: PostgreSQL/race, Python, static/build,
+use-report and authenticated CLI/compact startup steps all passed. Native
+OpenCode verification is the separate completed local check recorded above.

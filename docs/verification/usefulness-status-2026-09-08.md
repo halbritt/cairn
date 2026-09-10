@@ -1,4 +1,4 @@
-# Task-value evidence — updated 2026-09-09
+# Task-value evidence — updated 2026-09-10
 
 Cairn has supported useful, bounded outcomes: knowledge transferred between
 harnesses, a working configuration after a procedure correction, and recovery of
@@ -24,6 +24,14 @@ These cases differ in task, method and strength of attribution. They are not
 independent replications or inputs to an aggregate success score. The individual
 reports retain source pointers, failures and limits. In particular, the first
 configuration failure and the maintenance omissions remain part of the evidence.
+
+A [2026-09-10 follow-up review](opencode-unicode-2026-09-10.md) pulled the earlier
+validation lesson before finding and repairing native argument corruption. The
+lesson informed review of the execution boundary and the normal-session check;
+current source and the earlier JSON-integrity report also contributed. This adds
+another concrete repair during memory-guided work, with unknown incremental and
+net benefit. It is related continuation of the adapter case, not an independent
+replication or a new answering-model trial.
 
 The broader question is whether normal use repeatedly improves decisions,
 preserves constraints, reduces rediscovery or avoids mistakes enough to justify

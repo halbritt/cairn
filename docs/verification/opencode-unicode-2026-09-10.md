@@ -50,3 +50,23 @@ native argument path; it does not establish integrity for every upstream SDK or
 serializer, or identify previously altered requests.
 
 [Metadata](opencode-unicode-2026-09-10.json) retains the check and decision pointers.
+
+## Installation and retained guidance
+
+Installed clean `6c48411991b55cd766fcb2c738b4750445c04b98` in the CLI/API and
+updated the native adapter. CLI and API report the same build. PostgreSQL remains
+at schema 033; its process and protected configuration hashes are unchanged.
+An isolated native invocation using the installed adapter and actual hosted
+profile rejects a malformed query, then retrieves the existing validation lesson
+with that request ID. This creates ordinary search receipts, without fixture notes.
+
+The retained validation lesson was revised from version 2 to 3 with this observed
+transport boundary and source pointers. Exact mutation retry and a fresh pull
+verify its body; scope, sensitivity, applicability and attribution are preserved.
+Earlier guidance remains retained. Deployment identities and receipts are in the
+metadata manifest.
+
+[CI 34462181728](https://github.com/halbritt/cairn/actions/runs/34462181728)
+passed PostgreSQL/race, Python, static/build, use-report and authenticated CLI
+checks for the installed commit. Native OpenCode checks ran locally as described
+above; hosted CI does not run that opt-in harness.
