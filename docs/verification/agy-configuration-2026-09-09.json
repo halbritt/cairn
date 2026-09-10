@@ -1,0 +1,374 @@
+{
+  "schema": "cairn.agy-configuration-verification/1",
+  "baseline_commit": "dc43fb41a3527ad4bd3ad5f1ea7101daec069615",
+  "checks": {
+    "schema": "cairn.agy-configuration-report/1",
+    "plan_sha256": "080be2ad08e1488c66a32beede774ab4bda54f73ecd93b63eb8fb09d9a2ef9f4",
+    "exact_argv": true,
+    "unrelated_entry_preserved": true,
+    "explicit_scope_updated": true,
+    "enable_disable_remove": true,
+    "native_tool_execution": false,
+    "model_calls": 0
+  },
+  "process_observation": {
+    "executable_paths": [
+      "/home/halbritt/.local/bin/agy",
+      "/usr/bin/python3"
+    ],
+    "agy_invocations": 9,
+    "cairn_launched": false,
+    "ip_connections_observed": false,
+    "api_socket_contact_observed": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-8d9ae25a2b4b0abe",
+    "packet_content_sha256": "8d9ae25a2b4b0abe21ec3babd89b89aaaaa73325b4be8e08afc41604670fdf32",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "concrete dependency harm",
+        "required_by": "architecture-dependency-inversion-gate",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "consumer contract sketch",
+        "required_by": "architecture-dependency-inversion-gate",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "consumer policy and provider volatility",
+        "required_by": "architecture-dependency-inversion-gate",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "narrow contract and owner",
+        "required_by": "architecture-dependency-inversion-gate",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "net cost comparison",
+        "required_by": "architecture-dependency-inversion-gate",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "real implementation, substitution, release, or legacy-seam need",
+        "required_by": "architecture-dependency-inversion-gate",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "identified policy",
+        "required_by": "architecture-policy-mechanism-separation",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "independently meaningful policy",
+        "required_by": "architecture-policy-mechanism-separation",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "mechanism semantics",
+        "required_by": "architecture-policy-mechanism-separation",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "mechanism semantics that callers must still observe",
+        "required_by": "architecture-policy-mechanism-separation",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "stable semantic crossing data",
+        "required_by": "architecture-policy-mechanism-separation",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "volatile or replaceable mechanism",
+        "required_by": "architecture-policy-mechanism-separation",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "accepted data authority",
+        "required_by": "data-system-of-record-derived-state",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "complete mutation-path and data-authority inventory",
+        "required_by": "data-system-of-record-derived-state",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "derivation, rebuild, reconciliation, and consumer behavior during lag",
+        "required_by": "data-system-of-record-derived-state",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "identified mutation paths",
+        "required_by": "data-system-of-record-derived-state",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "measured read benefit plus write, storage, freshness, and consistency costs",
+        "required_by": "data-system-of-record-derived-state",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "coherent shared meaning or real boundary pressure",
+        "required_by": "universal-earned-abstraction",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "current consumers or demonstrated variation",
+        "required_by": "universal-earned-abstraction",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "hidden decision and net cost comparison",
+        "required_by": "universal-earned-abstraction",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "proc-determine-abstraction-earned",
+        "required_by": "universal-earned-abstraction",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "accepted policy or current relied-upon constraint",
+        "required_by": "universal-explicit-invariants",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "all mutation/creation paths and authority",
+        "required_by": "universal-explicit-invariants",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "failure and recovery requirements",
+        "required_by": "universal-explicit-invariants",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "identified authoritative owner",
+        "required_by": "universal-explicit-invariants",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "actual caller needs",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "caller needs and decision owner",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "decision owner and volatility",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "leaked knowledge or coordinated change",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "material cost/failure semantics callers require",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "knowledge and navigation required by callers/maintainers",
+        "required_by": "universal-local-reasoning",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "representative change or use scenario",
+        "required_by": "universal-local-reasoning",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "representative change scenario",
+        "required_by": "universal-local-reasoning",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "state, invariant, and dependency ownership",
+        "required_by": "universal-local-reasoning",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "actual current cost/risk or absence within a stated interval",
+        "required_by": "universal-no-change-option",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "expected future change from accepted plans",
+        "required_by": "universal-no-change-option",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "intervention cost and uncertainty",
+        "required_by": "universal-no-change-option",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "latent security, safety, data, durability, and compatibility check",
+        "required_by": "universal-no-change-option",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "proc-decide-leave-code-alone",
+        "required_by": "universal-no-change-option",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "accepted desired behavior and semantic authority",
+        "required_by": "universal-preserve-behavior-by-default",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "preservation matrix and consumers",
+        "required_by": "universal-preserve-behavior-by-default",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "proc-establish-preservation-boundaries",
+        "required_by": "universal-preserve-behavior-by-default",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "tests, characterization, probes, or explicit residual risk",
+        "required_by": "universal-preserve-behavior-by-default",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "change-type classification",
+        "required_by": "universal-separate-semantic-structural-change",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "checkpoint verification",
+        "required_by": "universal-separate-semantic-structural-change",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "per-edit change classification",
+        "required_by": "universal-separate-semantic-structural-change",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      },
+      {
+        "requirement": "preservation boundary and semantic authority",
+        "required_by": "universal-separate-semantic-structural-change",
+        "classification": "nonmaterial",
+        "reason": "Conclusion is limited to observed configuration compatibility and reuse of the unchanged MCP command. No runtime abstraction, policy, derived store, migration or native execution acceptance is introduced; corresponding architectural implementation obligations do not decide this configuration result."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-agy-evidence-authority.json",
+      "sha256": "e1758c172004691fa1d270a6a5ce7a843b357f699a1eee33ef30b40176ec7987"
+    },
+    {
+      "path": "/tmp/cairn-agy-evidence-contract.json",
+      "sha256": "351b45b95c35af21289ca6067c927d2e5fdd5771df9e6ed4fe3cde80e81070e9"
+    },
+    {
+      "path": "/tmp/cairn-agy-evidence-runtime.json",
+      "sha256": "d3f93d11f666a27f4f1f6f018168568a0d099effd82067d978287dbd3f5cf5b1"
+    },
+    {
+      "path": "/tmp/cairn-agy-evidence-constraints.json",
+      "sha256": "5962eae22200dacc58ee3ef8cccc4e65daaa9a7294bbab4f5b00a8913884488b"
+    },
+    {
+      "path": "/tmp/cairn-agy-evidence-history.json",
+      "sha256": "fa8f7f4de237897847f325c08e116f89651264858635079509b7a3a7d50eadd0"
+    },
+    {
+      "path": "/tmp/cairn-agy-decision.json",
+      "sha256": "01b973a21f1fd2de6bb8c18b7524d932e8cd085b41e961e995ac79c1d613439d"
+    },
+    {
+      "path": "/tmp/cairn-agy-doctrine.json",
+      "sha256": "3d250f1d8feed5dd1554f8c06ad0458fde0624d9e6f4abb77d21f3708a74289f"
+    },
+    {
+      "path": "/tmp/cairn-agy-doctrine-final.json",
+      "sha256": "0f971738715a0f310ed473f1570ff508c46698bf07d2bc8966fea5a5699fe345"
+    },
+    {
+      "path": "/tmp/cairn-agy-configuration-verified/plan.json",
+      "sha256": "080be2ad08e1488c66a32beede774ab4bda54f73ecd93b63eb8fb09d9a2ef9f4"
+    },
+    {
+      "path": "/tmp/cairn-agy-configuration-verified/report.json",
+      "sha256": "054000138f5c8aa764c5cdebabb8a028ae3f3779c9d2df84ff21f318a7e08a92"
+    },
+    {
+      "path": "/tmp/cairn-agy-process.trace",
+      "sha256": "e2df078aafa6cb89009c1a305fd1ab6d9890020c5b38d749314d8414798da015"
+    },
+    {
+      "path": "/tmp/cairn-agy-process-verification.json",
+      "sha256": "167bbcd2e976c41ea69a6af1b96f8fb65bb280e8d31b4845ac841be511c5093c"
+    },
+    {
+      "path": "/tmp/cairn-agy-output-preservation.json",
+      "sha256": "0611987241b91d987dcbeffee0e8e845c1d4e805ab2a961dbbc24eb17e1cdb17"
+    },
+    {
+      "path": "/tmp/cairn-agy-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    }
+  ]
+}

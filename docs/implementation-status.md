@@ -46,6 +46,12 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Agy setup reuses the existing MCP server.** Native 1.2.0 registration and
+  configuration updates preserve explicit scope in an isolated home. User-wide
+  settings require care with concurrent tasks; native tool execution and task
+  benefit remain unverified. [Setup](agy.md),
+  [evidence](verification/agy-configuration-2026-09-09.md). U7 remains lower priority.
+
 - **Build diagnosis distinguishes CLI, API and facade versions.** Local
   `version` needs no database; `agent version` reports client and server
   independently. MCP initialization identifies its own binary. Unknown stamps
@@ -1968,3 +1974,23 @@ diagnosis, without asserting reduced task cost or cumulative memory value.
 Local deployment evidence: /tmp/cairn-build-identity-deployment/.
 
 CI completion: `34431391693` subsequently passed for exact implementation `605be1a`.
+
+
+### 2026-09-09 — Agy configuration contract verified; U7 remains partial
+
+Agy 1.2.0 can register the existing Cairn MCP command with exact arguments. An
+optional isolated check verifies registration, list, explicit task/run updates,
+enable/disable and removal while preserving an unrelated entry. The first check
+expected enable to retain `disabled: false`; observed native enable removes that
+key. The corrected check passes, and an existing-output retry preserves 27 files.
+A traced run executes only Python and nine Agy configuration commands: no Cairn
+process, IP connection or operational API contact was observed. `make check` passes.
+
+Added a setup recipe and moved U7 from open to partial for configuration only.
+Settings are user-wide with explicit scope; no native conversation identity,
+permission/reload behavior, tool execution or useful Agy task is established.
+No owner configuration, installed runtime, database or adapter changed. Further
+Agy work remains lower priority than task value in Codex/OpenCode. The broader
+qualitative and cumulative evaluation standard is unchanged, and all previous
+implementation history is preserved.
+[Report](verification/agy-configuration-2026-09-09.md).
