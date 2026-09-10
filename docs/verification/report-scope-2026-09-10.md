@@ -35,3 +35,17 @@ qualitative assessment narratives remain the place to explain those judgments.
 Installation follows source integration and CI; the authenticated endpoint needs
 an updated API to accept the new fields. Existing requests without filters retain
 their behavior.
+
+
+## Fixture isolation correction
+
+The initial CLI check used a disposable database but inherited the default Cairn
+artifact home. Its two context directories were identified by synthetic note
+content, receipt IDs and timestamps, hash-checked, and moved intact under the
+private verification directory. No operational database was used for testing.
+
+The fixture now sets a temporary `CAIRN_HOME` for its child runs and checks the
+returned artifact paths against that directory. A fresh disposable CLI check
+passed and left its sentinel artifact home untouched. The first standalone
+check omitted database migration; the corrected check migrates before capture.
+This follow-up changes test isolation, not report behavior.

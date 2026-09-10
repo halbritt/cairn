@@ -4156,3 +4156,15 @@ observed exit code and was corrected. [Verification](verification/report-scope-2
 retains the scope and limitations. No operational note was edited in this turn;
 no model-task or measured review-cost improvement is claimed. Installation will
 follow CI. U4's broader recurrence and task-value requirements remain open.
+
+
+### 2026-09-10 — Isolate report CLI fixture artifacts
+
+The report CLI check initially used a disposable database but left two generated
+context directories in the default Cairn run directory. They were identified,
+hash-checked and moved intact to the private verification directory. The fixture
+now gives its child runs a temporary `CAIRN_HOME` and verifies their artifact paths.
+A fresh disposable CLI check passed without writing its sentinel run directory.
+Its first standalone invocation omitted migration and was corrected. No operational
+database was used for these tests. [Verification](verification/report-scope-2026-09-10.md#fixture-isolation-correction)
+retains the correction and evidence; report behavior is unchanged.

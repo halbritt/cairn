@@ -1,8 +1,10 @@
 """Exercise CLI access to a use history that exceeds its default page."""
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import uuid
 
 
@@ -51,13 +53,17 @@ def check(binary):
     print('CLI pages reach every exposure and record-filtered history without inventing usage or outcomes')
 
     selected = None
-    for task in ['unrelated task', 'review task']:
-        result = subprocess.run([binary, 'run', '--repo', repo, '--task', task,
-                                 '--run', 'attempt', '--', '/bin/true'],
-                                env=os.environ, capture_output=True, text=True, timeout=15)
-        assert result.returncode == 0, result.stderr
-        if task == 'review task':
-            selected = json.loads(result.stderr)['data']['receipt_id']
+    with tempfile.TemporaryDirectory(prefix='cairn-report-scope-') as run_home:
+        run_env = dict(os.environ, CAIRN_HOME=run_home)
+        for task in ['unrelated task', 'review task']:
+            result = subprocess.run([binary, 'run', '--repo', repo, '--task', task,
+                                     '--run', 'attempt', '--', '/bin/true'],
+                                    env=run_env, capture_output=True, text=True, timeout=15)
+            assert result.returncode == 0, result.stderr
+            observed = json.loads(result.stderr)['data']
+            assert Path(observed['artifacts']).is_relative_to(run_home)
+            if task == 'review task':
+                selected = observed['receipt_id']
     for operation in ['use-report', 'run-report', 'runs']:
         report = call([operation, '--task', 'review task', '--run', 'attempt', repo])
         assert {row['receipt_id'] for row in report['rows']} == {selected}, report

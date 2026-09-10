@@ -159,5 +159,29 @@
         "rationale": "No service account, socket, network role or container change; existing profile/repository guards are retained and exercised."
       }
     ]
+  },
+  "fixture_isolation_followup": {
+    "original_effect": "Two fixture context directories used the default Cairn run directory; the database was disposable.",
+    "correction": "Explicit temporary CAIRN_HOME for child runs; assert returned artifact paths remain under it.",
+    "checks": {
+      "fixture-residue-found.json": {
+        "path": "/tmp/cairn-report-scope-20260910/fixture-residue-found.json",
+        "sha256": "15f518cc8aec313877d46aa22bece6a21323e2a7e15d885362142d456deabc68"
+      },
+      "fixture-residue-moved.json": {
+        "path": "/tmp/cairn-report-scope-20260910/fixture-residue-moved.json",
+        "sha256": "8c8de8d51bc13cf2a5ce467f0ec4c189cb3bb7a7e2c2de6ec07b249e1d8e4a4a"
+      },
+      "cli-isolated.log": {
+        "path": "/tmp/cairn-report-scope-20260910/cli-isolated.log",
+        "sha256": "76e8548729f1a23fa331b36084a95b5d96ea7e1065affa990b37e034740a448d"
+      },
+      "cli-isolated-corrected.log": {
+        "path": "/tmp/cairn-report-scope-20260910/cli-isolated-corrected.log",
+        "sha256": "88e23bdde3c127ee38bc0ac193ad097e2ea9620bd49e9a2a329f85a1f0a0ef23"
+      }
+    },
+    "scratch_check_correction": "The first standalone check omitted schema migration; the corrected disposable check migrates before capture.",
+    "operational_database_used_for_tests": false
   }
 }
