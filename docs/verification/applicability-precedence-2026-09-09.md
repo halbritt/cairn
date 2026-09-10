@@ -42,3 +42,19 @@ doctrine guidance supported causal repair and failing-test feedback. Reassembly
 also activated unrelated ingestion, UI, presentation, configuration, ranking,
 interface and monitoring obligations; thirty are explicitly nonmaterial to this
 repair, with detailed classifications retained alongside the receipt.
+
+## Local installation
+
+Clean `63f63ed4f1c08abc2e05b68e9ff4ea2ea1f69e9d` is installed as CLI and API,
+with SHA-256 `210c90cdac5515fa71a668470683c6488e7d4ddc0c780139e04b55d3425c1ca5`. The API is PID
+191214; PostgreSQL remains PID 163669. A catalog-backed backup and
+previous executables were retained before the update. No schema migration was
+needed. Recorded harness and semantic-worker configuration hashes were preserved.
+A hosted semantic query returned ready discovery and an exact prior procedure
+body. The selected applicability lesson was captured with an identical retry,
+then retrieved and checked against its body digest.
+
+[Exact-source CI](https://github.com/halbritt/cairn/actions/runs/34419842234) passed
+PostgreSQL/race, Python, vet/build, history and authenticated startup checks.
+The new lesson and runtime verification add continuity and deployment evidence;
+no host-run outcome or memory-benefit assessment was created.

@@ -121,11 +121,69 @@
     {
       "path": "/tmp/cairn-applicability-precedence-citation-final.json",
       "sha256": "2f1621683145be016c509a16c051077b6fd952048a9a079d48c9eb0ba177244f"
+    },
+    {
+      "path": "/tmp/cairn-applicability-deployment/installation.json",
+      "sha256": "b8f7eed01839f598a22d23b6c428fd2e878413e44e55f21e4ad828a524d9904f"
+    },
+    {
+      "path": "/tmp/cairn-applicability-deployment/lesson.json",
+      "sha256": "7550b497dad1de3cb6012d0bc71cf821bec67c3c9e550868e903882490a34af5"
+    },
+    {
+      "path": "/tmp/cairn-applicability-ci.json",
+      "sha256": "96392e95b52c0284534f1db0676e763c6098a1b107b8ae50a6782982d4fde6b7"
+    },
+    {
+      "path": "/tmp/cairn-applicability-backup.log",
+      "sha256": "18080bbcc13186cb8fc63e79d8a60c714a3dd68b5479b2f4dfd43286a9ec7d68"
     }
   ],
   "limits": [
     "No model-selected task or incremental memory-value claim",
     "Declared pins do not certify workspace state",
     "Legacy histories remain original decisions; fresh requests use repaired precedence"
-  ]
+  ],
+  "installation": {
+    "revision": "63f63ed4f1c08abc2e05b68e9ff4ea2ea1f69e9d",
+    "sha256": "210c90cdac5515fa71a668470683c6488e7d4ddc0c780139e04b55d3425c1ca5",
+    "previous_api_pid": 4121278,
+    "store_pid": 163669,
+    "backup_path": "/home/halbritt/.local/share/cairn/backups/cairn-20260910T000655-189848.dump",
+    "backup_sha256": "54b6bebbdf285aa470efb23065dc5b4e37dc42376a7f94a4b39e316ef03d8aaf",
+    "configuration_sha256": {
+      ".opencode/tools/cairn.ts": "b7590a3e061133ef55ae41b949147bd30b6a6773c51edf820a76bf54b992b53d",
+      ".opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      ".codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "bb97a6690041a004c3385743b3b860394f635995d8b63781501900527b2793cd",
+      "/home/halbritt/.local/share/cairn/semantic/worker-stream": "33a97b9b1b6a86d1ec462ed375b412364361a60dbff189eaeab122d0fb90fcd0",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "290a93245909186c905708f328c276dc074232ef4fcd08c52f02ec56264a4fb5"
+    },
+    "api_pid": 191214,
+    "api_restarted": true,
+    "hosted_retrieval_receipt": "30b405f1-b830-4632-bf35-2d20e6ae3c13",
+    "read_record_id": "25adf0b0-7246-4f63-8687-7ccf2770f12a",
+    "read_record_version": 1,
+    "read_body_sha256": "b4ca91d980ab00ac774081d5ab931d9bedb91659e944c10bcf969430f8ac1220",
+    "discovery": {
+      "state": "ready",
+      "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+      "algorithm": "bge-max-chunk/1",
+      "scores_sha256": "196a33a0526db6c5c435d03935aa46c154c66bda07148d1140d3694dfba25b50"
+    }
+  },
+  "saved_lesson": {
+    "record_id": "81751203-8768-49ee-bfce-895efb69889d",
+    "version": 1,
+    "body_sha256": "617555818bf48ce98cdfdfb3204c4cbf821685e6d718c1006c4ab96dd26374ca",
+    "request_id": "1b02f81d-b7ab-43bb-80ff-9ddb070efaec",
+    "exact_retry_verified": true,
+    "fresh_pull_verified": true,
+    "receipt_id": "048ee5d3-bd03-45c1-8eb4-fdf3de265533"
+  },
+  "ci": {
+    "run_id": 34419842234,
+    "commit": "63f63ed4f1c08abc2e05b68e9ff4ea2ea1f69e9d",
+    "conclusion": "success"
+  }
 }

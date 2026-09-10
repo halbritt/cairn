@@ -141,14 +141,12 @@ those distinctions and the negative evidence.
 
 Live checks on 2026-09-09 found:
 
-- Installed CLI: clean `291557105d036b806a31c3fedee3ff702dc2a95c`, with SHA-256
-  `08f9579d251baeed1ee120e76a916ddee09e04ddc0304b2246d1847c86e2b0e2`.
-  Explicit compact startup, including task-file input, is installed alongside history
-  and retained-kind controls.
-- Running API: clean `cf66e1c3cc26b65d4f143f59f0f1070f7b56ec3b`, with SHA-256
-  `a58d8258296382e6a81b100574ecf65685c62cf88a42682fc23e9afc7c9c7026`.
-  API PID 4121278 uses optional streaming model reuse. The store stayed on PID
-  163669; this CLI deployment required no API restart or schema migration.
+- Installed CLI and running API: clean `63f63ed4f1c08abc2e05b68e9ff4ea2ea1f69e9d`,
+  with SHA-256 `210c90cdac5515fa71a668470683c6488e7d4ddc0c780139e04b55d3425c1ca5`.
+  API PID 191214 includes the applicability precedence repair and retains
+  optional streaming model reuse. PostgreSQL remains PID 163669; no schema
+  migration accompanied the update. CLI compact startup, task-file input, history
+  and retained-kind controls remain installed.
 - Dedicated PostgreSQL **17.10**, with migrations **001–030** applied. Data and
   socket remain under `~/.local/share/cairn`; captured evidence and canonical
   packages are in PostgreSQL, while run-directory context copies need separate
@@ -168,8 +166,9 @@ Live checks on 2026-09-09 found:
   No persistent note-vector cache, package update or independent model service
   was added. The one-shot launcher remains available.
 
-The [task-file installation](verification/start-task-file-2026-09-09.md#local-installation)
-records the current CLI. The [compact-start installation](verification/compact-start-2026-09-09.md#local-installation-and-ci-correction)
+The [applicability repair installation](verification/applicability-precedence-2026-09-09.md#local-installation)
+records the current CLI/API. The [task-file installation](verification/start-task-file-2026-09-09.md#local-installation)
+retains its preceding CLI deployment. The [compact-start installation](verification/compact-start-2026-09-09.md#local-installation-and-ci-correction)
 retains its preceding deployment and preserved API/configuration. The
 [resident-worker installation](verification/semantic-residency-2026-09-09.md#local-installation)
 retains the API, worker and idle-release checks. Earlier [use-history CLI](verification/use-history-cli-2026-09-09.md#cli-installation),
@@ -185,7 +184,14 @@ lifecycle; standalone scripts also support isolated/manual installations.
 
 ## Verification coverage
 
-The installed task-file startup extension passed [exact-source CI `2915571`](https://github.com/halbritt/cairn/actions/runs/34418879903),
+The installed applicability repair passed full disposable PostgreSQL/race
+integration, all Go and 34 Python tests, vet/format and an old/new binary replay
+comparison. [Exact CLI/API-source CI `63f63ed`](https://github.com/halbritt/cairn/actions/runs/34419842234)
+passed every step. Local service checks confirmed exact executable bytes,
+preserved configuration and hosted semantic retrieval/body identity.
+[Repair and deployment](verification/applicability-precedence-2026-09-09.md).
+
+The preceding task-file startup extension passed [exact-source CI `2915571`](https://github.com/halbritt/cairn/actions/runs/34418879903),
 including PostgreSQL/race and the authenticated CLI fixture. Local checks preserve
 exact file text through both carriers and reject invalid sources before retrieval.
 [Report and installation](verification/start-task-file-2026-09-09.md).
@@ -205,7 +211,7 @@ transport tests cover cancellation during a blocked write. Local installation
 verified exact compiled bytes, hosted retrieval/body identity, reuse and idle
 release. Its [report](verification/semantic-residency-2026-09-09.md) separates
 those checks from task-value claims.
-[Exact running API-source CI cf66e1c](https://github.com/halbritt/cairn/actions/runs/34412010428)
+[Earlier resident-worker API-source CI cf66e1c](https://github.com/halbritt/cairn/actions/runs/34412010428)
 passed PostgreSQL/race, Python, vet/build and the CLI history fixture.
 
 The installed use-history CLI passed disposable PostgreSQL/race integration,
@@ -1568,4 +1574,19 @@ recompilation and `STALE_PACKAGE` on a changed fresh retry. No history/schema
 migration or new pin was needed. The [report](verification/applicability-precedence-2026-09-09.md)
 retains failed baselines and interpretation limits. This is a verified retrieval
 repair; neither a model task nor memory's incremental contribution was assessed.
+All earlier implementation history remains intact.
+
+### 2026-09-09 — deploy applicability repair and retain its lesson
+
+Installed clean `63f63ed` as both CLI and API after a catalog-backed backup,
+retaining the preceding executables. API PID 191214 now runs the repaired check;
+PostgreSQL remains PID 163669 and no schema migration was needed. Recorded harness
+and semantic-worker settings were preserved. Hosted semantic retrieval returned
+ready discovery and the exact prior assessment-history procedure body.
+
+A selected ordinary lesson records the missing-pin/mismatch defect, expected
+conjunction semantics and historical-retry behavior. Identical capture retry and
+a fresh full pull verified its content. Exact-source CI 34419842234 passed all
+steps. The repair report retains deployment and lesson identities. This adds a
+usable repair and saved guidance; no model task or benefit assessment is inferred.
 All earlier implementation history remains intact.
