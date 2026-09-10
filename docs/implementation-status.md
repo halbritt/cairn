@@ -46,6 +46,11 @@ execution attempts or automatically associate retrieval with a host outcome.
 
 ## Recent retrieval and integration work
 
+- **Task-file guidance is now recoverable from saved procedures.** The existing
+  OpenCode note now explains `--prompt-file` and newline preservation. A previously
+  missed handoff question retrieves it first in lexical and semantic modes, with
+  a targeted 897-byte passage. [Coverage correction](verification/task-handoff-guidance-2026-09-09.md).
+
 - **Repeated semantic scoring reuses exact note vectors.** A bounded cache within
   the existing worker avoids re-embedding unchanged eligible notes. Thirteen
   real-model responses match the baseline; six warm queries take 0.034–0.044 seconds
@@ -1803,3 +1808,22 @@ This occurred after the comparison. Operational bodies, deployment metadata and
 probe-correction evidence remain under `/tmp/cairn-vector-cache-deployment/`.
 Repeated retrieval cost improved; cold cost, independent answer quality and
 sustained task benefit remain separate open questions.
+
+### 2026-09-09 — Repair saved task-file handoff guidance
+
+Revisited a question whose semantic results were weak during the retrieval-cost
+investigation. Neither lexical nor semantic five-result indexes returned the
+OpenCode procedure; newline/CRLF search returned no notes. Pulled OpenCode and
+Codex guidance omitted the implemented `--prompt-file` option, though the OpenCode
+note pointed to the correct source document.
+
+Revised OpenCode procedure `73537cbd-0ec3-4311-98c9-23e58a685b2f` v11→v12 with
+selected task-file usage, input limits and source pointers. Earlier prose and
+metadata remain; exact retry and fresh pulls match SHA-256
+694dd8d524e1454b3ff1988a78e92908fe2ff7537dcc691312b7d0876f0f33bb. The same question now returns it first
+in both modes; an existing source-span pull reads the complete added 897-byte
+passage. Retained exact-byte startup evidence and the recent integration were
+rechecked; no new launcher/model trial was run. This is a selected guidance
+coverage correction, not a ranking change, independent benchmark or task-value
+assessment. Runtime, binaries and model configuration remain unchanged.
+[Report](verification/task-handoff-guidance-2026-09-09.md) retains comparison pointers.

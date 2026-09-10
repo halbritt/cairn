@@ -478,6 +478,12 @@ to 0.034–0.044 seconds on the public 12-note workload. Current edits/exclusion
 worker cleanup pass the real API checks. This reduces repeated retrieval cost; it
 does not establish better answers or sustained task benefit.
 
+[Task-file guidance maintenance](verification/task-handoff-guidance-2026-09-09.md)
+repaired an observed missed question by adding the existing `--prompt-file` option
+to the saved OpenCode procedure. The selected question now retrieves that note
+first in lexical and semantic modes. This is coverage maintenance with explicit
+comparison limits; E4 and sustained task value remain open.
+
 [Explicit browsing](verification/browse-2026-09-09.md) now exposes the existing
 empty-query index through the agent CLI, MCP and native OpenCode. It provides
 bounded topic previews when the saved vocabulary is unknown, with normal scope,
