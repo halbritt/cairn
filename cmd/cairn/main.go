@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -44,6 +45,9 @@ func main() {
 					err = writeOpenCodeConfig(os.Stdout, os.Args[2:], executable)
 				}
 			}
+		}
+		if errors.Is(err, flag.ErrHelp) {
+			return
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cairn %s: %v\n", os.Args[1], err)

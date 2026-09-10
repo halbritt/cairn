@@ -67,6 +67,9 @@ Use `cairn version` to identify the CLI; authenticated `cairn agent ... version`
 reports the CLI and running API separately. [Build diagnostics](docs/build-identity.md)
 explain unknown stamps and compatibility limits.
 
+Use `cairn mcp --help` or the [configuration command help](docs/mcp.md#command-help)
+to inspect the installed flags before connecting a harness.
+
 Requires Go 1.25+, PostgreSQL 16+ client/server binaries, Bash, Python 3.11+, and
 `flock`. Run as an ordinary user. The local store uses its own private Unix
 socket and opens no TCP listener.

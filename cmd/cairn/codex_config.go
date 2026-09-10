@@ -12,7 +12,7 @@ func writeCodexConfig(out io.Writer, args []string, executable string) error {
 	f := flags("codex-config")
 	o := mcpFlags(f)
 	required := f.Bool("required", false, "require Cairn to connect before Codex starts")
-	if err := f.Parse(args); err != nil {
+	if err := parseHarnessFlags(f, args, out); err != nil {
 		return err
 	}
 	if err := o.validate(f.NArg()); err != nil {

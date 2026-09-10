@@ -3889,3 +3889,26 @@ A fresh installed MCP session also exposed and read the historical span. The
 first probe omitted the required socket flag; the corrected probe passed.
 Fresh ordinary search and pull returned the corrected v4 procedure and expected
 body hash. This verifies current guidance retrieval after maintenance.
+
+
+### 2026-09-10 — Offline help for MCP and harness configuration
+
+The prior installation probe exposed a CLI usability defect: `cairn mcp --help`
+returned only an error rather than the required connection flags. The same silent
+flag handling affected the three configuration generators. All four commands now
+print their registered usage/options on `--help` or `-h` and exit zero before
+connection or configuration generation. Other CLI parsing remains as implemented.
+
+The configuration tests first failed on empty help output, and a public invocation
+reproduced the installed MCP failure. Command package tests, static checks and
+offline public CLI checks then passed. Invalid inputs still fail without stdout,
+help-like flag values remain data, output failures propagate, and valid generated
+configuration matches the previous binary after normalizing the executable path.
+The standing offline check now runs in the existing CLI integration workflow.
+
+[Verification](verification/harness-help-2026-09-10.md) records source and evidence.
+This resolves an encountered setup obstacle. Recalled project priorities helped
+select work in the existing interfaces; incremental memory benefit and setup-time
+savings remain unmeasured. No model inference, operational-note mutation or storage
+change occurred. Installation remains at the separately recorded build until the
+CLI deployment entry is appended. All earlier history is preserved.

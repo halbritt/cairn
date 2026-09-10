@@ -20,7 +20,7 @@ type claudeServer struct {
 func writeClaudeConfig(out io.Writer, args []string, executable string) error {
 	f := flags("claude-config")
 	o := mcpFlags(f)
-	if err := f.Parse(args); err != nil {
+	if err := parseHarnessFlags(f, args, out); err != nil {
 		return err
 	}
 	if o.config.CodexThread {

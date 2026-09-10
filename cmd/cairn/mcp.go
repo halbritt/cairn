@@ -7,6 +7,7 @@ import (
 	"github.com/halbritt/cairn/localapi"
 	"github.com/halbritt/cairn/mcpapi"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"os"
 )
 
 type mcpOptions struct {
@@ -47,7 +48,7 @@ func (o *mcpOptions) validate(positional int) error {
 func serveMCP(ctx context.Context, args []string) error {
 	f := flags("mcp")
 	o := mcpFlags(f)
-	if err := f.Parse(args); err != nil {
+	if err := parseHarnessFlags(f, args, os.Stdout); err != nil {
 		return err
 	}
 	if err := o.validate(f.NArg()); err != nil {

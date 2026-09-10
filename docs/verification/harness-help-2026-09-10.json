@@ -1,0 +1,80 @@
+{
+  "schema": "cairn.harness-help-verification/1",
+  "date": "2026-09-10",
+  "baseline_commit": "5af9698825d4122b4511eb970217823d4eb3b931",
+  "migration": 34,
+  "model_inference_calls": 0,
+  "operational_records_mutated": false,
+  "task_value": "Observed setup help defect repaired; incremental memory contribution and setup-time savings unmeasured",
+  "checks": {
+    "/tmp/cairn-harness-help-20260910/red.log": "460188c60b57eefa0ed43725d6bf941041cdb0f31a99cac0fbc5b2a2f2c223fb",
+    "/tmp/cairn-harness-help-20260910/cli-red.log": "ffc3a59a38a5acf97f099fc8c7b714ac1f92a8c869af40c9365d0c002b3b5893",
+    "/tmp/cairn-harness-help-20260910/go.log": "42032abc8bee1e5ad0bcfad2e80cadae8d43d9763b8a3536e513a2c7ae7a87a5",
+    "/tmp/cairn-harness-help-20260910/check.log": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029",
+    "/tmp/cairn-harness-help-20260910/cli-green.log": "7eb2df808f324f19f76500df52b3060c0aa893290bfcfc7f49d9c507fdbc945a",
+    "/tmp/cairn-harness-help-20260910/config-compatibility.json": "b9303c90df309c39e48f8d45eaf24580e796b716ad9e9fc9273271a5713af862",
+    "/tmp/cairn-harness-help-20260910/decision-receipt.json": "e3210a33b07a828df2c5650a38fbb46ce94cfc510c7a88d427459a7dcf847326"
+  },
+  "production_source_sha256": {
+    "cmd/cairn/harness_help.go": "1c46559afc807e309e52de02af0c08aafc685f00b50b52c36a361fe834029aaf",
+    "cmd/cairn/main.go": "6c3f601f6dc3cb782e6999cf6593f2c0e5e9cdbad9e53c404878146407d4baa0",
+    "cmd/cairn/mcp.go": "f0b8d3f3195e06d66af013ceedad9270cbb409fc07fdb2191d729198afcadc11",
+    "cmd/cairn/opencode_config.go": "027819b9cec040b2f1368988eaa96bd048f4a28a32252ec44ef8b6055c6fb4e5",
+    "cmd/cairn/codex_config.go": "396839d178f47c6792b47773b44ee15e49f73d9b781fc30d472f5f815f6d2870",
+    "cmd/cairn/claude_config.go": "808ea52f141ddf0b989a22bc856ea12708b2491bead0e34b4c490f13523db027"
+  },
+  "doctrine": {
+    "packet_id": "pkt-eb5d8836e66724da",
+    "packet_sha256": "eb5d8836e66724dabf760ec21d4cb492e51addd7c4098169f82f3c31e55e3253",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "missing_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing concrete FlagSet and io.Writer contracts remain; no interface hierarchy or typed-nil absence contract is introduced."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing concrete FlagSet and io.Writer contracts remain; no interface hierarchy or typed-nil absence contract is introduced."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing concrete FlagSet and io.Writer contracts remain; no interface hierarchy or typed-nil absence contract is introduced."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing concrete FlagSet and io.Writer contracts remain; no interface hierarchy or typed-nil absence contract is introduced."
+      },
+      {
+        "requirement": "caller nil checks and method use",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "Existing concrete FlagSet and io.Writer contracts remain; no interface hierarchy or typed-nil absence contract is introduced."
+      },
+      {
+        "requirement": "documented absence semantics",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "Existing concrete FlagSet and io.Writer contracts remain; no interface hierarchy or typed-nil absence contract is introduced."
+      },
+      {
+        "requirement": "dynamic type and dynamic value at the return",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "Existing concrete FlagSet and io.Writer contracts remain; no interface hierarchy or typed-nil absence contract is introduced."
+      }
+    ],
+    "decision_receipt_validated": true,
+    "citation_loops_closed": true
+  }
+}

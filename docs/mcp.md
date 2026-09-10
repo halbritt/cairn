@@ -48,6 +48,27 @@ instruction requiring unavailable context can refuse the search with
 Leaving all context flags empty and omitting the per-call argument preserves
 searches without a context object.
 
+## Command help
+
+Inspect the installed connection and configuration flags without credentials or a
+running API:
+
+```sh
+cairn mcp --help
+cairn opencode-config --help
+cairn codex-config --help
+cairn claude-config --help
+```
+
+These four commands accept `--help` or `-h`, print usage and registered flag
+names/descriptions/defaults to stdout, and exit zero before connection or
+configuration generation. The socket and token-file arguments are explicitly
+marked required. Invalid arguments still fail on stderr without configuration or
+protocol output. Standard flag parsing applies: a `--help` used as a flag value or
+after `--` is not a help request. This is CLI behavior; no API upgrade is needed.
+Other commands retain their existing help handling.
+
+
 ## Tools
 
 | Tool | Inputs and behavior |

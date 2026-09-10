@@ -14,6 +14,11 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Discover harness setup flags offline.** `mcp`, `opencode-config`, `codex-config`
+  and `claude-config` now print useful `--help`/`-h` output and exit successfully.
+  [Command help](docs/mcp.md#command-help) uses the registered flags and needs no
+  credentials, running API or database.
+
 - **Inspect a passage from a long earlier note.** [History excerpts](docs/record-history.md#read-a-passage-from-an-earlier-version)
   (`4999caa`) add optional byte ranges to exact-version reads through CLI/API, MCP and native
   OpenCode. Results retain full-source identity and lossless selected bytes;

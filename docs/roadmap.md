@@ -24,6 +24,11 @@ scope/context flags. Both output modes connected in OpenCode without a model
 call. This removes routine JSON assembly; host launch and outcome association
 remain explicit responsibilities.
 
+The [harness command help repair](verification/harness-help-2026-09-10.md) now exposes
+registered setup flags offline for MCP and all three configuration generators.
+It resolves a failed help request from installation work; broader ingress and
+task-benefit requirements remain open.
+
 The [Codex configuration generator](verification/codex-config-2026-09-09.md) now
 emits a TOML entry from the same connection/context flags, using conversation or
 explicit task/run scope. The actual Codex client loaded generated files and pulled

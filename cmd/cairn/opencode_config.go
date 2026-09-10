@@ -20,7 +20,7 @@ func writeOpenCodeConfig(out io.Writer, args []string, executable string) error 
 	f := flags("opencode-config")
 	o := mcpFlags(f)
 	memoryOnly := f.Bool("memory-only", false, "restrict the task to memory search and body pulls")
-	if err := f.Parse(args); err != nil {
+	if err := parseHarnessFlags(f, args, out); err != nil {
 		return err
 	}
 	if o.config.CodexThread {
