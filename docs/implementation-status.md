@@ -17,8 +17,8 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `7dcf3dc`, including quoted exact-text search
-and supporting evidence in required retirement previews. The database schema remains at migration 031.
+The installed CLI and API are clean `97816e9`, including proposal conversion
+version pins and quoted exact-text search. The database schema is at migration 032.
 
 This snapshot assesses the source changes recorded below and the local installation
 on 2026-09-10. Feature reports below preserve their own verification dates and limits.
@@ -52,7 +52,7 @@ execution attempts or automatically associate retrieval with a host outcome.
 - **Proposal conversions retain lesson versions.** The operator can require the
   inspected version and inspect earlier conversions after reopening. Legacy pins
   stay unknown; audited forgetting can still erase lesson bodies. This source
-  change is verified and awaiting installation.
+  change is verified and installed.
   [Contract](demand-review.md#preserve-the-linked-lesson-version),
   [verification](verification/proposal-versions-2026-09-10.md).
 
@@ -2526,3 +2526,31 @@ No old pin was reconstructed, no body is copied into review history, and no mode
 task ran. This prepares the reviewed-failure path for exact-signature retrieval;
 that E1 work and the broader D1/value requirements remain open. Installation is
 pending at this entry. Complete earlier implementation history is preserved.
+
+
+### 2026-09-10 — Versioned proposal review installed after backup
+
+Clean `97816e9` is installed in the CLI, API and project binary; SHA-256
+`d9098cbd818ce5f41a808460b329eeb0d74eb9718a4f01291ca8a5eabfd7a5b4`.
+Migration 032 was applied after the standard store backup, whose checksum and
+readable restore catalog are retained in the feature manifest. API PID 1583844
+serves the new build. PostgreSQL PID 163669, connection settings, native adapter
+and semantic worker source are unchanged.
+
+The operational store has no proposal/review rows, so no production conversion
+was performed to stage a result. The installed history command returns NOT_FOUND
+for an absent ID, and ordinary hosted quoted retrieval still works. The actual
+conversion, earlier-writer and deletion behaviors were verified in disposable
+stores. CI 34453317076 remains in progress at this entry; task-value and E1/D1
+requirements remain open.
+
+
+### 2026-09-10 — Versioned proposal review CI passed
+
+[CI 34453317076](https://github.com/halbritt/cairn/actions/runs/34453317076)
+completed successfully for installed `97816e9`, with PostgreSQL/race tests,
+40 Python tests, static/build checks and authenticated CLI/stdio workflows.
+The local integration run additionally exercised an actual older proposal writer
+and its exact retries. Versioned conversion/history is installed and verified;
+error-signature retrieval, broader demand adaptation and durable task value remain
+open. No model-task result was added by this change.

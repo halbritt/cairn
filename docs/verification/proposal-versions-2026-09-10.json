@@ -120,6 +120,55 @@
     {
       "path": "/tmp/cairn-proposal-version-citations-final.json",
       "sha256": "1668c50721a9674b9a677ed3c3630ad5fb47baa5f4577fffb3c44968f27e428d"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-deployment/preflight.json",
+      "sha256": "a85c636a732b217ed61a21548239ac4addd3870bdea6cae91f37e6589dc7d7e2"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-deployment/migration.json",
+      "sha256": "c2ef4a4d4cb093e6257c7edc11e2aad5f8449e7d8cc891bb5aae65878ea308c9"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-deployment/installation.json",
+      "sha256": "23d928e45d2e96ea391d0e67b11c1b00dfda02884fd96f7b0878f555ccfc9409"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-deployment/installed-check.json",
+      "sha256": "fd52cba6e6fd1bbc4d76454a6b9e956aa9820bb038cea7b7c16759790e552f7a"
+    },
+    {
+      "path": "/tmp/cairn-proposal-version-deployment/ci.json",
+      "sha256": "7c811b56a7b222a26dec864f2e0f673a53f83bb53bbdf4eb1ef6de6638498694"
     }
-  ]
+  ],
+  "deployment": {
+    "commit": "97816e95514850c63379d2bdc3ffa4c61dba8f0d",
+    "installed_sha256": "d9098cbd818ce5f41a808460b329eeb0d74eb9718a4f01291ca8a5eabfd7a5b4",
+    "api_pid": 1583844,
+    "postgres_pid": 163669,
+    "migration": 32,
+    "backup": {
+      "path": "/home/halbritt/.local/share/cairn/backups/cairn-20260910T080541-1583317.dump",
+      "sha256": "06ba336bc2dd18b3430def2b4fe831b83c53f9e0d92658e2ae484bbe51a53352"
+    },
+    "backup_catalog_readable": true,
+    "configuration_and_adapter_preserved": true,
+    "installed_check": {
+      "migration": 32,
+      "proposal_count": 0,
+      "review_count": 0,
+      "pinned_review_count": 0,
+      "no_backfilled_versions": true,
+      "history_result": "NOT_FOUND",
+      "hosted_search_ranking": "lexical-scope-recency/5",
+      "hosted_search_receipt": "a5edd1ea-69f3-426e-bcc1-1c53ad503719",
+      "operational_proposals_mutated": false
+    },
+    "ci": {
+      "id": 34453317076,
+      "conclusion": "success",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34453317076"
+    }
+  }
 }

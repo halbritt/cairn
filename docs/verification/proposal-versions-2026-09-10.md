@@ -59,3 +59,25 @@ support the bounded decision. The decision receipt validates and the citation
 trace is closed. Four Go-interface obligations are nonmaterial because no
 interface or substitution boundary changes. The [manifest](proposal-versions-2026-09-10.json)
 retains packet identity, classifications and hashes of local evidence artifacts.
+
+
+## Local installation
+
+Clean `97816e95514850c63379d2bdc3ffa4c61dba8f0d` is installed in the CLI, API and
+project binary. SHA-256:
+`d9098cbd818ce5f41a808460b329eeb0d74eb9718a4f01291ca8a5eabfd7a5b4`.
+Migration 032 was applied after the standard store backup; the dump checksum and
+readable restore catalog are recorded in the verification manifest. API PID
+1583844 serves the new build. PostgreSQL PID 163669, connection settings, native
+adapter and semantic worker source remain unchanged.
+
+The operational store has no proposals or review rows. The installed history
+command therefore correctly returns NOT_FOUND for an absent ID; no synthetic
+conversion was added to production. Ordinary hosted quoted search still returns
+the existing applicability note through the restarted API. This verifies the
+installation and unchanged ordinary retrieval, while the conversion/history
+behavior is established by the disposable tests above.
+
+[CI 34453317076](https://github.com/halbritt/cairn/actions/runs/34453317076)
+completed successfully for installed `97816e9`, including PostgreSQL/race tests,
+40 Python tests, static/build checks and authenticated CLI/stdio workflows.
