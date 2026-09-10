@@ -165,8 +165,10 @@ Capture saves selected reusable knowledge as repository-wide A testimony.
 only IDs, version and retry ID. For a text-only correction, edit accepts `body`, the pulled record ID and
 expected version, and a new request UUID. Stored draft metadata is preserved.
 Alternatively, edit takes the same full replacement `draft` as the
-[MCP edit tool](mcp.md#tools); supply exactly one of `body`, `append`, `draft` or `evidence_citations`. Use `append` for a verbatim suffix including separating whitespace; the combined
+[MCP edit tool](mcp.md#tools); supply exactly one of `body`, `append`, `replace`, `draft` or `evidence_citations`. Use `append` for a verbatim suffix including separating whitespace; the combined
 body must fit 65,536 bytes. See [append guidance](local-api.md#append-selected-guidance).
+Use [exact passage replacement](local-api.md#replace-one-exact-passage) for a
+correction that preserves all text outside one uniquely matching passage.
 With a full
 draft, preserve scope, sensitivity, applicability, relations and attribution. Stale versions require a fresh pull and reconciliation.
 Neither capture nor edit grants authority or establishes task success.

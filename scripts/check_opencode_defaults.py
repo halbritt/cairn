@@ -144,7 +144,7 @@ def check(opencode, output, *, connection=None, extra_cases=()):
     # Malformed calls must be refused whether or not a connection is configured.
     for name, _, _ in cases:
         if name == 'adapter-append-ambiguous':
-            assert 'INVALID_REQUEST: supply exactly one of body, append, draft or evidence_citations' in results[name], (name, results[name])
+            assert 'INVALID_REQUEST: supply exactly one of body, append, replace, draft or evidence_citations' in results[name], (name, results[name])
         elif name.startswith('adapter-'):
             assert 'INVALID_REQUEST: invalid arguments for Cairn tool' in results[name], (name, results[name])
     report = dict(schema='cairn.opencode-defaults-check/1', opencode_version=version,

@@ -62,13 +62,14 @@ never opens the database. Use the same request UUID for a transport retry. The
 server has bounded request bodies and deadlines; an HTTP write failure does not roll back a committed mutation.
 
 Encoded JSON limits are 512 KiB for ordinary `create`, `edit`, `revise` and `append`,
-8 MiB for `evidence`, and 128 KiB for other API operations. The larger envelopes
+1 MiB for `replace`, 8 MiB for `evidence`, and 128 KiB for other API operations. The larger envelopes
 accommodate the existing 64 KiB decoded note and 1 MiB decoded evidence limits,
 including JSON escaping and metadata. They do not increase stored source sizes
 or retrieval budgets. The agent CLI, API client and server share these limits;
 the store still validates size, repository and sensitivity. `agent remember`
 uses `create`; native capture/edit tools use these same operations. Trusted local
-JSON `create`, `edit`, `revise` and `append` also accept 512 KiB envelopes.
+JSON `create`, `edit`, `revise` and `append` also accept 512 KiB envelopes;
+`replace` accepts 1 MiB for its two text fields.
 Update both API and CLI before sending larger requests. Existing accepted requests
 and their retry identities retain their behavior. Oversized envelopes, including
 excess trailing whitespace, are refused before a write or retry reservation.
@@ -135,7 +136,7 @@ Authenticated `version` takes `{}` and reports the running API executable withou
 reading repository data. `cairn agent ... version` also reports its own CLI build
 and needs no stdin request. [Build identity and limitations](build-identity.md).
 
-Operations: `create`, `edit`, `revise`, `append`, `cite`, `delete`, ordinary `supersede`, `compile`, `recompile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
+Operations: `create`, `edit`, `revise`, `append`, `replace`, `cite`, `delete`, ordinary `supersede`, `compile`, `recompile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, `assessments`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `run-package`, `run-index`, `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
@@ -283,7 +284,7 @@ to select this mode:
 }
 ```
 
-Supply exactly one of `body`, `append`, `draft` or `evidence_citations` to the
+Supply exactly one of `body`, `append`, `replace`, `draft` or `evidence_citations` to the
 native tool. The API returns only `record_id` and `version`; native tools also
 return the request ID. The old body is not echoed. Exact retries return the
 original revision even after later edits, without adding the suffix twice.
@@ -297,6 +298,49 @@ Read the current note and check the addition against its guidance and sources.
 Use append for a selected additive update; use replacement for corrections or
 consolidation. Appending does not remove contradictions, obsolete guidance or
 redundancy. Upgrade the CLI, API and adapter together before using this mode.
+
+
+### Replace one exact passage
+
+`POST /v1/replace`, `cairn agent replace` and `cairn replace` accept
+`request_id`, `record_id`, `expected_version`, `repo`, `old_text` and `new_text`.
+The current active A note must contain exactly one occurrence of `old_text`.
+Matching is literal and case-sensitive, with no whitespace or Unicode
+normalization. Overlapping occurrences also make the request ambiguous.
+Supply enough surrounding text to identify the intended passage.
+
+The native `cairn_edit` tool fixes the repository from configuration and takes:
+
+```json
+{
+  "request_id": "NEW_REQUEST_UUID",
+  "record_id": "PULLED_RECORD_UUID",
+  "expected_version": 3,
+  "replace": {
+    "old_text": "Run the old command.",
+    "new_text": "Run the corrected command."
+  }
+}
+```
+
+Supply `replace` as the only edit mode. `old_text` must be nonempty;
+`new_text` must be supplied, and may be an empty string to remove the passage.
+Both fields have a 65,536-byte limit. The final body must remain nonblank and
+fit 65,536 bytes; the request envelope allows 1 MiB for escaped old and new text.
+A missing or ambiguous passage, omitted/null `new_text`, invalid text or an
+invalid final body returns `INVALID_REQUEST` without a new version. Read the
+current note and reconcile the request. A stale version returns `VERSION_CONFLICT`
+even if the old passage no longer matches.
+
+All other body bytes, draft metadata and source citations are preserved. The
+operation uses the ordinary edit transaction and returns the new record ID and
+version, without echoing the body. Exact retries return the original result even
+after later edits; changed arguments with the same request ID conflict. Existing
+full-body, append and draft edits retain their own retry identities.
+
+This is selected text correction, not merging or automatic contradiction review.
+Retained citations do not certify the corrected wording. Earlier versions remain
+available for comparison. Upgrade the CLI, API and native adapter before use.
 
 
 ### Ordinary source citations

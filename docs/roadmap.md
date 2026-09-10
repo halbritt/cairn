@@ -610,6 +610,11 @@ an active A note without reproducing its existing body. The same edit tool retai
 version checks, metadata and citation preservation, bounded bodies and exact
 retries. This addresses additive maintenance only; consolidation, contradiction
 review and demonstrated sustained task value remain separate work.
+[Exact passage replacement](verification/note-replace-2026-09-10.md) now handles
+a selected correction without reconstructing unrelated instructions. Missing or
+ambiguous passages and stale versions refuse; full-body edits remain available
+for consolidation. This adds maintenance capability, with downstream task benefit
+and net cost still unmeasured.
 
 An [operational note review](verification/operational-note-review-2026-09-09.md)
 corrected an ambiguous OpenCode permission example and updated both harness

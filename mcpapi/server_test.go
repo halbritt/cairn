@@ -140,6 +140,31 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("replace", func(t *testing.T) {
+		var saved recordWriteResult
+		if err := json.Unmarshal(invoke("cairn_remember", map[string]any{"request_id": uuid.NewString(), "body": "Keep.\r\nOld command.\n日本語  ", "shareable": true}, ""), &saved); err != nil {
+			t.Fatal(err)
+		}
+		args := map[string]any{"request_id": uuid.NewString(), "record_id": saved.RecordID, "expected_version": 1, "replace": map[string]any{"old_text": "Old command.", "new_text": "Corrected command."}}
+		result := invoke("cairn_edit", args, "")
+		if string(invoke("cairn_edit", args, "")) != string(result) {
+			t.Fatal("replacement retry changed")
+		}
+		got, err := op.Get(ctx, saved.RecordID)
+		if err != nil || got.Version != 2 || got.Body != "Keep.\r\nCorrected command.\n日本語  " {
+			t.Fatalf("replacement bytes: %+v %v", got, err)
+		}
+		args["body"] = "ambiguous mode"
+		invoke("cairn_edit", args, "supply exactly one")
+		delete(args, "body")
+		args["replace"] = map[string]any{"old_text": "Corrected command."}
+		invoke("cairn_edit", args, "new_text")
+		args["replace"] = map[string]any{"old_text": "Corrected command.", "new_text": false}
+		invoke("cairn_edit", args, "string")
+		if _, err := op.Delete(ctx, core.DeleteRequest{RequestID: uuid.NewString(), RecordID: saved.RecordID, ExpectedVersion: 2}); err != nil {
+			t.Fatal(err)
+		}
+	})
 	phaseNote := invoke("cairn_remember", map[string]any{
 		"request_id": uuid.NewString(), "body": "phaseguide: check the patch before delivery",
 		"kind": "procedure", "shareable": true, "pins": map[string]string{"task_phase": "validation"},

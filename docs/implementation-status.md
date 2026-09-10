@@ -3734,3 +3734,36 @@ Python checks, static checks, authenticated CLI checks and OpenCode plugin check
 The tested production source matches installed `c5fa55a`; the intervening commit
 changes only the API fixture and documentation. The CLI and API still report the
 clean installed build. The initial CI failure remains in the history and metadata.
+
+
+### 2026-09-10 — Exact passage corrections for ordinary notes
+
+Added `replace` to the existing native edit tool and CLI/API so an agent can
+correct one uniquely matching passage while preserving all other text and stored
+metadata. The maintenance history contains actual lost instructions from full-body
+rewrites; this operation supports targeted corrections alongside full-body edits
+and append. Missing, repeated and overlapping matches refuse, as do stale versions
+and invalid final bodies. Explicit empty replacement can remove one passage from
+a nonblank note. Previous versions and citations remain intact; exact retries
+return the original identifiers after later edits. No migration or new tool is
+required.
+
+The disposable PostgreSQL race/API/MCP suite, static checks and 40 Python checks
+pass. Checks cover concurrency, ambiguity, UTF-8 bytes, maximum escaped requests,
+metadata/history, current authority and request identity. The first API check
+reproduced the missing endpoint; an initial core test also failed compilation
+because it used incorrect evidence/history fields. Those failed runs remain in
+the [report and metadata](verification/note-replace-2026-09-10.md).
+
+This is a usable correction operation, with independent downstream task benefit,
+reduced omission rate and net savings unmeasured. Owner-priority notes informed
+work selection alongside the roadmap. Installation and native verification are
+recorded separately when complete. All preceding implementation history is retained.
+
+
+Native OpenCode 1.18.21 checks passed with scripted completions and no inference,
+including exact replacement/retry and malformed-argument refusal. Previous CLI
+mutation responses still retry through the new binary. Pincite packet
+`pkt-973a8ef54d989d3b` has a validated receipt and closed citation loops; 21
+nonmaterial domain-model/interface obligations remain recorded. Installation is
+pending below; the operational store has not been used for fixtures.

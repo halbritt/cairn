@@ -43,7 +43,12 @@ def check_cli(binary, environment, client):
         assert set(appended) == {'record_id', 'version'}
         stored = operator(binary, environment, 'get', record_id=note['record_id'])
         assert stored['body'] == short['body'] + suffix['body'] and stored['scope'] == draft['scope']
-        print(name + ' JSON mutations preserve maximum escaped note bodies and append retries')
+        replacement = dict(request_id=str(uuid.uuid4()), record_id=note['record_id'], expected_version=5,
+                           repo='fixture:socket', old_text=stored['body'], new_text='\x02' * 65536)
+        replaced = call('replace', replacement)
+        assert replaced['version'] == 6 and call('replace', replacement) == replaced
+        assert operator(binary, environment, 'get', record_id=note['record_id'])['body'] == replacement['new_text']
+        print(name + ' JSON mutations preserve maximum escaped note bodies, append and replace retries')
 
     previous = environment.get('CAIRN_PREVIOUS_BINARY')
     if previous:
@@ -80,6 +85,7 @@ def check_harness(invoke, binary, environment):
     assert operator(binary, environment, 'get', record_id=note['record_id'])['body'] == draft['body']
     assert invoke('cairn_edit', edit) == revised
     check_append(invoke, binary, environment, note['scope']['repo'])
+    check_replace(invoke, binary, environment)
 
 
 def check_append(invoke, binary, environment, repo):
@@ -92,6 +98,18 @@ def check_append(invoke, binary, environment, repo):
     assert set(result) == {'record_id', 'version', 'request_id'}
     stored = operator(binary, environment, 'get', record_id=saved['record_id'])
     assert stored['body'] == original + request['append'] and stored['scope']['repo'] == repo
+
+
+def check_replace(invoke, binary, environment):
+    original = 'Before.\r\nOld command.\n日本語  '
+    saved = invoke('cairn_remember', dict(request_id=str(uuid.uuid4()), body=original, shareable=True))
+    request = dict(request_id=str(uuid.uuid4()), record_id=saved['record_id'], expected_version=1,
+                   replace=dict(old_text='Old command.', new_text='Corrected command.'))
+    result = invoke('cairn_edit', request)
+    assert result['version'] == 2 and invoke('cairn_edit', request) == result
+    assert set(result) == {'record_id', 'version', 'request_id'}
+    stored = operator(binary, environment, 'get', record_id=saved['record_id'])
+    assert stored['body'] == 'Before.\r\nCorrected command.\n日本語  '
 
 
 def check_opencode_session(opencode, output, connection, binary, environment):
@@ -113,6 +131,12 @@ def check_opencode_session(opencode, output, connection, binary, environment):
     cases.extend([('append-note', 'cairn_edit', append), ('append-retry', 'cairn_edit', append),
                   ('adapter-append-ambiguous', 'cairn_edit', dict(append, body='conflicting replacement')),
                   ('adapter-append-type', 'cairn_edit', dict(append, append=5))])
+    replace_seed = operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=draft))
+    replace = dict(request_id=str(uuid.uuid4()), record_id=replace_seed['record_id'], expected_version=1,
+                   replace=dict(old_text='normal-session', new_text='corrected-session'))
+    cases.extend([('replace-note', 'cairn_edit', replace), ('replace-retry', 'cairn_edit', replace),
+                  ('adapter-replace-missing', 'cairn_edit', dict(replace, replace=dict(old_text='normal-session'))),
+                  ('adapter-replace-type', 'cairn_edit', dict(replace, replace=dict(old_text='normal-session', new_text=False)))])
     marker = 'direction' + uuid.uuid4().hex
     decision = operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=dict(draft, kind='decision', body=marker)))
     operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=dict(draft, kind='procedure', body=marker + ': setup')))
@@ -121,6 +145,8 @@ def check_opencode_session(opencode, output, connection, binary, environment):
     cases.append(('adapter-kinds', 'cairn_search', dict(query=marker, kinds='decision')))
     report = check(opencode, output, connection=connection, extra_cases=cases)
     results = {name: json.loads(report['results'][name]) for name, _, _ in cases if not name.startswith('adapter-')}
+    assert results['replace-note']['version'] == 2 and results['replace-note'] == results['replace-retry']
+    assert operator(binary, environment, 'get', record_id=replace_seed['record_id'])['body'] == 'Selected fixture for corrected-session large edits'
     assert results['append-note']['version'] == 2 and results['append-note'] == results['append-retry']
     assert set(results['append-note']) == {'record_id', 'version', 'request_id'}
     appended = operator(binary, environment, 'get', record_id=append_seed['record_id'])

@@ -1,0 +1,169 @@
+{
+  "schema": "cairn.note-replace-verification/1",
+  "date": "2026-09-10",
+  "baseline_commit": "497f78d4babd9a9b03841a7ac0cb0c364ece4f0f",
+  "migration": 34,
+  "new_tools": 0,
+  "operational_records_mutated": false,
+  "model_runs": 0,
+  "task_value": "Selected passage correction capability; independent downstream benefit, omission reduction and net cost unmeasured",
+  "checks": {
+    "/tmp/cairn-note-replace-20260910/api-red.log": "8cce7142ed004135b585932cd150058700677d32576c74cbea4ca823c869df3c",
+    "/tmp/cairn-note-replace-20260910/api-green.log": "e6fe3daa5f372dc89ada9bb8f172f331173fa3d24bf6c916940c7185370fe45d",
+    "/tmp/cairn-note-replace-20260910/core.log": "8762d055850748ebaf5a49cd4670feaf396c75ff60733f1fcd48a67dc05fe81c",
+    "/tmp/cairn-note-replace-20260910/core-green.log": "15fe585c76e23e3988209da504217437d79e098569eb99645ac3821ea1ff7f0b",
+    "/tmp/cairn-note-replace-20260910/integration.log": "355893e12261b049cd22e647a5acaff54067657311a77a6d4e888b7985e2f515",
+    "/tmp/cairn-note-replace-20260910/mcp-final.log": "17d11a61e7be846b4d40730fab5f44bbedfa97153885d825c4a23efd461e1b9f",
+    "/tmp/cairn-note-replace-20260910/check-final.log": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029",
+    "/tmp/cairn-note-replace-20260910/python.log": "f7f468db790a07de76786d554521e101cf2ed18a1700ede225ef6870b3a021ab",
+    "/tmp/cairn-note-replace-20260910/native.log": "d412182d2cace8ea6139fa1d966061373404bab8c70612f7c0109f6978211dc0",
+    "/tmp/cairn-note-replace-20260910/decision-receipt.json": "c7c8e29fb021e49ca2138d4fec054708f444a027f30304838a35a1f756408f8b"
+  },
+  "production_source_sha256": {
+    "core/replace.go": "b0381eaa61965c144cc59d017a56868ca86157e328380b10e17f139c17794042",
+    "localapi/server.go": "54c12322d1ad435b8f8cd0d3316c7aa1d450ad6684aab1b91ec7b8625dcd2bc8",
+    "localapi/request_limit.go": "cd1ae49b7a1fcac3db33b56eb95c8587d9816c7dea59f7e94656e2e99ce6c241",
+    "cmd/cairn/agent.go": "7faf844cf145a9b52547ebec511d7c40e5ac57d0f6fcb28fc52f9ddf347ad9a5",
+    "cmd/cairn/commands.go": "59bc5aedf1bcfd666f27cb37eee6daf07fa6117237d534fc508a93240b144a1b",
+    "mcpapi/server.go": "13d8412384c449f95a55964b460f99aa59e4f5db874d7288ecc9bdbd6f2f39f4",
+    "integrations/opencode/cairn.ts": "8ae7929d361fb0a40bb1eee55dca865615768404250fdb89c09f2cf77c2356b2"
+  },
+  "doctrine": {
+    "packet_id": "pkt-973a8ef54d989d3b",
+    "packet_sha256": "973a8ef54d989d3b3b34eeb54bf3be53491bfb6ffe129c29dfd05f549010b707",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "missing_obligations": [
+      {
+        "requirement": "expert distinction of sameness over time",
+        "required_by": "domain-identity-entity",
+        "classification": "nonmaterial",
+        "reason": "No new entity, identity comparison, lifecycle or reference semantics are selected; existing record/version identity is preserved."
+      },
+      {
+        "requirement": "identity scenarios",
+        "required_by": "domain-identity-entity",
+        "classification": "nonmaterial",
+        "reason": "No new entity, identity comparison, lifecycle or reference semantics are selected; existing record/version identity is preserved."
+      },
+      {
+        "requirement": "identity source and comparison rules",
+        "required_by": "domain-identity-entity",
+        "classification": "nonmaterial",
+        "reason": "No new entity, identity comparison, lifecycle or reference semantics are selected; existing record/version identity is preserved."
+      },
+      {
+        "requirement": "lifecycle or reference consequences",
+        "required_by": "domain-identity-entity",
+        "classification": "nonmaterial",
+        "reason": "No new entity, identity comparison, lifecycle or reference semantics are selected; existing record/version identity is preserved."
+      },
+      {
+        "requirement": "authoritative examples",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "No domain vocabulary or model is redesigned; this adds one literal text operation to ordinary edit."
+      },
+      {
+        "requirement": "authoritative expert examples",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "No domain vocabulary or model is redesigned; this adds one literal text operation to ordinary edit."
+      },
+      {
+        "requirement": "feedback from implementation and usage",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "No domain vocabulary or model is redesigned; this adds one literal text operation to ordinary edit."
+      },
+      {
+        "requirement": "model expressed in executable behavior",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "No domain vocabulary or model is redesigned; this adds one literal text operation to ordinary edit."
+      },
+      {
+        "requirement": "terms whose meanings affect decisions",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "No domain vocabulary or model is redesigned; this adds one literal text operation to ordinary edit."
+      },
+      {
+        "requirement": "business differentiation and product lifespan",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "No deep domain modeling investment is proposed."
+      },
+      {
+        "requirement": "business-value and expert-access evidence",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "No deep domain modeling investment is proposed."
+      },
+      {
+        "requirement": "expert access and feedback cadence",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "No deep domain modeling investment is proposed."
+      },
+      {
+        "requirement": "recurring ambiguity, contradiction, or rule defect",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "No deep domain modeling investment is proposed."
+      },
+      {
+        "requirement": "team capacity to sustain the model",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "No deep domain modeling investment is proposed."
+      },
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or substitution hierarchy is added."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or substitution hierarchy is added."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or substitution hierarchy is added."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or substitution hierarchy is added."
+      },
+      {
+        "requirement": "caller nil checks and method use",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No interface nil-return contract changes; explicit missing new_text is a checked concrete pointer field."
+      },
+      {
+        "requirement": "documented absence semantics",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No interface nil-return contract changes; explicit missing new_text is a checked concrete pointer field."
+      },
+      {
+        "requirement": "dynamic type and dynamic value at the return",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "No interface nil-return contract changes; explicit missing new_text is a checked concrete pointer field."
+      }
+    ],
+    "decision_receipt_validated": true,
+    "citation_loops_closed": true
+  }
+}

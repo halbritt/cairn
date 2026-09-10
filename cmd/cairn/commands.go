@@ -45,7 +45,7 @@ Everyday commands:
   list REPO | get UUID | use-report [--record UUID] [--limit N] [--offset N] REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
-  create edit revise append delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
+  create edit revise append replace delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
   promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal proposal-history
   supersession RECORD_UUID
   authorize-scope | scope-authorization RECORD_UUID
@@ -355,6 +355,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invokeBounded(ctx, input, store.Edit, localapi.RequestBodyLimit("edit"))
 	case "revise":
 		return invokeBounded(ctx, input, store.Revise, localapi.RequestBodyLimit("revise"))
+	case "replace":
+		return invokeBounded(ctx, input, store.Replace, localapi.RequestBodyLimit("replace"))
 	case "append":
 		return invokeBounded(ctx, input, store.Append, localapi.RequestBodyLimit("append"))
 	case "cite":
