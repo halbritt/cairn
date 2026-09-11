@@ -63,3 +63,19 @@ unmet obligations concern unrelated data/interface/configuration changes,
 stronger external/monitoring claims or a separate production incident; each
 nonmaterial classification is retained in the manifest. Installation remains
 separate from this checkout verification.
+
+## Installed verification
+
+[CI for `4e75ed1`](https://github.com/halbritt/cairn/actions/runs/34560678618)
+passed. Clean CLI/API builds from that commit are installed with matching
+executable hashes. The API restarted at PID 386925; the PostgreSQL service stayed
+at PID 163669. The inventory digest of all 88 ordinary record versions is
+unchanged. No migration ran, and the prepared semantic worker and five-minute
+idle configuration retain their hashes. The worker remains from `ed29cbc`.
+
+An ordinary hosted-profile search and pull recovered the expected current value
+evaluation decision v1 and body hash. The installed API still refused that
+profile's protected use-report request. Report-field behavior was verified on
+the disposable authenticated fixture; production protected report contents were
+not read. The manifest separates those checks from installed build identity and
+normal retrieval. No memory record was created or revised for this change.

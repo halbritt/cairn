@@ -25,6 +25,22 @@
     "decision-receipt.json": {
       "path": "/tmp/cairn-expansion-observation-20260910/decision-receipt.json",
       "sha256": "7ba967e726e7d72f8943488635b532322f2f334bec33d1cefb0e5fb07bd579d9"
+    },
+    "installation.json": {
+      "path": "/tmp/cairn-expansion-observation-20260910/installation.json",
+      "sha256": "4c8279958442a245590226a32755fa480d55074bc08b6438d89544ee6f89d65a"
+    },
+    "installed-search.json": {
+      "path": "/tmp/cairn-expansion-observation-20260910/installed-search.json",
+      "sha256": "05b99646143c864ffd92ccad04c8af6e4329bb5da3401fb0ea00df263748629f"
+    },
+    "installed-pull.json": {
+      "path": "/tmp/cairn-expansion-observation-20260910/installed-pull.json",
+      "sha256": "c0afa541817009993f2d45998984146c375f9603c96adf070a637602b83c27e5"
+    },
+    "installed-report-refusal.json": {
+      "path": "/tmp/cairn-expansion-observation-20260910/installed-report-refusal.json",
+      "sha256": "1934f0cdf8df4175d6deeb12f6850798482719d773ffbdeae6a8f4f72fda29d4"
     }
   },
   "source_hashes": {
@@ -38,7 +54,7 @@
     "make_check": "passed",
     "full_disposable_integration": "passed",
     "answering_model_calls": 0,
-    "installation": "pending"
+    "installation": "passed"
   },
   "limits": [
     "The field establishes a retained service-side operation, not delivery, comprehension or benefit",
@@ -325,5 +341,83 @@
         "rationale": "A direct disposable-store reproduction and source identify the visibility gap; no independent production incident is claimed or needed for this bounded report change."
       }
     ]
+  },
+  "installation": {
+    "ci": {
+      "conclusion": "success",
+      "headSha": "4e75ed1be650a4cb736fe294fef672f10f5e59b3",
+      "status": "completed",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34560678618"
+    },
+    "before": {
+      "versions": {
+        "schema": "cairn.version/1",
+        "client": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911034147-d0f04d87eda1",
+          "vcs": "git",
+          "vcs_revision": "d0f04d87eda11e9ff48aa2c9a49da2b75f8d1858",
+          "vcs_time": "2026-09-11T03:41:47Z",
+          "vcs_modified": false
+        },
+        "server": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911025209-ed29cbcb7090",
+          "vcs": "git",
+          "vcs_revision": "ed29cbcb70907dbc0e275ebe90e198e450accfcc",
+          "vcs_time": "2026-09-11T02:52:09Z",
+          "vcs_modified": false
+        }
+      },
+      "cli_sha256": "59111d330dc5431384803054b7c36a91ee86bb666c5cb5bf652a4279a3d79125",
+      "api_pid": 235929,
+      "api_sha256": "7ec93898471c0ebfc877eca959c1052aad344b1a8a2e127efc2edbef2412fd3c",
+      "store_pid": 163669,
+      "record_inventory": {
+        "versions": 88,
+        "sha256": "c0e0844eccc96fb0928f41dfcfa77b248fe3d120ba28a404e3787cf064d896ec"
+      },
+      "semantic_worker_sha256": "4f70d19c1442bebe812cf0fab667a214992575d68737b981189783211916de95",
+      "semantic_config_sha256": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb"
+    },
+    "after": {
+      "versions": {
+        "schema": "cairn.version/1",
+        "client": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911040217-4e75ed1be650",
+          "vcs": "git",
+          "vcs_revision": "4e75ed1be650a4cb736fe294fef672f10f5e59b3",
+          "vcs_time": "2026-09-11T04:02:17Z",
+          "vcs_modified": false
+        },
+        "server": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911040217-4e75ed1be650",
+          "vcs": "git",
+          "vcs_revision": "4e75ed1be650a4cb736fe294fef672f10f5e59b3",
+          "vcs_time": "2026-09-11T04:02:17Z",
+          "vcs_modified": false
+        }
+      },
+      "cli_sha256": "c4dad27b95018daaed9ab5cc1a5d84dfd53f9c8345ee47c3e92343f0d6fced0e",
+      "api_pid": 386925,
+      "api_sha256": "c4dad27b95018daaed9ab5cc1a5d84dfd53f9c8345ee47c3e92343f0d6fced0e",
+      "store_pid": 163669,
+      "record_inventory": {
+        "versions": 88,
+        "sha256": "c0e0844eccc96fb0928f41dfcfa77b248fe3d120ba28a404e3787cf064d896ec"
+      },
+      "semantic_worker_sha256": "4f70d19c1442bebe812cf0fab667a214992575d68737b981189783211916de95",
+      "semantic_config_sha256": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb"
+    },
+    "normal_hosted_retrieval": "passed",
+    "hosted_protected_report_refusal": "passed",
+    "production_report_contents_read": false,
+    "database_migrated": false
   }
 }

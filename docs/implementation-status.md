@@ -19,10 +19,12 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI is clean `d0f04d8`; the API remains clean `ed29cbc`, and the
-native OpenCode adapter remains from `797aafe`. [Client diagnostics](verification/client-diagnostics-2026-09-10.md)
-now identify token-file I/O and Unix socket dial failures without private paths
-or credentials; the existing API does not require a restart. The [harness setup repair](verification/harness-configuration-text-2026-09-10.md)
+The installed CLI/API are clean `4e75ed1`; the native OpenCode adapter remains
+from `797aafe`. [Use-report expansion observations](verification/expansion-observation-2026-09-10.md)
+keep a retained instrumented expansion visible alongside later testimony or
+citation, without claiming delivery or task benefit. [Client diagnostics](verification/client-diagnostics-2026-09-10.md)
+identify token-file I/O and Unix socket dial failures without private paths
+or credentials. The [harness setup repair](verification/harness-configuration-text-2026-09-10.md)
 rejects malformed configuration text and overlong scope before producing unusable
 settings. [Declared native task scope](opencode-tools.md#continue-a-task-across-sessions)
 is installed and verified with that API. [Explicit native capture scope](mcp.md#choose-capture-scope)
@@ -4602,3 +4604,19 @@ The [report and manifest](verification/expansion-observation-2026-09-10.md) reta
 verification and the bounded compatibility decision. Update the API or direct-store
 CLI for this additive projection; no migration, event rewrite, ranking change or
 new utility score is involved. U4/U5 and broader task-value evidence remain open.
+
+
+### Expansion observation installed — 2026-09-10
+
+Exact-source CI passed for `4e75ed1`, and its clean CLI/API are installed with
+matching executable hashes. The API restarted at PID 386925; the store process
+remained at PID 163669. All 88 ordinary record versions retain their prior
+inventory digest. No migration occurred, and the semantic worker and idle
+configuration remain unchanged.
+
+Installed hosted search/pull recovered the expected value-evaluation decision v1.
+The protected use-report endpoint still refused the hosted profile. Field output
+was checked on the disposable authenticated fixture, while production verification
+establishes binary identity, normal retrieval and preserved access boundaries.
+The [installation report](verification/expansion-observation-2026-09-10.md) retains
+those distinctions. No new note, task assessment or memory-value claim was added.

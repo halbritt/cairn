@@ -6,8 +6,8 @@ changes by source-commit date; they are not numbered releases. The
 retains the complete chronology, including failed trials, corrections and
 superseded work.
 
-The latest recorded installation on 2026-09-10 has clean CLI `d0f04d8`, API
-`ed29cbc`, native adapter from `797aafe`, and database migration 034. Declared native task
+The latest recorded installation on 2026-09-10 has clean CLI/API `4e75ed1`,
+native adapter from `797aafe`, and database migration 034. Declared native task
 scope and explicit native capture scope use the existing API; task/run report
 filters remain installed. The
 optional semantic worker is from `ed29cbc` for passage reuse across idle release.
