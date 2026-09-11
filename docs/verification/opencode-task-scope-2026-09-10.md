@@ -69,3 +69,31 @@ concern architecture or domain-model redesign outside this change.
 The retained startup procedure and owner evaluation guidance helped keep this
 work focused on an access gap. Full task-context accounting, automatic propagation,
 native observed execution and sustained task value remain open.
+
+
+## Installation
+
+Clean feature `50e4935567aef0d9b267f288422ca71d267a82ea` passed CI run
+34547465329, with both jobs and all steps checked. The CLI and bundled native
+adapter are installed from that commit. CLI SHA-256 is
+`f0f6fd27ac1e2376c579bec48b8b413c1af643039c5a56ae24d60f2d0fe46d1b`;
+adapter SHA-256 is
+`e18aec232eb34af4d8e4d2c4109cf942d84c95c2e834d6bed54dd35aa6ec39df`.
+
+The API remains clean `b171a8b`, PID 4138687; this feature uses its existing
+search scope contract. No API or database restart occurred. PostgreSQL stayed
+PID 163669, at migration 034. Host configuration, identities, native recent-file
+plugin and semantic worker were preserved. All 82 retained note versions matched
+before/after installation. The project still uses native session defaults.
+
+A separate temporary project installed by the new CLI used the real ordinary
+hosted profile and actual native OpenCode client. Its search returned the exact
+configured task/run labels and pulled the current semantic worker lesson v10
+with its matching source hash. No memory fixture was written to the operational
+store and no model inference occurred. This verifies installed compatibility with
+the older running API; it does not establish task benefit.
+
+The saved ordinary OpenCode procedure then advanced v17→v18 by replacing one
+unique scope-description passage. A fresh pull confirmed the revision, with
+unrelated text/metadata and the retained v17 body preserved. That deliberate
+selected-guidance update adds one version after the installation inventory.

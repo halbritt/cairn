@@ -19,7 +19,9 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `b171a8b`. The optional semantic worker is
+The installed CLI and native OpenCode adapter are clean `50e4935`; the API
+remains clean `b171a8b`. [Declared native task scope](opencode-tools.md#continue-a-task-across-sessions)
+is installed and verified with that API. The optional semantic worker is
 from `d3edaa2`: [passage reuse](verification/semantic-chunk-cache-2026-09-10.md)
 avoids re-embedding unchanged windows after localized note edits. It is installed
 with the existing five-minute lifetime; cold scoring remains expensive.
@@ -4262,3 +4264,31 @@ using one connection file until changed; this is an explicit applicability choic
 not observed task/attempt attribution. [Usage](opencode-tools.md#continue-a-task-across-sessions)
 and [verification](verification/opencode-task-scope-2026-09-10.md). Whole-task
 budgeting, automatic scope propagation and broader task value remain open.
+
+
+### 2026-09-10 — install declared native task scope
+
+Clean feature 50e4935567aef0d9b267f288422ca71d267a82ea passed CI 34547465329,
+including both jobs and every step. CLI and project CLI now identify that commit;
+the installed bundled adapter SHA-256 is
+e18aec232eb34af4d8e4d2c4109cf942d84c95c2e834d6bed54dd35aa6ec39df.
+The running API remains clean b171a8b, PID 4138687, because the existing API
+already accepts explicit search scope. Neither API nor PostgreSQL restarted.
+Store PID 163669 and migration 034 remain. Semantic worker, launchers, identities,
+project/native configuration and recent-file plugin were preserved.
+
+Installation preserved all 82 note versions with payload inventory hash
+0f991a545927ffa340bb7859847f530696e81518172801bd3fd5aa12c79c5af5.
+The actual new CLI installed a temporary native project configured for the current
+task/run; OpenCode 1.18.21 searched through the operational ordinary hosted profile
+and pulled the exact existing semantic guidance v10. This was read-only use with
+no answering-model inference. The canonical project's default session scope
+remained unchanged. [Installation and evidence](verification/opencode-task-scope-2026-09-10.md).
+
+Ordinary OpenCode guidance was then revised v17→v18 by replacing one unique scope
+passage. Fresh retrieval, unchanged unrelated text and metadata, and the retained
+v17 body were verified. The new body SHA-256 is
+5e8cb608b4dde3029b917515492efead2522ff1f30387759767fbf92fae8ddd5.
+This deliberate guidance update adds one version after the installation check.
+Earlier history remains intact. Broader task value, automatic propagation and
+observed native execution requirements remain open.

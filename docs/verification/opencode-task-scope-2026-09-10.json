@@ -264,5 +264,98 @@
         "rationale": "No interface or method set is introduced; existing concrete settings and installer are extended."
       }
     ]
+  },
+  "feature_commit": "50e4935567aef0d9b267f288422ca71d267a82ea",
+  "ci": {
+    "run_id": 34547465329,
+    "head_sha": "50e4935567aef0d9b267f288422ca71d267a82ea",
+    "conclusion": "success",
+    "all_jobs_and_steps_checked": true
+  },
+  "installation": {
+    "before": {
+      "cairn-api.service": {
+        "MainPID": "4138687",
+        "ActiveState": "active",
+        "exe_sha256": "55c9428a7870422053fbe5eb0eba7fa60faccb3aceddbce2f0e3484fce406ec7"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "after": {
+      "cairn-api.service": {
+        "MainPID": "4138687",
+        "ActiveState": "active",
+        "exe_sha256": "55c9428a7870422053fbe5eb0eba7fa60faccb3aceddbce2f0e3484fce406ec7"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "version_pair": {
+      "schema": "cairn.version/1",
+      "client": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260911004005-50e4935567ae",
+        "vcs": "git",
+        "vcs_revision": "50e4935567aef0d9b267f288422ca71d267a82ea",
+        "vcs_time": "2026-09-11T00:40:05Z",
+        "vcs_modified": false
+      },
+      "server": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260910235756-b171a8b78b9b",
+        "vcs": "git",
+        "vcs_revision": "b171a8b78b9b0a889a7718974cb0b4e60b71bfba",
+        "vcs_time": "2026-09-10T23:57:56Z",
+        "vcs_modified": false
+      }
+    },
+    "installed_cli_sha256": "f0f6fd27ac1e2376c579bec48b8b413c1af643039c5a56ae24d60f2d0fe46d1b",
+    "installed_adapter_sha256": "e18aec232eb34af4d8e4d2c4109cf942d84c95c2e834d6bed54dd35aa6ec39df",
+    "record_versions_before": {
+      "versions": 82,
+      "sha256": "0f991a545927ffa340bb7859847f530696e81518172801bd3fd5aa12c79c5af5"
+    },
+    "record_versions_after": {
+      "versions": 82,
+      "sha256": "0f991a545927ffa340bb7859847f530696e81518172801bd3fd5aa12c79c5af5"
+    },
+    "api_restart_required": false,
+    "manifest": "/tmp/cairn-opencode-task-scope-20260910/deployment/installation.json",
+    "manifest_sha256": "15e1dafcd245171b694252c90055a83237e0a76df5654b1939cdb99597f8ff46",
+    "migration": 34,
+    "project_scope_defaults_preserved": true
+  },
+  "installed_native_check": {
+    "opencode_version": "1.18.21",
+    "scope": {
+      "repo": "/home/halbritt/git/cairn",
+      "task_id": "task-continuity-review",
+      "run_id": "task-continuity-review-20260910"
+    },
+    "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+    "version": 10,
+    "body_sha256": "f3de9e6ab9428ec10219e6611956f984ac85af3f2aca7d4af31ae33e8dd5dede",
+    "installed_adapter_sha256": "e18aec232eb34af4d8e4d2c4109cf942d84c95c2e834d6bed54dd35aa6ec39df",
+    "exact_saved_body_pulled": true,
+    "project_defaults_preserved": true,
+    "model_inference_calls": 0
+  },
+  "guidance_revision_after_installation": {
+    "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+    "from_version": 17,
+    "to_version": 18,
+    "body_before_sha256": "2c05940d406c43264be9667c75dd5875b41c1c0ef874f18edb45b6c6bbbade54",
+    "body_after_sha256": "5e8cb608b4dde3029b917515492efead2522ff1f30387759767fbf92fae8ddd5",
+    "unrelated_text_and_metadata_preserved": true,
+    "previous_body_verified": true
   }
 }
