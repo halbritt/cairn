@@ -64,6 +64,13 @@ requirement, with its implementation result reported separately from task benefi
 Codex and OpenCode are sufficient for the next cross-harness value work; extra
 adapters remain lower priority. Broader requirements stay on the [roadmap](../roadmap.md).
 
+A [qualitative documentation task](qualitative-review-example-2026-09-10.md)
+reached the native process timeout after its scratch configuration denied source
+reads. Six searches and seven full memory pulls did not produce a candidate.
+The coding agent subsequently wrote and tested the documentation example. This
+adds an implemented workflow and a retained negative attempt, not another
+successful memory-assisted task or evidence that memory has no value.
+
 ## Earlier inventory and trial plan — retained history
 
 The following inventory and proposed next comparison were written before the

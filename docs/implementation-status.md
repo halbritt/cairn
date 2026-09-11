@@ -19,6 +19,13 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
+A [worked qualitative review](use-outcome-loop.md#record-a-qualitative-review)
+now covers authenticated assessment writes, exact retry and history read-back.
+Its literal commands passed against a disposable API. The associated native
+OpenCode authoring attempt timed out after source-read permission denials;
+[the retained review](verification/qualitative-review-example-2026-09-10.md)
+records that failure separately from the root-authored documentation.
+
 The installed CLI/API are clean `4e75ed1`; the native OpenCode adapter remains
 from `797aafe`. [Use-report expansion observations](verification/expansion-observation-2026-09-10.md)
 keep a retained instrumented expansion visible alongside later testimony or
@@ -4620,3 +4627,35 @@ was checked on the disposable authenticated fixture, while production verificati
 establishes binary identity, normal retrieval and preserved access boundaries.
 The [installation report](verification/expansion-observation-2026-09-10.md) retains
 those distinctions. No new note, task assessment or memory-value claim was added.
+
+
+### Qualitative review example and failed native authoring — 2026-09-10
+
+The assessment guide previously explained qualitative and cumulative value but
+provided only a history-read command. It now includes a complete ordinary-profile
+write/read-back example: inspect existing history, choose a real narrative, keep
+unknown acceptance when appropriate, retain a stable request for retry, and
+inspect conflicts before issuing a new assessment. The coding agent authored
+this addition and executed its literal shell blocks against a disposable
+PostgreSQL/API instance. Unicode narrative read-back, ordinary testimony, empty
+and nonempty history, exact retry after later assessments, and stale-request
+refusal passed. No production code, schema, installed binary or profile changed.
+
+The earlier native OpenCode 1.18.21 authoring attempt reached its 300-second
+limit without producing a candidate. Five source reads were denied; six memory
+searches and seven full pulls completed. Its ten relay requests include nine
+completed requests reporting $0.007250116 and one interrupted request with no
+usage report. This excludes review and local-compute cost. Interim text was not
+a final candidate. The six retrievals are now linked to the observed run, whose
+assessment remains unknown with a binding/adapter obstacle. No memory benefit
+or model capability failure is inferred.
+
+A local scripted native check reproduced the permission failure, including a
+failed relative-pattern attempt without a Git project. Initializing the private
+snapshot as a Git project and allowing only its four exact relative source paths
+made those reads succeed while an unselected file stayed denied. This is a
+scratch-controller correction; no global permissions changed and no second
+answering-model run was launched after local completion. The original run and
+failed checks remain in the [review and manifest](verification/qualitative-review-example-2026-09-10.md).
+The task-value inventory includes the negative observation; U1/U4/U5 and E4/D2
+remain open. All previous implementation history is preserved.

@@ -235,6 +235,12 @@ recalled guidance, unavailable counterfactual and unmeasured net costs. The
 supports narrative judgments; multi-task reviews can remain source-linked cases.
 This adds qualitative evidence without closing E4/D2 or changing earlier outcomes.
 
+The [worked assessment example](use-outcome-loop.md#record-a-qualitative-review)
+makes this workflow executable with the existing API. Its commands are verified;
+the attempted native authoring run failed source-read permissions and produced no
+candidate. The [retained result](verification/qualitative-review-example-2026-09-10.md)
+does not close any task-value requirement.
+
 Authenticated agents and observers can now inspect their own complete assessment
 versions with `agent assessments` and an exact receipt ID, including narrative
 reasons and evidence references. The profile must match the receipt's owner,

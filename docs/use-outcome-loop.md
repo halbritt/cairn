@@ -312,6 +312,92 @@ maintenance. It also distinguishes supplied retrieval scopes from independent
 model sessions and counts maintenance/review work among the costs. Related reads
 and notes should not be presented as independent replications of value.
 
+### Record a qualitative review
+
+Use this when you have an existing agent profile and a retrieval receipt owned by
+that profile, in its repository and destination. A retrieval linked to a host run
+does not grant access to the host's assessment. This example records the agent's
+judgment as testimony; it does not establish human acceptance or measured benefit.
+It requires the Cairn CLI, Python 3 and a POSIX shell.
+
+Set these three variables to your existing socket, token file and owned receipt.
+Keep the shell open for the following steps. The private directory holds the
+selected review and saved request, not a transcript.
+
+```sh
+set -eu
+: "${CAIRN_REVIEW_SOCKET:?Set the existing API socket path}"
+: "${CAIRN_REVIEW_TOKEN:?Set the existing agent token file path}"
+: "${CAIRN_REVIEW_RECEIPT:?Set an owned retrieval receipt UUID}"
+umask 077
+review_dir=$(mktemp -d)
+cairn agent --socket "$CAIRN_REVIEW_SOCKET" --token-file "$CAIRN_REVIEW_TOKEN" \
+  assessments > "$review_dir/history.json" <<EOF
+{"receipt_id":"$CAIRN_REVIEW_RECEIPT"}
+EOF
+python3 -m json.tool "$review_dir/history.json"
+```
+
+Read the complete returned history before continuing. Create
+`$review_dir/reason.txt` with your selected account: what you observed, how memory
+may have helped, alternative explanations, costs and uncertainty. Use actual
+observations, and include source pointers where useful; do not copy an example
+judgment as your own. The trimmed reason must contain 8–4,000 characters.
+
+For example, a review might distinguish recalling a previously rejected approach
+from proving that the recall saved work. Name the earlier decision, describe the
+current choice, and say whether the prompt or current source already supplied
+the same guidance. A multi-turn contribution can remain plausible while task
+acceptance and net benefit are unknown.
+
+Prepare one request from the history you reviewed. The example leaves acceptance
+and failure classification unknown, uses a named self-review method and attaches
+no evidence objects. Source pointers in the reason are narrative, not captured
+`evidence_ids`. Use the existing selected-evidence workflow when you have evidence
+to attach; non-unknown task outcomes require it.
+
+```sh
+python3 - "$CAIRN_REVIEW_RECEIPT" "$review_dir" <<'PY'
+import json
+from pathlib import Path
+import sys
+import uuid
+
+receipt = str(uuid.UUID(sys.argv[1]))
+directory = Path(sys.argv[2])
+history = json.loads((directory / "history.json").read_text(encoding="utf-8"))
+if not history["ok"]:
+    raise SystemExit("Read assessment history successfully before writing")
+reason = (directory / "reason.txt").read_text(encoding="utf-8").strip()
+if not 8 <= len(reason) <= 4000:
+    raise SystemExit("Choose a reason containing 8-4000 characters")
+request = dict(
+    request_id=str(uuid.uuid4()), receipt_id=receipt,
+    expected_version=history["data"][-1]["version"] if history["data"] else 0,
+    task_outcome="unknown", failure_domain="unknown", failure_kind="",
+    method="qualitative-self-review/1", evidence_ids=[], reason=reason,
+)
+with (directory / "assessment-request.json").open("x", encoding="utf-8") as output:
+    json.dump(request, output, ensure_ascii=False)
+    output.write("\n")
+PY
+cairn agent --socket "$CAIRN_REVIEW_SOCKET" --token-file "$CAIRN_REVIEW_TOKEN" \
+  assess-run < "$review_dir/assessment-request.json"
+cairn agent --socket "$CAIRN_REVIEW_SOCKET" --token-file "$CAIRN_REVIEW_TOKEN" \
+  assessments <<EOF
+{"receipt_id":"$CAIRN_REVIEW_RECEIPT"}
+EOF
+```
+
+Check the returned version, reason, method, evidence IDs, observer and
+`witness: "testimony"`. If a connection fails after submission, preserve and
+resubmit the exact saved request with `assess-run`; do not generate a new request
+ID merely because its response was lost. An exact successful retry returns the
+same assessment version. `VERSION_CONFLICT` means another assessment changed the
+history: read it again and decide whether a further assessment is warranted.
+Prepare a new request only after that review, preserving the earlier request;
+do not blindly replace `expected_version` or overwrite the retained account.
+
 ## Completed tasks with open delegates
 
 An authenticated observer calls `core.ObserveTask` or `/v1/task-state` with an exact

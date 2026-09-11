@@ -18,6 +18,11 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Write a qualitative memory review.** The existing assessment guide now
+  includes an authenticated write/read-back example with stable request retries
+  and conflict handling. Unknown acceptance remains compatible with qualitative
+  value. No upgrade is required. [Example](docs/use-outcome-loop.md#record-a-qualitative-review).
+
 - **Keep observed expansion visible in use reports.** `expansion_observed`
   preserves the fact of a retained instrumented expansion alongside later
   testimony or citation. Existing usage labels, witnesses and unknown outcomes
