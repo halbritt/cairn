@@ -19,16 +19,18 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI is clean `208c1c8`; the native OpenCode adapter remains from
-`797aafe` and the API remains clean `b171a8b`. The [harness setup repair](verification/harness-configuration-text-2026-09-10.md)
+The installed CLI/API are clean `ed29cbc`; the native OpenCode adapter remains
+from `797aafe`. The [harness setup repair](verification/harness-configuration-text-2026-09-10.md)
 rejects malformed configuration text and overlong scope before producing unusable
 settings. [Declared native task scope](opencode-tools.md#continue-a-task-across-sessions)
 is installed and verified with that API. [Explicit native capture scope](mcp.md#choose-capture-scope)
 now saves a note for the repository, current task or current task/run. Repository
 capture remains the default. The optional semantic worker is
-from `d3edaa2`: [passage reuse](verification/semantic-chunk-cache-2026-09-10.md)
-avoids re-embedding unchanged windows after localized note edits. It is installed
-with the existing five-minute lifetime; cold scoring remains expensive.
+from `ed29cbc`: [passage reuse across idle release](verification/semantic-idle-cache-2026-09-10.md)
+keeps a bounded vector snapshot in API memory after the model worker exits. One
+installed search after the existing five-minute idle interval took 0.612 seconds,
+compared with 24.228 seconds cold, with matching scores and source identities.
+Initial cold scoring remains expensive.
 [Task/run report filters](use-outcome-loop.md#follow-one-task-across-runs) select
 one task’s retained runs and memory exposures before pagination. Broader
 recurrence analysis and task-value evidence remain open.
@@ -4490,3 +4492,23 @@ so its timings are not another controlled performance pair. Both source/result
 sets and their limits are retained in the [report](verification/semantic-idle-cache-2026-09-10.md)
 and [manifest](verification/semantic-idle-cache-2026-09-10.json). Installation follows
 verified CI; no independent downstream task-value claim is added.
+
+
+### Semantic idle cache installation checkpoint — 2026-09-10
+
+Clean `ed29cbcb70907dbc0e275ebe90e198e450accfcc` is installed for the CLI, API and prepared semantic
+worker. [CI run 34556271313](https://github.com/halbritt/cairn/actions/runs/34556271313)
+passed both jobs and required steps. API PID 235929 replaced the earlier
+API process; PostgreSQL, schema 034, native adapter, configuration, model/packages
+and launcher bytes stayed unchanged. All 87 existing note versions were preserved
+by installation. A selected revision advanced semantic guidance from v10 to v11;
+all previous versions remain byte-for-byte unchanged, and 88 versions are retained.
+
+An ordinary hosted-profile semantic search completed cold in 24.228 seconds.
+The worker actually exited after the unchanged five-minute idle interval; a
+different child then completed the same search in 0.612 seconds with the same
+complete score digest and ordered source identities. The API remained running
+throughout. This verifies installed reuse after a real idle release, while the
+initial cold budget remains close and broader task value remains open. The
+[report and manifest](verification/semantic-idle-cache-2026-09-10.md) retain the
+installation identities, source hashes, both responses and that limitation.

@@ -6,12 +6,12 @@ changes by source-commit date; they are not numbered releases. The
 retains the complete chronology, including failed trials, corrections and
 superseded work.
 
-The latest recorded installation on 2026-09-10 has clean CLI `208c1c8`, native
-adapter from `797aafe`, running API `b171a8b`, and database migration 034. Declared native task
+The latest recorded installation on 2026-09-10 has clean CLI/API `ed29cbc`,
+native adapter from `797aafe`, and database migration 034. Declared native task
 scope and explicit native capture scope use the existing API; task/run report
 filters remain installed. The
-optional semantic worker is from `d3edaa2` for passage reuse. Host configuration
-retains native session defaults. Later documentation commits do not change these
+optional semantic worker is from `ed29cbc` for passage reuse across idle release.
+Host configuration retains native session defaults. Later documentation commits do not change these
 builds. Check an installation with `cairn version`; use
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
 See [build identity](docs/build-identity.md) for unstamped builds and MCP processes.

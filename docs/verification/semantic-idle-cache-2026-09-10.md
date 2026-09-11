@@ -77,10 +77,35 @@ remain unchanged. No native OpenCode answering-model run was added.
 
 The [manifest](semantic-idle-cache-2026-09-10.json) records checks and source hashes.
 Scratch evidence is under `/tmp/cairn-semantic-idle-cache-20260910`; it is not a
-durable archive. Installation is recorded in a later checkpoint after CI.
+durable archive. The installation checkpoint below records the completed CI and
+operational check.
 
 
 Pincite packet `pkt-c43c53a89e17325a` supports the ownership and preservation
 choices. The decision receipt validates and consumption is closed. Seven
 nonmaterial obligations concern unchanged Go interfaces and broader performance
 representativeness; they do not establish general latency or task-value claims.
+
+
+## Installation and normal idle interval
+
+Clean CLI/API `ed29cbc` and its prepared worker are installed after both jobs
+passed in [CI run 34556271313](https://github.com/halbritt/cairn/actions/runs/34556271313).
+Only the API restarted; PostgreSQL, configuration, native adapter bytes, model,
+packages and worker launchers stayed unchanged. Installation preserved all 87
+existing note versions. The semantic guidance was then revised from version 10
+to 11; its earlier body and all other prior versions were verified unchanged.
+
+The installed API completed an unfiltered hosted semantic search in **24.228
+seconds** with no worker initially present. Its worker then exited under the
+unchanged five-minute idle setting. After 300.3 seconds, a
+new child completed the same search in **0.612 seconds**, with the same complete
+score digest and ordered record/version/body identities. The API PID remained
+235929; no restart or timeout adjustment occurred between searches.
+The manifest retains both actual responses and timings.
+
+This is one observed spaced retrieval on the operational corpus after the
+selected guidance update. The first cold request still approaches the existing
+25-second worker budget; larger or changed corpora can still fall back. The
+observation demonstrates reduced waiting after idle release, without establishing
+a workload percentile or independent downstream task benefit.
