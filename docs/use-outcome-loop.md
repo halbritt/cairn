@@ -415,3 +415,53 @@ in the task. A late terminal observation clears the finding; reopening the task
 also removes it from this closed-task query. `UNFINISHED_RUN` remains a separate
 hint about wrapper outcome recovery. The wrapper never infers whole-task closure
 from process exit.
+
+## Native review tools
+
+MCP and the native OpenCode adapter expose `cairn_assessments` and `cairn_assess`.
+Use `cairn_assessments` with a known `receipt_id` to read its retained reviews in
+ascending version order. Empty history returns `[]`. Review every returned
+reason before selecting the latest version as `expected_version`; use 0 for an
+empty history. A retrieval receipt belongs to its agent profile. Linking it to
+a host run does not give that agent access to the host's assessment.
+
+`cairn_assess` accepts the same fields as the authenticated `assess-run` request
+in the [worked example](#record-a-qualitative-review): choose a UUID before
+writing, supply the receipt and reviewed version, and name the review method.
+For uncertain task acceptance, `task_outcome: "unknown"`,
+`failure_domain: "unknown"`, `failure_kind: ""` and `evidence_ids: []` permit a
+qualitative account. Describe actual observations, competing explanations, costs
+and uncertainty in `reason` (8–4000 trimmed characters). Unknown acceptance does
+not rule out real memory value. Other outcome labels require selected evidence.
+The API validates outcome/domain combinations and binds both reads and writes
+to the authenticated profile's owner, repository and receipt destination.
+
+The write response contains `receipt_id`, `version`, `request_id`, `witness` and
+`observer`, without echoing the reason. Read history afterward to verify the
+retained narrative and evidence IDs. Agent reviews remain testimony, including
+when they cite evidence; these tools do not confer host or human acceptance.
+They do not capture evidence or change retrieval ranking.
+
+Retry an uncertain write using the exact saved request. Even after a later
+revision, that retry returns its original result. Changed intent with the same
+UUID gives `IDEMPOTENCY_CONFLICT`; a new UUID with a stale version gives
+`VERSION_CONFLICT`. Read and reconcile history before another revision. A
+connection or response-budget failure can occur after commitment.
+
+History returns evidence IDs without evidence bodies, refuses more than 1000
+versions, and has no pagination. Each tool's configured output budget applies
+without silent truncation; large histories can require more room. OpenCode's
+existing CLI response limit also applies. These are per-call limits, not
+whole-task accounting.
+
+Upgrade the MCP executable or reinstall the matching OpenCode adapter, then
+start a fresh harness session. The API must include the
+[assessment binding repair](verification/assessment-binding-2026-09-10.md);
+no database migration is needed. Explicit OpenCode allowlists need
+`cairn_assessments` and `cairn_assess` permissions. With OpenCode's MCP connection,
+the names carry its usual `cairn_cairn_` prefix. Installation does not change
+permissions, and memory-only startup allowlists remain search/pull only.
+
+[Interface checks](verification/native-assessments-2026-09-10.md) cover the
+workflow and refusals. They establish interface behavior; downstream review
+quality and task benefit remain to be observed in actual work.

@@ -87,6 +87,18 @@ type historyArgs struct {
 	Span          *core.ByteSpanRequest `json:"span,omitempty" jsonschema:"Optional byte excerpt of an exact version. Offset 0-65535, length 1-65536; clipped only at EOF. Result omits full body and includes span bytes and checksum."`
 }
 
+type assessmentsArgs struct {
+	ReceiptID string `json:"receipt_id" jsonschema:"An existing retrieval or run receipt owned by the configured profile, in its repository and destination."`
+}
+
+type assessmentWriteResult struct {
+	ReceiptID string `json:"receipt_id"`
+	Version   int    `json:"version"`
+	RequestID string `json:"request_id"`
+	Witness   string `json:"witness"`
+	Observer  string `json:"observer"`
+}
+
 type textReplacement struct {
 	OldText string  `json:"old_text" jsonschema:"Nonempty exact passage, which must occur exactly once (including overlapping occurrences). Supply surrounding text to disambiguate."`
 	NewText *string `json:"new_text" jsonschema:"Exact replacement; an explicit empty string removes the passage if the note remains nonblank."`
@@ -141,6 +153,8 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: buildinfo.Read().Label()}, nil)
 	tools := memoryTools{client: client, config: config}
 	destructive := true
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_assess", Description: "Append a review to a receipt owned by the configured profile in its repository and destination. Read cairn_assessments first; expected_version is the latest reviewed version, or 0 for empty history. Choose a request UUID before writing and reuse the complete arguments for retries. VERSION_CONFLICT requires reading and reconciling history. For qualitative review with uncertain acceptance, use task_outcome=unknown, failure_domain=unknown, failure_kind=\"\", evidence_ids=[], and record observations, alternatives, costs and uncertainty in reason (8-4000 trimmed characters); name your method. Other outcomes require selected evidence IDs. Agent reviews remain testimony; an owned retrieval is distinct from the host's task assessment. Returns identifiers and attribution without echoing the reason. A failed response may follow a committed write; retry the saved request."}, tools.assess)
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_assessments", Description: "Read an owned receipt's assessment history in ascending version order, including reasons, evidence IDs, observer, witness and method. Empty history returns []. Read this before writing or interpreting a task outcome; unknown acceptance does not mean zero memory value. A linked retrieval does not grant access to the host's assessment. Returns evidence IDs without bodies, at most 1000 versions; there is no pagination. The configured output budget applies without silent truncation."}, tools.assessments)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_history", Description: "Inspect retained versions of a known record for comparison. Omit version to list newest-first metadata (limit defaults to 20, maximum 100); follow next_before_version as before_version. Supply a positive version for one exact body, without nonzero paging fields. Optional span selects a byte excerpt of that version and omits the full body; UTF-8 fragments use body_base64. Results are historical, not current eligibility or authority; pull the current note before editing. The authenticated profile controls repository and destination; forgotten or excluded payloads refuse. No request UUID or expansion handle is needed. This read has its own output budget and does not spend index expansion credits; budget combined context across calls."}, tools.history)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_search", Description: "Search scoped memory with a query, or set browse=true without a query to inspect available topics. Browsing is bounded by the same budget and is not a complete inventory or relevance ranking. Read mandatory context in selected and inspect relevant index entries with cairn_pull using their complete pull_arguments. A notes are fallible; verify before relying on them. Search records exposure, not proven use."}, tools.search)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull", Description: "Pull a memory body using complete pull_arguments from cairn_search. Optional span selects byte offset and maximum length for a partial A/B source; bytes and hashes appear in span with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers. Instructions and marked competing positions require a whole pull. A marked pull returns the requested selection plus competing positions; read all of them. Use a new request UUID for a different range. A stale handle requires a fresh search. Shares the receipt's expansion budget. Read the complete note before replacing its body."}, tools.pull)
@@ -243,6 +257,18 @@ func (t memoryTools) history(ctx context.Context, _ *mcp.CallToolRequest, args h
 	var result core.RecordHistory
 	err := t.client.Call(ctx, "history", core.RecordHistoryRequest{RecordID: args.RecordID, Repo: t.config.Scope.Repo, Version: args.Version, BeforeVersion: args.BeforeVersion, Limit: args.Limit, Span: args.Span}, &result)
 	return toolResult(result, err, t.config.AvailableTokens)
+}
+
+func (t memoryTools) assessments(ctx context.Context, _ *mcp.CallToolRequest, args assessmentsArgs) (*mcp.CallToolResult, any, error) {
+	var result []core.Assessment
+	err := t.client.Call(ctx, "assessments", args, &result)
+	return toolResult(result, err, t.config.AvailableTokens)
+}
+
+func (t memoryTools) assess(ctx context.Context, _ *mcp.CallToolRequest, args core.AssessmentRequest) (*mcp.CallToolResult, any, error) {
+	var result core.Assessment
+	err := t.client.Call(ctx, "assess-run", args, &result)
+	return toolResult(assessmentWriteResult{result.ReceiptID, result.Version, args.RequestID, result.Witness, result.Observer}, err, t.config.AvailableTokens)
 }
 
 func (t memoryTools) pullEvidence(ctx context.Context, _ *mcp.CallToolRequest, args core.ExpandEvidenceRequest) (*mcp.CallToolResult, any, error) {

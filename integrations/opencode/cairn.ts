@@ -164,6 +164,40 @@ export const history = validatedTool({
   },
 })
 
+export const assessments = validatedTool({
+  description: "Read an owned receipt's assessment history in ascending version order, including reasons, evidence IDs, observer, witness and method. Empty history returns []. Read before writing or interpreting an outcome; unknown acceptance does not mean zero memory value. A linked retrieval does not grant access to the host's assessment. The profile controls ownership, repository and destination. Returns no evidence bodies; at most 1000 versions, without pagination or silent truncation. The configured output budget applies.",
+  args: { receipt_id: z.string().uuid() },
+  async execute(args, context) {
+    const config = await settings("assessments", context)
+    return render(await call(config, context, ["assessments"], args), config)
+  },
+})
+
+const assessmentResult = z.object({
+  receipt_id: z.string().uuid(), version: z.number().int().positive(),
+  witness: z.enum(["testimony", "instrumented"]), observer: z.string(),
+})
+
+export const assess = validatedTool({
+  description: "Append a review to a receipt owned by the configured profile in its repository and destination. Read cairn_assessments first; expected_version is the latest reviewed version, or 0 for empty history. Choose a request UUID before writing and reuse complete arguments for retries. VERSION_CONFLICT requires reading and reconciling history. Agent reviews remain testimony; an owned retrieval is distinct from the host's task assessment. Returns identifiers and attribution without echoing the reason. A failed response may follow a committed write; retry the saved request.",
+  args: {
+    request_id: z.string().uuid(), receipt_id: z.string().uuid(),
+    expected_version: z.number().int().min(0).max(2147483647),
+    task_outcome: z.enum(["accepted", "rejected", "not_attempted", "unknown"]).describe("Use unknown for uncertain acceptance; other outcomes require selected evidence IDs."),
+    failure_domain: z.enum(["none", "binding", "capability", "task", "unknown"]),
+    failure_kind: z.string().describe("Use an empty string for ordinary qualitative review with unknown outcome and domain."),
+    error_signature_sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+    method: z.string().describe("Name the method used to review the task."),
+    evidence_ids: z.array(z.string().uuid()).max(32).describe("Explicitly selected captured evidence IDs; [] is allowed for unknown outcome."),
+    reason: z.string().describe("8-4000 trimmed characters. Record observations, alternatives, costs and uncertainty; source pointers here remain narrative."),
+  },
+  async execute(args, context) {
+    const config = await settings("assess", context)
+    const result = assessmentResult.parse(await call(config, context, ["assess-run"], args))
+    return render({ ...result, request_id: args.request_id }, config)
+  },
+})
+
 export const pull = validatedTool({
   description: "Pull a memory body using its complete pull_arguments. Optional span selects byte offset and maximum length for a partial A/B source; selected bytes and hashes appear in span, with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers. Instructions and marked competing positions require a whole pull. A marked pull returns the requested selection plus competing positions; read all of them. Use a new request UUID for a different range. STALE_HANDLE requires a fresh search. Shares the original receipt's expansion budget. Read the complete note before replacing its body.",
   args: { ...pullArgs, span: z.object({ offset: z.number().int().min(0).max(65535), length: z.number().int().min(1).max(65536) }).strict().optional() },

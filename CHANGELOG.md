@@ -18,6 +18,13 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Review a task through native memory tools.** MCP and the OpenCode adapter
+  add `cairn_assessments` and `cairn_assess` for owned assessment history and
+  qualitative review writes. Reasons, earlier revisions and uncertainty remain;
+  agent reviews remain testimony. Upgrade the tool executable/adapter and use
+  the API binding repair; no migration is required.
+  [Workflow and limits](docs/use-outcome-loop.md#native-review-tools).
+
 - **Keep assessment writes and retries within the current profile.** The API
   now rejects an earlier receipt after its principal's repository or destination
   changes, including requests whose responses were already cached. Matching

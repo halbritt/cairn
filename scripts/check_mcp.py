@@ -12,6 +12,7 @@ from check_literal_retrieval import check_harness as check_literals
 from check_entities import check_harness as check_entities
 from check_advisory_conflicts import check_harness as check_advisory_conflicts
 from check_native_history import check as check_history
+from check_native_assessments import check as check_assessments
 
 
 @contextmanager
@@ -75,7 +76,7 @@ def session(binary, root, environment, extra_args=(), generated=False):
 
         send(dict(method='notifications/initialized', params={}))
         names = {t['name'] for t in request('tools/list', {})['tools']}
-        assert names == {'cairn_search', 'cairn_pull', 'cairn_pull_evidence', 'cairn_remember', 'cairn_edit', 'cairn_history'}, names
+        assert names == {'cairn_search', 'cairn_pull', 'cairn_pull_evidence', 'cairn_remember', 'cairn_edit', 'cairn_history', 'cairn_assess', 'cairn_assessments'}, names
         yield tool
     finally:
         process.stdin.close()
@@ -96,6 +97,7 @@ def check(binary, root, environment, claim, support):
             if error:
                 assert error in result, result
             return result
+        check_assessments(citation_tool, support)
         check_history(citation_tool)
         check_citations(citation_tool, support)
         invalid = tool('cairn_remember', dict(request_id=str(uuid.uuid4()), body='Invalid direct MCP boolean', shareable='false'), error=True)

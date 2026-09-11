@@ -12,6 +12,7 @@ from check_entities import check_harness as check_entities
 from check_advisory_conflicts import check_harness as check_advisory_conflicts
 from check_opencode_unicode import check as check_unicode
 from check_native_history import check as check_history
+from check_native_assessments import check as check_assessments
 from check_recent_file_session import check as check_recent_files
 from check_opencode_scope import check as check_scope, check_capture
 
@@ -32,7 +33,7 @@ def check(binary, root, environment, opencode, claim, support):
         'npm': '@ai-sdk/openai-compatible', 'name': 'No-model fixture',
         'options': {'baseURL': 'http://127.0.0.1:1/v1', 'apiKey': 'unused'},
         'models': {'probe': {'name': 'Probe'}}}}, permission={'*': 'deny'})
-    for name in ('search', 'pull', 'pull_evidence', 'remember', 'edit', 'history'):
+    for name in ('search', 'pull', 'pull_evidence', 'remember', 'edit', 'history', 'assess', 'assessments'):
         config['permission']['cairn_' + name] = 'allow'
     config_path = work / 'opencode.json'
     config_path.write_text(json.dumps(config))
@@ -63,6 +64,7 @@ def check(binary, root, environment, opencode, claim, support):
     large_history = operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=dict(
         kind='note', body='z' * 65536, scope=dict(repo='fixture:socket', task_id='*', run_id='*'),
         sensitivity='shareable', claim_type='self')))
+    assessment_receipt = check_assessments(invoke, support)
     check_history(invoke, large_history['record_id'])
     check_citations(invoke, support)
     check_entities(lambda name, args: invoke(name.removeprefix("cairn_"), args))
@@ -234,7 +236,13 @@ def check(binary, root, environment, opencode, claim, support):
     settings_path.write_text(json.dumps(settings))
     config['permission']['cairn_search'] = 'deny'
     config['permission']['cairn_history'] = 'deny'
+    config['permission']['cairn_assessments'] = 'deny'
+    config['permission']['cairn_assess'] = 'deny'
     config_path.write_text(json.dumps(config))
     invoke('search', dict(query=marker), 'disabled')
     invoke('history', dict(record_id=record['record_id']), 'disabled')
+    invoke('assessments', dict(receipt_id=assessment_receipt), 'disabled')
+    invoke('assess', dict(receipt_id=assessment_receipt, request_id=str(uuid.uuid4()), expected_version=2,
+                         task_outcome='unknown', failure_domain='unknown', failure_kind='',
+                         method='permission-check/1', evidence_ids=[], reason='This review must not be written.'), 'disabled')
     print('Native OpenCode session scope, validated capture/edit, exact body/evidence pulls, retries, hosted filtering and permission/refusal paths pass without model calls')

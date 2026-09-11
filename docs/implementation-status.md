@@ -19,6 +19,10 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
+[Native review tools](use-outcome-loop.md#native-review-tools) now support owned
+assessment history and qualitative writes in MCP and OpenCode. Disposable
+interface checks passed; installation is recorded separately below.
+
 A [worked qualitative review](use-outcome-loop.md#record-a-qualitative-review)
 now covers authenticated assessment writes, exact retry and history read-back.
 Its literal commands passed against a disposable API. The associated native
@@ -4759,3 +4763,31 @@ source identities, executable hashes and before/after checks.
 This completes adoption of the write-binding repair. Native assessment tools
 remain in the saved work-in-progress patch for subsequent implementation. No new
 task-benefit result or roadmap completion is inferred from installing the fix.
+
+### Native assessment tools implemented — 2026-09-10
+
+MCP and the custom OpenCode adapter now expose `cairn_assessments` and
+`cairn_assess`. Agents can read owned review history, append a qualitative
+account with unknown acceptance, and verify or revise it through the same native
+interface they use for memory. The existing API owns receipt binding, version
+checks, request idempotency, evidence validation and testimony attribution. The
+write response contains identifiers and attribution without echoing the reason.
+No new evaluation standard, automatic outcome inference or ranking change is
+introduced. Explicit OpenCode permissions still govern both operations.
+
+The initial MCP write check failed because the tool was absent. Its completed
+workflow passes against a disposable API, covering unknown review text, exact
+retry, conflicts, retained corrections and foreign-owner refusal. The old
+OpenCode build similarly refused the missing history tool. With the new adapter,
+13 native calls passed, including permission-denied reads/writes and unchanged
+history after refusal. The fixture supplied pinned plugin dependencies and no
+answering model. Its initial bootstrap error treated a successful migration
+response as if it required a data field; that check-script error was corrected
+before the native baseline comparison.
+
+The full disposable integration suite and `make check` passed.
+[Verification details](verification/native-assessments-2026-09-10.md) preserve
+the checks and limits. Installation remains separate from this source checkpoint.
+These tools remove a manual CLI step, but native review quality and additional
+task value still need observations from actual work. The full earlier history
+is retained, including the API repair that this work exposed.

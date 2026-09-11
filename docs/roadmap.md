@@ -185,6 +185,12 @@ settle mechanics without canceling unfinished requirements.
 
 ### Assess task value without narrowing it to an evaluator
 
+[Native review tools](use-outcome-loop.md#native-review-tools) now expose owned
+assessment history and qualitative writes through MCP and OpenCode. This removes
+the separate CLI-script step for those interfaces; interface checks do not close
+task-value requirements. Observe review quality and practical use in subsequent
+work.
+
 Owner clarification, 2026-09-09: the desired result is convincing evidence that
 memory creates task value. Mechanical provability is not a requirement for every
 form of value. The evaluation must not reward only benefits that happen to be easy
@@ -247,8 +253,9 @@ text and requiring only a root paragraph-break correction. It supports reviewed
 maintenance through existing tools; downstream value and net savings are unknown.
 The [assessment binding repair](verification/assessment-binding-2026-09-10.md)
 protects cached write responses and new assessments after a profile's repository
-or destination changes. Native assessment-history and write tools are being
-prepared through the existing API; they are not yet implemented or installed.
+or destination changes. Native assessment tools now use that API contract;
+source implementation and installed adoption are recorded separately in the
+[verification report](verification/native-assessments-2026-09-10.md).
 
 
 Authenticated agents and observers can now inspect their own complete assessment

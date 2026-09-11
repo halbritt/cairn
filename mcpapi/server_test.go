@@ -92,7 +92,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	if !reflect.DeepEqual(names, []string{"cairn_edit", "cairn_history", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_search"}) {
+	if !reflect.DeepEqual(names, []string{"cairn_assess", "cairn_assessments", "cairn_edit", "cairn_history", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_search"}) {
 		t.Fatal(names)
 	}
 	invoke := func(name string, args any, wantError string) json.RawMessage {
@@ -109,6 +109,47 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 			t.Fatalf("%s: %+v %s", name, result, body)
 		}
 		return json.RawMessage(body)
+	}
+	{
+		var found searchResult
+		if err := json.Unmarshal(invoke("cairn_search", searchArgs{Query: "review workflow"}, ""), &found); err != nil {
+			t.Fatal(err)
+		}
+		var history []core.Assessment
+		if err := json.Unmarshal(invoke("cairn_assessments", map[string]any{"receipt_id": found.ReceiptID}, ""), &history); err != nil || len(history) != 0 {
+			t.Fatalf("new receipt history: %+v, %v", history, err)
+		}
+		review := core.AssessmentRequest{RequestID: uuid.NewString(), ReceiptID: found.ReceiptID, ExpectedVersion: 0, TaskOutcome: "unknown", FailureDomain: "unknown", Method: "qualitative-review/1", EvidenceIDs: []string{}, Reason: "Synthetic review: recalled café guidance may help; source overlap and net value remain unknown."}
+		written := invoke("cairn_assess", review, "")
+		if strings.Contains(string(written), review.Reason) {
+			t.Fatal("write response unnecessarily echoed the narrative")
+		}
+		if retry := invoke("cairn_assess", review, ""); string(retry) != string(written) {
+			t.Fatalf("retry changed the write result: %s, %s", written, retry)
+		}
+		if err := json.Unmarshal(invoke("cairn_assessments", map[string]any{"receipt_id": found.ReceiptID}, ""), &history); err != nil || len(history) != 1 || history[0].Version != 1 || history[0].Reason != review.Reason || history[0].TaskOutcome != "unknown" || history[0].Witness != "testimony" || history[0].Observer != "agent:mcp-test" {
+			t.Fatalf("review history: %+v, %v", history, err)
+		}
+		changed := review
+		changed.Reason += " Changed intent."
+		invoke("cairn_assess", changed, "IDEMPOTENCY_CONFLICT")
+		changed.RequestID = uuid.NewString()
+		invoke("cairn_assess", changed, "VERSION_CONFLICT")
+		changed.ExpectedVersion = 1
+		changed.TaskOutcome, changed.FailureDomain = "accepted", "none"
+		invoke("cairn_assess", changed, "EVIDENCE_UNAVAILABLE")
+		changed.TaskOutcome, changed.FailureDomain = "unknown", "unknown"
+		invoke("cairn_assess", changed, "")
+		if err := json.Unmarshal(invoke("cairn_assessments", map[string]any{"receipt_id": found.ReceiptID}, ""), &history); err != nil || len(history) != 2 || history[0].Reason != review.Reason || history[1].Reason != changed.Reason {
+			t.Fatalf("correction lost earlier review: %+v, %v", history, err)
+		}
+		foreign, err := op.Compile(ctx, core.CompileRequest{RequestID: uuid.NewString(), Scope: core.Scope{Repo: repo, TaskID: "review", RunID: "foreign"}, Query: "review workflow", Purpose: "context", AvailableTokens: 64000}, core.Destination{Name: "hosted"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		invoke("cairn_assessments", map[string]any{"receipt_id": foreign.ReceiptID}, "AUTHORITY_DENIED")
+		changed.RequestID, changed.ReceiptID = uuid.NewString(), foreign.ReceiptID
+		invoke("cairn_assess", changed, "AUTHORITY_DENIED")
 	}
 	t.Run("search room", func(t *testing.T) {
 		invoke := func(args any, wantError string) json.RawMessage {
