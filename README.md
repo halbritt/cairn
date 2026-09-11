@@ -255,7 +255,8 @@ To correct only a saved note's text, pull its current version and call native
 `cairn_edit` with `record_id`, `expected_version`, a stable `request_id` UUID and
 `body`. Cairn preserves its stored draft metadata. Full-draft edits remain
 available. The [revision API](docs/local-api.md#body-only-revisions) also works
-through `cairn agent revise` with JSON input. For an additive update, use native
+through `cairn agent revise` with JSON input. Use `cairn agent revise --help`
+(or `replace`, `history`, or `assess-run`) for an offline request example. For an additive update, use native
 `cairn_edit` with `append` instead of `body`, or `cairn agent append` with a JSON
 `body` suffix. For a targeted correction, use `replace: {old_text, new_text}`
 through that edit tool; [exact passage replacement](docs/local-api.md#replace-one-exact-passage)

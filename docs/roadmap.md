@@ -310,6 +310,11 @@ This does not close broader task value or add a new acceptance score.
 
 ### 1. Repair the existing surface
 
+[Ordinary request help](verification/agent-help-2026-09-10.md) now makes existing
+JSON-based CLI operations discoverable without source lookup or a running API.
+Its examples execute through the ordinary hosted profile in disposable checks;
+this usability work does not close the remaining conformance or task-value items.
+
 | ID | Status | Work and acceptance evidence |
 | --- | --- | --- |
 | R1 — transient task text | implemented/tested | Stop default raw task/query retention in canonical receipts, replay and context files. Keep transient lexical ranking and a retained digest. Version the semantic contract and preserve old seal verification. A synthetic CLI canary must be absent from all newly retained receipt/artifact bodies. Track old copies under L5; changing future capture does not erase history or backups. Sources: usefulness §4, design §§12.2/15.2. |

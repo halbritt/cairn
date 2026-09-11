@@ -18,6 +18,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Inspect ordinary JSON requests from the CLI.** `cairn agent --help` and
+  `cairn agent OPERATION --help` explain note corrections, citations, history,
+  qualitative reviews and reconstruction with request examples. Help works
+  without a token, API, home directory or stdin. Upgrade only the CLI.
+  [Supported operations](docs/local-api.md#find-an-ordinary-request-format).
+
 - **Expose the review tools in Codex configuration.** `codex-config` now includes
   `cairn_assessments` and `cairn_assess`. Existing allowlists need both names and
   a fresh session; upgrading the binary alone does not add them. Native Codex

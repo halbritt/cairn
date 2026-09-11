@@ -27,11 +27,13 @@ from check_binary_evidence import check as check_binary_evidence
 from check_json_unicode import check as check_json_unicode
 from check_ordinary_citations import check_cli as check_ordinary_citations
 from check_harness_help import check as check_harness_help
+from check_agent_help import check_offline as check_agent_help, check_examples as check_agent_help_examples
 from check_harness_configuration import check as check_harness_configuration
 from check_client_diagnostics import check as check_client_diagnostics
 
 binary, home = sys.argv[1:]
 check_harness_help(binary)
+check_agent_help(binary)
 check_harness_configuration(binary)
 check_client_diagnostics(binary)
 root = Path(home)
@@ -158,6 +160,7 @@ try:
     support = evidence_call(['capture-evidence'], dict(request_id=str(uuid.uuid4()),
                             repo='fixture:socket', body='explicit supporting socket evidence',
                             source='synthetic socket evidence capture', sensitivity='shareable'))
+    check_agent_help_examples(binary, root, env, evidence_call)
     check_ordinary_citations(binary, root, env, evidence_call)
     check_literal_retrieval(binary, root, env)
     check_entities(binary, root, env)

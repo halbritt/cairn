@@ -17,7 +17,20 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	tokenFile := f.String("token-file", "", "owner-only API token file")
 	socket := f.String("socket", "", "Cairn Unix socket")
 	if err := f.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return commandHelp(agentHelp), nil
+		}
 		return nil, invalid(err.Error())
+	}
+	if f.NArg() >= 2 && (f.Arg(1) == "--help" || f.Arg(1) == "-h") {
+		if f.NArg() != 2 {
+			return nil, invalid("operation help takes no additional arguments")
+		}
+		help, err := agentOperationHelp(f.Arg(0))
+		if err != nil {
+			return nil, err
+		}
+		return help, nil
 	}
 	provided := map[string]bool{}
 	f.Visit(func(fl *flag.Flag) { provided[fl.Name] = true })

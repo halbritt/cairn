@@ -56,6 +56,13 @@ func main() {
 		return
 	}
 	data, err := run(ctx, os.Args[1:], os.Stdin)
+	if text, ok := data.(commandHelp); ok && err == nil {
+		if _, err := fmt.Fprint(os.Stdout, text); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if plan, ok := data.(agentStartPlan); ok {
 		data = nil // Never echo prepared task or memory text in an error envelope.
 		if err == nil {

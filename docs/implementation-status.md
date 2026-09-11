@@ -28,6 +28,10 @@ this project's configuration includes both review tools. The API remains at
 corrected to v11. The missed installation step and subsequent CI test repair
 remain in the history below.
 
+[Ordinary CLI request help](local-api.md#find-an-ordinary-request-format) now
+explains JSON-based corrections, history and reviews without connecting to the
+API. Its copied examples and full integration checks pass; installation is pending.
+
 A [worked qualitative review](use-outcome-loop.md#record-a-qualitative-review)
 now covers authenticated assessment writes, exact retry and history read-back.
 Its literal commands passed against a disposable API. The associated native
@@ -4876,3 +4880,26 @@ note version after the installation check. The [manifest](verification/codex-rev
 retains installation and selected correction evidence without committing note
 bodies. The native Codex interface gap is closed. Broader task value and the
 remaining roadmap requirements are still open.
+
+### Ordinary agent request help implemented — 2026-09-10
+
+The preceding guide-maintenance task encountered an actual CLI gap: `agent edit
+--help` returned a JSON-request error, requiring source lookup to choose the
+replacement request. `agent --help` now introduces ordinary operations, and nine
+JSON operations provide readable request examples through `--help` or `-h`.
+Help works before home lookup, credential access, connection or stdin; normal
+execution retains its JSON envelopes and API contracts.
+
+The offline-help test failed before implementation. Actual subprocess checks pass
+with no HOME and stdin left open. Copied examples complete real hosted API
+corrections, citations, history, unknown qualitative reviews and reconstruction,
+including original retries and stale-version refusal. CLI race tests, `make check`
+and the full disposable integration suite passed. The first full run revealed
+shared test evidence affecting a later count assertion; giving the example its
+own evidence fixed that fixture collision. The [verification report](verification/agent-help-2026-09-10.md)
+preserves both runs. Installation is pending at this checkpoint.
+
+This is a practical CLI usability improvement, with no new evaluator, authority,
+API or schema. The retrieved connection lesson and current source both supplied
+the execution-default constraints; their overlap prevents attributing the result
+to memory alone. Broader task value remains open.

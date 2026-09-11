@@ -1,0 +1,33 @@
+{
+  "baseline_revision": "78128767930bf41f45e69db281d06ee2e59ef88d",
+  "source_sha256": {
+    "cmd/cairn/agent.go": "6324aa5f29adb8cff9ef57276d8323f416644eb0211fb580d91c513ef250ef4b",
+    "cmd/cairn/agent_help.go": "218e05c362cdf9a09a2470533bc9c0ce77a1aede4fecad5af192d2abc1d69c8f",
+    "cmd/cairn/agent_help_test.go": "bf71b35380e30090cb2041ec696364e2ec637f7f7ad9dfef236a2500d3ef75b6",
+    "cmd/cairn/main.go": "d03eb47337f9e9015a2c6b990ccba6aaa9743a2c3bcfa8b8a9e1237ac0343188",
+    "cmd/cairn/commands.go": "256c35797e1933df349c86d501610025b93ceb1a2e9204de0686998964092ff0",
+    "scripts/check_agent_help.py": "3e63263a4c7d27427c7586cfd069d76155ad39e8916c8f6aef07abafbb9efa13",
+    "scripts/check-local-api.py": "11f574006f71e2b32825c4b15d0bc3065329e6f5c669b22a6edff40b8ac8a38e"
+  },
+  "scratch": "/tmp/cairn-agent-help-20260910",
+  "checks": {
+    "baseline-replace.log": "1e0bf4dd19f28b3d17271f7883cf6f2736558d14fd55cc9db9a9bdab57e39e93",
+    "red.log": "a451555f479ab482e768a7bf2e8eccd24b985f516de8ec210f381048672192bf",
+    "green.log": "a9360bdbcf5b2957ba65869dc4bc85c95b44aa8e7e0ed28219352f174145964c",
+    "cli-tests.log": "b35c6bfb704535d14796a872f02d8dfd96e28f54019bb191353cccf4a1de8717",
+    "integration.log": "2ffa0ed59270bc58a1aab9169721f739fc42153b0612e252eeea52039e8c29e1",
+    "integration-isolated.log": "820d57f2446485890037170a5d114e958e4719758daa39685316a090a133dc0d",
+    "final-check.log": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+  },
+  "doctrine": {
+    "packet_id": "pkt-75c52916cc84ed24",
+    "packet_content_sha256": "75c52916cc84ed24bea0c3709908325a25f70259e7ab9902c8ebfe99588c8820",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "doctrine": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "release": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "residual_nonmaterial_obligations": 14,
+    "decision_receipt_sha256": "081039856e2a1553c2a1a7f9c79dcb05a63bad429f74a3ec71effe1f4be5256e"
+  },
+  "installation": "pending clean-source CI"
+}
