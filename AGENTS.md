@@ -60,7 +60,7 @@ For saved project direction, narrow browsing with `kinds: ["decision", "preferen
 pages. This uses fallible labels, so search without a filter when classification
 is uncertain. Required instructions and normal access checks still apply.
 The local Codex configuration and native OpenCode adapter use conversation/session
-scope automatically; neither identifies individual turns or execution attempts.
+scope by default; neither identifies individual turns or execution attempts.
 Use the CLI below
 when MCP is unavailable or explicit task/run scope is needed.
 
@@ -86,7 +86,11 @@ prove capabilities or freshness. See `docs/build-identity.md`.
 
 Use native `cairn_remember` when available, or `agent remember` with the same
 profile, for explicitly selected, useful
-repository findings. Include source/verification context in the note, choose
+findings. Native `cairn_remember` defaults to repository scope; choose `scope:
+"task"` or `"run"` only when guidance belongs to the host's current search labels.
+For reusable project guidance keep repository scope. These labels are host
+configuration or conversation/session metadata, not execution attestation.
+Include source/verification context in the note, choose
 `--shareable` only for material suitable for hosted delivery, and supply a stable
 `--request-id` when retrying. `--stdin` accepts a chosen note body. Do not capture
 raw sessions, private Council content, credentials or workspace dumps; ordinary

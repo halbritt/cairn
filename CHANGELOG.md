@@ -17,6 +17,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Save guidance for one task or run.** Native MCP and OpenCode
+  `cairn_remember` accept `scope: "task"` or `"run"`, using the host's search
+  labels. Repository-wide capture remains the default. Update the MCP binary or
+  bundled OpenCode adapter; the existing API/schema suffice.
+  [Usage](docs/mcp.md#choose-capture-scope).
+
 - **Continue a named task across OpenCode sessions.** `opencode-install --task`
   gives native searches a stable declared task while retaining native run IDs.
   Add `--run` to fix both labels, for example to match a compact launcher.

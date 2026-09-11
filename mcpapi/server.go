@@ -57,6 +57,7 @@ type searchArgs struct {
 }
 
 type rememberArgs struct {
+	Scope     *string             `json:"scope,omitempty" jsonschema:"Capture applicability: repository (default), task, or run. Task uses the host search task across runs; run uses its task and run. Labels come from host configuration or native conversation metadata. Choose explicitly; ordinary edits cannot change scope."`
 	Entities  []core.EntityRef    `json:"entities,omitempty" jsonschema:"Explicit file or symbol associations, at most 16. File names are canonical repository-relative paths; symbols are qualified labels. Omit when unknown. Fallible relevance metadata, never inherited from search context."`
 	Pins      *core.Applicability `json:"pins,omitempty" jsonschema:"Explicit applicability restrictions. Omit for reusable unpinned guidance. Never inherited from search context. All supplied pins must match; edits cannot change them."`
 	RequestID string              `json:"request_id" jsonschema:"A UUID chosen before capture; reuse exactly for retries of this note."`
@@ -131,7 +132,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_search", Description: "Search scoped memory with a query, or set browse=true without a query to inspect available topics. Browsing is bounded by the same budget and is not a complete inventory or relevance ranking. Read mandatory context in selected and inspect relevant index entries with cairn_pull using their complete pull_arguments. A notes are fallible; verify before relying on them. Search records exposure, not proven use."}, tools.search)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull", Description: "Pull a memory body using complete pull_arguments from cairn_search. Optional span selects byte offset and maximum length for a partial A/B source; bytes and hashes appear in span with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers. Instructions and marked competing positions require a whole pull. A marked pull returns the requested selection plus competing positions; read all of them. Use a new request UUID for a different range. A stale handle requires a fresh search. Shares the receipt's expansion budget. Read the complete note before replacing its body."}, tools.pull)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull_evidence", Description: "Pull evidence referenced by an expanded memory, using its evidence ID and full-object expected SHA256 plus the original receipt and handle. Optional span selects byte offset and maximum length, clipped at EOF; selected bytes and their checksum appear in span. Reuse a request UUID only for identical retries. Shares the same expansion budget."}, tools.pullEvidence)
-	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_remember", Description: "Save an explicitly selected reusable repository note as ordinary A testimony, applicable across tasks and runs. Does not promote claims or grant authority. Choose shareable only for content suitable for hosted models; default local notes will not appear in hosted searches. Preserve the request UUID when retrying."}, tools.remember)
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_remember", Description: "Save an explicitly selected note as ordinary A testimony. Scope defaults to repository-wide; explicitly choose task or run for narrower applicability. Does not promote claims or grant authority. Choose shareable only for content suitable for hosted models; default local notes will not appear in hosted searches. Preserve the request UUID when retrying."}, tools.remember)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: new(bool)}, Name: "cairn_edit", Description: "Revise a previously pulled active Class A note. Supply its record_id and expected_version, a new request_id UUID, and body to change only the text while preserving all stored metadata. For an additive update, supply append with the exact suffix, including separating whitespace; existing text is preserved and the combined body must fit 65536 bytes. For a targeted correction, supply replace with old_text and new_text; old_text must occur exactly once, and all other text is preserved. Alternatively supply the complete replacement draft or evidence_citations to replace source references ([] clears them). Supply exactly one of body, append, replace, draft or evidence_citations. Text edits preserve citations and earlier versions retain their sources. Citations remain testimony, not qualification. For a full draft, copy kind, scope, pins, entities, sensitivity, relations and attribution fields from the pulled record; change only the intended content. Scope and sensitivity changes and privileged records are refused. The authenticated writer is recorded. Retry with exactly the same arguments; VERSION_CONFLICT requires a fresh search/pull and reconciliation, not blind overwrite. Returns identifiers without echoing the body."}, tools.edit)
 	return server, nil
 }
@@ -168,14 +169,9 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 		pageOffset = args.Offset
 	}
 
-	scope := t.config.Scope
-	if t.config.CodexThread {
-		thread, _ := request.Params.Meta["threadId"].(string)
-		if thread == "" || thread == "*" || len(thread) > 240 || strings.ContainsFunc(thread, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
-			return nil, nil, errors.New("--codex-thread requires tool-call _meta.threadId: a nonempty identifier of at most 240 bytes without whitespace, control characters or wildcard")
-		}
-		// Host-declared conversation grouping, not an authenticated run observation.
-		scope.TaskID, scope.RunID = "codex/"+thread, thread
+	scope, err := t.searchScope(request)
+	if err != nil {
+		return nil, nil, err
 	}
 	if args.RequestID == "" {
 		args.RequestID = uuid.NewString()
@@ -242,7 +238,35 @@ func (t memoryTools) pullEvidence(ctx context.Context, _ *mcp.CallToolRequest, a
 	return toolResult(result, err, t.config.AvailableTokens)
 }
 
-func (t memoryTools) remember(ctx context.Context, _ *mcp.CallToolRequest, args rememberArgs) (*mcp.CallToolResult, any, error) {
+// searchScope resolves the host's grouping labels, not an execution attestation.
+func (t memoryTools) searchScope(request *mcp.CallToolRequest) (core.Scope, error) {
+	scope := t.config.Scope
+	if t.config.CodexThread {
+		thread, _ := request.Params.Meta["threadId"].(string)
+		if thread == "" || thread == "*" || len(thread) > 240 || strings.ContainsFunc(thread, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+			return core.Scope{}, errors.New("--codex-thread requires tool-call _meta.threadId: a nonempty identifier of at most 240 bytes without whitespace, control characters or wildcard")
+		}
+		// Host-declared conversation grouping, not an authenticated run observation.
+		scope.TaskID, scope.RunID = "codex/"+thread, thread
+	}
+	return scope, nil
+}
+
+func (t memoryTools) remember(ctx context.Context, request *mcp.CallToolRequest, args rememberArgs) (*mcp.CallToolResult, any, error) {
+	scope := core.Scope{Repo: t.config.Scope.Repo, TaskID: "*", RunID: "*"}
+	if args.Scope != nil && *args.Scope != "repository" {
+		if *args.Scope != "task" && *args.Scope != "run" {
+			return nil, nil, errors.New("INVALID_REQUEST: scope must be repository, task, or run")
+		}
+		var err error
+		scope, err = t.searchScope(request)
+		if err != nil {
+			return nil, nil, err
+		}
+		if *args.Scope == "task" {
+			scope.RunID = "*"
+		}
+	}
 	if args.Kind == "" {
 		args.Kind = "note"
 	}
@@ -251,7 +275,7 @@ func (t memoryTools) remember(ctx context.Context, _ *mcp.CallToolRequest, args 
 		sensitivity = "shareable"
 	}
 	var result core.Record
-	err := t.client.Call(ctx, "create", core.CreateRequest{RequestID: args.RequestID, Draft: core.Draft{Entities: args.Entities, Kind: args.Kind, Body: args.Body, Scope: core.Scope{Repo: t.config.Scope.Repo, TaskID: "*", RunID: "*"}, Pins: args.Pins, Sensitivity: sensitivity, ClaimType: "self"}}, &result)
+	err := t.client.Call(ctx, "create", core.CreateRequest{RequestID: args.RequestID, Draft: core.Draft{Entities: args.Entities, Kind: args.Kind, Body: args.Body, Scope: scope, Pins: args.Pins, Sensitivity: sensitivity, ClaimType: "self"}}, &result)
 	// Capture returns only its identifier and retry key; do not echo a large or
 	// local-only body into the harness after the write has already committed.
 	return toolResult(recordWriteResult{result.RecordID, result.Version, args.RequestID}, err, t.config.AvailableTokens)

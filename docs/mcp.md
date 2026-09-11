@@ -80,7 +80,7 @@ Other commands retain their existing help handling.
 | `cairn_search` | A `query`, or `browse: true` without a query; optional retry `request_id` and per-call `context` for fields not fixed by the host. Returns mandatory context plus a bounded index. Each entry has a complete `pull_arguments` object for the next call. |
 | `cairn_pull` | Pass an entry's `pull_arguments` unchanged for the full body. Add `span: {offset: 0, length: 4096}` for a partial A/B source, or copy the entry's `summary_span` to read its exact preview source bytes. Use a new request UUID for each range. Reuse identical arguments for retries. Instructions require whole delivery. |
 | `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its full-object `expected_sha256`, and a retry `request_id`. Optional `span: {offset: 0, length: 4096}` selects at most that many bytes. Shares the body's expansion credits and bytes. |
-| `cairn_remember` | `body` and a stable UUID `request_id`; optional `kind`, `shareable` and explicit `pins`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |
+| `cairn_remember` | `body` and a stable UUID `request_id`; optional `scope`, `kind`, `shareable`, `entities` and explicit `pins`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |
 | `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and exactly one of `body`, `append` (a verbatim suffix), `replace` (`old_text`/`new_text` for one exact passage), a complete replacement `draft`, or `evidence_citations` to replace source references (`[]` clears them). Revises an active A note; text edits preserve citations. See [ordinary citations](evidence-citations.md#ordinary-notes). Returns identifiers without echoing the body. |
 | `cairn_history` | `record_id` with optional `limit`/`before_version` for retained metadata, or positive `version` for one exact body. Add `span: {offset, length}` for a bounded byte excerpt of that version. Historical comparison only; no current eligibility or authority. Uses configured repository, authenticated destination and the tool output budget. See [retained history](record-history.md#native-tools). |
 
@@ -118,6 +118,36 @@ With an ordinary agent profile, capture is A testimony. Select reusable knowledg
 with source/verification context; exclude raw sessions, private Council material
 and credentials. `shareable: true` explicitly permits hosted delivery. Default
 local notes do not appear in hosted searches. Capture does not promote authority.
+
+### Choose capture scope
+
+`cairn_remember` accepts an optional `scope` string:
+
+| Value | Applicability |
+|---|---|
+| `repository` (default) | All tasks and runs in the configured repository. |
+| `task` | The host's current search task, across its runs. |
+| `run` | The host's current search task and run. |
+
+Use `task` for guidance that belongs to the current task, such as an unfinished
+investigation's next step. Use `repository` for reusable project guidance.
+For example, add `"scope": "task"` to the usual selected `body`, stable
+`request_id` and, when appropriate, `shareable: true` capture arguments.
+
+Labels come from MCP startup configuration. With `--codex-thread`, task/run
+capture requires the same valid `_meta.threadId` as search: task is
+`codex/<threadId>` and run is `<threadId>`. Both remain conversation groupings,
+not individual turns or observed execution attempts. Repository capture does not
+require thread metadata. Explicit MCP task/run settings can match another harness.
+
+Scope selection does not inherit search context or applicability pins. Ordinary
+edits cannot change the stored scope. Repeat the choice and effective scope on
+retries; a changed task or run under the same request UUID refuses when it changes
+the stored draft. A task capture remains identical across runs of that task.
+Update the MCP binary and restart its host process to expose this argument;
+the existing API and database support it. [Checks and limits](verification/native-capture-scope-2026-09-10.md).
+
+### Revise a saved note
 
 To correct a saved note, search and pull its current body first. For a text-only
 correction, call `cairn_edit` with `record_id`, `expected_version`, a stable

@@ -202,7 +202,15 @@ Similarity does not prove the note answers the question. Pull and verify the
 source. Semantic search cannot accompany browsing, and ordinary queries remain
 lexical. Update the API, CLI and adapter together to use this argument.
 
-Capture saves selected reusable knowledge as repository-wide A testimony.
+Capture saves selected knowledge as ordinary A testimony. Optional `scope` is
+`repository` (default), `task`, or `run`, with the same [applicability choices](mcp.md#choose-capture-scope)
+as MCP. Task/run capture uses the adapter's current search labels: configured
+`task_id` / `run_id` when present, otherwise the actual native session defaults.
+Task capture spans runs of that task; run capture fixes both labels. Repository
+capture remains independent of session labels. Search context and pins are not
+inherited. Repeat the choice and effective scope for retries; changed stored
+scope under the same request UUID refuses. Update the bundled adapter to expose
+this argument; existing API/database versions suffice.
 `kind` defaults to `note`; omitted `shareable` keeps the note local. Writes return
 only IDs, version and retry ID. For a text-only correction, edit accepts `body`, the pulled record ID and
 expected version, and a new request UUID. Stored draft metadata is preserved.

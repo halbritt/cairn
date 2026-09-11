@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -478,6 +479,118 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	if err != nil || !denied.IsError || !strings.Contains(denied.Content[0].(*mcp.TextContent).Text, "AUTHORITY_DENIED") {
 		t.Fatalf("history ignored configured repository: %+v %v", denied, err)
 	}
+	t.Run("capture applicability", func(t *testing.T) {
+		call := func(t *testing.T, session *mcp.ClientSession, thread, name string, args any, wantError string) json.RawMessage {
+			t.Helper()
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Meta: mcp.Meta{"threadId": thread}, Name: name, Arguments: args})
+			if err != nil || len(result.Content) != 1 {
+				t.Fatalf("%s: %+v %v", name, result, err)
+			}
+			body := result.Content[0].(*mcp.TextContent).Text
+			if result.IsError != (wantError != "") || (wantError != "" && !strings.Contains(body, wantError)) {
+				t.Fatalf("%s: %+v %s", name, result, body)
+			}
+			return json.RawMessage(body)
+		}
+		for _, native := range []bool{false, true} {
+			t.Run(fmt.Sprint("native=", native), func(t *testing.T) {
+				config := Config{Scope: core.Scope{Repo: repo, TaskID: "build", RunID: "attempt"}, AvailableTokens: 64000}
+				if native {
+					config.Scope = core.Scope{Repo: repo}
+					config.CodexThread = true
+				}
+				host, err := NewServer(client, config)
+				if err != nil {
+					t.Fatal(err)
+				}
+				capture := connect(t, ctx, host)
+				marker := strings.ReplaceAll(uuid.NewString(), "-", "")
+				ids := map[string]string{}
+				for _, mode := range []string{"default", "repository", "task", "run", "private"} {
+					args := map[string]any{"request_id": uuid.NewString(), "body": marker + " " + mode, "shareable": mode != "private"}
+					if mode != "default" {
+						args["scope"] = mode
+					}
+					if mode == "private" {
+						args["scope"] = "task"
+						delete(args, "shareable")
+					}
+					// Repository capture still works without native metadata.
+					thread := ""
+					want := core.Scope{Repo: repo, TaskID: "*", RunID: "*"}
+					if mode == "task" || mode == "run" || mode == "private" {
+						thread = "capture-thread"
+						want.TaskID = "build"
+						if native {
+							want.TaskID = "codex/" + thread
+						}
+						if mode == "run" {
+							want.RunID = "attempt"
+							if native {
+								want.RunID = thread
+							}
+						}
+					}
+					saved := call(t, capture, thread, "cairn_remember", args, "")
+					if string(saved) != string(call(t, capture, thread, "cairn_remember", args, "")) {
+						t.Fatal("capture retry changed")
+					}
+					var identity recordWriteResult
+					if err := json.Unmarshal(saved, &identity); err != nil {
+						t.Fatal(err)
+					}
+					ids[mode] = identity.RecordID
+					record, err := op.Get(ctx, identity.RecordID)
+					if err != nil || record.Scope != want || record.Class != "A" || record.ObservedWriter != "agent:mcp-test" || record.Witness != "testimony" || (record.Sensitivity == "local") != (mode == "private") || record.Pins != nil {
+						t.Fatalf("%s capture: %+v %v", mode, record, err)
+					}
+					if mode == "task" {
+						args["scope"] = "run"
+						call(t, capture, thread, "cairn_remember", args, "IDEMPOTENCY_CONFLICT")
+						args["scope"] = "task"
+						if native {
+							call(t, capture, "different-thread", "cairn_remember", args, "IDEMPOTENCY_CONFLICT")
+						}
+					}
+				}
+				for _, mode := range []string{"", "session", "*"} {
+					call(t, capture, "capture-thread", "cairn_remember", map[string]any{"request_id": uuid.NewString(), "body": marker, "scope": mode}, "INVALID_REQUEST")
+				}
+				call(t, capture, "capture-thread", "cairn_remember", map[string]any{"request_id": uuid.NewString(), "body": marker, "task_id": "invented"}, "additional")
+				// Fresh MCP hosts stand for the same task in another run and another task.
+				task, run := "build", "attempt"
+				if native {
+					task, run = "codex/capture-thread", "capture-thread"
+				}
+				for _, scope := range []core.Scope{{Repo: repo, TaskID: task, RunID: run}, {Repo: repo, TaskID: task, RunID: "next-run"}, {Repo: repo, TaskID: "other-task", RunID: "next-run"}} {
+					host, err := NewServer(client, Config{Scope: scope, AvailableTokens: 64000})
+					if err != nil {
+						t.Fatal(err)
+					}
+					reader := connect(t, ctx, host)
+					var view searchResult
+					if err := json.Unmarshal(call(t, reader, "ignored", "cairn_search", searchArgs{Query: marker}, ""), &view); err != nil {
+						t.Fatal(err)
+					}
+					seen := map[string]bool{}
+					for _, entry := range view.Index {
+						seen[entry.RecordID] = true
+						body := call(t, reader, "ignored", "cairn_pull", entry.PullArguments, "")
+						if !strings.Contains(string(body), marker) {
+							t.Fatal("pull lost captured body")
+						}
+					}
+					for mode, id := range ids {
+						want := mode == "default" || mode == "repository" || (mode == "task" && scope.TaskID == task) || (mode == "run" && scope.TaskID == task && scope.RunID == run)
+						if seen[id] != want {
+							t.Fatalf("%s in %+v: %v", mode, scope, seen)
+						}
+					}
+				}
+			})
+		}
+	})
+
 }
 
 // CI shares its service database across packages. Bootstrap this fixture in its
@@ -557,9 +670,18 @@ func TestCodexThreadRequiresValidMetadata(t *testing.T) {
 	}
 	session := connect(t, context.Background(), server)
 	for _, thread := range []any{nil, "", "*", 42, []string{"thread"}, "two words", "line\nbreak", "control\x00", "space\u00a0", strings.Repeat("x", 241)} {
-		result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Meta: mcp.Meta{"threadId": thread}, Name: "cairn_search", Arguments: searchArgs{Query: "note"}})
-		if err != nil || !result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "requires tool-call _meta.threadId") {
-			t.Fatalf("metadata %q: %+v %v", thread, result, err)
+		for _, tool := range []struct {
+			name string
+			args any
+		}{
+			{"cairn_search", searchArgs{Query: "note"}},
+			{"cairn_remember", map[string]any{"request_id": uuid.NewString(), "body": "scoped", "scope": "task"}},
+			{"cairn_remember", map[string]any{"request_id": uuid.NewString(), "body": "scoped", "scope": "run"}},
+		} {
+			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Meta: mcp.Meta{"threadId": thread}, Name: tool.name, Arguments: tool.args})
+			if err != nil || !result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "requires tool-call _meta.threadId") {
+				t.Fatalf("metadata %q: %+v %v", thread, result, err)
+			}
 		}
 	}
 }

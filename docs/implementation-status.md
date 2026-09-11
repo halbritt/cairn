@@ -4311,3 +4311,32 @@ one response per pair; the review records that audit limitation. No new model
 trial, benchmark rerun, task acceptance, authority/ranking change or note
 revision was performed. Existing results and all earlier history remain.
 [Review and evidence](verification/performance-memory-value-2026-09-10.md).
+
+
+### 2026-09-10 — explicit task/run capture in native memory tools
+
+Native MCP and OpenCode `cairn_remember` now accept `scope: "repository"`,
+`"task"` or `"run"`. Repository-wide capture remains the default. Task/run
+selection uses the same host labels as search, allowing a task-specific finding
+to retain its applicability when captured through a native tool. Existing A
+attribution, local sensitivity, explicit pins, ordinary edit restrictions and
+create retry semantics remain. No API or schema change is required.
+
+The new MCP and actual native OpenCode tests first rejected the unsupported
+scope argument. Targeted and full disposable PostgreSQL/race checks then passed,
+including stored scope, fresh-host search/pull, private and unrelated-scope
+exclusion, invalid choices/metadata, changed-scope retry refusal and a task retry
+across a run change. All 43 Python tests and make check passed.
+
+Three expanded fixture mistakes were corrected: new repository-wide notes
+changed an older browse fixture's inventory; a shared query word exhausted pull
+credits by selecting other fixtures; identical task/run bodies were deduplicated.
+The corrections separated test execution and used unique queries/distinct bodies.
+No production matching, deduplication or budget behavior changed for these tests.
+[Verification and retained evidence](verification/native-capture-scope-2026-09-10.md).
+
+This is an implemented capture/retrieval capability, without an answering-model
+trial or an incremental memory-value claim. Existing host labels still describe
+configured tasks or conversations/sessions, not independent executions. Source
+integration precedes installation; the preceding installation summary remains
+accurate until the next installation checkpoint. All earlier history remains.

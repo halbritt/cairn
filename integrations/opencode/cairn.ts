@@ -54,6 +54,14 @@ async function settings(name: string, context: ToolContext) {
   return config
 }
 
+function searchScope(config: Settings, context: ToolContext) {
+  const session = context.sessionID
+  if (!session || session === "*" || Buffer.byteLength(session) > 240 || /[\s\p{Cc}]/u.test(session)) {
+    throw new Error("Cairn requires a valid native OpenCode session ID")
+  }
+  return { repo: config.repo, task_id: config.task_id ?? "opencode/" + session, run_id: config.run_id ?? session }
+}
+
 function call(config: Settings, context: ToolContext, args: string[], input?: unknown): Promise<unknown> {
   const command = ["agent", "--socket", config.socket, "--token-file", config.token_file, ...args]
   // Process arguments replace lone UTF-16 surrogates before Cairn can inspect them.
@@ -110,11 +118,8 @@ export const search = validatedTool({
     const config = await settings("search", context)
     const room = args.available_tokens ?? config.tokens
     if (room > config.tokens) throw new Error("INVALID_REQUEST: available_tokens exceeds configured ceiling " + config.tokens)
-    const session = context.sessionID
-    if (!session || session === "*" || Buffer.byteLength(session) > 240 || /[\s\p{Cc}]/u.test(session)) {
-      throw new Error("Cairn requires a valid native OpenCode session ID")
-    }
-    const command = ["search", "--repo", config.repo, "--task", config.task_id ?? "opencode/" + session, "--run", config.run_id ?? session, "--tokens", String(room)]
+    const scope = searchScope(config, context)
+    const command = ["search", "--repo", scope.repo, "--task", scope.task_id, "--run", scope.run_id, "--tokens", String(room)]
     if (args.request_id) command.push("--request-id", args.request_id)
     const declared: Record<string, string | undefined> = { ...args.context }
     for (const [key, value] of Object.entries(config.context ?? {})) {
@@ -179,8 +184,8 @@ export const pull_evidence = validatedTool({
 })
 
 export const remember = validatedTool({
-  description: "Save explicitly selected reusable repository knowledge as ordinary A testimony across tasks and sessions. Include source and verification context; never raw sessions or secrets. Reuse the request UUID for retries. shareable permits hosted delivery; local is the default.",
-  args: { entities, request_id: z.string().uuid(), body: z.string().min(1), kind: z.string().optional().describe("Defaults to note"), shareable: z.boolean().optional(),
+  description: "Save explicitly selected knowledge as ordinary A testimony. Scope defaults to repository-wide; explicitly choose task or run for narrower applicability. Include source and verification context; never raw sessions or secrets. Reuse the request UUID for retries. shareable permits hosted delivery; local is the default.",
+  args: { scope: z.enum(["repository", "task", "run"]).optional().describe("Repository applies across tasks/runs. Task uses the host search task across runs; run uses its task and run. Labels come from settings or the native session. Choose explicitly; ordinary edits cannot change scope."), entities, request_id: z.string().uuid(), body: z.string().min(1), kind: z.string().optional().describe("Defaults to note"), shareable: z.boolean().optional(),
     pins: z.object({
       ...contextFields,
       valid_from: z.string().optional(), valid_until: z.string().optional(),
@@ -188,8 +193,11 @@ export const remember = validatedTool({
   },
   async execute(args, context) {
     const config = await settings("remember", context)
+    const scope = args.scope === "task" || args.scope === "run"
+      ? searchScope(config, context) : { repo: config.repo, task_id: "*", run_id: "*" }
+    if (args.scope === "task") scope.run_id = "*"
     const result = await call(config, context, ["create"], { request_id: args.request_id, draft: {
-      kind: args.kind ?? "note", body: args.body, scope: { repo: config.repo, task_id: "*", run_id: "*" },
+      kind: args.kind ?? "note", body: args.body, scope,
       sensitivity: args.shareable ? "shareable" : "local", claim_type: "self", pins: args.pins, entities: args.entities,
     } })
     return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
