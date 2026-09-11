@@ -21,11 +21,12 @@ acceptance boundaries; full Stage 1–2 completion is not claimed.
 
 [Native review tools](use-outcome-loop.md#native-review-tools) now support owned
 assessment history and qualitative writes in MCP and OpenCode. Disposable
-interface checks passed; the CLI/MCP and native adapter are installed at `2ef6e04`.
-A [Codex allowlist correction](verification/codex-review-allowlist-2026-09-10.md)
-fixes a missed configuration step: native discovery and review checks passed,
-and this project's allowlist now includes both tools. Clean-build installation
-of the corrected generator is pending.
+interface checks passed. CLI/MCP `3acf719` includes the
+[Codex allowlist correction](verification/codex-review-allowlist-2026-09-10.md);
+this project's configuration includes both review tools. The API remains at
+`bb600c5` and the native adapter at `2ef6e04`. The saved Codex setup procedure is
+corrected to v11. The missed installation step and subsequent CI test repair
+remain in the history below.
 
 A [worked qualitative review](use-outcome-loop.md#record-a-qualitative-review)
 now covers authenticated assessment writes, exact retry and history read-back.
@@ -4857,3 +4858,21 @@ A temporary cap-removal mutation failed both oversized cases. No production
 worker code changed. The [Codex correction report](verification/codex-review-allowlist-2026-09-10.md)
 preserves the failed CI and repair evidence. The clean installed CLI remains
 `2ef6e04` pending successful CI for this correction.
+
+### Codex correction installed and setup guide maintained — 2026-09-10
+
+[CI for `3acf719`](https://github.com/halbritt/cairn/actions/runs/34567566389)
+passed, and clean CLI/MCP `3acf719` is installed. The installed generator and
+resolved project configuration expose the same eight tools. The API remains
+`bb600c5` and the native adapter `2ef6e04`; the API/PostgreSQL processes,
+configuration hashes and exact 91-version ordinary-note inventory were unchanged
+by installation. No migration was run.
+
+The selected Codex setup guide then advanced from v10 to v11. Its obsolete
+setup paragraph now names both review tools and explains existing-allowlist and
+retrieval-only configuration. Fresh search/pull verified the exact intended body,
+with other metadata preserved; history returned v10 unchanged. This adds one
+note version after the installation check. The [manifest](verification/codex-review-allowlist-2026-09-10.json)
+retains installation and selected correction evidence without committing note
+bodies. The native Codex interface gap is closed. Broader task value and the
+remaining roadmap requirements are still open.

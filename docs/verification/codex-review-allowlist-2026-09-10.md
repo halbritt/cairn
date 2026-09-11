@@ -66,3 +66,21 @@ the full semantic race suite and `make check` passed. A temporary Go overlay
 removing only the cap made both oversized cases fail because they were accepted.
 The production worker, cap, cancellation and fallback behavior remain unchanged.
 This is a test correction, not an additional installed feature.
+
+## Installed correction and saved guidance
+
+[CI for `3acf719`](https://github.com/halbritt/cairn/actions/runs/34567566389)
+passed. Clean CLI/MCP `3acf719` is installed; its generator and this project's
+resolved Codex configuration contain the same eight tools. The API remains on
+`bb600c5` and the native OpenCode adapter on `2ef6e04`. The API and PostgreSQL
+processes, configuration hashes and exact inventory of 91 ordinary note versions
+were unchanged by installation. No migration was run.
+
+After installation, the selected Codex setup procedure was corrected from v10
+to v11. Its setup paragraph now includes both review tools, explains upgrading
+existing allowlists and lists the three writes to omit for retrieval-only access.
+The rest of the guide and its metadata were preserved. Fresh search/pull returned
+the exact intended body; a historical read returned the original v10 body intact.
+This adds one ordinary note version after the installation inventory check.
+It prevents the saved procedure from repeating obsolete instructions; subsequent
+task benefit remains to be observed.

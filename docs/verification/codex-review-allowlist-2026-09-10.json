@@ -45,7 +45,92 @@
     ],
     "other_settings_unchanged": true
   },
-  "installation": "pending clean source build",
+  "installation": {
+    "ci": {
+      "conclusion": "success",
+      "headSha": "3acf719873d02d260b152a818cc5ee8ca7ef7421",
+      "status": "completed",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34567566389"
+    },
+    "before": {
+      "versions": {
+        "schema": "cairn.version/1",
+        "client": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911052109-2ef6e049333f",
+          "vcs": "git",
+          "vcs_revision": "2ef6e049333ff13fc34c6c2fc402f766606a3725",
+          "vcs_time": "2026-09-11T05:21:09Z",
+          "vcs_modified": false
+        },
+        "server": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911050622-bb600c561ce7",
+          "vcs": "git",
+          "vcs_revision": "bb600c561ce7592f6e5b9f4577b17038f1d0fed1",
+          "vcs_time": "2026-09-11T05:06:22Z",
+          "vcs_modified": false
+        }
+      },
+      "cli_sha256": "46d8e7584a37181eeb3f80ba6186978b07888a0796ac3a40ddcd00372ce7c146",
+      "adapter_sha256": "69d3c3183db5f00cb4781f715bc0746d356e85d2b9ff385836869f56bee7776a",
+      "api_pid": 555696,
+      "api_sha256": "1476433adc7892282cfe6985c466fa05e2a75a83bf4a5e4e4d34167aa9440adb",
+      "store_pid": 163669,
+      "record_inventory": {
+        "versions": 91,
+        "sha256": "5df83f78b94e6f50be7f3eb6bc364667788aa8eb80c9b5c326e6014c6091425f"
+      },
+      "configuration": {
+        "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+        "/home/halbritt/git/cairn/.codex/config.toml": "cf95c7a6f4f244d0b26e9c4a0063cccd2c3a93ddce473075dd7e0b0abf7d86d0",
+        "/home/halbritt/.config/opencode/opencode.json": "d207573666654ade4f08e9daf54da70567e4031d183ef108ff24756fbed5879f",
+        "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb"
+      }
+    },
+    "after": {
+      "versions": {
+        "schema": "cairn.version/1",
+        "client": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911055116-3acf719873d0",
+          "vcs": "git",
+          "vcs_revision": "3acf719873d02d260b152a818cc5ee8ca7ef7421",
+          "vcs_time": "2026-09-11T05:51:16Z",
+          "vcs_modified": false
+        },
+        "server": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911050622-bb600c561ce7",
+          "vcs": "git",
+          "vcs_revision": "bb600c561ce7592f6e5b9f4577b17038f1d0fed1",
+          "vcs_time": "2026-09-11T05:06:22Z",
+          "vcs_modified": false
+        }
+      },
+      "cli_sha256": "5db5a131c18be6d6ab842397b463db19adb240cc59126be5073ab15d2a08bcdf",
+      "adapter_sha256": "69d3c3183db5f00cb4781f715bc0746d356e85d2b9ff385836869f56bee7776a",
+      "api_pid": 555696,
+      "api_sha256": "1476433adc7892282cfe6985c466fa05e2a75a83bf4a5e4e4d34167aa9440adb",
+      "store_pid": 163669,
+      "record_inventory": {
+        "versions": 91,
+        "sha256": "5df83f78b94e6f50be7f3eb6bc364667788aa8eb80c9b5c326e6014c6091425f"
+      },
+      "configuration": {
+        "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+        "/home/halbritt/git/cairn/.codex/config.toml": "cf95c7a6f4f244d0b26e9c4a0063cccd2c3a93ddce473075dd7e0b0abf7d86d0",
+        "/home/halbritt/.config/opencode/opencode.json": "d207573666654ade4f08e9daf54da70567e4031d183ef108ff24756fbed5879f",
+        "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb"
+      }
+    },
+    "api_restarted": false,
+    "database_migrated": false
+  },
   "ci_test_repair": {
     "failed_ci": "https://github.com/halbritt/cairn/actions/runs/34567025918",
     "production_changes": false,
@@ -68,5 +153,43 @@
       "residual_nonmaterial_obligations": 42,
       "decision_receipt_sha256": "422b803be764d088c87a36a2d3122fd8e0c544ff3e907ab3b879860a9b40ca2d"
     }
+  },
+  "installed_tools": {
+    "generated": [
+      "cairn_search",
+      "cairn_pull",
+      "cairn_pull_evidence",
+      "cairn_remember",
+      "cairn_edit",
+      "cairn_history",
+      "cairn_assessments",
+      "cairn_assess"
+    ],
+    "resolved": [
+      "cairn_search",
+      "cairn_pull",
+      "cairn_pull_evidence",
+      "cairn_remember",
+      "cairn_edit",
+      "cairn_history",
+      "cairn_assessments",
+      "cairn_assess"
+    ]
+  },
+  "selected_guide_correction": {
+    "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+    "before_version": 10,
+    "after_version": 11,
+    "request_id": "e5b2c336-4652-4f3b-afa5-b59320328e6d",
+    "before_body_sha256": "1bc6b294dd00918fe130bd7ebd52cf97ab7b399ebf7c1a9173c885216e2aa0e0",
+    "after_body_sha256": "29596d0a38ef334cab60659493388409ddc1558657c92bd9f4cfd49d51a9ce79",
+    "old_body_retained": true,
+    "other_metadata_preserved": true,
+    "change": "Replace obsolete setup paragraph; preserve remaining guide"
+  },
+  "after_guide_inventory": {
+    "versions": 92,
+    "sha256": "f03952c0e6e94b661b3f0782beb08dd4568592c1c3bf3ab4738b327a38f40115",
+    "only_added_version": "be11369a-4ae6-4600-9345-5ff36446d5ff/11"
   }
 }
