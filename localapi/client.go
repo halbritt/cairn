@@ -28,12 +28,12 @@ type Client struct {
 func NewClient(socket, tokenFile string) (*Client, error) {
 	file, err := os.OpenFile(tokenFile, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return nil, err
+		return nil, &core.Error{Code: "CLIENT_SETUP_FAILED", Message: "cannot open API token file; check the configured token-file path and access", Cause: err}
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
-		return nil, err
+		return nil, &core.Error{Code: "CLIENT_SETUP_FAILED", Message: "cannot inspect API token file; check file access", Cause: err}
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || stat.Uid != uint32(os.Geteuid()) || info.Size() > 512 {
@@ -41,14 +41,18 @@ func NewClient(socket, tokenFile string) (*Client, error) {
 	}
 	token, err := io.ReadAll(io.LimitReader(file, 513))
 	if err != nil {
-		return nil, err
+		return nil, &core.Error{Code: "CLIENT_SETUP_FAILED", Message: "cannot read API token file; check file access", Cause: err}
 	}
 	secret := strings.TrimSpace(string(token))
 	if secret == "" || len(token) > 512 {
 		return nil, &core.Error{Code: "INVALID_REQUEST", Message: "empty or oversized API token"}
 	}
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		connection, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		if err != nil {
+			return nil, &core.Error{Code: "API_CONNECTION_FAILED", Message: "cannot connect to the Cairn API; check the configured socket and service", Cause: err}
+		}
+		return connection, nil
 	}}
 	return &Client{http: &http.Client{Transport: transport, Timeout: 35 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, transport: transport, token: secret}, nil
 }

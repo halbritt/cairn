@@ -4536,3 +4536,27 @@ reliability and the underlying startup cause remain unresolved. No deadline,
 retry, snapshot or permission change was selected, and no answering model ran.
 Earlier failed trials remain part of this history; no task-value acceptance is
 added by the cleanup or diagnostic checks.
+
+
+### Actionable client setup and connection errors — 2026-09-10
+
+A diagnostic launch with an absent token file blamed the local store and task
+runtime. Token-file I/O now reports `CLIENT_SETUP_FAILED`; Unix dial failure
+reports `API_CONNECTION_FAILED`. CLI and MCP messages point to the relevant
+configuration without printing private paths or credentials. The original OS
+or cancellation error remains inspectable by trusted Go callers, and unknown
+CLI errors retain the existing privacy mask.
+
+The initial pending regression test had a missing brace; after correcting its
+syntax, missing-token and missing-socket checks reproduced the intended failures.
+The executable CLI check then caught the separate message-masking defect. Focused
+Go race checks, actual CLI/MCP failure checks, `make check` and full disposable
+PostgreSQL integration now pass. Successful authenticated requests and the existing
+committed-but-lost-response runner tests remain covered.
+
+This changes diagnostics, including exit 7 for a later run operation's dial
+failure; earlier run effects remain possible and retained result fields still
+matter. No retry, API execution, token-validation or database behavior changes.
+Only the CLI/MCP executable requires adoption. The [report and manifest](verification/client-diagnostics-2026-09-10.md)
+separate checkout verification from installation and record source-review-only
+branches. No incremental task-value or native startup reliability claim is added.

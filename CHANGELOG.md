@@ -18,6 +18,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Identify client setup and connection failures.** CLI and MCP now distinguish
+  token-file I/O failure from an unavailable API connection, with actionable
+  messages that omit private paths and credentials. Unknown errors remain
+  masked. Upgrade the CLI/MCP executable; the current API and schema suffice.
+  [Behavior and verification](docs/verification/client-diagnostics-2026-09-10.md).
+
 - **Keep failed integration artifacts for diagnosis.** `make test-integration`
   stops its disposable PostgreSQL cluster and prints the retained directory when
   a check fails. Successful runs still remove their temporary files. This needs

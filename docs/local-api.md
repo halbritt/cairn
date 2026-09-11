@@ -61,6 +61,24 @@ explicit token path is not replaced with the default token. The agent client
 never opens the database. Use the same request UUID for a transport retry. The
 server has bounded request bodies and deadlines; an HTTP write failure does not roll back a committed mutation.
 
+Token-file I/O failures return `CLIENT_SETUP_FAILED`, with a message directing
+the caller to check the configured path and access. Unix socket dial failures
+return `API_CONNECTION_FAILED`, directing the caller to check the socket and
+service. Both use CLI exit 7 without printing the private path or credentials.
+Existing token validation still refuses unsafe sources; empty, oversized and
+non-owner-only files return `INVALID_REQUEST`. MCP startup reports token setup
+failure on stderr with exit 1; connected MCP sessions report dial failures as
+tool errors. Upgrade the CLI/MCP executable for these diagnostics; the existing
+API and database suffice.
+
+These codes describe the failing client operation, not an entire run's effects.
+An API dial failure after earlier run steps now retains `API_CONNECTION_FAILED`
+and exit 7 rather than the generic `RUN_FAILED` fallback. Inspect any returned
+receipt, `process_state` and pending run artifacts before further action. Requests
+are not automatically retried, and a lost response after connecting is not
+classified as a dial failure. Trusted Go callers can still inspect the original
+OS or cancellation cause with `errors.Is`/`errors.As`; rendered messages omit it.
+
 Encoded JSON limits are 512 KiB for ordinary `create`, `edit`, `revise` and `append`,
 1 MiB for `replace`, 8 MiB for `evidence`, and 128 KiB for other API operations. The larger envelopes
 accommodate the existing 64 KiB decoded note and 1 MiB decoded evidence limits,

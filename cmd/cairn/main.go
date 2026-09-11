@@ -72,6 +72,9 @@ func main() {
 		}
 		envelope.Message = err.Error()
 		switch envelope.Status {
+		case "CLIENT_SETUP_FAILED", "API_CONNECTION_FAILED":
+			exitCode = 7
+			envelope.Message = refusal.Error()
 		case "INSTALL_FAILED":
 			exitCode = 7
 		case "RESTORE_PAUSED", "RESTORE_INCOMPLETE", "PURGE_UNRECORDED", "REFUSAL_UNRECORDED", "INTEGRITY_FAILURE", "CHECKPOINT_MISMATCH":
