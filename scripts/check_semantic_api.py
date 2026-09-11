@@ -22,7 +22,7 @@ root.mkdir(mode=0o700)
 project = Path(__file__).resolve().parents[1]
 run_id = uuid.uuid4().hex
 repos = {
-    label: "trial:semantic-" + label + "-" + run_id for label in ["corpus", "long", "small"]
+    label: "trial:semantic-" + label + "-" + run_id for label in ["corpus", "long", "small", "idle"]
 }
 store = root / "store"
 store.mkdir(mode=0o700)
@@ -74,7 +74,7 @@ write(
     ),
 )
 identities = []
-for label in ["corpus", "long", "small"]:
+for label in ["corpus", "long", "small", "idle"]:
     token = secrets.token_urlsafe(32)
     p = store / (label + ".token")
     p.write_text(token)
@@ -295,6 +295,9 @@ with (root / "api.log").open("wb") as log:
             write(root / "residency-mutation.json", dict(before=before, after=after, hidden=hidden,
                 stale_handle_refused=True, current_version_scored=True, retired_note_excluded=True,
                 local_note_excluded=True))
+        if args.stream:
+            from check_semantic_idle import check as check_idle
+            check_idle(binary, args.worker, root, env, agent, repos["idle"])
         # Restart only this fixture API without a scorer; never modify the supplied worker.
         api.terminate()
         api.wait(timeout=10)
@@ -348,5 +351,5 @@ with (root / "api.log").open("wb") as log:
             check=True,
             timeout=30,
         )
-        for name in ["identities.json", "corpus.token", "long.token", "small.token"]:
+        for name in ["identities.json", "corpus.token", "long.token", "small.token", "idle.token"]:
             (store / name).unlink(missing_ok=True)

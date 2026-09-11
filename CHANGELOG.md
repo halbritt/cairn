@@ -18,6 +18,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Reuse passage vectors after an idle worker exits.** The streaming API can
+  retain a bounded snapshot in memory while releasing the loaded semantic model.
+  A compatible fresh worker restores matching-model vectors; current eligibility
+  and scores remain unchanged. Upgrade the API and prepared worker; no database
+  migration or disk cache is added. [Behavior and limits](docs/semantic-discovery.md).
+
 - **Refuse unusable harness settings before installation.** MCP startup and
   configuration generators enforce the existing scope byte limit. OpenCode
   setup now refuses malformed UTF-8 instead of silently replacing characters;

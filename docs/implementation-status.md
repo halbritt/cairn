@@ -4455,3 +4455,38 @@ eligibility checks required before installation. It adds no disk cache or new
 service. The installed CLI/API/worker and note versions remain unchanged.
 The comparison establishes a promising retrieval-cost improvement; broader task
 value and the roadmap remain open.
+
+
+### Semantic idle cache implementation — 2026-09-10
+
+The API streaming transport now retains one bounded opaque snapshot across idle
+worker release. A fresh prepared worker restores matching-model passage vectors;
+current source eligibility and scoring stay with their existing owners. Failed
+or cancelled exchanges, omitted snapshots and owner shutdown discard saved state.
+Calls that never reach scoring do not change it. This extends in-memory lifetime
+without introducing a disk cache, new service, database schema or longer deadline.
+
+The host advertises support through its stripped worker environment. Old workers
+retain their original behavior; a new worker under an old API returns its original
+response shape. Scores remain bounded to 64 KiB independently of the 600 KiB cache
+allowance. The full reply frame cap is 664 KiB. Python validates model identity,
+128 copied float32 vectors and complete state before restore; absent passages are
+replaced after successful scoring. No query/note text or record IDs enter the
+bundled snapshot, and cache state stays outside core results and receipts.
+
+Red/green Go and numerical tests verify actual idle child replacement and stream
+restoration. Race checks cover state replacement, omission, cancellation, failure,
+owner isolation and independent state/score/frame bounds. Eighteen numerical and
+framing tests, 48 total Python tests and static checks passed. Full disposable
+integration with the real prepared model passed: an API request fell from 11.838
+seconds cold to 0.605 seconds after a verified idle child exit with the same score
+digest and ordered source identities. A later edited source was pulled at version
+2, its old handle refused and private fixture content excluded.
+
+A separate full authenticated model check ran the new worker with installed CLI
+`208c1c8` serving a fixture API. Compatibility passed without cache restoration;
+its after-idle request remained cold. That run used a later documentation body,
+so its timings are not another controlled performance pair. Both source/result
+sets and their limits are retained in the [report](verification/semantic-idle-cache-2026-09-10.md)
+and [manifest](verification/semantic-idle-cache-2026-09-10.json). Installation follows
+verified CI; no independent downstream task-value claim is added.

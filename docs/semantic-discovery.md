@@ -66,7 +66,7 @@ successful request. The request deadline remains 25 seconds, and cancellation,
 failure and shutdown still discard the worker. Choose the lifetime for the host's
 memory budget and query spacing: longer retention avoids re-embedding unchanged
 notes but keeps the model and vectors resident between requests. It does not
-improve cold scoring or guarantee that the next eligible set will hit the cache.
+remove the first cold score or guarantee that the next eligible set will hit the cache.
 The library's `semantic.StreamCommand` retains the 30-second default;
 `semantic.StreamCommandWithIdleTimeout` lets its host choose a positive interval.
 
@@ -89,9 +89,19 @@ delivery. The loaded model and tokenizer are fixed for that worker's lifetime.
 
 The existing 64-note/128-chunk limits apply to cache hits too. At most 128 vectors
 are retained (192 KiB of vector payload with the installed float32 model, plus map
-overhead). The cache dies with the worker after idle release, failure or shutdown;
-it is not persistent storage or secure allocator erasure. Cold requests still pay
-model initialization and uncached passage embedding.
+overhead). A compatible API retains one serialized snapshot in its own memory
+when an idle worker exits. A new child restores matching-model vectors before
+scoring the current eligible set. This releases the loaded model while avoiding
+repeated passage inference. Model initialization and new passages still cost work.
+A changed model fingerprint discards the snapshot and computes cold results.
+
+The transport caps the opaque snapshot at 600 KiB and keeps it out of scoring
+results, receipts and logs. Only an idle exit preserves it: failed or cancelled
+exchanges and API shutdown discard state. A successful reply replaces it; omission
+clears it. Requests that never reach the transport do not alter its state, including
+searches with no eligible optional notes. Snapshot lifetime can therefore extend
+until the next scoring exchange or API shutdown. No file or database cache is
+created, and releasing references is not secure allocator erasure.
 The [passage-reuse comparison](verification/semantic-chunk-cache-2026-09-10.md)
 records localized-edit timing and the remaining cold cost. The earlier
 [whole-note cache comparison](verification/semantic-vector-cache-2026-09-09.md)
@@ -147,9 +157,25 @@ The optional streaming protocol is one UTF-8 JSON line per request and response:
 `{"id":"1","request":{"query":"...","notes":[...]}}` and
 `{"id":"1","result":{"model_sha256":"...","algorithm":"...","scores":[...]}}`.
 IDs belong to the API's transport, not agent-supplied task identity. Requests are
-bounded to 8 MiB before the newline; responses including the newline to 64 KiB.
-Unknown response fields, wrong IDs, missing results, partial lines and changed
-model/algorithm identity within a child refuse the request and discard the child.
+bounded to 8 MiB before the newline. Ordinary responses retain their 64 KiB
+allowance. A compatible host sets `CAIRN_SEMANTIC_STREAM_CACHE=1` only in the
+streaming child's stripped environment. The prepared worker then adds optional
+`cache` state to replies; the host passes it on the first request to a replacement
+child after idle release. The worker owns the snapshot format and validates its
+model fingerprint, 128-entry bound and copied float32 vectors. Later restore
+attempts within the same child refuse.
+
+The cache has a separate 600 KiB limit; the entire reply including newline is
+bounded to 664 KiB. Cache space cannot enlarge the ordinary scoring result limit.
+The transport treats cache content as opaque, trusted worker state. An older
+worker emits no cache and receives none; an older API does not advertise support,
+so the new prepared worker preserves its original reply shape. No new agent flag
+or tool argument is required. Upgrade the API and prepared worker, then restart
+the API to adopt both; installing either alone preserves ordinary scoring.
+
+Other unknown response fields, wrong IDs, missing results, partial lines and changed
+model/algorithm identity within a child refuse the request and discard the child
+and its saved state.
 The core independently validates the supplied candidate set and scores as before.
 
 Unconfigured, busy, failed or over-limit backends return lexical results with
