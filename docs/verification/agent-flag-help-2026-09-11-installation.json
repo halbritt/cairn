@@ -1,0 +1,44 @@
+{
+  "schema": "cairn.agent-flag-help-installation/1",
+  "date": "2026-09-11",
+  "ci": {
+    "conclusion": "success",
+    "head_sha": "75eb01e8497b41f7198abaf2e4dddec8301f9a8b",
+    "status": "completed",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34585053210"
+  },
+  "before": {
+    "client_revision": "03ff22c1e71126c8b3e3b2a609adc020d5a3c2fa",
+    "client_sha256": "56a7ad2878fab0ee43307c267223f02436d511a4fd53e201fc62cfc5e0b9ab10"
+  },
+  "after": {
+    "client_revision": "75eb01e8497b41f7198abaf2e4dddec8301f9a8b",
+    "client_modified": false,
+    "client_sha256": "b9858aa264717fe15756f115d8536aacfc418c353162860640b497b8776d554a"
+  },
+  "preserved": {
+    "server_revision": "bb600c561ce7592f6e5b9f4577b17038f1d0fed1",
+    "api_pid": 555696,
+    "api_sha256": "1476433adc7892282cfe6985c466fa05e2a75a83bf4a5e4e4d34167aa9440adb",
+    "store_pid": 163669,
+    "adapter_sha256": "69d3c3183db5f00cb4781f715bc0746d356e85d2b9ff385836869f56bee7776a",
+    "record_versions": 93,
+    "record_inventory_sha256": "9c183040412e9c644f15394761b4ccf196ba2e97a083c68ae155f168a25ff94e",
+    "configuration_sha256": {
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "cf95c7a6f4f244d0b26e9c4a0063cccd2c3a93ddce473075dd7e0b0abf7d86d0",
+      "/home/halbritt/.config/opencode/opencode.json": "d207573666654ade4f08e9daf54da70567e4031d183ef108ff24756fbed5879f",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb"
+    }
+  },
+  "installed_check": "Passed overview, nine JSON operations, and four flag operations under both help spellings with absent HOME, open stdin, and malformed-call refusal",
+  "api_restarted": false,
+  "store_restarted": false,
+  "database_migrated": false,
+  "rollback_binary": "/tmp/cairn-agent-flag-help-20260911/cairn-before-install",
+  "limits": [
+    "local CLI installation acceptance only",
+    "full design acceptance remains open",
+    "setup-time savings and durable memory benefit remain unmeasured"
+  ]
+}

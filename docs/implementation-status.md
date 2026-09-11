@@ -1,4 +1,4 @@
-# Implementation status — 2026-09-10
+# Implementation status — 2026-09-11
 
 Cairn is a usable local alpha for explicitly selected agent memory. It stores
 versioned notes and supporting evidence, makes them available through CLI,
@@ -21,7 +21,7 @@ acceptance boundaries; full Stage 1–2 completion is not claimed.
 
 [Native review tools](use-outcome-loop.md#native-review-tools) now support owned
 assessment history and qualitative writes in MCP and OpenCode. Disposable
-interface checks passed. CLI/MCP `03ff22c` includes the
+interface checks passed. CLI/MCP `75eb01e` includes the
 [Codex allowlist correction](verification/codex-review-allowlist-2026-09-10.md);
 this project's configuration includes both review tools. The API remains at
 `bb600c5` and the native adapter at `2ef6e04`. The saved Codex setup procedure is
@@ -31,7 +31,10 @@ remain in the history below.
 [Ordinary CLI request help](local-api.md#find-an-ordinary-request-format) now
 explains JSON-based corrections, history and reviews without connecting to the
 API. Its copied examples and full integration checks pass; clean CLI/MCP
-`03ff22c` is installed after successful CI and an installed offline check.
+`75eb01e` is installed after successful CI and an installed offline check. That
+build also exposes the actual flag options and positional forms for ordinary
+search, remember, pull, and evidence pull without requiring a token, HOME, API,
+or stdin.
 
 A [worked qualitative review](use-outcome-loop.md#record-a-qualitative-review)
 now covers authenticated assessment writes, exact retry and history read-back.
@@ -4956,3 +4959,22 @@ This is implemented CLI usability, not installation acceptance or evidence that
 memory improved the failed model run. The trial's one search did not lead to a
 pull or usable patch. Durable memory benefit and the remaining roadmap work stay
 open.
+
+### Everyday agent flag help installed — 2026-09-11
+
+[Exact-source CI for `75eb01e`](https://github.com/halbritt/cairn/actions/runs/34585053210)
+passed both the OpenCode-plugin and disposable-PostgreSQL jobs, including the race
+suite, Python checks, static checks, build, and authenticated CLI checks. Clean
+CLI/MCP `75eb01e` is installed in the user's CLI location. Its public offline
+check passes for the overview, nine JSON operations, and the four flag operations
+under both help spellings, with absent HOME and open stdin; malformed calls remain
+`INVALID_REQUEST`.
+
+The API remains clean `bb600c5` and the native OpenCode adapter remains unchanged
+from `2ef6e04`. API PID 555696, PostgreSQL PID 163669, service executable hash,
+adapter hash, configuration hashes, and the exact 93-version ordinary-note
+inventory were identical before and after installation. No service restarted and
+no migration ran. The [installation manifest](verification/agent-flag-help-2026-09-11-installation.json)
+retains those checks and the rollback-binary location. This accepts the local CLI
+installation only; setup-time savings, model-task improvement, durable memory
+benefit, and the remaining roadmap requirements stay open.

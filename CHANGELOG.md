@@ -6,7 +6,7 @@ changes by source-commit date; they are not numbered releases. The
 retains the complete chronology, including failed trials, corrections and
 superseded work.
 
-The latest recorded installation on 2026-09-10 has clean CLI/MCP `03ff22c`,
+The latest recorded installation on 2026-09-11 has clean CLI/MCP `75eb01e`,
 API `bb600c5`, native adapter from `2ef6e04`, and database migration 034. Declared native task
 scope and explicit native capture scope use the existing API; task/run report
 filters remain installed. The
@@ -22,7 +22,9 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
   `remember`, `pull`, and `pull-evidence` now provide readable `--help` and `-h`
   output from the same flag definitions used for execution. Help needs no token,
   API, home directory, or stdin; malformed calls remain errors. Upgrade only the
-  CLI. [Checks and failed model trial](docs/verification/agent-flag-help-2026-09-11.md).
+  CLI. Clean `75eb01e` is installed after successful exact-source CI and an
+  installed offline check; the API, store, adapter, configuration, and ordinary
+  note inventory were preserved. [Checks, installation, and failed model trial](docs/verification/agent-flag-help-2026-09-11.md).
 
 ## 2026-09-10
 

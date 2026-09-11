@@ -1,8 +1,8 @@
 # Everyday agent flag help
 
 Source checkpoint: base revision `c3208eb32c59071fae2ebb6a7d0f6b5942774209`,
-reviewed 2026-09-11. This report covers source behavior and tests, not installation
-acceptance.
+reviewed 2026-09-11. Source behavior, tests, and the later CLI-only installation
+checkpoint are reported separately below.
 
 ## Observed gap
 
@@ -71,7 +71,29 @@ the current public defect and bounded selected task establish present pressure.
 ## Limits
 
 The checks establish behavior for the exercised CLI and disposable API/store.
-They do not establish installation, setup-time savings, model-task improvement,
-or durable memory benefit. The OpenCode failure is one bounded model run with
+They do not establish setup-time savings, model-task improvement, or durable
+memory benefit. The OpenCode failure is one bounded model run with
 permission friction; it is not a general capability estimate. No API, database,
 schema, authority, destination, or delivery behavior changed.
+
+## Local CLI installation
+
+Exact-source [CI run 34585053210](https://github.com/halbritt/cairn/actions/runs/34585053210)
+passed for clean revision `75eb01e8497b41f7198abaf2e4dddec8301f9a8b`.
+Both jobs completed successfully, including the race suite, disposable PostgreSQL
+integration, Python checks, static checks, build, authenticated CLI checks, and
+the OpenCode-plugin check.
+
+That clean build replaced only `~/.local/bin/cairn`, after retaining the prior
+binary for rollback. The installed public offline check passes the command
+overview, nine JSON-operation help paths, and all four flag-operation help paths
+with both `--help` and `-h`, no HOME, an absent database target, and stdin left
+open. Invalid invocations still return `INVALID_REQUEST`.
+
+Before/after snapshots kept API revision `bb600c5`, API PID 555696, PostgreSQL
+PID 163669, API executable hash, native adapter hash, configuration hashes, and
+the complete 93-version ordinary-note inventory identical. No API or store
+service restarted, and no database migration ran. The
+[installation manifest](agent-flag-help-2026-09-11-installation.json) records the
+identities and retained rollback path. This is installation acceptance for the
+local CLI only, not full design acceptance or measured usefulness.
