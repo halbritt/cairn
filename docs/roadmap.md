@@ -245,6 +245,11 @@ A subsequent [native maintenance task](verification/native-guide-maintenance-202
 updated the stored assessment guide from that example, preserving its earlier
 text and requiring only a root paragraph-break correction. It supports reviewed
 maintenance through existing tools; downstream value and net savings are unknown.
+The [assessment binding repair](verification/assessment-binding-2026-09-10.md)
+protects cached write responses and new assessments after a profile's repository
+or destination changes. Native assessment-history and write tools are being
+prepared through the existing API; they are not yet implemented or installed.
+
 
 Authenticated agents and observers can now inspect their own complete assessment
 versions with `agent assessments` and an exact receipt ID, including narrative

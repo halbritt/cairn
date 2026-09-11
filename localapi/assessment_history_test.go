@@ -36,6 +36,10 @@ func TestAuthenticatedAssessmentHistoryPreservesNarrativeAndBoundaries(t *testin
 				if err = client.Call(ctx, "assess-run", req, &assessment); err != nil {
 					t.Fatal(err)
 				}
+				var retried core.Assessment
+				if err = client.Call(ctx, "assess-run", req, &retried); err != nil || !reflect.DeepEqual(retried, assessment) {
+					t.Fatalf("matching profile retry changed assessment: %+v, %v", retried, err)
+				}
 				expected = append(expected, assessment)
 			}
 			var first json.RawMessage
@@ -108,6 +112,56 @@ func TestAuthenticatedAssessmentHistoryPreservesNarrativeAndBoundaries(t *testin
 			err = client.Call(ctx, "run-report", core.RunReportRequest{Repo: repo, Limit: 10}, &report)
 			if core.Code(err) != "AUTHORITY_DENIED" {
 				t.Fatalf("protected report widened: %v", err)
+			}
+		})
+	}
+}
+
+func TestAssessmentWriteRefusesPriorBindingAndCachedResponse(t *testing.T) {
+	for _, test := range []struct {
+		name, role, destination, priorDestination string
+		changedRepo                               bool
+	}{
+		{"hosted agent after local", "agent", "hosted", "local", false},
+		{"hosted observer after local", "observer", "hosted", "local", false},
+		{"local agent after hosted", "agent", "local", "hosted", false},
+		{"local observer after hosted", "observer", "local", "hosted", false},
+		{"same destination new repository", "agent", "hosted", "hosted", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client, _, repo, _ := authenticatedHost(t, test.role, test.destination, nil)
+			ctx := context.Background()
+			priorRepo := repo
+			if test.changedRepo {
+				priorRepo = uuid.NewString()
+			}
+			prior, err := core.Open(ctx, os.Getenv("CAIRN_TEST_DATABASE_URL"), core.Channel{Principal: "host:test", Repo: priorRepo, Instrumented: test.role == "observer"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer prior.Close()
+			p, err := prior.Compile(ctx, core.CompileRequest{RequestID: uuid.NewString(), Scope: core.Scope{Repo: priorRepo, TaskID: "review", RunID: "prior"}, Purpose: "context", AvailableTokens: 32000}, core.Destination{Name: test.priorDestination, AllowLocal: test.priorDestination == "local"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := core.AssessmentRequest{RequestID: uuid.NewString(), ReceiptID: p.ReceiptID, TaskOutcome: "unknown", FailureDomain: "unknown", Method: "private-review/1", Reason: "PRIVATE PRIOR-BINDING ASSESSMENT NARRATIVE"}
+			written, err := prior.AssessRun(ctx, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var response json.RawMessage
+			err = client.Call(ctx, "assess-run", req, &response)
+			if core.Code(err) != "AUTHORITY_DENIED" || len(response) != 0 {
+				t.Fatalf("retry returned a prior-binding assessment: %s, %v", response, err)
+			}
+			req.RequestID, req.ExpectedVersion, req.Reason = uuid.NewString(), 1, "Changed profile must not append to the prior-binding receipt."
+			err = client.Call(ctx, "assess-run", req, &response)
+			if core.Code(err) != "AUTHORITY_DENIED" {
+				t.Fatalf("write changed a prior-binding receipt: %v", err)
+			}
+			history, err := prior.Assessments(ctx, p.ReceiptID)
+			if err != nil || !reflect.DeepEqual(history, []core.Assessment{written}) {
+				t.Fatalf("refused writes changed retained history: %+v, %v", history, err)
 			}
 		})
 	}

@@ -250,6 +250,14 @@ process outcomes and earlier assessments survive corrections. `cairn assessments
 RECEIPT_UUID` inspects that history. An assessment does not promote memory or mint
 a capability qualification. Current receipt-owner access applies.
 
+Authenticated `agent assess-run` also checks the receipt's repository and original
+destination against the current profile before a new write or an exact retry.
+If that principal's repository or destination has changed, the old receipt
+returns `AUTHORITY_DENIED`; retrying cannot recover its cached assessment through
+the new binding. Earlier assessments remain retained. The direct-store
+`AssessRun` contract is unchanged; the API uses `AssessRunForDestination`.
+See the [binding repair](verification/assessment-binding-2026-09-10.md).
+
 `cairn report REPO` counts unknown task outcomes among retained process outcomes.
 It uses the latest task assessment when one exists, then falls back to the
 process-derived task outcome. A correction back to unknown restores that count.

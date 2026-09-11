@@ -103,6 +103,20 @@ type Assessment struct {
 }
 
 func (s *Store) AssessRun(ctx context.Context, req AssessmentRequest) (Assessment, error) {
+	return s.assessRun(ctx, req, "")
+}
+
+// AssessRunForDestination checks the authenticated receipt binding before both
+// new writes and cached responses, which can contain a private review narrative.
+// AssessRun remains available to trusted direct-store callers.
+func (s *Store) AssessRunForDestination(ctx context.Context, req AssessmentRequest, dest Destination) (Assessment, error) {
+	if (dest.Name != "local" && dest.Name != "hosted") || (dest.Name == "hosted" && dest.AllowLocal) {
+		return Assessment{}, failure("DESTINATION_PROHIBITED", "invalid assessment destination")
+	}
+	return s.assessRun(ctx, req, dest.Name)
+}
+
+func (s *Store) assessRun(ctx context.Context, req AssessmentRequest, destination string) (Assessment, error) {
 	if req.ExpectedVersion < 0 || strings.TrimSpace(req.Method) == "" || len(req.Method) > 256 || len(req.FailureKind) > 128 || len(req.EvidenceIDs) > 32 || (req.ErrorSignature != "" && !digestValid(req.ErrorSignature)) {
 		return Assessment{}, failure("INVALID_REQUEST", "invalid assessment metadata")
 	}
@@ -134,6 +148,22 @@ func (s *Store) AssessRun(ctx context.Context, req AssessmentRequest) (Assessmen
 	}
 	if req.TaskOutcome != "unknown" && len(req.EvidenceIDs) == 0 {
 		return Assessment{}, failure("EVIDENCE_UNAVAILABLE", "a task assessment requires explicitly selected evidence")
+	}
+	guard := func(tx pgx.Tx) error {
+		if destination == "" {
+			return nil
+		}
+		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
+			return err
+		}
+		var recorded string
+		if err := tx.QueryRow(ctx, `SELECT destination FROM cairn.retrieval_receipt WHERE receipt_id=$1`, req.ReceiptID).Scan(&recorded); err != nil {
+			return err
+		}
+		if recorded != destination {
+			return failure("AUTHORITY_DENIED", "assessment destination differs from the receipt destination")
+		}
+		return nil
 	}
 	return mutate(ctx, s, "assess-run", req.RequestID, req, func(tx pgx.Tx) (Assessment, error) {
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
@@ -172,7 +202,7 @@ func (s *Store) AssessRun(ctx context.Context, req AssessmentRequest) (Assessmen
 			}
 		}
 		return result, nil
-	})
+	}, guard)
 }
 func checkAssessmentEvidence(ctx context.Context, tx pgx.Tx, id, repo string) error {
 	if err := validID(id); err != nil {

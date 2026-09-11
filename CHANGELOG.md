@@ -18,6 +18,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Keep assessment writes and retries within the current profile.** The API
+  now rejects an earlier receipt after its principal's repository or destination
+  changes, including requests whose responses were already cached. Matching
+  retries and earlier history remain intact. Update the API; no migration is
+  required. [Repair and compatibility](docs/verification/assessment-binding-2026-09-10.md).
+
 - **Write a qualitative memory review.** The existing assessment guide now
   includes an authenticated write/read-back example with stable request retries
   and conflict handling. Unknown acceptance remains compatible with qualitative

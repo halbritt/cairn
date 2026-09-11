@@ -32,6 +32,10 @@ The old guide survived intact; a root formatting correction followed the native
 append. This supports practical memory maintenance, with downstream benefit and
 net savings still unknown.
 
+An [assessment binding repair](verification/assessment-binding-2026-09-10.md)
+now checks the current profile before cached write responses as well as new
+writes. Its implementation is verified below; installation is recorded separately.
+
 The installed CLI/API are clean `4e75ed1`; the native OpenCode adapter remains
 from `797aafe`. [Use-report expansion observations](verification/expansion-observation-2026-09-10.md)
 keep a retained instrumented expansion visible alongside later testimony or
@@ -4698,3 +4702,32 @@ counts, source and artifact hashes, record versions, costs and acceptance limits
 The existing maintenance case now includes native updating of a Codex-maintained
 guide. No production code, installed build, profile, schema or roadmap requirement
 changed; the full earlier implementation history is preserved.
+
+
+### Assessment write binding repair — 2026-09-10
+
+Preparing native assessment-history and write tools exposed an API inconsistency.
+History reads checked the original receipt destination, but the write route used
+trusted `AssessRun` without a destination guard. Exact cached retries also
+preceded its repository check. A disposable API reproduction returned an earlier
+local assessment to the same principal after its destination changed to hosted.
+The test supplied the complete earlier payload; this is no claim of UUID-only
+disclosure or an observed production incident.
+
+The API now calls `AssessRunForDestination`, checking current receipt ownership,
+repository and original destination inside the mutation transaction before
+replay or application. Mismatches return `AUTHORITY_DENIED`; matching retries
+retain their original response, witness and history. The trusted direct-store
+method, request identity/digest, version checks and stored formats remain. No
+migration is needed. Formerly accepted inconsistent API requests now refuse,
+enforcing the existing receipt policy.
+
+Focused PostgreSQL/race checks cover both destination-change directions for
+agents and observers, repository reassignment, unchanged earlier history and
+exact matching-profile retries. The full disposable integration suite and
+`make check` passed. The [report and manifest](verification/assessment-binding-2026-09-10.md)
+retain the baseline failure and checks. The initial native history tool passed
+its first API check; the native write tool remains unimplemented. Their unfinished
+changes are saved under `/tmp/cairn-native-assessments-20260910` and excluded from
+this checkpoint. No answering-model run or task-value gain is claimed. All earlier
+implementation history is preserved.

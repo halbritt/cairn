@@ -231,7 +231,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/v1/outcome":
 		serveJSON(w, r, c.store.RecordOutcome)
 	case "/v1/assess-run":
-		serveJSON(w, r, c.store.AssessRun)
+		serveJSON(w, r, func(ctx context.Context, req core.AssessmentRequest) (core.Assessment, error) {
+			return c.store.AssessRunForDestination(ctx, req, c.destination)
+		})
 	case "/v1/assessments":
 		serveJSON(w, r, func(ctx context.Context, req struct {
 			ReceiptID string `json:"receipt_id"`

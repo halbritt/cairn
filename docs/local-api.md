@@ -172,6 +172,11 @@ in ascending order, including reasons and evidence IDs. The profile's repository
 and destination must match the receipt. It returns no evidence or package bodies;
 an owned receipt with no assessments returns `[]`. See the
 [review path](use-outcome-loop.md#qualitative-and-cumulative-review) for use and limits.
+`assess-run` checks the same current repository and original destination before
+applying a write or replaying its cached response. Changing a principal's binding
+does not authorize access to the earlier binding's receipts; mismatches return
+`AUTHORITY_DENIED`. This is enforced by the API's `AssessRunForDestination` path;
+the trusted direct-store `AssessRun` interface is unchanged.
 The [expansion contract](index-and-pull.md) binds
 body/evidence pulls to an indexed version and one shared session budget. `compile` takes
 no destination field; the configured profile owns that decision. An observer may
