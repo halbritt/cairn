@@ -19,9 +19,11 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and native OpenCode adapter are clean `50e4935`; the API
+The installed CLI and native OpenCode adapter are clean `797aafe`; the API
 remains clean `b171a8b`. [Declared native task scope](opencode-tools.md#continue-a-task-across-sessions)
-is installed and verified with that API. The optional semantic worker is
+is installed and verified with that API. [Explicit native capture scope](mcp.md#choose-capture-scope)
+now saves a note for the repository, current task or current task/run. Repository
+capture remains the default. The optional semantic worker is
 from `d3edaa2`: [passage reuse](verification/semantic-chunk-cache-2026-09-10.md)
 avoids re-embedding unchanged windows after localized note edits. It is installed
 with the existing five-minute lifetime; cold scoring remains expensive.
@@ -4340,3 +4342,35 @@ trial or an incremental memory-value claim. Existing host labels still describe
 configured tasks or conversations/sessions, not independent executions. Source
 integration precedes installation; the preceding installation summary remains
 accurate until the next installation checkpoint. All earlier history remains.
+
+
+### 2026-09-10 — install native capture scope and preserve task findings
+
+Installed clean feature commit `797aafedd70cfea2fb56f6f10087ac5519f04e14` after both jobs and all
+steps of CI run 34550429040 passed. The CLI/project binary and bundled native
+adapter are current; a fresh MCP process advertises the same revision and scope
+argument. Existing MCP processes need restart to use it. The API remains clean
+b171a8b at PID 4138687, and the store remains PID 163669 with migration 034.
+No API restart was needed. The installed CLI SHA-256 is
+6a49f841b7f940d0e53aaec100828a24b6fc3b48ca439c8fd6acf7d85dbb7c3b; native adapter SHA-256 is
+92de49181e3a7ff0117364ec6d2556ad593e82a0b2caae183f3a009f2a6bd8b0.
+
+Installation preserved all 83 note versions with inventory SHA-256
+cded6114bc0372275f3ec885545e42e8dd697b3058d062733689444e396f404f, plus canonical native session
+defaults, recent-file plugin, credentials and the prepared semantic worker.
+The ordinary hosted profile then captured one selected task finding through the
+installed native adapter under task `capture-scope`, wildcard run. It retains
+scope-test fixture mistakes and source pointers for task follow-up. Fresh native
+retrieval returned the exact body, identical capture retry reused the record,
+and another task omitted it. This is operational capture/retrieval without an
+answering-model task or a new task-value claim.
+
+The selected note is 56cd4054-9425-428a-832c-3e29243e5b62 v1, body SHA-256
+2eb7fa4c90f4d4dc154e52dd9cc8f021e031d101c88dc656bb942541b960afbd. OpenCode procedure v18→v19 and Codex procedure v9→v10
+then gained the new capture instructions through ordinary append updates.
+Fresh retrieval verified complete updated bodies, unchanged prior text and
+metadata, and retained earlier versions. There are now 86 note versions; all
+83 preceding versions still match their original inventory when the three
+deliberate additions are excluded. Services and preserved files remain unchanged.
+[Installed evidence and limits](verification/native-capture-scope-2026-09-10.md#installed-verification).
+All earlier implementation history remains intact.

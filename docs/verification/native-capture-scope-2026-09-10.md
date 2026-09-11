@@ -72,3 +72,35 @@ independent execution, automatic task propagation and sustained task-value
 assessment remain separate requirements. Upgrade the MCP binary and restart
 its host process, or update the bundled native OpenCode adapter. Existing API
 and database contracts suffice; ordinary edits still cannot change note scope.
+
+
+## Installed verification
+
+Clean CLI/native adapter `797aafe` is installed. Both jobs and all
+steps in [CI run 34550429040](https://github.com/halbritt/cairn/actions/runs/34550429040)
+completed successfully. A fresh MCP process identifies that revision and exposes
+the capture scope argument. Existing MCP processes retain their original build
+until restarted.
+
+The API remains `b171a8b`, PID 4138687; the store remains PID 163669 at migration
+034. Installation preserved all 83 existing note versions and the canonical
+OpenCode settings, recent-file plugin, credentials and prepared semantic worker.
+The CLI SHA-256 is `6a49f841b7f940d0e53aaec100828a24b6fc3b48ca439c8fd6acf7d85dbb7c3b`;
+the native adapter SHA-256 is `92de49181e3a7ff0117364ec6d2556ad593e82a0b2caae183f3a009f2a6bd8b0`.
+
+The installed adapter then saved a selected finding from this task through the
+ordinary hosted profile, using `scope: "task"` with task `capture-scope`. It retains
+the actual fixture mistakes and their source pointers for follow-up on this task.
+A fresh native session pulled the exact selected body, an identical capture retry
+returned the same record, and another task omitted it. The canonical project
+kept its default session scope. This adds one intentional operational note,
+`56cd4054-9425-428a-832c-3e29243e5b62` v1, body SHA-256
+`2eb7fa4c90f4d4dc154e52dd9cc8f021e031d101c88dc656bb942541b960afbd`. No answering-model task was run.
+
+The OpenCode procedure was extended v18→v19 and Codex procedure v9→v10 with the
+new capture choice and upgrade instructions. Fresh retrieval verified both full
+updated bodies; previous text, metadata and exact earlier versions remain.
+There are now 86 note versions. Excluding those three deliberate additions,
+the inventory still matches all 83 pre-install versions. The API/store processes
+and preserved installation files remain unchanged. These are installed operation
+and continuity checks, not an incremental task-value result.

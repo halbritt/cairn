@@ -234,5 +234,140 @@
         "rationale": "The existing Scope and create request representations remain; no data structure, ordering, caching or performance change is proposed. Three capture choices translate directly to existing labels."
       }
     ]
+  },
+  "installation": {
+    "commit": "797aafedd70cfea2fb56f6f10087ac5519f04e14",
+    "cli_sha256": "6a49f841b7f940d0e53aaec100828a24b6fc3b48ca439c8fd6acf7d85dbb7c3b",
+    "adapter_sha256": "92de49181e3a7ff0117364ec6d2556ad593e82a0b2caae183f3a009f2a6bd8b0",
+    "api": {
+      "schema": "cairn.build/1",
+      "go_version": "go1.25.0",
+      "module_version": "v0.0.0-20260910235756-b171a8b78b9b",
+      "vcs": "git",
+      "vcs_revision": "b171a8b78b9b0a889a7718974cb0b4e60b71bfba",
+      "vcs_time": "2026-09-10T23:57:56Z",
+      "vcs_modified": false
+    },
+    "ci_run": 34550429040,
+    "ci_conclusion": "success",
+    "before_versions": {
+      "versions": 83,
+      "sha256": "cded6114bc0372275f3ec885545e42e8dd697b3058d062733689444e396f404f"
+    },
+    "after_install_versions": {
+      "versions": 83,
+      "sha256": "cded6114bc0372275f3ec885545e42e8dd697b3058d062733689444e396f404f"
+    },
+    "post_capture": {
+      "previous_versions_unchanged": {
+        "versions": 83,
+        "sha256": "cded6114bc0372275f3ec885545e42e8dd697b3058d062733689444e396f404f"
+      },
+      "all_versions": {
+        "versions": 86,
+        "sha256": "c0f475ad0e4cea6cd16e9a2437e74a3708e8a3bf95f393cab523e814b6726749"
+      },
+      "added_versions": [
+        {
+          "record_id": "56cd4054-9425-428a-832c-3e29243e5b62",
+          "version": 1
+        },
+        {
+          "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+          "version": 19
+        },
+        {
+          "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+          "version": 10
+        }
+      ],
+      "services": {
+        "cairn-api.service": {
+          "MainPID": "4138687",
+          "ActiveState": "active",
+          "exe_sha256": "55c9428a7870422053fbe5eb0eba7fa60faccb3aceddbce2f0e3484fce406ec7"
+        },
+        "cairn-store.service": {
+          "MainPID": "163669",
+          "ActiveState": "active",
+          "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+        }
+      }
+    },
+    "native_selected_capture": {
+      "opencode_version": "1.18.21",
+      "scope": {
+        "repo": "/home/halbritt/git/cairn",
+        "task_id": "capture-scope",
+        "run_id": "*"
+      },
+      "record_id": "56cd4054-9425-428a-832c-3e29243e5b62",
+      "version": 1,
+      "body_sha256": "2eb7fa4c90f4d4dc154e52dd9cc8f021e031d101c88dc656bb942541b960afbd",
+      "installed_adapter_sha256": "92de49181e3a7ff0117364ec6d2556ad593e82a0b2caae183f3a009f2a6bd8b0",
+      "exact_selected_body_pulled": true,
+      "retry_same_record": true,
+      "other_task_omits_record": true,
+      "project_defaults_preserved": true,
+      "model_inference_calls": 0,
+      "task_value_established": false
+    },
+    "guidance_updates": [
+      {
+        "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+        "before_version": 18,
+        "after_version": 19,
+        "before_sha256": "5e8cb608b4dde3029b917515492efead2522ff1f30387759767fbf92fae8ddd5",
+        "after_sha256": "c0937675324e54bf61d40b81f4b713040e6ed258768f0ec518f82f2ff198a815",
+        "previous_body_and_metadata_preserved": true
+      },
+      {
+        "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+        "before_version": 9,
+        "after_version": 10,
+        "before_sha256": "92d3d1461c35b7543a188406ace2facdfa38ddadb6c152aace89f7de6fa59850",
+        "after_sha256": "1bc6b294dd00918fe130bd7ebd52cf97ab7b399ebf7c1a9173c885216e2aa0e0",
+        "previous_body_and_metadata_preserved": true
+      }
+    ],
+    "fresh_mcp": {
+      "server": {
+        "name": "cairn",
+        "version": "797aafedd70cfea2fb56f6f10087ac5519f04e14"
+      },
+      "capture_scope_schema": {
+        "type": [
+          "null",
+          "string"
+        ],
+        "description": "Capture applicability: repository (default), task, or run. Task uses the host search task across runs; run uses its task and run. Labels come from host configuration or native conversation metadata. Choose explicitly; ordinary edits cannot change scope."
+      }
+    },
+    "artifacts": {
+      "deployment/installation.json": {
+        "path": "/tmp/cairn-capture-scope-20260910/deployment/installation.json",
+        "sha256": "7afc733a95015570a04f5e6253465676799e0115137ccad52025d62b9c7face7"
+      },
+      "installed-native/report.json": {
+        "path": "/tmp/cairn-capture-scope-20260910/installed-native/report.json",
+        "sha256": "e26212d0804aa287bad9e23160cdb10cd98b3334abd1a661345991fd49ce1c8e"
+      },
+      "installed-mcp.json": {
+        "path": "/tmp/cairn-capture-scope-20260910/installed-mcp.json",
+        "sha256": "5ea2920b0fb3bcb4d4e039bc80b1cef425dd9748c90a14f7141d42936e557697"
+      },
+      "guidance-updates.json": {
+        "path": "/tmp/cairn-capture-scope-20260910/guidance-updates.json",
+        "sha256": "0bb338ed4c3421fad03b770e5c66e1d5a10f935e72de6ceaecd86624d381ea2b"
+      },
+      "post-capture.json": {
+        "path": "/tmp/cairn-capture-scope-20260910/post-capture.json",
+        "sha256": "253543ee8469ef6245cc0f7c7c750162df700fc7d1a8ff9a9b49dc0ad21a8944"
+      },
+      "ci.json": {
+        "path": "/tmp/cairn-capture-scope-20260910/ci.json",
+        "sha256": "fd8692826a954b40028185212f0c77515c66940f65fec2ce54653d2f531d8f1c"
+      }
+    }
   }
 }
