@@ -18,6 +18,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Expose the review tools in Codex configuration.** `codex-config` now includes
+  `cairn_assessments` and `cairn_assess`. Existing allowlists need both names and
+  a fresh session; upgrading the binary alone does not add them. Native Codex
+  discovery and the review workflow passed.
+  [Correction and checks](docs/verification/codex-review-allowlist-2026-09-10.md).
+
 - **Review a task through native memory tools.** MCP and the OpenCode adapter
   add `cairn_assessments` and `cairn_assess` for owned assessment history and
   qualitative review writes. Reasons, earlier revisions and uncertainty remain;

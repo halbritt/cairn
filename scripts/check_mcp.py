@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import json
 import select
 import subprocess
+import tomllib
 import uuid
 
 from check_ordinary_citations import check_harness as check_citations
@@ -23,7 +24,14 @@ def session(binary, root, environment, extra_args=(), generated=False):
     command = [binary, 'mcp', '--socket', str(root / 'api.sock'), '--token-file',
                str(root / 'hosted-agent.token'), '--repo', 'fixture:socket',
                '--task', 'mcp-integration', '--run', 'stdio', '--tokens', '64000', *extra_args]
-    if generated:
+    enabled_tools = None
+    if generated == 'codex':
+        rendered = subprocess.run([binary, 'codex-config', *command[2:]],
+                                  capture_output=True, text=True, check=True, env=env, timeout=5)
+        server = tomllib.loads(rendered.stdout)['mcp_servers']['cairn']
+        command = [server['command'], *server['args']]
+        enabled_tools = set(server['enabled_tools'])
+    elif generated:
         generator_args = ['claude-config', *command[2:]] if generated == 'claude' else ['opencode-config', *command[2:], '--memory-only']
         rendered = subprocess.run([binary, *generator_args],
                                   capture_output=True, text=True, check=True, env=env, timeout=5)
@@ -77,6 +85,8 @@ def session(binary, root, environment, extra_args=(), generated=False):
         send(dict(method='notifications/initialized', params={}))
         names = {t['name'] for t in request('tools/list', {})['tools']}
         assert names == {'cairn_search', 'cairn_pull', 'cairn_pull_evidence', 'cairn_remember', 'cairn_edit', 'cairn_history', 'cairn_assess', 'cairn_assessments'}, names
+        if enabled_tools is not None:
+            assert enabled_tools == names, ('Codex allowlist differs from shipped tools', enabled_tools, names)
         yield tool
     finally:
         process.stdin.close()
@@ -177,6 +187,8 @@ def check(binary, root, environment, claim, support):
         view = tool('cairn_search', dict(query=query))
         entry = next(e for e in view['index'] if e['record_id'] == saved['record_id'])
         assert tool('cairn_pull', entry['pull_arguments'])['selection']['record']['body'] == draft['body']
+    with session(binary, root, environment, generated='codex'):
+        pass  # Initialization compares the generated allowlist with actual MCP discovery.
     if environment.get('CAIRN_CLAUDE_BINARY'):
         from check_claude_config import check as check_claude
         check_claude(environment['CAIRN_CLAUDE_BINARY'], binary, root)

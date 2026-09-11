@@ -22,6 +22,10 @@ acceptance boundaries; full Stage 1–2 completion is not claimed.
 [Native review tools](use-outcome-loop.md#native-review-tools) now support owned
 assessment history and qualitative writes in MCP and OpenCode. Disposable
 interface checks passed; the CLI/MCP and native adapter are installed at `2ef6e04`.
+A [Codex allowlist correction](verification/codex-review-allowlist-2026-09-10.md)
+fixes a missed configuration step: native discovery and review checks passed,
+and this project's allowlist now includes both tools. Clean-build installation
+of the corrected generator is pending.
 
 A [worked qualitative review](use-outcome-loop.md#record-a-qualitative-review)
 now covers authenticated assessment writes, exact retry and history read-back.
@@ -4812,3 +4816,29 @@ net savings or human acceptance is inferred. The full narrative stays in owned
 assessment history; its selected identifiers and hash are in the manifest.
 This completes installed adoption of the interfaces, while review quality and
 durable task benefit remain open.
+
+### Codex review-tool allowlist corrected — 2026-09-10
+
+The previous installation preserved an explicit Codex allowlist with only six
+tools. Although direct MCP and native OpenCode exposed the review tools, Codex
+could not. The generator had the same omission. The earlier statement that fresh
+harness sessions would load the tools was incomplete; this entry records the
+miss and correction without removing that history.
+
+The generator now includes `cairn_assessments` and `cairn_assess`. A new disposable
+integration check compares its parsed allowlist with actual MCP discovery, so
+independently consistent but mismatched lists cannot pass. The parser check
+failed before the fix; its four cases, `make check` and the full integration
+suite passed after it. Actual Codex 0.153.4 exposed six tools with the old
+generator and eight with the candidate. The latter completed the review workflow,
+including retained reasons/evidence, unknown testimony, retries and conflict
+refusals, without an answering-model turn.
+
+This project's ignored configuration now adds only the two names; other parsed
+settings are unchanged. Documentation explains upgrading existing allowlists and
+removing all three write tools for retrieval-only access. The
+[verification report](verification/codex-review-allowlist-2026-09-10.md) retains
+checks and limits. Clean-build installation remains pending at this checkpoint.
+The stored Codex setup guide v10 also has the six-tool list; its selected
+correction follows installation. These are usability corrections, with additional
+memory benefit and review quality still unestablished.

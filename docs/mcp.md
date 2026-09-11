@@ -255,7 +255,14 @@ duplicate table. The generator does not edit files, set project trust or change
 other tool permissions. Keep paths and profile selection local to the installation.
 Optional startup is the default; `--required` makes Cairn a startup requirement.
 `--tokens` and all existing MCP context flags are forwarded. For retrieval-only
-access, remove `cairn_remember` and `cairn_edit` from the generated `enabled_tools`.
+access, remove `cairn_remember`, `cairn_edit` and `cairn_assess` from the generated
+`enabled_tools`.
+
+Existing allowlists need `cairn_assessments` and `cairn_assess` added explicitly
+to use the [native review tools](use-outcome-loop.md#native-review-tools).
+Upgrading the executable does not rewrite configuration or bypass an allowlist.
+The [Codex repair check](verification/codex-review-allowlist-2026-09-10.md)
+verifies discovery and the review workflow through a fresh native conversation.
 
 The output has this shape (with the selected budget and context flags in `args`):
 
@@ -272,14 +279,16 @@ args = [
 enabled_tools = [
   "cairn_search", "cairn_pull", "cairn_pull_evidence",
   "cairn_remember", "cairn_edit", "cairn_history",
+  "cairn_assessments", "cairn_assess",
 ]
 required = false
 startup_timeout_sec = 15
 ```
 
 Use a provisioned profile authorized for that repository and hosted delivery.
-This example exposes ordinary capture and edit as well as retrieval. Remove
-`cairn_remember` and `cairn_edit` for retrieval-only access. The
+This example exposes ordinary capture, edit and assessment writes as well as
+retrieval. Remove `cairn_remember`, `cairn_edit` and `cairn_assess` for
+retrieval-only access. The
 [native maintenance check](verification/codex-maintenance-2026-09-08.md) saved a
 selected procedure, revised it, and retrieved its current version in a fresh task.
 `--codex-thread` requires each search call to carry `_meta.threadId`. Cairn sets

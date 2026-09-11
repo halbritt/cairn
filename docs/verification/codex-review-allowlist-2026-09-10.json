@@ -1,0 +1,49 @@
+{
+  "baseline_revision": "1ac4e9ed466b78f7f2c5373aef9b42fa359e946e",
+  "source_sha256": {
+    "cmd/cairn/codex_config.go": "8901626529a803c1be1b591d8214563b4de8628e17302430b247f940f52a4c3f",
+    "scripts/check_mcp.py": "2bc5c035ca65658f3860c874ba253d47120478ff45536b18a4605d15a0fdcd31",
+    "scripts/test_codex_config.py": "9aec3383b72f79cfb65149c6c7bfbe1f0837e024400141125c9f31a40fa88e78"
+  },
+  "scratch": "/tmp/cairn-codex-review-allowlist-20260910",
+  "checks": {
+    "red.log": "3e62e58d2097b9a0ad2bc6f61d6b5c78ba6fe9774c11e8ba26ebf87663e43e12",
+    "green.log": "c224bb9e06b938adb1520c84713b51d81032c75e856bb8162d64b182c0a875e5",
+    "check.log": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029",
+    "integration.log": "1837bcf487f379f433c70ea433799fb41edb6619df215835c6397d2205f956da",
+    "native-red.log": "ff5c8ab2aa5eaa1e8ebd12be1bf143538883de77510147ab4f0d19eddb5b7827",
+    "native-green.log": "22c3d93ad4b0b31576141b68480c210c04281d23ddb6cfa573eb142f4e4a253f",
+    "native.py": "7184c79d2ac8e4ee1b384b0687cb407d50228a900d312ac2fdbec98fbfed5a7c",
+    "native.sh": "c0eebd4e955346679c6f73b45ac398a8a2196aab75fcc39200b74ebb3fe32173"
+  },
+  "native": {
+    "status": "passed",
+    "tools": [
+      "cairn_assess",
+      "cairn_assessments",
+      "cairn_edit",
+      "cairn_history",
+      "cairn_pull",
+      "cairn_pull_evidence",
+      "cairn_remember",
+      "cairn_search"
+    ],
+    "thread_id": "01a08ef5-ddd5-79d2-94b3-d4155e47b6ca",
+    "receipt_id": "30ba7b1c-9915-4d33-8e59-30778bd3bbf8",
+    "codex_version": "codex-cli 0.153.4",
+    "config_sha256": "3b8f61dbd2b310fd83a051798889e3c7c92ce34c4f4f9f770973d700c0d53e7e",
+    "model_turns_started": 0,
+    "read_write_history_retry_conflicts": "passed"
+  },
+  "local_configuration": {
+    "path": "/home/halbritt/git/cairn/.codex/config.toml",
+    "before_sha256": "0fc3226320370f8db9b214e4ba042bed802347b450a2481b2e9a87b13b46b8a3",
+    "after_sha256": "cf95c7a6f4f244d0b26e9c4a0063cccd2c3a93ddce473075dd7e0b0abf7d86d0",
+    "added_tools": [
+      "cairn_assessments",
+      "cairn_assess"
+    ],
+    "other_settings_unchanged": true
+  },
+  "installation": "pending clean source build"
+}

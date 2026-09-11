@@ -457,7 +457,9 @@ whole-task accounting.
 Upgrade the MCP executable or reinstall the matching OpenCode adapter, then
 start a fresh harness session. The API must include the
 [assessment binding repair](verification/assessment-binding-2026-09-10.md);
-no database migration is needed. Explicit OpenCode allowlists need
+no database migration is needed. Existing Codex `enabled_tools` lists need both
+review tool names; regenerate or update the Cairn entry and start a fresh session.
+Explicit OpenCode allowlists need
 `cairn_assessments` and `cairn_assess` permissions. With OpenCode's MCP connection,
 the names carry its usual `cairn_cairn_` prefix. Installation does not change
 permissions, and memory-only startup allowlists remain search/pull only.

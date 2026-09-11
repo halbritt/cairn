@@ -189,7 +189,9 @@ settle mechanics without canceling unfinished requirements.
 assessment history and qualitative writes through MCP and OpenCode. This removes
 the separate CLI-script step for those interfaces; interface checks do not close
 task-value requirements. Observe review quality and practical use in subsequent
-work.
+work. The [Codex allowlist correction](verification/codex-review-allowlist-2026-09-10.md)
+closes a missed configuration step with native discovery and review checks;
+it adds no new task-value result.
 
 Owner clarification, 2026-09-09: the desired result is convincing evidence that
 memory creates task value. Mechanical provability is not a requirement for every

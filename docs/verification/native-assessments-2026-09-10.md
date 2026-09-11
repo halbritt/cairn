@@ -77,3 +77,12 @@ an independent reviewer or new answering-model run. It demonstrates recording
 that uncertainty during actual work. It does not establish task benefit. The
 manifest retains its receipt, request, version and reason hash; the narrative
 remains in the owned assessment history.
+
+## Codex configuration correction
+
+The installation above preserved a Codex allowlist that still named six tools.
+Its fresh-session statement was therefore incomplete: direct MCP and OpenCode
+could expose the new tools, but this Codex configuration could not. The
+[follow-up correction](codex-review-allowlist-2026-09-10.md) adds both names to
+the generator and local project allowlist and verifies the workflow through a
+fresh native Codex conversation. The earlier results and chronology remain above.

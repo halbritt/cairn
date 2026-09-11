@@ -50,7 +50,8 @@ class CodexConfigTest(unittest.TestCase):
                          '--token-file', str(self.root / token), '--repo', 'repo:fixture',
                          '--task', task, '--run', run, '--tokens', '64000', *pins])
         self.assertEqual(server['enabled_tools'], ['cairn_search', 'cairn_pull',
-                         'cairn_pull_evidence', 'cairn_remember', 'cairn_edit', 'cairn_history'])
+                         'cairn_pull_evidence', 'cairn_remember', 'cairn_edit', 'cairn_history',
+                         'cairn_assessments', 'cairn_assess'])
         self.assertFalse(server['required'])
         self.assertEqual(server['startup_timeout_sec'], 15)
         self.assertEqual(set(server), {'command', 'args', 'enabled_tools',
