@@ -26,6 +26,12 @@ OpenCode authoring attempt timed out after source-read permission denials;
 [the retained review](verification/qualitative-review-example-2026-09-10.md)
 records that failure separately from the root-authored documentation.
 
+A [native guide-maintenance task](verification/native-guide-maintenance-2026-09-10.md)
+now adds one reviewed OpenCode update to an existing operational procedure.
+The old guide survived intact; a root formatting correction followed the native
+append. This supports practical memory maintenance, with downstream benefit and
+net savings still unknown.
+
 The installed CLI/API are clean `4e75ed1`; the native OpenCode adapter remains
 from `797aafe`. [Use-report expansion observations](verification/expansion-observation-2026-09-10.md)
 keep a retained instrumented expansion visible alongside later testimony or
@@ -4659,3 +4665,36 @@ answering-model run was launched after local completion. The original run and
 failed checks remain in the [review and manifest](verification/qualitative-review-example-2026-09-10.md).
 The task-value inventory includes the negative observation; U1/U4/U5 and E4/D2
 remain open. All previous implementation history is preserved.
+
+
+### Native assessment-guide maintenance — 2026-09-10
+
+OpenCode updated the existing assessment-history procedure from the checked-in
+qualitative write example at `22fb971`. The task used the corrected private Git
+snapshot and exact relative read permission from the preceding investigation.
+Its earlier failed documentation-authoring attempt remains a separate result.
+
+The native run completed in 100.549 seconds with two searches, a successful
+source read, two full pulls and one append. It pulled procedure v1 before editing
+and v2 afterward. Seven provider requests completed without relay refusal,
+reporting $0.004850411; local setup and review effort are not priced. The task's
+source and target note were supplied explicitly, so this does not measure an
+optional-memory advantage.
+
+Independent review found the 137-word addition accurate and confirmed all prior
+text, metadata and retained versions survived. Only the intended note changed.
+A missing paragraph separator required a root correction: v3 inserts two newline
+bytes and preserves every native word, while v2 retains the original defect.
+The ordinary-version inventory moved from 89 to 90 during native work and 91
+following that correction, with all prior fingerprints unchanged. A fresh root
+search/pull verified current v3.
+
+Both native retrievals are linked to the observed run. Its evidence-attached
+assessment accepts substantive maintenance with the formatting finding and root
+correction explicitly stated, under delegated coding-agent review. It establishes
+no new human acceptance, downstream task benefit or net savings. The [review and
+selected manifest](verification/native-guide-maintenance-2026-09-10.md) retain
+counts, source and artifact hashes, record versions, costs and acceptance limits.
+The existing maintenance case now includes native updating of a Codex-maintained
+guide. No production code, installed build, profile, schema or roadmap requirement
+changed; the full earlier implementation history is preserved.

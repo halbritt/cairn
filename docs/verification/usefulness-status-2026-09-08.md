@@ -71,6 +71,14 @@ The coding agent subsequently wrote and tested the documentation example. This
 adds an implemented workflow and a retained negative attempt, not another
 successful memory-assisted task or evidence that memory has no value.
 
+The [native guide-maintenance follow-up](native-guide-maintenance-2026-09-10.md)
+completed an update to the operational assessment procedure, preserving its
+previous text and metadata. The coding agent accepted the substantive addition
+and corrected a missing paragraph break. This extends the maintenance case:
+an existing guide can be maintained through another harness with review. Memory
+was the work product, and the prompt named the source and note. Downstream
+benefit and net savings remain unknown.
+
 ## Earlier inventory and trial plan — retained history
 
 The following inventory and proposed next comparison were written before the

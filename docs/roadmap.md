@@ -241,6 +241,11 @@ the attempted native authoring run failed source-read permissions and produced n
 candidate. The [retained result](verification/qualitative-review-example-2026-09-10.md)
 does not close any task-value requirement.
 
+A subsequent [native maintenance task](verification/native-guide-maintenance-2026-09-10.md)
+updated the stored assessment guide from that example, preserving its earlier
+text and requiring only a root paragraph-break correction. It supports reviewed
+maintenance through existing tools; downstream value and net savings are unknown.
+
 Authenticated agents and observers can now inspect their own complete assessment
 versions with `agent assessments` and an exact receipt ID, including narrative
 reasons and evidence references. The profile must match the receipt's owner,
