@@ -4427,3 +4427,31 @@ The unresolved optional full native-suite timeouts remain recorded above. Passin
 CI and isolated sessions do not erase them or establish an incremental memory
 benefit. This closes the setup repair; broader task value and roadmap requirements
 remain open.
+
+
+### Semantic idle-restart experiment — 2026-09-10
+
+An actual hosted-profile semantic search began without an API child and took
+22.629 seconds; its immediate repeat took 0.125 seconds with the same complete
+score digest. Current worker guidance recovered the earlier inference profile
+and rejected thread/batch experiments. Source review identified the remaining
+idle-release loss of cached vectors.
+
+A scratch candidate restored exact passage vectors into a fresh scoring process.
+Three alternating pairs on two fixed public repository documents took
+11.41–11.65 seconds cold and 0.58–0.66 seconds restored, with identical complete
+source-bound results and lower process peak RSS. Restoring 51,014 serialized bytes
+reduced actual model inputs from 25 to 1. An appended note recomputed one passage;
+removed passages were dropped; a different snapshot model identity forced cold
+recomputation. All pairs met the prospective latency, state-size and RSS bounds.
+
+The [report](verification/semantic-idle-snapshot-2026-09-10.md) and
+[manifest](verification/semantic-idle-snapshot-2026-09-10.json) preserve both sides
+of the comparison and its fixed-workload limits. No API/worker change was installed
+and no production test suite was rerun for the experimental documentation.
+The selected next implementation retains a bounded snapshot in API memory across
+idle release only, with lifecycle, compatibility, output-bound and actual API
+eligibility checks required before installation. It adds no disk cache or new
+service. The installed CLI/API/worker and note versions remain unchanged.
+The comparison establishes a promising retrieval-cost improvement; broader task
+value and the roadmap remain open.

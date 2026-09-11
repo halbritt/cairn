@@ -511,6 +511,16 @@ native ingress, full task acceptance or general usefulness.
 
 ### 3. Make retrieval current and evaluate real history
 
+A [fresh-process snapshot experiment](verification/semantic-idle-snapshot-2026-09-10.md)
+now supports retaining a bounded vector snapshot in API memory across idle worker
+release. Three fixed-document comparisons fell from 11.41–11.65 to 0.58–0.66 seconds
+with identical complete results. The snapshot is 51,014 serialized bytes. This is
+not installed: implement transport ownership, explicit protocol compatibility and
+private bounded state, then verify real idle restart, cancellation/shutdown,
+current eligibility and score preservation before deployment. Keep disk storage
+and a longer request deadline out of this change. The installed five-minute idle
+setting and current worker remain; independent task benefit is still open.
+
 [Passage vector reuse](verification/semantic-chunk-cache-2026-09-10.md) reduces
 scoring after localized edits within a live worker: three public-document appends
 fell from 4.15–4.53 to 0.24–0.28 seconds with identical complete responses. Existing
