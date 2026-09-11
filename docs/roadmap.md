@@ -273,6 +273,13 @@ deletion and recovery work proceeds alongside this sequence and gates consequent
 or sensitive operation at scale. A protected record of a blocked request is a
 contract repair, not completion of the later generated-demand product.
 
+A [reviewed performance case](verification/performance-memory-value-2026-09-10.md)
+adds a qualified continuity observation: prior experiment guidance remained
+available during a completed passage-cache optimization. Its measured retrieval
+speedup is separate from the inferred memory contribution. Conversation/source
+overlap, self-review, conditional workload and unknown total cost remain explicit.
+This does not close broader task value or add a new acceptance score.
+
 ### 1. Repair the existing surface
 
 | ID | Status | Work and acceptance evidence |

@@ -4292,3 +4292,22 @@ v17 body were verified. The new body SHA-256 is
 This deliberate guidance update adds one version after the installation check.
 Earlier history remains intact. Broader task value, automatic propagation and
 observed native execution requirements remain open.
+
+
+### 2026-09-10 — review memory contribution during retrieval optimization
+
+Added a retrospective performance-memory case to the task-value inventory. The
+review verified eleven original artifact hashes, eight frozen request/response
+identity sets, the three append measurements, the profile's ten-to-two inference
+input reduction, and exact historical semantic guidance v9. It records one
+qualified positive continuity case: earlier experimental findings were available
+during useful engineering work. Source inspection found the optimization, and
+the measured speedup is not attributed causally to memory.
+
+The review explicitly retains overlapping handoff/conversation and source
+context, investigator self-review, unknown total cost and the conditional edit
+workload. The original comparison checked both responses in memory but retained
+one response per pair; the review records that audit limitation. No new model
+trial, benchmark rerun, task acceptance, authority/ranking change or note
+revision was performed. Existing results and all earlier history remain.
+[Review and evidence](verification/performance-memory-value-2026-09-10.md).

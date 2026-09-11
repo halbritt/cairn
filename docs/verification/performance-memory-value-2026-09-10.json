@@ -1,0 +1,176 @@
+{
+  "date": "2026-09-10",
+  "reviewer": "Cairn coding agent; self-review of related work",
+  "scope": "Retrospective contribution review of the completed passage-cache task; prior comparisons are context, not pooled replications",
+  "feature_commit": "d3edaa29bf82fce3572aebf786b69439b37869ca",
+  "search_receipt_id": "4636f4c7-6fde-4d16-a7b9-048d813fa03c",
+  "lesson": {
+    "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+    "version": 9,
+    "body_sha256": "0d4370853ef619383ace281aa0d7d0bf7abb3c4d2bdc28cab4c05fb03cf59abf"
+  },
+  "checked_artifacts": [
+    {
+      "name": "plan.json",
+      "path": "/tmp/cairn-semantic-chunks-20260910/plan.json",
+      "sha256": "708eb5d0d51553c5d120acdd434c4e693bcba608bc9f844a9f03def47cc71a23"
+    },
+    {
+      "name": "compare.py",
+      "path": "/tmp/cairn-semantic-chunks-20260910/compare.py",
+      "sha256": "ed2b91a837c841a19028629a8cfc1d21c17fd44d9a949a9b8c529870d6c7fe4b"
+    },
+    {
+      "name": "red.log",
+      "path": "/tmp/cairn-semantic-chunks-20260910/red.log",
+      "sha256": "e4266bfafd5ac289c1e24fb60d028846e09178e3f13331dac3f0d6e75f86a824"
+    },
+    {
+      "name": "green.log",
+      "path": "/tmp/cairn-semantic-chunks-20260910/green.log",
+      "sha256": "c2df19fc34f90644612bac9fe8df850ec9a701be2f8542c65752f8d184e48147"
+    },
+    {
+      "name": "test.log",
+      "path": "/tmp/cairn-semantic-chunks-20260910/test.log",
+      "sha256": "55d27d195779f28e715bf5ae1f475d1680bea723b13eac8a1eecbea0a6beffa0"
+    },
+    {
+      "name": "deadline-rerun.log",
+      "path": "/tmp/cairn-semantic-chunks-20260910/deadline-rerun.log",
+      "sha256": "f526cee94ad59bd46f856668b7d56e6b5913b103210e4c6218f2f76aa1f84fc2"
+    },
+    {
+      "name": "python.log",
+      "path": "/tmp/cairn-semantic-chunks-20260910/python.log",
+      "sha256": "7deb7425ce3638b1764a86740ce837268fe0aa46de6e1f6c41edf95706937cb6"
+    },
+    {
+      "name": "integration.log",
+      "path": "/tmp/cairn-semantic-chunks-20260910/integration.log",
+      "sha256": "a24b0efa60aafce20f3407cc3407715b3bae454c7de281c66fde136ec512a533"
+    },
+    {
+      "name": "api/report.json",
+      "path": "/tmp/cairn-semantic-chunks-20260910/api/report.json",
+      "sha256": "f164fdb362b87197a5b4a10cc531f7a0b6d521fc8b7fb82fd0fd6b62f3c0045d"
+    },
+    {
+      "name": "check.log",
+      "path": "/tmp/cairn-semantic-chunks-20260910/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "name": "decision-receipt.json",
+      "path": "/tmp/cairn-semantic-chunks-20260910/decision-receipt.json",
+      "sha256": "f13ab03ed9e8aaa7880a9692c6a8d22e8d601194d1296eadad5e0b3c3b2f3b27"
+    }
+  ],
+  "requests": [
+    {
+      "label": "cold",
+      "request_sha256": "286f77a2119dd1958250a7f57b6c80bf338ef69b82d81d1e17420d976c0c903d",
+      "retained_response_sha256": "0116df43a0ab8f040db8ff1e06facdb922a5a1509336c23838747e4fb0e87db6"
+    },
+    {
+      "label": "warm",
+      "request_sha256": "edbd5841d9b1b5e4c5b83082d7e524c610e75ad1a73a667ffaf719f2bbab3a30",
+      "retained_response_sha256": "ee0bb2ecdde7067f707f824aac68ce91f2ca1a73afe9842e832d089d70fab1b7"
+    },
+    {
+      "label": "append-0",
+      "request_sha256": "edad3447beec36591797303609cc4f04a74ebd7c6692549d005d6915a22f6770",
+      "retained_response_sha256": "2167a6ab06faa00ab54a317b62fb3d3717b4ceb51561c1304c20c888f39a3b99"
+    },
+    {
+      "label": "append-1",
+      "request_sha256": "4e56cfe897b1ad663bf0bd29c17bb6d10ce49a69ab30ae6216fbe3339958758e",
+      "retained_response_sha256": "cb306d3233e865c67200314b9df93e10fa2e401bee65d49bd440edee9e36b357"
+    },
+    {
+      "label": "append-2",
+      "request_sha256": "79dbe8f094356c2722bb1b3b767efcca95495d381019b30b491897191b2bab1c",
+      "retained_response_sha256": "57d9b546f6ba3cde3f4070dfb20d55833e4b3fe40e567366888d27f9aef9f799"
+    },
+    {
+      "label": "remove",
+      "request_sha256": "5ef0fcea0da750b2ff967263e6135e5dafa47108c01807e30bff321f98c6906d",
+      "retained_response_sha256": "252f4b232d20f3d44138a6cb30c4f2ea249435e372eb3e92661474de64d8f476"
+    },
+    {
+      "label": "reintroduce",
+      "request_sha256": "8f57ef301e15e575487d9234cfb8f18454ba85ba0948cfe2aba77b10cfffc3fa",
+      "retained_response_sha256": "fd552bcded823f19266208b80c2e7b16a352c3c384a7d6a599c1c2a8058256fe"
+    },
+    {
+      "label": "duplicate",
+      "request_sha256": "4a37a5c3e25b4133deece5ebf1e795c2068bb6014f8d9ada4696f1804aa5e84c",
+      "retained_response_sha256": "209126cb03c2160422f95ab5f5c000eb494301ffa3a4dded2deb2c17a61a5227"
+    }
+  ],
+  "append_pairs": [
+    {
+      "label": "append-0",
+      "baseline_seconds": 4.281450942158699,
+      "candidate_seconds": 0.23629453498870134
+    },
+    {
+      "label": "append-1",
+      "baseline_seconds": 4.525292420992628,
+      "candidate_seconds": 0.2810924469958991
+    },
+    {
+      "label": "append-2",
+      "baseline_seconds": 4.151999182999134,
+      "candidate_seconds": 0.26549802999943495
+    }
+  ],
+  "profile": [
+    {
+      "input_count": 10,
+      "embed_seconds": 4.072579036001116,
+      "condition": "baseline",
+      "score_seconds": 4.083229359006509,
+      "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+      "response_sha256": "c4412e69a1a498967af7c317de1852f0325245bcf261bc7a68af399856a21573"
+    },
+    {
+      "input_count": 2,
+      "embed_seconds": 0.21997057693079114,
+      "condition": "candidate",
+      "score_seconds": 0.2312868491280824,
+      "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+      "response_sha256": "c4412e69a1a498967af7c317de1852f0325245bcf261bc7a68af399856a21573"
+    }
+  ],
+  "inspection_limits": [
+    "The retained comparison stores one response per pair; original in-process equality assertions are the witness for both outputs, not a retained second independent output.",
+    "Search index verifies availability; the contemporaneous report and coding-agent account describe how guidance influenced decisions.",
+    "Current conversation/handoff and direct repository sources overlap the saved guidance.",
+    "No new model trial, benchmark rerun, assessment mutation or memory promotion.",
+    "Total retrieval, maintenance, evaluation and implementation cost is unavailable."
+  ],
+  "assessment": {
+    "judgment": "Qualified positive continuity case; incremental and net memory contribution unknown",
+    "witness": "Coding agent self-review, overlapping conversation and source context",
+    "no_new_task_acceptance": true,
+    "no_new_runtime_or_ranking_change": true
+  },
+  "audit_script": {
+    "path": "/tmp/cairn-performance-value-20260910/audit.py",
+    "sha256": "df26552aef396c8c99fd865efa328b3e8f1769805e7b7ca8828d46bd24a3d333"
+  },
+  "doctrine": {
+    "packet_id": "pkt-2e748e09b047890b",
+    "packet_content_sha256": "2e748e09b047890bf9767b8a4d3d4580880eba0c7cd982fe185b428dc1abfe14",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "receipt_path": "/tmp/cairn-performance-value-20260910/decision-receipt.json",
+    "receipt_sha256": "4615859c100b26af53bd5efb0d5a1e55668c42035f857378459a065653866d1a",
+    "residual_obligations_path": "/tmp/cairn-performance-value-20260910/residual-obligations.json",
+    "residual_obligations_sha256": "d35d5682a1ede469b04d23c8e9a14075950180d19b4455fefff71d0a61325a66",
+    "residual_count": 37,
+    "limits": "Generic engineering guidance does not establish causal memory value; owner evaluation direction and actual case evidence govern."
+  }
+}
