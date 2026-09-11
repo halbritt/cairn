@@ -73,6 +73,21 @@ after `--` is not a help request. This is CLI behavior; no API upgrade is needed
 Other commands retain their existing help handling.
 
 
+## Setup text and scope
+
+Startup and all three configuration generators require well-formed UTF-8 text
+without NUL. Explicit repository/task/run IDs must be nonblank, not `*`, and
+at most 256 bytes each. Labels retain spaces and case; the limit counts UTF-8
+bytes, not characters. `--codex-thread` still omits task/run settings and uses
+its existing native metadata checks. Context pins retain API validation of their
+semantic meaning at retrieval time.
+
+Invalid text or scope refuses before configuration output or credential access.
+A generated configuration still needs a usable profile and running API to connect.
+Intentional U+FFFD is allowed; malformed byte strings are refused rather than
+replaced. Update the setup/MCP executable for these checks.
+[Reproduction and verification](verification/harness-configuration-text-2026-09-10.md).
+
 ## Tools
 
 | Tool | Inputs and behavior |

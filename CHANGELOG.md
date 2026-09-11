@@ -18,6 +18,13 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Refuse unusable harness settings before installation.** MCP startup and
+  configuration generators enforce the existing scope byte limit. OpenCode
+  setup now refuses malformed UTF-8 instead of silently replacing characters;
+  configuration text and paths reject NUL. Valid Unicode remains unchanged.
+  [Repair and checks](docs/verification/harness-configuration-text-2026-09-10.md).
+  Update the CLI; the existing API and database suffice.
+
 - **Save guidance for one task or run.** Native MCP and OpenCode
   `cairn_remember` accept `scope: "task"` or `"run"`, using the host's search
   labels. Repository-wide capture remains the default. Update the MCP binary or

@@ -49,7 +49,10 @@ labels and a sum of API receipts do not establish that remaining context.
 The [harness command help repair](verification/harness-help-2026-09-10.md) now exposes
 registered setup flags offline for MCP and all three configuration generators.
 It resolves a failed help request from installation work; broader ingress and
-task-benefit requirements remain open.
+task-benefit requirements remain open. The [setup text repair](verification/harness-configuration-text-2026-09-10.md)
+also refuses malformed configuration strings and overlong scope at setup. It
+repairs observed output/installation corruption while preserving valid labels;
+it adds no model-task acceptance or incremental memory-value claim.
 
 The [Codex configuration generator](verification/codex-config-2026-09-09.md) now
 emits a TOML entry from the same connection/context flags, using conversation or

@@ -4374,3 +4374,35 @@ metadata, and retained earlier versions. There are now 86 note versions; all
 deliberate additions are excluded. Services and preserved files remain unchanged.
 [Installed evidence and limits](verification/native-capture-scope-2026-09-10.md#installed-verification).
 All earlier implementation history remains intact.
+
+
+### Harness configuration text repair — 2026-09-10
+
+MCP startup and all three configuration generators now reject scope identifiers
+above the store's 256-byte limit. OpenCode configuration and native installation
+refuse malformed UTF-8 before JSON encoding can change it to U+FFFD. Configuration
+arguments and paths also reject NUL. Valid Unicode, intentional U+FFFD, literal
+escapes and exact 256-byte labels remain usable. Existing startup and command
+construction own the checks; the API retains context-pin semantics.
+
+Installed baseline `797aafe` reproduced both defects with synthetic arguments.
+A raw-output scan initially missed JSON-escaped replacement characters; decoding
+the arguments exposed the changed values. Focused red/green tests, actual offline
+CLI round trips, standard disposable integration, static checks and 43 Python
+tests passed. No production database was used for fixtures.
+
+Three full runs with optional OpenCode checks timed out at 60 seconds: first in
+the large-note session, then twice in recent-file sessions. Both unchanged session
+checks passed separately; the recent-file run passed all five cases. Retained
+failure logs show only a title request and no main tool calls, with snapshot
+tracking as the last log entry. A later process check found no Git process;
+attaching a syscall tracer was refused. The cause remains unknown. No timeout or
+automatic retry policy changed, and a full optional native-suite pass is not
+claimed. The adapter source is unchanged.
+
+The [repair report](verification/harness-configuration-text-2026-09-10.md) and
+[manifest](verification/harness-configuration-text-2026-09-10.json) retain the
+checks and limits. Source comparison found the defect; recalled Unicode guidance
+subsequently informed the validation boundary. This is a verified setup repair,
+with no independent memory-value attribution. Installation and CI are recorded
+in the subsequent checkpoint when completed.

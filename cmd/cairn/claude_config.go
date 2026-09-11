@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
-	"unicode/utf8"
 )
 
 type claudeMemoryConfig struct {
@@ -34,7 +33,7 @@ func writeClaudeConfig(out io.Writer, args []string, executable string) error {
 		return err
 	}
 	for _, arg := range command {
-		if !utf8.ValidString(arg) || strings.Contains(arg, "${") {
+		if strings.Contains(arg, "${") {
 			return invalid("Claude configuration requires UTF-8 arguments without environment expansion (${)")
 		}
 	}

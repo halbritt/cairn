@@ -147,6 +147,11 @@ declared scope as an [explicit startup](compact-start.md) or another harness.
 The labels are declarations, not native session IDs or evidence that executions
 are independent. Both omitted retains the existing native scope.
 
+All installer configuration values and paths must be well-formed UTF-8 without
+NUL. Invalid text refuses before writing or replacing files; valid Unicode and
+intentional U+FFFD are preserved. [Setup text checks](verification/harness-configuration-text-2026-09-10.md)
+cover generated MCP configuration as well as native installation.
+
 Identifiers must contain 1–256 UTF-8 bytes, with nonblank text, no NUL and no
 wildcard `*`. They retain case, spaces and punctuation exactly. The installer
 refuses invalid scope before writing files. Hand-maintained connection files

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"unicode/utf8"
 )
 
 func writeCodexConfig(out io.Writer, args []string, executable string) error {
@@ -24,9 +23,6 @@ func writeCodexConfig(out io.Writer, args []string, executable string) error {
 	}
 	quoted := make([]string, len(command))
 	for i, arg := range command {
-		if !utf8.ValidString(arg) {
-			return invalid("Codex configuration requires UTF-8 arguments")
-		}
 		encoded, err := json.Marshal(arg)
 		if err != nil {
 			return err

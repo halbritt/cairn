@@ -39,6 +39,9 @@ func (o *mcpOptions) validate(positional int) error {
 	if positional != 0 || o.socket == "" || o.token == "" {
 		return invalid("MCP requires --socket and --token-file and accepts no positional arguments")
 	}
+	if err := validateHarnessText(o.socket, o.token); err != nil {
+		return err
+	}
 	if o.pins != (core.ContextPins{}) {
 		o.config.Context = &o.pins
 	}

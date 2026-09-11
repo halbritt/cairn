@@ -27,9 +27,11 @@ from check_binary_evidence import check as check_binary_evidence
 from check_json_unicode import check as check_json_unicode
 from check_ordinary_citations import check_cli as check_ordinary_citations
 from check_harness_help import check as check_harness_help
+from check_harness_configuration import check as check_harness_configuration
 
 binary, home = sys.argv[1:]
 check_harness_help(binary)
+check_harness_configuration(binary)
 root = Path(home)
 root.mkdir(mode=0o700)
 token = secrets.token_urlsafe(32)

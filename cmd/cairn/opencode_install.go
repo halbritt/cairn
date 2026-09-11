@@ -89,6 +89,13 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 			settings.Context[strings.ReplaceAll(name, "-", "_")] = *value
 		}
 	}
+	text := []string{settings.Executable, settings.Socket, settings.TokenFile, settings.Repo, *project}
+	for _, value := range settings.Context {
+		text = append(text, value)
+	}
+	if err := validateHarnessText(text...); err != nil {
+		return result, err
+	}
 	for _, path := range []*string{&settings.Executable, &settings.Socket, &settings.TokenFile, project} {
 		absolute, err := filepath.Abs(*path)
 		if err != nil {
@@ -106,6 +113,9 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 	}
 	if !info.IsDir() {
 		return result, invalid("project must be an existing directory")
+	}
+	if err := validateHarnessText(settings.Executable, settings.Socket, settings.TokenFile, resolved); err != nil {
+		return result, err
 	}
 	result.Project = resolved
 	directory := filepath.Join(resolved, ".opencode")

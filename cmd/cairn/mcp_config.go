@@ -3,6 +3,8 @@ package main
 import (
 	"path/filepath"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 )
 
 func (o *mcpOptions) command(executable string) ([]string, error) {
@@ -29,5 +31,18 @@ func (o *mcpOptions) command(executable string) ([]string, error) {
 			command = append(command, pin[0], pin[1])
 		}
 	}
+	if err := validateHarnessText(command...); err != nil {
+		return nil, err
+	}
 	return command, nil
+}
+
+// Configuration must preserve text before JSON/TOML encoding or process launch.
+func validateHarnessText(values ...string) error {
+	for _, arg := range values {
+		if !utf8.ValidString(arg) || strings.ContainsRune(arg, 0) {
+			return invalid("harness configuration requires valid UTF-8 arguments without NUL")
+		}
+	}
+	return nil
 }

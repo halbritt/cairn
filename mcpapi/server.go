@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
@@ -24,7 +25,7 @@ type Config struct {
 	CodexThread     bool
 }
 
-// Validate checks startup scope and room; the API validates pins on retrieval.
+// Validate checks startup scope, text integrity and room; the API validates pin semantics on retrieval.
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.Scope.Repo) == "" || c.Scope.Repo == "*" {
 		return fmt.Errorf("MCP requires an explicit repository")
@@ -35,6 +36,18 @@ func (c Config) Validate() error {
 		}
 	} else if strings.TrimSpace(c.Scope.TaskID) == "" || strings.TrimSpace(c.Scope.RunID) == "" || c.Scope.TaskID == "*" || c.Scope.RunID == "*" {
 		return fmt.Errorf("MCP requires an explicit repository, task and run")
+	}
+	for _, value := range []string{c.Scope.Repo, c.Scope.TaskID, c.Scope.RunID} {
+		if len(value) > 256 || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
+			return fmt.Errorf("MCP scope requires 1-256 UTF-8 bytes without NUL per identifier")
+		}
+	}
+	if c.Context != nil {
+		for _, value := range []string{c.Context.Revision, c.Context.WorkspaceSHA256, c.Context.TaskClass, c.Context.TaskPhase, c.Context.BindingID, c.Context.CapabilityID} {
+			if !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
+				return fmt.Errorf("MCP context requires valid UTF-8 text without NUL")
+			}
+		}
 	}
 	if c.AvailableTokens < 256 || c.AvailableTokens > 1000000 {
 		return fmt.Errorf("MCP memory input room must be between 256 and 1000000")
