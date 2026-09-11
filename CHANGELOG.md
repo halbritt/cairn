@@ -18,6 +18,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Keep failed integration artifacts for diagnosis.** `make test-integration`
+  stops its disposable PostgreSQL cluster and prints the retained directory when
+  a check fails. Successful runs still remove their temporary files. This needs
+  only the updated checkout, with no CLI/API installation.
+  [Checks and native investigation](docs/verification/failed-integration-artifacts-2026-09-10.md).
+
 - **Reuse passage vectors after an idle worker exits.** The streaming API can
   retain a bounded snapshot in memory while releasing the loaded semantic model.
   A compatible fresh worker restores matching-model vectors; current eligibility

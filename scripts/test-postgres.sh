@@ -5,10 +5,19 @@ cd "$(dirname "$0")/.."
 pg_bin="${CAIRN_PG_BIN:-$(pg_config --bindir)}"
 test_root="$(mktemp -d /tmp/cairn-postgres.XXXXXXXX)"
 cleanup() {
+    local check_status=$?
     if [[ -f "$test_root/data/postmaster.pid" ]]; then
-        "$pg_bin/pg_ctl" -D "$test_root/data" -m immediate -w stop >/dev/null
+        if ! "$pg_bin/pg_ctl" -D "$test_root/data" -m immediate -w stop >/dev/null; then
+            echo "Could not stop the test database; artifacts retained at $test_root" >&2
+            exit 1
+        fi
     fi
-    rm -rf -- "$test_root"
+    if [[ "$check_status" -eq 0 ]]; then
+        rm -rf -- "$test_root"
+    else
+        echo "Integration check failed (exit $check_status); artifacts retained at $test_root" >&2
+    fi
+    exit "$check_status"
 }
 trap cleanup EXIT
 "$pg_bin/initdb" -D "$test_root/data" --auth-local=trust --auth-host=reject --no-locale -E UTF8 >/dev/null

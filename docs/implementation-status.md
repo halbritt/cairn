@@ -4512,3 +4512,27 @@ throughout. This verifies installed reuse after a real idle release, while the
 initial cold budget remains close and broader task value remains open. The
 [report and manifest](verification/semantic-idle-cache-2026-09-10.md) retain the
 installation identities, source hashes, both responses and that limitation.
+
+
+### Failed integration artifacts and native startup investigation — 2026-09-10
+
+The integration runner now retains its temporary artifacts and prints their
+location when a check fails, while stopping its owned PostgreSQL cluster and
+preserving the failure exit code. Successful runs still remove their directory.
+An intentional Go-job failure reproduced the former artifact loss, then verified
+retention after the repair; a successful stub-job probe verified shutdown and
+removal. These are real PostgreSQL lifecycle checks with controlled jobs, not a
+replacement for application tests. No binary installation or production restart
+is required. [Repair and verification](verification/failed-integration-artifacts-2026-09-10.md).
+
+The native investigation preserved another 60-second startup timeout in the first
+OpenCode debug-agent search, after all five recent-file cases passed. Both this
+failure and the earlier inspectable baseline retained an unfinished global plugin
+installation while their project installation completed. Launch-time tracing was
+available despite the earlier refused attach. A complete authenticated API/native
+tool check then passed under tracing, including 226 debug invocations, recent-file
+permissions and the maximum-note session. Tracing can change timing; untraced
+reliability and the underlying startup cause remain unresolved. No deadline,
+retry, snapshot or permission change was selected, and no answering model ran.
+Earlier failed trials remain part of this history; no task-value acceptance is
+added by the cleanup or diagnostic checks.

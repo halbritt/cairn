@@ -1,0 +1,393 @@
+{
+  "date": "2026-09-10",
+  "baseline_commit": "5df9fa8c24c1bb2907cc411ab227c852a8c4f459",
+  "native_binary": {
+    "path": "/home/halbritt/.npm-global/lib/node_modules/opencode-ai/bin/opencode.exe",
+    "version": "1.18.21",
+    "sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99"
+  },
+  "wrappers": {
+    "opencode-debug": {
+      "path": "/tmp/cairn-native-stall-20260910/opencode-debug",
+      "sha256": "2256b63fdf2df3049af4a401dd6fe40a7f425de1218b574733b23f37bf29cd24"
+    },
+    "opencode-trace": {
+      "path": "/tmp/cairn-native-stall-20260910/opencode-trace",
+      "sha256": "4c62175361ed2bd980837ead77266b0e6b7d619786fa07dc0ab1a49216465b96"
+    }
+  },
+  "checks": {
+    "artifact-check-red.log": {
+      "path": "/tmp/cairn-native-stall-20260910/artifact-check-red.log",
+      "sha256": "672462233d4af63cd28fb71b745a4266d2931338fdeeb0d199b30cc2a18e20fb"
+    },
+    "artifact-check-green-final.log": {
+      "path": "/tmp/cairn-native-stall-20260910/artifact-check-green-final.log",
+      "sha256": "9010cfac5af38e29dfe76f4328f2a18008138e48e84a4b2b689c2174b0102047"
+    },
+    "artifact-check-success-final.log": {
+      "path": "/tmp/cairn-native-stall-20260910/artifact-check-success-final.log",
+      "sha256": "be0c891cf0923f95d28e59d6a5fe0efbbf93c1e329584439492e957a7e4cc7c9"
+    },
+    "diagnose.log": {
+      "path": "/tmp/cairn-native-stall-20260910/diagnose.log",
+      "sha256": "a048af8bdf0a7098c93777e63f9308a340e2d083865e76a166674fe75bc72bb4"
+    },
+    "full-diagnostic.log": {
+      "path": "/tmp/cairn-native-stall-20260910/full-diagnostic.log",
+      "sha256": "a1d0dcdfebebc6184bcb4e78eb9c173a40dba6dd93986771ca981d196ed24d73"
+    },
+    "full-trace.log": {
+      "path": "/tmp/cairn-native-stall-20260910/full-trace.log",
+      "sha256": "843293dcf94e1747b7b89f1947601a778ca3c7d9aac2fee41b2d7a0ce2decd4b"
+    },
+    "retained-lock-map.json": {
+      "path": "/tmp/cairn-native-stall-20260910/retained-lock-map.json",
+      "sha256": "83e8cc04e66419433daf5ba828ebf3a78de28aa821eb3ed802362e8d988cd221"
+    },
+    "processes.jsonl": {
+      "path": "/tmp/cairn-native-stall-20260910/processes.jsonl",
+      "sha256": "2c4a6c5048cfa7cea7aa05ca6203d89cac68f7aa48ed344a6ad91a3c34347d47"
+    },
+    "full-processes.jsonl": {
+      "path": "/tmp/cairn-native-stall-20260910/full-processes.jsonl",
+      "sha256": "e39aaf76769ec7da095a8fd60fc8cc0c067ab51daf510dabbd4493f5b45f2a78"
+    },
+    "trace-processes.jsonl": {
+      "path": "/tmp/cairn-native-stall-20260910/trace-processes.jsonl",
+      "sha256": "6328c58f29354919f1b3cfdb1c185053f2cc88a38e9b9ab0479dd454e805eb78"
+    },
+    "trace-startup/result.json": {
+      "path": "/tmp/cairn-native-stall-20260910/trace-startup/result.json",
+      "sha256": "52a154d0ea267a542b476e1fab6eaa3be29da1efdf2f9daaf441884644a5a753"
+    },
+    "decision-receipt.json": {
+      "path": "/tmp/cairn-native-stall-20260910/decision-receipt.json",
+      "sha256": "e08377fe824952a6c8d56b8a92b0c2b19c22a022eef37db6f36cda637361c704"
+    }
+  },
+  "native_results": {
+    "isolated_recent_files": "all five passed with DEBUG logging",
+    "full_debug": "60-second timeout in first debug-agent search",
+    "full_traced": "passed complete authenticated API/native-tools check",
+    "traced_debug_invocations": 226,
+    "full_debug_root": "/tmp/cairn-postgres.fie7JHnf",
+    "full_trace_root": "/tmp/cairn-postgres.oDiPPNlk",
+    "owned_clusters_stopped": true,
+    "answering_model_calls": 0
+  },
+  "source_hashes": {
+    "scripts/test-postgres.sh": "29a31e48b2822aecf44242dfd0f70c1bda4e525b703c26afc73c2ceaea16667e"
+  },
+  "upstream_sources": {
+    "npm.ts": {
+      "path": "/tmp/cairn-native-stall-20260910/source/npm.ts",
+      "sha256": "e43b39cad6096633471e30615770512b972fd2931dd0a0bb7df774be38b945a7"
+    },
+    "config/config.ts": {
+      "path": "/tmp/cairn-native-stall-20260910/source/config/config.ts",
+      "sha256": "b0fd57d860661ce70e7fbd06e7f2cc24417c70d3db4207ad97129ac1b649997e"
+    },
+    "session/system.ts": {
+      "path": "/tmp/cairn-native-stall-20260910/source/session/system.ts",
+      "sha256": "ff8fd5d64ce82a1ad1264b267cda5410facde72626c2f56d6fb94cf96509f0c4"
+    },
+    "session/tools.ts": {
+      "path": "/tmp/cairn-native-stall-20260910/source/session/tools.ts",
+      "sha256": "ec76a577f6f68d44c6202dcd3fae1d3b859c8a3bda603939364048ce033be095"
+    },
+    "snapshot/index.ts": {
+      "path": "/tmp/cairn-native-stall-20260910/source/snapshot/index.ts",
+      "sha256": "d301ef3dce67c870247bf65db962c2f0c7881f9ffd0e564167605111c9a2065f"
+    },
+    "util/hash.ts": {
+      "path": "/tmp/cairn-native-stall-20260910/source/util/hash.ts",
+      "sha256": "0d0816d1eb3cabcbea8394fe30c4e28206a32ff3cd07bb09b7999a86b14dd100"
+    },
+    "util/effect-flock.ts": {
+      "path": "/tmp/cairn-native-stall-20260910/source/util/effect-flock.ts",
+      "sha256": "926d0d566e1101ae4374576781f6015a33ae42ad5fd161286539ec6f284a15cf"
+    },
+    "tool/registry.ts": {
+      "path": "/tmp/cairn-native-stall-20260910/source/tool/registry.ts",
+      "sha256": "a8b24a6d58a80c42307e251905dbaa4f25ca0724569b1e531e412da934ab00fe"
+    }
+  },
+  "limits": [
+    "Shell probes use controlled Go/Python job exits, not application tests",
+    "No native root cause or repaired untraced reliability claim",
+    "No CLI/API installation or schema change",
+    "Private temporary artifacts are not a durable archive"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-18af6ff47fa75d92",
+    "packet_content_sha256": "18af6ff47fa75d92f3a4ccdae59250e11ce01e306ef34d75ebb01f1fc8e11044",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-012f9f4a4fc9e76d",
+        "required_by": "data-dedup-key-identity-completeness",
+        "requirement": "an explicit enumeration of the record's identity dimensions matched against the key's columns",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-9ae09a63fe1a5ef8",
+        "required_by": "data-dedup-key-identity-completeness",
+        "requirement": "logical-identity definition of the affected record",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-87773e203d59013a",
+        "required_by": "data-dedup-key-identity-completeness",
+        "requirement": "the conflict-handling semantics at that key - abort update or silent drop",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-4865f8254cf67aba",
+        "required_by": "data-ingest-population-scoping",
+        "requirement": "a dry-run enumeration with counts compared against expectation",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-905937990cfd5f38",
+        "required_by": "data-ingest-population-scoping",
+        "requirement": "the discovery pattern shown to match the specification's depth and class constraints",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-c87fc05d43132cb2",
+        "required_by": "data-ingest-population-scoping",
+        "requirement": "the input population specification",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-7a41bb7011b779eb",
+        "required_by": "data-ingest-population-scoping",
+        "requirement": "the specified input population stated precisely",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-79ca08bed8844a25",
+        "required_by": "implementation-async-ui-state-design",
+        "requirement": "an enumeration of lifecycle phases with a designed state for each",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-cbe2d532269e88e9",
+        "required_by": "implementation-async-ui-state-design",
+        "requirement": "content lifecycle phases enumerated",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a6efab71031db341",
+        "required_by": "implementation-async-ui-state-design",
+        "requirement": "explicit handlers where platform defaults were overridden",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-44706d6d596a492d",
+        "required_by": "implementation-async-ui-state-design",
+        "requirement": "geometry reserved independent of the async payload",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bee4873549539a2e",
+        "required_by": "implementation-config-reference-validation",
+        "requirement": "a load-time or gate check resolving every reference against them",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-aebc722e27fd332e",
+        "required_by": "implementation-config-reference-validation",
+        "requirement": "a named-identifier failure on mismatch",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-60e11fd14335b2fa",
+        "required_by": "implementation-config-reference-validation",
+        "requirement": "the consumer's defined identifier and enum sets",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-93c171b4a8964e37",
+        "required_by": "implementation-rank-before-truncate",
+        "requirement": "the match-text composition enumerated field by field",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-5cac0cd10a85dbb8",
+        "required_by": "implementation-rank-before-truncate",
+        "requirement": "the scan shown to score the full bounded set before truncation",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-895e1060f7bb5f86",
+        "required_by": "implementation-rank-before-truncate",
+        "requirement": "the selection contract stated",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-78d89cb5f8e6192c",
+        "required_by": "implementation-rank-before-truncate",
+        "requirement": "the selection contract stated - relevance-ordered top-N versus first-N",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No ingest, deduplication, ranking, UI, configuration schema or monitoring change; these obligations do not govern the selected Bash artifact-retention repair."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b39c8b4fb6a38a6d",
+        "required_by": "operations-external-capability-verification",
+        "requirement": "access to the real device or endpoint",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Native root-cause and uninstrumented reliability remain explicitly unestablished; no production capability, monitoring or general acceptance claim is made. The selected repair is independently checked shell cleanup."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-4e1dfd2c915fe674",
+        "required_by": "operations-external-capability-verification",
+        "requirement": "an end-to-end verification artifact against the actual device or endpoint",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Native root-cause and uninstrumented reliability remain explicitly unestablished; no production capability, monitoring or general acceptance claim is made. The selected repair is independently checked shell cleanup."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-dc786532677f8ca1",
+        "required_by": "operations-external-capability-verification",
+        "requirement": "or an explicit record that verification is provisional",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Native root-cause and uninstrumented reliability remain explicitly unestablished; no production capability, monitoring or general acceptance claim is made. The selected repair is independently checked shell cleanup."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-27a2b6e1eadab2c7",
+        "required_by": "operations-external-capability-verification",
+        "requirement": "the real system's own statement of its capability - device configuration output wire capture or endpoint self-description",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Native root-cause and uninstrumented reliability remain explicitly unestablished; no production capability, monitoring or general acceptance claim is made. The selected repair is independently checked shell cleanup."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-60d9caec35224cb1",
+        "required_by": "operations-gate-authoritative-signal",
+        "requirement": "eval-versus-serving configuration parity",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Native root-cause and uninstrumented reliability remain explicitly unestablished; no production capability, monitoring or general acceptance claim is made. The selected repair is independently checked shell cleanup."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-e4ad35d778e78b32",
+        "required_by": "operations-gate-authoritative-signal",
+        "requirement": "inventory of gates and the signals they observe",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Native root-cause and uninstrumented reliability remain explicitly unestablished; no production capability, monitoring or general acceptance claim is made. The selected repair is independently checked shell cleanup."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-0f7f32d908c01285",
+        "required_by": "operations-gate-authoritative-signal",
+        "requirement": "proof the check reads that signal rather than a derived view",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Native root-cause and uninstrumented reliability remain explicitly unestablished; no production capability, monitoring or general acceptance claim is made. The selected repair is independently checked shell cleanup."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-581914c6a1489c19",
+        "required_by": "operations-gate-authoritative-signal",
+        "requirement": "the authoritative signal named for each gate",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Native root-cause and uninstrumented reliability remain explicitly unestablished; no production capability, monitoring or general acceptance claim is made. The selected repair is independently checked shell cleanup."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-80432417005eb207",
+        "required_by": "operations-symptom-cause-monitoring",
+        "requirement": "current page inventory classified symptom-versus-cause",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Native root-cause and uninstrumented reliability remain explicitly unestablished; no production capability, monitoring or general acceptance claim is made. The selected repair is independently checked shell cleanup."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-8c2d798754f29f02",
+        "required_by": "operations-symptom-cause-monitoring",
+        "requirement": "golden-signal coverage with the error definition stated",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Native root-cause and uninstrumented reliability remain explicitly unestablished; no production capability, monitoring or general acceptance claim is made. The selected repair is independently checked shell cleanup."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-63abf1a71b4719e2",
+        "required_by": "operations-symptom-cause-monitoring",
+        "requirement": "the service's user-visible failure modes",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Native root-cause and uninstrumented reliability remain explicitly unestablished; no production capability, monitoring or general acceptance claim is made. The selected repair is independently checked shell cleanup."
+      }
+    ]
+  }
+}

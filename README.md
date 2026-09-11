@@ -350,8 +350,11 @@ make test-lifecycle
 make check
 ```
 
-The integration target starts and removes its own temporary PostgreSQL cluster,
-gives each Go package a separate database, and uses Go's race detector. CI runs
+The integration target starts its own temporary PostgreSQL cluster, gives each Go
+package a separate database, and uses Go's race detector. It stops the cluster on
+exit and removes its files after success. On failure it prints the retained
+artifact directory for diagnosis. A failed database stop also retains the directory
+and fails the command. CI runs
 packages sequentially against its shared service database. Explicit concurrent
 transaction tests remain enabled. The suite covers migration from the original schema,
 concurrent edits/retries, grant revocation races, evidence and destination gates,
