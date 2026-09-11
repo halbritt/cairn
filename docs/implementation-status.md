@@ -21,7 +21,7 @@ acceptance boundaries; full Stage 1–2 completion is not claimed.
 
 [Native review tools](use-outcome-loop.md#native-review-tools) now support owned
 assessment history and qualitative writes in MCP and OpenCode. Disposable
-interface checks passed. CLI/MCP `3acf719` includes the
+interface checks passed. CLI/MCP `03ff22c` includes the
 [Codex allowlist correction](verification/codex-review-allowlist-2026-09-10.md);
 this project's configuration includes both review tools. The API remains at
 `bb600c5` and the native adapter at `2ef6e04`. The saved Codex setup procedure is
@@ -30,7 +30,8 @@ remain in the history below.
 
 [Ordinary CLI request help](local-api.md#find-an-ordinary-request-format) now
 explains JSON-based corrections, history and reviews without connecting to the
-API. Its copied examples and full integration checks pass; installation is pending.
+API. Its copied examples and full integration checks pass; clean CLI/MCP
+`03ff22c` is installed after successful CI and an installed offline check.
 
 A [worked qualitative review](use-outcome-loop.md#record-a-qualitative-review)
 now covers authenticated assessment writes, exact retry and history read-back.
@@ -4903,3 +4904,18 @@ This is a practical CLI usability improvement, with no new evaluator, authority,
 API or schema. The retrieved connection lesson and current source both supplied
 the execution-default constraints; their overlap prevents attributing the result
 to memory alone. Broader task value remains open.
+
+### Ordinary agent help installed — 2026-09-10
+
+[CI for `03ff22c`](https://github.com/halbritt/cairn/actions/runs/34568798147)
+passed, and clean CLI/MCP `03ff22c` is installed. The installed binary passes the
+offline overview and all nine operation-help checks, including absent HOME,
+open stdin and invalid invocations. `cairn agent replace --help` now provides the
+request shape that previously required source lookup.
+
+The API remains `bb600c5` and the native OpenCode adapter `2ef6e04`. API and
+PostgreSQL processes, configuration hashes and the exact 92-version ordinary-note
+inventory were unchanged. No migration or restart was required. The
+[installation manifest](verification/agent-help-2026-09-10.json) retains the build
+and before/after checks. This completes the CLI usability change, while durable
+memory benefit and the remaining roadmap requirements stay open.

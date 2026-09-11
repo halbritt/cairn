@@ -36,3 +36,13 @@ This removes a concrete request-discovery obstacle. It does not establish net
 memory benefit or a completed independent model task. A retrieved connection
 lesson reinforced preserving execution defaults, alongside the same rules in
 current source. Installation is separate from this source checkpoint.
+
+## Installation
+
+[CI for `03ff22c`](https://github.com/halbritt/cairn/actions/runs/34568798147)
+passed. Clean CLI/MCP `03ff22c` is installed, and the installed binary passed the
+offline help checks. The API remains on `bb600c5` and the OpenCode adapter on
+`2ef6e04`. The API/PostgreSQL processes, configuration hashes and exact inventory
+of 92 ordinary note versions remained unchanged. No migration or restart was
+needed. The installed help now answers the request-format question that prompted
+this change; broader memory benefit remains unestablished.
