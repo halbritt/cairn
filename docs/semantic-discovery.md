@@ -75,7 +75,8 @@ host's five-minute choice and its observed cost reduction. The worker occupied
 about 208 MiB in the original local experiment while loaded. The prepared worker
 reuses vectors for exact decoded passages from its last successfully scored
 request. An edit only requires new inference for passages whose text changes;
-appending to a long note can preserve its earlier windows. Tokenization still
+appending to a long note can preserve its earlier windows. An insertion or
+deletion earlier in a note can shift later windows and invalidate them. Tokenization still
 runs on every supplied body. Identical passages within one request also share
 inference, while each occurrence keeps its original position and note identity
 for scoring and counts toward the chunk limit.

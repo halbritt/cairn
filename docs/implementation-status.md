@@ -19,7 +19,10 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and API are clean `b171a8b`.
+The installed CLI and API are clean `b171a8b`. The optional semantic worker is
+from `d3edaa2`: [passage reuse](verification/semantic-chunk-cache-2026-09-10.md)
+avoids re-embedding unchanged windows after localized note edits. It is installed
+with the existing five-minute lifetime; cold scoring remains expensive.
 [Task/run report filters](use-outcome-loop.md#follow-one-task-across-runs) select
 one task’s retained runs and memory exposures before pagination. Broader
 recurrence analysis and task-value evidence remain open.
@@ -4208,3 +4211,29 @@ cold-deadline fixture. Its unchanged isolated rerun and full integration passed;
 root cause is unknown and the failure is retained. Worker installation is pending
 at this checkpoint; installed CLI/API remain b171a8b. See
 [comparison and limitations](verification/semantic-chunk-cache-2026-09-10.md).
+
+
+### 2026-09-10 — install passage reuse and refresh worker guidance
+
+Clean feature d3edaa29bf82fce3572aebf786b69439b37869ca passed CI 34545885103;
+both jobs and their steps completed successfully. Installed worker SHA-256 is
+2d85715d25ea9dbc5deb86d37e3ad9e640ba11dfe08f4e920a52453e2aab240f. API restarted
+as PID 4138687; its executable and both CLI copies remain clean b171a8b. Existing
+configuration, credentials, native adapter/plugin and launchers were preserved.
+PostgreSQL stayed PID 163669, and the installation preserved all 81 note versions
+with payload inventory hash 9dd36e27886d461cdee9d78789c9bb08c2e7ec52a82167e5ca1bcd3031adbb25.
+The previous worker file and installation manifest are retained under
+/tmp/cairn-semantic-chunks-20260910/deployment/.
+
+Actual hosted-profile semantic calls completed ready in 8.153 and 0.073 seconds,
+using the same child with matching score digest, context seal and selected source
+versions. These are installed-path checks, not an old/new cache comparison.
+The v9 semantic worker guidance was then revised to v10, preserving unrelated
+text, metadata and retained v9 wording. This deliberate update adds one version
+after the unchanged installation inventory; v10 body SHA-256 is
+f3de9e6ab9428ec10219e6611956f984ac85af3f2aca7d4af31ae33e8dd5dede.
+
+The comparison report now spells out shifted-window limits: earlier insertions
+or deletions can invalidate later windows, and short-note edits may require full
+passage inference. Cold speedup, larger-corpus behavior and net task benefit
+remain unestablished. [Full evidence](verification/semantic-chunk-cache-2026-09-10.md).

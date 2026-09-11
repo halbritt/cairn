@@ -59,7 +59,9 @@ not independent replicated trials or a user-traffic distribution. The shared hos
 was not CPU-pinned. Cold scoring was slower in this pair, and unchanged warm
 scoring has added tokenization work. Neither cold improvement nor a universal
 latency guarantee is claimed. Cross-restart persistence remains deferred; this
-change only improves work while the existing worker survives.
+change only improves work while the existing worker survives. Inserting or deleting
+text earlier in a note can shift subsequent token windows and invalidate them;
+a short edited note may still require embedding its entire passage.
 
 ## Verification
 
@@ -86,3 +88,27 @@ The current Cairn semantic lesson recovered the earlier profile and cautioned
 against repeating unchanged thread/batch experiments. Source inspection then
 identified whole-body invalidation. That is observed guidance use; incremental
 memory contribution and net task value remain uncertain.
+
+
+## Installation and ordinary retrieval
+
+Feature commit `d3edaa29bf82fce3572aebf786b69439b37869ca` passed CI run
+34545885103, with both jobs and all steps checked. The prepared worker script
+was replaced after retaining the old file; its installed SHA-256 is
+`2d85715d25ea9dbc5deb86d37e3ad9e640ba11dfe08f4e920a52453e2aab240f`.
+API PID 4138687 loaded the new worker. CLI/API remain clean `b171a8b`, with
+unchanged executables, harness configuration, identities, launchers and host
+five-minute idle setting. PostgreSQL remained PID 163669. All 81 retained note
+versions matched before/after installation.
+
+Two ordinary hosted-profile semantic searches against the installed API returned
+ready results in 8.153 and 0.073 seconds. They used the same child and returned the
+same complete score digest, source seal and selected versions. This verifies the
+installed path; it is not a paired comparison against the earlier cache. These
+queries precede the guidance revision below.
+
+The saved semantic worker lesson advanced v9→v10 to describe passage reuse,
+shifted-window limits and installed source provenance. The edit preserved all
+unrelated text and metadata; a fresh pull and retained v9 body were verified.
+That selected guidance revision intentionally adds one note version after the
+installation inventory. The raw note bodies remain outside Git.

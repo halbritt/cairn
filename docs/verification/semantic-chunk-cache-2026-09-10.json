@@ -364,5 +364,168 @@
         "rationale": "No interface or ownership redesign and no maintainability benefit claim; private cache representation changes within existing Scorer."
       }
     ]
+  },
+  "feature_commit": "d3edaa29bf82fce3572aebf786b69439b37869ca",
+  "ci": {
+    "run_id": 34545885103,
+    "head_sha": "d3edaa29bf82fce3572aebf786b69439b37869ca",
+    "conclusion": "success",
+    "all_jobs_and_steps_checked": true
+  },
+  "installation": {
+    "before": {
+      "cairn-api.service": {
+        "MainPID": "4095273",
+        "ActiveState": "active",
+        "exe_sha256": "55c9428a7870422053fbe5eb0eba7fa60faccb3aceddbce2f0e3484fce406ec7"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "after": {
+      "cairn-api.service": {
+        "MainPID": "4138687",
+        "ActiveState": "active",
+        "exe_sha256": "55c9428a7870422053fbe5eb0eba7fa60faccb3aceddbce2f0e3484fce406ec7"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "worker_before_sha256": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+    "worker_after_sha256": "2d85715d25ea9dbc5deb86d37e3ad9e640ba11dfe08f4e920a52453e2aab240f",
+    "record_versions_before": {
+      "versions": 81,
+      "sha256": "9dd36e27886d461cdee9d78789c9bb08c2e7ec52a82167e5ca1bcd3031adbb25"
+    },
+    "record_versions_after": {
+      "versions": 81,
+      "sha256": "9dd36e27886d461cdee9d78789c9bb08c2e7ec52a82167e5ca1bcd3031adbb25"
+    },
+    "version_pair": {
+      "schema": "cairn.version/1",
+      "client": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260910235756-b171a8b78b9b",
+        "vcs": "git",
+        "vcs_revision": "b171a8b78b9b0a889a7718974cb0b4e60b71bfba",
+        "vcs_time": "2026-09-10T23:57:56Z",
+        "vcs_modified": false
+      },
+      "server": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260910235756-b171a8b78b9b",
+        "vcs": "git",
+        "vcs_revision": "b171a8b78b9b0a889a7718974cb0b4e60b71bfba",
+        "vcs_time": "2026-09-10T23:57:56Z",
+        "vcs_modified": false
+      }
+    },
+    "manifest": "/tmp/cairn-semantic-chunks-20260910/deployment/installation.json",
+    "manifest_sha256": "cd92855edf92298584a9cf1847001d0d402046461ef10d525b95992a2e11e8d8"
+  },
+  "installed_retrieval": {
+    "rows": [
+      {
+        "label": "cold",
+        "wall_seconds": 8.152969822986051,
+        "children": [
+          4138727
+        ],
+        "discovery": {
+          "state": "ready",
+          "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+          "algorithm": "bge-max-chunk/1",
+          "scores_sha256": "bdf4261d499537a52190d02bb6fe812e2803f469236d8db53be2745d384cb8c3"
+        },
+        "source_seal": "blake3:b8d2f1606b7026d4f208869b3c4f039705624f80f6892706564fc2a6cddb3f77",
+        "index_versions": [
+          {
+            "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+            "version": 9,
+            "body_sha256": "0d4370853ef619383ace281aa0d7d0bf7abb3c4d2bdc28cab4c05fb03cf59abf"
+          },
+          {
+            "record_id": "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+            "version": 9,
+            "body_sha256": "0ddcc688c09f238ff3ae3f3b985f4e45bc51b0a691833f5b1f3a53ee441df7e5"
+          },
+          {
+            "record_id": "2923953f-80c2-46ff-aea6-1e5b5fd1743c",
+            "version": 3,
+            "body_sha256": "2bb4e8901f0376d79b7ed26a6354646c247845de1beb46f8874928da5f5b6671"
+          },
+          {
+            "record_id": "593a9e91-905b-43a2-9c7a-953857ae728e",
+            "version": 1,
+            "body_sha256": "1b8e374b920cb74c60b77dfa254110e4c3ce6bd2465015464d77e8d53579b043"
+          },
+          {
+            "record_id": "7cf12fed-ae20-4991-8c4b-367ca133bc20",
+            "version": 1,
+            "body_sha256": "29332b2401226c409fbc01d996465e2149ecdd42c21f5981803ef8993cc1e3e8"
+          }
+        ]
+      },
+      {
+        "label": "warm",
+        "wall_seconds": 0.07333534490317106,
+        "children": [
+          4138727
+        ],
+        "discovery": {
+          "state": "ready",
+          "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+          "algorithm": "bge-max-chunk/1",
+          "scores_sha256": "bdf4261d499537a52190d02bb6fe812e2803f469236d8db53be2745d384cb8c3"
+        },
+        "source_seal": "blake3:b8d2f1606b7026d4f208869b3c4f039705624f80f6892706564fc2a6cddb3f77",
+        "index_versions": [
+          {
+            "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+            "version": 9,
+            "body_sha256": "0d4370853ef619383ace281aa0d7d0bf7abb3c4d2bdc28cab4c05fb03cf59abf"
+          },
+          {
+            "record_id": "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+            "version": 9,
+            "body_sha256": "0ddcc688c09f238ff3ae3f3b985f4e45bc51b0a691833f5b1f3a53ee441df7e5"
+          },
+          {
+            "record_id": "2923953f-80c2-46ff-aea6-1e5b5fd1743c",
+            "version": 3,
+            "body_sha256": "2bb4e8901f0376d79b7ed26a6354646c247845de1beb46f8874928da5f5b6671"
+          },
+          {
+            "record_id": "593a9e91-905b-43a2-9c7a-953857ae728e",
+            "version": 1,
+            "body_sha256": "1b8e374b920cb74c60b77dfa254110e4c3ce6bd2465015464d77e8d53579b043"
+          },
+          {
+            "record_id": "7cf12fed-ae20-4991-8c4b-367ca133bc20",
+            "version": 1,
+            "body_sha256": "29332b2401226c409fbc01d996465e2149ecdd42c21f5981803ef8993cc1e3e8"
+          }
+        ]
+      }
+    ],
+    "same_worker_and_result": true
+  },
+  "guidance_revision_after_installation": {
+    "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+    "from_version": 9,
+    "to_version": 10,
+    "body_before_sha256": "0d4370853ef619383ace281aa0d7d0bf7abb3c4d2bdc28cab4c05fb03cf59abf",
+    "body_after_sha256": "f3de9e6ab9428ec10219e6611956f984ac85af3f2aca7d4af31ae33e8dd5dede",
+    "unrelated_text_preserved": true,
+    "metadata_preserved": true,
+    "retained_previous_body_verified": true
   }
 }

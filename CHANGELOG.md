@@ -8,8 +8,9 @@ superseded work.
 
 The latest recorded installation on 2026-09-10 has clean CLI/API `b171a8b`, at
 database migration 034. Task/run report filters are installed; the native adapter
-and host configuration are unchanged. Later documentation commits do not change
-these builds. Check an installation with `cairn version`; use
+and host configuration are unchanged. The optional semantic worker has since
+been updated from `d3edaa2` for passage reuse; CLI/API binaries stay at `b171a8b`.
+Later documentation commits do not change these builds. Check an installation with `cairn version`; use
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
 See [build identity](docs/build-identity.md) for unstamped builds and MCP processes.
 
