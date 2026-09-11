@@ -18,6 +18,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Keep observed expansion visible in use reports.** `expansion_observed`
+  preserves the fact of a retained instrumented expansion alongside later
+  testimony or citation. Existing usage labels, witnesses and unknown outcomes
+  remain. Update the API or direct-store CLI; no migration is required.
+  [Meaning and checks](docs/verification/expansion-observation-2026-09-10.md).
+
 - **Identify client setup and connection failures.** CLI and MCP now distinguish
   token-file I/O failure from an unavailable API connection, with actionable
   messages that omit private paths and credentials. Unknown errors remain

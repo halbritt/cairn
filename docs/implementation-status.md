@@ -4577,3 +4577,28 @@ connection lesson v1 and body hash, verifying ordinary retrieval across these
 client/API builds. Existing guidance about explicit connection paths and default
 identity remains consistent with source. The [installation report](verification/client-diagnostics-2026-09-10.md)
 records these observations separately from the repair and from task-value claims.
+
+
+### Observed expansion survives usage summarization — 2026-09-10
+
+Review of U4/U5 found that a later reported expansion could replace the displayed
+witness for an actual service expansion, while citation took precedence over
+expansion entirely. The existing classifications remained accurate for the one
+selected event, but the report hid the separate instrumented fact. A disposable
+PostgreSQL sequence reproduced that gap.
+
+`use-report` now returns `expansion_observed` for each exact record/version/receipt.
+The field retains instrumented expansion alongside the existing usage label,
+witness and method; manual testimony alone leaves it false. Body and supporting
+evidence pulls, including excerpts, qualify. A service-side operation does not
+establish response delivery, comprehension or task benefit. Absence of a retained
+event does not prove absence of use, and older servers omit the new field.
+
+Focused PostgreSQL/race checks, the complete disposable integration suite and
+`make check` passed. The actual CLI/API reports observed expansion alongside
+citation testimony with task outcome and coverage still unknown. Other records
+and retrievals do not inherit the flag; repeated pulls do not multiply rows.
+The [report and manifest](verification/expansion-observation-2026-09-10.md) retain
+verification and the bounded compatibility decision. Update the API or direct-store
+CLI for this additive projection; no migration, event rewrite, ranking change or
+new utility score is involved. U4/U5 and broader task-value evidence remain open.

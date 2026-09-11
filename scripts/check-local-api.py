@@ -106,6 +106,20 @@ try:
     result = subprocess.run([binary,'agent','expand'],input=json.dumps(pull),env=env,capture_output=True,text=True,check=True)
     expansion=json.loads(result.stdout)['data']
     assert expansion['selection']['record']['record_id']==record['record_id'] and expansion['credits_remaining']==3
+    # Citation testimony must not hide the separately observed body retrieval.
+    citation = dict(request_id=str(uuid.uuid4()), receipt_id=index['package']['receipt_id'],
+                    record_id=record['record_id'], version=record['version'], signal='cited')
+    subprocess.run([binary, 'agent', 'usage'], input=json.dumps(citation), env=env,
+                   capture_output=True, text=True, check=True, timeout=5)
+    result = subprocess.run([binary, 'agent', 'use-report'],
+                            input=json.dumps(dict(repo='fixture:socket', record_id=record['record_id'], limit=100)),
+                            env=env, capture_output=True, text=True, check=True, timeout=5)
+    rows = [row for row in json.loads(result.stdout)['data']['rows']
+            if row['receipt_id'] == index['package']['receipt_id']]
+    assert len(rows) == 1 and rows[0]['expansion_observed'] is True, rows
+    assert rows[0]['usage'] == 'cited' and rows[0]['usage_witness'] == 'testimony', rows
+    assert rows[0]['task_outcome'] == 'unknown' and rows[0]['usage_coverage'] == 'unknown', rows
+    print('Authenticated use reports preserve observed expansion alongside citation testimony and unknown task value')
     refused = dict(index_request,request_id=str(uuid.uuid4()),available_tokens=256)
     result=subprocess.run([binary,'agent','index'],input=json.dumps(refused),env=env,capture_output=True,text=True)
     assert result.returncode != 0

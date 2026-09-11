@@ -15,6 +15,22 @@ A delivered record with no usage observation is `delivered_only` only when a
 service has explicitly recorded complete usage coverage. Generic H0 wrappers
 leave coverage unknown. There is no automatic behavior-inference engine.
 
+`expansion_observed` separately reports whether the service retained an
+instrumented expansion event for that exact record/version/receipt. A body or
+supporting-evidence expansion qualifies, including a byte excerpt. Later
+expansion testimony or a higher-ranked citation does not hide that observation.
+The existing `usage`, `usage_witness` and `usage_method` still describe the
+selected usage event; citations remain testimony.
+
+For example, `usage: "cited"`, `usage_witness: "testimony"` and
+`expansion_observed: true` mean that a citation was reported and the service
+observed an expansion. They do not prove successful response delivery,
+comprehension or task benefit. False means no such instrumented event is retained;
+it does not prove the agent never accessed the content. Coverage remains separate.
+An older server omits this field, which must not be interpreted as false. Update
+the API for authenticated reports, or the CLI for direct-store reports; no
+database migration is needed. [Verification](verification/expansion-observation-2026-09-10.md).
+
 `core.UseReport` accepts `repo`, optional `record_id`, `limit` (1–200) and `offset`.
 Optional `task_id` and `run_id` narrow the retained receipt scope.
 The report includes pagination metadata. It is an observational join, not a causal

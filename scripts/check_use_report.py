@@ -46,6 +46,7 @@ def check(binary):
     assert len(filtered) == 51 and {row['receipt_id'] for row in filtered} == receipts
     assert all(row['record_id'] == records[0] and row['version'] == 1 for row in filtered)
     assert all(row['usage'] == 'unknown' and row['task_outcome'] == 'unknown' for row in filtered)
+    assert all(row['expansion_observed'] is False for row in filtered)
     assert call(['use-report', '--offset', '102', repo])['rows'] == []
     for args in [['--limit', '0', repo], ['--limit', '201', repo], ['--offset', '-1', repo],
                  ['--record', 'invalid', repo], [], [repo, 'extra']]:

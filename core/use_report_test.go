@@ -7,6 +7,84 @@ import (
 	"testing"
 )
 
+func TestUseReportKeepsObservedExpansionAlongsideReportedUsage(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t, Channel{Principal: "expansion-observation"})
+	repo := uuid.NewString()
+	note, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := projectNote(repo)
+	other.Body = "Another independent lesson"
+	if _, err := s.Create(ctx, CreateRequest{uuid.NewString(), other}); err != nil {
+		t.Fatal(err)
+	}
+	req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Purpose: "context", AvailableTokens: 64000}
+	index, err := s.Index(ctx, req, Destination{"local", true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var handle string
+	for _, h := range index.Handles {
+		if h.RecordID == note.RecordID {
+			handle = h.Handle
+		}
+	}
+	check := func(observed bool, signal, witness string) {
+		t.Helper()
+		report, err := s.UseReport(ctx, UseReportRequest{Repo: repo, Limit: 100})
+		if err != nil || len(report.Rows) != 2 {
+			t.Fatalf("report: %+v %v", report, err)
+		}
+		for _, row := range report.Rows {
+			if row.RecordID == note.RecordID {
+				if row.ExpansionObserved != observed || row.Usage != signal || row.UsageWitness != witness {
+					t.Fatalf("lost expansion observation or changed usage qualification: %+v", row)
+				}
+			} else if row.ExpansionObserved || row.Usage != "unknown" {
+				t.Fatalf("observation leaked to another record: %+v", row)
+			}
+		}
+	}
+	check(false, "unknown", "unknown")
+	reportUsage := func(signal string) {
+		t.Helper()
+		_, err := s.RecordUsage(ctx, UsageRequest{RequestID: uuid.NewString(), ReceiptID: index.Package.ReceiptID, RecordID: note.RecordID, Version: note.Version, Signal: signal})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	reportUsage("expanded")
+	check(false, "expanded", "testimony")
+	pull := ExpandRequest{RequestID: uuid.NewString(), ReceiptID: index.Package.ReceiptID, Handle: handle}
+	if _, err := s.Expand(ctx, pull, Destination{"local", true}); err != nil {
+		t.Fatal(err)
+	}
+	reportUsage("expanded")
+	check(true, "expanded", "testimony")
+	reportUsage("cited")
+	check(true, "cited", "testimony")
+	if _, err := s.Expand(ctx, pull, Destination{"local", true}); err != nil {
+		t.Fatal(err)
+	}
+	check(true, "cited", "testimony")
+	req.RequestID = uuid.NewString()
+	req.Scope.RunID = "another-retrieval"
+	if _, err := s.Index(ctx, req, Destination{"local", true}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := s.UseReport(ctx, UseReportRequest{Repo: repo, RunID: req.Scope.RunID, Limit: 100})
+	if err != nil || len(report.Rows) != 2 {
+		t.Fatalf("another retrieval: %+v %v", report, err)
+	}
+	for _, row := range report.Rows {
+		if row.ExpansionObserved || row.Usage != "unknown" {
+			t.Fatalf("observation leaked to another retrieval: %+v", row)
+		}
+	}
+}
+
 func TestUseReportJoinsWithoutMultiplyingObservations(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t, Channel{Principal: "use-report", Instrumented: true})
