@@ -49,3 +49,20 @@ names. Parsed settings otherwise match its saved predecessor, and
 `codex mcp get cairn --json` resolves all eight. That command checks resolved
 configuration; the separate native check above establishes actual discovery.
 Installation of the clean source build is recorded below when completed.
+
+## CI correction before installation
+
+[CI for `087be85`](https://github.com/halbritt/cairn/actions/runs/34567025918)
+failed in the existing semantic command test: it expected the output writer's
+limit error but received worker exit status 141. Go 1.25 `Cmd.Wait` prioritizes
+unsuccessful process exit over copying errors, so closing an overflowing pipe
+can report producer SIGPIPE instead. The original test passed 100 local race
+repetitions; that does not invalidate the recorded CI failure.
+
+The replacement tests valid JSON at 65536 bytes, 65537 bytes and one MiB. The
+first must survive intact; larger responses must fail in the worker transport.
+It does not depend on which pipe error wins. Thirty focused race repetitions,
+the full semantic race suite and `make check` passed. A temporary Go overlay
+removing only the cap made both oversized cases fail because they were accepted.
+The production worker, cap, cancellation and fallback behavior remain unchanged.
+This is a test correction, not an additional installed feature.

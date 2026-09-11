@@ -45,5 +45,28 @@
     ],
     "other_settings_unchanged": true
   },
-  "installation": "pending clean source build"
+  "installation": "pending clean source build",
+  "ci_test_repair": {
+    "failed_ci": "https://github.com/halbritt/cairn/actions/runs/34567025918",
+    "production_changes": false,
+    "source_sha256": "0dad861a6e175e34329e0645b4f24e4756ae6722a16a6058c0561fea561d7532",
+    "checks": {
+      "ci-failed.log": "7f51dc0e0989426fcbc72513b1ba4c982ec4acd57b900efb9f6ffc8b0c028c8d",
+      "output-limit-repro.log": "7dd3fdf76a7dd47d9b5b0d48accf30ad2474c3ffc8bc8af3fd027a8196e69c81",
+      "output-limit-green.log": "6e562390c4a2f08402ce90b54dd6ef6d8fe9f8a4533e9d409d8f70fb79f08688",
+      "output-limit-mutation.log": "baf80f9d8af0bb4a9840d64c2e87605e7fc4a6577c6cabfe7da93343507034dd",
+      "semantic-green.log": "3ba6f6a14409df27f913ab2c6b9a8acd55ab6dbb8b15c4091e6b56bea87943a3",
+      "final-test-repair-check.log": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    "doctrine": {
+      "packet_id": "pkt-f56b325fb125099b",
+      "packet_content_sha256": "f56b325fb125099b9fa42d05b403c1d2bc5caed2c62b2a525f0fdb71dd4307d3",
+      "corpus": "corpus-2026-07-12-a11702cc9217",
+      "doctrine": "doctrine-f6bbb5196a3f8bf9",
+      "retriever": "retriever-ec995ecdd083b2c8",
+      "release": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+      "residual_nonmaterial_obligations": 42,
+      "decision_receipt_sha256": "422b803be764d088c87a36a2d3122fd8e0c544ff3e907ab3b879860a9b40ca2d"
+    }
+  }
 }

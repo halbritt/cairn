@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ func script(t *testing.T, body string) string {
 	return path
 }
 
-func TestCommandBoundsOutputAndExcludesServerCredentials(t *testing.T) {
+func TestCommandExcludesServerCredentialsAndRejectsInvalidResponses(t *testing.T) {
 	t.Setenv("CAIRN_DATABASE_URL", "must-not-reach-worker")
 	path := script(t, "test -z \"${CAIRN_DATABASE_URL:-}\" || exit 9\nprintf '%s' '{\"model_sha256\":\"test\",\"algorithm\":\"test/1\",\"scores\":[]}'\n")
 	rank, err := Command(path)
@@ -31,7 +32,7 @@ func TestCommandBoundsOutputAndExcludesServerCredentials(t *testing.T) {
 	if err != nil || result.Algorithm != "test/1" {
 		t.Fatalf("worker transport: %+v %v", result, err)
 	}
-	for _, test := range []struct{ body, reason string }{{"printf '{}{}'\n", "one JSON"}, {"head -c 70000 /dev/zero\n", "output exceeds limit"}, {"exit 5\n", "worker failed"}} {
+	for _, test := range []struct{ body, reason string }{{"printf '{}{}'\n", "one JSON"}, {"exit 5\n", "worker failed"}} {
 		rank, err = Command(script(t, test.body))
 		if err != nil {
 			t.Fatal(err)
@@ -39,6 +40,30 @@ func TestCommandBoundsOutputAndExcludesServerCredentials(t *testing.T) {
 		if _, err = rank(context.Background(), core.SemanticRankRequest{}); err == nil || !strings.Contains(err.Error(), test.reason) {
 			t.Fatalf("expected %s, got %v", test.reason, err)
 		}
+	}
+}
+
+func TestCommandEnforcesOutputLimit(t *testing.T) {
+	for _, size := range []int{65536, 65537, 1 << 20} {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
+			const prefix = `{"model_sha256":"test","algorithm":"`
+			const suffix = `","scores":[]}`
+			algorithm := strings.Repeat("x", size-len(prefix)-len(suffix))
+			response := prefix + algorithm + suffix
+			rank, err := Command(script(t, "printf '%s' '"+response+"'\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := rank(context.Background(), core.SemanticRankRequest{})
+			if size == 65536 {
+				if err != nil || result.Algorithm != algorithm {
+					t.Fatalf("response at limit was not preserved: %v", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "worker failed") {
+				// Pipe closure can surface either the writer error or producer SIGPIPE.
+				t.Fatalf("oversized valid response was not refused by transport: %v", err)
+			}
+		})
 	}
 }
 

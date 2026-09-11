@@ -4842,3 +4842,18 @@ checks and limits. Clean-build installation remains pending at this checkpoint.
 The stored Codex setup guide v10 also has the six-tool list; its selected
 correction follows installation. These are usability corrections, with additional
 memory benefit and review quality still unestablished.
+
+### Semantic output-cap test corrected during Codex release — 2026-09-10
+
+CI for `087be85` failed an existing semantic test: output above the cap produced
+worker exit 141 instead of the copying error text the test required. Local
+repetition did not reproduce it, but Go's process-wait source establishes that
+unsuccessful exit takes precedence over copying errors. The test now checks
+complete valid JSON at the 64 KiB boundary and refusal above it, accepting either
+underlying error through the existing worker-failure classification.
+
+Thirty focused race repetitions, the semantic race suite and `make check` passed.
+A temporary cap-removal mutation failed both oversized cases. No production
+worker code changed. The [Codex correction report](verification/codex-review-allowlist-2026-09-10.md)
+preserves the failed CI and repair evidence. The clean installed CLI remains
+`2ef6e04` pending successful CI for this correction.
