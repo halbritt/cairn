@@ -74,3 +74,15 @@ Pincite informed error ownership and preservation boundaries. Its validated
 packet, typed evidence, decision receipt and residual obligations are retained
 with the verification metadata. Scratch evidence is under
 `/tmp/cairn-mcp-setup-20260910`; it is not a durable archive.
+
+
+## Installation
+
+Clean CLI `208c1c8` is installed after both CI jobs passed for that exact commit
+([run 34554012895](https://github.com/halbritt/cairn/actions/runs/34554012895)).
+The installed binary passed the offline configuration check again. Native adapter
+bytes and configuration stayed unchanged; its source remains `797aafe`. The API
+remains `b171a8b`, with no service restart or schema change. The installation
+preserved every stored note version; a subsequent selected append extended the
+existing Unicode lesson from version 3 to 4 and verified its prior body exactly.
+The manifest records installed identities and that deliberate note update.

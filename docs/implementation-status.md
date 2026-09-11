@@ -19,8 +19,10 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI and native OpenCode adapter are clean `797aafe`; the API
-remains clean `b171a8b`. [Declared native task scope](opencode-tools.md#continue-a-task-across-sessions)
+The installed CLI is clean `208c1c8`; the native OpenCode adapter remains from
+`797aafe` and the API remains clean `b171a8b`. The [harness setup repair](verification/harness-configuration-text-2026-09-10.md)
+rejects malformed configuration text and overlong scope before producing unusable
+settings. [Declared native task scope](opencode-tools.md#continue-a-task-across-sessions)
 is installed and verified with that API. [Explicit native capture scope](mcp.md#choose-capture-scope)
 now saves a note for the repository, current task or current task/run. Repository
 capture remains the default. The optional semantic worker is
@@ -4406,3 +4408,22 @@ checks and limits. Source comparison found the defect; recalled Unicode guidance
 subsequently informed the validation boundary. This is a verified setup repair,
 with no independent memory-value attribution. Installation and CI are recorded
 in the subsequent checkpoint when completed.
+
+
+### Harness configuration installation checkpoint — 2026-09-10
+
+Clean `208c1c81a861555ba64808c2b194e55ecbb63cb0` is installed in the local and
+project CLI locations. Both jobs and their required steps passed in
+[CI run 34554012895](https://github.com/halbritt/cairn/actions/runs/34554012895).
+The installed executable passed the offline configuration check. API `b171a8b`
+and store processes stayed unchanged, as did native adapter bytes from `797aafe`,
+semantic worker `d3edaa2`, configuration, credentials and database migration 034.
+The installation preserved all existing note versions. A deliberate append then
+extended Unicode lesson `104519b5-82cd-44b3-ba73-1def2ad42e8c` from version 3 to 4;
+its previous body was verified unchanged. The [manifest](verification/harness-configuration-text-2026-09-10.json)
+records those identities and checks.
+
+The unresolved optional full native-suite timeouts remain recorded above. Passing
+CI and isolated sessions do not erase them or establish an incremental memory
+benefit. This closes the setup repair; broader task value and roadmap requirements
+remain open.
