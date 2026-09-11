@@ -21,7 +21,7 @@ acceptance boundaries; full Stage 1–2 completion is not claimed.
 
 [Native review tools](use-outcome-loop.md#native-review-tools) now support owned
 assessment history and qualitative writes in MCP and OpenCode. Disposable
-interface checks passed; installation is recorded separately below.
+interface checks passed; the CLI/MCP and native adapter are installed at `2ef6e04`.
 
 A [worked qualitative review](use-outcome-loop.md#record-a-qualitative-review)
 now covers authenticated assessment writes, exact retry and history read-back.
@@ -38,11 +38,11 @@ net savings still unknown.
 
 An [assessment binding repair](verification/assessment-binding-2026-09-10.md)
 now checks the current profile before cached write responses as well as new
-writes. Clean CLI/API `bb600c5` is installed after passing CI and ordinary hosted
+writes. API `bb600c5` is installed after passing CI and ordinary hosted
 retrieval checks; the initial CI failure and test correction remain in the history.
 
-The installed CLI/API are clean `bb600c5`; the native OpenCode adapter remains
-from `797aafe`. [Use-report expansion observations](verification/expansion-observation-2026-09-10.md)
+The installed CLI/MCP is clean `2ef6e04`, the API is clean `bb600c5`, and the
+native OpenCode adapter is from `2ef6e04`. [Use-report expansion observations](verification/expansion-observation-2026-09-10.md)
 keep a retained instrumented expansion visible alongside later testimony or
 citation, without claiming delivery or task benefit. [Client diagnostics](verification/client-diagnostics-2026-09-10.md)
 identify token-file I/O and Unix socket dial failures without private paths
@@ -4791,3 +4791,24 @@ the checks and limits. Installation remains separate from this source checkpoint
 These tools remove a manual CLI step, but native review quality and additional
 task value still need observations from actual work. The full earlier history
 is retained, including the API repair that this work exposed.
+
+### Native assessment tools installed and used — 2026-09-10
+
+Clean CLI/MCP `2ef6e04` and its matching native OpenCode adapter are installed
+after [successful CI](https://github.com/halbritt/cairn/actions/runs/34565632417).
+The running API remains on `bb600c5`, which already contains the required binding
+repair. The API and PostgreSQL processes, exact 91-version ordinary-note
+inventory, connection files, Codex/OpenCode configuration and semantic service
+settings remained unchanged. No migration was run. The
+[installation manifest](verification/native-assessments-2026-09-10.json) retains
+the before/after identities and hashes. Fresh harness sessions load the new tools.
+
+Through a fresh installed MCP process, the implementing agent read, appended and
+read back an actual review for retrieval `f9110acb-dda5-45bf-8bb7-b9fd8af4b78b`.
+It records the assessment guide v3 pull and acknowledges that current source and
+handoff already supplied the same rules. Version 1 remains `unknown` and
+`testimony`, attributed to `agent:cairn-hosted`; no incremental memory benefit,
+net savings or human acceptance is inferred. The full narrative stays in owned
+assessment history; its selected identifiers and hash are in the manifest.
+This completes installed adoption of the interfaces, while review quality and
+durable task benefit remain open.

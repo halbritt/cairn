@@ -52,5 +52,28 @@ permission paths with the actual installed runtime.
 Upgrade the MCP executable or install its matching OpenCode adapter and restart
 the harness. Keep the [assessment binding repair](assessment-binding-2026-09-10.md)
 in the API. No migration is needed. Installation does not alter permissions or
-the existing memory-only search/pull allowlists. Installed adoption is pending
-at this source checkpoint.
+the existing memory-only search/pull allowlists. The installed adoption follows.
+
+[CI for `2ef6e04`](https://github.com/halbritt/cairn/actions/runs/34565632417)
+passed. Clean CLI/MCP `2ef6e04` and its matching native adapter are now installed.
+The API remains on clean `bb600c5`; neither the API nor PostgreSQL restarted.
+The exact 91-version note inventory, Cairn connection settings, Codex/OpenCode
+configuration and semantic service settings retained their hashes. CLI and
+adapter hashes match the clean build and its source, respectively. Existing
+harness processes need a fresh session to load the added tools.
+
+## Operational review
+
+A fresh MCP process at the installed revision recorded a selected review of this
+work against owned retrieval `f9110acb-dda5-45bf-8bb7-b9fd8af4b78b`, then read it
+back. Version 1 retains method `qualitative-self-review/1`, witness `testimony`,
+observer `agent:cairn-hosted` and outcome `unknown`. The review describes the
+actual guide v3 pull, the API repair and native interface work. It explicitly
+notes that source and handoff already contained the recalled rules; memory's
+incremental contribution and net savings remain uncertain.
+
+This is an implementing-agent account through the installed interface, without
+an independent reviewer or new answering-model run. It demonstrates recording
+that uncertainty during actual work. It does not establish task benefit. The
+manifest retains its receipt, request, version and reason hash; the narrative
+remains in the owned assessment history.

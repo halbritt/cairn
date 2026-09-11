@@ -45,6 +45,22 @@
     "check-opencode.sh": {
       "path": "/tmp/cairn-native-assessments-20260910/check-opencode.sh",
       "sha256": "b3e057a422e28838387066f80923cddbb5c523f098a88bf20f31a905a38c1ec8"
+    },
+    "native-installation.json": {
+      "path": "/tmp/cairn-native-assessments-20260910/native-installation.json",
+      "sha256": "42275e8bc65825c3208b9a09643d884857f32609a1381aa9d52b8044ee823ccf"
+    },
+    "operational-review.json": {
+      "path": "/tmp/cairn-native-assessments-20260910/operational-review.json",
+      "sha256": "ae3aff52c28a8915f307de1f524ab866288a893da99381566a9ef1d96cae6238"
+    },
+    "operational-review.py": {
+      "path": "/tmp/cairn-native-assessments-20260910/operational-review.py",
+      "sha256": "073e49f0b027a01bee8bae75c348b3c930d9728b788376dbfd2b9b800890bf67"
+    },
+    "install-native.py": {
+      "path": "/tmp/cairn-native-assessments-20260910/install-native.py",
+      "sha256": "9fbb24fb3d682c5f569bac9d5b7441ffe1de30abe8951db9e313a036465acfba"
     }
   },
   "native": {
@@ -60,7 +76,112 @@
     "native_changed_tool_workflow": "passed",
     "full_opencode_opt_in_suite": "not rerun"
   },
-  "installation": "pending",
+  "installation": {
+    "ci": {
+      "conclusion": "success",
+      "headSha": "2ef6e049333ff13fc34c6c2fc402f766606a3725",
+      "status": "completed",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34565632417"
+    },
+    "before": {
+      "versions": {
+        "schema": "cairn.version/1",
+        "client": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911050622-bb600c561ce7",
+          "vcs": "git",
+          "vcs_revision": "bb600c561ce7592f6e5b9f4577b17038f1d0fed1",
+          "vcs_time": "2026-09-11T05:06:22Z",
+          "vcs_modified": false
+        },
+        "server": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911050622-bb600c561ce7",
+          "vcs": "git",
+          "vcs_revision": "bb600c561ce7592f6e5b9f4577b17038f1d0fed1",
+          "vcs_time": "2026-09-11T05:06:22Z",
+          "vcs_modified": false
+        }
+      },
+      "cli_sha256": "1476433adc7892282cfe6985c466fa05e2a75a83bf4a5e4e4d34167aa9440adb",
+      "adapter_sha256": "92de49181e3a7ff0117364ec6d2556ad593e82a0b2caae183f3a009f2a6bd8b0",
+      "api_pid": 555696,
+      "api_sha256": "1476433adc7892282cfe6985c466fa05e2a75a83bf4a5e4e4d34167aa9440adb",
+      "store_pid": 163669,
+      "record_inventory": {
+        "versions": 91,
+        "sha256": "5df83f78b94e6f50be7f3eb6bc364667788aa8eb80c9b5c326e6014c6091425f"
+      },
+      "configuration": {
+        "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+        "/home/halbritt/git/cairn/.codex/config.toml": "0fc3226320370f8db9b214e4ba042bed802347b450a2481b2e9a87b13b46b8a3",
+        "/home/halbritt/.config/opencode/opencode.json": "d207573666654ade4f08e9daf54da70567e4031d183ef108ff24756fbed5879f",
+        "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb"
+      }
+    },
+    "after": {
+      "versions": {
+        "schema": "cairn.version/1",
+        "client": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911052109-2ef6e049333f",
+          "vcs": "git",
+          "vcs_revision": "2ef6e049333ff13fc34c6c2fc402f766606a3725",
+          "vcs_time": "2026-09-11T05:21:09Z",
+          "vcs_modified": false
+        },
+        "server": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911050622-bb600c561ce7",
+          "vcs": "git",
+          "vcs_revision": "bb600c561ce7592f6e5b9f4577b17038f1d0fed1",
+          "vcs_time": "2026-09-11T05:06:22Z",
+          "vcs_modified": false
+        }
+      },
+      "cli_sha256": "46d8e7584a37181eeb3f80ba6186978b07888a0796ac3a40ddcd00372ce7c146",
+      "adapter_sha256": "69d3c3183db5f00cb4781f715bc0746d356e85d2b9ff385836869f56bee7776a",
+      "api_pid": 555696,
+      "api_sha256": "1476433adc7892282cfe6985c466fa05e2a75a83bf4a5e4e4d34167aa9440adb",
+      "store_pid": 163669,
+      "record_inventory": {
+        "versions": 91,
+        "sha256": "5df83f78b94e6f50be7f3eb6bc364667788aa8eb80c9b5c326e6014c6091425f"
+      },
+      "configuration": {
+        "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+        "/home/halbritt/git/cairn/.codex/config.toml": "0fc3226320370f8db9b214e4ba042bed802347b450a2481b2e9a87b13b46b8a3",
+        "/home/halbritt/.config/opencode/opencode.json": "d207573666654ade4f08e9daf54da70567e4031d183ef108ff24756fbed5879f",
+        "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb"
+      }
+    },
+    "installer": {
+      "schema": "cairn.response/1",
+      "ok": true,
+      "status": "OK",
+      "data": {
+        "project": "/home/halbritt/git/cairn",
+        "files": [
+          {
+            "path": "/home/halbritt/git/cairn/.opencode/cairn.json",
+            "sha256": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+            "state": "unchanged"
+          },
+          {
+            "path": "/home/halbritt/git/cairn/.opencode/tools/cairn.ts",
+            "sha256": "69d3c3183db5f00cb4781f715bc0746d356e85d2b9ff385836869f56bee7776a",
+            "state": "written"
+          }
+        ]
+      }
+    },
+    "api_restarted": false,
+    "database_migrated": false
+  },
   "limits": [
     "No task-value or review-quality gain established",
     "Agent reviews remain testimony",
@@ -117,5 +238,18 @@
       "sha256": "a90bfb8d47d10f7fb5e4ab703eb0f078234f6afb900a4308d9464a249e84f078"
     },
     "consumption": "Native initial and final packet consumption recorded"
+  },
+  "operational_review": {
+    "receipt_id": "f9110acb-dda5-45bf-8bb7-b9fd8af4b78b",
+    "request_id": "5e86d8bf-24e3-4cbf-814c-2c4b3020ddfe",
+    "version": 1,
+    "witness": "testimony",
+    "observer": "agent:cairn-hosted",
+    "method": "qualitative-self-review/1",
+    "outcome": "unknown",
+    "reason_sha256": "03129b0308e01317b8f2ddd9c636a5ca6942113a718492c40e43423576939c3e",
+    "mcp_build": "2ef6e049333ff13fc34c6c2fc402f766606a3725",
+    "model_calls": 0,
+    "interpretation": "Implementing-agent account: memory repeated existing source/handoff rules; incremental contribution and net value remain uncertain."
   }
 }
