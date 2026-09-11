@@ -15,6 +15,13 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Reuse unchanged passages after note edits.** The optional semantic worker
+  caches exact decoded passages within its existing lifetime. Localized edits
+  only re-embed changed windows; current eligibility and cache limits remain.
+  [Measurements and limits](docs/verification/semantic-chunk-cache-2026-09-10.md).
+  Update the prepared worker script and restart the API; no binary or schema
+  upgrade is required.
+
 - **Review one task across runs.** `use-report` and `run-report` accept exact
   `--task` and `--run` filters before pagination, including their authenticated
   JSON equivalents. [Usage](docs/use-outcome-loop.md#follow-one-task-across-runs).

@@ -37,7 +37,7 @@ def validate_request(request):
 
 
 class Scorer:
-    """Own the prepared model; request notes and vectors remain local to score."""
+    """Own the prepared model and bounded vectors from the last successful score."""
 
     def __init__(self, model_dir):
         versions = {name: importlib.metadata.version(name) for name in
@@ -67,7 +67,7 @@ class Scorer:
         self.tokenizer = tokenizer
         self.model_hash = model_hash
         self.np = np
-        self.note_vectors = {}
+        self.chunk_vectors = {}
 
     def score(self, request):
         np = self.np
@@ -75,32 +75,31 @@ class Scorer:
         question = PREFIX + query
         if len(self.tokenizer.encode(question).ids) > 512:
             raise ValueError("query exceeds model input limit")
-        passages, owners, parts = [], [], []
+        passages, owners, keys = [], [], []
+        missing = {}
         for index, note in enumerate(notes):
-            cached = self.note_vectors.get(note["body_sha256"])
-            if cached is None:
-                start = len(passages) + 1
-                for chunk in chunks(self.tokenizer, note["body"]):
-                    if len(owners) == 128:
-                        raise ValueError("semantic chunk budget exceeded")
-                    if len(self.tokenizer.encode(chunk).ids) > 512:
-                        raise ValueError("decoded chunk exceeds model input limit")
-                    passages.append(chunk)
-                    owners.append(index)
-                parts.append(slice(start, len(passages) + 1))
-            else:
-                if len(owners) + len(cached) > 128:
+            for chunk in chunks(self.tokenizer, note["body"]):
+                if len(owners) == 128:
                     raise ValueError("semantic chunk budget exceeded")
-                owners.extend([index] * len(cached))
-                parts.append(cached)
+                if len(self.tokenizer.encode(chunk).ids) > 512:
+                    raise ValueError("decoded chunk exceeds model input limit")
+                # Inference receives this exact decoded passage. The model and
+                # tokenizer are fixed for this Scorer's lifetime.
+                key = hashlib.sha256(chunk.encode()).hexdigest()
+                if key not in self.chunk_vectors and key not in missing:
+                    missing[key] = len(passages) + 1
+                    passages.append(chunk)
+                owners.append(index)
+                keys.append(key)
         # Single-passage batches avoid padding shorter passages to their neighbours.
         embedded = np.array(list(self.model.embed([question] + passages, batch_size=BATCH_SIZE)))
         if embedded.shape != (len(passages) + 1, 384) or not np.isfinite(embedded).all():
             raise ValueError("invalid model embeddings")
-        parts = [embedded[part] if isinstance(part, slice) else part for part in parts]
+        parts = [self.chunk_vectors[key] if key in self.chunk_vectors
+                 else embedded[missing[key]] for key in keys]
         # Reconstruct the original matrix before normalization and scoring so
         # cache hits preserve the same numerical path as cold requests.
-        vectors = np.concatenate([embedded[:1]] + parts)
+        vectors = np.stack([embedded[0]] + parts)
         norms = np.linalg.norm(vectors, axis=1, keepdims=True)
         if (norms == 0).any():
             raise ValueError("empty model embedding")
@@ -113,9 +112,11 @@ class Scorer:
             dict(record_id=n["record_id"], version=n["version"], body_sha256=n["body_sha256"],
                  score=round(max(-1.0, min(1.0, scores[i])) * 1_000_000))
             for i, n in enumerate(notes)])
-        # Retain only this request's eligible bodies, without text or record IDs.
+        # Retain only this request's passage hashes and raw vectors, without
+        # text, query hashes or record IDs. Every occurrence counts toward the
+        # chunk limit even when several notes share the same passage.
         # Copies avoid keeping unrelated query/miss vectors through array views.
-        self.note_vectors = {n["body_sha256"]: part.copy() for n, part in zip(notes, parts)}
+        self.chunk_vectors = {key: part.copy() for key, part in zip(keys, parts)}
         return result
 
 

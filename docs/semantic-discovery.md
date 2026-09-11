@@ -72,17 +72,29 @@ The library's `semantic.StreamCommand` retains the 30-second default;
 
 The [spaced-follow-up check](verification/semantic-idle-2026-09-10.md) records this
 host's five-minute choice and its observed cost reduction. The worker occupied
-about 208 MiB in the original local experiment while loaded. The prepared worker now reuses exact note vectors
-from its last successfully scored request. Only body hashes and vectors are retained;
-query text, note text and record IDs are not cached. Notes absent from the next
-successful request are dropped. Changed bodies are embedded again, and all current
-eligibility checks still run before the worker receives candidates.
+about 208 MiB in the original local experiment while loaded. The prepared worker
+reuses vectors for exact decoded passages from its last successfully scored
+request. An edit only requires new inference for passages whose text changes;
+appending to a long note can preserve its earlier windows. Tokenization still
+runs on every supplied body. Identical passages within one request also share
+inference, while each occurrence keeps its original position and note identity
+for scoring and counts toward the chunk limit.
+
+Only passage hashes and raw vectors are retained; query text, query hashes, note
+text and record IDs are not cached. Passages absent from the next successful
+request are dropped. All current eligibility checks still run before the worker
+receives candidates. A cached passage cannot introduce a candidate or authorize
+delivery. The loaded model and tokenizer are fixed for that worker's lifetime.
 
 The existing 64-note/128-chunk limits apply to cache hits too. At most 128 vectors
 are retained (192 KiB of vector payload with the installed float32 model, plus map
 overhead). The cache dies with the worker after idle release, failure or shutdown;
 it is not persistent storage or secure allocator erasure. Cold requests still pay
-model initialization and note embedding. [Comparison and limits](verification/semantic-vector-cache-2026-09-09.md).
+model initialization and uncached passage embedding.
+The [passage-reuse comparison](verification/semantic-chunk-cache-2026-09-10.md)
+records localized-edit timing and the remaining cold cost. The earlier
+[whole-note cache comparison](verification/semantic-vector-cache-2026-09-09.md)
+remains as historical evidence.
 Existing custom one-shot workers continue to use `--semantic-command`.
 
 Use the printed path if `CAIRN_HOME` is customized. A systemd installation must

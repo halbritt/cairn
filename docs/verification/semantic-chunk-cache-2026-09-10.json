@@ -1,0 +1,368 @@
+{
+  "date": "2026-09-10",
+  "baseline_commit": "3e95c25c380836c54ee6c7e60ee2be20ee69104a",
+  "worker_before_sha256": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+  "worker_candidate_sha256": "2d85715d25ea9dbc5deb86d37e3ad9e640ba11dfe08f4e920a52453e2aab240f",
+  "measurements": [
+    {
+      "label": "cold",
+      "conditions": {
+        "baseline": {
+          "seconds": 4.792608396150172,
+          "rss_kib": 220328
+        },
+        "candidate": {
+          "seconds": 5.215833499096334,
+          "rss_kib": 220440
+        }
+      },
+      "order": [
+        "baseline",
+        "candidate"
+      ],
+      "complete_response_equal": true,
+      "response_sha256": "5543a98849ec0e54aa2e1d812c80a1e2c24b69c747a8a33381f58ad3b64e516f"
+    },
+    {
+      "label": "warm",
+      "conditions": {
+        "candidate": {
+          "seconds": 0.06370445899665356,
+          "rss_kib": 220444
+        },
+        "baseline": {
+          "seconds": 0.05028482596389949,
+          "rss_kib": 222048
+        }
+      },
+      "order": [
+        "candidate",
+        "baseline"
+      ],
+      "complete_response_equal": true,
+      "response_sha256": "a26142ce102acbf23080a6b105a3803bca6e0787b21dbc018d9162f8acaff9a4"
+    },
+    {
+      "label": "append-0",
+      "conditions": {
+        "baseline": {
+          "seconds": 4.281450942158699,
+          "rss_kib": 222388
+        },
+        "candidate": {
+          "seconds": 0.23629453498870134,
+          "rss_kib": 222148
+        }
+      },
+      "order": [
+        "baseline",
+        "candidate"
+      ],
+      "complete_response_equal": true,
+      "response_sha256": "7bd7dc251bc81c5246e7ed97d661a57f99592c55996b3bc34c3629636d93b0de"
+    },
+    {
+      "label": "append-1",
+      "conditions": {
+        "candidate": {
+          "seconds": 0.2810924469958991,
+          "rss_kib": 222148
+        },
+        "baseline": {
+          "seconds": 4.525292420992628,
+          "rss_kib": 222392
+        }
+      },
+      "order": [
+        "candidate",
+        "baseline"
+      ],
+      "complete_response_equal": true,
+      "response_sha256": "d21ab99f2b1cf03d250e23cfa7903152c4f4a9eccd993ea6654eb70b0ac2d7c0"
+    },
+    {
+      "label": "append-2",
+      "conditions": {
+        "baseline": {
+          "seconds": 4.151999182999134,
+          "rss_kib": 222416
+        },
+        "candidate": {
+          "seconds": 0.26549802999943495,
+          "rss_kib": 222492
+        }
+      },
+      "order": [
+        "baseline",
+        "candidate"
+      ],
+      "complete_response_equal": true,
+      "response_sha256": "b1499b7501af9e6db43df58b530adcf15872be5e13e942f412a1e74918eef700"
+    },
+    {
+      "label": "remove",
+      "conditions": {
+        "candidate": {
+          "seconds": 0.04518957296386361,
+          "rss_kib": 222492
+        },
+        "baseline": {
+          "seconds": 0.04468276910483837,
+          "rss_kib": 222416
+        }
+      },
+      "order": [
+        "candidate",
+        "baseline"
+      ],
+      "complete_response_equal": true,
+      "response_sha256": "0cbabc678e3ba468b30bd2797d2cb2687e2339fe11717f539b2ea8544590f2e5"
+    },
+    {
+      "label": "reintroduce",
+      "conditions": {
+        "baseline": {
+          "seconds": 4.3501387080177665,
+          "rss_kib": 223892
+        },
+        "candidate": {
+          "seconds": 4.229341252939776,
+          "rss_kib": 223992
+        }
+      },
+      "order": [
+        "baseline",
+        "candidate"
+      ],
+      "complete_response_equal": true,
+      "response_sha256": "79dde6dab9cbc5d68cd03ce0a33633ba94af1f904fabc15df9388216d8103322"
+    },
+    {
+      "label": "duplicate",
+      "conditions": {
+        "candidate": {
+          "seconds": 0.06312939408235252,
+          "rss_kib": 223992
+        },
+        "baseline": {
+          "seconds": 0.049773536156862974,
+          "rss_kib": 223892
+        }
+      },
+      "order": [
+        "candidate",
+        "baseline"
+      ],
+      "complete_response_equal": true,
+      "response_sha256": "ee2a08d6ca0feb9dcaca459020d0532859d934de12d869acd3d8e0e7b2b3ce47"
+    }
+  ],
+  "profile": [
+    {
+      "input_count": 10,
+      "embed_seconds": 4.072579036001116,
+      "condition": "baseline",
+      "score_seconds": 4.083229359006509,
+      "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+      "response_sha256": "c4412e69a1a498967af7c317de1852f0325245bcf261bc7a68af399856a21573"
+    },
+    {
+      "input_count": 2,
+      "embed_seconds": 0.21997057693079114,
+      "condition": "candidate",
+      "score_seconds": 0.2312868491280824,
+      "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+      "response_sha256": "c4412e69a1a498967af7c317de1852f0325245bcf261bc7a68af399856a21573"
+    }
+  ],
+  "environment": {
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.39",
+    "python": "3.11.15",
+    "packages": {
+      "fastembed": "0.8.0",
+      "numpy": "2.4.6",
+      "onnxruntime": "1.29.0",
+      "tokenizers": "0.23.2"
+    },
+    "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+    "concurrency": "two worker processes; requests executed serially; shared host not pinned"
+  },
+  "evidence": {
+    "plan.json": {
+      "path": "/tmp/cairn-semantic-chunks-20260910/plan.json",
+      "sha256": "708eb5d0d51553c5d120acdd434c4e693bcba608bc9f844a9f03def47cc71a23"
+    },
+    "compare.py": {
+      "path": "/tmp/cairn-semantic-chunks-20260910/compare.py",
+      "sha256": "ed2b91a837c841a19028629a8cfc1d21c17fd44d9a949a9b8c529870d6c7fe4b"
+    },
+    "red.log": {
+      "path": "/tmp/cairn-semantic-chunks-20260910/red.log",
+      "sha256": "e4266bfafd5ac289c1e24fb60d028846e09178e3f13331dac3f0d6e75f86a824"
+    },
+    "green.log": {
+      "path": "/tmp/cairn-semantic-chunks-20260910/green.log",
+      "sha256": "c2df19fc34f90644612bac9fe8df850ec9a701be2f8542c65752f8d184e48147"
+    },
+    "test.log": {
+      "path": "/tmp/cairn-semantic-chunks-20260910/test.log",
+      "sha256": "55d27d195779f28e715bf5ae1f475d1680bea723b13eac8a1eecbea0a6beffa0"
+    },
+    "deadline-rerun.log": {
+      "path": "/tmp/cairn-semantic-chunks-20260910/deadline-rerun.log",
+      "sha256": "f526cee94ad59bd46f856668b7d56e6b5913b103210e4c6218f2f76aa1f84fc2"
+    },
+    "python.log": {
+      "path": "/tmp/cairn-semantic-chunks-20260910/python.log",
+      "sha256": "7deb7425ce3638b1764a86740ce837268fe0aa46de6e1f6c41edf95706937cb6"
+    },
+    "integration.log": {
+      "path": "/tmp/cairn-semantic-chunks-20260910/integration.log",
+      "sha256": "a24b0efa60aafce20f3407cc3407715b3bae454c7de281c66fde136ec512a533"
+    },
+    "api/report.json": {
+      "path": "/tmp/cairn-semantic-chunks-20260910/api/report.json",
+      "sha256": "f164fdb362b87197a5b4a10cc531f7a0b6d521fc8b7fb82fd0fd6b62f3c0045d"
+    },
+    "check.log": {
+      "path": "/tmp/cairn-semantic-chunks-20260910/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    "decision-receipt.json": {
+      "path": "/tmp/cairn-semantic-chunks-20260910/decision-receipt.json",
+      "sha256": "f13ab03ed9e8aaa7880a9692c6a8d22e8d601194d1296eadad5e0b3c3b2f3b27"
+    }
+  },
+  "limits": [
+    "No cold-start speedup, task trial or net memory-benefit claim",
+    "Three dependent append pairs on public development documents",
+    "13 nonmaterial doctrine obligations retained",
+    "Initial test launch ETXTBSY; unchanged rerun and full integration passed"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-f10dd26b16b60102",
+    "packet_content_sha256": "f10dd26b16b60102b7f1eb1105b2d7fadfd3040a2117a14e654a1bc45d6fdbe4",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "unmet_obligations": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-d6c1edc49e3cfba2",
+        "required_by": "implementation-duplication-as-evidence",
+        "requirement": "candidate contract and cost",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No duplicated implementation is extracted or centralized; same Scorer owns inference. Numerical preservation is separately tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-5744bfd8abbd7893",
+        "required_by": "implementation-duplication-as-evidence",
+        "requirement": "co-change where available",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No duplicated implementation is extracted or centralized; same Scorer owns inference. Numerical preservation is separately tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-8ba9338edd24783e",
+        "required_by": "implementation-duplication-as-evidence",
+        "requirement": "knowledge authority",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No duplicated implementation is extracted or centralized; same Scorer owns inference. Numerical preservation is separately tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-6242559ddf99d4f5",
+        "required_by": "implementation-duplication-as-evidence",
+        "requirement": "ownership and change reasons",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No duplicated implementation is extracted or centralized; same Scorer owns inference. Numerical preservation is separately tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-0cd795779acc87d2",
+        "required_by": "implementation-duplication-as-evidence",
+        "requirement": "semantic and ownership comparison",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No duplicated implementation is extracted or centralized; same Scorer owns inference. Numerical preservation is separately tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a26d1050436340dc",
+        "required_by": "implementation-duplication-as-evidence",
+        "requirement": "semantic equivalence",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No duplicated implementation is extracted or centralized; same Scorer owns inference. Numerical preservation is separately tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-fc24ce879a6b2c4c",
+        "required_by": "performance-benchmark-validity",
+        "requirement": "repeated raw results, variance, and environment stability",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Only the recorded development requests on this shared host are claimed; no traffic distribution, stable-host benchmark or latency percentile is inferred."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-9baad807733ce3be",
+        "required_by": "performance-benchmark-validity",
+        "requirement": "representative input distribution and resource limits",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Only the recorded development requests on this shared host are claimed; no traffic distribution, stable-host benchmark or latency percentile is inferred."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-80a70c5738a3d89a",
+        "required_by": "performance-representative-baseline",
+        "requirement": "repeated raw measurements and variance",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Raw paired results are retained, but three sequential appends are not independent replicated trials and establish no population variance."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-88e0ac180929bdd1",
+        "required_by": "universal-local-reasoning",
+        "requirement": "knowledge and navigation required by callers/maintainers",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No interface or ownership redesign and no maintainability benefit claim; private cache representation changes within existing Scorer."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-c21a7c21c790fb22",
+        "required_by": "universal-local-reasoning",
+        "requirement": "representative change or use scenario",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No interface or ownership redesign and no maintainability benefit claim; private cache representation changes within existing Scorer."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-e053f0e1f20ce2aa",
+        "required_by": "universal-local-reasoning",
+        "requirement": "representative change scenario",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No interface or ownership redesign and no maintainability benefit claim; private cache representation changes within existing Scorer."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-d743f7ec6aee7216",
+        "required_by": "universal-local-reasoning",
+        "requirement": "state, invariant, and dependency ownership",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No interface or ownership redesign and no maintainability benefit claim; private cache representation changes within existing Scorer."
+      }
+    ]
+  }
+}

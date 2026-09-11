@@ -4188,3 +4188,23 @@ protected reports. [Verification](verification/report-scope-2026-09-10.md#instal
 records the installation and its limits. There was no operational note-content
 mutation or model-task trial; this completes the report-filter capability while
 leaving U4's broader task-value requirements open.
+
+
+### 2026-09-10 — reuse unchanged semantic passages after localized edits
+
+Implemented exact decoded-passage vector reuse in the existing worker. Three
+appends to a public long note scored in 0.24–0.28 seconds versus 4.15–4.53 seconds
+with whole-note caching; eight paired complete responses matched. A separate
+profile counted ten inference inputs before and two after. Cache ownership,
+128-window occurrence limit, current eligibility and idle expiry remain;
+retention includes only current passage hashes and raw vectors, with no disk
+cache. Unchanged notes now pay tokenization each time. Cold performance and
+sustained task benefit remain open.
+
+The append test first failed, then passed; thirteen numerical/framing tests,
+full disposable PostgreSQL/race integration with the real worker, Python checks
+and static checks passed. Initial make test hit ETXTBSY launching a temporary
+cold-deadline fixture. Its unchanged isolated rerun and full integration passed;
+root cause is unknown and the failure is retained. Worker installation is pending
+at this checkpoint; installed CLI/API remain b171a8b. See
+[comparison and limitations](verification/semantic-chunk-cache-2026-09-10.md).

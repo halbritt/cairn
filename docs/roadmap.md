@@ -492,6 +492,12 @@ native ingress, full task acceptance or general usefulness.
 
 ### 3. Make retrieval current and evaluate real history
 
+[Passage vector reuse](verification/semantic-chunk-cache-2026-09-10.md) reduces
+scoring after localized edits within a live worker: three public-document appends
+fell from 4.15–4.53 to 0.24–0.28 seconds with identical complete responses. Existing
+eligibility, limits and lifetime remain. Cold retrieval and sustained task value
+are still open.
+
 [Configurable semantic idle retention](verification/semantic-idle-2026-09-10.md)
 now avoids repeated cold embedding during spaced follow-ups on this host. A
 five-minute setting reduced one follow-up after 35 idle seconds from 24.851 to

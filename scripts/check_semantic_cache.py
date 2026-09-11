@@ -55,7 +55,7 @@ def main():
         assert outputs[0] == outputs[1], label + ': complete scoring response changed'
         row = dict(label=label, baseline_seconds=times[0], candidate_seconds=times[1],
                    response_sha256=hashlib.sha256(json.dumps(outputs[0], sort_keys=True).encode()).hexdigest(),
-                   order=order, retained_vector_bytes=sum(v.nbytes for v in scorers[1].note_vectors.values()))
+                   order=order, retained_vector_bytes=sum(v.nbytes for v in scorers[1].chunk_vectors.values()))
         assert row['retained_vector_bytes'] <= 128 * 384 * 8
         measurements.append(row)
         (args.output / 'measurements.json').write_text(json.dumps(measurements, indent=2)+'\n')
