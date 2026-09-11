@@ -6,10 +6,10 @@ changes by source-commit date; they are not numbered releases. The
 retains the complete chronology, including failed trials, corrections and
 superseded work.
 
-The latest recorded installation on 2026-09-10 has clean CLI `f405aeb` and API
-`4999caa`, at database migration 034. Native per-search room uses the updated CLI/MCP
-executable and OpenCode adapter; no API upgrade is required. Later documentation
-commits do not change these builds. Check a particular installation with `cairn version`; use
+The latest recorded installation on 2026-09-10 has clean CLI/API `b171a8b`, at
+database migration 034. Task/run report filters are installed; the native adapter
+and host configuration are unchanged. Later documentation commits do not change
+these builds. Check an installation with `cairn version`; use
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
 See [build identity](docs/build-identity.md) for unstamped builds and MCP processes.
 

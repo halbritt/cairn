@@ -19,7 +19,10 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI is clean `f405aeb`; the API is clean `4999caa`.
+The installed CLI and API are clean `b171a8b`.
+[Task/run report filters](use-outcome-loop.md#follow-one-task-across-runs) select
+one task’s retained runs and memory exposures before pagination. Broader
+recurrence analysis and task-value evidence remain open.
 [Native search room](search-room.md) is installed in MCP and OpenCode: a search
 can request a smaller allowance beneath its configured ceiling. Whole-task context
 accounting remains open.
@@ -71,7 +74,7 @@ remain. Downstream task value remains unmeasured.
 to Striatum main at `5848b23`. The integration repairs two historical-contract
 regressions and passes full repository and focused native race checks. Its
 accepted catalog remains `observation@1`/`build@3`; native adoption and real-build
-benefit remain open. The installed Driver and Cairn services were not upgraded.
+benefit remain open. That integration left the installed Striatum Driver unchanged.
 
 The [native adoption check](native-striatum-context.md#shared-rfc-adoption-check--2026-09-10)
 also found an unfinished, separate amendment on RFC 0004. Its request and
@@ -4168,3 +4171,20 @@ A fresh disposable CLI check passed without writing its sentinel run directory.
 Its first standalone invocation omitted migration and was corrected. No operational
 database was used for these tests. [Verification](verification/report-scope-2026-09-10.md#fixture-isolation-correction)
 retains the correction and evidence; report behavior is unchanged.
+
+
+### 2026-09-10 — Install task/run report filters
+
+Installed clean CLI/API `b171a8b78b9b0a889a7718974cb0b4e60b71bfba` after
+[CI 34544439753](https://github.com/halbritt/cairn/actions/runs/34544439753)
+passed both jobs and all steps. The preceding feature CI also passed. A store
+backup and previous binary copies were retained before restarting the API.
+PostgreSQL, migration 034, configuration, native adapter and all 81 retained
+note-version payloads stayed unchanged.
+
+The installed executable passed the isolated CLI history/task/run check. The
+running API reports the same clean build and retains hosted denial for both
+protected reports. [Verification](verification/report-scope-2026-09-10.md#installation)
+records the installation and its limits. There was no operational note-content
+mutation or model-task trial; this completes the report-filter capability while
+leaving U4's broader task-value requirements open.

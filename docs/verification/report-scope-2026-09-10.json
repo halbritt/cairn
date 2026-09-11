@@ -183,5 +183,20 @@
     },
     "scratch_check_correction": "The first standalone check omitted schema migration; the corrected disposable check migrates before capture.",
     "operational_database_used_for_tests": false
+  },
+  "installation": {
+    "commit": "b171a8b78b9b0a889a7718974cb0b4e60b71bfba",
+    "ci_run": 34544439753,
+    "ci_sha256": "68a61ed73587ea670a3e904017d3a42731292514cc5dbb2ef5d4ac9b57f41709",
+    "manifest": "/tmp/cairn-report-scope-20260910/deployment/installation.json",
+    "manifest_sha256": "41188d69fd5b4f55bfc4c91651c4055eccf1f4fe40456c977f21713c9974652c",
+    "installed_cli_check": "/tmp/cairn-report-scope-20260910/installed-cli.log",
+    "installed_cli_check_sha256": "007deda27b1cde111bf42b1c14b6b7cff52deb77e3b795d697848afd876118bd",
+    "installed_api_check": "/tmp/cairn-report-scope-20260910/installed-api.json",
+    "installed_api_check_sha256": "5401ea8ee1a6067e48a8a66fe475e4c3c1b68607cba1a9370b1131eec3c70a45",
+    "migration": 34,
+    "record_versions_preserved": 81,
+    "api_restarted": true,
+    "database_and_adapter_unchanged": true
   }
 }

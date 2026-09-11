@@ -32,9 +32,8 @@ These checks establish report behavior. They do not measure review-time savings,
 memory's incremental contribution or improved model-task outcomes. Existing
 qualitative assessment narratives remain the place to explain those judgments.
 
-Installation follows source integration and CI; the authenticated endpoint needs
-an updated API to accept the new fields. Existing requests without filters retain
-their behavior.
+The authenticated endpoint needs an updated API to accept the new fields.
+Existing requests without filters retain their behavior.
 
 
 ## Fixture isolation correction
@@ -49,3 +48,19 @@ returned artifact paths against that directory. A fresh disposable CLI check
 passed and left its sentinel artifact home untouched. The first standalone
 check omitted database migration; the corrected check migrates before capture.
 This follow-up changes test isolation, not report behavior.
+
+
+## Installation
+
+Clean CLI/API `b171a8b78b9b0a889a7718974cb0b4e60b71bfba` are installed after
+[CI 34544439753](https://github.com/halbritt/cairn/actions/runs/34544439753)
+passed both jobs and all steps. A store backup and previous executable copies
+were retained before the API restart. PostgreSQL, migration 034, configuration
+and native adapter files stayed unchanged; all 81 retained note versions match
+their pre-installation inventory.
+
+The installed executable passed the isolated CLI history and task/run selection
+check. The running API reports the same clean build and refuses both protected
+reports through the existing hosted profile. Positive authenticated filtering
+was verified by the disposable Unix API suite. These checks establish the
+installed capability and access boundary, without a new model-task claim.
