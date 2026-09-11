@@ -34,9 +34,10 @@ net savings still unknown.
 
 An [assessment binding repair](verification/assessment-binding-2026-09-10.md)
 now checks the current profile before cached write responses as well as new
-writes. Its implementation is verified below; installation is recorded separately.
+writes. Clean CLI/API `bb600c5` is installed after passing CI and ordinary hosted
+retrieval checks; the initial CI failure and test correction remain in the history.
 
-The installed CLI/API are clean `4e75ed1`; the native OpenCode adapter remains
+The installed CLI/API are clean `bb600c5`; the native OpenCode adapter remains
 from `797aafe`. [Use-report expansion observations](verification/expansion-observation-2026-09-10.md)
 keep a retained instrumented expansion visible alongside later testimony or
 citation, without claiming delivery or task benefit. [Client diagnostics](verification/client-diagnostics-2026-09-10.md)
@@ -4742,3 +4743,19 @@ assessment field. Focused disposable checks passed in UTC and the host timezone;
 `make check` passed. Production code is unchanged by this correction.
 The [repair report](verification/assessment-binding-2026-09-10.md) retains the
 failed CI run and reproduction. Installation remains pending successful CI.
+
+### Assessment binding repair installed — 2026-09-10
+
+Clean CLI/API `bb600c5` is installed after
+[successful CI](https://github.com/halbritt/cairn/actions/runs/34564679136).
+The API process executable matches the tested CLI hash. A fresh hosted search
+and pull verified the current assessment guide v3; the agent's protected report
+access still refused. The API restarted without restarting PostgreSQL or running
+a migration. The exact inventory of 91 ordinary record versions, semantic worker
+and semantic service settings remained unchanged. The
+[installation manifest](verification/assessment-binding-2026-09-10.json) retains
+source identities, executable hashes and before/after checks.
+
+This completes adoption of the write-binding repair. Native assessment tools
+remain in the saved work-in-progress patch for subsequent implementation. No new
+task-benefit result or roadmap completion is inferred from installing the fix.

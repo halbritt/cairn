@@ -62,3 +62,19 @@ represent the same instant with different Go `time.Location` values. The test
 now converts both timestamps to UTC before comparing every assessment field.
 Focused disposable checks pass in UTC and the host timezone, and `make check`
 passes. This changes the test only; the initial failed CI result remains recorded.
+
+## Installed build
+
+[CI for `bb600c5`](https://github.com/halbritt/cairn/actions/runs/34564679136)
+passed, including the PostgreSQL race suite, Python checks and authenticated
+CLI/MCP integration. The clean build is now installed for the CLI and running
+API. Their reported source revision is
+`bb600c561ce7592f6e5b9f4577b17038f1d0fed1`; both executable hashes are
+`1476433adc7892282cfe6985c466fa05e2a75a83bf4a5e4e4d34167aa9440adb`.
+
+An ordinary hosted search and full pull returned the current assessment guide
+v3 with its expected body hash. The protected use report still refused that
+agent profile. The API restarted; PostgreSQL did not. All 91 ordinary record
+versions retained their exact inventory fingerprint, and the semantic worker
+and its service settings retained their hashes. No migration was run. Native
+assessment tools are still pending; this installation repairs the existing API.

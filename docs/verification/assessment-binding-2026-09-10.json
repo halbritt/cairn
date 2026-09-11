@@ -48,6 +48,14 @@
     "ci-check.log": {
       "path": "/tmp/cairn-native-assessments-20260910/ci-check.log",
       "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    "installation.json": {
+      "path": "/tmp/cairn-native-assessments-20260910/installation.json",
+      "sha256": "6486cf03dda33493bc33707e30a44324205ce05f014b4e6527b3cd04fc1a5d49"
+    },
+    "install.py": {
+      "path": "/tmp/cairn-native-assessments-20260910/install.py",
+      "sha256": "4ac0f54ee678133a8ce946d54fa816745337dd5d8d30939c59661b2382396d66"
     }
   },
   "verification": {
@@ -56,7 +64,84 @@
     "make_check": "passed",
     "answering_model_calls": 0
   },
-  "installation": "pending",
+  "installation": {
+    "ci": {
+      "conclusion": "success",
+      "headSha": "bb600c561ce7592f6e5b9f4577b17038f1d0fed1",
+      "status": "completed",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34564679136"
+    },
+    "before": {
+      "versions": {
+        "schema": "cairn.version/1",
+        "client": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911040217-4e75ed1be650",
+          "vcs": "git",
+          "vcs_revision": "4e75ed1be650a4cb736fe294fef672f10f5e59b3",
+          "vcs_time": "2026-09-11T04:02:17Z",
+          "vcs_modified": false
+        },
+        "server": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911040217-4e75ed1be650",
+          "vcs": "git",
+          "vcs_revision": "4e75ed1be650a4cb736fe294fef672f10f5e59b3",
+          "vcs_time": "2026-09-11T04:02:17Z",
+          "vcs_modified": false
+        }
+      },
+      "cli_sha256": "c4dad27b95018daaed9ab5cc1a5d84dfd53f9c8345ee47c3e92343f0d6fced0e",
+      "api_pid": 386925,
+      "api_sha256": "c4dad27b95018daaed9ab5cc1a5d84dfd53f9c8345ee47c3e92343f0d6fced0e",
+      "store_pid": 163669,
+      "record_inventory": {
+        "versions": 91,
+        "sha256": "5df83f78b94e6f50be7f3eb6bc364667788aa8eb80c9b5c326e6014c6091425f"
+      },
+      "semantic_worker_sha256": "4f70d19c1442bebe812cf0fab667a214992575d68737b981189783211916de95",
+      "semantic_config_sha256": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb"
+    },
+    "after": {
+      "versions": {
+        "schema": "cairn.version/1",
+        "client": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911050622-bb600c561ce7",
+          "vcs": "git",
+          "vcs_revision": "bb600c561ce7592f6e5b9f4577b17038f1d0fed1",
+          "vcs_time": "2026-09-11T05:06:22Z",
+          "vcs_modified": false
+        },
+        "server": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911050622-bb600c561ce7",
+          "vcs": "git",
+          "vcs_revision": "bb600c561ce7592f6e5b9f4577b17038f1d0fed1",
+          "vcs_time": "2026-09-11T05:06:22Z",
+          "vcs_modified": false
+        }
+      },
+      "cli_sha256": "1476433adc7892282cfe6985c466fa05e2a75a83bf4a5e4e4d34167aa9440adb",
+      "api_pid": 555696,
+      "api_sha256": "1476433adc7892282cfe6985c466fa05e2a75a83bf4a5e4e4d34167aa9440adb",
+      "store_pid": 163669,
+      "record_inventory": {
+        "versions": 91,
+        "sha256": "5df83f78b94e6f50be7f3eb6bc364667788aa8eb80c9b5c326e6014c6091425f"
+      },
+      "semantic_worker_sha256": "4f70d19c1442bebe812cf0fab667a214992575d68737b981189783211916de95",
+      "semantic_config_sha256": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb"
+    },
+    "normal_hosted_retrieval": "passed",
+    "hosted_protected_report_refusal": "passed",
+    "production_report_contents_read": false,
+    "database_migrated": false
+  },
   "limits": [
     "Synthetic reproduction after profile changes; no observed production disclosure",
     "Exact retry requires the original payload, not only a UUID",
