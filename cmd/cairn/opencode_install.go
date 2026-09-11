@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/integrations/opencode"
@@ -21,6 +23,8 @@ type openCodeSettings struct {
 	TokenFile  string            `json:"token_file"`
 	Repo       string            `json:"repo"`
 	Tokens     int               `json:"tokens"`
+	TaskID     string            `json:"task_id,omitempty"`
+	RunID      string            `json:"run_id,omitempty"`
 	Context    map[string]string `json:"context,omitempty"`
 }
 
@@ -52,6 +56,8 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 	f.StringVar(&settings.TokenFile, "token-file", "", "provisioned ordinary agent token path (required)")
 	f.StringVar(&settings.Repo, "repo", "", "canonical repository identity (required)")
 	f.IntVar(&settings.Tokens, "tokens", 32000, "memory input room per tool result")
+	f.StringVar(&settings.TaskID, "task", "", "optional declared task scope shared across native sessions")
+	f.StringVar(&settings.RunID, "run", "", "optional declared run scope; requires --task, otherwise use each native session ID")
 	pins := map[string]*string{}
 	for _, name := range []string{"revision", "workspace-sha256", "task-class", "task-phase", "binding", "capability"} {
 		pins[name] = f.String(name, "", "declared context pin; validated by the API on retrieval")
@@ -64,6 +70,16 @@ func installOpenCode(args []string, executable string) (openCodeInstallation, er
 	}
 	if settings.Tokens < 256 || settings.Tokens > 1000000 {
 		return result, invalid("memory input room must be between 256 and 1000000")
+	}
+	for name, value := range map[string]string{"task": settings.TaskID, "run": settings.RunID} {
+		provided := false
+		f.Visit(func(option *flag.Flag) { provided = provided || option.Name == name })
+		if provided && (strings.TrimSpace(value) == "" || value == "*" || len(value) > 256 || !utf8.ValidString(value) || strings.ContainsRune(value, 0)) {
+			return result, invalid("declared task/run scope requires 1-256 UTF-8 bytes, no NUL, and no wildcard")
+		}
+	}
+	if settings.RunID != "" && settings.TaskID == "" {
+		return result, invalid("--run requires an explicit --task")
 	}
 	for name, value := range pins {
 		if *value != "" {

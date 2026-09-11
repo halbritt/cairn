@@ -28,7 +28,11 @@ cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" start \
 
 Use your canonical repository identity and actual task/run labels. These are
 declared launcher scope, not a fabricated OpenCode session ID or observed execution
-attempt. Later native searches use OpenCode's actual session scope. Existing
+attempt. Later native searches default to OpenCode's actual session scope. To
+keep task- or run-restricted notes available through fresh native searches,
+[configure the adapter](opencode-tools.md#continue-a-task-across-sessions) with
+the same `--task` and, when needed, `--run` labels. Startup does not modify that
+configuration or propagate its labels automatically. Existing
 OpenCode configuration selects the model; you can pass its normal flags after
 `--`. Cairn does not edit model settings or tool permissions.
 

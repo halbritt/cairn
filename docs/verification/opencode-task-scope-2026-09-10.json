@@ -1,0 +1,268 @@
+{
+  "date": "2026-09-10",
+  "baseline_commit": "70d4d92bb0b80a6192e7956a64e67a099e748085",
+  "adapter_before_sha256": "02dc935a5bdfe67516ebc88587abe655b2022f53a503922cbc4b1c1e21682985",
+  "adapter_after_sha256": "e18aec232eb34af4d8e4d2c4109cf942d84c95c2e834d6bed54dd35aa6ec39df",
+  "opencode_version": "1.18.21",
+  "native_scope": {
+    "native_session_scopes": [
+      {
+        "repo": "fixture:socket",
+        "task_id": "repair \u65e5\u672c\u8a9e exact",
+        "run_id": "ses_f721db313ffeIFHEPTm2cEPHD2"
+      },
+      {
+        "repo": "fixture:socket",
+        "task_id": "repair \u65e5\u672c\u8a9e exact",
+        "run_id": "ses_f721dabd0ffeHzVCtlGlMRWRVF"
+      }
+    ],
+    "task_record_id": "710415fa-dee5-4e22-8f30-33b60f4e69d3",
+    "fixed_scope": {
+      "repo": "fixture:socket",
+      "task_id": "repair \u65e5\u672c\u8a9e exact",
+      "run_id": "attempt literal"
+    },
+    "default_scope_excludes_task_notes": true,
+    "current_profile_privacy_preserved": true,
+    "caller_scope_override_refused": true,
+    "native_sessions_are_not_independent_model_tasks": true
+  },
+  "checks": {
+    "red.log": {
+      "path": "/tmp/cairn-opencode-task-scope-20260910/red.log",
+      "sha256": "34c51b1afea1101594c31f055d977e5a95767e5e614236ab2e5f243a2e4253ad"
+    },
+    "green.log": {
+      "path": "/tmp/cairn-opencode-task-scope-20260910/green.log",
+      "sha256": "a9360bdbcf5b2957ba65869dc4bc85c95b44aa8e7e0ed28219352f174145964c"
+    },
+    "go-tests.log": {
+      "path": "/tmp/cairn-opencode-task-scope-20260910/go-tests.log",
+      "sha256": "41d5cc7660823d21deaab6aa5c385556120b4db9b8408bf8d84f65a2e138cf2c"
+    },
+    "go-tests-corrected.log": {
+      "path": "/tmp/cairn-opencode-task-scope-20260910/go-tests-corrected.log",
+      "sha256": "d6ae065621b30e9b4e15381032f94e16022e43e7337cda744e72a7506f7c60ff"
+    },
+    "integration.log": {
+      "path": "/tmp/cairn-opencode-task-scope-20260910/integration.log",
+      "sha256": "96d5a846b1bd27fcae8ce56b932699a724148419fee3d0eb71c29bb8709baf8e"
+    },
+    "python.log": {
+      "path": "/tmp/cairn-opencode-task-scope-20260910/python.log",
+      "sha256": "53cec000e766bb099b08fb68fee121432805aaa349d60fb739457374e83d243f"
+    },
+    "check.log": {
+      "path": "/tmp/cairn-opencode-task-scope-20260910/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    "decision-receipt.json": {
+      "path": "/tmp/cairn-opencode-task-scope-20260910/decision-receipt.json",
+      "sha256": "d615c01a4f869825f17fca1480bc807f0c424b6b718385a1bbf783de01111343"
+    }
+  },
+  "limits": [
+    "No model inference or completed task evaluation",
+    "Fixed labels are declarations, not native execution attestation",
+    "No automatic launcher scope propagation or whole-task context accounting"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-2f98d7bcf21730ce",
+    "packet_content_sha256": "2f98d7bcf21730ce62e4c34ea5612b12c52d6bed097670b1a000ccc7376f453b",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "unmet_obligations": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-c9d609d3dae4012c",
+        "required_by": "architecture-dependency-inversion-gate",
+        "requirement": "concrete dependency harm",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No dependency inversion or new substitute implementation is introduced; existing CLI/core ownership remains."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-80174fd7619168b4",
+        "required_by": "architecture-dependency-inversion-gate",
+        "requirement": "consumer contract sketch",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No dependency inversion or new substitute implementation is introduced; existing CLI/core ownership remains."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-24abaa03cc677f64",
+        "required_by": "architecture-dependency-inversion-gate",
+        "requirement": "consumer policy and provider volatility",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No dependency inversion or new substitute implementation is introduced; existing CLI/core ownership remains."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-7e4a4370edda30c3",
+        "required_by": "architecture-dependency-inversion-gate",
+        "requirement": "narrow contract and owner",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No dependency inversion or new substitute implementation is introduced; existing CLI/core ownership remains."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-779b82067bf63482",
+        "required_by": "architecture-dependency-inversion-gate",
+        "requirement": "net cost comparison",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No dependency inversion or new substitute implementation is introduced; existing CLI/core ownership remains."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b7f9a3bf788e96b1",
+        "required_by": "architecture-dependency-inversion-gate",
+        "requirement": "real implementation, substitution, release, or legacy-seam need",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No dependency inversion or new substitute implementation is introduced; existing CLI/core ownership remains."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bd11f2fbf8ed352c",
+        "required_by": "architecture-policy-mechanism-separation",
+        "requirement": "identified policy",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No policy extraction or new architecture boundary; existing scope matching remains in core and adapter configuration supplies labels."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-55947e2c9b11e87a",
+        "required_by": "architecture-policy-mechanism-separation",
+        "requirement": "independently meaningful policy",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No policy extraction or new architecture boundary; existing scope matching remains in core and adapter configuration supplies labels."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-2048c9aa2f2cb21a",
+        "required_by": "architecture-policy-mechanism-separation",
+        "requirement": "mechanism semantics",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No policy extraction or new architecture boundary; existing scope matching remains in core and adapter configuration supplies labels."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-0c2d8012d288ea77",
+        "required_by": "architecture-policy-mechanism-separation",
+        "requirement": "mechanism semantics that callers must still observe",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No policy extraction or new architecture boundary; existing scope matching remains in core and adapter configuration supplies labels."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-fb93f6cd02aa1753",
+        "required_by": "architecture-policy-mechanism-separation",
+        "requirement": "stable semantic crossing data",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No policy extraction or new architecture boundary; existing scope matching remains in core and adapter configuration supplies labels."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-5a26c08d16c0b0f7",
+        "required_by": "architecture-policy-mechanism-separation",
+        "requirement": "volatile or replaceable mechanism",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No policy extraction or new architecture boundary; existing scope matching remains in core and adapter configuration supplies labels."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-672ee2aedbbccb5d",
+        "required_by": "domain-modeling-investment-gate",
+        "requirement": "business differentiation and product lifespan",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Existing task/run/session distinctions are reused and tested; no new domain model or expert-dependent business rule is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-fd9eede1324f4f15",
+        "required_by": "domain-modeling-investment-gate",
+        "requirement": "business-value and expert-access evidence",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Existing task/run/session distinctions are reused and tested; no new domain model or expert-dependent business rule is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-c71eea1802d975ea",
+        "required_by": "domain-modeling-investment-gate",
+        "requirement": "expert access and feedback cadence",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Existing task/run/session distinctions are reused and tested; no new domain model or expert-dependent business rule is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-350b980dc5d4778a",
+        "required_by": "domain-modeling-investment-gate",
+        "requirement": "recurring ambiguity, contradiction, or rule defect",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Existing task/run/session distinctions are reused and tested; no new domain model or expert-dependent business rule is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-4811df978de63122",
+        "required_by": "domain-modeling-investment-gate",
+        "requirement": "team capacity to sustain the model",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Existing task/run/session distinctions are reused and tested; no new domain model or expert-dependent business rule is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No interface or method set is introduced; existing concrete settings and installer are extended."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No interface or method set is introduced; existing concrete settings and installer are extended."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No interface or method set is introduced; existing concrete settings and installer are extended."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No interface or method set is introduced; existing concrete settings and installer are extended."
+      }
+    ]
+  }
+}

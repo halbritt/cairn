@@ -16,6 +16,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-10
 
+- **Continue a named task across OpenCode sessions.** `opencode-install --task`
+  gives native searches a stable declared task while retaining native run IDs.
+  Add `--run` to fix both labels, for example to match a compact launcher.
+  Defaults remain session-derived. [Usage](docs/opencode-tools.md#continue-a-task-across-sessions).
+  Update the CLI and bundled adapter; existing API and database versions suffice.
+
 - **Reuse unchanged passages after note edits.** The optional semantic worker
   caches exact decoded passages within its existing lifetime. Localized edits
   only re-embed changed windows; current eligibility and cache limits remain.

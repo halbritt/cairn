@@ -14,6 +14,57 @@ import (
 	"github.com/halbritt/cairn/integrations/opencode"
 )
 
+func TestOpenCodeInstallDeclaredTaskScope(t *testing.T) {
+	project := t.TempDir()
+	args := append(installArgs(project), "--task", "repair 日本語", "--run", "attempt 'literal'")
+	if _, err := installOpenCode(args, "/tmp/cairn"); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(project, ".opencode/cairn.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(body, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if settings["task_id"] != "repair 日本語" || settings["run_id"] != "attempt 'literal'" {
+		t.Fatalf("declared task scope changed: %s", body)
+	}
+}
+
+func TestOpenCodeInstallTaskScopeDefaultsAndRefusals(t *testing.T) {
+	for _, args := range [][]string{{}, {"--task", "long-lived-task"}} {
+		project := t.TempDir()
+		if _, err := installOpenCode(append(installArgs(project), args...), "/tmp/cairn"); err != nil {
+			t.Fatal(err)
+		}
+		body, err := os.ReadFile(filepath.Join(project, ".opencode/cairn.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var settings map[string]any
+		if err := json.Unmarshal(body, &settings); err != nil {
+			t.Fatal(err)
+		}
+		if _, found := settings["run_id"]; found {
+			t.Fatalf("installer fixed an undeclared run: %s", body)
+		}
+		if len(args) == 0 && settings["task_id"] != nil {
+			t.Fatalf("installer fixed an undeclared task: %s", body)
+		}
+	}
+	for _, args := range [][]string{{"--task", ""}, {"--task", " "}, {"--task", "*"}, {"--task", strings.Repeat("界", 86)}, {"--task", "bad\x00scope"}, {"--task", "bad\xffscope"}, {"--run", "run-only"}, {"--task", "valid", "--run", ""}, {"--task", "valid", "--run", "*"}} {
+		project := t.TempDir()
+		if _, err := installOpenCode(append(installArgs(project), args...), "/tmp/cairn"); err == nil {
+			t.Fatalf("accepted invalid scope %q", args)
+		}
+		if _, err := os.Stat(filepath.Join(project, ".opencode")); !os.IsNotExist(err) {
+			t.Fatalf("invalid scope wrote installation files: %v", err)
+		}
+	}
+}
+
 func installArgs(project string) []string {
 	return []string{"--project", project, "--socket", "missing socket '$(literal)'", "--token-file", "missing token 日本語", "--repo", "repo:installation"}
 }
@@ -134,7 +185,7 @@ func TestOpenCodeInstallRefusesSymlinkDestinations(t *testing.T) {
 }
 
 func TestOpenCodeInstallInvalidArgumentsHaveNoEffects(t *testing.T) {
-	for _, extra := range [][]string{{"--repo", "*"}, {"--token-file="}, {"--tokens", "255"}, {"--task", "invented"}, {"unexpected"}} {
+	for _, extra := range [][]string{{"--repo", "*"}, {"--token-file="}, {"--tokens", "255"}, {"--unknown-option", "invented"}, {"unexpected"}} {
 		project := t.TempDir()
 		_, err := installOpenCode(append(installArgs(project), extra...), "/cairn")
 		if core.Code(err) != "INVALID_REQUEST" {

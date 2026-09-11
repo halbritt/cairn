@@ -4237,3 +4237,28 @@ The comparison report now spells out shifted-window limits: earlier insertions
 or deletions can invalidate later windows, and short-note edits may require full
 passage inference. Cold speedup, larger-corpus behavior and net task benefit
 remain unestablished. [Full evidence](verification/semantic-chunk-cache-2026-09-10.md).
+
+
+### 2026-09-10 — keep native OpenCode searches on a declared task
+
+Implemented optional opencode-install --task and --run settings for native search.
+A task alone persists across sessions while each session retains its native run
+ID; an explicit run requires the task and fixes both labels. Default native
+scope remains unchanged. This addresses the documented compact-start scope switch
+without pretending launcher labels are native session IDs or propagating them
+automatically. Scope is host-configured; tool arguments cannot override it.
+
+The new installer test failed before the flag existed and then passed. The older
+invalid-argument test was updated because --task is now deliberately supported;
+it still rejects an unknown flag. Full disposable PostgreSQL/race and actual
+OpenCode 1.18.21 checks passed, including exact task-note pulls from two distinct
+native sessions, run-restricted selection, private/unrelated exclusion, unchanged
+request retry identity, invalid settings and restored defaults. Python and static
+checks passed. No answering-model task or production test mutation occurred.
+
+Installation is pending at this checkpoint. CLI/API remain b171a8b and the earlier
+passage-reuse worker remains installed. Fixed task settings apply across sessions
+using one connection file until changed; this is an explicit applicability choice,
+not observed task/attempt attribution. [Usage](opencode-tools.md#continue-a-task-across-sessions)
+and [verification](verification/opencode-task-scope-2026-09-10.md). Whole-task
+budgeting, automatic scope propagation and broader task value remain open.

@@ -24,6 +24,15 @@ scope/context flags. Both output modes connected in OpenCode without a model
 call. This removes routine JSON assembly; host launch and outcome association
 remain explicit responsibilities.
 
+[Declared OpenCode task scope](opencode-tools.md#continue-a-task-across-sessions)
+lets a configured task continue across native sessions. Task-only configuration
+retains native session IDs for runs; an optional fixed run can align subsequent
+searches with a launcher or another harness. Existing defaults remain. Native
+checks retrieve task-restricted guidance in two distinct sessions, with exact
+pulls and preserved privacy/scope refusals. This closes an access gap in task
+continuity; automatic propagation, observed execution identity and model-task
+value remain open. [Verification](verification/opencode-task-scope-2026-09-10.md).
+
 The [structured CLI pull form](index-and-pull.md) now accepts a returned
 `pull_arguments` object directly on stdin. It resolves a repeated CLI interaction
 mismatch encountered during native integration; shell/JSON retries and stale
@@ -48,7 +57,7 @@ explicit task/run scope. The actual Codex client loaded generated files and pull
 exact saved content in both modes. It leaves existing host configuration intact;
 native connection and setup capability do not establish a completed model task.
 
-The [native OpenCode adapter](opencode-tools.md) now uses actual custom-tool
+The [native OpenCode adapter](opencode-tools.md) now defaults to actual custom-tool
 session context for search scope and the existing authenticated CLI for all six
 ordinary tools, including retained history. CLI results include structured pull
 arguments alongside shell commands. [Native verification](verification/opencode-tools-2026-09-09.md) covers

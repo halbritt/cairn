@@ -13,6 +13,7 @@ from check_advisory_conflicts import check_harness as check_advisory_conflicts
 from check_opencode_unicode import check as check_unicode
 from check_native_history import check as check_history
 from check_recent_file_session import check as check_recent_files
+from check_opencode_scope import check as check_scope
 
 
 def check(binary, root, environment, opencode, claim, support):
@@ -54,6 +55,7 @@ def check(binary, root, environment, opencode, claim, support):
         assert result.returncode == 0, (name, result.stderr, result.stdout)
         return json.loads(json.loads(result.stdout)['result']['output'])
 
+    check_scope(binary, environment, invoke, settings_path, settings, root / 'opencode-scope.json')
     check_unicode(invoke, opencode, root / 'opencode-unicode', settings_path, settings)
     # Large debug input produced incomplete stdout; normal-session capture is
     # checked below. Seed this output-budget fixture through the operator CLI.

@@ -5,8 +5,8 @@ Native capture and search accept `entities`; body-only edits preserve them, full
 draft edits can replace them, and exact-version history reads expose them.
 
 The [native tool adapter](../integrations/opencode/cairn.ts) gives OpenCode
-session-scoped search, body/evidence pulls and ordinary note maintenance through
-the existing authenticated Cairn CLI. It uses OpenCode's `context.sessionID`;
+search, body/evidence pulls and ordinary note maintenance through
+the existing authenticated Cairn CLI. Search defaults to OpenCode's `context.sessionID`;
 the MCP alternative continues to require explicit task/run configuration.
 
 Verified with OpenCode 1.18.21. Its
@@ -53,7 +53,7 @@ the API separately when a new tool feature requires it.
 Use `--tokens` to set memory room (default 32,000). Optional `--revision`,
 `--workspace-sha256`, `--task-class`, `--task-phase`, `--binding` and `--capability` flags populate
 the existing declared context settings; the API validates them on retrieval.
-There are no task/run flags because native OpenCode supplies session scope.
+Use optional `--task` and `--run` for [declared task scope](#continue-a-task-across-sessions).
 
 Optional `--recent-files` also installs a plugin that turns recent successful
 file reads into hints for fresh searches. See [recent file hints](recent-file-hints.md)
@@ -126,10 +126,47 @@ Capture accepts explicit [applicability pins](currentness-and-replay.md#saving-g
 including task phase and validity. Search settings are never automatically copied
 into a saved note.
 
-Search uses the configured repository, task `opencode/<sessionID>` and run
+By default, search uses the configured repository, task `opencode/<sessionID>` and run
 `<sessionID>`. This groups a conversation, including multiple turns, and is not
 an execution-attempt identity or observed outcome. Missing/invalid native session
 IDs refuse search. No environment or random-ID fallback exists.
+
+### Continue a task across sessions
+
+To retrieve notes restricted to a task that continues across OpenCode sessions,
+add `--task TASK_ID` to the complete `opencode-install` command. This writes
+`task_id` in `.opencode/cairn.json`; each native session still supplies its own
+`run_id`. For example, a note scoped to task `storage-review` and run `*` becomes
+eligible in later sessions configured with `--task storage-review`. Without that
+setting, those sessions use different `opencode/<sessionID>` tasks and do not
+match the saved task restriction.
+
+For an explicitly named run, also add `--run RUN_ID`. It requires `--task` and
+writes `run_id` in the connection file. This lets native searches use the same
+declared scope as an [explicit startup](compact-start.md) or another harness.
+The labels are declarations, not native session IDs or evidence that executions
+are independent. Both omitted retains the existing native scope.
+
+Identifiers must contain 1–256 UTF-8 bytes, with nonblank text, no NUL and no
+wildcard `*`. They retain case, spaces and punctuation exactly. The installer
+refuses invalid scope before writing files. Hand-maintained connection files
+accept the same optional `task_id` and `run_id` fields; an empty or null field
+does not mean the default. Omit the field instead.
+
+The connection file applies to all sessions using that adapter and is read on
+each call. Keep the full settings when reconfiguring with `--replace`; to resume
+native defaults, omit both flags from the complete installation command. Remove
+or change a fixed task when work moves to another task. Agents cannot override
+these settings through search arguments. Changing effective scope needs a new
+search request UUID; retained pulls keep their original receipt scope and still
+recheck eligibility. Capture continues to use its explicitly supplied scope,
+with ordinary `remember` defaulting to repository-wide notes.
+
+Update the CLI and bundled adapter to expose these settings. Existing API and
+database versions support them. [Verification](verification/opencode-task-scope-2026-09-10.md)
+covers native sessions without an answering-model task.
+
+### Read selected sources
 
 Search returns full mandatory `selected` context and an ordered index. Pass each
 relevant entry's complete `pull_arguments` to `cairn_pull`. Retain those arguments
