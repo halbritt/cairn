@@ -1,6 +1,31 @@
 # Cairn roadmap
 
-Updated 2026-09-10. Baseline: `e3b47c7` (local memory and task delivery loop).
+Updated 2026-09-11. Baseline: `e3b47c7` (local memory and task delivery loop).
+
+## Single-user operating assumptions
+
+Owner clarification, 2026-09-11: Cairn must not be overburdened with security
+theater on a single-user box. This reaffirms the
+[operator's existing correction, §2](sources/agent-memory/synthesis/producer-attribution-correction.md#2-environment-this-is-not-a-hostile-setting-and-the-design-should-stop-paying-as-if-it-were):
+authentication is deliberately light; favor detecting mistakes and making them
+visible, reserving prevention for unrecoverable outcomes. Imported and untrusted
+content still requires the handling specified in that correction.
+
+Apply this direction when choosing ordinary memory setup and access behavior.
+Project context is useful for finding relevant notes; do not assume each project
+needs a separate security boundary. Current repository-bound credentials and
+project-local configuration describe the implementation, not a requirement to
+preserve that setup. Any added access restriction or setup burden needs a concrete
+justification in this operating environment.
+
+## Current near-term goal
+
+Owner direction, 2026-09-11: make Cairn available in Codex, OpenCode, Agy, and
+Claude Code across the owner's projects, so each agent can save and recall useful
+shared memory with minimal setup on the single-user machine. This supersedes
+the earlier sequencing that deferred Agy and Claude until more Codex/OpenCode
+task-value work. Use one shared collection through user-level installations;
+include project context in notes when it affects their applicability.
 
 Cairn has a transactional PostgreSQL core and a manually fed process wrapper.
 The next product milestone is memory used in real Striatum/OpenCode builds, with
@@ -151,11 +176,12 @@ acceptance evidence exists; deployment and measured usefulness are separate.
 Items can be delivered in smaller commits without marking the whole item complete.
 
 The owner requested ordinary **Agy and Claude Code interfaces** on 2026-09-09.
-The owner subsequently clarified that **Codex and OpenCode are sufficient to
-demonstrate cross-harness task benefit**. Increasing task value in those existing
-harnesses takes priority over adding adapters. U7/U8 retain the requested scope at
-lower priority; implement them after useful task progress, or when a concrete
-task requires a missing harness. Their initial functionality does not depend on
+The owner subsequently clarified on 2026-09-09 that **Codex and OpenCode are
+sufficient to demonstrate cross-harness task benefit**. At that checkpoint,
+task value in those harnesses took priority over additional adapters, and U7/U8
+retained the requested scope at lower priority. The 2026-09-11 near-term goal
+above supersedes that ordering and calls for ordinary access in all four
+harnesses now. Their initial functionality does not depend on
 advanced H1 mediation or native resume/compaction interlocks. The
 [implementation status and history](implementation-status.md) must retain dated
 changes, superseded approaches, negative results and corrections as work proceeds.

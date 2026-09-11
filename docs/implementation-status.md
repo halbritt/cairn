@@ -4,6 +4,9 @@ Cairn is a usable local alpha for explicitly selected agent memory. It stores
 versioned notes and supporting evidence, makes them available through CLI,
 Codex and OpenCode interfaces, and records supplied context and observed outcomes.
 The installed system supports ordinary cross-session use today.
+As of 2026-09-11, [shared memory is available across projects](shared-memory.md)
+through global Codex, OpenCode, Agy, and Claude Code installations. Native reads
+and writes from Pincite and Striatum Next used the same existing collection.
 The [changelog](../CHANGELOG.md) summarizes user-visible development changes and
 upgrade requirements; the full implementation history remains below.
 
@@ -25,7 +28,7 @@ interface checks passed. CLI/MCP `75eb01e` includes the
 [Codex allowlist correction](verification/codex-review-allowlist-2026-09-10.md);
 this project's configuration includes both review tools. The API remains at
 `bb600c5` and the native adapter at `2ef6e04`. The saved Codex setup procedure is
-corrected to v11. The missed installation step and subsequent CI test repair
+corrected to v12, including the global installation and shared collection. The missed installation step and subsequent CI test repair
 remain in the history below.
 
 [Ordinary CLI request help](local-api.md#find-an-ordinary-request-format) now
@@ -4978,3 +4981,21 @@ no migration ran. The [installation manifest](verification/agent-flag-help-2026-
 retains those checks and the rollback-binary location. This accepts the local CLI
 installation only; setup-time savings, model-task improvement, durable memory
 benefit, and the remaining roadmap requirements stay open.
+
+### Shared memory installed in four harnesses — 2026-09-11
+
+The owner's current goal supersedes the earlier deferral of Agy and Claude Code.
+Both Codex profiles, OpenCode, Agy, and Claude Code now load Cairn from user-level
+configuration across projects. Existing notes remain in the same shared collection;
+no database or API change was needed. Agy and Claude receive session labels from
+a small installed launcher, removing manual task/run setup.
+
+Codex created a useful setup note from Pincite. OpenCode read and extended it from
+Striatum Next; Claude read and extended it from Pincite; Agy read and extended it
+from Striatum Next. Fresh Codex and OpenCode sessions retrieved the resulting
+version 4 from the other projects. Agy also corrected the existing priority note
+from the updated roadmap and read the new version. These were native installed
+tool calls: Codex app-server and OpenCode's native tool executor, plus ordinary
+model sessions in Claude and Agy. The [usage guide](shared-memory.md) records the
+configuration locations. This completes the near-term access goal; broader
+memory usefulness and full design acceptance remain separate work.

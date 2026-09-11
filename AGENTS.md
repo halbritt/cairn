@@ -20,6 +20,11 @@ producer-attribution correction where it supersedes earlier synthesis.
 
 ## Use the provisioned memory interface
 
+The owner's host now uses this existing memory collection across projects in
+Codex, OpenCode, Agy, and Claude Code. The canonical repository value below is
+the shared collection name, independent of the working directory. Include actual
+project context in notes where it matters. See [shared memory](docs/shared-memory.md).
+
 On the owner's host, when `~/.local/share/cairn/hosted-agent.token` exists and
 `cairn` is installed, use that profile for hosted-agent memory in this repository.
 At the start of a substantive task, search for relevant prior decisions,

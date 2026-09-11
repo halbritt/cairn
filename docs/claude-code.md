@@ -1,12 +1,21 @@
 # Claude Code memory access
 
+Claude Code is now registered at user scope on the owner's host for
+[shared memory across projects](shared-memory.md). Start a fresh session in any
+project and use the `cairn` MCP tools. The installed launcher supplies connection
+settings and session labels automatically. A normal Claude session in Pincite
+read a setup note contributed by Codex and OpenCode, appended its own setup
+details, and read the saved revision on 2026-09-11.
+
+## Explicit configuration generator
+
 `cairn claude-config` generates the Claude Code MCP configuration for Cairn's
 ordinary tools: search, body/evidence pull, capture, edit and retained history.
 Claude Code 2.1.265 has accepted the generated entry and executed search,
 body/evidence pull, capture and edit in scripted native sessions. The newer
 `cairn_history` operation has MCP/OpenCode coverage; native Claude execution of
-that operation remains unverified. Model-selected tool use and task benefit
-remain unverified.
+that operation remains unverified. The later shared-memory installation verifies
+model-selected search, pull, and edit; broader task benefit remains open.
 
 Generate a configuration for the intended task and execution:
 

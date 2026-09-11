@@ -1,10 +1,19 @@
 # Agy MCP setup
 
-Agy 1.2.0 has native stdio MCP registration. It can store a command for Cairn's
-existing MCP server, so no additional Cairn adapter is needed for this setup
-step. Registration, argument preservation and configuration updates are verified
-in an isolated home. Native tool discovery/execution and an Agy memory task remain
-unverified. [Evidence and limits](verification/agy-configuration-2026-09-09.md).
+Agy 1.2.1 is now connected to the owner's [shared memory across projects](shared-memory.md).
+The global `cairn` registration uses `~/.local/bin/cairn-shared-mcp agy`;
+the launcher supplies the shared collection and a fresh session label. Start a
+new Agy conversation in any project and use its Cairn tools. Native search,
+pull, and editing worked in a normal Pincite session on 2026-09-11: Agy corrected
+the saved priority decision from the current roadmap and read the saved revision.
+
+## Earlier explicit-scope setup
+
+The 2026-09-09 check used Agy 1.2.0's native stdio MCP registration. It stored a
+command for Cairn's existing MCP server, so no additional adapter was needed for this setup
+step. Registration, argument preservation and configuration updates were verified
+in an isolated home. Native tool discovery/execution was unverified at that
+checkpoint. [Historical evidence](verification/agy-configuration-2026-09-09.md).
 
 The observed configuration is **user-wide** at
 `~/.gemini/config/mcp_config.json`; the registration command exposes no project
@@ -42,11 +51,11 @@ agy mcp disable cairn-cairn
 `agy mcp enable cairn-cairn` enables it again; `agy mcp remove cairn-cairn` removes
 the registration. Registration and enablement do not establish that an already
 running session reloaded its tools. Session reload and permission behavior still
-need native verification. No owner registration was made during this work.
+were unverified at that checkpoint. No owner registration was made during that
+earlier check; the 2026-09-11 installation above supersedes that state.
 
 The expected tools are Cairn's existing `cairn_search`, `cairn_pull`,
 `cairn_pull_evidence`, `cairn_remember`, `cairn_edit` and `cairn_history`. Their
 [MCP contract](mcp.md#tools) retains ordinary testimony, explicit sharing,
-compare-and-swap editing, currentness checks and bounded pulls. The Agy runtime
-must still be shown to discover and execute these tools with its own permissions;
-a stored command or generic MCP check does not establish that result.
+compare-and-swap editing, currentness checks and bounded pulls. The shared-memory
+installation above supplies the later native execution evidence.

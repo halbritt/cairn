@@ -18,6 +18,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-11
 
+- **Use shared memory across projects in all four agents.** Codex, OpenCode,
+  Agy, and Claude Code now have user-level Cairn installations on the owner's
+  host. They save and recall the same collection without per-project setup.
+  Native reads and writes from Pincite and Striatum Next verified the connection.
+  [Use shared memory](docs/shared-memory.md).
+
 - **Inspect everyday agent command flags offline.** `cairn agent search`,
   `remember`, `pull`, and `pull-evidence` now provide readable `--help` and `-h`
   output from the same flag definitions used for execution. Help needs no token,
