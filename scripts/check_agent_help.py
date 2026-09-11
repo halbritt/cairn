@@ -8,6 +8,7 @@ import uuid
 
 OPERATIONS = ('edit', 'revise', 'append', 'replace', 'cite', 'history',
               'assessments', 'assess-run', 'recompile')
+FLAG_OPERATIONS = ('search', 'remember', 'pull', 'pull-evidence')
 
 
 def example(binary, operation, env):
@@ -22,7 +23,7 @@ def check_offline(binary):
         env = dict(os.environ, CAIRN_DATABASE_URL='host=/absent-help-db dbname=denied')
         env.pop('HOME', None)
         env.pop('CAIRN_HOME', None)
-        for operation in ('', *OPERATIONS):
+        for operation in ('', *OPERATIONS, *FLAG_OPERATIONS):
             for option in ('--help', '-h'):
                 args = [binary, 'agent', *([operation] if operation else []), option]
                 # Keep stdin open: help must finish without asking for JSON input.
@@ -36,7 +37,9 @@ def check_offline(binary):
                         process.kill()
                         process.communicate(timeout=5)
                 assert output.startswith('Usage: cairn agent') and not error, (args, output, error)
-        for args in (['replace', '--help', 'extra'], ['unknown', '--help'], ['--bad', '--help']):
+        for args in (['replace', '--help', 'extra'],
+                     *([operation, '--help', 'extra'] for operation in FLAG_OPERATIONS),
+                     ['unknown', '--help'], ['--bad', '--help']):
             result = subprocess.run([binary, 'agent', *args], env=env, text=True,
                                     capture_output=True, timeout=5)
             assert result.returncode == 2 and json.loads(result.stdout)['status'] == 'INVALID_REQUEST', result

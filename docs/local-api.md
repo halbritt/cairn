@@ -21,17 +21,24 @@ Use local help before preparing a JSON request:
 
 ```sh
 cairn agent --help
+cairn agent search --help
+cairn agent remember --help
+cairn agent pull --help
+cairn agent pull-evidence --help
 cairn agent replace --help
 cairn agent history --help
 cairn agent assess-run --help
 ```
 
 Help prints readable text and exits successfully without reading stdin, resolving
-a home directory, opening credentials or contacting the API. Operation help covers
-`edit`, `revise`, `append`, `replace`, `cite`, `history`, `assessments`, `assess-run`
-and `recompile`; `-h` also works. Replace example placeholders with actual values,
-then pass one JSON request on stdin. Connection flags go before the operation.
-Normal responses retain their JSON envelope and existing access checks.
+a home directory, opening credentials or contacting the API. Flag help for
+`search`, `remember`, `pull`, and `pull-evidence` is generated from the same flag
+definitions used by normal execution, and includes positional usage.
+JSON-operation help covers `edit`, `revise`, `append`, `replace`, `cite`, `history`,
+`assessments`, `assess-run`, and `recompile`; `-h` also works. Replace example
+placeholders with actual values, then pass one JSON request on stdin. Connection
+flags go before the operation. Normal responses retain their JSON envelope and
+existing access checks.
 
 The API's `edit` requires a complete `draft`; use `revise` for a body-only
 replacement. Native `cairn_edit` combines those choices in a different tool

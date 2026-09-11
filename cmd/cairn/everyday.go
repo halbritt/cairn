@@ -34,17 +34,36 @@ func remember(ctx context.Context, s *core.Store, args []string, input io.Reader
 	}
 	return s.Create(ctx, req)
 }
-func rememberRequest(args []string, input io.Reader) (core.CreateRequest, error) {
+
+type rememberOptions struct {
+	entities  *[]core.EntityRef
+	fromStdin *bool
+	repo      *string
+	kind      *string
+	share     *bool
+	task      *string
+	run       *string
+	request   *string
+	pinsJSON  *string
+}
+
+func newRememberFlags() (*flag.FlagSet, *rememberOptions) {
+	options := &rememberOptions{}
 	f := flags("remember")
-	entities := entityFlags(f)
-	fromStdin := f.Bool("stdin", false, "read note text from stdin instead of arguments")
-	repo := f.String("repo", defaultRepo(), "repository identity")
-	kind := f.String("kind", "note", "record kind")
-	share := f.Bool("shareable", false, "allow hosted delivery")
-	task := f.String("task", "*", "task scope")
-	run := f.String("run", "*", "run scope")
-	request := f.String("request-id", uuid.NewString(), "retry identity")
-	pinsJSON := f.String("pins", "", "explicit applicability JSON object; omitted means unpinned")
+	options.entities = entityFlags(f)
+	options.fromStdin = f.Bool("stdin", false, "read note text from stdin instead of arguments")
+	options.repo = f.String("repo", defaultRepo(), "repository identity")
+	options.kind = f.String("kind", "note", "record kind")
+	options.share = f.Bool("shareable", false, "allow hosted delivery")
+	options.task = f.String("task", "*", "task scope")
+	options.run = f.String("run", "*", "run scope")
+	options.request = f.String("request-id", uuid.NewString(), "retry identity")
+	options.pinsJSON = f.String("pins", "", "explicit applicability JSON object; omitted means unpinned")
+	return f, options
+}
+
+func rememberRequest(args []string, input io.Reader) (core.CreateRequest, error) {
+	f, options := newRememberFlags()
 	if err := f.Parse(args); err != nil {
 		return core.CreateRequest{}, invalid(err.Error())
 	}
@@ -52,7 +71,7 @@ func rememberRequest(args []string, input io.Reader) (core.CreateRequest, error)
 	pinsProvided := false
 	f.Visit(func(fl *flag.Flag) { pinsProvided = pinsProvided || fl.Name == "pins" })
 	if pinsProvided {
-		if err := decode(strings.NewReader(*pinsJSON), &pins); err != nil {
+		if err := decode(strings.NewReader(*options.pinsJSON), &pins); err != nil {
 			return core.CreateRequest{}, invalid(err.Error())
 		}
 		if pins == nil {
@@ -60,7 +79,7 @@ func rememberRequest(args []string, input io.Reader) (core.CreateRequest, error)
 		}
 	}
 	body := strings.Join(f.Args(), " ")
-	if *fromStdin {
+	if *options.fromStdin {
 		if f.NArg() != 0 {
 			return core.CreateRequest{}, invalid("remember accepts either --stdin or note arguments")
 		}
@@ -74,10 +93,10 @@ func rememberRequest(args []string, input io.Reader) (core.CreateRequest, error)
 		return core.CreateRequest{}, invalid("remember requires 1-65536 bytes of nonblank UTF-8 text")
 	}
 	sensitivity := "local"
-	if *share {
+	if *options.share {
 		sensitivity = "shareable"
 	}
-	return core.CreateRequest{RequestID: *request, Draft: core.Draft{Entities: *entities, Kind: *kind, Body: body, Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Pins: pins, ClaimType: "self", Sensitivity: sensitivity}}, nil
+	return core.CreateRequest{RequestID: *options.request, Draft: core.Draft{Entities: *options.entities, Kind: *options.kind, Body: body, Scope: core.Scope{Repo: *options.repo, TaskID: *options.task, RunID: *options.run}, Pins: pins, ClaimType: "self", Sensitivity: sensitivity}}, nil
 }
 func search(ctx context.Context, s *core.Store, args []string) (core.Package, error) {
 	var kinds []string

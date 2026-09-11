@@ -1,5 +1,10 @@
 package main
 
+import (
+	"flag"
+	"strings"
+)
+
 // commandHelp is human-readable output for an explicitly requested help path.
 // Ordinary command results retain their JSON response envelope.
 type commandHelp string
@@ -39,6 +44,26 @@ The API still owns authorization, version checks and privacy.
 func agentOperationHelp(operation string) (commandHelp, error) {
 	var detail, example string
 	switch operation {
+	case "search":
+		f, _ := newAgentSearchFlags()
+		return agentFlagHelp(
+			"cairn agent [--token-file FILE] [--socket PATH] search --task TASK --run RUN [OPTIONS] QUERY\n       cairn agent [--token-file FILE] [--socket PATH] search --task TASK --run RUN --browse [OPTIONS]",
+			"Search eligible memory and return a bounded index with pull commands. Task and run identities are required; use --browse without query or entity hints to inspect eligible previews.", f), nil
+	case "remember":
+		f, _ := newRememberFlags()
+		return agentFlagHelp(
+			"cairn agent [--token-file FILE] [--socket PATH] remember [OPTIONS] NOTE TEXT\n       cairn agent [--token-file FILE] [--socket PATH] remember [OPTIONS] --stdin",
+			"Save one selected ordinary note through the authenticated API. Use --stdin for exact multiline text; pass -- before note text that begins with a hyphen.", f), nil
+	case "pull":
+		f, _ := newAgentPullFlags(operation)
+		return agentFlagHelp(
+			"cairn agent [--token-file FILE] [--socket PATH] pull [OPTIONS] RECEIPT_UUID HANDLE_UUID\n       cairn agent [--token-file FILE] [--socket PATH] pull < request.json",
+			"Read a selected note from a search result. Pass the complete pull_arguments as JSON on stdin, or use the receipt and handle as positional arguments. --offset and --length select a bounded byte span in positional form.", f), nil
+	case "pull-evidence":
+		f, _ := newAgentPullFlags(operation)
+		return agentFlagHelp(
+			"cairn agent [--token-file FILE] [--socket PATH] pull-evidence [OPTIONS] RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256\n       cairn agent [--token-file FILE] [--socket PATH] pull-evidence < request.json",
+			"Read one selected supporting source from a search result. Pass the complete pull_arguments as JSON on stdin, or use all four positional identities. --offset and --length select a bounded byte span in positional form.", f), nil
 	case "revise":
 		detail = "Replace an active ordinary note's body, preserving its metadata and citations.\n"
 		example = `{"request_id":"NEW_UUID","record_id":"RECORD_UUID","expected_version":1,"repo":"REPOSITORY","body":"Corrected note text"}`
@@ -72,4 +97,17 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	text := "Usage: cairn agent [--token-file FILE] [--socket PATH] " + operation + " < request.json\n\n" + detail
 	text += "\nReplace example placeholders with actual values. For writes, generate a new\nrequest UUID and use the current expected_version; retry identical JSON after\nan uncertain response. VERSION_CONFLICT requires a fresh read and reconciliation.\nHelp does not read stdin or connect to the API.\n\nExample JSON:\n" + example + "\n"
 	return commandHelp(text), nil
+}
+
+func agentFlagHelp(usage, detail string, f *flag.FlagSet) commandHelp {
+	var text strings.Builder
+	text.WriteString("Usage: ")
+	text.WriteString(usage)
+	text.WriteString("\n\n")
+	text.WriteString(detail)
+	text.WriteString("\n\nOptions:\n")
+	f.SetOutput(&text)
+	f.PrintDefaults()
+	text.WriteString("\nHelp does not read stdin, inspect credentials, or connect to the API.\n")
+	return commandHelp(text.String())
 }

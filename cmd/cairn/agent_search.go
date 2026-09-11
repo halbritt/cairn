@@ -17,50 +17,76 @@ import (
 type agentSearchEntry = indexview.Entry
 type agentSearchView = indexview.View
 
-func agentSearch(ctx context.Context, client *localapi.Client, args []string, socket, tokenFile string) (agentSearchView, error) {
-	var kinds []string
+type agentSearchOptions struct {
+	kinds      []string
+	entities   *[]core.EntityRef
+	repo       *string
+	task       *string
+	run        *string
+	request    *string
+	tokens     *int
+	browse     *bool
+	advisory   *bool
+	signature  *string
+	semantic   *bool
+	offset     *int
+	revision   *string
+	workspace  *string
+	taskClass  *string
+	taskPhase  *string
+	binding    *string
+	capability *string
+}
+
+func newAgentSearchFlags() (*flag.FlagSet, *agentSearchOptions) {
+	options := &agentSearchOptions{}
 	f := flags("agent search")
-	entities := entityFlags(f)
-	repo := f.String("repo", defaultRepo(), "repository identity")
-	f.Func("kind", "optional record kind; repeat for multiple labels (required instructions always apply)", func(value string) error { kinds = append(kinds, value); return nil })
-	task := f.String("task", "", "host task identity (required)")
-	run := f.String("run", "", "host run identity (required)")
-	request := f.String("request-id", uuid.NewString(), "index retry identity")
-	tokens := f.Int("tokens", 32000, "available memory input room")
-	browse := f.Bool("browse", false, "browse eligible memory without a query (bounded by the memory budget)")
-	advisory := f.Bool("advisory-conflicts", false, "include qualified competing advisory positions together; context retrieval only")
-	signature := f.String("error-signature-sha256", "", "optional reviewed failure signature (SHA-256); a retrieval hint, not observed failure")
-	semantic := f.Bool("semantic", false, "optional semantic discovery; labelled lexical fallback if unavailable")
-	offset := f.Int("offset", 0, "ranked search page offset (0 to start), or next browse offset")
-	revision := f.String("revision", "", "declared repository revision")
-	workspace := f.String("workspace-sha256", "", "workspace digest")
-	taskClass := f.String("task-class", "", "task category")
-	taskPhase := f.String("task-phase", "", "declared task phase (exact label)")
-	binding := f.String("binding", "", "binding identity")
-	capability := f.String("capability", "", "capability identity")
+	options.entities = entityFlags(f)
+	options.repo = f.String("repo", defaultRepo(), "repository identity")
+	f.Func("kind", "optional record kind; repeat for multiple labels (required instructions always apply)", func(value string) error { options.kinds = append(options.kinds, value); return nil })
+	options.task = f.String("task", "", "host task identity (required)")
+	options.run = f.String("run", "", "host run identity (required)")
+	options.request = f.String("request-id", uuid.NewString(), "index retry identity")
+	options.tokens = f.Int("tokens", 32000, "available memory input room")
+	options.browse = f.Bool("browse", false, "browse eligible memory without a query (bounded by the memory budget)")
+	options.advisory = f.Bool("advisory-conflicts", false, "include qualified competing advisory positions together; context retrieval only")
+	options.signature = f.String("error-signature-sha256", "", "optional reviewed failure signature (SHA-256); a retrieval hint, not observed failure")
+	options.semantic = f.Bool("semantic", false, "optional semantic discovery; labelled lexical fallback if unavailable")
+	options.offset = f.Int("offset", 0, "ranked search page offset (0 to start), or next browse offset")
+	options.revision = f.String("revision", "", "declared repository revision")
+	options.workspace = f.String("workspace-sha256", "", "workspace digest")
+	options.taskClass = f.String("task-class", "", "task category")
+	options.taskPhase = f.String("task-phase", "", "declared task phase (exact label)")
+	options.binding = f.String("binding", "", "binding identity")
+	options.capability = f.String("capability", "", "capability identity")
+	return f, options
+}
+
+func agentSearch(ctx context.Context, client *localapi.Client, args []string, socket, tokenFile string) (agentSearchView, error) {
+	f, options := newAgentSearchFlags()
 	if err := f.Parse(args); err != nil {
 		return agentSearchView{}, invalid(err.Error())
 	}
 	query := strings.Join(f.Args(), " ")
-	if *semantic && *browse {
+	if *options.semantic && *options.browse {
 		return agentSearchView{}, invalid("semantic discovery cannot be combined with browsing")
 	}
-	if strings.TrimSpace(*task) == "" || strings.TrimSpace(*run) == "" || *task == "*" || *run == "*" {
+	if strings.TrimSpace(*options.task) == "" || strings.TrimSpace(*options.run) == "" || *options.task == "*" || *options.run == "*" {
 		return agentSearchView{}, invalid("agent search requires explicit --task and --run")
 	}
-	if (*browse && (query != "" || *signature != "" || len(*entities) > 0)) || (!*browse && strings.TrimSpace(query) == "" && *signature == "" && len(*entities) == 0) {
+	if (*options.browse && (query != "" || *options.signature != "" || len(*options.entities) > 0)) || (!*options.browse && strings.TrimSpace(query) == "" && *options.signature == "" && len(*options.entities) == 0) {
 		return agentSearchView{}, invalid("agent search requires a query, entity hints, --error-signature-sha256, or --browse without search hints")
 	}
-	if *offset < 0 || *offset > 10000 {
+	if *options.offset < 0 || *options.offset > 10000 {
 		return agentSearchView{}, invalid("offset must be 0-10000")
 	}
 	var browseOffset, pageOffset *int
-	if *browse {
-		browseOffset = offset
+	if *options.browse {
+		browseOffset = options.offset
 	} else {
 		f.Visit(func(fl *flag.Flag) {
 			if fl.Name == "offset" {
-				pageOffset = offset
+				pageOffset = options.offset
 			}
 		})
 	}
@@ -77,12 +103,12 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 		return agentSearchView{}, err
 	}
 	var result core.IndexResult
-	if err = client.Call(ctx, "index", core.CompileRequest{AdvisoryConflicts: *advisory, Entities: *entities, ErrorSignature: *signature, Kinds: kinds, RequestID: *request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *semantic,
-		Scope: core.Scope{Repo: *repo, TaskID: *task, RunID: *run}, Query: query, Purpose: "context", AvailableTokens: *tokens,
-		Context: &core.ContextPins{Revision: *revision, WorkspaceSHA256: *workspace, TaskClass: *taskClass, TaskPhase: *taskPhase, BindingID: *binding, CapabilityID: *capability}}, &result); err != nil {
+	if err = client.Call(ctx, "index", core.CompileRequest{AdvisoryConflicts: *options.advisory, Entities: *options.entities, ErrorSignature: *options.signature, Kinds: options.kinds, RequestID: *options.request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *options.semantic,
+		Scope: core.Scope{Repo: *options.repo, TaskID: *options.task, RunID: *options.run}, Query: query, Purpose: "context", AvailableTokens: *options.tokens,
+		Context: &core.ContextPins{Revision: *options.revision, WorkspaceSHA256: *options.workspace, TaskClass: *options.taskClass, TaskPhase: *options.taskPhase, BindingID: *options.binding, CapabilityID: *options.capability}}, &result); err != nil {
 		return agentSearchView{}, err
 	}
-	return presentAgentSearch(result, *request, []string{executable, "agent", "--socket", socket, "--token-file", tokenFile}, *tokens)
+	return presentAgentSearch(result, *options.request, []string{executable, "agent", "--socket", socket, "--token-file", tokenFile}, *options.tokens)
 }
 
 func presentAgentSearch(result core.IndexResult, request string, command []string, room int) (agentSearchView, error) {
@@ -91,12 +117,23 @@ func presentAgentSearch(result core.IndexResult, request string, command []strin
 
 func shellCommand(args []string) string { return indexview.ShellCommand(args) }
 
-func agentPull(ctx context.Context, client *localapi.Client, operation string, args []string) (json.RawMessage, error) {
+type agentPullOptions struct {
+	request *string
+	offset  *int
+	length  *int
+}
+
+func newAgentPullFlags(operation string) (*flag.FlagSet, *agentPullOptions) {
+	options := &agentPullOptions{}
 	f := flags("agent " + operation)
-	request := f.String("request-id", uuid.NewString(), "pull retry identity")
-	var offset, length int
-	f.IntVar(&offset, "offset", 0, "source byte offset (requires --length)")
-	f.IntVar(&length, "length", 0, "maximum source bytes to return; clipped at EOF")
+	options.request = f.String("request-id", uuid.NewString(), "pull retry identity")
+	options.offset = f.Int("offset", 0, "source byte offset (requires --length)")
+	options.length = f.Int("length", 0, "maximum source bytes to return; clipped at EOF")
+	return f, options
+}
+
+func agentPull(ctx context.Context, client *localapi.Client, operation string, args []string) (json.RawMessage, error) {
+	f, options := newAgentPullFlags(operation)
 	if err := f.Parse(args); err != nil {
 		return nil, invalid(err.Error())
 	}
@@ -104,7 +141,7 @@ func agentPull(ctx context.Context, client *localapi.Client, operation string, a
 	var span *core.ByteSpanRequest
 	f.Visit(func(value *flag.Flag) {
 		if value.Name == "offset" || value.Name == "length" {
-			span = &core.ByteSpanRequest{Offset: offset, Length: length}
+			span = &core.ByteSpanRequest{Offset: *options.offset, Length: *options.length}
 		}
 	})
 	endpoint := "expand"
@@ -112,13 +149,13 @@ func agentPull(ctx context.Context, client *localapi.Client, operation string, a
 		if f.NArg() != 2 {
 			return nil, invalid("agent pull requires RECEIPT_UUID HANDLE_UUID")
 		}
-		payload = core.ExpandRequest{RequestID: *request, ReceiptID: f.Arg(0), Handle: f.Arg(1), Span: span}
+		payload = core.ExpandRequest{RequestID: *options.request, ReceiptID: f.Arg(0), Handle: f.Arg(1), Span: span}
 	} else {
 		if f.NArg() != 4 {
 			return nil, invalid("agent pull-evidence requires RECEIPT_UUID HANDLE_UUID EVIDENCE_UUID EXPECTED_SHA256")
 		}
 		endpoint = "expand-evidence"
-		payload = core.ExpandEvidenceRequest{RequestID: *request, ReceiptID: f.Arg(0), Handle: f.Arg(1), EvidenceID: f.Arg(2), ExpectedSHA256: f.Arg(3), Span: span}
+		payload = core.ExpandEvidenceRequest{RequestID: *options.request, ReceiptID: f.Arg(0), Handle: f.Arg(1), EvidenceID: f.Arg(2), ExpectedSHA256: f.Arg(3), Span: span}
 	}
 	var result json.RawMessage
 	err := client.Call(ctx, endpoint, payload, &result)

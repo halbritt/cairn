@@ -4919,3 +4919,40 @@ inventory were unchanged. No migration or restart was required. The
 [installation manifest](verification/agent-help-2026-09-10.json) retains the build
 and before/after checks. This completes the CLI usability change, while durable
 memory benefit and the remaining roadmap requirements stay open.
+
+### Everyday agent flag help implemented — 2026-09-11
+
+The four ordinary flag-based agent commands now expose readable `--help` and
+`-h`: `search`, `remember`, `pull`, and `pull-evidence`. Each help path runs
+before home lookup, credential access, API connection, or stdin reads. Search,
+remember, and pull execution share their flag constructors with help, avoiding a
+second option list. Positional use remains described separately. Normal requests,
+explicit and default connection handling, JSON operation help, response envelopes,
+and malformed-call refusal are unchanged.
+
+The public baseline returned `INVALID_REQUEST` for all four help commands. A
+bounded OpenCode implementation trial then exited 1 after 461.6 seconds and left
+only an untracked print-based scratch probe, not an implementation or asserted
+test. It made one Cairn search and no pull. Seven denied shell command forms added
+trial friction but are not treated as the sole cause. The retained run is assessed
+`rejected` with `failure_domain=capability`; root implementation and the model-run
+result remain separate.
+
+Four test-first slices reproduced the missing operation help before each path was
+added. The consolidated Go test covers both spellings and current option/usage
+signals without HOME, connection, or stdin. The public subprocess check leaves
+stdin open, verifies the actual current flags, and keeps malformed and literal-help
+forms out of the help path. `make test-integration`, `make check`, and the independent
+baseline-derived check pass. [Verification and limits](verification/agent-flag-help-2026-09-11.md)
+preserve the source and trial identities.
+
+Pincite packet `pkt-1fda759a1a719776` has a validated `verified` decision
+receipt and closed citation observations. Its remaining obligations concern
+unaffected ingestion, ranking, UI, configuration-reference and data-identity
+surfaces, or the already-resolved no-change question; they are nonmaterial to
+this CLI-only change.
+
+This is implemented CLI usability, not installation acceptance or evidence that
+memory improved the failed model run. The trial's one search did not lead to a
+pull or usable patch. Durable memory benefit and the remaining roadmap work stay
+open.

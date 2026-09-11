@@ -16,6 +16,14 @@ builds. Check an installation with `cairn version`; use
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
 See [build identity](docs/build-identity.md) for unstamped builds and MCP processes.
 
+## 2026-09-11
+
+- **Inspect everyday agent command flags offline.** `cairn agent search`,
+  `remember`, `pull`, and `pull-evidence` now provide readable `--help` and `-h`
+  output from the same flag definitions used for execution. Help needs no token,
+  API, home directory, or stdin; malformed calls remain errors. Upgrade only the
+  CLI. [Checks and failed model trial](docs/verification/agent-flag-help-2026-09-11.md).
+
 ## 2026-09-10
 
 - **Inspect ordinary JSON requests from the CLI.** `cairn agent --help` and
