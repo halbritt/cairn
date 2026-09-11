@@ -19,8 +19,10 @@ net cost. Task value may be qualitative, indirect or delayed; mechanical
 proof is not the sole admissible evidence. The [roadmap](roadmap.md) retains the complete requirements and
 acceptance boundaries; full Stage 1–2 completion is not claimed.
 
-The installed CLI/API are clean `ed29cbc`; the native OpenCode adapter remains
-from `797aafe`. The [harness setup repair](verification/harness-configuration-text-2026-09-10.md)
+The installed CLI is clean `d0f04d8`; the API remains clean `ed29cbc`, and the
+native OpenCode adapter remains from `797aafe`. [Client diagnostics](verification/client-diagnostics-2026-09-10.md)
+now identify token-file I/O and Unix socket dial failures without private paths
+or credentials; the existing API does not require a restart. The [harness setup repair](verification/harness-configuration-text-2026-09-10.md)
 rejects malformed configuration text and overlong scope before producing unusable
 settings. [Declared native task scope](opencode-tools.md#continue-a-task-across-sessions)
 is installed and verified with that API. [Explicit native capture scope](mcp.md#choose-capture-scope)
@@ -4560,3 +4562,18 @@ matter. No retry, API execution, token-validation or database behavior changes.
 Only the CLI/MCP executable requires adoption. The [report and manifest](verification/client-diagnostics-2026-09-10.md)
 separate checkout verification from installation and record source-review-only
 branches. No incremental task-value or native startup reliability claim is added.
+
+
+### Client diagnostics installed — 2026-09-10
+
+Exact-source CI passed for `d0f04d8`. Its clean CLI is installed, and actual
+CLI/fresh-MCP failure checks pass. Normal version diagnosis reports the new
+client alongside the unchanged clean `ed29cbc` API at PID 235929. No service
+restart or database migration occurred. The inventory of 88 ordinary record
+versions is unchanged. Already-running MCP processes retain their loaded build.
+
+An installed hosted-profile search and JSON pull recovered the expected current
+connection lesson v1 and body hash, verifying ordinary retrieval across these
+client/API builds. Existing guidance about explicit connection paths and default
+identity remains consistent with source. The [installation report](verification/client-diagnostics-2026-09-10.md)
+records these observations separately from the repair and from task-value claims.

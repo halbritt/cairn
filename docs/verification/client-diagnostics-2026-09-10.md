@@ -67,3 +67,19 @@ are closed. The 29 unmet obligations concern unrelated data, configuration,
 interface or monitoring surfaces, stronger external claims, or a separate incident
 record where direct reproduction is already available. Their individual
 nonmaterial classifications remain in the manifest.
+
+## Installed verification
+
+[CI for `d0f04d8`](https://github.com/halbritt/cairn/actions/runs/34559411262)
+passed. The clean CLI from that commit is installed and its actual CLI/MCP
+failure checks pass. The running API remains clean `ed29cbc` at PID 235929, with
+the same executable digest; no restart or migration occurred. Fresh MCP processes
+use the new installed binary; already-running facades keep their loaded build.
+All 88 ordinary record versions retain the same complete inventory digest.
+
+An installed hosted-profile search and JSON pull returned connection guidance
+`bbf8593d-0b9e-470e-b55e-c500ed9e1dca` v1 with its expected body hash. Its explicit
+connection/default-identity boundary remains consistent with current source and
+tests. This verifies ordinary retrieval with the newer client and existing API;
+it does not establish an incremental task benefit. The source/log hashes and
+both installed identities are retained in the manifest.

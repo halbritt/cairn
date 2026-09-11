@@ -33,6 +33,22 @@
     "decision-receipt.json": {
       "path": "/tmp/cairn-client-diagnostics-20260910/decision-receipt.json",
       "sha256": "b2e04335b9e56946d2598a7de5c4c4b9eb386caae5577102a6d00515409c3f3d"
+    },
+    "installation.json": {
+      "path": "/tmp/cairn-client-diagnostics-20260910/installation.json",
+      "sha256": "0e60347348afed5842867e7c250ff20f3042b3662b22ce768df3d32293809262"
+    },
+    "installed-diagnostics.log": {
+      "path": "/tmp/cairn-client-diagnostics-20260910/installed-diagnostics.log",
+      "sha256": "55b44e4a6fc97f286d1fb321bf28495a1cb01a510b73f3c1ff6f45d42c1a3ebf"
+    },
+    "installed-search.json": {
+      "path": "/tmp/cairn-client-diagnostics-20260910/installed-search.json",
+      "sha256": "8a142722af1e96a14be72b6bbfdd9d5c5e76a4cd4c7d5507dd9a7eba719cf17a"
+    },
+    "installed-pull.json": {
+      "path": "/tmp/cairn-client-diagnostics-20260910/installed-pull.json",
+      "sha256": "7bc1e5712a70f77c943b0e6fdf216cd16ffc8e6b7a3c8417ecab6a7e93862e92"
     }
   },
   "source_hashes": {
@@ -48,7 +64,7 @@
     "make_check": "passed",
     "disposable_database_integration": "passed",
     "native_answering_model_calls": 0,
-    "installation": "pending"
+    "installation": "passed"
   },
   "limits": [
     "An error on a later run operation does not describe earlier effects",
@@ -326,5 +342,82 @@
         "rationale": "The defect is established by retained direct reproduction and current source; no independent incident database is necessary for the bounded diagnostic repair."
       }
     ]
+  },
+  "installation": {
+    "ci": {
+      "conclusion": "success",
+      "headSha": "d0f04d87eda11e9ff48aa2c9a49da2b75f8d1858",
+      "status": "completed",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34559411262"
+    },
+    "before": {
+      "versions": {
+        "schema": "cairn.version/1",
+        "client": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911025209-ed29cbcb7090",
+          "vcs": "git",
+          "vcs_revision": "ed29cbcb70907dbc0e275ebe90e198e450accfcc",
+          "vcs_time": "2026-09-11T02:52:09Z",
+          "vcs_modified": false
+        },
+        "server": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911025209-ed29cbcb7090",
+          "vcs": "git",
+          "vcs_revision": "ed29cbcb70907dbc0e275ebe90e198e450accfcc",
+          "vcs_time": "2026-09-11T02:52:09Z",
+          "vcs_modified": false
+        }
+      },
+      "cli_sha256": "7ec93898471c0ebfc877eca959c1052aad344b1a8a2e127efc2edbef2412fd3c",
+      "api_pid": 235929,
+      "api_sha256": "7ec93898471c0ebfc877eca959c1052aad344b1a8a2e127efc2edbef2412fd3c",
+      "record_inventory": {
+        "versions": 88,
+        "sha256": "c0e0844eccc96fb0928f41dfcfa77b248fe3d120ba28a404e3787cf064d896ec"
+      }
+    },
+    "after": {
+      "versions": {
+        "schema": "cairn.version/1",
+        "client": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911034147-d0f04d87eda1",
+          "vcs": "git",
+          "vcs_revision": "d0f04d87eda11e9ff48aa2c9a49da2b75f8d1858",
+          "vcs_time": "2026-09-11T03:41:47Z",
+          "vcs_modified": false
+        },
+        "server": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911025209-ed29cbcb7090",
+          "vcs": "git",
+          "vcs_revision": "ed29cbcb70907dbc0e275ebe90e198e450accfcc",
+          "vcs_time": "2026-09-11T02:52:09Z",
+          "vcs_modified": false
+        }
+      },
+      "cli_sha256": "59111d330dc5431384803054b7c36a91ee86bb666c5cb5bf652a4279a3d79125",
+      "api_pid": 235929,
+      "api_sha256": "7ec93898471c0ebfc877eca959c1052aad344b1a8a2e127efc2edbef2412fd3c",
+      "record_inventory": {
+        "versions": 88,
+        "sha256": "c0e0844eccc96fb0928f41dfcfa77b248fe3d120ba28a404e3787cf064d896ec"
+      }
+    },
+    "rollback_binary": "/tmp/cairn-client-diagnostics-20260910/cairn-before",
+    "api_restarted": false,
+    "database_migrated": false
+  },
+  "installed_retrieval": {
+    "record_id": "bbf8593d-0b9e-470e-b55e-c500ed9e1dca",
+    "version": 1,
+    "body_sha256": "11ad2bd5939dc94f3dc659483526d94eb4400a80464b419292d3d0bb8c0b02d5",
+    "incremental_memory_value": "not established"
   }
 }
