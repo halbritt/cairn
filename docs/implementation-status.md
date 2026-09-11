@@ -4731,3 +4731,14 @@ its first API check; the native write tool remains unimplemented. Their unfinish
 changes are saved under `/tmp/cairn-native-assessments-20260910` and excluded from
 this checkpoint. No answering-model run or task-value gain is claimed. All earlier
 implementation history is preserved.
+
+### Assessment repair CI comparison correction — 2026-09-10
+
+CI for repair commit `14c61eb` failed the new retained-history assertion after
+its authorization checks passed. A local `TZ=UTC` reproduction isolated the
+comparison: pgx and JSON history used different Go location representations for
+the same timestamp. The test now normalizes both to UTC while comparing every
+assessment field. Focused disposable checks passed in UTC and the host timezone;
+`make check` passed. Production code is unchanged by this correction.
+The [repair report](verification/assessment-binding-2026-09-10.md) retains the
+failed CI run and reproduction. Installation remains pending successful CI.

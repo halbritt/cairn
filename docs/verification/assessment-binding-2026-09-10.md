@@ -52,3 +52,13 @@ MCP change is saved at
 this repair or an installed capability. Native history passed its first real-API
 check; the write-tool test failed because that tool was not implemented. Those
 interfaces remain follow-up work after this underlying correction.
+
+## CI comparison correction
+
+[CI for `14c61eb`](https://github.com/halbritt/cairn/actions/runs/34564347551)
+passed the refusal assertions but failed the new retained-history comparison.
+`TZ=UTC` reproduced the failure locally: pgx's timestamp and JSON-decoded history
+represent the same instant with different Go `time.Location` values. The test
+now converts both timestamps to UTC before comparing every assessment field.
+Focused disposable checks pass in UTC and the host timezone, and `make check`
+passes. This changes the test only; the initial failed CI result remains recorded.

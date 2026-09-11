@@ -160,7 +160,14 @@ func TestAssessmentWriteRefusesPriorBindingAndCachedResponse(t *testing.T) {
 				t.Fatalf("write changed a prior-binding receipt: %v", err)
 			}
 			history, err := prior.Assessments(ctx, p.ReceiptID)
-			if err != nil || !reflect.DeepEqual(history, []core.Assessment{written}) {
+			if err != nil || len(history) != 1 {
+				t.Fatalf("refused writes changed retained history: %+v, %v", history, err)
+			}
+			// pgx timestamps and JSON-decoded history can use different Location
+			// values for the same instant, including Local versus UTC on CI.
+			written.ObservedAt = written.ObservedAt.UTC()
+			history[0].ObservedAt = history[0].ObservedAt.UTC()
+			if !reflect.DeepEqual(history, []core.Assessment{written}) {
 				t.Fatalf("refused writes changed retained history: %+v, %v", history, err)
 			}
 		})

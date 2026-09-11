@@ -6,7 +6,7 @@
     "core/assessment.go": "12e59f16ccfd0f30674e6d34b0cc86b423c7150e76fb37a7d4340d1be359862a",
     "core/store.go": "ecadf53aa16115b284d917d9394fb4c02d06dced0431ab8e317bb11c2430ffda",
     "localapi/server.go": "55aa6df54c2d93e5430d8fe7cdd741ca4fed0bde8fb204310760c7b33df73f71",
-    "localapi/assessment_history_test.go": "298873a6e8307efe9c4114bd8e92dc502327866e04a7d66a0b8b39847796939b"
+    "localapi/assessment_history_test.go": "94709b3f3c9ec127bbcfbd2319a4b840dc99dd23ad624738d714a2452378846f"
   },
   "checks": {
     "red-destination.log": {
@@ -32,6 +32,22 @@
     "native-tools-wip.patch": {
       "path": "/tmp/cairn-native-assessments-20260910/native-tools-wip.patch",
       "sha256": "da51b4da80e939f25e3aeab299bf37d6b17938a75ccf431bd04e3b2f85df5a6c"
+    },
+    "ci-utc-red.log": {
+      "path": "/tmp/cairn-native-assessments-20260910/ci-utc-red.log",
+      "sha256": "2a6158e40cc4428d4af8113ecb1221e20e055bdd92f8c5023de7274746bbdec1"
+    },
+    "ci-utc-green.log": {
+      "path": "/tmp/cairn-native-assessments-20260910/ci-utc-green.log",
+      "sha256": "308d4a5c91cf6d8703985a9d708fe2a1285f3afd047d5d25798176fb4d8e4a62"
+    },
+    "ci-local-green.log": {
+      "path": "/tmp/cairn-native-assessments-20260910/ci-local-green.log",
+      "sha256": "8c1ced4d8095879d721c3954eb42882b11592851e3dcb5af17a7715a53bcba38"
+    },
+    "ci-check.log": {
+      "path": "/tmp/cairn-native-assessments-20260910/ci-check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
     }
   },
   "verification": {
@@ -331,5 +347,11 @@
       "sha256": "d8a7f66f7aac226fbf4507c286910115b4f59ee06309d125cf35e757f384746f"
     },
     "consumption": "Native-interface investigation, repair discovery and evidence-backed repair consumption recorded"
+  },
+  "ci_follow_up": {
+    "initial_revision": "14c61eb657df0ec86d6903cadb4b4666ba2655c6",
+    "initial_run": "https://github.com/halbritt/cairn/actions/runs/34564347551",
+    "initial_conclusion": "failure",
+    "cause": "Test compared Go time.Location representation between pgx timestamp and JSON history; reproduced under TZ=UTC. Normalize both instants to UTC before comparing every assessment field. Production behavior unchanged."
   }
 }
