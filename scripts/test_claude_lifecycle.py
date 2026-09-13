@@ -476,7 +476,7 @@ class SemanticFallbackTests(unittest.TestCase):
             memory = hook.Memory(dict(semantic_fallback=True, cairn='unused', socket='unused',
                                       token_file='unused', repo='fixture'), 'semantic')
             for prompt, calls in [('Which durable backend is used?', 2), ('repair core/store.go', 1), ('repair "ExactError"', 1)]:
-                state = {}
+                state = dict(hints=dict(errors=['ExpiredError'], error_at=0))
                 with patch.object(memory, 'search', return_value=dict(index=[], discovery=dict(state='unavailable'))) as search, \
                      patch.object(hook, 'select_json') as model:
                     result = hook.recall(memory, dict(hook_event_name='UserPromptSubmit', cwd=tmp, prompt=prompt), state)
@@ -493,3 +493,24 @@ class SemanticFallbackTests(unittest.TestCase):
                     dict(selected=['a'*6500]), dict(selected=['b'*6500], discovery=dict(state='unavailable'))]):
                 with self.assertRaises(hook.HookError):
                     hook.recall(memory, dict(hook_event_name='UserPromptSubmit', cwd=tmp, prompt='durable backend'), {})
+
+class CheckpointCurrentnessTests(unittest.TestCase):
+    def test_completion_revises_only_a_supplied_topic_and_preserves_compare_and_swap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = hook.Memory(dict(cairn='unused', socket='unused', token_file='unused', repo='fixture'), 'checkpoint')
+            event = dict(cwd=tmp, workstream='Migration')
+            old = dict(record_id='existing', version=7, body=hook.workstream_prefix(event)+'Migration\n\nNext: tests and deploy.')
+            selection = dict(checkpoint='Tests passed and deployment verified. Entire migration complete.',
+                             checkpoint_state='complete', workstream='Migration', memories=[])
+            writes = hook.selected_writes(memory, event, selection, old, [])
+            self.assertEqual(len(writes), 1)
+            self.assertIs(writes[0][2], old)
+            self.assertIn('Status: complete', writes[0][0])
+            self.assertNotIn('Next: tests', writes[0][0])
+            with patch.object(memory, 'call', return_value=dict(record_id='existing')) as call:
+                hook.save_note(memory, *writes[0][:2], writes[0][2])
+            self.assertEqual(call.call_args.kwargs['payload']['expected_version'], 7)
+            with self.assertRaises(hook.HookError):
+                hook.selected_writes(memory, event, selection, None, [])
+            with self.assertRaises(hook.HookError):
+                hook.selected_writes(memory, event, dict(selection, checkpoint='x'*(hook.CHECKPOINT_BYTES+1)), old, [])

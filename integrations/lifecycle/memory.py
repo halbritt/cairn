@@ -17,12 +17,14 @@ CONTEXT_BYTES = 12000
 TEXT_BYTES = 24000
 TRANSCRIPT_BYTES = 2 * 1024 * 1024
 NOTE_BYTES = 6000
+CHECKPOINT_BYTES = 3000
 SEARCH_ROOM = 8000
 DURABLE_KINDS = ("decision", "preference", "lesson", "procedure")
 CAPTURE_SCHEMA = {
     "type": "object", "properties": {
         "checkpoint": {"type": ["string", "null"]},
         "workstream": {"type": ["string", "null"]},
+        "checkpoint_state": {"type": ["string", "null"], "enum": ["open", "complete", None]},
         "memories": {"type": "array", "maxItems": 3, "items": {
             "type": "object", "properties": {
                 "record_id": {"type": ["string", "null"]},
@@ -38,9 +40,17 @@ When checkpoint is non-null, choose a stable workstream topic under 90 UTF-8 byt
 Reuse a supplied existing_handoffs topic when it is the SAME task, preserving its
 useful context. A new session/agent is not a new workstream. Do not join unrelated
 tasks merely because they share a project. With no checkpoint, workstream=null.
-Use checkpoint only for unfinished work: goal, current state, verification actually
-reported, source/workspace references and concrete next steps. Incorporate still
-relevant previous checkpoint context. Do not infer completion from an exit event.
+Use checkpoint for unfinished work: goal, current state, verification actually
+reported, source/workspace references and concrete next steps. Write a COMPLETE
+replacement under 3000 UTF-8 bytes, never append a chronology. Remove obsolete
+progress and completed next steps; retain still-open work, relevant constraints
+and references. Prior wording remains in record history.
+Set checkpoint_state=open for unfinished work. When the conversation explicitly
+reports ALL work in a supplied handoff complete, revise that SAME topic with a
+brief final result and verification, checkpoint_state=complete. Never create a
+new completed handoff. Do not infer completion from exit, thanks, one finished
+subtask or a generic done. With checkpoint=null, checkpoint_state=null.
+Do not copy a previous 'Status: complete' header into the checkpoint text.
 Store meaningful owner corrections, settled decisions with reasons, preferences,
 verified reusable fixes or procedures separately in memories, at most three.
 For matching existing guidance, use its supplied record_id and kind, and return
@@ -280,6 +290,7 @@ def retrieval_intent(event, state):
             query += " " + part
     return dict(query=query, files=paths, phrases=anchors,
                 words=set(keywords) | terms(" ".join(error_terms)), project=project,
+                precise=bool(paths or phrases or error_terms),
                 startup=event["hook_event_name"] == "SessionStart")
 
 
@@ -366,8 +377,7 @@ def recall(memory, event, state=None):
                                         discovery="lexical")
     semantic_pull = None
     if (not entries and memory.config.get("semantic_fallback") and len(intent["words"]) >= 2
-            and not intent["files"] and not re.search(r'["\`].+?["\`]', event.get("prompt", ""))
-            and not state.get("hints", {}).get("errors") and not intent["startup"]):
+            and not intent["precise"] and not intent["startup"]):
         entry, semantic_pull = semantic_candidate(memory, event, intent, result, seen, status)
         if entry:
             entries = [entry]
@@ -494,10 +504,14 @@ def valid_body(body):
 
 
 def selected_writes(memory, event, selected, previous, candidates, handoffs=()):
-    if not isinstance(selected, dict) or set(selected) != {"checkpoint", "workstream", "memories"}:
+    if (not isinstance(selected, dict) or not {"checkpoint", "workstream", "memories"} <= set(selected)
+            or set(selected) - {"checkpoint", "workstream", "memories", "checkpoint_state"}):
         raise HookError("memory selection did not return the required schema")
     checkpoint, notes = selected["checkpoint"], selected["memories"]
-    if checkpoint is not None and not valid_body(checkpoint):
+    checkpoint_state = selected.get("checkpoint_state", "open" if checkpoint is not None else None)
+    if checkpoint_state not in ("open", "complete", None) or ((checkpoint is None) != (checkpoint_state is None)):
+        raise HookError("memory selection returned an invalid checkpoint state")
+    if checkpoint is not None and (not valid_body(checkpoint) or len(checkpoint.encode()) > CHECKPOINT_BYTES):
         raise HookError("memory selection returned an invalid checkpoint")
     if not isinstance(notes, list) or len(notes) > 3:
         raise HookError("memory selection returned invalid reusable notes")
@@ -538,7 +552,9 @@ def selected_writes(memory, event, selected, previous, candidates, handoffs=()):
         title = workstream_prefix(event) + topic.strip()
         supplied = [*handoffs, *([previous] if previous else [])]
         old = next((r for r in supplied if r["body"].startswith(title + "\n")), None)
-        body = title + "\n\n" + checkpoint.strip()
+        if checkpoint_state == "complete" and old is None:
+            raise HookError("completion requires a supplied existing handoff")
+        body = title + "\n\n" + ("Status: complete\n" if checkpoint_state == "complete" else "") + checkpoint.strip()
         if old is None:
             old = memory.checkpoint(title)
             if old and old["body"] != body:

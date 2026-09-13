@@ -165,6 +165,9 @@ def run_fixture(args, output, store, operator_env):
                             selection['checkpoint']=excerpt['previous_checkpoint'].split('\n',1)[1]
                         if any(marker in latest for marker in ('UNRELATED_WEATHER','NO_MEMORY','SERVICE_DOWN')):
                             selection = dict(checkpoint=None,workstream=None,memories=[])
+                        if 'COMPLETE_WORKSTREAM' in latest:
+                            selection = dict(checkpoint='All PostgreSQL validation, gateway continuity and deployment checks completed successfully.',
+                                             workstream='PostgreSQL validation', checkpoint_state='complete', memories=[])
                         tool = next(n for n in names if n.lower() == 'structuredoutput')
                         body = response_events('selected', data['model'], dict(type='tool_use', id='selected', name=tool, input=selection))
                 else:
@@ -356,6 +359,7 @@ def run_fixture(args, output, store, operator_env):
         profile_fixture(home,output,native,installer,args,work)
         retry_fixture(home, work)
         semantic_fixture(home, work, bool(args.semantic_worker))
+        checkpoint_fixture(home, work)
         from concurrent.futures import ThreadPoolExecutor
         agent = AIAgent(api_key='fixture-only',base_url=endpoint,provider='custom',api_mode='chat_completions',model='probe',
             platform='slack',session_id='interrupted-native',quiet_mode=True,enabled_toolsets=['mcp-cairn'],skip_context_files=True,skip_background_review=True)
@@ -424,6 +428,26 @@ def profile_fixture(home,output,native,installer,args,work):
         for provider in providers:
             provider.shutdown()
     print('Native context-local profiles isolate labels; explicit project recall works from an unrelated terminal directory')
+
+
+def checkpoint_fixture(home, work):
+    engine = load('native_checkpoint_engine', ROOT/'integrations/lifecycle/memory.py')
+    config = json.loads((home/'cairn/engine.json').read_text())
+    memory = engine.Memory(config, 'completion-native')
+    title = 'Handoff: hermesfixture / PostgreSQL validation'
+    old = memory.checkpoint(title)
+    event = dict(hook_event_name='SessionEnd', session_id='completion-native', cwd=str(work),
+                 workstream='PostgreSQL validation', messages=[
+                     dict(role='user', text='COMPLETE_WORKSTREAM: All PostgreSQL validation, gateway continuity and deployment checks are finished.'),
+                     dict(role='assistant', text='The entire workstream is complete.')])
+    engine.capture(memory, event, dict(workstream=title))
+    current = memory.checkpoint(title)
+    assert current['record_id'] == old['record_id'] and current['version'] == old['version']+1
+    assert 'Status: complete' in current['body'] and 'Next: return to CLI' not in current['body'], current
+    historical = memory.call('history', payload=dict(record_id=old['record_id'], version=old['version']))
+    assert historical['versions'][0]['body'] == old['body'], historical
+    assert len(current['body'].encode()) <= engine.CHECKPOINT_BYTES + 160
+    print('Native completed checkpoint replaces stale progress at the same record ID and retains exact prior history')
 
 
 def semantic_fixture(home, work, configured):

@@ -100,3 +100,23 @@ Separately, the installed real selector passed paraphrase, unrelated and embedde
 instruction cases twice each (3.15–7.17 seconds). Status labels semantic discovery,
 verification, rejection, timeout/failure and worker unavailability. These bounded
 cases establish behavior, not general relevance accuracy or long-term benefit.
+
+## Task 5 evidence
+
+Checkpoint selection now returns a complete current replacement under 3000 UTF-8
+bytes. It removes obsolete progress and completed next steps while retaining
+open work, constraints and references. An explicit completion can revise only a
+supplied existing topic; the same record gains a short final result labelled
+`Status: complete`. Null selection remains no change. Durable guidance stays
+separate, and ordinary compare-and-swap revision retains previous versions.
+
+53 focused tests pass. The real selector passed partial completion (security scan
+still open), full completion and continuing already completed work without a new
+write. Final checkpoint bodies were 408 and 472 bytes in those synthetic cases.
+The disposable native fixture confirmed the same record ID, incremented version,
+removal of stale next steps and exact earlier body through Cairn history.
+No existing collection was bulk rewritten. Selection remains fallible.
+
+During final review, precise recall hints were consolidated so expired diagnostic
+hints cannot disable semantic fallback indefinitely; current file/quoted/error
+hints still keep lexical retrieval. The boundary test covers expired diagnostics.
