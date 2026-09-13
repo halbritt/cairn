@@ -42,3 +42,20 @@ lesson, retained its previous text, and created a separate session checkpoint.
 Artifacts remain outside git: `/tmp/cairn-lifecycle-durable-1` and
 `/tmp/cairn-durable-selection.log`. Partial multi-note saves are not transactional.
 An unconfirmed write reports failure rather than claiming the batch was saved.
+
+## 3. Workstream continuity
+
+Named `Handoff: PROJECT / TOPIC` records replace new session-UUID checkpoint
+titles. Relevant existing handoffs are read for selection; current session state
+remembers a retrieved/saved title. Matching supplied workstreams revise the same
+record. Unrelated task topics create separate records. Legacy session checkpoints
+remain available for context; they are not bulk-rewritten.
+
+Validation: 22 focused tests and the native fixture using a fresh Claude UUID
+continued and revised the same workstream record, then the original session
+compacted against its latest version. The real-model synthetic selection checks
+passed with the new topic schema. Candidate pulls are bounded by attempts, and
+queries remain below the API's 4096-byte limit without cutting quoted phrases.
+Artifacts: `/tmp/cairn-lifecycle-workstream-3`. Cross-harness native continuation
+will be checked with OpenCode in step 5; semantic matching and long-term usefulness
+are not established by this fixture.

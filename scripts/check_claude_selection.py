@@ -32,6 +32,7 @@ def main():
             event = dict(hook_event_name='PreCompact', session_id=session_id, cwd=tmp, transcript_path=str(transcript))
             with patch.object(memory, 'checkpoint', return_value=None), \
                  patch.object(hook, 'durable_candidates', return_value=[]), \
+                 patch.object(hook, 'handoff_candidates', return_value=[]), \
                  patch.object(memory, 'call', return_value={'record_id': 'fixture-record'}) as write:
                 hook.capture(memory, event)
                 if name == 'decision':

@@ -72,8 +72,8 @@ def check(claude, binary, root, environment):
                     existing = next((r for r in excerpt['existing_memories']
                                      if r['record_id'] == task_seed['record_id']), None)
                     notes = [dict(record_id=existing['record_id'], kind='lesson', title='Native task hook',
-                                  body=task_seed['body'] + '\n\nVerification: native file-directed retrieval passed.')]
-                    selection = dict(checkpoint=checkpoint, memories=notes if existing else [])
+                                  body=task_seed['body'] + '\n\nVerification: native file-directed retrieval passed.')] if existing else []
+                    selection = dict(checkpoint=checkpoint, workstream="PostgreSQL lifecycle validation", memories=notes)
                     schema_tool = next((name for name in names if name.lower() == 'structuredoutput'), None)
                     if schema_tool:
                         block = dict(type='tool_use', id='capture_' + str(len(captures)), name=schema_tool,
@@ -144,17 +144,21 @@ def check(claude, binary, root, environment):
         entry = next(e for e in durable['index'] if e['record_id'] == task_seed['record_id'])
         revised = memory.call('pull', payload=entry['pull_arguments'])['selection']['record']
         assert revised['version'] == 2 and revised['body'].endswith('retrieval passed.'), revised
-        previous = memory.checkpoint(hook.title_for(event))
+        previous = memory.checkpoint(hook.workstream_prefix(event) + "PostgreSQL lifecycle validation")
         assert previous and previous['body'].endswith(checkpoint), (previous, captures)
         assert previous['observed_writer'] == 'agent:hosted-capture'
         assert previous['scope']['task_id'] == '*' and previous['sensitivity'] == 'shareable'
         before = len(requests)
         run('resume', ['--resume', session_id, '--', 'Continue the lifecycle task.'])
-        assert any(hook.title_for(event) in json.dumps(r) for r in requests[before:]), 'Resume omitted checkpoint index'
-        assert memory.checkpoint(hook.title_for(event))['version'] == previous['version'], 'Identical selection created a redundant revision'
+        assert any((hook.workstream_prefix(event) + "PostgreSQL lifecycle validation") in json.dumps(r) for r in requests[before:]), 'Resume omitted checkpoint index'
+        assert memory.checkpoint(hook.workstream_prefix(event) + "PostgreSQL lifecycle validation")['version'] == previous['version'], 'Identical selection created a redundant revision'
+        checkpoint = 'Goal: verify PostgreSQL lifecycle validation. Verification: fresh sessions can continue this workstream. Next: inspect compaction.'
+        run('fresh-session', ['--session-id', str(uuid.uuid4()), '--', 'Continue PostgreSQL lifecycle validation.'])
+        continued = memory.checkpoint(hook.workstream_prefix(event) + "PostgreSQL lifecycle validation")
+        assert continued['record_id'] == previous['record_id'] and continued['version'] == previous['version'] + 1, continued
         checkpoint = 'Goal: verify lifecycle memory. Decision: disposable PostgreSQL. Verification: startup and resume passed. Next: inspect compaction.'
         run('compact', ['--resume', session_id, '--', '/compact'])
-        after = memory.checkpoint(hook.title_for(event))
+        after = memory.checkpoint(hook.workstream_prefix(event) + "PostgreSQL lifecycle validation")
         assert after and after['record_id'] == previous['record_id'] and after['version'] > previous['version'], after
         assert after['body'].endswith(checkpoint)
         assert any('PreCompact' in json.dumps(r['messages']) for r in captures), 'Native PreCompact did not run'

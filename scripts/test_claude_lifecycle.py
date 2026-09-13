@@ -34,6 +34,9 @@ class LifecycleTests(unittest.TestCase):
                           transcript_path=str(self.transcript))
         self.candidates = patch.object(hook, "durable_candidates", return_value=[])
         self.candidates.start()
+        self.handoffs = patch.object(hook, "handoff_candidates", return_value=[])
+        self.handoffs.start()
+        self.addCleanup(self.handoffs.stop)
         self.addCleanup(self.candidates.stop)
         self.config = dict(cairn="cairn", claude="claude", socket="socket", token_file="token", repo="shared", state_dir=str(self.root / "state"))
 
@@ -92,12 +95,12 @@ class LifecycleTests(unittest.TestCase):
     def test_capture_updates_one_note_and_null_does_not_write(self):
         self.write_dialogue([dict(type="user", message=dict(content="Use PostgreSQL; tests are pending."))])
         memory = hook.Memory(self.config, "session-one")
-        previous = dict(record_id="existing", version=4, body="Previous checkpoint")
+        previous = dict(record_id="existing", version=4, body=hook.workstream_prefix(self.event) + "Storage\n\nPrevious checkpoint")
         with patch.object(memory, "checkpoint", return_value=previous), patch.object(memory, "call", return_value={"record_id": "existing"}) as call:
-            with patch.object(hook, "run_json", return_value={"structured_output": {"memories": [], "checkpoint": None}}):
+            with patch.object(hook, "run_json", return_value={"structured_output": {"memories": [], "workstream": None, "checkpoint": None}}):
                 self.assertEqual(hook.capture(memory, self.event), {})
                 call.assert_not_called()
-            with patch.object(hook, "run_json", return_value={"structured_output": {"memories": [], "checkpoint": "Decision: PostgreSQL. Tests pending."}}) as model:
+            with patch.object(hook, "run_json", return_value={"structured_output": {"memories": [], "workstream": "Storage", "checkpoint": "Decision: PostgreSQL. Tests pending."}}) as model:
                 hook.capture(memory, self.event)
                 self.assertEqual(call.call_args.args[0], "revise")
                 payload = call.call_args.kwargs["payload"]
@@ -112,8 +115,8 @@ class LifecycleTests(unittest.TestCase):
     def test_invalid_model_output_never_writes(self):
         self.write_dialogue([dict(type="user", message=dict(content="Useful decision"))])
         memory = hook.Memory(self.config, "session-one")
-        for result in [{}, {"is_error": True}, {"structured_output": {"memories": [], "checkpoint": False}},
-                       {"structured_output": {"memories": [], "checkpoint": "x" * (hook.NOTE_BYTES + 1)}}]:
+        for result in [{}, {"is_error": True}, {"structured_output": {"memories": [], "workstream": "Storage", "checkpoint": False}},
+                       {"structured_output": {"memories": [], "workstream": "Storage", "checkpoint": "x" * (hook.NOTE_BYTES + 1)}}]:
             with patch.object(memory, "checkpoint", return_value=None), patch.object(memory, "call") as call, \
                  patch.object(hook, "run_json", return_value=result), self.assertRaises(hook.HookError):
                 hook.capture(memory, self.event)
@@ -159,7 +162,7 @@ class LifecycleTests(unittest.TestCase):
         self.write_dialogue([dict(type="user", message=dict(content="Useful decision"))])
         memory = hook.Memory(self.config, "session-one")
         with patch.object(memory, "checkpoint", return_value=None), \
-             patch.object(hook, "run_json", return_value={"structured_output": {"memories": [], "checkpoint": "Selected decision"}}), \
+             patch.object(hook, "run_json", return_value={"structured_output": {"memories": [], "workstream": "Storage", "checkpoint": "Selected decision"}}), \
              patch.object(memory, "call", side_effect=hook.HookError("write failed")):
             with self.assertRaisesRegex(hook.HookError, "write failed"):
                 hook.capture(memory, self.event)
@@ -207,7 +210,7 @@ class LifecycleTests(unittest.TestCase):
         self.write_dialogue([dict(type="user", message=dict(content="Prefer PostgreSQL; SQLite is superseded."))])
         memory = hook.Memory(self.config, "session-one")
         old = dict(record_id="decision", version=7, kind="decision", body="Earlier SQLite decision")
-        selection = dict(checkpoint="Transaction tests remain pending.", memories=[dict(
+        selection = dict(workstream="Storage", checkpoint="Transaction tests remain pending.", memories=[dict(
             record_id="decision", kind="decision", title="Storage", body="PostgreSQL supersedes SQLite; owner correction.")])
         with patch.object(hook, "durable_candidates", return_value=[old]), \
              patch.object(memory, "checkpoint", return_value=None), \
@@ -223,7 +226,7 @@ class LifecycleTests(unittest.TestCase):
     def test_invalid_durable_target_prevents_all_writes(self):
         self.write_dialogue([dict(type="user", message=dict(content="Useful decision"))])
         memory = hook.Memory(self.config, "session-one")
-        selection = dict(checkpoint="Valid checkpoint", memories=[dict(
+        selection = dict(workstream="Storage", checkpoint="Valid checkpoint", memories=[dict(
             record_id="invented", kind="decision", title="Storage", body="New decision")])
         with patch.object(memory, "checkpoint", return_value=None), \
              patch.object(hook, "run_json", return_value=dict(structured_output=selection)), \
@@ -231,11 +234,42 @@ class LifecycleTests(unittest.TestCase):
             hook.capture(memory, self.event)
         call.assert_not_called()
 
+    def test_fresh_session_reuses_named_workstream_and_unrelated_task_is_separate(self):
+        memory = hook.Memory(self.config, "fresh-session")
+        old = dict(record_id="handoff", version=3, kind="note",
+                   body=hook.workstream_prefix(self.event) + "Storage migration\n\nTests pending.")
+        selection = dict(workstream="Storage migration", checkpoint="Tests passed; deploy next.", memories=[])
+        with patch.object(memory, "checkpoint", return_value=None), \
+             patch.object(memory, "call", return_value=dict(record_id="saved")) as call:
+            writes = hook.selected_writes(memory, self.event, selection, None, [], [old])
+            for write in writes:
+                hook.save_note(memory, *write)
+            self.assertEqual(call.call_args.args[0], "revise")
+            self.assertEqual(call.call_args.kwargs["payload"]["record_id"], "handoff")
+            selection["workstream"] = "Editor layout"
+            for write in hook.selected_writes(memory, self.event, selection, None, [], [old]):
+                hook.save_note(memory, *write)
+            self.assertEqual(call.call_args.args[0], "create")
+            self.assertIn("Editor layout", call.call_args.kwargs["payload"]["draft"]["body"])
+
+    def test_retrieved_handoff_binds_resume_to_workstream(self):
+        memory = hook.Memory(self.config, "session")
+        title = hook.workstream_prefix(self.event) + "Storage migration"
+        record = dict(body=title + "\n\nTests pending.", kind="note")
+        entry = dict(record_id="handoff", version=1, summary=record["body"], pull_arguments={})
+        state = {}
+        with patch.object(memory, "search", return_value=dict(index=[entry])) as search, \
+             patch.object(memory, "call", return_value=dict(selection=dict(record=record))):
+            hook.recall(memory, dict(self.event, hook_event_name="UserPromptSubmit", prompt="Continue storage migration"), state)
+            self.assertEqual(state["workstream"], title)
+            hook.recall(memory, dict(self.event, hook_event_name="SessionStart", source="resume"), state)
+            self.assertIn('"' + title + '"', search.call_args.args[0])
+
     def test_identical_new_topic_is_not_duplicated_in_fresh_session(self):
         memory = hook.Memory(self.config, "session-one")
         body = hook.clip(self.root.name, 40) + ": Storage\n\nUse PostgreSQL."
         old = dict(record_id="existing", kind="decision", version=1, body=body)
-        selection = dict(checkpoint=None, memories=[dict(record_id=None, kind="decision",
+        selection = dict(workstream=None, checkpoint=None, memories=[dict(record_id=None, kind="decision",
                          title="Storage", body="Use PostgreSQL.")])
         with patch.object(memory, "checkpoint", return_value=old), patch.object(memory, "call") as call:
             for write in hook.selected_writes(memory, self.event, selection, None, []):

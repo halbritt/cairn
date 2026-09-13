@@ -66,12 +66,9 @@ and private Council content. A null checkpoint and empty memory list write nothi
 fallible model judgment; this is not a secret-redaction guarantee or an
 independent verification of the reported work.
 
-Each session updates one ordinary shareable note named
-`Handoff: PROJECT / Claude session SESSION_UUID`. The note remains available to
-other agents through ordinary search. Revisions use the current version and
+Unfinished work uses an ordinary shareable note named `Handoff: PROJECT / TOPIC`. The selector receives up to two relevant complete workstream notes and must reuse a matching topic across sessions. A retrieved or saved workstream title is retained in session metadata for resume. Fresh agents discover it through ordinary task search. Project identity alone does not join unrelated tasks. Existing session-UUID checkpoints remain readable as migration context. Revisions use the current version and
 preserve store-owned metadata. Concurrent capture hooks for the same session
-cannot run together. Explicit workstream handoffs remain available through the
-`handoff` skill; automatic session checkpoints do not replace those notes.
+cannot run together. Explicit handoffs through the `handoff` skill use the same searchable naming convention. Matching remains fallible: bounded lexical discovery can miss a workstream, and concurrent first creation is not a uniqueness guarantee.
 
 ## Bounds and failures
 
