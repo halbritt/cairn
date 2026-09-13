@@ -64,7 +64,7 @@ seal while enforcing receipt ownership, current privacy and forgetting rules.
 ## Get started
 
 On the owner's host, [shared memory is installed across projects](docs/shared-memory.md)
-in Codex, OpenCode, Agy, and Claude Code. Start a fresh session and use the Cairn
+in Codex, OpenCode, Agy, Claude Code, and Hermes. Start a fresh session and use the Cairn
 tools; no project-specific registration is needed.
 
 Use `cairn version` to identify the CLI; authenticated `cairn agent ... version`

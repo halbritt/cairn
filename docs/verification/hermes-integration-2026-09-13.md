@@ -103,7 +103,29 @@ chosen lookup against the live collection then completed real selection in
 
 The repair passed all 90 Python tests, `make check`, the native Hermes fixture
 (`/tmp/cairn-hermes-budget-native`) and the full disposable integration suite
-with native Claude/OpenCode enabled. Final installation identity follows below.
+with native Claude/OpenCode enabled.
+
+Final installed code is clean `db530a17a23b17f81715af1083cf928c0d3b4a81`.
+The provider hash is
+`e91b999799d36812a6ca4cd1a980bc667614910c190a4e7beacea702f1597ad5`;
+the shared engine hash is
+`a0fa48e188449f8273685b477c2280f91c96a319cb9b26a509cd01f1d59e8836`.
+The same engine bytes are installed in both Claude profiles and OpenCode.
+Hermes's installed manifest records the clean source revision and all file hashes.
+No Cairn API restart or migration was needed; CLI/API remain `d9c0884`.
+The code revision is tracked by
+[CI run 34787317902](https://github.com/halbritt/cairn/actions/runs/34787317902).
+
+The final gateway restart reconnected Slack Socket Mode at 15:36:45 PDT;
+`hermes-gateway.service` is active/running with zero restart retries. Fresh CLI
+and captured GatewayRunner lookups using the installed profile and configured
+model both passed after the repair. Each discovered eight Cairn tools and
+completed search/pull; both session states contain a confirmed capture digest
+and no new workstream. Final recall took 142 ms (CLI) and 113 ms (gateway);
+completed-turn capture took 5.849 and 5.046 seconds respectively. Neither final
+lookup reported a capture failure. The gateway probe sent zero external messages.
+These are two bounded ordinary lookup observations, not a generalized task-value
+measurement. Metadata and local probe logs remain under `/tmp/cairn-hermes-live-*`.
 
 ## Limits
 
