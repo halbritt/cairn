@@ -18,6 +18,15 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-13
 
+- **Make lifecycle memory selective and continuous across agents.** Claude and
+  OpenCode use file/error hints, omit weak matches, retain bounded context and
+  avoid repeating unchanged capture. Reusable notes update separately from named
+  workstream checkpoints. Native OpenCode continued the same handoff written by
+  Claude. Install/update the Python hooks and optional OpenCode plugin; no store
+  migration or API upgrade is required. [OpenCode setup](docs/opencode-lifecycle.md),
+  [verification](docs/verification/lifecycle-improvements-2026-09-13.md), and
+  [Codex/Agy assessment](docs/lifecycle-hook-assessment.md).
+
 - **Recall and checkpoint memory at Claude lifecycle boundaries.** Optional user
   hooks inject bounded memory on startup, submitted tasks, resume and compaction.
   Before compaction or exit, a tool-free model call selects a concise checkpoint

@@ -19,7 +19,7 @@ def module(name, path):
     return result
 
 
-hook = module("cairn_lifecycle", ROOT / "integrations/claude/lifecycle.py")
+hook = module("cairn_lifecycle", ROOT / "integrations/lifecycle/memory.py")
 installer = module("install_claude_hooks", ROOT / "scripts/install-claude-hooks.py")
 
 
@@ -287,6 +287,28 @@ class LifecycleTests(unittest.TestCase):
             hook.capture(memory, self.event, state)
             hook.capture(memory, self.event, state)
             self.assertEqual(model.call_count, 2)
+
+    def test_opencode_identity_and_retained_context_use_the_shared_engine(self):
+        event = dict(self.event, session_id="ses_native123", hook_event_name="PostToolUse", tool_name="Read",
+                     tool_input=dict(file_path=str(self.root / "store.go")))
+        config = dict(self.config, harness="opencode")
+        hook.handle(config, event)
+        state = json.loads((self.root / "state/ses_native123.json").read_text())
+        self.assertIn("store.go", state["hints"]["files"])
+        self.assertIn("opencode/ses_native123", hook.Memory(config, event["session_id"]).scope)
+        with self.assertRaises(hook.HookError):
+            hook.handle(config, dict(event, session_id="../../outside"))
+        memory = hook.Memory(config, event["session_id"])
+        state = {"seen": {"retained": 1, "evicted": 1}}
+        with patch.object(memory, "search", return_value={}):
+            hook.recall(memory, dict(event, hook_event_name="UserPromptSubmit", retained_record_ids=["retained"]), state)
+        self.assertEqual(state["seen"], {"retained": 1})
+
+    def test_continuation_prefers_project_without_joining_unrelated_workstreams(self):
+        event = dict(self.event, hook_event_name="UserPromptSubmit", prompt="Continue editor layout")
+        intent = hook.retrieval_intent(event, {})
+        self.assertIn('"' + hook.workstream_prefix(event).rstrip() + '"', intent["query"])
+        self.assertFalse(hook.relevant(dict(summary=hook.workstream_prefix(event) + "Storage migration"), intent))
 
     def test_retrieved_handoff_binds_resume_to_workstream(self):
         memory = hook.Memory(self.config, "session")

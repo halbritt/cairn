@@ -39,7 +39,7 @@ def install(settings_path, destination, config):
                                  "timeout": 150 if event in ("PreCompact", "SessionEnd") else 13}]})
     original = settings_path.read_bytes() if settings_path.exists() else None
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
-    shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/claude/lifecycle.py", script)
+    shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/lifecycle/memory.py", script)
     script.chmod(0o700)
     write_json(config_path, dict(config, state_dir=str(destination / "state")))
     backup = settings_path.with_name(settings_path.name + ".before-cairn-lifecycle")

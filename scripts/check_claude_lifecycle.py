@@ -168,6 +168,8 @@ def check(claude, binary, root, environment):
         assert len(captures) == capture_count, 'Unchanged PreCompact/SessionEnd repeated model selection'
         assert 'PreCompact' in compact_result.stdout, 'Native PreCompact did not run'
         print('Claude native startup, task context, MCP pull, resume, PreCompact and SessionEnd selected capture pass')
+        return dict(work=work, config=config, title=hook.workstream_prefix(event) + "PostgreSQL lifecycle validation",
+                    record=after)
     finally:
         server.shutdown()
         server.server_close()

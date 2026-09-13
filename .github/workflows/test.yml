@@ -11,6 +11,7 @@ jobs:
         with:
           node-version: '24'
       - run: node scripts/check_opencode_recent_files.mjs
+      - run: node scripts/check_opencode_lifecycle.mjs
   postgres:
     runs-on: ubuntu-latest
     services:

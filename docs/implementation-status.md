@@ -1,11 +1,13 @@
 # Implementation status — 2026-09-13
 
-[Claude lifecycle hooks](claude-lifecycle.md) now supply bounded memory at startup,
-submitted tasks, resume and compaction, and select checkpoints before compaction
-or exit. The proactive Cairn skill is deployed across all four agents. The
-[native verification](verification/claude-lifecycle-2026-09-13.md) separates actual
-Claude/API transport checks from real model selection and broader usefulness.
-
+[Claude lifecycle hooks](claude-lifecycle.md) and the optional [OpenCode lifecycle
+plugin](opencode-lifecycle.md) now share selective recall, separate reusable notes,
+named workstreams and unchanged-capture suppression. Native OpenCode continued
+and revised a Claude-created handoff. The proactive Cairn skill remains concise
+and deployed across all four agents. [Verification](verification/lifecycle-improvements-2026-09-13.md)
+separates native transport, real-model selection and broader usefulness.
+[Codex/Agy hooks](lifecycle-hook-assessment.md) are assessed but not installed for
+Cairn.
 
 Cairn is a usable local alpha for explicitly selected agent memory. It stores
 versioned notes and supporting evidence, makes them available through CLI,

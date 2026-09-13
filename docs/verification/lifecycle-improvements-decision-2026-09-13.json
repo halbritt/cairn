@@ -1,0 +1,238 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-lifecycle-improvements-2026-09-13",
+  "question": "How should authorized lifecycle adapters share selective recall and durable capture while preserving host event semantics?",
+  "scope": [
+    "Claude/OpenCode lifecycle adapters",
+    "Codex/Agy hook assessment"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Finish improvements 1 through 5 in order; carry forward landing and deployment",
+    "authorized_scope": [
+      "selective ambient recall",
+      "separate durable capture",
+      "workstream continuity",
+      "unchanged capture suppression",
+      "OpenCode integration and Codex/Agy assessment"
+    ]
+  },
+  "evidence": [
+    {
+      "evidence_class": "evidence-repository-contracts",
+      "id": "lifecycle-contracts",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/cairn",
+          "method": "Read current instructions, lifecycle implementation and boundary tests; ran unit and native fixture checks on 2026-09-13."
+        }
+      ],
+      "satisfies": [
+        "repository contract",
+        "target repository and task scope",
+        "repository instructions from root through target path"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "AGENTS.md preserves PostgreSQL, store-owned identity, hosted destination and selected capture; integration checks use disposable databases."
+    },
+    {
+      "evidence_class": "evidence-explicit-user-requirements",
+      "id": "lifecycle-scope",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/cairn",
+          "method": "Read current instructions, lifecycle implementation and boundary tests; ran unit and native fixture checks on 2026-09-13."
+        }
+      ],
+      "satisfies": [
+        "explicit task authority",
+        "task scope and authority statement",
+        "accepted desired behavior and semantic authority",
+        "user instruction and authority",
+        "decision owner",
+        "a bounded decision question",
+        "alternatives including no change where viable",
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "evidence connecting the proposed action to the condition",
+        "expected future change from accepted plans"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "Owner requested finish improvements 1 through 5 in order, carrying forward land/deploy; changes to lifecycle recall/capture authorized, other store authority unchanged. The concrete alternatives are retaining explicit-only tools (does not meet owner-requested ambient behavior), reusing the tested engine (selected), and independent harness engines (extra policy duplication)."
+    },
+    {
+      "evidence_class": "evidence-static-source-structure",
+      "id": "lifecycle-source",
+      "provenance": [
+        {
+          "locator": "integrations/lifecycle/memory.py",
+          "method": "Read complete implementation"
+        },
+        {
+          "locator": "integrations/opencode/lifecycle.ts",
+          "method": "Read complete plugin and pinned host1.18.21 source"
+        }
+      ],
+      "satisfies": [
+        "integration inventory",
+        "inventory of remote calls with their timeout and failure behavior",
+        "response validation at the boundary",
+        "owner and lifetime",
+        "acquisition and release paths",
+        "adjacent code",
+        "current source, configuration, and relevant runtime state",
+        "affected behavior and state",
+        "Python and dependency version matrix",
+        "formatter linter and type-checker configuration",
+        "repository toolchain inspection",
+        "resource ownership and failure policy",
+        "explicit lifecycle and failure policy",
+        "ownership and lifecycle map",
+        "capacity/backpressure and error propagation",
+        "external format and domain text contract",
+        "normalization requirements",
+        "protocol or file metadata",
+        "change-type classification",
+        "per-edit change classification",
+        "preservation boundary and semantic authority"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "Read shared Python engine, Claude installer and OpenCode plugin: explicit UTF-8 and JSON bounds; metadata-only state; 5-second CLI calls, 35-second selector, 150-second host budget; per-session lock/queue and disposal ownership. Core fields and PostgreSQL authority unchanged. Native SDK1.18.21 and Python3.12 repository conventions inspected."
+    },
+    {
+      "evidence_class": "evidence-tests",
+      "id": "lifecycle-tests",
+      "provenance": [
+        {
+          "locator": "scripts/test_claude_lifecycle.py",
+          "method": "26 focused tests in 74-test Python suite"
+        },
+        {
+          "locator": "scripts/check_opencode_lifecycle.mjs",
+          "method": "Node24 direct plugin execution with synthetic host and subprocess engine"
+        },
+        {
+          "locator": "scripts/check_claude_lifecycle.py; scripts/check_opencode_lifecycle.py",
+          "method": "Actual binaries, scripted loopback responses, isolated PostgreSQL cluster; /tmp/cairn-lifecycle-cross-host-3"
+        }
+      ],
+      "satisfies": [
+        "reversibility and verification",
+        "checkpoint verification",
+        "which edge cases unit tests already cover",
+        "availability of a real managed dependency for tests",
+        "an end-to-end verification artifact against the actual device or endpoint",
+        "or an explicit record that verification is provisional",
+        "access to the real device or endpoint",
+        "the real system's own statement of its capability - device configuration output wire capture or endpoint self-description",
+        "evidence of how each dependency fails - refused hung slow or malformed",
+        "public API and tests",
+        "representative non-ASCII data",
+        "round-trip and failure tests",
+        "out-of-process dependency map and unit-coverage evidence",
+        "the longest happy path touching all out-of-process dependencies per scenario",
+        "out-of-process dependency classification with ownership evidence",
+        "per-dependency classification as managed or unmanaged with ownership evidence",
+        "tests, characterization, probes, or explicit residual risk"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "74 Python tests, Node lifecycle and recent-file plugin checks pass. Native Claude2.1.270 and OpenCode1.18.21 scripted-provider fixture against disposable PostgreSQL passes cross-session/harness same-record continuation, real pull and idle capture. Configured real selector separates decision/checkpoint and skips lookup/exclusion. TypeScript checks against installed OpenCode SDK pass."
+    }
+  ],
+  "assertions": [
+    {
+      "id": "contract",
+      "type": "observation",
+      "text": "Owner requested the five behavioral changes; existing PostgreSQL and ordinary authority contracts remain.",
+      "evidence": [
+        "lifecycle-scope",
+        "lifecycle-contracts"
+      ]
+    },
+    {
+      "id": "integration-choice",
+      "type": "decision",
+      "text": "Use one Python selection/recall engine with native Claude command hooks and OpenCode message/idle/compaction adapters.",
+      "depends_on": [
+        "contract"
+      ],
+      "owner": "repository owner",
+      "authority": "Explicit implementation and deployment request"
+    },
+    {
+      "id": "verification",
+      "type": "verification",
+      "text": "Focused and native checks establish the documented adapter behavior; they do not establish full design acceptance or sustained usefulness.",
+      "depends_on": [
+        "integration-choice"
+      ],
+      "criteria": [
+        "bounded recall and capture",
+        "separate notes and same-workstream updates",
+        "unchanged extraction skip",
+        "native cross-harness pull and update"
+      ],
+      "evidence": [
+        "lifecycle-tests",
+        "lifecycle-source"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Shared engine with host-specific boundaries",
+      "disposition": "selected",
+      "evidence": [
+        "lifecycle-source",
+        "lifecycle-tests"
+      ]
+    },
+    {
+      "option": "Keep only model-selected tools",
+      "disposition": "rejected",
+      "evidence": [
+        "lifecycle-scope"
+      ]
+    },
+    {
+      "option": "Implement independent per-harness selection policies",
+      "disposition": "rejected",
+      "evidence": [
+        "lifecycle-source"
+      ]
+    },
+    {
+      "option": "Install Codex/Agy adapters without native transcript verification",
+      "disposition": "deferred",
+      "evidence": [
+        "lifecycle-tests"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/verification/lifecycle-improvements-2026-09-13.md",
+    "docs/lifecycle-hook-assessment.md",
+    "integrations/lifecycle/memory.py",
+    "integrations/opencode/lifecycle.ts",
+    "pkt-ec2306dd7a6036ea sha256:ec2306dd7a6036ea6fefe95ff8278de1f24587309bb14b20dea648c0ef69f54c"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "74 Python tests",
+    "both Node plugin checks",
+    "make check",
+    "make test-integration with native Claude and OpenCode fixtures"
+  ],
+  "reopening_conditions": [
+    "host event or transcript contract changes",
+    "observed memory misses or harmful duplicate guidance",
+    "owner requests further harness integration"
+  ],
+  "residual_risk": [
+    "Fallible selection and bounded lexical discovery",
+    "No atomic multi-note batch or concurrent first-title uniqueness",
+    "Abrupt-kill and native OpenCode compaction coverage remain limited",
+    "No sustained task-benefit measurement"
+  ]
+}

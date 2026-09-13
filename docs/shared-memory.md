@@ -67,3 +67,13 @@ and [Claude Code's user scope](https://code.claude.com/docs/en/mcp).
 OpenCode uses its existing native adapter in the global tools directory. Agy's
 installed customization guide documents its global MCP configuration at
 `~/.gemini/config/mcp_config.json`.
+
+## Optional lifecycle memory
+
+The owner's Claude profiles and OpenCode use the shared lifecycle engine for
+selective ambient recall, separate durable memories and named workstream handoffs.
+Unchanged conversation content skips model selection after a confirmed capture.
+See [Claude setup](claude-lifecycle.md), [OpenCode setup](opencode-lifecycle.md) and
+[verification](verification/lifecycle-improvements-2026-09-13.md). Codex and Agy
+continue using their ordinary tools and proactive skill; their supported hook
+routes are [documented separately](lifecycle-hook-assessment.md).

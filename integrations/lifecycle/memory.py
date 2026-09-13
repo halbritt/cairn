@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Selected Cairn memory at Claude Code lifecycle boundaries (stdlib only)."""
+"""Selected Cairn memory at authorized host lifecycle boundaries (stdlib only)."""
 import argparse
 import fcntl
 import hashlib
@@ -98,7 +98,8 @@ def run_json(command, *, body=None, timeout=5, env=None, cwd=None):
 class Memory:
     def __init__(self, config, session):
         self.config = config
-        self.scope = ["--repo", config["repo"], "--task", "claude/" + session, "--run", session]
+        self.scope = ["--repo", config["repo"], "--task", config.get("task_id", config.get("harness", "claude") + "/" + session),
+                      "--run", config.get("run_id", session)]
         self.command = [config["cairn"], "agent", "--socket", config["socket"],
                         "--token-file", config["token_file"]]
 
@@ -112,6 +113,12 @@ class Memory:
     def search(self, query, room=SEARCH_ROOM, entities=(), kinds=()):
         hints = [flag for entity in entities for flag in ("--entity-file", entity)]
         hints += [flag for kind in kinds for flag in ("--kind", kind)]
+        for key, value in self.config.get("context", {}).items():
+            flag = {"revision": "--revision", "workspace_sha256": "--workspace-sha256",
+                    "task_class": "--task-class", "task_phase": "--task-phase",
+                    "binding": "--binding", "capability": "--capability"}.get(key)
+            if flag and value:
+                hints += [flag, value]
         result = self.call("search", [*self.scope, "--tokens", str(room), *hints, "--", query])
         if result.get("status") not in ("READY", "SCOPE_EMPTY"):
             raise HookError("Cairn retrieval is not ready")
@@ -158,6 +165,13 @@ def conversation(path):
             seen.add(identity)
         if text.strip():
             messages.append({"role": record["type"], "text": text})
+    return bounded_dialogue(messages)
+
+
+def bounded_dialogue(messages):
+    if not isinstance(messages, list) or any(not isinstance(m, dict) or m.get("role") not in ("user", "assistant")
+            or not isinstance(m.get("text"), str) for m in messages):
+        raise HookError("invalid host dialogue")
     # Keep complete recent messages where possible; mark a clipped large message.
     selected = []
     for message in reversed(messages):
@@ -192,7 +206,8 @@ STOP_WORDS = set("a an and are as at be before can check continue could do does 
 
 
 def terms(text):
-    return {word for word in re.findall(r"[\w.-]+", text.lower()) if len(word) >= 3 and word not in STOP_WORDS}
+    words = (word.strip(".-") for word in re.findall(r"[\w.-]+", text.lower()))
+    return {word for word in words if len(word) >= 3 and word not in STOP_WORDS}
 
 
 def file_hint(value, cwd):
@@ -234,8 +249,13 @@ def retrieval_intent(event, state):
     if event.get("source") in ("resume", "compact"):
         anchors.insert(0, state.get("workstream", title_for(event)))
     anchors = [a for a in anchors if len(a.encode()) <= 256 and '"' not in a][:8]
+    search_anchors = anchors
+    if re.search(r"\b(?:continue|resume|handoff)\b", prompt, re.IGNORECASE):
+        # Prefer this project's workstreams without treating project identity
+        # alone as evidence that any particular handoff answers the task.
+        search_anchors = [workstream_prefix(event).rstrip(), *anchors][:8]
     query = project
-    for part in [*('"' + item + '"' for item in anchors), *error_terms, *keywords[:48]]:
+    for part in [*('"' + item + '"' for item in search_anchors), *error_terms, *keywords[:48]]:
         if len((query + " " + part).encode()) <= 4000:
             query += " " + part
     return dict(query=query, files=paths, phrases=anchors,
@@ -262,9 +282,14 @@ def recall(memory, event, state=None):
     state = state if state is not None else {}
     if event["hook_event_name"] == "SessionStart":
         state["seen"] = {}  # new/resumed/compacted context needs fresh delivery
+    if "retained_record_ids" in event:
+        retained = event["retained_record_ids"]
+        if not isinstance(retained, list) or any(not isinstance(i, str) for i in retained):
+            raise HookError("invalid retained context identities")
+        state["seen"] = {k: v for k, v in state.get("seen", {}).items() if k in retained}
     seen = state.setdefault("seen", {})
     intent = retrieval_intent(event, state)
-    kinds = ("decision", "preference") if intent["startup"] and event.get("source") not in ("resume", "compact") else ()
+    kinds = ("decision", "preference") if intent["startup"] and not event.get("prompt") and event.get("source") not in ("resume", "compact") else ()
     result = memory.search(intent["query"], entities=intent["files"], kinds=kinds)
     entries = [entry for entry in result.get("index", []) if relevant(entry, intent)
                and seen.get(entry["record_id"]) != entry["version"]]
@@ -337,11 +362,10 @@ def handoff_candidates(memory, event, messages, state):
     intent = retrieval_intent(dict(event, hook_event_name="UserPromptSubmit", prompt=prompt), state)
     result = memory.search(intent["query"], room=32000, entities=intent["files"], kinds=["note"])
     records = []
-    entries = [e for e in result.get("index", []) if relevant(e, intent)
-               and e.get("summary", "").startswith(workstream_prefix(event))][:2]
+    entries = [e for e in result.get("index", []) if relevant(e, intent)][:2]
     for entry in entries:
         record = memory.call("pull", payload=entry["pull_arguments"])["selection"]["record"]
-        if record["body"].startswith(workstream_prefix(event)) and " / Claude session " not in record["body"].split("\n", 1)[0]:
+        if record.get("class") == "A" and record["body"].startswith(workstream_prefix(event)) and " / Claude session " not in record["body"].split("\n", 1)[0]:
             records.append(record)
     return records
 
@@ -354,7 +378,7 @@ def durable_candidates(memory, event, messages):
     records = []
     for entry in [e for e in result.get("index", []) if relevant(e, intent)][:3]:
         record = memory.call("pull", payload=entry["pull_arguments"])["selection"]["record"]
-        if record["kind"] in DURABLE_KINDS and len(record["body"].encode()) <= NOTE_BYTES:
+        if record.get("class") == "A" and record["kind"] in DURABLE_KINDS and len(record["body"].encode()) <= NOTE_BYTES:
             records.append(record)
     return records
 
@@ -438,7 +462,7 @@ def selected_writes(memory, event, selected, previous, candidates, handoffs=()):
 
 def capture(memory, event, state=None):
     state = state if state is not None else {}
-    messages = conversation(event["transcript_path"])
+    messages = bounded_dialogue(event["messages"]) if "messages" in event else conversation(event["transcript_path"])
     if not messages:
         return {}
     digest = hashlib.sha256(encoded([CAPTURE_PROMPT, CAPTURE_SCHEMA, memory.config.get("model"), messages]).encode()).hexdigest()
@@ -488,10 +512,14 @@ def handle(config, event):
         return {}
     if not isinstance(event.get("session_id"), str) or not event["session_id"] or len(event["session_id"]) > 128:
         raise HookError("missing or invalid host session identity")
-    try:
-        uuid.UUID(event["session_id"])
-    except ValueError as exc:
-        raise HookError("host session identity must be a UUID") from exc
+    if config.get("harness") == "opencode":
+        if not re.fullmatch(r"ses_[A-Za-z0-9]+", event["session_id"]):
+            raise HookError("invalid OpenCode session identity")
+    else:
+        try:
+            uuid.UUID(event["session_id"])
+        except ValueError as exc:
+            raise HookError("host session identity must be a UUID") from exc
     event_name = event.get("hook_event_name")
     if event_name not in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse", "PostToolUseFailure"):
         return {}
