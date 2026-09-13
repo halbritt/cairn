@@ -1,0 +1,49 @@
+# Hermes memory improvements
+
+Owner authorization, 2026-09-13: complete these five improvements in order,
+then deploy. Slack is the only deployed messaging gateway. Baseline code is
+`db530a1`; deployment documentation is `c28e6a0`.
+
+1. Reduce capture latency. Measure the selector separately from lookup/startup,
+   compare a faster model on the same synthetic decisions, corrections,
+   exclusions and checkpoints, and remove provably unnecessary selection work.
+   Target: no selector invocation for a confirmed unchanged/acknowledgment-only
+   continuation, and lower measured selector latency without losing those cases.
+2. Give Slack threads explicit project/workstream context, independent of the
+   gateway's terminal cwd. Keep context through restart, isolate thread choices,
+   allow clearing/changing them, and make bare continuation use that choice.
+3. Provide a compact on-demand memory status view: recalled records, last capture
+   outcome (saved, no change, failed/pending), current workstream and retry path.
+   Keep routine chat quiet and do not retain raw dialogue in status files.
+4. Add bounded semantic fallback after lexical relevance misses. Preserve precise
+   file/error retrieval, required context, labelled worker unavailability and the
+   combined 12000-byte delivered-context ceiling. Similarity alone must not
+   establish applicability; verify candidates before injecting them.
+5. Keep current checkpoints concise: replace obsolete progress, preserve still-open
+   work and relevant decisions, retain older wording in record history, and keep
+   reusable guidance separate. Verify same-record updates and completion handling.
+
+Preserve the ordinary hosted profile, store-owned identity, existing task model,
+native Hermes memory and unrelated plugins/settings. Reuse the shared lifecycle
+engine; no production databases for tests or raw-session capture. Native checks
+cover CLI and the real Slack/GatewayRunner path with captured outbound transport.
+Deploy only after focused, native, shared lifecycle and repository checks pass;
+verify installed hashes, gateway restart and bounded ordinary retrieval/status.
+Do not equate these checks with full design acceptance or long-term task benefit.
+
+## Task 1 evidence
+
+The synthetic benchmark covers decision/checkpoint separation, same-ID owner
+correction, lookup, exclusion, unfinished work and courtesy, twice per model.
+All cases passed. Baseline selector median across all cases was 3.874s; Haiku
+was 7.303s and slower on this host. A low-effort comparison did not establish a
+consistent benefit, so the deployed selector/model settings will stay unchanged.
+The new exact courtesy-pair shortcut took 0.413–0.467ms, versus baseline
+3.481–3.530s. It only skips a continuation when its prior dialogue fingerprint
+was confirmed, or when the entire supplied dialogue consists of courtesy pairs.
+Changed/unconfirmed earlier work, substantive replies and corrections still select.
+The measurement is whole `capture()` with lookup/write boundaries replaced for
+synthetic model comparison; it performs no database access. Native verification
+will separately cover the complete installed path. `claude --version` startup
+was 6.7–10.0ms (five observations), which is a lower-bound probe, not a full
+selector startup profile. No persistent selector process or concurrency was added.

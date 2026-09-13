@@ -1,5 +1,6 @@
 """Behavior at the host/memory boundary, using no operational database or model."""
 import fcntl
+import hashlib
 import importlib.util
 import json
 import os
@@ -367,6 +368,39 @@ class LifecycleTests(unittest.TestCase):
             result = str(hook.recall(memory, event, state))
             self.assertIn("required", result)
             self.assertNotIn("file guidance", result)
+
+
+class CourtesyCaptureTests(unittest.TestCase):
+    def test_only_complete_courtesy_pairs_skip_selection(self):
+        from unittest.mock import Mock
+        memory = Mock(config={})
+        courtesy = [dict(role='user', text='Thanks!'), dict(role='assistant', text="You're welcome.")]
+        state = {}
+        self.assertEqual(hook.capture(memory, dict(messages=courtesy), state), {})
+        memory.checkpoint.assert_not_called()
+        self.assertEqual(state['captured_messages'], 2)
+        self.assertFalse(hook.courtesy_only([dict(role='user', text='Thanks, use PostgreSQL 17.'), courtesy[1]]))
+        self.assertFalse(hook.courtesy_only([courtesy[0], dict(role='assistant', text='The deployment is done.')]))
+        self.assertFalse(hook.courtesy_only([dict(role='user', text='Yes'), courtesy[1]]))
+        self.assertFalse(hook.courtesy_only(courtesy[:1]))
+
+    def test_uncaptured_or_changed_prefix_cannot_be_hidden_by_courtesy(self):
+        from unittest.mock import Mock
+        memory = Mock(config={})
+        memory.checkpoint.side_effect = hook.HookError('selection path reached')
+        original = [dict(role='user', text='Correct the database to PostgreSQL 17.'), dict(role='assistant', text='Updated.')]
+        thanks = [dict(role='user', text='Thanks!'), dict(role='assistant', text="You're welcome.")]
+        event = dict(messages=original+thanks,cwd='/tmp',session_id='courtesy')
+        for state in ({}, {'captured_messages':2,'captured_digest':'unconfirmed'}):
+            with self.assertRaisesRegex(hook.HookError,'selection path reached'):
+                hook.capture(memory,event,state)
+        digest = hashlib.sha256(hook.encoded([hook.CAPTURE_PROMPT,hook.CAPTURE_SCHEMA,None,original]).encode()).hexdigest()
+        state = dict(captured_messages=2,captured_digest=digest)
+        self.assertEqual(hook.capture(memory,event,state), {})
+        self.assertEqual(state['captured_messages'],4)
+        event['messages'][0]['text']='A new correction'
+        with self.assertRaisesRegex(hook.HookError,'selection path reached'):
+            hook.capture(memory,event,state)
 
 
 class CandidateBudgetTests(unittest.TestCase):

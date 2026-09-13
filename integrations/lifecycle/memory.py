@@ -478,13 +478,31 @@ def selected_writes(memory, event, selected, previous, candidates, handoffs=()):
     return writes
 
 
+def courtesy_only(messages):
+    if not messages or len(messages) % 2:
+        return False
+    allowed = ({"thanks", "thank you", "thanks a lot", "thank you very much", "thx", "cheers"},
+               {"you're welcome", "you are welcome", "no problem", "happy to help", "glad to help", "anytime"})
+    return all(message["role"] == ("user" if index % 2 == 0 else "assistant")
+               and message["text"].strip().lower().replace("’", "'").rstrip(".!") in allowed[index % 2]
+               for index, message in enumerate(messages))
+
+
 def capture(memory, event, state=None):
     state = state if state is not None else {}
     messages = bounded_dialogue(event["messages"]) if "messages" in event else conversation(event["transcript_path"])
     if not messages:
         return {}
-    digest = hashlib.sha256(encoded([CAPTURE_PROMPT, CAPTURE_SCHEMA, memory.config.get("model"), messages]).encode()).hexdigest()
+    def fingerprint(dialogue):
+        return hashlib.sha256(encoded([CAPTURE_PROMPT, CAPTURE_SCHEMA, memory.config.get("model"), dialogue]).encode()).hexdigest()
+    digest = fingerprint(messages)
     if state.get("captured_digest") == digest:
+        return {}
+    previous_count = state.get("captured_messages", 0)
+    confirmed_prefix = (0 < previous_count <= len(messages)
+                        and fingerprint(messages[:previous_count]) == state.get("captured_digest"))
+    if courtesy_only(messages[previous_count:] if confirmed_prefix else messages):
+        state.update(captured_digest=digest, captured_messages=len(messages))
         return {}
     previous = memory.checkpoint(state.get("workstream", title_for(event)))
     handoffs = handoff_candidates(memory, event, messages, state)
@@ -522,6 +540,7 @@ def capture(memory, event, state=None):
     # Only a fully confirmed selection (including null) suppresses later calls.
     # On failure, retain the old digest so a subsequent event can retry.
     state["captured_digest"] = digest
+    state["captured_messages"] = len(messages)
     return {"systemMessage": "Cairn selected memories saved: " + ", ".join(saved)} if saved else {}
 
 
