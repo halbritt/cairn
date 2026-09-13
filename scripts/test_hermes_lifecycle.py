@@ -10,7 +10,7 @@ import types
 import unittest
 from unittest.mock import Mock, patch
 
-from test_claude_lifecycle import ROOT, hook
+from test_claude_lifecycle import ROOT, hook, module
 
 
 def adapter():
@@ -23,8 +23,9 @@ def adapter():
         'tools.terminal_tool': types.SimpleNamespace(get_session_cwd=lambda _: None, resolve_task_overrides=lambda _: {}),
         'hermes_test_adapter.memory': hook,
     }
-    spec = importlib.util.spec_from_file_location('hermes_test_adapter', ROOT / 'integrations/hermes/__init__.py', submodule_search_locations=[])
+    spec = importlib.util.spec_from_file_location('hermes_test_adapter', ROOT / 'integrations/hermes/__init__.py', submodule_search_locations=[str(ROOT / "integrations/hermes")])
     module = importlib.util.module_from_spec(spec)
+    modules["hermes_test_adapter"] = module
     with patch.dict(sys.modules, modules):
         spec.loader.exec_module(module)
     return module
@@ -178,6 +179,47 @@ class HermesBoundaryTests(unittest.TestCase):
         intent=hook.retrieval_intent(event,{})
         self.assertTrue(hook.relevant(dict(summary=hook.workstream_prefix(event)+'PostgreSQL validation'),intent))
         self.assertFalse(hook.relevant(dict(summary='Unrelated weather facts'),intent))
+
+
+class ConversationContextTests(unittest.TestCase):
+    def test_binding_survives_reload_isolates_threads_and_refuses_pending_change(self):
+        controls = module('hermes_controls_test',ROOT/'integrations/hermes/controls.py')
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            a = controls.conversation_key('slack', 'team/channel/thread-a')
+            b = controls.conversation_key('slack', 'team/channel/thread-b')
+            self.assertIn('Migration', controls.set_context(home, a, [tmp, 'Migration']))
+            self.assertEqual(controls.read_control(home,a)['binding']['workstream'],'Migration')
+            self.assertEqual(controls.read_control(home,b),{})
+            with controls.change_control(home,a) as state:
+                state['pending']=True
+            self.assertIn('unconfirmed',controls.set_context(home,a,['clear']))
+            self.assertEqual(controls.read_control(home,a)['binding']['workstream'],'Migration')
+            with controls.change_control(home,a) as state:
+                state['pending']=False
+            controls.set_context(home,a,['clear'])
+            self.assertIsNone(controls.read_control(home,a)['binding'])
+
+    def test_explicit_project_overrides_terminal_context_and_topic_is_enforced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);project=root/'chosen-project';project.mkdir()
+            elsewhere=root/'terminal';elsewhere.mkdir()
+            event=dict(cwd=str(elsewhere),project_path=str(project),workstream='Database migration',
+                       hook_event_name='UserPromptSubmit',prompt='continue')
+            intent=hook.retrieval_intent(event,{})
+            self.assertEqual(intent['project'],'chosen-project')
+            self.assertIn('Handoff: chosen-project / Database migration',intent['query'])
+            self.assertIsNone(hook.file_hint(str(elsewhere/'other.go'),str(elsewhere),project))
+            selected=dict(checkpoint='Pending tests.',workstream='Another topic',memories=[])
+            with self.assertRaisesRegex(hook.HookError,'explicitly chosen'):
+                hook.selected_writes(Mock(),event,selected,None,[])
+
+    def test_explicit_context_captures_current_turn_without_prior_project_dialogue(self):
+        provider=plugin.CairnProvider(Mock())
+        provider.turn_capture=True
+        messages=[dict(role='user',content='Old project secret topic'),dict(role='assistant',content='Old answer'),
+                  dict(role='user',content='Current migration'),dict(role='assistant',content='Tests remain')]
+        self.assertEqual(provider.selected_dialogue(messages),[dict(role='user',text='Current migration'),dict(role='assistant',text='Tests remain')])
 
 
 if __name__=='__main__':

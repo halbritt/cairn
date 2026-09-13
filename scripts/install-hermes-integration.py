@@ -34,8 +34,16 @@ def install(home, native, claude, skill, model=None):
     plugin = home / 'plugins/cairn'
     plugin.mkdir(parents=True, exist_ok=True, mode=0o700)
     for source, target in [(ROOT / 'integrations/hermes/__init__.py', plugin / '__init__.py'),
-                           (ROOT / 'integrations/lifecycle/memory.py', plugin / 'memory.py')]:
+                           (ROOT / 'integrations/lifecycle/memory.py', plugin / 'memory.py'),
+                           (ROOT / 'integrations/hermes/controls.py', plugin / 'controls.py')]:
         shutil.copyfile(source, target)
+    commands = home / 'plugins/cairn-controls'
+    commands.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for source, name in [('commands.py', '__init__.py'), ('controls.py', 'controls.py'), ('commands-plugin.yaml', 'plugin.yaml')]:
+        shutil.copyfile(ROOT / 'integrations/hermes' / source, commands / name)
+    enabled = config.setdefault('plugins', {}).setdefault('enabled', [])
+    if 'cairn-controls' not in enabled:
+        enabled.append('cairn-controls')
     engine = dict(cairn=native['executable'], socket=native['socket'], token_file=native['token_file'],
                   repo=native['repo'], harness='hermes', claude=claude, state_dir=str(home / 'cairn/state'))
     if model:
@@ -71,7 +79,8 @@ def install(home, native, claude, skill, model=None):
         'schema': 'cairn.hermes-install/1',
         'source_revision': revision, 'source_modified': modified,
         'files': {str(p.relative_to(home)): hashlib.sha256(p.read_bytes()).hexdigest()
-                  for p in (plugin / '__init__.py', plugin / 'memory.py', skill_dir / 'SKILL.md')}})
+                  for p in (plugin / '__init__.py', plugin / 'memory.py', plugin / 'controls.py',
+                            commands / '__init__.py', commands / 'controls.py', commands / 'plugin.yaml', skill_dir / 'SKILL.md')}})
     return config
 
 

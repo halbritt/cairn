@@ -14,6 +14,7 @@ from agent.context_compressor import is_compaction_summary_message
 from hermes_constants import get_hermes_home
 from tools.terminal_tool import get_session_cwd, resolve_task_overrides
 from .memory import bounded_dialogue, project_for
+from .controls import conversation_key, read_control, change_control
 
 logger = logging.getLogger(__name__)
 CONTEXT_BYTES = 12000
@@ -70,6 +71,8 @@ class CairnProvider(MemoryProvider):
         self.warning_callback = None
         self.last_dialogue = []
         self.capture_pending = False
+        self.binding = None
+        self.turn_capture = False
 
     def is_available(self):
         return (get_hermes_home() / 'cairn-lifecycle.json').is_file()
@@ -81,6 +84,9 @@ class CairnProvider(MemoryProvider):
         self.session_ids.append(session_id)
         self.platform = kwargs.get('platform', 'cli')
         self.gateway_session_key = kwargs.get('gateway_session_key', '')
+        self.control_key = conversation_key('cli' if self.platform == 'cli' else 'gateway',
+                                            self.gateway_session_key or session_id)
+        self.load_context()
         self.enabled = (kwargs.get('agent_context', 'primary') == 'primary'
                         and self.platform not in ('cron', 'subagent', 'flush', 'auxiliary'))
         self.warning_callback = kwargs.get('warning_callback')
@@ -93,6 +99,22 @@ class CairnProvider(MemoryProvider):
     def get_tool_schemas(self):
         return []  # Explicit tools belong to Cairn's ordinary authenticated MCP facade.
 
+    def load_context(self):
+        record = read_control(self.home, self.control_key)
+        self.binding = record.get('binding')
+        self.turn_capture = record.get('turn_capture', False)
+
+    def selected_dialogue(self, messages):
+        if self.turn_capture:
+            start = next((i for i in range(len(messages)-1, -1, -1) if messages[i].get('role') == 'user'), len(messages))
+            messages = messages[start:]
+        return dialogue(messages)
+
+    def capture_result(self, result):
+        self.capture_pending = result is None
+        with change_control(self.home, self.control_key) as record:
+            record['pending'] = self.capture_pending
+
     def cwd(self):
         # The gateway uses per-task environment overrides; never another chat's cwd.
         return (get_session_cwd(self.task_id) or get_session_cwd(self.session_id)
@@ -103,7 +125,7 @@ class CairnProvider(MemoryProvider):
         if not self.enabled or os.environ.get('CAIRN_LIFECYCLE_DISABLED') == '1' or os.environ.get('CAIRN_LIFECYCLE_CHILD') == '1':
             return False
         cwd = Path(self.cwd())
-        return not any((path / '.cairn-no-memory').exists() for path in (cwd,project_for(cwd)))
+        return not any((path / '.cairn-no-memory').exists() for path in (cwd,project_for(cwd),Path(self.binding["project_path"]) if self.binding else cwd))
 
     def discard_dialogue(self):
         self.context = ''
@@ -119,6 +141,8 @@ class CairnProvider(MemoryProvider):
         started = time.monotonic()
         try:
             payload = dict(hook_event_name=event, session_id=self.session_id, cwd=self.cwd(), **fields)
+            if self.binding:
+                payload.update(self.binding)
             process = run_engine([sys.executable, self.config['script'], '--config', self.config['engine_config']],
                                  payload, timeout=ENGINE_TIMEOUT)
             if process.returncode:
@@ -145,6 +169,7 @@ class CairnProvider(MemoryProvider):
             if turn_id and turn_id == self.turn_id:
                 return
             self.turn_id, self.task_id = turn_id, task_id
+            self.load_context()
             self.context = ''
             self.compaction_attempted = False
             if parent_session_id:
@@ -152,7 +177,7 @@ class CairnProvider(MemoryProvider):
             if not self.active():
                 self.discard_dialogue()
                 return
-            self.last_dialogue = dialogue(conversation_history or [])
+            self.last_dialogue = self.selected_dialogue(conversation_history or [])
             self.capture_pending = True
             prompt = user_message if isinstance(user_message, str) else ''
             source = 'resume' if prompt.strip().lower().rstrip('.!') in ('continue', 'resume') else ''
@@ -181,8 +206,8 @@ class CairnProvider(MemoryProvider):
                 self.discard_dialogue()
                 return
             self.session_id = session_id
-            self.last_dialogue = dialogue(conversation_history or [])
-            self.capture_pending = self.invoke('SessionEnd', messages=self.last_dialogue) is None
+            self.last_dialogue = self.selected_dialogue(conversation_history or [])
+            self.capture_result(self.invoke('SessionEnd', messages=self.last_dialogue))
 
     def pre_command(self, command='', session_key='', surface='', **kwargs):
         key = self.gateway_session_key if surface=='gateway' else self.session_id
@@ -195,7 +220,7 @@ class CairnProvider(MemoryProvider):
             # Gateway manual compression deliberately skips provider initialization.
             # The live provider can retry its bounded original turn before that helper runs.
             result = self.invoke('PreCompact', messages=self.last_dialogue)
-            self.capture_pending = result is None
+            self.capture_result(result)
             self.compaction_attempted = True
             self.context = ''
 
@@ -215,9 +240,10 @@ class CairnProvider(MemoryProvider):
             if not self.active():
                 self.discard_dialogue()
                 return ''
-            self.last_dialogue = dialogue(messages)
+            if not self.turn_capture:
+                self.last_dialogue = dialogue(messages)
             result = self.invoke('PreCompact', messages=self.last_dialogue)
-            self.capture_pending = result is None
+            self.capture_result(result)
             self.context = ''
             self.compaction_attempted = True
         return ''
@@ -227,14 +253,14 @@ class CairnProvider(MemoryProvider):
             if not self.active():
                 self.discard_dialogue()
                 return
-            snapshot = dialogue(messages)
+            snapshot = self.selected_dialogue(messages)
             # /new's queued old-session callback may arrive after /resume or a
             # new owner turn. Completed turns already saved synchronously; only
             # retry the current pending turn, never rebind old text to a new ID.
             if self.compaction_attempted:
                 snapshot = self.last_dialogue
             if self.capture_pending and self.last_dialogue and snapshot[:len(self.last_dialogue)] == self.last_dialogue:
-                self.capture_pending = self.invoke('SessionEnd', messages=snapshot) is None
+                self.capture_result(self.invoke('SessionEnd', messages=snapshot))
 
     def on_session_switch(self, new_session_id, **kwargs):
         with self.lock:

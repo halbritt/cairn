@@ -47,3 +47,25 @@ synthetic model comparison; it performs no database access. Native verification
 will separately cover the complete installed path. `claude --version` startup
 was 6.7–10.0ms (five observations), which is a lower-bound probe, not a full
 selector startup profile. No persistent selector process or concurrency was added.
+
+## Task 2 evidence
+
+`/cairn context <directory> [workstream]` (Slack `!cairn`) sets explicit
+conversation context; `context` shows it and `context clear` restores automatic
+project selection. A profile-level commands plugin makes this available before
+an agent is created. Gateway keys come from the native pre-command event and
+are hashed into atomic per-conversation control files. CLI controls belong to
+that CLI process. Explicit choices persist across gateway reset/restart without
+changing the terminal cwd or the shared collection identity.
+
+The provider supplies chosen project/workstream fields to the shared engine;
+those fields reset stale capture/retrieval state on change. An explicitly bound
+workstream cannot be silently changed by selection. Once context has been chosen,
+capture uses the current turn plus previously selected checkpoint context, so
+older conversation text is not reassigned to another project. A pending failed
+capture must be retried before changing its context.
+
+47 focused lifecycle tests pass. Native Hermes verifies the cold gateway command
+and persistence through restart. Native profile callbacks retrieved the bound
+project while their actual terminal cwd was an unrelated directory. Existing
+CLI, gateway, compaction, correction, interruption and timeout checks still pass.

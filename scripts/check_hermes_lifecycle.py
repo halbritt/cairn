@@ -109,6 +109,7 @@ def run_fixture(args, output, store, operator_env):
     preserved = json.loads(home.joinpath('config.yaml').read_text())
     preserved['memory'].pop('provider')
     preserved['mcp_servers'].pop('cairn')
+    preserved['plugins']['enabled'].remove('cairn-controls')
     assert preserved==original_config, 'installer changed unrelated settings'
     before = home.joinpath('config.yaml').read_bytes()
     installer.install(home, native, str(args.claude.resolve()), Path.home() / '.codex-harm/skills/cairn/SKILL.md', 'sonnet')
@@ -382,13 +383,20 @@ def profile_fixture(home,output,native,installer,args,work):
     second = output / 'other-profile'
     installer.install(second,native,str(args.claude.resolve()),Path.home()/'.codex-harm/skills/cairn/SKILL.md','sonnet')
     providers=[]
+    controls = load('native_profile_controls',ROOT/'integrations/hermes/controls.py')
+    unrelated = output/'unrelated-terminal'
+    unrelated.mkdir()
+    previous_cwd = os.environ['TERMINAL_CWD']
+    os.environ['TERMINAL_CWD'] = str(unrelated)
     try:
         for path in (home,second):
             token = set_hermes_home_override(path)
             try:
+                controls.set_context(path,'gateway/same-native-label',[str(work),'PostgreSQL validation'])
                 provider = load_memory_provider('cairn')
                 provider.initialize('same-native-label',hermes_home=str(path),platform='slack')
                 providers.append(provider)
+                assert Path(provider.cwd()) == unrelated, 'native cwd override was not exercised'
                 invoke_hook('pre_llm_call',session_id='same-native-label',turn_id=str(path),user_message='Continue PostgreSQL validation.')
             finally:
                 reset_hermes_home_override(token)
@@ -401,9 +409,10 @@ def profile_fixture(home,output,native,installer,args,work):
                 reset_hermes_home_override(token)
         assert providers[0].config['engine_config'] != providers[1].config['engine_config']
     finally:
+        os.environ['TERMINAL_CWD'] = previous_cwd
         for provider in providers:
             provider.shutdown()
-    print('Native context-local profiles isolate identical session labels and request context')
+    print('Native context-local profiles isolate labels; explicit project recall works from an unrelated terminal directory')
 
 
 def timeout_fixture(AIAgent,endpoint,engine_path,original_engine,output,selections):
@@ -489,6 +498,11 @@ async def gateway_fixture(requests, selections, errors):
         return dict(type='message',channel_type='im',channel=channel,team='T-FIXTURE',user='fixture-user',
                     ts=str(time.time()),thread_ts=threads[channel],client_msg_id=str(uuid.uuid4()),text=text)
 
+    from hermes_constants import get_hermes_home
+    project = Path(os.environ['TERMINAL_CWD'])
+    await slack._handle_slack_message(raw('!cairn context '+str(project)+' PostgreSQL validation'))
+    await drain()
+    assert 'Cairn project:' in deliveries[-1]['content'], 'cold gateway context command failed'
     event = raw('continue')
     before = len(selections)
     await slack._handle_slack_message(event)
@@ -549,8 +563,22 @@ async def gateway_fixture(requests, selections, errors):
     await drain()
     assert not errors, errors
     assert 'Hermes continued PostgreSQL validation' in deliveries[-1]['content'], deliveries[-1]
+    before_controls = (len(requests),len(selections))
+    for channel, topic in [('D-ALPHA','Alpha work'),('D-BRAVO','Bravo work')]:
+        await slack._handle_slack_message(raw('!cairn context '+str(project)+' '+topic,channel))
+        await drain()
+        assert 'Workstream: '+topic in deliveries[-1]['content']
+    await slack._handle_slack_message(raw('!cairn context clear','D-ALPHA'))
+    await drain()
+    assert 'automatic project' in deliveries[-1]['content']
+    await slack._handle_slack_message(raw('!cairn context','D-BRAVO'))
+    await drain()
+    assert 'Workstream: Bravo work' in deliveries[-1]['content'], 'thread binding crossed conversation keys'
+    assert before_controls == (len(requests),len(selections)), 'context controls invoked a model'
     await asyncio.wait_for(runner.stop(),15)
-    print('Gateway transport reconnect, graceful shutdown and restart continuation pass')
+    records = [json.loads(p.read_text()) for p in (get_hermes_home()/'cairn/conversations').glob('*.json')]
+    assert any(r.get('binding',{}).get('workstream')=='PostgreSQL validation' for r in records if r.get('binding')), 'thread binding did not persist through restart'
+    print('Gateway transport reconnect, graceful shutdown, restart continuation and persistent thread context pass')
 
 
 if __name__ == '__main__':
