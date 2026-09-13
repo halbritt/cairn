@@ -1,0 +1,331 @@
+# Native OpenCode tools
+
+[File and symbol associations](entity-search.md) are explicit versioned metadata.
+Native capture and search accept `entities`; body-only edits preserve them, full
+draft edits can replace them, and exact-version history reads expose them.
+
+The [native tool adapter](../integrations/opencode/cairn.ts) gives OpenCode
+search, body/evidence pulls and ordinary note maintenance through
+the existing authenticated Cairn CLI. Search defaults to OpenCode's `context.sessionID`;
+the MCP alternative continues to require explicit task/run configuration.
+
+Verified with OpenCode 1.18.21. Its
+[custom-tool interface](https://opencode.ai/docs/custom-tools/) supplies session
+context. Its pinned
+[MCP adapter](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/mcp/catalog.ts#L38)
+does not send that context in MCP tool-call metadata. Do not use `--codex-thread`
+with OpenCode or substitute a process ID for a session ID.
+
+## Install in a project
+
+Install the current Cairn CLI at a stable path and provision an ordinary API
+profile for the intended repository and destination. From an existing target
+project, run:
+
+```sh
+cairn opencode-install --project "$PWD" \
+  --socket /absolute/path/to/api.sock \
+  --token-file /absolute/path/to/hosted-agent.token \
+  --repo /absolute/path/to/canonical/repository
+```
+
+The binary embeds its matching adapter. The command writes
+`.opencode/tools/cairn.ts` and `.opencode/cairn.json`, both owner-only, without
+requiring a source checkout. Connection paths are made absolute relative to the
+invoking directory, and the executable path names the binary running the command.
+The repository identity stays exactly as supplied. No token bytes are read and
+no API, database, model or package service is contacted during installation.
+
+Identical reruns leave files untouched. If either file's contents differ, the command
+refuses before writing either file; inspect the differences and repeat the full
+command with `--replace` for an intentional upgrade or reconfiguration. That
+replaces differing Cairn files and tightens their permissions to `0600`. Symlink
+destinations are refused. Each file replacement is atomic, but the pair is not a
+filesystem transaction: after an I/O failure, rerun the same command to finish.
+Successful output lists both paths, content hashes and written/unchanged states.
+An `INSTALL_FAILED` response identifies a filesystem failure and exits 7.
+
+The installer does not edit `opencode.json`/`opencode.jsonc` or tool permissions, add
+credentials, edit Git exclusions, or start a harness. Keep the connection file
+out of Git and start a fresh OpenCode session to load the installed tools. Upgrade
+the API separately when a new tool feature requires it.
+
+Use `--tokens` to set memory room (default 32,000). Optional `--revision`,
+`--workspace-sha256`, `--task-class`, `--task-phase`, `--binding` and `--capability` flags populate
+the existing declared context settings; the API validates them on retrieval.
+Use optional `--task` and `--run` for [declared task scope](#continue-a-task-across-sessions).
+
+Optional `--recent-files` also installs a plugin that turns recent successful
+file reads into hints for fresh searches. See [recent file hints](recent-file-hints.md)
+for explicit overrides, retry/page handling, retention and disabling it. Omission
+leaves any existing plugin untouched. Search results expose `query_entities`;
+copy it into `entities` on retries and later pages.
+
+The installed connection file has this shape and can also be maintained manually:
+
+```json
+{
+  "executable": "/absolute/path/to/cairn",
+  "socket": "/absolute/path/to/api.sock",
+  "token_file": "/absolute/path/to/hosted-agent.token",
+  "repo": "/absolute/path/to/canonical/repository",
+  "tokens": 32000
+}
+```
+
+Keep this connection file out of Git and make it owner-only (`chmod 600
+.opencode/cairn.json`). It contains the token path, never its bytes. Use the
+hosted profile for a hosted model; do not substitute operator/observer credentials
+or a local-destination token. The CLI verifies token custody and the API owns
+principal, role, repository authorization and destination filtering.
+
+OpenCode loads `@opencode-ai/plugin` for the TypeScript tool definition. The
+verified host supplied version 1.18.21. No separate Bun executable is needed for
+the tool; OpenCode runs it. On updates, copy the new adapter together with the
+matching Cairn CLI. Search refuses a CLI result without structured pull arguments.
+
+The names are `cairn_search`, `cairn_pull`, `cairn_pull_evidence`,
+`cairn_remember`, `cairn_edit`, `cairn_history`, `cairn_assessments` and
+`cairn_assess`. OpenCode's tool permissions apply, including
+explicit requests through the native permission context. Choose permissions for
+the intended task. These names differ from the `cairn_cairn_*` MCP names; an
+existing MCP-only permission entry does not automatically allow native tools.
+
+Use [cairn_history](record-history.md#native-tools) to compare earlier wording
+without shell access. It reads retained metadata or an exact historical body,
+with an optional byte `span` for a passage from a long earlier version;
+it does not authorize current use or replace pulling the current note before
+editing. Explicit tool allowlists need the additional read permission.
+
+Use the [native review tools](use-outcome-loop.md#native-review-tools) to read
+and append qualitative assessments without shell access. These use receipt
+ownership under the configured API profile; agent reviews remain testimony.
+
+The installer does not add automatic startup retrieval. An isolated
+[OpenCode 1.18.21 hook check](verification/opencode-startup-hook-2026-09-09.md)
+found that the system-prompt hook also runs for auxiliary requests and is not
+gated by tool permissions. A direct search from that hook would need additional
+permission and lifecycle integration; the normal tools continue to use the
+native permission context.
+
+Use [explicit compact startup](compact-start.md) to preload an index through
+`cairn agent start`, then pull relevant sources with these normal tools. The
+launcher and tools must use the same API principal. This route does not install
+a system hook or change OpenCode permissions.
+
+OpenCode also initializes its own plugin SDK dependencies during startup. Its
+[v1.18.21 implementation](https://github.com/anomalyco/opencode/blob/v1.18.21/packages/opencode/src/config/config.ts)
+requests the matching `@opencode-ai/plugin` package in its configuration
+directories. A fresh environment can therefore involve registry access before a
+Cairn tool runs. A [startup investigation](verification/native-startup-2026-09-10.md)
+observed that work but did not reproduce an earlier timeout; dependency activity
+alone does not identify the cause of a stalled tool call.
+
+## Scope and behavior
+
+Search accepts [`available_tokens`](search-room.md) to lower its input room for
+one call beneath the configured `tokens` ceiling. Omission keeps the configured
+default; repeat the allowance on retries and pages.
+
+Capture accepts explicit [applicability pins](currentness-and-replay.md#saving-guidance-with-explicit-applicability),
+including task phase and validity. Search settings are never automatically copied
+into a saved note.
+
+By default, search uses the configured repository, task `opencode/<sessionID>` and run
+`<sessionID>`. This groups a conversation, including multiple turns, and is not
+an execution-attempt identity or observed outcome. Missing/invalid native session
+IDs refuse search. No environment or random-ID fallback exists.
+
+### Continue a task across sessions
+
+To retrieve notes restricted to a task that continues across OpenCode sessions,
+add `--task TASK_ID` to the complete `opencode-install` command. This writes
+`task_id` in `.opencode/cairn.json`; each native session still supplies its own
+`run_id`. For example, a note scoped to task `storage-review` and run `*` becomes
+eligible in later sessions configured with `--task storage-review`. Without that
+setting, those sessions use different `opencode/<sessionID>` tasks and do not
+match the saved task restriction.
+
+For an explicitly named run, also add `--run RUN_ID`. It requires `--task` and
+writes `run_id` in the connection file. This lets native searches use the same
+declared scope as an [explicit startup](compact-start.md) or another harness.
+The labels are declarations, not native session IDs or evidence that executions
+are independent. Both omitted retains the existing native scope.
+
+All installer configuration values and paths must be well-formed UTF-8 without
+NUL. Invalid text refuses before writing or replacing files; valid Unicode and
+intentional U+FFFD are preserved. [Setup text checks](verification/harness-configuration-text-2026-09-10.md)
+cover generated MCP configuration as well as native installation.
+
+Identifiers must contain 1–256 UTF-8 bytes, with nonblank text, no NUL and no
+wildcard `*`. They retain case, spaces and punctuation exactly. The installer
+refuses invalid scope before writing files. Hand-maintained connection files
+accept the same optional `task_id` and `run_id` fields; an empty or null field
+does not mean the default. Omit the field instead.
+
+The connection file applies to all sessions using that adapter and is read on
+each call. Keep the full settings when reconfiguring with `--replace`; to resume
+native defaults, omit both flags from the complete installation command. Remove
+or change a fixed task when work moves to another task. Agents cannot override
+these settings through search arguments. Changing effective scope needs a new
+search request UUID; retained pulls keep their original receipt scope and still
+recheck eligibility. Capture continues to use its explicitly supplied scope,
+with ordinary `remember` defaulting to repository-wide notes.
+
+Update the CLI and bundled adapter to expose these settings. Existing API and
+database versions support them. [Verification](verification/opencode-task-scope-2026-09-10.md)
+covers native sessions without an answering-model task.
+
+### Read selected sources
+
+Search returns full mandatory `selected` context and an ordered index. Pass each
+relevant entry's complete `pull_arguments` to `cairn_pull`. Retain those arguments
+for retries. The CLI also retains its existing shell `pull_command`; the native
+adapter omits that redundant command from the tool result. Its
+`cairn.opencode-search/1` presentation preserves the underlying `source_schema`
+and `source_seal` and is not itself a sealed package.
+
+For an unfamiliar topic, `cairn_search` also accepts `{"browse": true}` without
+a query. This exposes eligible previews ordered by scope specificity and recency
+within the existing budget. Inspect `omitted.OPTIONAL_BUDGET` for notes left out
+by packing; browsing is not a complete inventory. Scope, applicability,
+destination filtering and mandatory context still apply. A blank search does
+not enable browsing implicitly, and a nonempty query cannot accompany it.
+
+If the result contains `browse.next_offset`, call `cairn_search` again with
+`{"browse": true, "offset": N}` using that value. Keep the same session and
+context. Every page repeats required instructions, and each page/pull consumes
+context in addition to prior calls. Pages read current state; edits and captures
+may shift positions. Update both the API service and CLI for paged browsing.
+
+For ranked continuation, start with `{"query":"relevant words","offset":0}`.
+Repeat with `page.next_offset`, preserving query, semantic mode, kinds, scope and
+context. Omit `offset` to keep unpaged behavior. Update the API, CLI and installed
+adapter together. Each page has its own budget and current-state ordering;
+restart if notes or semantic availability change. See the
+[complete paging contract](index-and-pull.md#agent-commands-without-request-json).
+
+For vocabulary mismatches, use `{"query":"storage?","semantic":true}` with
+the [optional local semantic backend](semantic-discovery.md). Inspect
+`discovery.state`; unavailable scoring produces labelled lexical fallback.
+Similarity does not prove the note answers the question. Pull and verify the
+source. Semantic search cannot accompany browsing, and ordinary queries remain
+lexical. Update the API, CLI and adapter together to use this argument.
+
+Capture saves selected knowledge as ordinary A testimony. Optional `scope` is
+`repository` (default), `task`, or `run`, with the same [applicability choices](mcp.md#choose-capture-scope)
+as MCP. Task/run capture uses the adapter's current search labels: configured
+`task_id` / `run_id` when present, otherwise the actual native session defaults.
+Task capture spans runs of that task; run capture fixes both labels. Repository
+capture remains independent of session labels. Search context and pins are not
+inherited. Repeat the choice and effective scope for retries; changed stored
+scope under the same request UUID refuses. Update the bundled adapter to expose
+this argument; existing API/database versions suffice.
+`kind` defaults to `note`; omitted `shareable` keeps the note local. Writes return
+only IDs, version and retry ID. For a text-only correction, edit accepts `body`, the pulled record ID and
+expected version, and a new request UUID. Stored draft metadata is preserved.
+Alternatively, edit takes the same full replacement `draft` as the
+[MCP edit tool](mcp.md#tools); supply exactly one of `body`, `append`, `replace`, `draft` or `evidence_citations`. Use `append` for a verbatim suffix including separating whitespace; the combined
+body must fit 65,536 bytes. See [append guidance](local-api.md#append-selected-guidance).
+Use [exact passage replacement](local-api.md#replace-one-exact-passage) for a
+correction that preserves all text outside one uniquely matching passage.
+With a full
+draft, preserve scope, sensitivity, applicability, relations and attribution. Stale versions require a fresh pull and reconciliation.
+Neither capture nor edit grants authority or establishes task success.
+
+The adapter validates arguments itself before accessing connection settings or
+calling Cairn. In the verified OpenCode version, publishing a tool schema does
+not enforce its types at execution time. For example, `shareable` must be a JSON
+boolean; the string `"false"` is refused with `INVALID_REQUEST` instead of being
+treated as permission to share. Omitted `shareable` still keeps a note local.
+
+Connection settings are read for each call. Optional `context` keys are
+`revision`, `workspace_sha256`, `task_class`, `task_phase`, `binding` and `capability`; they map
+to the existing CLI search flags. These are host declarations, not attestations
+of the physical checkout. Pulls continue to use their original receipts.
+The adapter refuses malformed Unicode in CLI arguments before process launch,
+preserving search queries and context declarations from silent replacement.
+This also checks configured argument values; valid Unicode remains supported.
+See the [native transport repair](verification/opencode-unicode-2026-09-10.md).
+
+The search tool's optional [context argument](search-context.md) can fill fields
+left unset in those settings for one call. Conflicting configured values refuse
+before retrieval. Tool arguments use `binding_id` and `capability_id`; the settings
+file keeps its existing `binding` and `capability` keys.
+
+`tokens` defaults to 32,000, with the same 256–1,000,000 range as MCP. The adapter
+uses the conservative UTF-8 byte bound and refuses oversized results rather than
+returning a partial body. A refused result can follow a committed write or pull;
+reuse the original request ID. OpenCode applies its own result truncation and
+task budgets separately. Each CLI child has a 30-second timeout and receives the
+native cancellation signal. API errors remain errors; connection failures do not
+become empty search results.
+
+## Verify
+
+The opt-in native checks use a disposable PostgreSQL database and actual OpenCode
+custom-tool execution, with a model catalog fixture that has no usable endpoint:
+
+```sh
+CAIRN_OPENCODE_TOOLS_BINARY=/absolute/path/to/opencode make test-integration
+```
+
+This variable enables no-model custom-tool checks. It is separate from the older
+`CAIRN_OPENCODE_BINARY` model probe. Tests cover session scope, default local
+capture, exact body/evidence pulls, retries, edits, stale handles, hosted filtering
+and permission/repository refusals, including malformed capture arguments. See the
+[verification record](verification/opencode-tools-2026-09-09.md) for evidence and
+remaining limits. Remove the installed tool file to undo this integration; keep
+ordinary memory records and the existing MCP/CLI alternatives.
+
+`cairn_pull` also accepts `span: {offset: 0, length: 4096}` for a partial A/B
+note. An index entry's `summary_span` can be copied into `span` to read the
+exact preview source bytes, excluding synthetic omission markers. Its text,
+byte range and full/selected hashes appear in `span`, while
+`selection.record.body` is empty. Instructions require a whole pull. Use a new
+request UUID for each range and read the full note before replacing its body.
+The [note excerpt contract](index-and-pull.md#index-and-expansion-contract)
+defines limits and currentness checks.
+
+`cairn_pull_evidence` accepts an optional `span: {offset: 0, length: 4096}`
+for byte ranges of larger captured sources. Keep `expected_sha256` bound to the
+full object and use a new request UUID for each range. Selected bytes and their
+checksum appear separately in `span`; see the
+[evidence expansion contract](index-and-pull.md#index-and-expansion-contract).
+Update the API, CLI and installed adapter together before using this option.
+
+To check the separate normal-session argument path on OpenCode 1.18.21:
+
+```sh
+python3 scripts/check_opencode_defaults.py \
+  --opencode /absolute/path/to/opencode \
+  --output /tmp/cairn-opencode-defaults-check
+```
+
+The output directory must be new. This uses a scripted loopback completion
+endpoint, with no model inference or Cairn database access. It characterizes the
+upstream default/type behavior and checks the shipped adapter's rejection path.
+A changed upstream result requires review after a harness upgrade. The
+[validation repair](verification/opencode-validation-2026-09-09.md) records the
+original failure and the distinction from the debug tool path.
+
+### Select saved kinds
+
+`cairn_search` accepts `kinds`, for example
+`{"browse": true, "kinds": ["decision", "preference"]}` to find saved project
+direction. It also works with lexical or semantic queries. Required instructions
+always apply, and labels confer no authority. Keep the same kinds when following
+`browse.next_offset`. See [index and pull](index-and-pull.md) for the full contract.
+Update the API, CLI and bundled adapter together before using this argument.
+
+
+`cairn_edit` also accepts `evidence_citations` instead of `body` or `draft` to
+replace an ordinary note's captured source references. An explicit empty list
+clears the current references; text edits preserve them. The note remains A
+testimony. See [ordinary source citations](evidence-citations.md#ordinary-notes)
+for exact digests, optional passages and upgrade requirements.
+
+
+Known failure signatures can also find reviewed lessons without shared query
+vocabulary. See [failure signature search](failure-signature-search.md) for the
+optional `error_signature_sha256` tool field and operator sharing requirement.

@@ -1,0 +1,60 @@
+# Cross-record supersession verification
+
+Migration 021 adds retained replacement and affected-version references plus the
+`superseded` lifecycle. The CLI exposes atomic supersession and metadata
+inspection. Local agents can supersede ordinary A records after obtaining their
+own impact preview; B supersession remains an authorized operator operation.
+
+Disposable PostgreSQL verification establishes:
+
+- Superseding a consumed B claim removes it from fresh compilation, selects the
+  independently supported replacement, and preserves the earlier replay seal.
+- Revising the replacement preserves the original pinned link. Revising a known
+  dependent removes its current-version docket notice while retaining history.
+- Forgetting the obsolete source does not invalidate a replacement with
+  independent support and no derivation link to that source.
+- Ordinary A supersession creates no authority event, permits narrower scope,
+  and does not make the replacement visible outside that narrower scope.
+- Stale source/replacement versions, missing or stale previews, wrong actors,
+  B-to-A replacement, revoked replacement authority, unavailable evidence,
+  scope/applicability/sensitivity expansion, expired validity, open conflicts,
+  dependent C instructions and self-replacement refuse without retiring the
+  source or creating a replacement link.
+- Two concurrent replacements have one winner. An inactive source cannot be
+  revived as a replacement to create a cycle. Identical retries return the
+  original transition.
+- The authenticated API preserves caller identity, refuses grant-bearing
+  supersession and hosted access to protected inspection metadata.
+- A real disposable backup/restore preserves ordinary supersession, its pinned
+  replacement, inactive source and idempotent retry.
+
+`make test-integration check test-lifecycle` passes, including race-enabled store
+tests, authenticated Unix API smoke checks, formatting/vet, historical replay,
+checkpoint verification, restore fencing and existing interrupted-deletion
+drills. Initial new-feature tests failed to compile because the supersession API
+did not exist. An extended fixture later missed lexical selection after its
+body revision dropped the query term; correcting that fixture restored the
+intended history/deletion check without changing selection behavior.
+
+The first CI run exposed a timezone-sensitive test comparison. It reproduced
+locally with `TZ=UTC`: PostgreSQL decoding and cached JSON represented the same
+instant with different Go `Location` pointers. The assertion now compares the
+timestamp instant and every other metadata field, without changing production
+timestamp behavior. UTC integration checks verify this correction.
+
+No operational claim was superseded for these checks. This establishes the
+implemented lifecycle behavior, not broad memory usefulness or full lifecycle
+acceptance. Scope broadening, notice acknowledgement, future discovery of
+undeclared dependencies and fresh-restore A/B retirement reapplication remain
+outside this slice.
+
+The implementation is in `db33296d6e9119901e1a3d4f4570078f51c35a1e`; the
+timezone assertion correction is in `676b4ae2bfa02aad300c587b55417eaa9794bfc2`.
+The latter passed [CI](https://github.com/halbritt/cairn/actions/runs/34207156401)
+and is installed from a clean Go 1.25.0 build (`vcs.modified=false`), SHA-256
+`2645058318a4f63feea8a13c1f0357b4279f3ff36ed154aab32434ebb6dcd567`.
+An isolated restore of the pre-upgrade schema-020 backup upgraded to 021 and
+accepted a repeated migration without changing record versions. The operational
+upgrade then reached schema 021; the API runs the same binary bytes,
+authenticated existing-record reads pass, and the operational record-version
+digest is unchanged. A pre-upgrade backup and previous binary remain local.

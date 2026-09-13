@@ -1,0 +1,759 @@
+{
+  "schema": "cairn.observed-model-failure/1",
+  "source_commit": "25c339d44871a19f199bcddd315ddc1c4d6dfd2a",
+  "trial": {
+    "scenario": "striatum-lane-go-cache-reviewed-recurrence",
+    "availability": "post_review_recurrence",
+    "experiment_kind": "reviewed_recurrence",
+    "base": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af",
+    "fix": "56840cf694ecf451980abbd694fd3c8c01cbc7d7",
+    "scenario_sha256": "9dc4ccd91bc896aeb30839afc32e1cdade95361e48a0640ec76296284944835d",
+    "gate_sha256": "042f64b28dafcabac4db78e092521d93b1bc647226a194b73e7cccd56672fd07",
+    "model": "deepseek/deepseek-v4-pro-0813",
+    "binding": "opencode-openrouter",
+    "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+    "cairn_sha256": "8dab57688eaf612c803478d338c1a32f73387dcba7bca26018d27e3cef6467c4",
+    "controller_sha256": "bbebc4d423287c8e15ddae05ccf16e0c21210caaa7ef3e2f01d04b0165d63fd8",
+    "host_controller_sha256": "12742f7b809919887ed5de1bbeae1130cdeeb94903b32a1e4637104c8ba4fe5e",
+    "relay_sha256": "6eb38d165448bacced6f67924c4aed871b1b167a6fe2e842579a5052cfeaba0a",
+    "settings": {
+      "arms": [
+        "cairn_h0"
+      ],
+      "disable_thinking": false,
+      "context_tokens": 131072,
+      "output_limit": 32768,
+      "process_seconds": 900,
+      "steps": 60,
+      "work_budget": "extended",
+      "retain_final": false
+    }
+  },
+  "original_result": {
+    "process_exit": 124,
+    "duration_seconds": 900.152,
+    "receipt": {
+      "attempt_id": "e6e4fca4-cc7d-4864-a7ec-e75b7c304f69",
+      "receipt_id": "ad4f4fad-1400-425c-810b-b08d10513b58",
+      "seal": "blake3:18fc491ed95a2a88460931e88a30a155315959390d2b2308e91cf4e7e7b091d6",
+      "process_state": "timeout",
+      "outcome_id": "66fd4ab0-a99a-47fc-96e9-0671420c1e2d",
+      "artifacts": "/tmp/cairn-observed-model-20260908-p/store/runs/ad4f4fad-1400-425c-810b-b08d10513b58"
+    },
+    "host_attempt": {
+      "attempt_id": "e6e4fca4-cc7d-4864-a7ec-e75b7c304f69",
+      "terminal": {
+        "attempt_id": "e6e4fca4-cc7d-4864-a7ec-e75b7c304f69",
+        "state": "timeout"
+      },
+      "run_status": {
+        "receipt_id": "ad4f4fad-1400-425c-810b-b08d10513b58",
+        "observed_at": "2026-09-08T06:07:28.447717-07:00",
+        "launch_claimed": true,
+        "binding_observed": true,
+        "outcome": {
+          "observation_id": "66fd4ab0-a99a-47fc-96e9-0671420c1e2d",
+          "process_state": "timeout",
+          "exit_code": null,
+          "duration_ms": 900056
+        }
+      },
+      "observer": "host:recurrence:cairn_h0",
+      "journal": "/tmp/cairn-observed-model-20260908-p/cairn_h0-host"
+    },
+    "gate": {
+      "exit_code": 1,
+      "actions": [
+        "fail"
+      ],
+      "passed": false,
+      "stdout_sha256": "858f5b06cef5d1fbbef73a336415444af8934b6c67b13b4be6bc8e2f9e05b244",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "changed_paths": [
+      "internal/backend/llm/supervisor.go",
+      "internal/backend/supervise/env_roundtrip_test.go",
+      "internal/backend/supervise/env_transport_test.go",
+      "internal/backend/supervise/init.go",
+      "internal/backend/supervise/supervise.go"
+    ],
+    "outside_scope": [],
+    "patch_sha256": "e17d0d447a10838cc631e3884075c3c8e7c9eb9a4b1141e6ef8d8c55cb1c9eb0",
+    "trace_summary": {
+      "tool_events": {
+        "bash:error": 3,
+        "bash:completed": 6,
+        "read:completed": 22,
+        "grep:completed": 7,
+        "todowrite:completed": 1,
+        "edit:completed": 9,
+        "write:completed": 2
+      },
+      "finish_reasons": {
+        "tool-calls": 33,
+        "stop": 1
+      },
+      "reported_tokens": {
+        "input": 210322,
+        "output": 9363,
+        "reasoning": 40866
+      },
+      "cited_record_ids": [
+        "0719eefe-ac9c-4f7c-93fd-f177334763da"
+      ],
+      "citation_method": "exact selected UUID in OpenCode text event; testimony only"
+    },
+    "selected_records": [
+      "0719eefe-ac9c-4f7c-93fd-f177334763da"
+    ],
+    "assessment_join": {
+      "assessment": {
+        "receipt_id": "ad4f4fad-1400-425c-810b-b08d10513b58",
+        "version": 1,
+        "task_outcome": "rejected",
+        "failure_domain": "task",
+        "failure_kind": "historical_cache_gate",
+        "method": "cairn.historical-cache-gate/2; host-observed condition, not full task acceptance",
+        "evidence_ids": [
+          "22346419-3ee6-41e4-a8c5-d9ad6cc2b8db"
+        ],
+        "reason": "The candidate failed a necessary cache-lifetime condition or the authorized write scope. This is bounded trial assessment, not a Striatum verdict or a capability diagnosis.",
+        "witness": "instrumented",
+        "observer": "host:recurrence:cairn_h0",
+        "observed_at": "2026-09-08T06:07:29.158701-07:00"
+      },
+      "citation_observations": [
+        {
+          "observation_id": "1cc106de-1f69-45ef-b130-61438e5a1369"
+        }
+      ],
+      "run_use_rows": [
+        {
+          "exposure_kind": "body",
+          "usage_witness": "testimony",
+          "usage_method": "cairn.opencode-text-uuid/1; model-authored UUID is testimony, not causal influence",
+          "usage_coverage": "unknown",
+          "task_class": "historical-go-cache-repair",
+          "binding_id": "opencode-openrouter",
+          "capability_id": "deepseek/deepseek-v4-pro-0813",
+          "assessment_version": 1,
+          "assessment_witness": "instrumented",
+          "failure_domain": "task",
+          "failure_kind": "historical_cache_gate",
+          "error_signature_sha256": "",
+          "receipt_id": "ad4f4fad-1400-425c-810b-b08d10513b58",
+          "record_id": "0719eefe-ac9c-4f7c-93fd-f177334763da",
+          "version": 2,
+          "scope": {
+            "repo": "trial:cairn_h0",
+            "task_id": "striatum-lane-go-cache-reviewed-recurrence",
+            "run_id": "cairn_h0"
+          },
+          "purpose": "context",
+          "used_at": "2026-09-08T05:52:28.235072-07:00",
+          "best_observed_delivery": "available",
+          "usage": "cited",
+          "process_state": "timeout",
+          "exit_code": null,
+          "duration_ms": 900056,
+          "task_outcome": "rejected",
+          "current_version": 2,
+          "current_lifecycle": "active"
+        }
+      ],
+      "excluded_preflight_rows": 1,
+      "interpretation": "One row per exposed record/version/receipt. Repeated observations do not multiply rows. Exit zero is not acceptance; citations are testimony, inferred use is not citation, and missing telemetry is unknown. Associations do not establish causal benefit."
+    }
+  },
+  "host_verification": {
+    "schema": "cairn.observed-model-host-verification/1",
+    "attempt_id": "e6e4fca4-cc7d-4864-a7ec-e75b7c304f69",
+    "receipt_id": "ad4f4fad-1400-425c-810b-b08d10513b58",
+    "outcome_id": "66fd4ab0-a99a-47fc-96e9-0671420c1e2d",
+    "observer": "host:recurrence:cairn_h0",
+    "host_terminal": "timeout",
+    "corresponding_result": "sha256:e17d0d447a10838cc631e3884075c3c8e7c9eb9a4b1141e6ef8d8c55cb1c9eb0",
+    "launch_claimed": true,
+    "binding_observed": true,
+    "process_exit": 124,
+    "pending_observations": 0,
+    "selected_records": [
+      "0719eefe-ac9c-4f7c-93fd-f177334763da"
+    ],
+    "assessment": {
+      "receipt_id": "ad4f4fad-1400-425c-810b-b08d10513b58",
+      "version": 1,
+      "task_outcome": "rejected",
+      "failure_domain": "task",
+      "failure_kind": "historical_cache_gate",
+      "method": "cairn.historical-cache-gate/2; host-observed condition, not full task acceptance",
+      "evidence_ids": [
+        "22346419-3ee6-41e4-a8c5-d9ad6cc2b8db"
+      ],
+      "reason": "The candidate failed a necessary cache-lifetime condition or the authorized write scope. This is bounded trial assessment, not a Striatum verdict or a capability diagnosis.",
+      "witness": "instrumented",
+      "observer": "host:recurrence:cairn_h0",
+      "observed_at": "2026-09-08T06:07:29.158701-07:00"
+    },
+    "use_rows": [
+      {
+        "exposure_kind": "body",
+        "usage_witness": "testimony",
+        "usage_method": "cairn.opencode-text-uuid/1; model-authored UUID is testimony, not causal influence",
+        "usage_coverage": "unknown",
+        "task_class": "historical-go-cache-repair",
+        "binding_id": "opencode-openrouter",
+        "capability_id": "deepseek/deepseek-v4-pro-0813",
+        "assessment_version": 1,
+        "assessment_witness": "instrumented",
+        "failure_domain": "task",
+        "failure_kind": "historical_cache_gate",
+        "error_signature_sha256": "",
+        "receipt_id": "ad4f4fad-1400-425c-810b-b08d10513b58",
+        "record_id": "0719eefe-ac9c-4f7c-93fd-f177334763da",
+        "version": 2,
+        "scope": {
+          "repo": "trial:cairn_h0",
+          "task_id": "striatum-lane-go-cache-reviewed-recurrence",
+          "run_id": "cairn_h0"
+        },
+        "purpose": "context",
+        "used_at": "2026-09-08T05:52:28.235072-07:00",
+        "best_observed_delivery": "available",
+        "usage": "cited",
+        "process_state": "timeout",
+        "exit_code": null,
+        "duration_ms": 900056,
+        "task_outcome": "rejected",
+        "current_version": 2,
+        "current_lifecycle": "active"
+      }
+    ],
+    "interpretation": "Observed host correspondence and bounded evaluator assessment; not full task acceptance or causal memory benefit."
+  },
+  "relay": {
+    "limits": {
+      "requests": 64,
+      "request_bytes": 1048576,
+      "response_bytes": 33554432,
+      "output_tokens": 32768,
+      "response_seconds": 600,
+      "socket_seconds": 45,
+      "provider": {
+        "max_price": {
+          "prompt": 1.5,
+          "completion": 4.0,
+          "request": 0
+        },
+        "data_collection": "deny",
+        "require_parameters": true
+      }
+    },
+    "requests": 36,
+    "completed_requests": 35,
+    "rejections": 0,
+    "last_failure_type": "ConnectionResetError",
+    "requests_with_usage": 35,
+    "reported_cost": 0.459436974976
+  },
+  "reviews": {
+    "reference": {
+      "schema": "cairn.observed-model-review/1",
+      "label": "reference",
+      "source_hashes": {
+        "/home/halbritt/git/cairn/trials/opencode-recurrence/repair_contracts_test.go.txt": "87c754c11b61bf04dbf3a63116353b5af02a3de6c52291f0d73a0321604748b8",
+        "/home/halbritt/git/cairn/trials/opencode-recurrence/inherited_metadata_test.go.txt": "bd49478246814aa01b7e39463c3cc84453b2795af84e8a95f1d48a0bdfdf3386",
+        "/tmp/cairn-observed-preparation-probe.go.txt": "da8afdeed4375e5c3f6b71e20004156db2a9ede41b55ea7ef39dcfc84e8cf024"
+      },
+      "checks": {
+        "targeted": {
+          "exit_code": 0,
+          "duration_seconds": 0.48,
+          "stdout_sha256": "633a31350ffd487d9d6fc3710a88480082180f08914e1888ac7d9e964b3b76a6",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_path": "/tmp/cairn-observed-model-20260908-p/reference-targeted-review.jsonl",
+          "stderr_path": "/tmp/cairn-observed-model-20260908-p/reference-targeted-review.stderr",
+          "test_terminal_events": 6,
+          "test_counts": {
+            "pass": 6,
+            "fail": 0,
+            "skip": 0
+          },
+          "test_results": [
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnObservedPreparationFailureBeforeLaunch",
+              "action": "pass"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/supervise",
+              "test": "TestCairnInheritedMetadataDoesNotOverrideRuntime",
+              "action": "pass"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnRecurrenceRuntimeCacheLifetime",
+              "action": "pass"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnReviewedRepairContracts/cache-is-writable-during-invocation",
+              "action": "pass"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnReviewedRepairContracts/explicit-override-preserves-other-inherited-values",
+              "action": "pass"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnReviewedRepairContracts",
+              "action": "pass"
+            }
+          ]
+        },
+        "packages": {
+          "exit_code": 1,
+          "duration_seconds": 5.927,
+          "stdout_sha256": "736632c0246efe97687e583c4f6de68e7b331ecf4aa4efae06597bdb520855b1",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_path": "/tmp/cairn-observed-model-20260908-p/reference-packages-review.jsonl",
+          "stderr_path": "/tmp/cairn-observed-model-20260908-p/reference-packages-review.stderr",
+          "test_terminal_events": 134,
+          "test_counts": {
+            "pass": 133,
+            "fail": 1,
+            "skip": 0
+          },
+          "test_results": [
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestRelaunchPinsOrderedAttemptClosures",
+              "action": "fail"
+            }
+          ]
+        }
+      }
+    },
+    "cairn_h0": {
+      "schema": "cairn.observed-model-review/1",
+      "label": "cairn_h0",
+      "source_hashes": {
+        "/home/halbritt/git/cairn/trials/opencode-recurrence/repair_contracts_test.go.txt": "87c754c11b61bf04dbf3a63116353b5af02a3de6c52291f0d73a0321604748b8",
+        "/home/halbritt/git/cairn/trials/opencode-recurrence/inherited_metadata_test.go.txt": "bd49478246814aa01b7e39463c3cc84453b2795af84e8a95f1d48a0bdfdf3386"
+      },
+      "checks": {
+        "targeted": {
+          "exit_code": 1,
+          "duration_seconds": 0.455,
+          "stdout_sha256": "f51839549ef2849a887e73a3d31d1dc1f9ec35b6b4ff1981c3e560b56181a491",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_path": "/tmp/cairn-observed-model-20260908-p/cairn_h0-targeted-review.jsonl",
+          "stderr_path": "/tmp/cairn-observed-model-20260908-p/cairn_h0-targeted-review.stderr",
+          "test_terminal_events": 5,
+          "test_counts": {
+            "pass": 1,
+            "fail": 4,
+            "skip": 0
+          },
+          "test_results": [
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/supervise",
+              "test": "TestCairnInheritedMetadataDoesNotOverrideRuntime",
+              "action": "pass"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnRecurrenceRuntimeCacheLifetime",
+              "action": "fail"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnReviewedRepairContracts/cache-is-writable-during-invocation",
+              "action": "fail"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnReviewedRepairContracts/explicit-override-preserves-other-inherited-values",
+              "action": "fail"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnReviewedRepairContracts",
+              "action": "fail"
+            }
+          ]
+        },
+        "packages": {
+          "exit_code": 1,
+          "duration_seconds": 5.948,
+          "stdout_sha256": "3dc3525e01196c9daf2400ca255f99108a7d8347c18259e92b1eb0b40a0a813a",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_path": "/tmp/cairn-observed-model-20260908-p/cairn_h0-packages-review.jsonl",
+          "stderr_path": "/tmp/cairn-observed-model-20260908-p/cairn_h0-packages-review.stderr",
+          "test_terminal_events": 139,
+          "test_counts": {
+            "pass": 132,
+            "fail": 7,
+            "skip": 0
+          },
+          "test_results": [
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/supervise",
+              "test": "TestEnvOverrideReachesRuntime/explicit_override_wins_over_inherited_value",
+              "action": "fail"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/supervise",
+              "test": "TestEnvOverrideReachesRuntime",
+              "action": "fail"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestRelaunchPinsOrderedAttemptClosures",
+              "action": "fail"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnRecurrenceRuntimeCacheLifetime",
+              "action": "fail"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnReviewedRepairContracts/cache-is-writable-during-invocation",
+              "action": "fail"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnReviewedRepairContracts/explicit-override-preserves-other-inherited-values",
+              "action": "fail"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnReviewedRepairContracts",
+              "action": "fail"
+            }
+          ]
+        }
+      }
+    },
+    "diagnostic": {
+      "schema": "cairn.observed-model-review/1",
+      "label": "diagnostic",
+      "source_hashes": {
+        "/home/halbritt/git/cairn/trials/opencode-recurrence/repair_contracts_test.go.txt": "87c754c11b61bf04dbf3a63116353b5af02a3de6c52291f0d73a0321604748b8",
+        "/home/halbritt/git/cairn/trials/opencode-recurrence/inherited_metadata_test.go.txt": "bd49478246814aa01b7e39463c3cc84453b2795af84e8a95f1d48a0bdfdf3386"
+      },
+      "checks": {
+        "targeted": {
+          "exit_code": 0,
+          "duration_seconds": 0.77,
+          "stdout_sha256": "064aea9568dfa9b0f049434c0c237d42c55ab7c4f27b39026327f62653974bea",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_path": "/tmp/cairn-observed-model-20260908-p/diagnostic-targeted-review.jsonl",
+          "stderr_path": "/tmp/cairn-observed-model-20260908-p/diagnostic-targeted-review.stderr",
+          "test_terminal_events": 5,
+          "test_counts": {
+            "pass": 5,
+            "fail": 0,
+            "skip": 0
+          },
+          "test_results": [
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/supervise",
+              "test": "TestCairnInheritedMetadataDoesNotOverrideRuntime",
+              "action": "pass"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnRecurrenceRuntimeCacheLifetime",
+              "action": "pass"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnReviewedRepairContracts/cache-is-writable-during-invocation",
+              "action": "pass"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnReviewedRepairContracts/explicit-override-preserves-other-inherited-values",
+              "action": "pass"
+            },
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestCairnReviewedRepairContracts",
+              "action": "pass"
+            }
+          ]
+        },
+        "packages": {
+          "exit_code": 1,
+          "duration_seconds": 6.096,
+          "stdout_sha256": "28d5476ba24000dd4f79059e0dcee31cf28caee3f5614d5b3887366ade7bbafb",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdout_path": "/tmp/cairn-observed-model-20260908-p/diagnostic-packages-review.jsonl",
+          "stderr_path": "/tmp/cairn-observed-model-20260908-p/diagnostic-packages-review.stderr",
+          "test_terminal_events": 139,
+          "test_counts": {
+            "pass": 138,
+            "fail": 1,
+            "skip": 0
+          },
+          "test_results": [
+            {
+              "package": "github.com/halbritt/striatum-next/internal/backend/llm",
+              "test": "TestRelaunchPinsOrderedAttemptClosures",
+              "action": "fail"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "preparation_diagnostic": {
+    "reference_preflight": {
+      "schema": "cairn.preparation-review/1",
+      "probe_sha256": "da8afdeed4375e5c3f6b71e20004156db2a9ede41b55ea7ef39dcfc84e8cf024",
+      "uid": 1000,
+      "limits": [
+        "Fixed historical invoke seam, not a portable API",
+        "One permission-denied preparation path, not all failures or cross-UID"
+      ],
+      "results": {
+        "broken": {
+          "exit_code": 1,
+          "actions": [
+            "fail"
+          ],
+          "stdout_sha256": "71162145e539503b74f14dcac8c53e9e8ed2240341b9e7085f316919e5b8af28",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "reference": {
+          "exit_code": 0,
+          "actions": [
+            "pass"
+          ],
+          "stdout_sha256": "052a30b472458ba547e0ecfb2d3589a2f7104919e93c462047c950742073ca92",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "candidate": "unavailable: the private invoke signature and preparation boundary changed; compilation failure was retained separately and excluded from candidate verdict"
+  },
+  "diagnostic_change": {
+    "schema": "cairn.isolated-candidate-diagnostic/1",
+    "original_patch_sha256": "e17d0d447a10838cc631e3884075c3c8e7c9eb9a4b1141e6ef8d8c55cb1c9eb0",
+    "file": "internal/backend/supervise/init.go",
+    "before_sha256": "f57705a4c3882eb2974f6e657c276597a651b3536ce4a24c4ea054256cadf357",
+    "after_sha256": "d74d5af84d45826ee9107f5f97da274a93ab6415697d50c79382a6038f29b4cb",
+    "change": "Place transported overrides after inherited values in exec.Cmd.Env",
+    "interpretation": "Reviewer diagnostic only; original model result and assessments unchanged"
+  },
+  "review_demand": {
+    "schema": "cairn.observed-demand-review/1",
+    "receipt_id": "ad4f4fad-1400-425c-810b-b08d10513b58",
+    "original_hashes": {
+      "report.json": "07c7815882a9bd9db9156b801409cd95dd7e732fb6ea96125e974620a9d9b1e6",
+      "trial.dump": "c378f7c18db962573d6ad287e40dbbc1d848c3b1b264dd8ec2b0d00cd76e74c4",
+      "cairn_h0.patch": "e17d0d447a10838cc631e3884075c3c8e7c9eb9a4b1141e6ef8d8c55cb1c9eb0"
+    },
+    "evidence_id": "f2ca6a4d-dd00-4eb9-9148-1327eec54c5e",
+    "assessment": {
+      "receipt_id": "ad4f4fad-1400-425c-810b-b08d10513b58",
+      "version": 2,
+      "task_outcome": "rejected",
+      "failure_domain": "task",
+      "failure_kind": "environment_override_lost",
+      "error_signature_sha256": "f2e17f8bc20de0b9a439b4e9690a470f8f815075ef56354e1fe61f670ac5f3ce",
+      "method": "cairn.observed-repair-review/1; actual confined runtime checks, no full acceptance",
+      "evidence_ids": [
+        "f2ca6a4d-dd00-4eb9-9148-1327eec54c5e"
+      ],
+      "reason": "The original candidate keeps inherited GOCACHE and loses explicit environment overrides. Independent checks and its own override test fail. Reversing only environment append order in a separate diagnostic removes these observed failures; that diagnostic does not replace the model candidate.",
+      "witness": "instrumented",
+      "observer": "host:recurrence:cairn_h0",
+      "observed_at": "2026-09-08T06:12:53.445462-07:00"
+    },
+    "proposal_before": {
+      "kind": "failure",
+      "source_current": true,
+      "proposal_id": "f41b3559-59db-428f-92c2-3ba77bd39345",
+      "repo": "trial:cairn_h0",
+      "version": 1,
+      "disposition": "open",
+      "failure_receipt": "ad4f4fad-1400-425c-810b-b08d10513b58",
+      "failure_version": 2,
+      "recovery_receipt": "",
+      "recovery_version": 0,
+      "evidence_ids": [
+        "f2ca6a4d-dd00-4eb9-9148-1327eec54c5e"
+      ],
+      "task_class": "historical-go-cache-repair",
+      "binding_id": "opencode-openrouter",
+      "capability_id": "deepseek/deepseek-v4-pro-0813",
+      "error_signature_sha256": "f2e17f8bc20de0b9a439b4e9690a470f8f815075ef56354e1fe61f670ac5f3ce",
+      "method": "standalone-task-failure/1"
+    },
+    "proposal_after": {
+      "kind": "failure",
+      "source_current": true,
+      "proposal_id": "f41b3559-59db-428f-92c2-3ba77bd39345",
+      "repo": "trial:cairn_h0",
+      "version": 2,
+      "disposition": "converted",
+      "failure_receipt": "ad4f4fad-1400-425c-810b-b08d10513b58",
+      "failure_version": 2,
+      "recovery_receipt": "",
+      "recovery_version": 0,
+      "evidence_ids": [
+        "f2ca6a4d-dd00-4eb9-9148-1327eec54c5e"
+      ],
+      "task_class": "historical-go-cache-repair",
+      "binding_id": "opencode-openrouter",
+      "capability_id": "deepseek/deepseek-v4-pro-0813",
+      "error_signature_sha256": "f2e17f8bc20de0b9a439b4e9690a470f8f815075ef56354e1fe61f670ac5f3ce",
+      "method": "standalone-task-failure/1",
+      "result_record": "16a90b22-ae29-436c-a73f-343c7a2dc273"
+    },
+    "result_record": {
+      "record_id": "16a90b22-ae29-436c-a73f-343c7a2dc273",
+      "version": 1,
+      "class": "A",
+      "sensitivity": "local",
+      "observed_writer": "local-uid:1000"
+    },
+    "generation_reused_identity": true,
+    "docket_before": {
+      "items": [
+        {
+          "proposal_id": "f41b3559-59db-428f-92c2-3ba77bd39345",
+          "reason": "TASK_FAILURE",
+          "suggested_action": "Review the attached task-failure evidence; no matching accepted recovery is attached."
+        }
+      ],
+      "truncated": false
+    },
+    "docket_after": {
+      "items": [],
+      "truncated": false
+    },
+    "use_rows": [
+      {
+        "exposure_kind": "body",
+        "usage_witness": "testimony",
+        "usage_method": "cairn.opencode-text-uuid/1; model-authored UUID is testimony, not causal influence",
+        "usage_coverage": "unknown",
+        "task_class": "historical-go-cache-repair",
+        "binding_id": "opencode-openrouter",
+        "capability_id": "deepseek/deepseek-v4-pro-0813",
+        "assessment_version": 2,
+        "assessment_witness": "instrumented",
+        "failure_domain": "task",
+        "failure_kind": "environment_override_lost",
+        "error_signature_sha256": "f2e17f8bc20de0b9a439b4e9690a470f8f815075ef56354e1fe61f670ac5f3ce",
+        "receipt_id": "ad4f4fad-1400-425c-810b-b08d10513b58",
+        "record_id": "0719eefe-ac9c-4f7c-93fd-f177334763da",
+        "version": 2,
+        "scope": {
+          "repo": "trial:cairn_h0",
+          "task_id": "striatum-lane-go-cache-reviewed-recurrence",
+          "run_id": "cairn_h0"
+        },
+        "purpose": "context",
+        "used_at": "2026-09-08T05:52:28.235072-07:00",
+        "best_observed_delivery": "available",
+        "usage": "cited",
+        "process_state": "timeout",
+        "exit_code": null,
+        "duration_ms": 900056,
+        "task_outcome": "rejected",
+        "current_version": 2,
+        "current_lifecycle": "active"
+      }
+    ],
+    "original_report_preserved": true,
+    "interpretation": "Real observed failed run to reviewed local A lesson in disposable store; no promotion or accepted recovery."
+  },
+  "cleanup": {
+    "removed": [
+      "/tmp/cairn-observed-model-20260908-p/broken",
+      "/tmp/cairn-observed-model-20260908-p/reference",
+      "/tmp/cairn-observed-model-20260908-p/cairn_h0",
+      "/tmp/cairn-observed-model-20260908-p/diagnostic",
+      "/tmp/cairn-observed-model-20260908-p/go-cache",
+      "/tmp/cairn-observed-model-20260908-p/store/data",
+      "/tmp/cairn-observed-model-20260908-p/store/socket"
+    ],
+    "dumps": {
+      "trial.dump": {
+        "sha256": "c378f7c18db962573d6ad287e40dbbc1d848c3b1b264dd8ec2b0d00cd76e74c4",
+        "bytes": 139604,
+        "catalog_validated": true
+      },
+      "reviewed-trial.dump": {
+        "sha256": "ff2c80e54eca292c231212ac1ec243a3ad4ac19425cd69d4cea17b0cf245bd7a",
+        "bytes": 150014,
+        "catalog_validated": true
+      }
+    },
+    "postgres_stopped_before_cleanup": true,
+    "pending_host_observations": 0,
+    "native_home_and_cache_removed": true,
+    "retained": "Original reports/patch/dump, reviewed dump, host journal, selected review metadata and logs"
+  },
+  "private_artifacts": {
+    "report.json": {
+      "path": "/tmp/cairn-observed-model-20260908-p/report.json",
+      "sha256": "07c7815882a9bd9db9156b801409cd95dd7e732fb6ea96125e974620a9d9b1e6"
+    },
+    "host-verification.json": {
+      "path": "/tmp/cairn-observed-model-20260908-p/host-verification.json",
+      "sha256": "41937fd4a27eb0b5bd28129f2e3192377c0fbe4445aeda675e6ef04322035653"
+    },
+    "hosted-relay.json": {
+      "path": "/tmp/cairn-observed-model-20260908-p/hosted-relay.json",
+      "sha256": "ed71e5684833cb6e97d977b66d421938c334363741b533523cc4419e128a21b3"
+    },
+    "cairn_h0.patch": {
+      "path": "/tmp/cairn-observed-model-20260908-p/cairn_h0.patch",
+      "sha256": "e17d0d447a10838cc631e3884075c3c8e7c9eb9a4b1141e6ef8d8c55cb1c9eb0"
+    },
+    "demand-review.json": {
+      "path": "/tmp/cairn-observed-model-20260908-p/demand-review.json",
+      "sha256": "19ea8455701176e5b33e1d905b0a8b2a46c4b626920e8d064b907c37e4a4dfd1"
+    },
+    "trial.dump": {
+      "path": "/tmp/cairn-observed-model-20260908-p/trial.dump",
+      "sha256": "c378f7c18db962573d6ad287e40dbbc1d848c3b1b264dd8ec2b0d00cd76e74c4"
+    },
+    "reviewed-trial.dump": {
+      "path": "/tmp/cairn-observed-model-20260908-p/reviewed-trial.dump",
+      "sha256": "ff2c80e54eca292c231212ac1ec243a3ad4ac19425cd69d4cea17b0cf245bd7a"
+    },
+    "cleanup.json": {
+      "path": "/tmp/cairn-observed-model-20260908-p/cleanup.json",
+      "sha256": "3616e56b4e6348a1e33e2565ecd18671b63bb0ee53194d7858dc2068400a914d"
+    }
+  },
+  "doctrine": {
+    "packet_id": "pkt-c86681a6959d824a",
+    "packet_content_sha256": "c86681a6959d824ab157b8ba20e4d65d92ca84606f59e440b9e24fe7f9501b2d",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "evidence_passes": 2,
+    "material_obligations_open": 0,
+    "receipt_path": "/tmp/cairn-observed-model-decision-receipt.json",
+    "receipt_sha256": "cfda40453f0a30dcd0ab9f08167730561f4fb660701d2837a3f1fd9f70dbe025",
+    "citation_result_path": "/tmp/cairn-observed-model-citation-result.json"
+  },
+  "limits": [
+    "One known-recurrence H0 run; no new independent comparison or general usefulness claim",
+    "Actual timeout host finalization does not establish abrupt-controller-death recovery",
+    "Original failed candidate and assessment are preserved; reviewer diagnostic is not model recovery",
+    "New local A lesson is unpromoted and confined to the disposable reviewed dump",
+    "Cross-UID and complete preparation behavior remain unverified",
+    "No native Striatum host, operational memory, installed executable or live graph change"
+  ]
+}

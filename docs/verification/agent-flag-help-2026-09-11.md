@@ -1,0 +1,99 @@
+# Everyday agent flag help
+
+Source checkpoint: base revision `c3208eb32c59071fae2ebb6a7d0f6b5942774209`,
+reviewed 2026-09-11. Source behavior, tests, and the later CLI-only installation
+checkpoint are reported separately below.
+
+## Observed gap
+
+The project binary returned exit 2 and an `INVALID_REQUEST` envelope for
+`cairn agent search --help`, `remember --help`, `pull --help`, and
+`pull-evidence --help`. The saved independent check failed on the first command.
+The adjacent JSON-operation help already worked without credentials, API access,
+HOME, or stdin.
+
+## Bounded OpenCode trial
+
+An isolated OpenCode run used model `deepseek/deepseek-v4-flash-0731`, a 24-request
+relay bound, and a 600-second task timeout. It started from the base revision,
+connected to the native Cairn MCP server, and passed its Go preflight. The run
+made 23 provider steps, one Cairn search, no Cairn pull, and 14 shell attempts;
+seven shell forms were denied before permitted alternatives worked.
+
+The process exited 1 after 461.6 seconds. Its worktree contained only
+`cmd/cairn/scratch_help_probe_test.go`, which printed results but asserted no
+behavior. There was no production patch. Receipt
+`7bea52f5-991c-4b07-81f4-ce1e9b7fb65c` now has an instrumented version-2
+`rejected` assessment with `failure_domain=capability` and selected evidence.
+Version 2 corrects version 1's six-denial count to seven. The denial friction is
+retained as a competing explanation, not treated as the sole cause. A search
+call, MCP connection, or process exit does not establish memory benefit.
+
+## Implemented behavior
+
+The CLI's early operation-help dispatch now recognizes all four flag-based
+commands. Search, remember, and pull each construct one `flag.FlagSet` that both
+help rendering and execution use. `pull-evidence` shares pull's parser with its
+own positional usage. The existing execution functions still parse and consume
+the resulting option values; help returns before the connection defaults or
+client are resolved.
+
+The public help gives both positional forms and, for pull operations, the existing
+JSON-stdin form. Go's standard flag renderer lists the registered options. Both
+`--help` and `-h` return readable text. Extra arguments, unknown operations, and
+literal `--help` data behind `--` do not become successful help calls.
+
+## Verification
+
+- Four public-interface tests failed individually before their corresponding
+  help cases were implemented, then passed.
+- The consolidated Go test exercises all four commands, both help spellings,
+  absent HOME/CAIRN_HOME, and an input reader that panics if read.
+- `scripts/check_agent_help.py` builds on the existing public subprocess check.
+  It keeps stdin open, removes HOME/CAIRN_HOME, points database access at an
+  absent host, checks both spellings, and requires malformed invocations to exit
+  2 with `INVALID_REQUEST`.
+- The baseline-derived independent check verifies current parser options,
+  positional usage, literal-help behavior, and an empty scratch directory.
+- `make test-integration` passed against a disposable PostgreSQL cluster. This
+  includes authenticated search, pull, remember, existing JSON help examples,
+  and the public offline-help process check.
+- `make check` passed `go vet ./...` and the repository formatting gate.
+
+Pincite packet `pkt-1fda759a1a719776` (content SHA-256
+`1fda759a1a7197768816af4a6b2dea18fc247ec10d57283d9a7fab02ec48a605`)
+has a validated `verified` decision receipt and five closed concept citations.
+Unmet obligations about ingestion, ranking, UI, configuration references, and
+data keys are nonmaterial because those surfaces are not changed. The no-change
+procedure and expected-future-change obligations are also nonmaterial because
+the current public defect and bounded selected task establish present pressure.
+
+## Limits
+
+The checks establish behavior for the exercised CLI and disposable API/store.
+They do not establish setup-time savings, model-task improvement, or durable
+memory benefit. The OpenCode failure is one bounded model run with
+permission friction; it is not a general capability estimate. No API, database,
+schema, authority, destination, or delivery behavior changed.
+
+## Local CLI installation
+
+Exact-source [CI run 34585053210](https://github.com/halbritt/cairn/actions/runs/34585053210)
+passed for clean revision `75eb01e8497b41f7198abaf2e4dddec8301f9a8b`.
+Both jobs completed successfully, including the race suite, disposable PostgreSQL
+integration, Python checks, static checks, build, authenticated CLI checks, and
+the OpenCode-plugin check.
+
+That clean build replaced only `~/.local/bin/cairn`, after retaining the prior
+binary for rollback. The installed public offline check passes the command
+overview, nine JSON-operation help paths, and all four flag-operation help paths
+with both `--help` and `-h`, no HOME, an absent database target, and stdin left
+open. Invalid invocations still return `INVALID_REQUEST`.
+
+Before/after snapshots kept API revision `bb600c5`, API PID 555696, PostgreSQL
+PID 163669, API executable hash, native adapter hash, configuration hashes, and
+the complete 93-version ordinary-note inventory identical. No API or store
+service restarted, and no database migration ran. The
+[installation manifest](agent-flag-help-2026-09-11-installation.json) records the
+identities and retained rollback path. This is installation acceptance for the
+local CLI only, not full design acceptance or measured usefulness.

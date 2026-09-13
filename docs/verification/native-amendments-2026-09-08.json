@@ -1,0 +1,37 @@
+{
+  "schema": "cairn.native-amendments/1",
+  "striatum_base_commit": "a6b1ae71d95cdf99200c10d8c6ce855d9da70a69",
+  "striatum_draft_commit": "0d9245f2954c088a03661463ac52ec15254eddff",
+  "request_ref": 408328,
+  "subject": "striatum-next/passes/cairn-native-context-input-20260908",
+  "status": "proposed",
+  "amendments": [
+    "rfcs/0004-compiler-passes/cairn-context-amendment.md",
+    "rfcs/0007-agent-runtimes-and-execution-backends/cairn-context-amendment.md"
+  ],
+  "checks": {
+    "striatum_make_lint_including_all_decision_source_pins": "passed",
+    "draft_relative_file_links": "passed",
+    "draft_whitespace": "passed"
+  },
+  "findings": [
+    "Pre-launch acquisition must preserve the observing caller's receipt ownership",
+    "Dynamic retrieval joins do not admit retrievals created before host spawn",
+    "ClaimRun does not implement a complete selected-record freshness recheck",
+    "Native dispatch needs staged consumption of the exact observed receipt",
+    "Existing ordinary-input rendering is the intended path; static assets are not a prerequisite"
+  ],
+  "accepted_sources_or_decisions_changed": false,
+  "runtime_enabled": false,
+  "native_build_executed": false,
+  "unrelated_requests_or_timers_changed": false,
+  "closing_observation_issued": false,
+  "doctrine": {
+    "packet_id": "pkt-41bf29ea9f23e2b7",
+    "packet_content_sha256": "41bf29ea9f23e2b7d54e608bec8276a435d7a0a554704fe2102c1b93a4243da7",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "unmatched_obligations_nonmaterial_to_draft_only_result": 31
+  }
+}

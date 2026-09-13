@@ -1,0 +1,213 @@
+{
+  "schema": "cairn.note-span-verification/1",
+  "baseline_commit": "157a49d",
+  "reproduction": {
+    "body_bytes": 60042,
+    "available_tokens": 1000000,
+    "expansion_limit": 24000,
+    "baseline": "BUDGET_REFUSED",
+    "result": "exact tail with full and partial digests; 3 credits remain"
+  },
+  "source": [
+    {
+      "path": "core/index.go",
+      "sha256": "f2c5292b7510970fc60473e86fbefda79669e59d43237d8ec7ec871ec21b56bb"
+    },
+    {
+      "path": "core/byte_span.go",
+      "sha256": "7b08a946e4e91c4f5e5956e14caae6da2c786958af136c28b2ba909a367cfc66"
+    },
+    {
+      "path": "core/evidence_expansion.go",
+      "sha256": "0c953f18730ad8d23ec0808733dfa4481de6fdbe54c1847a6e5cf51e7860f36b"
+    },
+    {
+      "path": "core/note_span_test.go",
+      "sha256": "d20cf5695a1660293b0b8aa8d895db528d40533833b20416435c55c32b86979c"
+    },
+    {
+      "path": "core/deletion_test.go",
+      "sha256": "253d7e32efede6c087b7d64bf33d521be4b60b5976445827b770ed834fb1612e"
+    },
+    {
+      "path": "cmd/cairn/agent_search.go",
+      "sha256": "79325997650d2e1ae250c14026759e2f74bbe734680a4434d1380ddb3f962512"
+    },
+    {
+      "path": "integrations/opencode/cairn.ts",
+      "sha256": "4d07a80fd26585b5a9a71744da2f0598b2d751cccabbe8ed8b96355bb0c444d0"
+    },
+    {
+      "path": "mcpapi/server.go",
+      "sha256": "10a66909de745c328db6392cb0d0b1f79917d3dbabb6ad2155b4a6d7e2548400"
+    },
+    {
+      "path": "scripts/check_agent_search.py",
+      "sha256": "b0d67fb161fb61c553e671dbb9f979a5dc4482e8c2954febdf2f9e24c6069075"
+    },
+    {
+      "path": "scripts/check_mcp.py",
+      "sha256": "3d4c6c1cfd420ad20f3a2c94e3e7b22856a1e4871474645d6b99684360b0c6c6"
+    },
+    {
+      "path": "scripts/check_opencode_tools.py",
+      "sha256": "71e4ca6aca739abd17592656770340ec753e8823c3a7be9c302a1b17ce8dd3f9"
+    }
+  ],
+  "checks": {
+    "disposable_postgres_race": "passed",
+    "cli_api": "passed",
+    "mcp_stdio": "passed",
+    "native_opencode": "passed",
+    "previous_binary_full_body_evidence_retry": "passed",
+    "go_tests": "passed",
+    "python_tests": 30,
+    "vet_format_build": "passed"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-note-span-baseline.log",
+      "sha256": "f67f8bf0df02b28608370568a438388253004c052060d338fa132c80abe4577e"
+    },
+    {
+      "path": "/tmp/cairn-note-span-focused.log",
+      "sha256": "1187e15c5e59d4f13e3d6e0f75969ed9ab0a3ac41e00fbcbd39e426c77055c24"
+    },
+    {
+      "path": "/tmp/cairn-note-span-focused-b.log",
+      "sha256": "8d28b5216db0062dc10f1d6c20cab56bcef5f0311a5e2c12cd2a3b6eb0fb66fc"
+    },
+    {
+      "path": "/tmp/cairn-note-span-focused-c.log",
+      "sha256": "78b1ad84d0beb906ca0551a9eb06e8af31051a246581173529689e7b5e181914"
+    },
+    {
+      "path": "/tmp/cairn-note-span-forgetting.log",
+      "sha256": "ef708f8624d30afde7bb4dd029a56640d7e1274a265e06450fad3c7c19901f25"
+    },
+    {
+      "path": "/tmp/cairn-note-span-integration.log",
+      "sha256": "c7b8f2a5a68645e9908e390d6659d973b6552c120d0d8e876230867b2f9c9bea"
+    },
+    {
+      "path": "/tmp/cairn-note-span-tests.log",
+      "sha256": "104e6394b6cab823790814150ba9d0959174a6b67e3ace7e09d28aacf4c9d78d"
+    },
+    {
+      "path": "/tmp/cairn-note-span-check.log",
+      "sha256": "7e9bbc361fc3c1f98d20aec476936b4cd2eaecb7adec63bdd38519d225c274a0"
+    },
+    {
+      "path": "/tmp/cairn-note-span-plan.json",
+      "sha256": "3d0ae84252a3ea585fcdf0b5392ccd997fe13000dd898cc63f665ac5915ae6d8"
+    },
+    {
+      "path": "/tmp/cairn-note-span-test.sh",
+      "sha256": "86b85682b3f84e2cb94f3829842835eb96da2dfbed5d0f1a408fa43464783b66"
+    },
+    {
+      "path": "/tmp/cairn-note-span-deployment/before.json",
+      "sha256": "f997a2e6fb74ffb7e9cdff1421f0bec6ebfff6167bd1070480015aff7f9d6912"
+    },
+    {
+      "path": "/tmp/cairn-note-span-deployment/adapter-install.json",
+      "sha256": "06ee4df120b323bafe6eef0b0ed7849b98d31ffbaae0e7dee6fbd3a3bec917b7"
+    },
+    {
+      "path": "/tmp/cairn-note-span-deployment/installation.json",
+      "sha256": "1dd9e5c3427105fe68ac89b7b7b4d5bb02771a00bd17958e49dfb37f37b57d7d"
+    },
+    {
+      "path": "/tmp/cairn-note-span-deployment/verify-client.py",
+      "sha256": "32fe214b92333a6b3e7af5bf33e43c9aa65acc5c4026900e3fedd8ba06b91b93"
+    },
+    {
+      "path": "/tmp/cairn-note-span-deployment/client/report.json",
+      "sha256": "e3c1c8671603dba80e95327b5a0f4a11bf64c9ce4faccbaf8abbb5e477763cf4"
+    }
+  ],
+  "model_answering_calls": 0,
+  "doctrine": {
+    "packet_id": "pkt-50f32fac978a9a85",
+    "packet_content_sha256": "50f32fac978a9a85c8a8d2086ba6824a4502b112a517dc1aa04ddf8e0e46d044",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_path": "/tmp/cairn-note-span-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new Go interface or substitution boundary; concrete byte-span DTO/codec shared by two existing core consumers. Existing serialized contracts checked; positional Go literals need the documented added field."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new Go interface or substitution boundary; concrete byte-span DTO/codec shared by two existing core consumers. Existing serialized contracts checked; positional Go literals need the documented added field."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new Go interface or substitution boundary; concrete byte-span DTO/codec shared by two existing core consumers. Existing serialized contracts checked; positional Go literals need the documented added field."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new Go interface or substitution boundary; concrete byte-span DTO/codec shared by two existing core consumers. Existing serialized contracts checked; positional Go literals need the documented added field."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No generic named procedure completion claimed; explicit alternatives, preservation boundaries and completed checks retained."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No generic named procedure completion claimed; explicit alternatives, preservation boundaries and completed checks retained."
+      }
+    ]
+  },
+  "deployment": {
+    "installed_revision": "559307cbffe4f95fa4c85f54804f5d14f3e65197",
+    "installed_sha256": "b79d63c574560add0d7eb10fced886f3d8a355c5460d1084c360256831b5df2b",
+    "api_pid": "3408435",
+    "api_sha256": "b79d63c574560add0d7eb10fced886f3d8a355c5460d1084c360256831b5df2b",
+    "clean_build": true,
+    "api_restarted": true,
+    "host_settings_preserved": true,
+    "semantic_worker_preserved": true,
+    "adapter_sha256": "4d07a80fd26585b5a9a71744da2f0598b2d751cccabbe8ed8b96355bb0c444d0",
+    "schema_changed": false,
+    "native_codex": "0.153.4: full and exact 83-byte excerpt of saved v6, identical retry, correct shared credits; no model turn",
+    "ci": {
+      "run_id": 34384075765,
+      "head_sha": "559307cbffe4f95fa4c85f54804f5d14f3e65197",
+      "conclusion": "success",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34384075765"
+    }
+  }
+}

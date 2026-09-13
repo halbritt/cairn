@@ -1,0 +1,145 @@
+{
+  "schema": "cairn.native-executor-verification/1",
+  "cairn_source": "55c8ff360fce8bf5a2e148c7e805912061551cac",
+  "striatum_source": "ee8a463c9978833bc53d2726eef63eb9417fcb91",
+  "fixture_root": "/tmp/cairn-native-executor-fixture-l",
+  "fixture_report_sha256": "657e5d367fe867b892e684d99775ff0131e4cfc5c02e747ce636de0f132cc98c",
+  "scenario_sha256": "20d8fcc3081aadf3f0e8b88d7a07b44d2fa834c5ab69326cbe150bee14d3c797",
+  "execution_pins": {
+    "driver_binary_sha256": "cee6184e65ca24029e028633701434dddc3bcea6ba75f8745db4ed2055aa0a73",
+    "go_paths": [
+      "/home/halbritt/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64",
+      "/home/halbritt/go/pkg/mod"
+    ],
+    "go_binary_sha256": "b93cdfdbc72f1afc3f21498c80bf3d155a44a9b95e2d690c940511051574bc25",
+    "striatum_head": "ee8a463c9978833bc53d2726eef63eb9417fcb91",
+    "striatum_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cairn_scripts": {
+      "trial_native_executor.py": "937c6b77868469a8b7eb76c0e65e19a0222eaead1e0f375c9befb19ffe24d994",
+      "trial_native_runtime.py": "73272ee235619a3e07de1ee0cb3e9dd87b7bb281c2cf2d90426fc17693990659",
+      "trial_native_recurrence.py": "3fb75e379d799e4143c7e98c58742d5f1b4f595c284bb2dc5e87e1eb575cc40c",
+      "trial_agent_env.py": "99aa09abf6ecf0efaf74de2e0241ff2208f150514f54e8f7ecdbcfdc9931480a",
+      "trial_repair_assessment.py": "99442405923d0209cccfa94dac4c9b4ddc44e2cd2f40f9492cf986531f0f85a2",
+      "trial_openrouter.py": "6eb38d165448bacced6f67924c4aed871b1b167a6fe2e842579a5052cfeaba0a",
+      "trial_retrieval_tools.py": "1ce9cdb4dbbc53d290cca7036ee414c9033702de2300e5b68e9527c789606fff"
+    },
+    "fixture_source_sha256": "6878e07235f36146f7f78706af9148b0a328691b2800663baf993906a09a86b1"
+  },
+  "arms": [
+    {
+      "mode": "no_memory",
+      "invocations": 1,
+      "change_set_admitted": true,
+      "change_set_checked": true,
+      "process_exit": 0,
+      "exact_prompt_received": true,
+      "prompt_sha256": "54c33a8bf4038a8b4252c69fccc79878e56742215845a62d6bf8be349509a5eb",
+      "lesson_occurrences": 0,
+      "provider_requests": 0,
+      "gate": {
+        "passed": false,
+        "exit_code": 1,
+        "gate_actions": [
+          "fail"
+        ],
+        "formatted": true,
+        "skipped_tests": 193,
+        "stdout_sha256": "9c19ee224618ad623f511856602763da5f24b6344c69f27e79b00ae572c1ddbb",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "boundary": "All Go tests with no test DSN; database-dependent tests skip. Hidden gate uses real Unix HTTP transport."
+      }
+    },
+    {
+      "mode": "direct_context",
+      "invocations": 1,
+      "change_set_admitted": true,
+      "change_set_checked": true,
+      "process_exit": 0,
+      "exact_prompt_received": true,
+      "prompt_sha256": "55ad8a52bc4fa704c73ae515a8ec1df11c502f6a6c5419797f5be44ced69ade7",
+      "lesson_occurrences": 2,
+      "provider_requests": 0,
+      "gate": {
+        "passed": false,
+        "exit_code": 1,
+        "gate_actions": [
+          "fail"
+        ],
+        "formatted": true,
+        "skipped_tests": 193,
+        "stdout_sha256": "2086e27935c4e007caac5b1333b679e093295caa8190ab5ec83ff704c93a37c2",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "boundary": "All Go tests with no test DSN; database-dependent tests skip. Hidden gate uses real Unix HTTP transport."
+      }
+    },
+    {
+      "mode": "native_context",
+      "invocations": 1,
+      "change_set_admitted": true,
+      "change_set_checked": true,
+      "process_exit": 0,
+      "exact_prompt_received": true,
+      "prompt_sha256": "44eee0eb0fe2426c762fbaeaf184dde6858d3e44076f3c8898f2d6cb6aaf4f06",
+      "lesson_occurrences": 1,
+      "provider_requests": 0,
+      "gate": {
+        "passed": false,
+        "exit_code": 1,
+        "gate_actions": [
+          "fail"
+        ],
+        "formatted": true,
+        "skipped_tests": 193,
+        "stdout_sha256": "5d4e0e768ad4de6975b06bbaa29c2cd73997e1dc4e0214c4e3a12868193b2e15",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "boundary": "All Go tests with no test DSN; database-dependent tests skip. Hidden gate uses real Unix HTTP transport."
+      },
+      "native_observation": {
+        "claim_confirmed": true,
+        "invocation_started": true,
+        "delivery_observation_id": "b9d5c890-48d1-4bf9-a452-1a9663df1dc5",
+        "outcome_observation_id": "63a67c2c-54c6-49b3-9498-1ea89c8b6fe8",
+        "prompt_sha256": "44eee0eb0fe2426c762fbaeaf184dde6858d3e44076f3c8898f2d6cb6aaf4f06"
+      }
+    }
+  ],
+  "checks": [
+    {
+      "command": "Strict delegated affected Driver race tests",
+      "log": "/tmp/cairn-native-executor-driver-check.log",
+      "sha256": "e0f6be684d3f14238e1c3babc81f5f9cac35c1df2507a0e639ff69cfef7f3e20",
+      "exit_code": 0
+    },
+    {
+      "command": "Striatum make fmtcheck build lint",
+      "log": "/tmp/cairn-native-executor-striatum-final-build.log",
+      "sha256": "07e610f75fa6949f7044ebbf82c2640d3b2af05dc69e9655f6f30f09ba311115",
+      "exit_code": 0
+    },
+    {
+      "command": "Cairn make check",
+      "log": "/tmp/cairn-native-executor-cairn-final-check.log",
+      "sha256": "b0ea022a3c3cbbe3ce6fee217ec5ece61f56bab9d7b7270dfac51fdb32ff50e3",
+      "exit_code": 0
+    },
+    {
+      "command": "Cairn make test",
+      "log": "/tmp/cairn-native-executor-cairn-final-tests.log",
+      "sha256": "0f4d02dac0fc7f8e8c3e177f4db3be848f9a05dc0c40d02b4ddf0b4ad8cca623",
+      "exit_code": 0
+    },
+    {
+      "command": "Fresh source/oracle preflight",
+      "log": "/tmp/cairn-native-recurrence-preflight-c/report.json",
+      "sha256": "517da5e6844c947640e7818e933091312d057c506a562c792aa752b2119d2a4e",
+      "exit_code": 0
+    }
+  ],
+  "limits": "Model-free executor verification. No model task outcome or general memory benefit established.",
+  "doctrine": {
+    "packet_id": "pkt-e152faa478c0644e",
+    "packet_content_sha256": "e152faa478c0644e110ab6c86c778d2e66651bbd48b64f1015229420b43ad2a6",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9"
+  }
+}

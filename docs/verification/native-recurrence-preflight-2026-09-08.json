@@ -1,0 +1,104 @@
+{
+  "schema": "cairn.native-recurrence-preflight/1",
+  "scenario_sha256": "20d8fcc3081aadf3f0e8b88d7a07b44d2fa834c5ab69326cbe150bee14d3c797",
+  "controller_sha256": "3fb75e379d799e4143c7e98c58742d5f1b4f595c284bb2dc5e87e1eb575cc40c",
+  "model_requests": 0,
+  "native_execution_verified": false,
+  "calibration": {
+    "baseline": {
+      "gate": {
+        "passed": false,
+        "exit_code": 1,
+        "gate_actions": [
+          "fail"
+        ],
+        "formatted": true,
+        "skipped_tests": 193,
+        "stdout_sha256": "e8e4c27d1c6e1ba388eef5cfe8c040c341d6b1805440c129bf844596ae2884fa",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "boundary": "All Go tests with no test DSN; database-dependent tests skip. Hidden gate uses real Unix HTTP transport."
+      },
+      "cases": {
+        "explicit_without_home": "fail",
+        "explicit_with_unusable_defaults": "pass",
+        "home_defaults": "pass",
+        "cairn_home_defaults": "pass",
+        "only_token_explicit": "pass",
+        "only_socket_explicit": "pass",
+        "empty_token": "fail",
+        "empty_socket": "fail",
+        "invalid_flag_without_home": "fail",
+        "missing_default_without_home": "pass",
+        "bad_explicit_token": "pass"
+      }
+    },
+    "reference": {
+      "gate": {
+        "passed": true,
+        "exit_code": 0,
+        "gate_actions": [
+          "pass"
+        ],
+        "formatted": true,
+        "skipped_tests": 193,
+        "stdout_sha256": "cebb65f63b7eeae650bdfb0ec48539631864e8b0a964a96c743756ffb36db85e",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "boundary": "All Go tests with no test DSN; database-dependent tests skip. Hidden gate uses real Unix HTTP transport."
+      },
+      "cases": {
+        "explicit_without_home": "pass",
+        "explicit_with_unusable_defaults": "pass",
+        "home_defaults": "pass",
+        "cairn_home_defaults": "pass",
+        "only_token_explicit": "pass",
+        "only_socket_explicit": "pass",
+        "empty_token": "pass",
+        "empty_socket": "pass",
+        "invalid_flag_without_home": "pass",
+        "missing_default_without_home": "pass",
+        "bad_explicit_token": "pass"
+      }
+    }
+  },
+  "workspace_manifest_sha256": "f4b1a4ab06db33e1d5080fbf9d075e5cce5ef49d8b0fea54ac1c66d6fc769e53",
+  "workspace_files": 269,
+  "check": {
+    "exit_code": 0,
+    "stdout_sha256": "040eac9b09a4089e1af6f16361cf7b2a359015aaee820151a925e3c64a5bedbc",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "tests": {
+    "exit_code": 0,
+    "stdout_sha256": "10b113f657cd904d65aeb8c717fa9d26a3b6995496d02ba653cb9fcf89e5eedd",
+    "stderr_sha256": "53428d2e0d1f3b902d6fe27b29529522bc8e504f2b0a7fa1310b125f7ccc7d3c"
+  },
+  "passed": true,
+  "limits": "Source and evaluator calibration only. No model, native Driver execution or memory benefit measured. Database tests skip. The complete frozen repository includes older different-task experiments equally in all conditions.",
+  "private_root": "/tmp/cairn-native-recurrence-preflight-b",
+  "cairn_parent": "b125e087ba53a3fcf5fd549332fa1ceb11e9b36e",
+  "shared_evaluator_sha256": "892888cf8529827de4ffedff34fe621579ba9c5ca8e8635da7a6fee7651823ba",
+  "initial_preflight": {
+    "private_root": "/tmp/cairn-native-recurrence-preflight-a",
+    "result": "failed",
+    "reason": "Excluding older experiment modules removed all Python tests; make test refused with NO TESTS RAN. Replaced the partial file set with the complete frozen repository before any model call."
+  },
+  "current_repository_checks": [
+    {
+      "command": "make check",
+      "exit_code": 0,
+      "log": "/tmp/cairn-native-recurrence-check.log",
+      "sha256": "b0ea022a3c3cbbe3ce6fee217ec5ece61f56bab9d7b7270dfac51fdb32ff50e3"
+    },
+    {
+      "command": "make test",
+      "exit_code": 0,
+      "log": "/tmp/cairn-native-recurrence-tests.log",
+      "sha256": "21cafc46c517a2e820ed1adb90ce166c0fed0520c5a661e1eb16ab7c386b648f"
+    }
+  ],
+  "doctrine": {
+    "packet_id": "pkt-9e4852698407d84f",
+    "content_sha256": "9e4852698407d84f9f9aec87722190f2ccd67c72d1598097820016d71572f0f3",
+    "scope": "Source and evaluator calibration; native executor and benefit remain unverified"
+  }
+}

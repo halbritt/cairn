@@ -1,0 +1,172 @@
+{
+  "schema": "cairn.recent-file-verification/1",
+  "date": "2026-09-10",
+  "baseline_commit": "8606d34e07ae9a61724ee7a33ce2a32f74213b24",
+  "native_opencode": "1.18.21",
+  "checks": {
+    "disposable_pg_race_integration": "passed",
+    "native_cases": 5,
+    "python_tests": 40,
+    "plugin_contracts": "passed",
+    "installer": "passed",
+    "static": "passed",
+    "answering_model_calls": 0,
+    "full_native_tools": "passed"
+  },
+  "doctrine": {
+    "packet_id": "pkt-13875aa281866175",
+    "packet_content_sha256": "13875aa2818661753020c9f418bd1d930544654eec7f5bfd07de9ae870b44e62",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "unmet_obligations": [
+      {
+        "requirement": "co-change where available",
+        "classification": "nonmaterial",
+        "reason": "No duplication consolidation, shared harness abstraction or change-frequency claim is selected. Current host ownership and accepted missing capability determine placement."
+      },
+      {
+        "requirement": "recurring change evidence when available",
+        "classification": "nonmaterial",
+        "reason": "No duplication consolidation, shared harness abstraction or change-frequency claim is selected. Current host ownership and accepted missing capability determine placement."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/integration.log",
+      "sha256": "09251aa56c7ee7e2569b5880d510891d62fc4903f54dbcc3b40947009b4f003b"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/python.log",
+      "sha256": "5130e247d00c299f77daa96f864ac36bcc19b66f0fd4b162c2b665a0f37b7260"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/install-green.log",
+      "sha256": "d6ae065621b30e9b4e15381032f94e16022e43e7337cda744e72a7506f7c60ff"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/plugin-green.log",
+      "sha256": "8c1ea67d6a59dea51922d3e059040ff7fd05b7536991b41c33ac533733565fe5"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/native-case-evidence/report.json",
+      "sha256": "3afcc2699f3546c70777d109e60f66cdf7f0844800d2496053c86543ad8916d0"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/decision-receipt.json",
+      "sha256": "75ff7588b2ac01aafe4e9fc683d25e97ddb0ef5e78ab040bcab11111f83a3544"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/doctrine-evidence.json",
+      "sha256": "5218f079e3caf6b8075a8d1c6a7f002568b4aa25abc13e2d5dabd5d224c9ef54"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/native.log",
+      "sha256": "c7b4549a608968351a99a7571beaf264bcdc5c552b356a5f19ee6d0484b7750b"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/native-final.log",
+      "sha256": "51c5e01998e35c3bc1cdc6dc481012fa26a097570955aaa4d5905d8155290086"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/native-verified.log",
+      "sha256": "a90ede760ee468a0ae6f73a8ef6a402ed91c88c179693f2abe7faf167e217fd3"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/native-complete.log",
+      "sha256": "4b116a8925cb3103deccf26bccf30d68ff87486d6c6c8733d28f73b232cea83d"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/deployment/installation.json",
+      "sha256": "1cd0903c190e80c8709e7f7ca3eaa06220b2e72ef7bdb9b6568607d0601db98c"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/live-relative/report.json",
+      "sha256": "99aa5db20cdd557953fdc4624cad9fe149c4b5290b866784be6f6374780f7ecb"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/guide-adoption.json",
+      "sha256": "ede978661aeeb971eabcbb8ebecb96bafba1f800448b64c292508203f5737158"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/live.log",
+      "sha256": "a03e72130fd1de7ee9c531744c181443f2590ca0ae49d32aa7665b44362a124a"
+    },
+    {
+      "path": "/tmp/cairn-automatic-intent-20260910/ci.json",
+      "sha256": "b96641bb74de2e57ef7f18475e2d6244746e0f37ef8e45bc7fbea6b9d0eaaa6b"
+    }
+  ],
+  "installation": {
+    "commit": "670cf19c935cac25f392a2d804e57691e25fdbf8",
+    "cli_sha256": "f135322f022036ed4512336b8aad77ba65f7e3e8d2d51ee6a9649a2482e541d1",
+    "adapter_sha256": "22c66e33041b778276fe885118becb7deed0402d3f0d1ff7f19685f593b24d57",
+    "plugin_sha256": "7b30fe4c636abbc25f360fb445425b27347d0b79127e0767bfd8db514728f4b0",
+    "api_commit": "3ff1fcd435121d5873f8890a2a5396ac5ed275d9",
+    "api_pid": "3062046",
+    "store_pid": "163669",
+    "migration": 34,
+    "api_restarted": false,
+    "preserved_configuration": true
+  },
+  "installed_native_check": {
+    "schema": "cairn.installed-recent-files-check/1",
+    "record_id": "81751203-8768-49ee-bfce-895efb69889d",
+    "version": 2,
+    "body_sha256": "617555818bf48ce98cdfdfb3204c4cbf821685e6d718c1006c4ab96dd26374ca",
+    "read_source_sha256": "a5a8dc35b1b62b4269b71e4cff1e87b9567c64d4c719e22a96ffeaa64d955400",
+    "query_entities": [
+      {
+        "kind": "file",
+        "name": "core/currentness.go"
+      }
+    ],
+    "receipt_id": "b5a21c4b-9206-4d9e-9d48-dce226a0a2ed",
+    "request_id": "8f0a09f1-a103-42d2-bd4f-090468aa025d",
+    "main_requests": 4,
+    "inference_calls": 0,
+    "profile": "ordinary hosted agent",
+    "route": "Actual repository cwd; native read then empty-argument search and pull; existing operational guide only",
+    "adapter_sha256": "22c66e33041b778276fe885118becb7deed0402d3f0d1ff7f19685f593b24d57",
+    "plugin_sha256": "7b30fe4c636abbc25f360fb445425b27347d0b79127e0767bfd8db514728f4b0"
+  },
+  "maintained_procedure": {
+    "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+    "previous_version": 15,
+    "current_version": 16,
+    "body_sha256": "0d415efb00d59ee92a9dcb5f3283a51aa3556fc8dc17ac4987cc8eb9ec4bb216",
+    "body_bytes": 14087,
+    "entities": [
+      {
+        "kind": "file",
+        "name": "cmd/cairn/opencode_install.go"
+      },
+      {
+        "kind": "file",
+        "name": "integrations/opencode/cairn.ts"
+      },
+      {
+        "kind": "file",
+        "name": "integrations/opencode/recent-files.ts"
+      }
+    ],
+    "prior_body_preserved": true,
+    "exact_retry": true,
+    "receipt_id": "243ca1d8-89f2-411f-8bd3-eeec84c9e6f8",
+    "other_draft_metadata_preserved": true
+  },
+  "ci": {
+    "run_id": 34513401855,
+    "commit": "670cf19c935cac25f392a2d804e57691e25fdbf8",
+    "conclusion": "success",
+    "jobs": [
+      "postgres",
+      "opencode-plugin"
+    ]
+  }
+}

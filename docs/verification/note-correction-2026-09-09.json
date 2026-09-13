@@ -1,0 +1,215 @@
+{
+  "schema": "cairn.note-correction-verification/1",
+  "baseline_commit": "792835558be49737ae434f64d58a23d9516c1f01",
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "opencode_version": "1.18.21",
+  "cairn_binary_sha256": "68aefb01f1f3514581b7a0b0cfd48b384776804153f2f3b6e766f2792ba1346d",
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-note-correction-model-a/plan.json",
+      "sha256": "3fd06b022f6770c6a229f29236b154775d2a49b4cab3633d21ef44b3ee3cb722"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/report.json",
+      "sha256": "398fe0f7dad7e1d60d7fc05b23e5d8c51a6f602ab91c14e68ffab76b254094f4"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/trial.dump",
+      "sha256": "5bfba1e4fad0636d48f973e92fbb24504b74a0c80474fa36f2b84906013da67a"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/review/reviewed.dump",
+      "sha256": "88c5595accb961fe06f0330132869e612a5dbcb5f83491faecd3b56be9d47983"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/review-b/reviewed.dump",
+      "sha256": "3ce2be215f09f180db93668a8f7b5f0f8387921aa10e5f21adf775b195d556ae"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/review-c/report.json",
+      "sha256": "2b7f8b2e1d8e16a2608692767a1b5aed6a617ad105d19a4eab7b8a3e82b01c62"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/review-c/reviewed.dump",
+      "sha256": "9ebb1e688b1e1b6bb074b621e335c8f06fc12ace3a76d2ab3a9b191cbe7d2592"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/authoritative-source.txt",
+      "sha256": "e6e926a09ba55db821beb33aa263cabce8526a87168a1151ff78b7136756a5cf"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/procedure-before.json",
+      "sha256": "bcbf3fc0ad53b4ddef8849bc8dc74cdebb08ba1f41d80d92b188275a82720958"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/procedure-after.json",
+      "sha256": "bcbf3fc0ad53b4ddef8849bc8dc74cdebb08ba1f41d80d92b188275a82720958"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/no_memory/stdout.jsonl",
+      "sha256": "c1ce690bab7ee80a99bfd5dca145380d42c3b15284cb3eee9c6ca0bdd0c65f6d"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/no_memory/relay.json",
+      "sha256": "caf508eaf4dd22e10abb686b2757deb7e0d391019a4d0a8143436df23f0e6691"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/no_memory/prompt.txt",
+      "sha256": "695e6a15638851a0645f7db077c3a85dcec1aa91a608b5ca8ec76b1d2d867c3a"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/stale_memory/stdout.jsonl",
+      "sha256": "b6f093cbb42add81ad48547fcfbba70d465103ac56fa3848dbca55568a590109"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/stale_memory/relay.json",
+      "sha256": "b00ce40858bd0135aa210d8d6052faaf71941c26e24dd7774b9b806295399adb"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/stale_memory/prompt.txt",
+      "sha256": "7f6ce8fc04fa7af9578e6c0499615c3035a455e5d632fc6e81cdc32c0a2244d7"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/corrector/stdout.jsonl",
+      "sha256": "66fa0c562c9c6d161063acec44c767a6a8bf14c84bb2bf7e27dc8acc17e6be32"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/corrector/relay.json",
+      "sha256": "8e701b3a95162bdd8f6db25829af265ea913d44bfab8efa32829183f5bee93a6"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-model-a/corrector/prompt.txt",
+      "sha256": "beeb8e0f44274525b33cf4150c73b6cbf3f86cff79046efb4ac4089fbc66b82f"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-trial.py",
+      "sha256": "df016f4631ed5b48444b881bd2667966bd9fb27fee758b31cddfc1e240834137"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-db.sh",
+      "sha256": "ad4e41e849d9cf9296f07ae33e7e764ff5eadf09d685179eed380194fa7180a6"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-review.py",
+      "sha256": "8fdd5be3c3e010b2e8025250e54e5e1bf0450560787ef0e1a31225c7d6c75d3f"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-review-b.py",
+      "sha256": "5b4ea44d2c2387ee7dbed58edd41ea9f022628d8bc3672004050b045d36aeaba"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-review-c.py",
+      "sha256": "6be04d3e9562f6fe1c2bbd2605e664c5b89e10cf026d355a6373d722619b50ad"
+    },
+    {
+      "path": "/tmp/cairn-note-correction-assessment-clarification.json",
+      "sha256": "369d618f8136e20722066c04c94dcecede883348f5aee5f1797a9cff336c0dcc"
+    },
+    {
+      "path": "/tmp/cairn-codex-correction-before.json",
+      "sha256": "3d92f376d49b723e583cf98da41d5c93ef1eaa3c9fa667d649b97b0313c3f7fb"
+    },
+    {
+      "path": "/tmp/cairn-codex-correction-request.json",
+      "sha256": "9243c6ccd5f9bad29733ebd966956ba07981d34df29baef66ef095269642a774"
+    },
+    {
+      "path": "/tmp/cairn-codex-correction-result.json",
+      "sha256": "a447f97ab190a32cc7d0cef64359796ebf20ada0ebbb201a4136994f2bcd1bb7"
+    },
+    {
+      "path": "/tmp/cairn-codex-correction-verify/report.json",
+      "sha256": "ed909a9c168b88534a5ce0358e24552f110fef84471f8cfde6682a35e399d9a9"
+    },
+    {
+      "path": "/tmp/cairn-correction-report-inspected.md",
+      "sha256": "582a625b1538fc7a23cfad14f8879229ddab6fd9b0210e728cfe706495e87a4c"
+    }
+  ],
+  "limits": {
+    "corrector_requests": 8,
+    "reader_requests": 6,
+    "control_requests": 2,
+    "corrector_output_tokens": 4096,
+    "reader_output_tokens": 2048,
+    "control_output_tokens": 1024,
+    "corrector_seconds": 180,
+    "reader_seconds": 120,
+    "response_seconds": 90
+  },
+  "conditions": [
+    {
+      "arm": "no_memory",
+      "requests": 2,
+      "elapsed_seconds": 16.397871421882883,
+      "process_state": "exited",
+      "exit_code": 0,
+      "receipt_id": "5a015429-49b9-46e8-a1bd-2b61d707d98c"
+    },
+    {
+      "arm": "stale_memory",
+      "requests": 4,
+      "elapsed_seconds": 71.3371025940869,
+      "process_state": "exited",
+      "exit_code": 0,
+      "receipt_id": "1499efb8-df45-4cd9-beb0-e344ff2ca46c"
+    },
+    {
+      "arm": "corrector",
+      "requests": 4,
+      "elapsed_seconds": 60.02010798687115,
+      "process_state": "exited",
+      "exit_code": 0,
+      "receipt_id": "4491bd89-d8dc-4095-9395-552dc99dd929"
+    }
+  ],
+  "review": {
+    "assessment_corrections": [
+      {
+        "arm": "no_memory",
+        "version": 2,
+        "task_outcome": "unknown",
+        "failure_domain": "unknown",
+        "failure_kind": ""
+      },
+      {
+        "arm": "corrector",
+        "version": 2,
+        "task_outcome": "unknown",
+        "failure_domain": "binding",
+        "failure_kind": "quota"
+      }
+    ],
+    "procedure_unchanged": true,
+    "citation_count": 2
+  },
+  "skipped": [
+    "after_correction",
+    "direct_source"
+  ],
+  "operational_correction": {
+    "thread_id": "01a0855d-941c-7590-abc6-1f6e28352fd2",
+    "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+    "version": 4,
+    "exact_saved_body": true,
+    "model_turns_started": 0
+  },
+  "limits_of_claim": [
+    "Single fixed-order cohort with different role budgets",
+    "No successful model-selected correction or downstream task improvement",
+    "Original and corrected assessments retained",
+    "Operational note correction selected by this coding agent; native verification started no model turn"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-c73ea2eb2d668dd3",
+    "packet_sha256": "cecbfba17a27d8ead63b421eede0fbc3ed12e59528c07b12bec4651fef238b2e",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "receipt": "/tmp/cairn-correction-decision.json",
+    "receipt_sha256": "d40a646be8924ffa9793fe7ac354a3141adf925a44b74f75092ce6113c0dc6cf",
+    "status": "abstained",
+    "residuals": "/tmp/cairn-correction-residuals.json",
+    "residuals_sha256": "a933bf167454b4f91be1813c6ea8985d0b40a79a73d1787248042013558af89e",
+    "citation_result_sha256": "cdd4be874cb8cd32e94b3c01a673a5bad12531b2677d1defd0297861e003af89"
+  }
+}

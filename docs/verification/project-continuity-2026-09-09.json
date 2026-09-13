@@ -1,0 +1,143 @@
+{
+  "schema": "cairn.project-continuity/1",
+  "notes": [
+    {
+      "topic": "priorities",
+      "record_id": "91c075c2-32d2-4fc7-83dd-68a4956fff8d",
+      "version": 1,
+      "kind": "decision",
+      "body_sha256": "9c52b70d75265b3ca972d4280086beafd8b7faea450630bd32255cea996231a8",
+      "source_commit": "fff9b664dafcfd2ea13808ce017af1e4bbdcfa13"
+    },
+    {
+      "topic": "value",
+      "record_id": "30681751-37ae-4c70-9543-3697f95d3fdc",
+      "version": 1,
+      "kind": "decision",
+      "body_sha256": "ce957a3027dce0f09fa9654ff36ba6ce0f29826d802e92fe441fac43b8466111",
+      "source_commit": "fff9b664dafcfd2ea13808ce017af1e4bbdcfa13"
+    },
+    {
+      "topic": "history",
+      "record_id": "5dd22562-20c7-4267-957b-d8f463cbb177",
+      "version": 1,
+      "kind": "preference",
+      "body_sha256": "241e44fe5cc9b509a7539fee2087c23919e761ea2a342be0c6772aee9ccb424c",
+      "source_commit": "fff9b664dafcfd2ea13808ce017af1e4bbdcfa13"
+    }
+  ],
+  "retrieval": [
+    {
+      "name": "priorities",
+      "semantic": false,
+      "rank": null,
+      "discovery": null
+    },
+    {
+      "name": "priorities",
+      "semantic": true,
+      "rank": 1,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "2772d653b22240b2f0005e13ddbff08ab933285f7f24e9ffaf0de5e21721142e"
+      },
+      "exact_pull": true
+    },
+    {
+      "name": "value",
+      "semantic": false,
+      "rank": 1,
+      "discovery": null,
+      "exact_pull": true
+    },
+    {
+      "name": "history",
+      "semantic": false,
+      "rank": 1,
+      "discovery": null,
+      "exact_pull": true
+    }
+  ],
+  "capture": "deliberately selected summaries",
+  "scope": "ordinary hosted profile in Cairn repository",
+  "model_turns_started": 0,
+  "task_value": "not established; prospective continuity benefit",
+  "source": [
+    {
+      "path": "core/assessment.go",
+      "sha256": "759b26c3a6466c5e67a531e1bc388a06b23a0ca9c6d3e371962e3514e42193ee"
+    },
+    {
+      "path": "docs/use-outcome-loop.md",
+      "sha256": "539e8a884bb89d054ca98fb0c6da34aa517966d9b822e046317e1a585f4ab90d"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "2ee9d46a1cbaf62e2cfd49caee913473696858fc9f55179782c9d86824b776c6"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-project-continuity/capture.py",
+      "sha256": "1c443de9a4a67a4e381105105b8fb2a906f10ec4a9438e55382e57c53ccbe33f"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/history-capture.json",
+      "sha256": "dd2d6ba6027375f3b96d56406585b49ea18c769e2bc328b1a2aef8dac7a6e10f"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/history-fresh-pull.json",
+      "sha256": "7334aa8432092f146df745f7703292eea224ef65d226420bce454b92a0edcb41"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/history-lexical.json",
+      "sha256": "5535860b65261e4f03782d7ceea879e54c46e94c9f1c0b48c584897e5a4416bd"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/history-request.json",
+      "sha256": "95bb16e9faf61af8ce97c554cc5fcaf5ca3f5bdf4e01e8863a5de67fa0562540"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/priorities-capture.json",
+      "sha256": "9df293233b57f3d814a9093c59742f27b1d0df25b43bbedb80e12fc1c8714bf4"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/priorities-fresh-pull.json",
+      "sha256": "825a25f030c42c7da63b41d94d3837247ec99424cf5b712840087a65df1f87db"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/priorities-lexical.json",
+      "sha256": "ab73aac9f8ec0b5314b373a7e4b60e41b2544b31436a62c3585c3a5e97dbf1fc"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/priorities-request.json",
+      "sha256": "5e6e79a36aca118ccaca3196ddf18d3a2ad1115c4cb1b7da223e03c2030ff366"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/priorities-semantic.json",
+      "sha256": "dbf523d184e4eb88a6d29ceb63e995a3753c36e93e4f1ca0fea22edeb92074c7"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/retrieval.json",
+      "sha256": "691572c7242d84e2d2697fe2a0639f93b19f4eaefe3e14a4a0a7726a018a5016"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/value-capture.json",
+      "sha256": "cd1d3a4774fe09b9d39bd5473356f59de0acb69aa7a5373921c56a7b3858c7db"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/value-fresh-pull.json",
+      "sha256": "24500053ad1ca12031febb1691a35cda890338a21c71368bd5074553fe687f5d"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/value-lexical.json",
+      "sha256": "8de735c8a4562181c8fdaff2be5305a3827f5e17ff0b604041184037fa2f558c"
+    },
+    {
+      "path": "/tmp/cairn-project-continuity/value-request.json",
+      "sha256": "36594eb36284d8a6df1d8f882047cd1227dc420d316de8957f88de3cbee80557"
+    }
+  ]
+}

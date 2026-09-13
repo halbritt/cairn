@@ -1,0 +1,276 @@
+{
+  "schema": "cairn.refusal-detail-verification/1",
+  "baseline_commit": "5eb9d0f20a924218fa399674aecf9893843b0ed4",
+  "source_hashes": {
+    "core/compiler.go": "2d4e42d0dfad89cd9a557600f33c8d75b7f4c5076e6de0d0e533c78534e1b91c",
+    "core/refusals.go": "967634192bb0735419a1e96881b60245d810a4894bf1f36656c170db378ea02d",
+    "core/refusal_details_test.go": "a9cfec9efaeacfe30c46dd3080d9c8120f9521f72fae71eab46060c490a4f09a",
+    "scripts/check-local-api.py": "1054333bc142c493d4390b047b8e140949b2d468bdba37cdc82ea55c033ac316"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-refusal-detail-final-integration.log",
+      "sha256": "a5a6b5cdb91baa8165d86942ca2576d1aee5633dc77b6eb3fe29ba3ce4983ab4"
+    },
+    {
+      "path": "/tmp/cairn-refusal-detail-final-tests.log",
+      "sha256": "2426e597e3457bdadada7ecd399ce914f0b8948ea5c1d16df82f8af8dff7ffae"
+    },
+    {
+      "path": "/tmp/cairn-refusal-detail-final-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    }
+  ],
+  "checks": {
+    "integration": "passed",
+    "test": "passed",
+    "check": "passed"
+  },
+  "model_inference_calls": 0,
+  "limits": [
+    "Partial trace only",
+    "No automatic expiry or purge; bounded per observation only",
+    "R3 and R5 remain partial",
+    "No measured downstream task benefit"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-472cc950f4fb719e",
+    "packet_content_sha256": "472cc950f4fb719ec9dd0cac52a00b1e10b283f2a18ae191028988085c7e371e",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "decision_path": "/tmp/cairn-refusal-detail-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface, method set, dependency direction or replaceable consumer boundary changes. Existing structs and retention functions are extended directly."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface, method set, dependency direction or replaceable consumer boundary changes. Existing structs and retention functions are extended directly."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface, method set, dependency direction or replaceable consumer boundary changes. Existing structs and retention functions are extended directly."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface, method set, dependency direction or replaceable consumer boundary changes. Existing structs and retention functions are extended directly."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-952f31ce8fb4e7e5",
+        "required_by": "performance-measurable-objective",
+        "requirement": "accepted workload and operation boundary",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-8d7fadd3f9df0843",
+        "required_by": "performance-measurable-objective",
+        "requirement": "authority to inspect the target and identify the objective owner",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-307c4962372daddd",
+        "required_by": "performance-measurable-objective",
+        "requirement": "environment, input distribution and scale, concurrency, and success/failure population",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-70683f1dd9ca60e5",
+        "required_by": "performance-measurable-objective",
+        "requirement": "latency percentile, throughput, CPU, memory, I/O, network, cost, or other metric with a target",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-61e26c432823a48a",
+        "required_by": "performance-measurable-objective",
+        "requirement": "owner for the objective and any quality tradeoff",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ebb0884635b738d8",
+        "required_by": "performance-memory-lifecycle",
+        "requirement": "allocation and in-use/retention evidence",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-6bfcad289866a04a",
+        "required_by": "performance-memory-lifecycle",
+        "requirement": "owner/reference/lifetime path",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-8b5e13628c141b96",
+        "required_by": "performance-memory-lifecycle",
+        "requirement": "precise memory metric and interval",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-aa0ad2a3a62183a3",
+        "required_by": "performance-memory-lifecycle",
+        "requirement": "representative macro memory behavior",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-e41b3aaffb0a2b98",
+        "required_by": "performance-metric-semantics",
+        "requirement": "access to instrumentation definition or benchmark harness",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-77d255f6e4aa9b9d",
+        "required_by": "performance-metric-semantics",
+        "requirement": "instrumentation definition and configuration",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-2b915a3e29486ac5",
+        "required_by": "performance-metric-semantics",
+        "requirement": "instrumentation overhead and data-loss limits",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-5d78e0165dbf2ff9",
+        "required_by": "performance-metric-semantics",
+        "requirement": "sanity check against actual runtime behavior",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf68c6c3274c65da",
+        "required_by": "performance-metric-semantics",
+        "requirement": "unit, aggregation window, population, and sampling behavior",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-5674473a3dbd4153",
+        "required_by": "performance-profile-causal-bottleneck",
+        "requirement": "direct versus cumulative contribution and concurrency boundary analysis",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-9c6345eceaef94e6",
+        "required_by": "performance-profile-causal-bottleneck",
+        "requirement": "profile type and sampling/granularity semantics",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-e5d5683f663216c1",
+        "required_by": "performance-profile-causal-bottleneck",
+        "requirement": "representative workload, version, and profile interval",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b7f9a3ec8e8395df",
+        "required_by": "performance-profile-causal-bottleneck",
+        "requirement": "reproducibility or independent corroboration",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No performance or memory-usage improvement claimed. Existing metadata retention is bounded per observation only; no profiling-based change is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "The named generic procedure is not separately claimed. The reviewed result explicitly records no-change alternatives, preserved behavior, new failure detail and scoped validation."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "The named generic procedure is not separately claimed. The reviewed result explicitly records no-change alternatives, preserved behavior, new failure detail and scoped validation."
+      }
+    ]
+  },
+  "deployment": {
+    "commit": "b846d04610c9950b6083933c9f0d1765bc13be84",
+    "sha256": "1152793c97bd956b1a5c416d844c3bdebf6c7ae705318fc6a1680e0d17d710ca",
+    "api_pid": 2907273,
+    "semantic_worker_preserved": true,
+    "postgres_not_restarted": true,
+    "hosted_search_pull": "passed exact current storage note v2",
+    "hosted_budget_refusal": "BUDGET_REFUSED with opaque id",
+    "hosted_refusal_inspection": "AUTHORITY_DENIED",
+    "protected_operational_trace_read": false,
+    "report_path": "/tmp/cairn-refusal-detail-deployment/report.json",
+    "report_sha256": "5dd8683c9ac5f4289931c3e992a2fcb5f3593b03167cfbf9c25498edb4a539b6"
+  }
+}

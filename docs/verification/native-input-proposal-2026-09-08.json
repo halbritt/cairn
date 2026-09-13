@@ -1,0 +1,26 @@
+{
+  "schema": "cairn.native-input-proposal/1",
+  "striatum_source_commit": "a6b1ae71d95cdf99200c10d8c6ce855d9da70a69",
+  "request_ref": 408328,
+  "subject": "striatum-next/passes/cairn-native-context-input-20260908",
+  "target": "captured",
+  "request_phase": "satisfied",
+  "intent_capture_run": 408357,
+  "run_closure": "submitted",
+  "accepted_intent_head": 408364,
+  "read_only_planner_unmet": [],
+  "striatum_source_changed": false,
+  "manual_drive_triggered": false,
+  "unrelated_requests_or_timers_changed": false,
+  "proposal": "declared Cairn observation consumed by build as an exact ECR packet/run input",
+  "proposal_accepted": false,
+  "native_delivery_implemented": false,
+  "doctrine": {
+    "packet_id": "pkt-7e9933beb3fab6e1",
+    "packet_content_sha256": "7e9933beb3fab6e1728837ff1fd75cca30d4b59ecc44e38c972d1cf1c1783120",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "nonmaterial_to_proposal_obligations": 15
+}

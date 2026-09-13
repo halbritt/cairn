@@ -1,0 +1,273 @@
+{
+  "schema": "cairn.binary-evidence-capture-verification/1",
+  "baseline_commit": "9cffda1eaf7d6e492b8ad058c3ee77f158d4bcf9",
+  "checks": {
+    "static": true,
+    "go_python": true,
+    "python_tests": 40,
+    "disposable_pg_race_integration": true,
+    "stdio_mcp": true,
+    "cli_binary_capture_and_qualified_pull": true,
+    "legacy_text_retry": true,
+    "answering_model": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-a984b24a12c8404d",
+    "packet_content_sha256": "a984b24a12c8404d79351f23bec16e7fbf5f33267251eb85c3c563e01d345862",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "expert distinction of sameness over time",
+        "required_by": "domain-identity-entity",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "identity scenarios",
+        "required_by": "domain-identity-entity",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "identity source and comparison rules",
+        "required_by": "domain-identity-entity",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "lifecycle or reference consequences",
+        "required_by": "domain-identity-entity",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "authoritative examples",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "authoritative expert examples",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "feedback from implementation and usage",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "model expressed in executable behavior",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "terms whose meanings affect decisions",
+        "required_by": "domain-language-model-loop",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "business differentiation and product lifespan",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "business-value and expert-access evidence",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "expert access and feedback cadence",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "recurring ambiguity, contradiction, or rule defect",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "team capacity to sustain the model",
+        "required_by": "domain-modeling-investment-gate",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing evidence entity and request identity are unchanged; no domain-modeling initiative or Go interface introduced."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-binary-capture-evidence-authority.json",
+      "sha256": "fe253d6738313e5ce7b597eee1a86d7c44b7e7aee9b99517d9e6d3c9f00329da"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-evidence-implementation.json",
+      "sha256": "b320e00824f3fb396c9f0f5049dc33d546188537b2a7dfa4dd481a1d1872c22f"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-evidence-contracts.json",
+      "sha256": "ab08417053aa46343cb8030e85cb53ea2dd26d6a1c1a52b4eeb96c1d08990e83"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-evidence-tests.json",
+      "sha256": "d7d4760bbd55ee6b5439ba2d42dc74d998987fe0db40b7b472b253efc37cd267"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-red.log",
+      "sha256": "43fda6601487bc1a3e84bec704fbd2550240a72622b5106dfdc56aa30747dbec"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-intent-red.log",
+      "sha256": "f87611ff67bac4978290cc004dc6512ed2effbb38a61821bf79fb2818fd0518e"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-intent-green.log",
+      "sha256": "0fd529c8cb5e5d55b9baa6185b291e67881ac0661f2a95d5f76d251214aad26f"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-target.log",
+      "sha256": "0b0f01bf38550b7b19bae292b39940b41cddb274b644d8dc37882b4bf12fd660"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-tests.log",
+      "sha256": "ddcbd6c669162f11effb01ebb59b21aa80b25a01b6f852d4519854cbb1ea67a5"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-integration-final.log",
+      "sha256": "1c3659a01e5fd8352296435b62cb04f2ccb5f5e82c93c45131f329654f044dfe"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-compatibility.json",
+      "sha256": "03e739c35eaaf3680ac8e74ba8d430d042fe5c6b844f28a63cf07ddaefe90e40"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-decision.json",
+      "sha256": "f4da2dcb608318fa66ee203d27eb2690bbdfdff0ebf5b8ff205ae3a547f8f277"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-doctrine.json",
+      "sha256": "71b0859f88903347a74f63d85233fdec59836da808e5b226fde26faf54f16e06"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-doctrine-final.json",
+      "sha256": "8ed4163a4ec375f5c0aa6016d255465940bab9ce06efe77972e44b31865b09ff"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-citations.json",
+      "sha256": "bb6e080b70deb2dd9ea2561bb624eca907d26f2bce67af29127d2ac4b379073b"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-citations-final.json",
+      "sha256": "5d43066ee6809656a08afd33b81829dcd2f8c7b55b23890395f4c6a0565a5b84"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-deployment/installation.json",
+      "sha256": "f12bd1861c36a87810c9af48de0383c069b314b2b0546d230dd1e989d4faf424"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-deployment/versions.json",
+      "sha256": "a7651bdc6451818b925028882e197a164c7b54f98cf6bc4dacad741f7ee0f53f"
+    },
+    {
+      "path": "/tmp/cairn-binary-capture-deployment/guidance.json",
+      "sha256": "36363eb8aaa1b23c46527038d50b3c4d97b36a458dc103b691bcbf1318619c57"
+    }
+  ],
+  "installation": {
+    "source_commit": "386eae14cb1ad4d44e6bd61a56601217c14d4fe4",
+    "installed_sha256": "332601448045c160ca95c88de27100a6bcf9104e6bfb120403d0f609a68d8260",
+    "before": {
+      "cairn-api.service": {
+        "MainPID": "736082",
+        "ActiveState": "active",
+        "exe_sha256": "e73a06fe06c0983b3e88ab329f3a666fc0ef1336ea6e58447ef8662a6bd501dc"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "after": {
+      "cairn-api.service": {
+        "MainPID": "825681",
+        "ActiveState": "active",
+        "exe_sha256": "332601448045c160ca95c88de27100a6bcf9104e6bfb120403d0f609a68d8260"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.opencode/tools/cairn.ts": "e0b2c2d4dba5a5daaec53f55643f2cbba34d459e1c0b013d97275c3232519ecd",
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "bb97a6690041a004c3385743b3b860394f635995d8b63781501900527b2793cd"
+    },
+    "backup": {
+      "path": "/home/halbritt/.local/share/cairn/backups/cairn-20260910T033008-823658.dump",
+      "sha256": "23700a936fcbc8f8b757cd8e52cf0e91b26a2305d1bcc3b64bb4679d5292e231"
+    },
+    "version": {
+      "schema": "cairn.build/1",
+      "go_version": "go1.25.0",
+      "module_version": "v0.0.0-20260910032959-386eae14cb1a",
+      "vcs": "git",
+      "vcs_revision": "386eae14cb1ad4d44e6bd61a56601217c14d4fe4",
+      "vcs_time": "2026-09-10T03:29:59Z",
+      "vcs_modified": false
+    },
+    "migration": false
+  },
+  "guidance": {
+    "record_id": "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+    "previous_version": 4,
+    "version": 5,
+    "sha256": "35cfeec5023e2a6b5851205f6c71aa5b45f23826c546a174f4d7506832f707b8",
+    "previous_body_preserved": true,
+    "metadata_preserved": true,
+    "exact_retry": true,
+    "fresh_pull": true
+  }
+}

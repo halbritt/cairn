@@ -1,0 +1,251 @@
+{
+  "schema": "cairn.agent-env-verification/1",
+  "experiment_revision": "0e7d8ccd326432189cb8cbf774da4064228d1ac1",
+  "repair_revision": "f4c5fe3bf1e59ec3dc83d723de7c18bb3a694ade",
+  "base": "45e37cf9d55c0b85c93e1b5532780a05cb03b4d1",
+  "scenario_sha256": "34e22eed464f77824e910e6921a2c59470d30d1720c6096837a9e3318f4bd7cc",
+  "gate_sha256": "d914a1ed45329733e48f41fd5b81ab6863a89d7085550fdf86a66111d3c84475",
+  "controller_sha256": "a940bfd8b93d837a233d3224fc4d4a61d79c7bb292e324ff662714d5e17b7f73",
+  "lesson": {
+    "record_id": "16a90b22-ae29-436c-a73f-343c7a2dc273",
+    "version": 1,
+    "body_sha256": "32a49cce9065b3d8fbc7bd97fb7978aec04889a2850fd7335afd8cb6f1c2157c",
+    "source_receipt": "ad4f4fad-1400-425c-810b-b08d10513b58",
+    "evidence_id": "f2ca6a4d-dd00-4eb9-9148-1327eec54c5e",
+    "reviewed_dump_sha256": "ff2c80e54eca292c231212ac1ec243a3ad4ac19425cd69d4cea17b0cf245bd7a",
+    "admission": "Exact reviewer-authored A lesson copied as explicitly shareable into this owned disposable trial only; original remains local and unpromoted."
+  },
+  "arms": [
+    {
+      "arm": "no_memory",
+      "process_exit": 1,
+      "duration_seconds": 129.2527266270481,
+      "behavioral_gate": [
+        "pass"
+      ],
+      "all_non_db_go_tests_exit": 0,
+      "formatting_passed": false,
+      "skipped_db_tests": 193,
+      "original_assessment": {
+        "receipt_id": "8aa45d34-df83-48d8-a24d-fdf2813530dc",
+        "version": 1,
+        "task_outcome": "rejected",
+        "failure_domain": "task",
+        "failure_kind": "",
+        "method": "agent-connection-artifact-gate/1",
+        "evidence_ids": [
+          "74e93a47-5a2d-4056-add8-cf833a2f4d73"
+        ],
+        "reason": "Frozen code repair checks; no final prose gate, general benefit claim or production acceptance.",
+        "witness": "instrumented",
+        "observer": "observer:agent-env:no_memory",
+        "observed_at": "2026-09-08T11:57:46.191354-07:00"
+      },
+      "corrected_assessment": {
+        "receipt_id": "8aa45d34-df83-48d8-a24d-fdf2813530dc",
+        "version": 2,
+        "task_outcome": "unknown",
+        "failure_domain": "binding",
+        "failure_kind": "quota",
+        "method": "agent-connection-artifact-gate/2",
+        "evidence_ids": [
+          "7ec11ab9-8fa1-438c-8d80-fedf7c2f2c3a"
+        ],
+        "reason": "Observed local trial request allowance exhausted; candidate checks remain separate.",
+        "witness": "instrumented",
+        "observer": "observer:agent-env:no_memory",
+        "observed_at": "2026-09-08T12:04:29.120156-07:00"
+      },
+      "model_searches": 0,
+      "model_pulls": 0,
+      "exact_lesson_pulled": false,
+      "linked_retrievals": 0,
+      "changed_paths": [
+        "cmd/cairn/agent.go"
+      ],
+      "outside_scope": [],
+      "patch_sha256": "5372da8d53da3473188b839fbbd0797d8a8e253d89d603d96355159c2a1abd12",
+      "candidate_source_sha256": "88509b84bcbdc8cefff16bcc4f3e56ac30b3421906824cd390b572f62ed7740b",
+      "requests": 16,
+      "relay_rejections": 6,
+      "requests_with_reported_cost": 16,
+      "reported_cost": 0.007350099616,
+      "prompt_tokens": 313658,
+      "completion_tokens": 9729,
+      "wrapper_pid": 3531004,
+      "wrapper_pid_present": false,
+      "private_root": "/tmp/cairn-agent-env-model-a/no_memory"
+    },
+    {
+      "arm": "direct_context",
+      "process_exit": 1,
+      "duration_seconds": 171.40588243491948,
+      "behavioral_gate": [
+        "pass"
+      ],
+      "all_non_db_go_tests_exit": 0,
+      "formatting_passed": true,
+      "skipped_db_tests": 193,
+      "original_assessment": {
+        "receipt_id": "d92f3ccc-1b6d-4ce7-a91f-808eda000916",
+        "version": 1,
+        "task_outcome": "rejected",
+        "failure_domain": "task",
+        "failure_kind": "",
+        "method": "agent-connection-artifact-gate/1",
+        "evidence_ids": [
+          "ecf1d106-0dc2-49ec-8314-ca4ed192498d"
+        ],
+        "reason": "Frozen code repair checks; no final prose gate, general benefit claim or production acceptance.",
+        "witness": "instrumented",
+        "observer": "observer:agent-env:direct_context",
+        "observed_at": "2026-09-08T12:01:04.73998-07:00"
+      },
+      "corrected_assessment": {
+        "receipt_id": "d92f3ccc-1b6d-4ce7-a91f-808eda000916",
+        "version": 2,
+        "task_outcome": "unknown",
+        "failure_domain": "binding",
+        "failure_kind": "quota",
+        "method": "agent-connection-artifact-gate/2",
+        "evidence_ids": [
+          "176bb654-c9aa-4f00-be59-de4a862fa141"
+        ],
+        "reason": "Observed local trial request allowance exhausted; candidate checks remain separate.",
+        "witness": "instrumented",
+        "observer": "observer:agent-env:direct_context",
+        "observed_at": "2026-09-08T12:04:29.14527-07:00"
+      },
+      "model_searches": 0,
+      "model_pulls": 0,
+      "exact_lesson_pulled": false,
+      "linked_retrievals": 0,
+      "changed_paths": [
+        "cmd/cairn/agent.go",
+        "cmd/cairn/agent_connection_test.go"
+      ],
+      "outside_scope": [],
+      "patch_sha256": "ee6cb3772a864422d7a37ee1598c44f0ff538948ee8cff0b6019a32c6b429c19",
+      "candidate_source_sha256": "906301068f0223bed1305789174ca7841d46005d86f16714225fbd765ae3c60f",
+      "requests": 16,
+      "relay_rejections": 6,
+      "requests_with_reported_cost": 16,
+      "reported_cost": 0.010814056736,
+      "prompt_tokens": 430022,
+      "completion_tokens": 17944,
+      "wrapper_pid": 3543662,
+      "wrapper_pid_present": false,
+      "private_root": "/tmp/cairn-agent-env-model-a/direct_context"
+    },
+    {
+      "arm": "retrieval",
+      "process_exit": 1,
+      "duration_seconds": 134.471101033967,
+      "behavioral_gate": [
+        "pass"
+      ],
+      "all_non_db_go_tests_exit": 0,
+      "formatting_passed": false,
+      "skipped_db_tests": 193,
+      "original_assessment": {
+        "receipt_id": "574eb61b-3743-41c2-9fad-8ee3888b9d69",
+        "version": 1,
+        "task_outcome": "rejected",
+        "failure_domain": "task",
+        "failure_kind": "",
+        "method": "agent-connection-artifact-gate/1",
+        "evidence_ids": [
+          "bd36d2db-4e86-4271-bc10-33c956a4e4bd"
+        ],
+        "reason": "Frozen code repair checks; no final prose gate, general benefit claim or production acceptance.",
+        "witness": "instrumented",
+        "observer": "observer:agent-env:retrieval",
+        "observed_at": "2026-09-08T12:03:41.575137-07:00"
+      },
+      "corrected_assessment": {
+        "receipt_id": "574eb61b-3743-41c2-9fad-8ee3888b9d69",
+        "version": 2,
+        "task_outcome": "unknown",
+        "failure_domain": "binding",
+        "failure_kind": "quota",
+        "method": "agent-connection-artifact-gate/2",
+        "evidence_ids": [
+          "ddf4a4a8-9fd9-45cb-8c66-134ac52957e4"
+        ],
+        "reason": "Observed local trial request allowance exhausted; candidate checks remain separate.",
+        "witness": "instrumented",
+        "observer": "observer:agent-env:retrieval",
+        "observed_at": "2026-09-08T12:04:29.172676-07:00"
+      },
+      "model_searches": 0,
+      "model_pulls": 0,
+      "exact_lesson_pulled": false,
+      "linked_retrievals": 0,
+      "changed_paths": [
+        "cmd/cairn/agent.go"
+      ],
+      "outside_scope": [],
+      "patch_sha256": "74207e54a1aa040f539116a689cbf4f236ef6387f80316ff24c4096f0ea859f0",
+      "candidate_source_sha256": "1c2159a1df688ff0a6ea8043ab216111a884c17138299ad8a6986889f0718fd9",
+      "requests": 16,
+      "relay_rejections": 6,
+      "requests_with_reported_cost": 16,
+      "reported_cost": 0.012517680976,
+      "prompt_tokens": 474161,
+      "completion_tokens": 11403,
+      "wrapper_pid": 3566513,
+      "wrapper_pid_present": false,
+      "private_root": "/tmp/cairn-agent-env-model-a/retrieval"
+    }
+  ],
+  "calibration": {
+    "root": "/tmp/cairn-agent-env-calibration-a",
+    "baseline_failed": [
+      "explicit_without_home",
+      "empty_token",
+      "empty_socket",
+      "invalid_flag_without_home"
+    ],
+    "reference_passed": 11
+  },
+  "original_dump_sha256": "3f48dc1600ba312caec431d834878bb74dc6e47485dc0f78778bd31f3cb67eea",
+  "reviewed_dump_sha256": "eef82909a3ced3a93cbe5b44f3cef6506e296048575733b35120c4c99a67aa0d",
+  "install": {
+    "schema": "cairn.agent-env-install/1",
+    "revision": "f4c5fe3bf1e59ec3dc83d723de7c18bb3a694ade",
+    "ci_id": 34266592872,
+    "client_sha256": "2af2ec68fb35719fffb3b6b9b9ee111d5af65b21d03222a2b01b71c342764437",
+    "old_probe": {
+      "exit_code": 7,
+      "status": "STORE_ERROR"
+    },
+    "new_probe": {
+      "exit_code": 3,
+      "status": "NOT_FOUND"
+    },
+    "home_variables_absent": true,
+    "operator_database_address_unusable": true,
+    "api_pid": 3421974,
+    "api_binary_sha256": "dbcee2e64c675ef4f13a433440822befd515892bcef15218d725eec4405a48c4",
+    "api_restarted": false,
+    "record_versions_unchanged": true,
+    "record_version_digest_method": "sha256 psql rows with trailing whitespace stripped",
+    "record_version_sha256": "004c9c250fe1aae32e725a49fced912258adc3aa7d8a3879883e825ffd126309",
+    "new_operational_memory": 0,
+    "new_model_runs": 0,
+    "previous_binary": "/tmp/cairn-before-agent-env-f4c5fe3",
+    "interpretation": "Installed corrected client reaches the existing live Unix API with explicit paths and no HOME. Random nonexistent record returns NOT_FOUND. API and store retain their existing processes; client-only change needs no server restart."
+  },
+  "verification": {
+    "integration": "make test-integration: passed; isolated clusters, race tests and actual CLI/API probes",
+    "check": "make check: passed",
+    "python_tests": 17,
+    "patch_roundtrip": "git apply --no-index reproduces candidate lacking final newline",
+    "logs": [
+      "/tmp/cairn-agent-env-integration.log",
+      "/tmp/cairn-agent-env-check.log"
+    ]
+  },
+  "interpretation": "No accepted model run; all hit the local request allowance. All three artifact behavioral gates passed; the retrieval arm never used search or pull, so transfer was not tested. Reviewed no-memory candidate supplied the integrated fix. Original assessments retained, with v2 correcting local binding quota to unknown task outcome. No general memory or causal benefit claim.",
+  "reported_total_cost": 0.030681837328
+}

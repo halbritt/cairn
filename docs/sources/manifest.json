@@ -1,0 +1,25 @@
+{
+  "schema": "cairn.design-sources/1",
+  "sources": [
+    {
+      "source": "/home/halbritt/council-artifacts/agent-memory/design/agent-memory-design.md",
+      "snapshot": "docs/sources/agent-memory/design/agent-memory-design.md",
+      "sha256": "1308aaee75c8af7ed30bbc8717527532a88c68731a5d8b571c9127f7dbb49a19"
+    },
+    {
+      "source": "/home/halbritt/council-artifacts/agent-memory/synthesis/producer-attribution-correction.md",
+      "snapshot": "docs/sources/agent-memory/synthesis/producer-attribution-correction.md",
+      "sha256": "0bd0534890108cb55414f17a25f69afef1d3ad102396c09978490255ad52cd3e"
+    },
+    {
+      "source": "/home/halbritt/council-artifacts/agent-memory/synthesis/provenance-synthesis-v3.md",
+      "snapshot": "docs/sources/agent-memory/synthesis/provenance-synthesis-v3.md",
+      "sha256": "31d02bb883ee81aa7fb339162f1f2419f0a8dc3d38a5a1b89516b0770db46194"
+    },
+    {
+      "source": "/home/halbritt/council-artifacts/agent-memory/synthesis/usefulness-synthesis-v1.md",
+      "snapshot": "docs/sources/agent-memory/synthesis/usefulness-synthesis-v1.md",
+      "sha256": "81a08f07ccedba8efa66b774c7060fd56f9d34de7b3869a59b1c82313c9bfb72"
+    }
+  ]
+}

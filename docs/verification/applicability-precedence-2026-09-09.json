@@ -1,0 +1,189 @@
+{
+  "schema": "cairn.applicability-precedence-verification/1",
+  "source_base_commit": "5c59c51f8715c246b772dda804fe033ccc391523",
+  "defect": "First missing context pin masked a later mismatch, falsely refusing inapplicable mandatory policy.",
+  "repair": "A known mismatch excludes before missing context is reported; validity exclusions retain precedence.",
+  "baseline": {
+    "cases": [
+      {
+        "mode": "body",
+        "old_receipt": "b795bfa5-6e22-4298-8f81-f4c0d0cb5418",
+        "old_seal": "blake3:c362b970932264a5657cfb31a8464e1cbae4d40746030304860f5e9c871400b6",
+        "new_receipt": "7ebf7b3e-f4b0-49a6-a2dc-7418b10654dd",
+        "new_seal": "blake3:8838f50530efda58214f010273917e5f0247be1b6bb0b3d09eecdcaa235974f9",
+        "historical_package_identical": true,
+        "old_retry_status": "STALE_PACKAGE"
+      },
+      {
+        "mode": "index",
+        "old_receipt": "5203ad23-ca32-4cd9-b74c-e6ab3a6adbc4",
+        "old_seal": "blake3:706cbbf1f9d159ad7c03b52c6127f0f2a9466f1ec8296409004be5ef39d4683a",
+        "new_receipt": "5b8ff580-82b9-493a-8354-28d1400b4f0c",
+        "new_seal": "blake3:72c07907c8c5dea9a3e1beec63f84e113f19346b46d0135bb64279dca3f9c2bb",
+        "historical_package_identical": true,
+        "old_retry_status": "STALE_PACKAGE"
+      }
+    ],
+    "old_binary_sha256": "08f9579d251baeed1ee120e76a916ddee09e04ddc0304b2246d1847c86e2b0e2",
+    "new_binary_sha256": "abca1b95a84adfaf4d5b1b9ba52418ab971c1445a491ae3eeca8679165901eb0",
+    "mandatory_review": {
+      "old": "POLICY_UNENFORCEABLE",
+      "new": "OK",
+      "matching_task_missing_revision": "POLICY_UNENFORCEABLE"
+    }
+  },
+  "checks": [
+    "Full disposable PostgreSQL/race integration",
+    "All Go and 34 Python tests, vet/format",
+    "Private and shareable mandatory policies, body/index, mismatch and genuinely missing contexts",
+    "Old/new binary historical package identity and STALE_PACKAGE retry behavior"
+  ],
+  "model_inference_calls": 0,
+  "prior_memory": {
+    "record_id": "25adf0b0-7246-4f63-8687-7ccf2770f12a",
+    "version": 1,
+    "contribution": "Read during initial use/outcome inspection; source review subsequently found this applicability defect. No memory discovery or benefit attribution."
+  },
+  "doctrine": {
+    "initial_packet_id": "pkt-78d5002ba5127fb2",
+    "final_packet_id": "pkt-6bdf154a31233a5d",
+    "final_packet_content_sha256": "6bdf154a31233a5d6b7ffb547859d04bb206cc3e8bea46f88a2197be7d5de5a4",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "typed_passes": 1,
+    "decision_receipt": "/tmp/cairn-applicability-precedence-decision.json",
+    "unmet_nonmaterial_count": 30,
+    "unmet_detail": "/tmp/cairn-applicability-precedence-unmet.json",
+    "interpretation": "Initial causal-repair/test-first guidance applied; final evidence reassembly also activated unrelated ingestion/UI/ranking/interface rules, explicitly classified as nonmaterial."
+  },
+  "artifacts": [
+    {
+      "path": "core/currentness.go",
+      "sha256": "80309a02e142c189f807a8eadad09234b247ecd34c0ea83b0adb84906b9c7ce2"
+    },
+    {
+      "path": "core/currentness_test.go",
+      "sha256": "1dafe826e07aa2c8af84f705cc85dcba7060ba49dc83fded8a3bb2f29e70bbd6"
+    },
+    {
+      "path": "core/compiler.go",
+      "sha256": "2104c1084924d2b9c1395a668205ecdfb5c54df70c85c7ffde59d9aa1b3ad45f"
+    },
+    {
+      "path": "core/recompile.go",
+      "sha256": "2bc67ed0189cc548091e88ff9d19b9716d3bae4b1b7e9e3e616ab90a5f5902f0"
+    },
+    {
+      "path": "/tmp/cairn-applicability-before.log",
+      "sha256": "8166066298cdf9d36e22e0ff95f21b698e8f74431838f055228fe6d604fbdbc1"
+    },
+    {
+      "path": "/tmp/cairn-applicability-integration.log",
+      "sha256": "de1e98d688b4d7b386f817e11dec7c2a3b5eb2e85eb3099c7a379fb8e04d0748"
+    },
+    {
+      "path": "/tmp/cairn-applicability-tests.log",
+      "sha256": "56952c25193e21bbafd1a84dbed229387dce44e1870da120302d252d7360ddf1"
+    },
+    {
+      "path": "/tmp/cairn-applicability-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-applicability-compat/report.json",
+      "sha256": "052964d9b2bf2725bbf4459c3fac26403d18cc28702d2d84fe977cfd68edaaf4"
+    },
+    {
+      "path": "/tmp/cairn-applicability-compat.py",
+      "sha256": "cded8e3a2fc36fca01bc1e2acdba99935cb7de86d136864563747cdc2ff67d3b"
+    },
+    {
+      "path": "/tmp/cairn-applicability-precedence-decision.json",
+      "sha256": "d00842138aefda1c990d1b5b94ca936ab4a7a7254f60eac25843b9d3aaf908a4"
+    },
+    {
+      "path": "/tmp/cairn-applicability-precedence-doctrine.json",
+      "sha256": "bb353d6969e0765b6488b5a76c7e0f0d00880c0f336b89b295e62e2378e853cc"
+    },
+    {
+      "path": "/tmp/cairn-applicability-precedence-doctrine-final.json",
+      "sha256": "88970f369226b7fa93bd745f9047305a26e93ba07f6e19756f835fdef599b80e"
+    },
+    {
+      "path": "/tmp/cairn-applicability-precedence-unmet.json",
+      "sha256": "c31383b813e05910c443be1a2fd87c45b283c1fdf8430d2d558384134815a8a5"
+    },
+    {
+      "path": "/tmp/cairn-applicability-precedence-citation-initial.json",
+      "sha256": "e574211adcec5bbd03b4a7e4606909cbd7b9179ca4513cab77bb803060b5aee6"
+    },
+    {
+      "path": "/tmp/cairn-applicability-precedence-citation-final.json",
+      "sha256": "2f1621683145be016c509a16c051077b6fd952048a9a079d48c9eb0ba177244f"
+    },
+    {
+      "path": "/tmp/cairn-applicability-deployment/installation.json",
+      "sha256": "b8f7eed01839f598a22d23b6c428fd2e878413e44e55f21e4ad828a524d9904f"
+    },
+    {
+      "path": "/tmp/cairn-applicability-deployment/lesson.json",
+      "sha256": "7550b497dad1de3cb6012d0bc71cf821bec67c3c9e550868e903882490a34af5"
+    },
+    {
+      "path": "/tmp/cairn-applicability-ci.json",
+      "sha256": "96392e95b52c0284534f1db0676e763c6098a1b107b8ae50a6782982d4fde6b7"
+    },
+    {
+      "path": "/tmp/cairn-applicability-backup.log",
+      "sha256": "18080bbcc13186cb8fc63e79d8a60c714a3dd68b5479b2f4dfd43286a9ec7d68"
+    }
+  ],
+  "limits": [
+    "No model-selected task or incremental memory-value claim",
+    "Declared pins do not certify workspace state",
+    "Legacy histories remain original decisions; fresh requests use repaired precedence"
+  ],
+  "installation": {
+    "revision": "63f63ed4f1c08abc2e05b68e9ff4ea2ea1f69e9d",
+    "sha256": "210c90cdac5515fa71a668470683c6488e7d4ddc0c780139e04b55d3425c1ca5",
+    "previous_api_pid": 4121278,
+    "store_pid": 163669,
+    "backup_path": "/home/halbritt/.local/share/cairn/backups/cairn-20260910T000655-189848.dump",
+    "backup_sha256": "54b6bebbdf285aa470efb23065dc5b4e37dc42376a7f94a4b39e316ef03d8aaf",
+    "configuration_sha256": {
+      ".opencode/tools/cairn.ts": "b7590a3e061133ef55ae41b949147bd30b6a6773c51edf820a76bf54b992b53d",
+      ".opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      ".codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "bb97a6690041a004c3385743b3b860394f635995d8b63781501900527b2793cd",
+      "/home/halbritt/.local/share/cairn/semantic/worker-stream": "33a97b9b1b6a86d1ec462ed375b412364361a60dbff189eaeab122d0fb90fcd0",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "290a93245909186c905708f328c276dc074232ef4fcd08c52f02ec56264a4fb5"
+    },
+    "api_pid": 191214,
+    "api_restarted": true,
+    "hosted_retrieval_receipt": "30b405f1-b830-4632-bf35-2d20e6ae3c13",
+    "read_record_id": "25adf0b0-7246-4f63-8687-7ccf2770f12a",
+    "read_record_version": 1,
+    "read_body_sha256": "b4ca91d980ab00ac774081d5ab931d9bedb91659e944c10bcf969430f8ac1220",
+    "discovery": {
+      "state": "ready",
+      "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+      "algorithm": "bge-max-chunk/1",
+      "scores_sha256": "196a33a0526db6c5c435d03935aa46c154c66bda07148d1140d3694dfba25b50"
+    }
+  },
+  "saved_lesson": {
+    "record_id": "81751203-8768-49ee-bfce-895efb69889d",
+    "version": 1,
+    "body_sha256": "617555818bf48ce98cdfdfb3204c4cbf821685e6d718c1006c4ab96dd26374ca",
+    "request_id": "1b02f81d-b7ab-43bb-80ff-9ddb070efaec",
+    "exact_retry_verified": true,
+    "fresh_pull_verified": true,
+    "receipt_id": "048ee5d3-bd03-45c1-8eb4-fdf3de265533"
+  },
+  "ci": {
+    "run_id": 34419842234,
+    "commit": "63f63ed4f1c08abc2e05b68e9ff4ea2ea1f69e9d",
+    "conclusion": "success"
+  }
+}

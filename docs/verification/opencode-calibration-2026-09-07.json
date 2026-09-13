@@ -1,0 +1,595 @@
+{
+  "schema": "cairn.harness-calibration/1",
+  "trials": [
+    {
+      "label": "e",
+      "report": {
+        "schema": "cairn.opencode-recurrence/1",
+        "scenario": "striatum-lane-go-cache",
+        "availability": "later_recurrence",
+        "base": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af",
+        "fix": "56840cf694ecf451980abbd694fd3c8c01cbc7d7",
+        "preflight": {
+          "broken": {
+            "exit_code": 1,
+            "actions": [
+              "fail"
+            ],
+            "passed": false,
+            "stdout_sha256": "a7cde84b9eda0dff61c518f8ced9683cbd41fd8f6b33443857d87ace79d27c38",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "reference": {
+            "exit_code": 0,
+            "actions": [
+              "pass"
+            ],
+            "passed": true,
+            "stdout_sha256": "1115475bfcbbb705613d946283157e994e782ac7053ca44959c33045c25d6e5b",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        "scenario_sha256": "576b42d5fb6e5c1a3062e26e6a5ab96017fa3e7a4b53174284f36f2b91cc4ff7",
+        "gate_sha256": "96b0f07a560343ad0e9533f8eb47eb3c2415e9850d07d6c88f0e3a7e9a416c7d",
+        "model": "qwen3.8-27b",
+        "lease_id": "ea3b9ab8-06bc-4428-8413-a4444998f833",
+        "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+        "cairn_sha256": "a4c6cbb6f06ba90a7dd8b0abec84213c34c189aa010789e86e3fecfb2da0af96",
+        "controller_sha256": "ca3a4436822c5c0a90711c6848276c899ea2d1614db395459245848d0c362012",
+        "arms": [
+          {
+            "arm": "repo_only",
+            "process_exit": 124,
+            "duration_seconds": 300.095,
+            "receipt": {
+              "receipt_id": "7c3285f8-0b32-4309-9ffb-d5b38d52b0e9",
+              "seal": "blake3:bbabb20358ff4a8cb494445ba9a4e83234d6c08e30179d968f1d253e38e490ad",
+              "process_state": "timeout",
+              "outcome_id": "ca91c501-eb16-457f-a3bc-d823af537bd4"
+            },
+            "gate": {
+              "exit_code": 1,
+              "actions": [
+                "fail"
+              ],
+              "passed": false,
+              "stdout_sha256": "4df5b61baf34917c1907fb6b0740bdcfc07f37345b6cb82f1fd09b1c3e43be50",
+              "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "changed_paths": [],
+            "outside_scope": [],
+            "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "model_stdout_sha256": "1c96d12e653c63679626043a384065adba374766329e53f892bb4931c18c308f",
+            "model_stderr_sha256": "279dd49dd92bdb9e7237750fa893226bc2bd75218299c5e1e189b0ac1cf5eb3c",
+            "runtime_observed": true,
+            "launch_diagnostics": [],
+            "trace_events": 91,
+            "trace_types": [
+              "step_finish",
+              "step_start",
+              "text",
+              "tool_use"
+            ],
+            "trace_summary": {
+              "tool_events": {
+                "read:completed": 28,
+                "bash:completed": 1,
+                "grep:completed": 3
+              },
+              "finish_reasons": {
+                "tool-calls": 16,
+                "stop": 3
+              },
+              "reported_tokens": {
+                "input": 197458,
+                "output": 5321,
+                "reasoning": 0
+              },
+              "cited_record_ids": [],
+              "citation_method": "exact selected UUID in OpenCode text event; testimony only"
+            },
+            "config_sha256": "c8164c7dddab89d5460e420673167d28337805e285d08ef6286558cf89f0d29d",
+            "selected_records": [],
+            "assessment_join": {
+              "assessment": {
+                "receipt_id": "7c3285f8-0b32-4309-9ffb-d5b38d52b0e9",
+                "version": 1,
+                "task_outcome": "rejected",
+                "failure_domain": "task",
+                "failure_kind": "historical_cache_gate",
+                "method": "cairn.historical-cache-gate/1; operator testimony",
+                "evidence_ids": [
+                  "3e530b64-9432-45c6-b342-e918a6e378ef"
+                ],
+                "reason": "The candidate failed a necessary cache-lifetime condition or the authorized write scope. This is bounded trial assessment, not a Striatum verdict or a capability diagnosis.",
+                "witness": "testimony",
+                "observer": "local-uid:1000",
+                "observed_at": "2026-09-07T16:20:13.672859-07:00"
+              },
+              "citation_observations": [],
+              "run_use_rows": [],
+              "excluded_preflight_rows": 0,
+              "interpretation": "One row per exposed record/version/receipt. Repeated observations do not multiply rows. Exit zero is not acceptance; citations are testimony, inferred use is not citation, and missing telemetry is unknown. Associations do not establish causal benefit."
+            }
+          }
+        ],
+        "limits": [
+          "Later recurrence experiment; memories are captured now from sources that predate the historical repair",
+          "One task and one run per arm cannot establish general causal benefit",
+          "Mechanical regression results are not Striatum graph acceptance",
+          "Future fix and held-out gate are excluded from model workspace"
+        ],
+        "experiment_kind": "harness_calibration",
+        "settings": {
+          "arms": [
+            "repo_only"
+          ],
+          "disable_thinking": true,
+          "output_limit": 8192,
+          "process_seconds": 300,
+          "steps": 20
+        },
+        "records": [
+          {
+            "record_id": "6a1bdf7a-2695-4d93-bc56-6b915f31b965",
+            "version": 2,
+            "source": "3a9550d0b27449bc2655c825dd1ab3af8c7cf946:commit-message",
+            "body_sha256": "3329c3bfc877f77572ccb242152f120a15618d0985ea2a30e6fa35f6f45ca279"
+          },
+          {
+            "record_id": "b8fddb78-0f46-4b00-963a-14cd47864f4f",
+            "version": 2,
+            "source": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af:decisions/D0013-adapter-supervision.md#D0013.C2",
+            "body_sha256": "1e520c4eb0de5cf2375d7bba01243ee76f73dce86edf39343c82c25c631678da"
+          }
+        ],
+        "status": "completed",
+        "selection_preflight": {
+          "repo_only": {
+            "receipt_id": "b7f719f1-8bbe-4168-8263-c523c0f5eecb",
+            "seal": "blake3:bbabb20358ff4a8cb494445ba9a4e83234d6c08e30179d968f1d253e38e490ad",
+            "selected_records": [],
+            "available_tokens": 32000,
+            "optional_limit": 3200
+          }
+        }
+      },
+      "partial_native_observation": {
+        "schema": "cairn.native-calibration-observation/1",
+        "observed_at": "2026-09-07T23:20:06.845721+00:00",
+        "complete": false,
+        "source": "OpenCode 1.18.21 private native database during the active trial",
+        "part_counts": {
+          "text": 22,
+          "step-start": 19,
+          "tool": 32,
+          "step-finish": 19,
+          "compaction": 3
+        },
+        "repeated_target_reads": {
+          "/work/internal/backend/llm/supervisor.go": 4,
+          "/work/internal/backend/supervise/supervise.go": 3
+        },
+        "interpretation": "Compaction and repeated reads observed; their causal contribution to failure is not isolated."
+      },
+      "source_report_sha256": "ee93e7f90f30b474ccd10c453be801191ccfb9196420724020c30b91ca43460a"
+    },
+    {
+      "label": "f",
+      "report": {
+        "schema": "cairn.opencode-recurrence/1",
+        "scenario": "striatum-lane-go-cache",
+        "availability": "later_recurrence",
+        "base": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af",
+        "fix": "56840cf694ecf451980abbd694fd3c8c01cbc7d7",
+        "preflight": {
+          "broken": {
+            "exit_code": 1,
+            "actions": [
+              "fail"
+            ],
+            "passed": false,
+            "stdout_sha256": "7fdc0623c6798a7fdf53d4024ea342999a3ae7c3785e108040a2b817ef215b82",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "reference": {
+            "exit_code": 0,
+            "actions": [
+              "pass"
+            ],
+            "passed": true,
+            "stdout_sha256": "d84da101a8c0b27ff0b38bd1bb197f3f7f9f26a871edafe8ccdd938db63bbf7c",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        "scenario_sha256": "576b42d5fb6e5c1a3062e26e6a5ab96017fa3e7a4b53174284f36f2b91cc4ff7",
+        "gate_sha256": "96b0f07a560343ad0e9533f8eb47eb3c2415e9850d07d6c88f0e3a7e9a416c7d",
+        "model": "qwen3.8-27b",
+        "lease_id": "b3b4263b-07cf-479c-9e39-984fbe336885",
+        "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+        "cairn_sha256": "a4c6cbb6f06ba90a7dd8b0abec84213c34c189aa010789e86e3fecfb2da0af96",
+        "controller_sha256": "c281b7c46d093be630f80943f204452d80db1fea8622e0338b5882171ae2e21f",
+        "arms": [
+          {
+            "arm": "repo_only",
+            "process_exit": 0,
+            "duration_seconds": 149.815,
+            "receipt": {
+              "receipt_id": "c167b860-ac1c-49dc-976a-5cc9575f3b3e",
+              "seal": "blake3:bbabb20358ff4a8cb494445ba9a4e83234d6c08e30179d968f1d253e38e490ad",
+              "process_state": "exited",
+              "exit_code": 0,
+              "outcome_id": "2f9f2d32-c665-4ed1-88ea-6641cd4186d4"
+            },
+            "gate": {
+              "exit_code": 1,
+              "actions": [
+                "fail"
+              ],
+              "passed": false,
+              "stdout_sha256": "9f25c06809c0f6cf41d7c8a178d83cdcd9587938fbdd52c9bfa53fa3fadffcc5",
+              "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "changed_paths": [],
+            "outside_scope": [],
+            "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "model_stdout_sha256": "67dc6cae66db76f67b8f2cfc040b61fb6618b41c5f3ff338b3603fdd9441259f",
+            "model_stderr_sha256": "7ddb896e58785bfb14dd1572a6a8364dbad1d2a932aa73cfede0e16e83791a67",
+            "runtime_observed": true,
+            "launch_diagnostics": [],
+            "trace_events": 87,
+            "trace_types": [
+              "step_finish",
+              "step_start",
+              "text",
+              "tool_use"
+            ],
+            "trace_summary": {
+              "tool_events": {
+                "bash:error": 3,
+                "glob:completed": 2,
+                "read:completed": 19,
+                "grep:completed": 5,
+                "bash:completed": 1
+              },
+              "finish_reasons": {
+                "tool-calls": 19,
+                "stop": 1
+              },
+              "reported_tokens": {
+                "input": 78900,
+                "output": 1663,
+                "reasoning": 0
+              },
+              "cited_record_ids": [],
+              "citation_method": "exact selected UUID in OpenCode text event; testimony only"
+            },
+            "config_sha256": "97513caae326e0ab61ac3308ac9d0447d4397f40daf4fcdd00a2de15e5b01e83",
+            "selected_records": [],
+            "assessment_join": {
+              "assessment": {
+                "receipt_id": "c167b860-ac1c-49dc-976a-5cc9575f3b3e",
+                "version": 1,
+                "task_outcome": "rejected",
+                "failure_domain": "task",
+                "failure_kind": "historical_cache_gate",
+                "method": "cairn.historical-cache-gate/1; operator testimony",
+                "evidence_ids": [
+                  "60337bcd-4254-4730-9598-9a2132794091"
+                ],
+                "reason": "The candidate failed a necessary cache-lifetime condition or the authorized write scope. This is bounded trial assessment, not a Striatum verdict or a capability diagnosis.",
+                "witness": "testimony",
+                "observer": "local-uid:1000",
+                "observed_at": "2026-09-07T16:23:29.455567-07:00"
+              },
+              "citation_observations": [],
+              "run_use_rows": [],
+              "excluded_preflight_rows": 0,
+              "interpretation": "One row per exposed record/version/receipt. Repeated observations do not multiply rows. Exit zero is not acceptance; citations are testimony, inferred use is not citation, and missing telemetry is unknown. Associations do not establish causal benefit."
+            }
+          }
+        ],
+        "limits": [
+          "Later recurrence experiment; memories are captured now from sources that predate the historical repair",
+          "One task and one run per arm cannot establish general causal benefit",
+          "Mechanical regression results are not Striatum graph acceptance",
+          "Future fix and held-out gate are excluded from model workspace"
+        ],
+        "experiment_kind": "harness_calibration",
+        "settings": {
+          "arms": [
+            "repo_only"
+          ],
+          "disable_thinking": true,
+          "context_tokens": 131072,
+          "output_limit": 8192,
+          "process_seconds": 300,
+          "steps": 20
+        },
+        "records": [
+          {
+            "record_id": "8098e654-da47-4a19-82b2-51be05bac7a0",
+            "version": 2,
+            "source": "3a9550d0b27449bc2655c825dd1ab3af8c7cf946:commit-message",
+            "body_sha256": "3329c3bfc877f77572ccb242152f120a15618d0985ea2a30e6fa35f6f45ca279"
+          },
+          {
+            "record_id": "2ee0b484-9271-4253-a559-1bbcc61c5661",
+            "version": 2,
+            "source": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af:decisions/D0013-adapter-supervision.md#D0013.C2",
+            "body_sha256": "1e520c4eb0de5cf2375d7bba01243ee76f73dce86edf39343c82c25c631678da"
+          }
+        ],
+        "status": "completed",
+        "selection_preflight": {
+          "repo_only": {
+            "receipt_id": "7b6fafe6-b910-49f9-9ce6-548ccefc76f5",
+            "seal": "blake3:bbabb20358ff4a8cb494445ba9a4e83234d6c08e30179d968f1d253e38e490ad",
+            "selected_records": [],
+            "available_tokens": 32000,
+            "optional_limit": 3200
+          }
+        }
+      },
+      "partial_native_observation": {
+        "schema": "cairn.native-calibration-observation/1",
+        "observed_at": "2026-09-07T23:23:08.866018+00:00",
+        "complete": false,
+        "part_counts": {
+          "text": 13,
+          "step-start": 15,
+          "tool": 25,
+          "step-finish": 15
+        },
+        "repeated_target_reads": {
+          "/work/internal/backend/llm/supervisor.go": 1,
+          "/work/internal/backend/supervise/supervise.go": 1
+        },
+        "source": "OpenCode 1.18.21 private native database during the active trial"
+      },
+      "source_report_sha256": "8e520de403c4af991396ddac7c413c40c25cbf6ec6e270ff02a75d4d7bc1677c"
+    }
+  ],
+  "server": {
+    "build_info": "b10210-000547513",
+    "n_ctx": 131072,
+    "total_slots": 1,
+    "chat_template_sha256": "12827f24b742ea4e80cdc12dbcf9622227056b9f797252a3149263d4f9aaadce",
+    "enable_thinking_conditions": [
+      "{%- if enable_thinking is undefined or enable_thinking is true %}",
+      "{%- if enable_thinking is defined and enable_thinking is false %}"
+    ]
+  },
+  "thinking_probe": {
+    "schema": "cairn.adapter-probe/1",
+    "version": "1.18.21",
+    "through_cairn_wrapper": false,
+    "thinking_override_requested": true,
+    "binary_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+    "probed_at": "2026-09-07T23:14:32Z",
+    "carrier": "argv",
+    "first_model_request_contains_canary": true,
+    "requests": [
+      {
+        "path": "/v1/chat/completions",
+        "has_canary": true,
+        "enable_thinking": false,
+        "max_tokens": 1000
+      },
+      {
+        "path": "/v1/chat/completions",
+        "has_canary": true,
+        "enable_thinking": false,
+        "max_tokens": 1000
+      }
+    ],
+    "exit_code": 0,
+    "timed_out": false,
+    "stdout_sha256": "2aeb36af84c295821654f9f8c1c9c0200dbe7ff9a015000c3cece706f3378420",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "limits": [
+      "Synthetic local endpoint, no model capability evaluation",
+      "No runtime mediation",
+      "No live user configuration conformance claim"
+    ]
+  },
+  "default_probe": {
+    "schema": "cairn.adapter-probe/1",
+    "version": "1.18.21",
+    "through_cairn_wrapper": false,
+    "thinking_override_requested": false,
+    "binary_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+    "probed_at": "2026-09-07T23:15:54Z",
+    "carrier": "argv",
+    "first_model_request_contains_canary": true,
+    "requests": [
+      {
+        "path": "/v1/chat/completions",
+        "has_canary": true,
+        "enable_thinking": null,
+        "max_tokens": 1000
+      },
+      {
+        "path": "/v1/chat/completions",
+        "has_canary": true,
+        "enable_thinking": null,
+        "max_tokens": 1000
+      }
+    ],
+    "exit_code": 0,
+    "timed_out": false,
+    "stdout_sha256": "ab6e5ee07ecf731cfcaccded5c38ba74bbb695fc9f1f5eee76e66bca30abd06f",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "limits": [
+      "Synthetic local endpoint, no model capability evaluation",
+      "No runtime mediation",
+      "No live user configuration conformance claim"
+    ]
+  },
+  "edit_probe": {
+    "schema": "cairn.adapter-probe/1",
+    "version": "1.18.21",
+    "through_cairn_wrapper": false,
+    "thinking_override_requested": true,
+    "edit_probe_requested": true,
+    "edit_observed": true,
+    "binary_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+    "probed_at": "2026-09-07T23:39:24Z",
+    "carrier": "argv",
+    "first_model_request_contains_canary": true,
+    "requests": [
+      {
+        "path": "/v1/chat/completions",
+        "has_canary": true,
+        "enable_thinking": false,
+        "max_tokens": 1000,
+        "tools": []
+      },
+      {
+        "path": "/v1/chat/completions",
+        "has_canary": true,
+        "enable_thinking": false,
+        "max_tokens": 1000,
+        "tools": [
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "fixture_tool_requested": "read"
+      },
+      {
+        "path": "/v1/chat/completions",
+        "has_canary": true,
+        "enable_thinking": false,
+        "max_tokens": 1000,
+        "tools": [
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "fixture_tool_requested": "edit"
+      },
+      {
+        "path": "/v1/chat/completions",
+        "has_canary": true,
+        "enable_thinking": false,
+        "max_tokens": 1000,
+        "tools": [
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ]
+      }
+    ],
+    "exit_code": 0,
+    "timed_out": false,
+    "stdout_sha256": "623c8c67dfc445452bf422e8de23af0dd982258ede079846c1ae168023488e2f",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "limits": [
+      "Synthetic local endpoint, no model capability evaluation",
+      "No runtime mediation",
+      "No live user configuration conformance claim"
+    ]
+  },
+  "wrapped_edit_probe": {
+    "schema": "cairn.adapter-probe/1",
+    "version": "1.18.21",
+    "through_cairn_wrapper": true,
+    "thinking_override_requested": true,
+    "edit_probe_requested": true,
+    "edit_observed": true,
+    "binary_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+    "probed_at": "2026-09-07T23:32:08Z",
+    "carrier": "argv",
+    "first_model_request_contains_canary": true,
+    "requests": [
+      {
+        "path": "/v1/chat/completions",
+        "has_canary": true,
+        "enable_thinking": false,
+        "max_tokens": 1000,
+        "tools": []
+      },
+      {
+        "path": "/v1/chat/completions",
+        "has_canary": true,
+        "enable_thinking": false,
+        "max_tokens": 1000,
+        "tools": [
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "fixture_tool_requested": "read"
+      },
+      {
+        "path": "/v1/chat/completions",
+        "has_canary": true,
+        "enable_thinking": false,
+        "max_tokens": 1000,
+        "tools": [
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ],
+        "fixture_tool_requested": "edit"
+      },
+      {
+        "path": "/v1/chat/completions",
+        "has_canary": true,
+        "enable_thinking": false,
+        "max_tokens": 1000,
+        "tools": [
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "write"
+        ]
+      }
+    ],
+    "exit_code": 0,
+    "timed_out": false,
+    "stdout_sha256": "e429ad87b0fdc4e7616d9bd7570b7eb875559912b0e00ab040e9c0962e09a36a",
+    "stderr_sha256": "c59c3980b5b81f529d55652b5fd7160799efdeb399d579b78d1ad58b67d6c48b",
+    "limits": [
+      "Synthetic local endpoint, no model capability evaluation",
+      "No runtime mediation",
+      "No live user configuration conformance claim"
+    ]
+  }
+}

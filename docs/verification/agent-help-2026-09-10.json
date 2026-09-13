@@ -1,0 +1,119 @@
+{
+  "baseline_revision": "78128767930bf41f45e69db281d06ee2e59ef88d",
+  "source_sha256": {
+    "cmd/cairn/agent.go": "6324aa5f29adb8cff9ef57276d8323f416644eb0211fb580d91c513ef250ef4b",
+    "cmd/cairn/agent_help.go": "218e05c362cdf9a09a2470533bc9c0ce77a1aede4fecad5af192d2abc1d69c8f",
+    "cmd/cairn/agent_help_test.go": "bf71b35380e30090cb2041ec696364e2ec637f7f7ad9dfef236a2500d3ef75b6",
+    "cmd/cairn/main.go": "d03eb47337f9e9015a2c6b990ccba6aaa9743a2c3bcfa8b8a9e1237ac0343188",
+    "cmd/cairn/commands.go": "256c35797e1933df349c86d501610025b93ceb1a2e9204de0686998964092ff0",
+    "scripts/check_agent_help.py": "3e63263a4c7d27427c7586cfd069d76155ad39e8916c8f6aef07abafbb9efa13",
+    "scripts/check-local-api.py": "11f574006f71e2b32825c4b15d0bc3065329e6f5c669b22a6edff40b8ac8a38e"
+  },
+  "scratch": "/tmp/cairn-agent-help-20260910",
+  "checks": {
+    "baseline-replace.log": "1e0bf4dd19f28b3d17271f7883cf6f2736558d14fd55cc9db9a9bdab57e39e93",
+    "red.log": "a451555f479ab482e768a7bf2e8eccd24b985f516de8ec210f381048672192bf",
+    "green.log": "a9360bdbcf5b2957ba65869dc4bc85c95b44aa8e7e0ed28219352f174145964c",
+    "cli-tests.log": "b35c6bfb704535d14796a872f02d8dfd96e28f54019bb191353cccf4a1de8717",
+    "integration.log": "2ffa0ed59270bc58a1aab9169721f739fc42153b0612e252eeea52039e8c29e1",
+    "integration-isolated.log": "820d57f2446485890037170a5d114e958e4719758daa39685316a090a133dc0d",
+    "final-check.log": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+  },
+  "doctrine": {
+    "packet_id": "pkt-75c52916cc84ed24",
+    "packet_content_sha256": "75c52916cc84ed24bea0c3709908325a25f70259e7ab9902c8ebfe99588c8820",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "doctrine": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "release": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "residual_nonmaterial_obligations": 14,
+    "decision_receipt_sha256": "081039856e2a1553c2a1a7f9c79dcb05a63bad429f74a3ec71effe1f4be5256e"
+  },
+  "installation": {
+    "ci": {
+      "conclusion": "success",
+      "headSha": "03ff22c1e71126c8b3e3b2a609adc020d5a3c2fa",
+      "status": "completed",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34568798147"
+    },
+    "before": {
+      "versions": {
+        "schema": "cairn.version/1",
+        "client": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911055116-3acf719873d0",
+          "vcs": "git",
+          "vcs_revision": "3acf719873d02d260b152a818cc5ee8ca7ef7421",
+          "vcs_time": "2026-09-11T05:51:16Z",
+          "vcs_modified": false
+        },
+        "server": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911050622-bb600c561ce7",
+          "vcs": "git",
+          "vcs_revision": "bb600c561ce7592f6e5b9f4577b17038f1d0fed1",
+          "vcs_time": "2026-09-11T05:06:22Z",
+          "vcs_modified": false
+        }
+      },
+      "cli_sha256": "5db5a131c18be6d6ab842397b463db19adb240cc59126be5073ab15d2a08bcdf",
+      "adapter_sha256": "69d3c3183db5f00cb4781f715bc0746d356e85d2b9ff385836869f56bee7776a",
+      "api_pid": 555696,
+      "api_sha256": "1476433adc7892282cfe6985c466fa05e2a75a83bf4a5e4e4d34167aa9440adb",
+      "store_pid": 163669,
+      "record_inventory": {
+        "versions": 92,
+        "sha256": "f03952c0e6e94b661b3f0782beb08dd4568592c1c3bf3ab4738b327a38f40115"
+      },
+      "configuration": {
+        "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+        "/home/halbritt/git/cairn/.codex/config.toml": "cf95c7a6f4f244d0b26e9c4a0063cccd2c3a93ddce473075dd7e0b0abf7d86d0",
+        "/home/halbritt/.config/opencode/opencode.json": "d207573666654ade4f08e9daf54da70567e4031d183ef108ff24756fbed5879f",
+        "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb"
+      }
+    },
+    "after": {
+      "versions": {
+        "schema": "cairn.version/1",
+        "client": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911061000-03ff22c1e711",
+          "vcs": "git",
+          "vcs_revision": "03ff22c1e71126c8b3e3b2a609adc020d5a3c2fa",
+          "vcs_time": "2026-09-11T06:10:00Z",
+          "vcs_modified": false
+        },
+        "server": {
+          "schema": "cairn.build/1",
+          "go_version": "go1.25.0",
+          "module_version": "v0.0.0-20260911050622-bb600c561ce7",
+          "vcs": "git",
+          "vcs_revision": "bb600c561ce7592f6e5b9f4577b17038f1d0fed1",
+          "vcs_time": "2026-09-11T05:06:22Z",
+          "vcs_modified": false
+        }
+      },
+      "cli_sha256": "56a7ad2878fab0ee43307c267223f02436d511a4fd53e201fc62cfc5e0b9ab10",
+      "adapter_sha256": "69d3c3183db5f00cb4781f715bc0746d356e85d2b9ff385836869f56bee7776a",
+      "api_pid": 555696,
+      "api_sha256": "1476433adc7892282cfe6985c466fa05e2a75a83bf4a5e4e4d34167aa9440adb",
+      "store_pid": 163669,
+      "record_inventory": {
+        "versions": 92,
+        "sha256": "f03952c0e6e94b661b3f0782beb08dd4568592c1c3bf3ab4738b327a38f40115"
+      },
+      "configuration": {
+        "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+        "/home/halbritt/git/cairn/.codex/config.toml": "cf95c7a6f4f244d0b26e9c4a0063cccd2c3a93ddce473075dd7e0b0abf7d86d0",
+        "/home/halbritt/.config/opencode/opencode.json": "d207573666654ade4f08e9daf54da70567e4031d183ef108ff24756fbed5879f",
+        "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb"
+      }
+    },
+    "api_restarted": false,
+    "database_migrated": false
+  },
+  "installed_offline_check": "Passed all nine operation helps, overview, invalid calls, no HOME and open stdin"
+}

@@ -1,0 +1,70 @@
+package llm_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/halbritt/striatum-next/internal/backend"
+	"github.com/halbritt/striatum-next/internal/backend/supervise"
+)
+
+// Observe the real confined runtime and subsequent workspace reclamation. The
+// cache directory name and the implementation used to pass the setting are free.
+func TestCairnRecurrenceRuntimeCacheLifetime(t *testing.T) {
+	requireDelegation(t)
+	marker := filepath.Join(t.TempDir(), "runtime-cache-observation")
+	script := `printf '%s\n%s\n' "$GOCACHE" "$PWD" > ` + marker + `
+if test -d "$GOCACHE"; then printf 'directory\n' >> ` + marker + `; fi
+`
+	supervisor, spool := newSupervisor(t, script)
+	manifestPath, manifest := writeBundle(t, spool, "proposal-generation")
+	submission, err := supervisor.Run(manifest, filepath.Dir(manifestPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = backend.ReadSubmissionManifest(filepath.Join(submission, "manifest.json")); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+	if len(lines) != 3 || lines[0] == "" || lines[2] != "directory" {
+		t.Fatalf("runtime cache directory unavailable: %q", body)
+	}
+	cache := lines[0]
+	workspace := spool.WorkspaceDir(manifest.DispatchID)
+	rel, err := filepath.Rel(workspace, cache)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		t.Fatalf("cache %q is outside lane workspace %q", cache, workspace)
+	}
+	if _, err = os.Stat(cache); !os.IsNotExist(err) {
+		t.Fatalf("cache survived lane reclamation: %v", err)
+	}
+
+	// Preserve ordinary inherited values when no invocation override is supplied.
+	// The marker below reproduces the regression observed in calibration L.
+	t.Setenv("CAIRN_ENV_PROBE", "inherited")
+	t.Setenv("STRIATUM_SUPERVISE_ENV_0", "CAIRN_ENV_PROBE=metadata")
+	valuePath := filepath.Join(t.TempDir(), "environment-value")
+	proc, err := supervise.StartConfined(supervise.Spec{Argv: []string{
+		"/bin/sh", "-c", `printf '%s' "$CAIRN_ENV_PROBE" > "$1"`, "probe", valuePath,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proc.Cleanup()
+	if err := proc.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	value, err := os.ReadFile(valuePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(value) != "inherited" {
+		t.Fatalf("inherited helper metadata changed runtime value to %q", value)
+	}
+}

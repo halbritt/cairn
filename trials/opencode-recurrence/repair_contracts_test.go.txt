@@ -1,0 +1,62 @@
+package llm_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/halbritt/striatum-next/internal/backend/supervise"
+)
+
+// These post-run checks supplement the frozen trial gate. They do not establish
+// full Striatum acceptance, cross-UID behavior, or preparation-failure coverage.
+func TestCairnReviewedRepairContracts(t *testing.T) {
+	requireDelegation(t)
+	t.Run("cache-is-writable-during-invocation", func(t *testing.T) {
+		observation := filepath.Join(t.TempDir(), "cache-use")
+		script := `if test -d "$GOCACHE" && printf cached > "$GOCACHE/cairn-write-probe"; then
+printf '%s\nwritable\n' "$GOCACHE" > ` + observation + `
+fi
+`
+		supervisor, spool := newSupervisor(t, script)
+		manifestPath, manifest := writeBundle(t, spool, "proposal-generation")
+		if _, err := supervisor.Run(manifest, filepath.Dir(manifestPath)); err != nil {
+			t.Fatal(err)
+		}
+		body, err := os.ReadFile(observation)
+		if err != nil {
+			t.Fatalf("runtime did not write its prepared cache: %v", err)
+		}
+		parts := strings.Split(strings.TrimSpace(string(body)), "\n")
+		if len(parts) != 2 || parts[1] != "writable" {
+			t.Fatalf("cache write observation = %q", body)
+		}
+		if _, err := os.Stat(parts[0]); !os.IsNotExist(err) {
+			t.Fatalf("written cache was not reclaimed: %v", err)
+		}
+	})
+	t.Run("explicit-override-preserves-other-inherited-values", func(t *testing.T) {
+		t.Setenv("CAIRN_OVERRIDE_PROBE", "inherited")
+		t.Setenv("CAIRN_UNRELATED_PROBE", "unchanged")
+		observation := filepath.Join(t.TempDir(), "environment")
+		proc, err := supervise.StartConfined(supervise.Spec{
+			Argv: []string{"/bin/sh", "-c", `printf '%s|%s' "$CAIRN_OVERRIDE_PROBE" "$CAIRN_UNRELATED_PROBE" > "$1"`, "probe", observation},
+			Env:  []string{"CAIRN_OVERRIDE_PROBE=explicit"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer proc.Cleanup()
+		if err := proc.Wait(); err != nil {
+			t.Fatal(err)
+		}
+		body, err := os.ReadFile(observation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != "explicit|unchanged" {
+			t.Fatalf("runtime environment = %q", body)
+		}
+	})
+}

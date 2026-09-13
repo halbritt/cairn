@@ -1,0 +1,170 @@
+{
+  "schema": "cairn.opencode-native-tools-verification/1",
+  "baseline_commit": "86f3298",
+  "opencode_version": "1.18.21",
+  "installed_cli_sha256": "96ddebf5424360f20c6c4dfd7961e89a1b02413e8c0203ccf06ec35796d4d57e",
+  "native_fixture_model_calls": 0,
+  "native_fixture_tools_checked": [
+    "cairn_search",
+    "cairn_pull",
+    "cairn_pull_evidence",
+    "cairn_remember",
+    "cairn_edit"
+  ],
+  "installed_project_tool": true,
+  "native_session_row_confirmed": true,
+  "exact_existing_procedure_pulled": true,
+  "ordinary_procedure_version": 4,
+  "artifacts": [
+    {
+      "path": "integrations/opencode/cairn.ts",
+      "sha256": "69281a7dc7bbaf1ab8427b19a2d0710b827ea805a17b31e7caeb89df176633d2"
+    },
+    {
+      "path": "cmd/cairn/agent_search.go",
+      "sha256": "22bfb963ea04e9d3cb56fbf768884831e99ea86f890aea61bd27d40e889157db"
+    },
+    {
+      "path": "scripts/check_opencode_tools.py",
+      "sha256": "1919c82643c3f790c02d01e736127191581912012e35b10665c3719e6801dcaf"
+    },
+    {
+      "path": "/tmp/cairn-opencode-tools-check.log",
+      "sha256": "b0ea022a3c3cbbe3ce6fee217ec5ece61f56bab9d7b7270dfac51fdb32ff50e3"
+    },
+    {
+      "path": "/tmp/cairn-opencode-tools-tests.log",
+      "sha256": "c9cd609d03fd8b816112674bbd48a705df5004e67af7585f56008b6b83a1baca"
+    },
+    {
+      "path": "/tmp/cairn-opencode-tools-integration-defaults.log",
+      "sha256": "b584d4fad6e0adc86e5ee07657f1305d4726194bf2b38496dcccc23376539f4c"
+    },
+    {
+      "path": "/tmp/cairn-opencode-tools-installed/report.json",
+      "sha256": "aba2295979585f41c1ce3a60cef57daed24f9cb4ba4853e053aba86e5210aaf1"
+    },
+    {
+      "path": "/tmp/cairn-opencode-tools-maintenance/request.json",
+      "sha256": "307dde97006fb203c00cb4a574583070fc81951a3a93752b3310421f79f2271d"
+    },
+    {
+      "path": "/tmp/cairn-opencode-tools-maintenance/report.json",
+      "sha256": "8f1d9a6f36df04c91d0a7cb6e23c790d2453a6cfdd939151a5aca6afaa5ed4e0"
+    },
+    {
+      "path": "/tmp/cairn-codex-opencode-revision.py",
+      "sha256": "d872a3c4a29ac3f16aedebf4e16520487b4b65d07bd4fad3e64a443228c356a6"
+    },
+    {
+      "path": "/tmp/cairn-codex-opencode-revision/report.json",
+      "sha256": "88bd74d0b5df45bbff51a02c1e01518bcf382ce8ee9f88f7c99e2b30f4d557ce"
+    },
+    {
+      "path": "/tmp/cairn-opencode-defaults-lesson/request.json",
+      "sha256": "9ff595d88d726ea603982f5e3b794c23d1a2f00037619b94d5d4237ff4ef39dc"
+    },
+    {
+      "path": "/tmp/cairn-opencode-defaults-lesson/capture.stdout.json",
+      "sha256": "3370ba95d76e0fa967aecdaa288edf2653dbd74950327a5db84044a2677f170b"
+    },
+    {
+      "path": "/tmp/cairn-codex-defaults-lesson.py",
+      "sha256": "e45ca224579e256c7972fcd2635ea478bb2621b826ea68ee57e34ef7e799f506"
+    },
+    {
+      "path": "/tmp/cairn-codex-defaults-lesson/report.json",
+      "sha256": "643b3c757c00b630a6f6a8b7c84308b947a0b7267424723b3b6133740ff1c9a9"
+    }
+  ],
+  "limits": [
+    "Native direct calls, no model-selected use or task-benefit comparison",
+    "Conversation grouping, no execution-attempt or task outcome authority",
+    "OpenCode applies separate output truncation and task budget"
+  ],
+  "design_review": {
+    "packet_id": "pkt-f3d7278613902daf",
+    "packet_content_sha256": "f3d7278613902dafa4bbd0c7d1c32df23d9e4c2143981eb25f41b1d7831114fc",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_receipt": "/tmp/cairn-opencode-tools-decision.json",
+    "nonmaterial_obligations": [
+      {
+        "requirement": "expert distinction of sameness over time",
+        "classification": "nonmaterial",
+        "rationale": "Existing native session identity is used only as declared search scope; no new domain identity/lifecycle model or Go interface is introduced. Long-term model investment, expert model validation and resume/compaction claims are outside this adapter verification."
+      },
+      {
+        "requirement": "authoritative expert examples",
+        "classification": "nonmaterial",
+        "rationale": "Existing native session identity is used only as declared search scope; no new domain identity/lifecycle model or Go interface is introduced. Long-term model investment, expert model validation and resume/compaction claims are outside this adapter verification."
+      },
+      {
+        "requirement": "business differentiation and product lifespan",
+        "classification": "nonmaterial",
+        "rationale": "Existing native session identity is used only as declared search scope; no new domain identity/lifecycle model or Go interface is introduced. Long-term model investment, expert model validation and resume/compaction claims are outside this adapter verification."
+      },
+      {
+        "requirement": "business-value and expert-access evidence",
+        "classification": "nonmaterial",
+        "rationale": "Existing native session identity is used only as declared search scope; no new domain identity/lifecycle model or Go interface is introduced. Long-term model investment, expert model validation and resume/compaction claims are outside this adapter verification."
+      },
+      {
+        "requirement": "expert access and feedback cadence",
+        "classification": "nonmaterial",
+        "rationale": "Existing native session identity is used only as declared search scope; no new domain identity/lifecycle model or Go interface is introduced. Long-term model investment, expert model validation and resume/compaction claims are outside this adapter verification."
+      },
+      {
+        "requirement": "recurring ambiguity, contradiction, or rule defect",
+        "classification": "nonmaterial",
+        "rationale": "Existing native session identity is used only as declared search scope; no new domain identity/lifecycle model or Go interface is introduced. Long-term model investment, expert model validation and resume/compaction claims are outside this adapter verification."
+      },
+      {
+        "requirement": "team capacity to sustain the model",
+        "classification": "nonmaterial",
+        "rationale": "Existing native session identity is used only as declared search scope; no new domain identity/lifecycle model or Go interface is introduced. Long-term model investment, expert model validation and resume/compaction claims are outside this adapter verification."
+      },
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "classification": "nonmaterial",
+        "rationale": "Existing native session identity is used only as declared search scope; no new domain identity/lifecycle model or Go interface is introduced. Long-term model investment, expert model validation and resume/compaction claims are outside this adapter verification."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "classification": "nonmaterial",
+        "rationale": "Existing native session identity is used only as declared search scope; no new domain identity/lifecycle model or Go interface is introduced. Long-term model investment, expert model validation and resume/compaction claims are outside this adapter verification."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "classification": "nonmaterial",
+        "rationale": "Existing native session identity is used only as declared search scope; no new domain identity/lifecycle model or Go interface is introduced. Long-term model investment, expert model validation and resume/compaction claims are outside this adapter verification."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "classification": "nonmaterial",
+        "rationale": "Existing native session identity is used only as declared search scope; no new domain identity/lifecycle model or Go interface is introduced. Long-term model investment, expert model validation and resume/compaction claims are outside this adapter verification."
+      }
+    ],
+    "citation_classification": "/tmp/cairn-opencode-tools-citation-result.json"
+  },
+  "shared_revision_followup": {
+    "implementation_commit": "3285367",
+    "native_opencode_edit": true,
+    "previous_version": 4,
+    "current_version": 5,
+    "fresh_opencode_exact_pull": true,
+    "fresh_codex_conversations": 2,
+    "exact_codex_pulls": 4,
+    "model_calls": 0,
+    "ordinary_class": "A"
+  },
+  "selected_lesson_transfer": {
+    "topic": "OpenCode custom-tool defaults are not passed through from validation",
+    "native_opencode_capture": true,
+    "fresh_codex_exact_pull": true,
+    "record_version": 1,
+    "ordinary_class": "A",
+    "model_calls": 0
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schema": "cairn.tool-retrieval-scenario/1",
+  "id": "cairn-storage-question-refinement",
+  "source_commit": "a154257bfe2550064f11ab19a865c8d7ed1fc9a4",
+  "workload": "core/testdata/retrieval-quality.json",
+  "workload_sha256": "30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0",
+  "arms": ["no_memory", "direct_context", "tool_retrieval"],
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "limits": {"requests_per_arm": 10, "output_tokens_per_request": 8192, "process_seconds_per_arm": 240, "memory_calls": 8, "retrieval_room": 64000},
+  "task": "Answer these questions about Cairn from the supplied source material, if available: Where does Cairn keep its data by default, and which environment variable chooses a different home directory? Does CAIRN_DATABASE_URL move the directory managed by local-store.sh? What is Cairn's monthly subscription price? Do not invent unavailable information. Return a final JSON object with keys data_home (string or null), home_override (string or null), database_url_moves_local_store (boolean or null), monthly_price (string or null), sources (array of source record UUIDs), and explanation (short text distinguishing source-supported facts from unavailable information). Sources must identify material you actually received, not guessed references.",
+  "tool_instruction": "You can use the bash tool to call /opt/memory search QUERY or /opt/memory pull RECEIPT_UUID HANDLE_UUID. These commands use an authenticated, repository-scoped Cairn agent profile; there is no database access. Start with /opt/memory search storage, matching the observed user query. If a query misses, refine it yourself. Inspect relevant full bodies with pull before citing them. There are at most eight memory calls. No other shell commands or tools are allowed. Return the requested final JSON when you have enough evidence or cannot find it.",
+  "criteria": {
+    "source_supported_storage": {"data_home": "~/.local/share/cairn", "home_override": "CAIRN_HOME", "database_url_moves_local_store": false, "required_source_note": "storage"},
+    "unavailable_price": {"monthly_price": null},
+    "tool_contact": "Tool arm must actually observe an empty first storage index, make a later nonempty index query, and pull the storage record before citing its UUID. Direct context must contain the same source bytes. These observations prove this bounded route, not general usefulness, learning or transfer."
+  },
+  "interpretation": "Prospectively fixed experiment on real Cairn documentation and the user's storage topic. Questions overlap the earlier development workload and are not held out. One run per arm does not establish causal superiority. Correct no-memory abstention is reported separately from answer completeness. No new retrieval production mechanism, operational memory, schema or recovery engineering is part of this trial."
+}

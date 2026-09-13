@@ -1,0 +1,458 @@
+{
+  "schema": "cairn.evidence-transport-verification/1",
+  "baseline_commit": "3069117",
+  "decoded_source_limit": 1048576,
+  "evidence_encoded_limit": 8388608,
+  "other_encoded_limit": 131072,
+  "baseline": "Valid1MiB escaped source refused by128KiB client cap",
+  "checks": {
+    "exact_full_source_and_digest": "passed",
+    "capture_retry": "passed",
+    "decoded_limit": "passed",
+    "client_and_raw_server_envelope_caps": "passed",
+    "non_evidence_caps": "passed",
+    "refusal_before_mutation": "passed",
+    "cli_with_invalid_database": "passed",
+    "disposable_postgres_race": "passed",
+    "go_tests": "passed",
+    "python_tests": 30,
+    "vet_format_build": "passed"
+  },
+  "source": [
+    {
+      "path": "localapi/request_limit.go",
+      "sha256": "a265ce44b2ee4170da3c44c61d92c0e9615b2c8913fb337203ca28523cbb8650"
+    },
+    {
+      "path": "localapi/client.go",
+      "sha256": "4874a7cc7b2f9b45f42d8fdb9b39c66b4ee7064025857c233178733eae6979e3"
+    },
+    {
+      "path": "localapi/server.go",
+      "sha256": "2f0624c150ced4c47dcec28e24b47894a5857328d3a8304c604935eb07f87faf"
+    },
+    {
+      "path": "cmd/cairn/agent.go",
+      "sha256": "f6fd4ae7290817257e5c50e418512fee047d78c3e9c7fa6e6ba4bfa6bc34eb34"
+    },
+    {
+      "path": "localapi/evidence_limit_test.go",
+      "sha256": "f8cb024bd7f4e3231fb2e80ee500e8dced7e445d8d06071fa30b61d40b6aaa4f"
+    },
+    {
+      "path": "scripts/check_agent_search.py",
+      "sha256": "3ffc1705fbc1ef46357654ad108cd38f935919adb864876b16cf120a4c95518e"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-evidence-limit-baseline.log",
+      "sha256": "97d89599bdf0262e22cd205bb205b2ae96963e598ec4ff2863c0747764314557"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-focused.log",
+      "sha256": "0bf3cc6d7d794ca17f4547a2f80084315e4d1a9addc8f58507fd18634dadd211"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-bounds.log",
+      "sha256": "07f3724428588ef3e904c89afec7cf928f5245c5be5c98e6a95647f292508abe"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-integration.log",
+      "sha256": "66d27a492c6cea6e3437b899b359cf726a3ac6e77b3b430bbbe07cc7e514b8e4"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-tests.log",
+      "sha256": "9d32c60615d1d74bf67ed61f5f35f2b0697c4a9507669f4d904fa1cfb7b10257"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-check.log",
+      "sha256": "7e9bbc361fc3c1f98d20aec476936b4cd2eaecb7adec63bdd38519d225c274a0"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-plan.json",
+      "sha256": "e3568abce7e9e0b63a36c1ba66946a955783cb51de7bd28d00fb9d85269638e8"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-final.json",
+      "sha256": "7c221b722ecadaf0374549be13cd81aa84ca309ca33f8fee8cd8172745fdf393"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-decision.json",
+      "sha256": "197a00d603dcc55645774cf878ee27743f332d10370bd57dee4542e72e52ec77"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/before.json",
+      "sha256": "f2b2d7c4fc6efb3883546d12860ef6fb03e5474d80b3c102ac063e5c7dcbd9a3"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/installation.json",
+      "sha256": "57c0432c53dd53842ca77fa72c689827d395312e30f7c8e208e0c81deca87fe1"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/owned-history-smoke.json",
+      "sha256": "7a401a18a852c8e1d5a499d54db3c406ce09d9c65087a908262edc7f6a8599b8"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/lesson-revision-request.json",
+      "sha256": "2d2a584ac1c678372f35a91c8ec63414be0ed5407c76559f288dd3c9644fbc25"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/lesson-revised.json",
+      "sha256": "35bb128e1f953c0fb6773868057762b34dc579a105dbbd8e63908895e8a4f37f"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/lesson-search.json",
+      "sha256": "75d8bd2b6d54a791ddfc267a65fc3cb1a0b65cafe5ebabc6394d603baa74929c"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/lesson-pulled.json",
+      "sha256": "30b1fb812d17238c52bc8803df6b65f3508f71192fcea9c68b239cd7634e0c14"
+    },
+    {
+      "path": "/tmp/cairn-evidence-limit-deployment/lesson-verification.json",
+      "sha256": "7d5871a0e4bea5782b92400cf1a8711da4fa2ec2bf114646dec54ec55e466f91"
+    }
+  ],
+  "model_calls": 0,
+  "schema_changed": false,
+  "doctrine": {
+    "packet_id": "pkt-937293b107fa20da",
+    "packet_content_sha256": "937293b107fa20da9fa162898c230e92854ca38e0099b7f4873b6d18223f7441",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_path": "/tmp/cairn-evidence-limit-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-012f9f4a4fc9e76d",
+        "required_by": "data-dedup-key-identity-completeness",
+        "requirement": "an explicit enumeration of the record's identity dimensions matched against the key's columns",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No bulk discovery or identity-key change. One explicitly supplied source uses unchanged capture identity; exact bytes and retry/refusal behavior are tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-9ae09a63fe1a5ef8",
+        "required_by": "data-dedup-key-identity-completeness",
+        "requirement": "logical-identity definition of the affected record",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No bulk discovery or identity-key change. One explicitly supplied source uses unchanged capture identity; exact bytes and retry/refusal behavior are tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-87773e203d59013a",
+        "required_by": "data-dedup-key-identity-completeness",
+        "requirement": "the conflict-handling semantics at that key - abort update or silent drop",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No bulk discovery or identity-key change. One explicitly supplied source uses unchanged capture identity; exact bytes and retry/refusal behavior are tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-4865f8254cf67aba",
+        "required_by": "data-ingest-population-scoping",
+        "requirement": "a dry-run enumeration with counts compared against expectation",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No bulk discovery or identity-key change. One explicitly supplied source uses unchanged capture identity; exact bytes and retry/refusal behavior are tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-905937990cfd5f38",
+        "required_by": "data-ingest-population-scoping",
+        "requirement": "the discovery pattern shown to match the specification's depth and class constraints",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No bulk discovery or identity-key change. One explicitly supplied source uses unchanged capture identity; exact bytes and retry/refusal behavior are tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-c87fc05d43132cb2",
+        "required_by": "data-ingest-population-scoping",
+        "requirement": "the input population specification",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No bulk discovery or identity-key change. One explicitly supplied source uses unchanged capture identity; exact bytes and retry/refusal behavior are tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-7a41bb7011b779eb",
+        "required_by": "data-ingest-population-scoping",
+        "requirement": "the specified input population stated precisely",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No bulk discovery or identity-key change. One explicitly supplied source uses unchanged capture identity; exact bytes and retry/refusal behavior are tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-79ca08bed8844a25",
+        "required_by": "implementation-async-ui-state-design",
+        "requirement": "an enumeration of lifecycle phases with a designed state for each",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-cbe2d532269e88e9",
+        "required_by": "implementation-async-ui-state-design",
+        "requirement": "content lifecycle phases enumerated",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a6efab71031db341",
+        "required_by": "implementation-async-ui-state-design",
+        "requirement": "explicit handlers where platform defaults were overridden",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-44706d6d596a492d",
+        "required_by": "implementation-async-ui-state-design",
+        "requirement": "geometry reserved independent of the async payload",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-21dbd360ff3b90b7",
+        "required_by": "implementation-attention-budget-presentation",
+        "requirement": "a prioritization key tied to the consumer's decision",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-984d7130ad01736c",
+        "required_by": "implementation-attention-budget-presentation",
+        "requirement": "proof canonical data is unchanged by presentation",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-83a38fa945c9ef21",
+        "required_by": "implementation-attention-budget-presentation",
+        "requirement": "the bound stated and enforced",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-477d260ba84eaf0e",
+        "required_by": "implementation-attention-budget-presentation",
+        "requirement": "the consumer and budget named",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-94f3707ab1ca403d",
+        "required_by": "implementation-attention-budget-presentation",
+        "requirement": "the consumer and their budget named",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bee4873549539a2e",
+        "required_by": "implementation-config-reference-validation",
+        "requirement": "a load-time or gate check resolving every reference against them",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-aebc722e27fd332e",
+        "required_by": "implementation-config-reference-validation",
+        "requirement": "a named-identifier failure on mismatch",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-60e11fd14335b2fa",
+        "required_by": "implementation-config-reference-validation",
+        "requirement": "the consumer's defined identifier and enum sets",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-93c171b4a8964e37",
+        "required_by": "implementation-rank-before-truncate",
+        "requirement": "the match-text composition enumerated field by field",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-5cac0cd10a85dbb8",
+        "required_by": "implementation-rank-before-truncate",
+        "requirement": "the scan shown to score the full bounded set before truncation",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-895e1060f7bb5f86",
+        "required_by": "implementation-rank-before-truncate",
+        "requirement": "the selection contract stated",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-78d89cb5f8e6192c",
+        "required_by": "implementation-rank-before-truncate",
+        "requirement": "the selection contract stated - relevance-ordered top-N versus first-N",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No UI, presentation/ranking change or declarative configuration is introduced. The change bounds encoded ingress for an existing operation; store and retrieval semantics are unchanged."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b39c8b4fb6a38a6d",
+        "required_by": "operations-external-capability-verification",
+        "requirement": "access to the real device or endpoint",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No external device or third-party capability assumption. The endpoint under repair was exercised through real client, raw HTTP and CLI against disposable PostgreSQL; live deployment is recorded separately."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-4e1dfd2c915fe674",
+        "required_by": "operations-external-capability-verification",
+        "requirement": "an end-to-end verification artifact against the actual device or endpoint",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No external device or third-party capability assumption. The endpoint under repair was exercised through real client, raw HTTP and CLI against disposable PostgreSQL; live deployment is recorded separately."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-dc786532677f8ca1",
+        "required_by": "operations-external-capability-verification",
+        "requirement": "or an explicit record that verification is provisional",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No external device or third-party capability assumption. The endpoint under repair was exercised through real client, raw HTTP and CLI against disposable PostgreSQL; live deployment is recorded separately."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-27a2b6e1eadab2c7",
+        "required_by": "operations-external-capability-verification",
+        "requirement": "the real system's own statement of its capability - device configuration output wire capture or endpoint self-description",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No external device or third-party capability assumption. The endpoint under repair was exercised through real client, raw HTTP and CLI against disposable PostgreSQL; live deployment is recorded separately."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-80432417005eb207",
+        "required_by": "operations-symptom-cause-monitoring",
+        "requirement": "current page inventory classified symptom-versus-cause",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No incident monitoring or paging change; this is a bounded reproduced capture mismatch, not an outage."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-8c2d798754f29f02",
+        "required_by": "operations-symptom-cause-monitoring",
+        "requirement": "golden-signal coverage with the error definition stated",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No incident monitoring or paging change; this is a bounded reproduced capture mismatch, not an outage."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-63abf1a71b4719e2",
+        "required_by": "operations-symptom-cause-monitoring",
+        "requirement": "the service's user-visible failure modes",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No incident monitoring or paging change; this is a bounded reproduced capture mismatch, not an outage."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-49731a7fb6fe90d5",
+        "required_by": "task:defect-repair",
+        "requirement": "evidence-incidents",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No operational incident is claimed; actual failing reproduction and completed runtime observations establish the defect."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No generic named procedure completion claimed; explicit alternatives and preservation boundaries are retained."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No generic named procedure completion claimed; explicit alternatives and preservation boundaries are retained."
+      }
+    ]
+  },
+  "deployment": {
+    "installed_revision": "283142b5cdc210ee8ee2e045e3f4ce229051545b",
+    "installed_sha256": "e67c07ff943fc5ca23ae0bf0275d2911211c30c3fb415d2a15c1dbed48bed9b1",
+    "api_pid": "3508260",
+    "api_sha256": "e67c07ff943fc5ca23ae0bf0275d2911211c30c3fb415d2a15c1dbed48bed9b1",
+    "api_restarted": true,
+    "clean_build": true,
+    "preserved": {
+      ".codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      ".opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      ".opencode/tools/cairn.ts": "4d07a80fd26585b5a9a71744da2f0598b2d751cccabbe8ed8b96355bb0c444d0",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d",
+      "/home/halbritt/.local/share/cairn/semantic/worker": "ae97c97e9dca97c3435cd61f77223f9f25cf635b010b2f230e0a84d1537c6d72",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954"
+    },
+    "read_only_hosted_smoke": true,
+    "schema_changed": false,
+    "operational_evidence_captures": 0,
+    "ci": {
+      "run_id": 34387578002,
+      "head_sha": "283142b5cdc210ee8ee2e045e3f4ce229051545b",
+      "conclusion": "success",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34387578002"
+    }
+  },
+  "selected_lesson": {
+    "record_id": "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+    "old_version": 1,
+    "version": 2,
+    "body_sha256": "645878a1463302a9a8b839d8e3a79de3d6e24efd8c47e6d9718c376dfc923e90",
+    "fresh_scope_exact_read": true
+  }
+}

@@ -1,0 +1,197 @@
+{
+  "schema": "cairn.retrieval-workload/1",
+  "source_commit": "754d088468d89d2fad0c8d453ec8bd677a5c642f",
+  "description": "Prospectively labelled, manually selected Cairn documentation passages and authored questions. Only storage-topic is verbatim from the user. Relevant means this passage directly addresses the question; empty labels mean none of this bounded corpus answers it. This is a development workload, not independent acceptance or a held-out benchmark.",
+  "available_tokens": 64000,
+  "notes": [
+    {
+      "id": "storage",
+      "path": "README.md",
+      "body": "The default database and run artifacts live under `~/.local/share/cairn`.\n`CAIRN_HOME` changes that directory. `CAIRN_DATABASE_URL` selects an existing\n**dedicated Cairn database** for the CLI; it does not redirect the local-store\nscript. Use `CAIRN_PG_BIN` to select PostgreSQL binaries when necessary.",
+      "sha256": "a3b3f6411f77461a6ca272e7268ae497f16b2a2729c9ec93b9bb0c24173f2d92"
+    },
+    {
+      "id": "pulls",
+      "path": "docs/index-and-pull.md",
+      "body": "Evidence pulls share the same credits and bytes as body pulls, including encoded\nmetadata and a response-envelope allowance. Oversized objects refuse intact and\ndo not spend a credit. Identical transport retries return the prior response\nwithout another spend while repeating live authorization and availability checks.\n`cairn expand-evidence` is the local operator form. The existing `cairn evidence ID`\nremains separate local inspection and does not consume this retrieval budget.",
+      "sha256": "842706b449d2a43a497d0c025b8d2b3a63e2a2befef8569f6ddaf4287de6f142"
+    },
+    {
+      "id": "currentness",
+      "path": "docs/currentness-and-replay.md",
+      "body": "An ordinary record may include `draft.pins`: `revision` (immutable Git object ID),\n`workspace_sha256`, `task_class`, `binding_id`, `capability_id`, `valid_from` and\n`valid_until`. Unspecified constraints are unpinned. Ordinary edits and B\ncorrections cannot remove or change these constraints; explicit\n[scope authorization](scope-authorization.md) can expand applicability through a\nseparate C decision. A validity interval is half-open.\n\nCompile requests supply matching `context` labels. Missing context, mismatch and\noutside-validity omissions have fixed census buckets. A mandatory applicable C\ninstruction cannot be skipped by omitting required context. These are declared\nconstraints; matching them does not certify physical workspace state. `search`\nand `run` accept revision/workspace/task-class/binding/capability flags. The wrapper\nuses one consistent tuple for compilation and run metadata.",
+      "sha256": "2d7c1709412b9cd2d8f7744521b90af479a09cb21f6f5fead758deae7359e70e"
+    },
+    {
+      "id": "evidence",
+      "path": "docs/evidence-refresh.md",
+      "body": "`cairn check-evidence` accepts JSON `request_id` and `evidence_id`. It checks the\nretained inline bytes against their captured SHA-256 and persists a generation,\nmethod, timestamp, expected/actual digests, requester and affected-record count.\nThe caller cannot supply the resulting state. A local agent profile can invoke\n`check-evidence` through the Unix API; hosted profiles cannot inspect these checks.\n\nThe method `inline-sha256/1` establishes stored-byte correspondence. It does not\nverify the truth or relevance of the source, fetch its locator, or establish that\nan upstream document is still current. A matching retained object becomes\n`resolvable`; differing bytes become `divergent`. Transport retries return the\noriginal check without incrementing its generation; use a new UUID for a new\nobservation.",
+      "sha256": "4501575f42fbfcfd180207596f14dd8cf8e6ad632c5db47185ae4895a124ec8a"
+    },
+    {
+      "id": "outcomes",
+      "path": "docs/use-outcome-loop.md",
+      "body": "`cairn use-report REPO` returns one row per record/version/receipt exposure. Each\nobservation stream is reduced before joining, so repeated deliveries or citations\ndo not multiply task outcomes. Rows retain repository/task/run scope, purpose,\ntask class, binding and capability identity, process duration/exit, current record\nversion/lifecycle, usage qualification and the latest task assessment.",
+      "sha256": "fea275e9fd5215e113cd454a6ee79d7445aee1fb738384af909f8f8dee82385b"
+    },
+    {
+      "id": "runner",
+      "path": "docs/authenticated-runner.md",
+      "body": "`cairn agent run` runs the existing H0 process wrapper through Cairn's Unix API.\nThe wrapper needs an observer token and socket access. It does not open PostgreSQL\nor use operator authority. The child process runs in the invoking host; the API\nserver never executes a command supplied over HTTP.\n\nUse a provisioned `observer` identity scoped to the repository and destination.\nKeep its token separate from an ordinary agent's token. The server derives the\nprincipal, observation role and destination from its private configuration; flags\ncannot choose a different principal or elevate an agent profile.",
+      "sha256": "0f29ad4a05d9952c98be2c845a33b0a1b5370c7a7ebbb4158cf0bae4d3df686e"
+    },
+    {
+      "id": "status",
+      "path": "docs/run-status.md",
+      "body": "Use `run-status` after a lost launch-claim or outcome response to inspect what\nCairn recorded. Both local and hosted profiles can inspect receipts they own.\nThe principal and repository must match the receipt; operator CLI access does\nnot override ownership.",
+      "sha256": "9f57cccd3d5255907d79cffe73f7d124fb7189e595ff67673666340d03933a35"
+    },
+    {
+      "id": "supersession",
+      "path": "docs/supersession.md",
+      "body": "`supersede` retires one active A or B record in favor of an explicit current\nversion of another record. It names both expected versions, a current\n`preview-retract` token for the old record, and a reason. A B source requires\nthe `correct` capability and an independently qualified B replacement. An A\nsource can name A or qualified B; its retirement creates no authority event.\nC changes continue to require retraction and a new issuance.",
+      "sha256": "de6afd28bd7305228309d45ba0fa5fe5c00ef69023501ec216822be8910362db"
+    },
+    {
+      "id": "conflict",
+      "path": "docs/conflict-inspection.md",
+      "body": "The detail response contains the exact versions named when the conflict opened,\ntheir bodies when available, observed writers, attributed producers, testimony\nor instrumented witness, and original scopes/classes. Current version, class and\nlifecycle are separate fields. Editing a note cannot rewrite its earlier\ndisputed position. Attributed producer and witness fields remain observations,\nnot verification that a position is true.",
+      "sha256": "b38f56393414a2332005c9efe1838e325f7b4aa83b96b27670562ee8643561ba"
+    },
+    {
+      "id": "demand",
+      "path": "docs/demand-review.md",
+      "body": "`cairn generate-proposals` accepts `request_id`, `repo`, and optional `offset`.\nIt scans at most 100 eligible failures per page and returns `more`/`next_offset`.\nThe generator pairs an explicitly assessed task rejection with the first later\nacceptance under the same declared repository/task, task class, binding and\ncapability identity. Unknown comparison labels, missing error-signature digests,\nand binding failures do not generate proposals. If no matching acceptance exists,\nthe failure becomes a standalone proposal (`kind: failure`, method\n`standalone-task-failure/1`). Its recovery receipt is empty and recovery version\nis zero. A paired proposal has `kind: failure_recovery`.\n\nA pair is a review candidate, not proof that an action fixed the failure. It\nretains both receipt/assessment versions, selected evidence IDs and the detector\nmethod. Identical source pairs reuse one proposal. Later assessment corrections\nremove stale pairs from the active docket; history remains inspectable. This\noperates on structured observations and never mines raw prompts or outputs.",
+      "sha256": "b68d195b32032f3c6647bd7b71c71333d0d6f04b8ba2c3de9fba87d3f309374c"
+    },
+    {
+      "id": "delete",
+      "path": "docs/ordinary-delete.md",
+      "body": "Use `cairn delete` to remove an active Class A note that has no retained\nreferences and has never held a privileged class. It takes a JSON request:",
+      "sha256": "ebadb64f119c42ee54f1b70d9b53bae80464185d11719ebb1b412dd62369bdeb"
+    },
+    {
+      "id": "scope",
+      "path": "docs/scope-authorization.md",
+      "body": "Scope broadening is a C authority transition. It changes where an existing\nrecord may apply; it does not promote the record or replace its supporting\nqualification. `authorize-scope` requires a live `issue` grant, an exact source\nversion, a current impact preview, an explicit target scope and applicability,\nand a reason. The existing `issue` capability owns this C decision; installed\ngrants gain no new capability through migration.",
+      "sha256": "f4ce3488fbfa772e8e77b915604c7e410580374125f1c8192aa8d10f4d614af9"
+    }
+  ],
+  "queries": [
+    {
+      "id": "storage-topic",
+      "query": "storage?",
+      "relevant": [
+        "storage"
+      ]
+    },
+    {
+      "id": "storage-location",
+      "query": "Where does Cairn keep its data?",
+      "relevant": [
+        "storage"
+      ]
+    },
+    {
+      "id": "storage-env-exact",
+      "query": "CAIRN_HOME",
+      "relevant": [
+        "storage"
+      ]
+    },
+    {
+      "id": "storage-env-words",
+      "query": "CAIRN HOME",
+      "relevant": [
+        "storage"
+      ]
+    },
+    {
+      "id": "evidence-retry",
+      "query": "How can I fetch supporting bytes without spending credits twice?",
+      "relevant": [
+        "pulls"
+      ]
+    },
+    {
+      "id": "revision",
+      "query": "Why is old advice excluded after a revision change?",
+      "relevant": [
+        "currentness"
+      ]
+    },
+    {
+      "id": "tampering",
+      "query": "Can I check whether captured evidence was altered?",
+      "relevant": [
+        "evidence"
+      ]
+    },
+    {
+      "id": "citation-count",
+      "query": "Do repeated citations count as extra successful tasks?",
+      "relevant": [
+        "outcomes"
+      ]
+    },
+    {
+      "id": "agent-launch",
+      "query": "Can an ordinary agent token start a process?",
+      "relevant": [
+        "runner"
+      ]
+    },
+    {
+      "id": "lost-reply",
+      "query": "How do I tell whether a launch was recorded after the reply went missing?",
+      "relevant": [
+        "status"
+      ]
+    },
+    {
+      "id": "replacement",
+      "query": "How do I replace an obsolete note with another record?",
+      "relevant": [
+        "supersession"
+      ]
+    },
+    {
+      "id": "original-conflict",
+      "query": "Can I inspect the original disputed position after someone edits it?",
+      "relevant": [
+        "conflict"
+      ]
+    },
+    {
+      "id": "failure-lessons",
+      "query": "How are failures turned into proposed lessons?",
+      "relevant": [
+        "demand"
+      ]
+    },
+    {
+      "id": "remove-note",
+      "query": "How can I remove a note that has never been used?",
+      "relevant": [
+        "delete"
+      ]
+    },
+    {
+      "id": "broaden-scope",
+      "query": "What permits applying a record to more tasks?",
+      "relevant": [
+        "scope"
+      ]
+    },
+    {
+      "id": "absent-gpu",
+      "query": "How much GPU memory does Cairn need for embeddings?",
+      "relevant": []
+    },
+    {
+      "id": "absent-price",
+      "query": "What is the monthly subscription price?",
+      "relevant": []
+    }
+  ]
+}

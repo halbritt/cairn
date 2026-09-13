@@ -1,0 +1,49 @@
+{
+  "schema": "cairn.codex-mcp-verification/1",
+  "codex": "codex-cli 0.153.4",
+  "cairn_sha256": "756cd084be0430eb9059d401aa45dc1974be1e2c52030711a9c9151990be3089",
+  "result": {
+    "codex_version": "codex-cli 0.153.4",
+    "server_count": 1,
+    "tools": [
+      "cairn_pull",
+      "cairn_pull_evidence",
+      "cairn_search"
+    ],
+    "exact_saved_lesson": true,
+    "record_class": "A",
+    "model_turns_started": 0,
+    "ephemeral": true
+  },
+  "source_revision": "d374280",
+  "official_sources": [
+    "https://learn.chatgpt.com/docs/extend/mcp?surface=cli",
+    "https://learn.chatgpt.com/docs/app-server"
+  ],
+  "evidence": {
+    "report.json": {
+      "path": "/tmp/cairn-codex-probe-b/report.json",
+      "sha256": "b77b8ca58e0f5fba95a8ddc9bd6869003767a66560b37b13a52e9cedbbc6ce34"
+    },
+    "3-mcpServerStatus-list.json": {
+      "path": "/tmp/cairn-codex-probe-b/3-mcpServerStatus-list.json",
+      "sha256": "28a387e3b54faef60d04cd81007023753219b8e2fb8c86e4b41e5d8777881f26"
+    },
+    "4-mcpServer-tool-call.json": {
+      "path": "/tmp/cairn-codex-probe-b/4-mcpServer-tool-call.json",
+      "sha256": "0a8bf58030c101a6ff3dcc8c3165a443ce85fa4aba4fb33edc5ca30e48985b5c"
+    },
+    "5-mcpServer-tool-call.json": {
+      "path": "/tmp/cairn-codex-probe-b/5-mcpServer-tool-call.json",
+      "sha256": "659e493824f5b1456726e9a52126591aba83a3c7105c91aeb4a9261153a7fffc"
+    },
+    "result.json": {
+      "path": "/tmp/cairn-codex-config-probe/result.json",
+      "sha256": "6a98bdc0014d1645cf77a990b75eb031140925fa213b901422de736a277208a8"
+    },
+    "cairn-codex-probe-b.py": {
+      "path": "/tmp/cairn-codex-probe-b.py",
+      "sha256": "224b25582bf10dc72818346ad3b56e58c502b7f72224c4423dd3b2d1f7547471"
+    }
+  }
+}

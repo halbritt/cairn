@@ -1,0 +1,13 @@
+{
+  "request_id": "63f5a0ab-f412-4212-8fbb-b353abf52d88",
+  "draft": {
+    "kind": "note",
+    "body": "Synthetic fixture: inspect the compiler error before changing dependencies.",
+    "scope": {
+      "repo": "fixture:example",
+      "task_id": "fixture:build",
+      "run_id": "fixture:run-1"
+    },
+    "claim_type": "self"
+  }
+}

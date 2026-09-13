@@ -1,0 +1,429 @@
+{
+  "schema": "cairn.semantic-deadline-verification/1",
+  "baseline_commit": "a9a4b1c",
+  "installed_before": "9b888e1",
+  "profile": {
+    "setup_seconds": 0.43326856195926666,
+    "profiled_score_seconds": 20.412379093002528,
+    "notes": 20,
+    "body_bytes": 58353,
+    "chunks": 50,
+    "worker_sha256": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+    "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b"
+  },
+  "batching_plan": {
+    "schema": "cairn.semantic-length-batches/1",
+    "source_commit": "a9a4b1c",
+    "baseline_sha256": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+    "candidate_sha256": "54e34835e825989b6edfaee96bb466be334801408c34227729e489086f36e321",
+    "request_sha256": "8ee44461b29d9fdd7c804f2cd60473519baf02785365c5da800e9fc874e8d916",
+    "candidate": "Stable sort input passages by unpadded model-token length, embed batches of four, restore original order before existing score computation",
+    "preservation": "All note chunks, identities, body hashes, versions and integer scores equal; fingerprint may differ because batch size is explicit",
+    "hypothesis": "Current long-note lengths reduce the padding penalty observed on the earlier short-note corpus; batched inference may reduce cost",
+    "target": "At least 20 percent lower median paired whole-worker wall time, each candidate below20s, no lost source coverage or integer-score difference, peak RSS below1.5x baseline",
+    "method": "At most three alternating one-shot pairs on the fixed current request, 60s per process; stop on score mismatch or first pair with no wall-time reduction; no candidate tuning",
+    "limits": "Shared host; one current twenty-note input and setup query, not service percentiles, all workload generalization or task benefit",
+    "first_profile": {
+      "setup_seconds": 0.43326856195926666,
+      "profiled_score_seconds": 20.412379093002528,
+      "onnx_cumulative_seconds": 20.321,
+      "notes": 20,
+      "chunks": 50,
+      "body_bytes": 58353
+    }
+  },
+  "batching_pairs": [
+    {
+      "pair": 0,
+      "timing": {
+        "baseline": {
+          "wall_seconds": 23.88910268107429,
+          "gnu_wall": 23.88,
+          "user_cpu": 47.11,
+          "system_cpu": 0.14,
+          "peak_rss_kib": 225216
+        },
+        "candidate": {
+          "wall_seconds": 21.399574592942372,
+          "gnu_wall": 21.35,
+          "user_cpu": 41.25,
+          "system_cpu": 0.16,
+          "peak_rss_kib": 311740
+        }
+      },
+      "integer_scores_and_sources_equal": true,
+      "differences": [],
+      "baseline_model": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+      "candidate_model": "841e1dc06232f5ceb668d14b85a5f8a1284cecc1f39da767c30cc603d6190650"
+    },
+    {
+      "pair": 1,
+      "timing": {
+        "candidate": {
+          "wall_seconds": 20.9478886439465,
+          "gnu_wall": 20.9,
+          "user_cpu": 40.55,
+          "system_cpu": 0.16,
+          "peak_rss_kib": 312420
+        },
+        "baseline": {
+          "wall_seconds": 21.05140843987465,
+          "gnu_wall": 21.02,
+          "user_cpu": 42.27,
+          "system_cpu": 0.12,
+          "peak_rss_kib": 225216
+        }
+      },
+      "integer_scores_and_sources_equal": true,
+      "differences": [],
+      "baseline_model": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+      "candidate_model": "841e1dc06232f5ceb668d14b85a5f8a1284cecc1f39da767c30cc603d6190650"
+    },
+    {
+      "pair": 2,
+      "timing": {
+        "baseline": {
+          "wall_seconds": 21.904005179181695,
+          "gnu_wall": 21.86,
+          "user_cpu": 43.9,
+          "system_cpu": 0.12,
+          "peak_rss_kib": 225260
+        },
+        "candidate": {
+          "wall_seconds": 21.611622563097626,
+          "gnu_wall": 21.58,
+          "user_cpu": 40.42,
+          "system_cpu": 0.16,
+          "peak_rss_kib": 312172
+        }
+      },
+      "integer_scores_and_sources_equal": true,
+      "differences": [],
+      "baseline_model": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+      "candidate_model": "841e1dc06232f5ceb668d14b85a5f8a1284cecc1f39da767c30cc603d6190650"
+    }
+  ],
+  "batching_result": {
+    "pairs": 3,
+    "scores_equal": true,
+    "median_paired_speedup": 1.0135289525453457,
+    "candidate_under_deadline": false,
+    "memory_limit_met": true,
+    "target_met": false
+  },
+  "live_before": {
+    "seconds": 20.055915670003742,
+    "status": "DEGRADED_NO_EMBEDDINGS",
+    "discovery": {
+      "state": "unavailable"
+    },
+    "first": "225ad6f4-87ab-41af-a19c-1d38b53232c3"
+  },
+  "transports": [
+    {
+      "complete_response_equal": true,
+      "round": 0,
+      "seconds": 20.294054002,
+      "transport": "command"
+    },
+    {
+      "complete_response_equal": true,
+      "round": 0,
+      "seconds": 20.118454748,
+      "transport": "stream"
+    },
+    {
+      "complete_response_equal": true,
+      "round": 1,
+      "seconds": 0.033408128,
+      "transport": "stream"
+    }
+  ],
+  "change": {
+    "worker_timeout_seconds_before": 20,
+    "worker_timeout_seconds_after": 25,
+    "native_timeout_seconds": 30,
+    "api_timeout_seconds": 35,
+    "idle_release_seconds": 30,
+    "python_worker_changed": false,
+    "model_changed": false,
+    "source_coverage_changed": false
+  },
+  "checks": {
+    "semantic_race": "passed",
+    "postgres_race_integration": "passed",
+    "python_tests": 40,
+    "static": "passed",
+    "answering_model_calls": 0,
+    "installation": "verified clean a848e3c through native OpenCode and actual Codex project MCP",
+    "feature_ci": {
+      "run": 34468167658,
+      "conclusion": "success",
+      "all_jobs_and_steps_checked": true
+    }
+  },
+  "doctrine": {
+    "packet_id": "pkt-ba3bab962ec3ebec",
+    "packet_content_sha256": "ba3bab962ec3ebeca0ce604290cc945a7891c456aa10905d648590a37019b9d9",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "repeated raw results, variance, and environment stability",
+        "required_by": "performance-benchmark-validity",
+        "classification": "nonmaterial to this bounded availability adjustment",
+        "reason": "No generalized speedup, stationary environment, service distribution or optimal batching claim. The rejected candidate is screened on one retained corpus on a shared host; direct unchanged-model transport observations establish only that input completing within25s. Broader performance adoption would require stronger evidence."
+      },
+      {
+        "requirement": "representative input distribution and resource limits",
+        "required_by": "performance-benchmark-validity",
+        "classification": "nonmaterial to this bounded availability adjustment",
+        "reason": "No generalized speedup, stationary environment, service distribution or optimal batching claim. The rejected candidate is screened on one retained corpus on a shared host; direct unchanged-model transport observations establish only that input completing within25s. Broader performance adoption would require stronger evidence."
+      },
+      {
+        "requirement": "exact code, dependency, build, benchmark, data, and environment versions",
+        "required_by": "performance-representative-baseline",
+        "classification": "nonmaterial to this bounded availability adjustment",
+        "reason": "No generalized speedup, stationary environment, service distribution or optimal batching claim. The rejected candidate is screened on one retained corpus on a shared host; direct unchanged-model transport observations establish only that input completing within25s. Broader performance adoption would require stronger evidence."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-cold-cost/plan.json",
+      "sha256": "1c605b58ac55bbe20f227ceefe51bc2460fab199a24b7ee2734e65399b1f6589"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/profile.json",
+      "sha256": "f0a7c8d4f16270fa8516ae81fe0da03d0e71313e98505a7553e8a0c9be8e94c9"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/profile.txt",
+      "sha256": "45503a201a45713c344f3a11d655d95746ccba4fbb88fbac284992a49d346314"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/measure_worker.py",
+      "sha256": "ed91f2b5a6f6b4fba5a3c3395f1152545a3ee144b8e060bb780b266e0871e112"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/corpus.json",
+      "sha256": "b2db7e45e63aa05a4a4ef8db36f1b8d3cd9af7ca802f72ebbb0a20c31c475766"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/request.json",
+      "sha256": "8ee44461b29d9fdd7c804f2cd60473519baf02785365c5da800e9fc874e8d916"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/response.json",
+      "sha256": "70a45bb76a6ad88d8ab5ff7c8e2104edf94430eb277b120a498fb02d8d916373"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/baseline.py",
+      "sha256": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/candidate.py",
+      "sha256": "54e34835e825989b6edfaee96bb466be334801408c34227729e489086f36e321"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/compare_batches.py",
+      "sha256": "6bcb79a22688199e8fc64b899f814e383c77ed1b07b8d2c4475d2149bec1ddc2"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/pairs.json",
+      "sha256": "301d5eb33c6bc4d690204bc319dc41e7200a6882033d34f09419cb0a2a50e4d1"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/comparison.json",
+      "sha256": "eec844de127b841081205c829d1c737fadb076c38c26a26b7e5f8603396b0afa"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/live-before.json",
+      "sha256": "bf04d78f0fd44ea7def1500edd085f2d5c9bbcdb4eaee50338667e48ff6e5866"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/live-before-timing.json",
+      "sha256": "b6b83658aba2403ef31790f7a8406e67feca69e5ce5ac04f5f4c8833e77c2c58"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/probe_transports.go",
+      "sha256": "ba3d8c671ea926fb4e111a6d8fdde45d5a364faea8d2d49331581ec0c57bafef"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/transport-probe.json",
+      "sha256": "6a95974b9a0ad8445f1866ecef4c33d3801dad28ad85f94a1d9deda524844662"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deadline-red.log",
+      "sha256": "1b2ed3f950acd79f803de2120087e9d4cf0ac1e89faec2400fc261a185cf9158"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deadline-green.log",
+      "sha256": "c432e28a0984cc76c2438eb74e801a0eaad71c7ccde6d5d18e1f0db3f4944e22"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/integration.log",
+      "sha256": "402009cdba22ac79e48e94d97b5141082c39144f56f0237c01734bc4b306f474"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/python-tests.log",
+      "sha256": "48f353a5b6def5999aae42dbbb6e49aeb8a444378e012e2e66524e47861645e3"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/evidence.py",
+      "sha256": "b406e1f3990dddfe60d0f9d1f71b4e6d72fbebc54be3382bbc68d3e45968a533"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/final_evidence.py",
+      "sha256": "c8af3e8a7b8aae6a27d76b338e47172a27cc47f6e7fc1a71d349067b0583a452"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/decision-receipt.json",
+      "sha256": "2fdcea99cc9778e79651c1c51e94a4d349cb59f773186a50dc1ed58d702a8553"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/doctrine.json",
+      "sha256": "73d4acd8366fb4c7907f6f253a5c49c4f9643f891603904c5e961af780b208e0"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/doctrine-verified.json",
+      "sha256": "1abb22963b5b902b41510d5d9c2dd5158686d4c91f49ae695a47f474baa5ce7b"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/doctrine-final.json",
+      "sha256": "444e9a0a66a3bdad18e84a248812dbd0720799481b5ab89f09b34cdaa3e5d98e"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/install.py",
+      "sha256": "d9aa77b8cc572384fdb733174ed133c94bf0d21b6b252eb33f9a06a812da3324"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/native_opencode.py",
+      "sha256": "2b33fd132920adc613d36163d6c661c5c0daa5e6e6dd6073056eba9750f1a060"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/native_codex.py",
+      "sha256": "be45c13f3045040e09faa3ac8ef3a9c3b144c6905a2cf129a902a10fbf85dbdc"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/update_guide.py",
+      "sha256": "999565ab78a7165f7b456ead690ade73aeed06e757ff7c242f3587468ef3bf46"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/ci.json",
+      "sha256": "e994da4152b315c660e039eb65b749c8e2d06283a0e3ec2b6d4bb298ea73a36b"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/installation.json",
+      "sha256": "4de448c659edbe1f2a97729931c01f57897ad41744cfa7deaaae533dcbba959c"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/preflight.json",
+      "sha256": "2f4366b0ce3a46902ad0e8f548adaaf6bef65befbef3b9c484471d46df17720c"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/opencode-report.json",
+      "sha256": "1bcc1cec4e626d1f646b7cc40eea47b405ca5659f7c3adc52ae3ff55d0dbd0b8"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/opencode-search.json",
+      "sha256": "2a49b960b56fbdc63011a592392c3a3112ee30bc65681704e6ea2d68815514c1"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/opencode-pull.json",
+      "sha256": "d7b0ed78466813994a22fac4930682aac0cea2ed654740d19a7d19987c0d54de"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/codex/report.json",
+      "sha256": "ee022e0e4ff564e07bc873f176bc36236fe42d952ea872f82cb6919106de3ceb"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/codex/search.json",
+      "sha256": "e0e32e1a19b0d02e130f256abd88e91bc3f3d66e57ed892e42f820be6d85b5ec"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/codex/pull.json",
+      "sha256": "d7b0ed78466813994a22fac4930682aac0cea2ed654740d19a7d19987c0d54de"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/guide-update.json",
+      "sha256": "f016f4c63005015c0f19c756060e1e1191930e2d8bd0f105c6e536414e393d07"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/guide-after.json",
+      "sha256": "0a3a88c674c6cc6ca458c6fd63542bffe403aa9a2d0d47d57bfc3c4175ff224f"
+    },
+    {
+      "path": "/tmp/cairn-cold-cost/deployment/lexical-after-guide.json",
+      "sha256": "d8f92ffddc7058bf59670335cf41f7b683ad9e72533be6e2c73ffb4fc2d1e982"
+    }
+  ],
+  "deployment": {
+    "commit": "a848e3c0051b4dabc334613d8fcc3ce969b550dd",
+    "binary_sha256": "8d0f1836bca1532ea2643a43890e6fbf23778ba14c0e16ccb5cd19e8ef581e2f",
+    "api_pid": "2093518",
+    "postgres_pid": "163669",
+    "schema": 33,
+    "configuration_and_worker_unchanged": true,
+    "opencode": {
+      "opencode_version": "1.18.21",
+      "cold_seconds": 25.209559882059693,
+      "pull_seconds": 0.9415554951410741,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "3b9db33eed6e6f451f3828ccfc7f1b2cb24d232e2be6aaa242ce6d7aef6a8fc1"
+      },
+      "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+      "version": 9,
+      "body_sha256": "92d3d1461c35b7543a188406ace2facdfa38ddadb6c152aace89f7de6fa59850",
+      "full_corpus_score_digest_matches": true,
+      "cold_api_children_before": [],
+      "model_calls": 0,
+      "mode": "actual native debug tool execution, no answering model",
+      "adapter_sha256": "63476bf4d92f1812b09a7f51be4603e23261d5d4eb20a56c790051ae8bc3bbec"
+    },
+    "codex": {
+      "codex_version": "codex-cli 0.153.4",
+      "thread_id": "01a08c22-98d0-7610-b097-511c760cb6b6",
+      "search_seconds": 20.49395666178316,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "3b9db33eed6e6f451f3828ccfc7f1b2cb24d232e2be6aaa242ce6d7aef6a8fc1"
+      },
+      "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+      "version": 9,
+      "body_sha256": "92d3d1461c35b7543a188406ace2facdfa38ddadb6c152aace89f7de6fa59850",
+      "exact_scores_match_opencode": true,
+      "project_configuration_used": true,
+      "mcp_overrides": false,
+      "model_turns": 0,
+      "ephemeral": true
+    },
+    "guidance_update": {
+      "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+      "before_version": 6,
+      "after_version": 7,
+      "before_sha256": "ac8e2d3da16104904841661d5491de7652333e1e877ac1fdd7f0d0838d98c8bf",
+      "after_sha256": "99fce4e09c2939972b7460e013c50766ad79fa95572887c1f3eaf9a32e38e539",
+      "preserved_all_other_text": true,
+      "previous_body_retained": true,
+      "metadata_preserved": true,
+      "request_id": "d58e8282-855f-4beb-a429-0b90e3af10d7",
+      "before_receipt": "c7e4aada-6557-4fa5-b62f-501b9f552b9a",
+      "after_receipt": "bafa4411-0fa1-4b32-a3f0-f41895830ef6",
+      "after_body_bytes": 6296
+    },
+    "lexical_after_correction": "OpenCode setup first and Codex setup second; general worker guidance no longer displaces them",
+    "measurement_corpus": "All timing and native score parity observations precede guide v7"
+  }
+}

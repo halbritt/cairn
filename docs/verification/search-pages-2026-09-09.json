@@ -1,0 +1,238 @@
+{
+  "schema": "cairn.search-pages-verification/1",
+  "baseline_commit": "d8ff5690ba0b0d1a096b5fbe8ea55641c9809ef5",
+  "behavior": {
+    "opt_in": "offset=0",
+    "continuation": "page.next_offset",
+    "raw_request": "page_offset",
+    "schema": "cairn.semantic/11",
+    "offset_range": [
+      0,
+      10000
+    ],
+    "ranking_changed": false,
+    "snapshot_cursor": false,
+    "per_page_budget": true,
+    "mandatory_context_every_page": true,
+    "migration": false
+  },
+  "checks": {
+    "static": true,
+    "go_python": true,
+    "python_tests": 40,
+    "disposable_pg_race_integration": true,
+    "native_opencode": true,
+    "answering_model": false,
+    "final_core_checks": true
+  },
+  "doctrine": {
+    "packet_id": "pkt-20e4d66b311b2515",
+    "packet_content_sha256": "20e4d66b311b2515978a789aa180ef774a44dcbec5112727adfd29c48000c7f9",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or package dependency; existing concrete allocation owner is reused."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or package dependency; existing concrete allocation owner is reused."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or package dependency; existing concrete allocation owner is reused."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No new Go interface or package dependency; existing concrete allocation owner is reused."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-search-pages-evidence-authority.json",
+      "sha256": "3617920ad1c2182c9ba43c353dd517f618388be07115d2543a416115315361d1"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-evidence-contract.json",
+      "sha256": "e79f5c9612dc71ee63b208e8455945c71e163baeef6b01c84dd64b12dd912c5c"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-evidence-placement.json",
+      "sha256": "4e53f3bc5353692652480a86a8e276db410ee0b420f9633c3616f193a796be03"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-evidence-checks.json",
+      "sha256": "2c3140a6d0583ff72d7f474195450a89ba691b3ea22a243c9423dd654feca46e"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-red.log",
+      "sha256": "52f37ec4d9b72e858c8dbcf962c9e018d640b8ccfe9ce1f0d2535c65e361ec02"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-cli-red.log",
+      "sha256": "34885d8b7dffe25775d44b6a012388dd19d063e3ebdb2ab7609606f7bf3e61f0"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-mcp-red.log",
+      "sha256": "c9fc9759e664034bf58431a4aa032ebc626de0d1f2de859479dc2e4a72be7bed"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-native-red.log",
+      "sha256": "99a867181364ba8dbdb0273d14fcbe543a63989db450b5a16ff2afb5541c8e19"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-core-final.log",
+      "sha256": "9d64e3a7c5ba73f944055514807b38d0a1abd078b4e55d3e035ebfc9cae9549c"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-tests.log",
+      "sha256": "70d4941283bd09fd9e3e0a89b962f40f078a8977d26e2c2744221ecca0aed524"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-integration.log",
+      "sha256": "64fc263661c03ec05fa618af32b6106f43bf32a23f2192e5312792ada30d0c5e"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-decision.json",
+      "sha256": "e68c3883de45158bb75dd6d8ffdba9257f1b580cf0b0745822914114657957a3"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-doctrine.json",
+      "sha256": "ea9a6eef973fe4a8aeb55b3a8e2d97ba79a2b32f6aea2746e1539929f4119ca4"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-doctrine-final.json",
+      "sha256": "690d5de13e0a78cb990b350965798a3ff3498468975b556189c5cb396a853b28"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-citations.json",
+      "sha256": "8354ac8a4b3423962cae637c960194f1f864666e6b5faa3e296487cf1817f7f3"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-citations-final.json",
+      "sha256": "76c4901a3310615b35e69edd7880b4d218ab0722f9e47a95392bd278825a73b2"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-deployment/installation.json",
+      "sha256": "9368a00cb930b723a80783ede1c5009b24d5042e40485d2ea591ead04d411205"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-deployment/semantic-live.json",
+      "sha256": "e8e4c9cef89afefa86fb8e3af1276e42d3f30e13ac8cf6e897d4f5b4a247c646"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-ci.json",
+      "sha256": "4852e22099ac4becc8b3c482ec0247d95c0f177ba150b66d2c25a307bff7f29e"
+    },
+    {
+      "path": "/tmp/cairn-search-pages-build.txt",
+      "sha256": "6f49d92aa542a8cbcaa9a876cd76382bca45c6d4b6676cd799143474b5a7e4fb"
+    }
+  ],
+  "installation": {
+    "source_commit": "032b9c7a6b135b11f38cc2ddc408a9518b5c5848",
+    "cli_api_sha256": "5b1123987348931eeb914907bf2e77bc78cd74b5688b10b969e82a4262e52005",
+    "api_pid": 680757,
+    "postgres_pid": 163669,
+    "adapter_sha256": "e0b2c2d4dba5a5daaec53f55643f2cbba34d459e1c0b013d97275c3232519ecd",
+    "preserved": {
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "bb97a6690041a004c3385743b3b860394f635995d8b63781501900527b2793cd"
+    },
+    "backup": {
+      "path": "/home/halbritt/.local/share/cairn/backups/cairn-20260910T024007-678187.dump",
+      "sha256": "1518a40090547045ba6249e6fc1ecf767d90afa964062350afa0c02631972c4f"
+    },
+    "unpaged_preserved": true,
+    "unpaged_count": 6,
+    "lexical_pages": [
+      {
+        "offset": 0,
+        "entries": 5,
+        "next_offset": 5
+      },
+      {
+        "offset": 5,
+        "entries": 5,
+        "next_offset": 10
+      },
+      {
+        "offset": 10,
+        "entries": 5,
+        "next_offset": 15
+      },
+      {
+        "offset": 15,
+        "entries": 3,
+        "next_offset": null
+      }
+    ],
+    "lexical_distinct_entries": 18,
+    "later_page_exact_pull": {
+      "record_id": "7cf12fed-ae20-4991-8c4b-367ca133bc20",
+      "version": 1,
+      "sha256": "29332b2401226c409fbc01d996465e2149ecdd42c21f5981803ef8993cc1e3e8"
+    },
+    "semantic": {
+      "pages": [
+        {
+          "offset": 0,
+          "entries": 5,
+          "elapsed_seconds": 15.558157362043858,
+          "next_offset": 5
+        },
+        {
+          "offset": 5,
+          "entries": 5,
+          "elapsed_seconds": 0.054199407109990716,
+          "next_offset": 10
+        },
+        {
+          "offset": 10,
+          "entries": 5,
+          "elapsed_seconds": 0.05492512183263898,
+          "next_offset": 15
+        },
+        {
+          "offset": 15,
+          "entries": 5,
+          "elapsed_seconds": 0.055888283997774124,
+          "next_offset": null
+        }
+      ],
+      "total_distinct_entries": 20,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "104e13b723435ed586db335a37ba6ed0623c3a17fc40f7d84295ebedd8a5b0f7"
+      },
+      "answering_model": false
+    },
+    "operational_notes_changed": 0,
+    "ci": {
+      "id": 34430333159,
+      "status": "completed",
+      "conclusion": "success",
+      "commit": "032b9c7a6b135b11f38cc2ddc408a9518b5c5848"
+    }
+  }
+}

@@ -1,0 +1,273 @@
+// Install as .opencode/tools/cairn.ts; connection settings belong in .opencode/cairn.json.
+import { tool, type ToolContext } from "@opencode-ai/plugin"
+import { execFile } from "node:child_process"
+import { readFile } from "node:fs/promises"
+import { isAbsolute } from "node:path"
+import type { ZodRawShape } from "zod"
+
+const z = tool.schema
+function validatedTool<Args extends ZodRawShape>(definition: Parameters<typeof tool<Args>>[0]) {
+  const schema = z.object(definition.args).strict()
+  return tool({ ...definition, async execute(args, context) {
+    // OpenCode's model-facing schema does not validate the execution arguments.
+    const parsed = schema.safeParse(args)
+    if (!parsed.success) throw new Error("INVALID_REQUEST: invalid arguments for Cairn tool")
+    return definition.execute(parsed.data, context)
+  } })
+}
+
+const contextFields = {
+  revision: z.string().optional(), workspace_sha256: z.string().optional(),
+  task_class: z.string().optional(), task_phase: z.string().optional(),
+  binding_id: z.string().optional(), capability_id: z.string().optional(),
+}
+
+const entities = z.array(z.object({ kind: z.enum(["file", "symbol"]), name: z.string().min(1) }).strict()).max(16).optional().describe("Explicit file or symbol associations. File names are canonical repository-relative paths; symbols are qualified labels. Names are case-sensitive; no alias or rename resolution. Fallible relevance metadata, never authority or observed workspace state.")
+
+const absolutePath = z.string().refine(isAbsolute, "Use an absolute installation path")
+const declaredScope = z.string().refine(value => value.trim() !== "" && value !== "*" &&
+  Buffer.byteLength(value, "utf8") <= 256 && !/[\u0000\uD800-\uDFFF]/u.test(value),
+  "Use 1-256 UTF-8 bytes, without NUL or wildcard")
+const settingsSchema = z.object({
+  executable: absolutePath,
+  socket: absolutePath,
+  token_file: absolutePath,
+  repo: z.string().min(1).refine(value => value !== "*"),
+  tokens: z.number().int().min(256).max(1000000).default(32000),
+  task_id: declaredScope.optional(),
+  run_id: declaredScope.optional(),
+  context: z.object({
+    revision: z.string().optional(),
+    workspace_sha256: z.string().optional(),
+    task_class: z.string().optional(),
+    task_phase: z.string().optional(),
+    binding: z.string().optional(),
+    capability: z.string().optional(),
+  }).strict().optional(),
+}).strict().refine(config => config.run_id === undefined || config.task_id !== undefined,
+  "A declared run_id requires task_id")
+type Settings = ReturnType<typeof settingsSchema.parse>
+
+async function settings(name: string, context: ToolContext) {
+  const config = settingsSchema.parse(JSON.parse(await readFile(new URL("../cairn.json", import.meta.url), "utf8")))
+  await context.ask({ permission: "cairn_" + name, patterns: [config.repo], always: [config.repo], metadata: {} })
+  return config
+}
+
+function searchScope(config: Settings, context: ToolContext) {
+  const session = context.sessionID
+  if (!session || session === "*" || Buffer.byteLength(session) > 240 || /[\s\p{Cc}]/u.test(session)) {
+    throw new Error("Cairn requires a valid native OpenCode session ID")
+  }
+  return { repo: config.repo, task_id: config.task_id ?? "opencode/" + session, run_id: config.run_id ?? session }
+}
+
+function call(config: Settings, context: ToolContext, args: string[], input?: unknown): Promise<unknown> {
+  const command = ["agent", "--socket", config.socket, "--token-file", config.token_file, ...args]
+  // Process arguments replace lone UTF-16 surrogates before Cairn can inspect them.
+  if ([config.executable, ...command].some(value => /[\uD800-\uDFFF]/u.test(value))) {
+    return Promise.reject(new Error("INVALID_REQUEST: CLI arguments require well-formed Unicode"))
+  }
+  return new Promise((resolve, reject) => {
+    const child = execFile(config.executable, command,
+      { encoding: "utf8", timeout: 30000, maxBuffer: 1024 * 1024, signal: context.abort }, (error, stdout) => {
+        let response
+        try { response = JSON.parse(stdout) } catch {
+          reject(new Error("Cairn CLI failed without a valid response; check the local installation and connection"))
+          return
+        }
+        if (error || response.schema !== "cairn.response/1" || response.ok !== true) {
+          reject(new Error(response.message ?? "Cairn CLI request failed"))
+          return
+        }
+        resolve(response.data)
+      })
+    child.stdin?.on("error", () => reject(new Error("Cairn CLI input pipe failed")))
+    child.stdin?.end(input === undefined ? undefined : JSON.stringify(input))
+  })
+}
+
+function render(value: unknown, config: Settings) {
+  const text = JSON.stringify(value)
+  if (Buffer.byteLength(text, "utf8") > config.tokens) {
+    throw new Error("BUDGET_REFUSED: tool result exceeds memory input room")
+  }
+  return text
+}
+
+const pullArgs = {
+  request_id: z.string().uuid(),
+  receipt_id: z.string().uuid(),
+  handle: z.string().uuid(),
+}
+const searchView = z.object({
+  schema: z.literal("cairn.agent-search/1"),
+  index: z.array(z.object({ pull_arguments: z.object(pullArgs), pull_command: z.string() }).passthrough()),
+}).passthrough()
+const writeResult = z.object({ record_id: z.string().uuid(), version: z.number().int().positive() })
+
+export const search = validatedTool({
+  description: "Search repository memory in the host's configured task/run scope, defaulting to this OpenCode session, with a query or browse=true without a query. Browsing is bounded by the same budget, ordered by scope and recency, and is not a complete inventory or relevance ranking. Read mandatory selected context and pull relevant index entries using their complete pull_arguments. A notes are fallible; verify before applying them. Search records exposure, not proven use.",
+  args: { available_tokens: z.number().int().min(256).max(1000000).optional().describe("Optional input room for this search, in conservative UTF-8 bytes; cannot exceed the configured host ceiling. Omit for the host default. Repeat on retries and pages; changed room needs a new request UUID. Does not measure or enforce whole-conversation context usage."), advisory_conflicts: z.boolean().optional().describe("Opt in to qualified competing advisory positions. All must be eligible together; otherwise the group is omitted. Pulling a marked position returns its complete competing positions under the shared budget. Repeat on retries and later pages. Does not resolve disagreement or change authority."), entities: entities.describe("Optional explicit file/symbol hints. With the recent-files plugin, omission on a fresh first search uses recent successful file reads; [] disables that behavior. Copy returned query_entities on retries and later pages. Names are fallible relevance metadata, not authority."), context: z.object(contextFields).strict().optional().describe("Context declared for this search only. May fill fields the host left unset; conflicting configured values are refused. Observe actual task state first. Does not certify execution or change repository/session scope. Repeat the same context on later pages."), error_signature_sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional().describe("SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by a shareable operator review. May replace query text; cannot browse. Not proof of failure or correctness."), kinds: z.array(z.enum(["note", "observation", "claim", "lesson", "procedure", "decision", "preference", "instruction"])).max(8).optional().describe("Select any listed optional record label; empty means all. Required instructions always apply. Labels do not establish authority."), query: z.string().optional().describe("Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available."), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget."), request_id: z.string().uuid().optional() },
+  async execute(args, context) {
+    const query = args.query ?? ""
+    if (args.semantic && args.browse) throw new Error("INVALID_REQUEST: semantic discovery cannot be combined with browsing")
+    if ((args.browse && (query !== "" || args.error_signature_sha256 || args.entities?.length)) || (!args.browse && query.trim() === "" && !args.error_signature_sha256 && !args.entities?.length)) {
+      throw new Error("INVALID_REQUEST: search requires a query, entities, error_signature_sha256, or browse=true without search hints")
+    }
+    const config = await settings("search", context)
+    const room = args.available_tokens ?? config.tokens
+    if (room > config.tokens) throw new Error("INVALID_REQUEST: available_tokens exceeds configured ceiling " + config.tokens)
+    const scope = searchScope(config, context)
+    const command = ["search", "--repo", scope.repo, "--task", scope.task_id, "--run", scope.run_id, "--tokens", String(room)]
+    if (args.request_id) command.push("--request-id", args.request_id)
+    const declared: Record<string, string | undefined> = { ...args.context }
+    for (const [key, value] of Object.entries(config.context ?? {})) {
+      if (!value) continue
+      const field = key === "binding" ? "binding_id" : key === "capability" ? "capability_id" : key
+      if (declared[field] && declared[field] !== value) {
+        throw new Error("INVALID_REQUEST: context." + field + " conflicts with configured context")
+      }
+      declared[field] = value
+    }
+    for (const [key, value] of Object.entries(declared)) {
+      const flag = key === "binding_id" ? "binding" : key === "capability_id" ? "capability" : key.replaceAll("_", "-")
+      if (value !== undefined) command.push("--" + flag, value)
+    }
+    for (const entity of args.entities ?? []) command.push("--entity-" + entity.kind, entity.name)
+    for (const kind of args.kinds ?? []) command.push("--kind", kind)
+    if (args.error_signature_sha256) command.push("--error-signature-sha256", args.error_signature_sha256)
+    if (args.advisory_conflicts) command.push("--advisory-conflicts")
+    if (args.semantic) command.push("--semantic")
+    if (args.browse) command.push("--browse", "--offset", String(args.offset ?? 0))
+    else {
+      if (args.offset !== undefined) command.push("--offset", String(args.offset))
+      command.push("--", query)
+    }
+    const view = searchView.parse(await call(config, context, command))
+    // Native callers need the structured arguments, not a shell invocation.
+    const index = view.index.map(({ pull_command, ...entry }) => entry)
+    // Presentation metadata for repeatable retries/pages, not part of the seal.
+    return render({ ...view, schema: "cairn.opencode-search/1", query_entities: args.entities ?? [], index }, { ...config, tokens: room })
+  },
+})
+
+export const history = validatedTool({
+  description: "Inspect retained versions of a known record for comparison. Omit version for newest-first metadata; follow next_before_version as before_version. Supply a positive version for one exact body, without nonzero paging fields. Optional span selects a byte excerpt of that version and omits the full body; UTF-8 fragments use body_base64. Historical text and class do not establish current eligibility or authority; pull the current note before editing. The authenticated profile controls repository and destination; forgotten or excluded payloads refuse. No request UUID or expansion handle is needed. This read has its own output budget and does not spend index expansion credits; budget combined context across calls.",
+  args: { record_id: z.string().uuid(), version: z.number().int().min(0).max(2147483647).optional(),
+    before_version: z.number().int().min(0).max(2147483647).optional(),
+    limit: z.number().int().min(0).max(100).optional().describe("Metadata page size; omitted or zero means 20"),
+    span: z.object({ offset: z.number().int().min(0).max(65535), length: z.number().int().min(1).max(65536) }).strict().optional().describe("Byte excerpt; requires a positive exact version") },
+  async execute(args, context) {
+    const config = await settings("history", context)
+    return render(await call(config, context, ["history"], { ...args, repo: config.repo }), config)
+  },
+})
+
+export const assessments = validatedTool({
+  description: "Read an owned receipt's assessment history in ascending version order, including reasons, evidence IDs, observer, witness and method. Empty history returns []. Read before writing or interpreting an outcome; unknown acceptance does not mean zero memory value. A linked retrieval does not grant access to the host's assessment. The profile controls ownership, repository and destination. Returns no evidence bodies; at most 1000 versions, without pagination or silent truncation. The configured output budget applies.",
+  args: { receipt_id: z.string().uuid() },
+  async execute(args, context) {
+    const config = await settings("assessments", context)
+    return render(await call(config, context, ["assessments"], args), config)
+  },
+})
+
+const assessmentResult = z.object({
+  receipt_id: z.string().uuid(), version: z.number().int().positive(),
+  witness: z.enum(["testimony", "instrumented"]), observer: z.string(),
+})
+
+export const assess = validatedTool({
+  description: "Append a review to a receipt owned by the configured profile in its repository and destination. Read cairn_assessments first; expected_version is the latest reviewed version, or 0 for empty history. Choose a request UUID before writing and reuse complete arguments for retries. VERSION_CONFLICT requires reading and reconciling history. Agent reviews remain testimony; an owned retrieval is distinct from the host's task assessment. Returns identifiers and attribution without echoing the reason. A failed response may follow a committed write; retry the saved request.",
+  args: {
+    request_id: z.string().uuid(), receipt_id: z.string().uuid(),
+    expected_version: z.number().int().min(0).max(2147483647),
+    task_outcome: z.enum(["accepted", "rejected", "not_attempted", "unknown"]).describe("Use unknown for uncertain acceptance; other outcomes require selected evidence IDs."),
+    failure_domain: z.enum(["none", "binding", "capability", "task", "unknown"]),
+    failure_kind: z.string().describe("Use an empty string for ordinary qualitative review with unknown outcome and domain."),
+    error_signature_sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+    method: z.string().describe("Name the method used to review the task."),
+    evidence_ids: z.array(z.string().uuid()).max(32).describe("Explicitly selected captured evidence IDs; [] is allowed for unknown outcome."),
+    reason: z.string().describe("8-4000 trimmed characters. Record observations, alternatives, costs and uncertainty; source pointers here remain narrative."),
+  },
+  async execute(args, context) {
+    const config = await settings("assess", context)
+    const result = assessmentResult.parse(await call(config, context, ["assess-run"], args))
+    return render({ ...result, request_id: args.request_id }, config)
+  },
+})
+
+export const pull = validatedTool({
+  description: "Pull a memory body using its complete pull_arguments. Optional span selects byte offset and maximum length for a partial A/B source; selected bytes and hashes appear in span, with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers. Instructions and marked competing positions require a whole pull. A marked pull returns the requested selection plus competing positions; read all of them. Use a new request UUID for a different range. STALE_HANDLE requires a fresh search. Shares the original receipt's expansion budget. Read the complete note before replacing its body.",
+  args: { ...pullArgs, span: z.object({ offset: z.number().int().min(0).max(65535), length: z.number().int().min(1).max(65536) }).strict().optional() },
+  async execute(args, context) {
+    const config = await settings("pull", context)
+    return render(await call(config, context, ["expand"], args), config)
+  },
+})
+
+export const pull_evidence = validatedTool({
+  description: "Pull evidence attached to an expanded memory. Use its evidence ID and full-object expected SHA256 with the original receipt and handle. Optional span selects byte offset and maximum length, clipped at EOF; selected bytes and their checksum appear in span. Reuse the request UUID only for identical retries. Shares the expansion budget.",
+  args: { ...pullArgs, evidence_id: z.string().uuid(), expected_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    span: z.object({ offset: z.number().int().min(0).max(1048575), length: z.number().int().min(1).max(1048576) }).strict().optional() },
+  async execute(args, context) {
+    const config = await settings("pull_evidence", context)
+    return render(await call(config, context, ["expand-evidence"], args), config)
+  },
+})
+
+export const remember = validatedTool({
+  description: "Save explicitly selected knowledge as ordinary A testimony. Scope defaults to repository-wide; explicitly choose task or run for narrower applicability. Include source and verification context; never raw sessions or secrets. Reuse the request UUID for retries. shareable permits hosted delivery; local is the default.",
+  args: { scope: z.enum(["repository", "task", "run"]).optional().describe("Repository applies across tasks/runs. Task uses the host search task across runs; run uses its task and run. Labels come from settings or the native session. Choose explicitly; ordinary edits cannot change scope."), entities, request_id: z.string().uuid(), body: z.string().min(1), kind: z.string().optional().describe("Defaults to note"), shareable: z.boolean().optional(),
+    pins: z.object({
+      ...contextFields,
+      valid_from: z.string().optional(), valid_until: z.string().optional(),
+    }).strict().optional().describe("Explicit applicability restrictions; all must match. Omit for unpinned guidance. Never inherited from search context. Edits cannot change pins."),
+  },
+  async execute(args, context) {
+    const config = await settings("remember", context)
+    const scope = args.scope === "task" || args.scope === "run"
+      ? searchScope(config, context) : { repo: config.repo, task_id: "*", run_id: "*" }
+    if (args.scope === "task") scope.run_id = "*"
+    const result = await call(config, context, ["create"], { request_id: args.request_id, draft: {
+      kind: args.kind ?? "note", body: args.body, scope,
+      sensitivity: args.shareable ? "shareable" : "local", claim_type: "self", pins: args.pins, entities: args.entities,
+    } })
+    return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
+  },
+})
+
+export const edit = validatedTool({
+  description: "Revise a pulled active A note. Supply exactly one of body (text only), append (verbatim suffix including separating whitespace; combined body maximum 65536 bytes), replace ({old_text, new_text}: old_text must match one unique exact passage; all other text is preserved; empty new_text removes the passage if the note remains nonblank), draft (complete replacement), or evidence_citations (replace source references; [] clears them). Text edits preserve citations; earlier versions retain their sources. Citations require captured source IDs and full-source digests and remain testimony, not qualification. Supply its ID, expected version, and a new request UUID. Preserve scope, sensitivity, pins, entities, relations and attribution except deliberately changed associations. Reuse exact arguments for retries; VERSION_CONFLICT needs fresh search/pull and reconciliation. Returns identifiers without echoing the body.",
+  args: { request_id: z.string().uuid(), record_id: z.string().uuid(), expected_version: z.number().int().positive(), body: z.string().min(1).optional(), append: z.string().min(1).optional(), replace: z.object({ old_text: z.string().min(1), new_text: z.string() }).strict().optional(), draft: z.record(z.string(), z.unknown()).optional(),
+    evidence_citations: z.array(z.object({ evidence_id: z.string().uuid(), expected_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      spans: z.array(z.object({ offset: z.number().int().min(0), length: z.number().int().positive() }).strict()).max(32).optional(),
+    }).strict()).max(32).optional(),
+  },
+  async execute(args, context) {
+    if ([args.body, args.append, args.replace, args.draft, args.evidence_citations].filter(value => value !== undefined).length !== 1) throw new Error("INVALID_REQUEST: supply exactly one of body, append, replace, draft or evidence_citations")
+    const config = await settings("edit", context)
+    if (args.evidence_citations !== undefined) {
+      const result = await call(config, context, ["cite"], { request_id: args.request_id, record_id: args.record_id, expected_version: args.expected_version, repo: config.repo, evidence_citations: args.evidence_citations })
+      return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
+    }
+    if (args.replace !== undefined) {
+      const result = await call(config, context, ["replace"], { request_id: args.request_id, record_id: args.record_id, expected_version: args.expected_version, repo: config.repo, ...args.replace })
+      return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
+    }
+    if (args.append !== undefined) {
+      const result = await call(config, context, ["append"], { request_id: args.request_id, record_id: args.record_id, expected_version: args.expected_version, repo: config.repo, body: args.append })
+      return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
+    }
+    if (args.body !== undefined) {
+      const result = await call(config, context, ["revise"], { request_id: args.request_id, record_id: args.record_id, expected_version: args.expected_version, repo: config.repo, body: args.body })
+      return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
+    }
+    if ((args.draft?.scope as { repo?: unknown } | undefined)?.repo !== config.repo) {
+      throw new Error("AUTHORITY_DENIED: edit draft must use the configured repository")
+    }
+    const result = await call(config, context, ["edit"], args)
+    return render({ ...writeResult.parse(result), request_id: args.request_id }, config)
+  },
+})

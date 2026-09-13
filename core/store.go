@@ -1,0 +1,410 @@
+package core
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+//go:embed schema/*.sql
+var schemas embed.FS
+
+type Store struct {
+	pool           *pgxpool.Pool
+	channel        Channel
+	semanticRanker SemanticRanker
+}
+
+// Open must be called by trusted host code. Agents must never receive the DSN
+// or choose the Channel. The local CLI uses OS identity and testimony only.
+func Open(ctx context.Context, dsn string, channel Channel) (*Store, error) {
+	if strings.TrimSpace(channel.Principal) == "" || len(channel.Principal) > 256 {
+		return nil, failure("AUTHORITY_DENIED", "trusted channel identity required")
+	}
+	if dsn == "" {
+		return nil, failure("INVALID_REQUEST", "explicit database DSN required")
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return nil, err
+	}
+	if err = pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, &Error{Code: "STORE_UNREACHABLE", Message: "cannot connect to the configured Cairn database", Cause: err}
+	}
+	return &Store{pool: pool, channel: channel}, nil
+}
+
+// OpenWithSemanticRanker enables an optional host-owned scorer before the store
+// is shared. The ordinary Open path remains independent of an embedding model.
+func OpenWithSemanticRanker(ctx context.Context, dsn string, channel Channel, ranker SemanticRanker) (*Store, error) {
+	s, err := Open(ctx, dsn, channel)
+	if err == nil {
+		s.semanticRanker = ranker
+	}
+	return s, err
+}
+func (s *Store) Close() { s.pool.Close() }
+
+// Migrate requires installer credentials and a dedicated experimental database.
+// Migrations and their checksums commit together; concurrent installers serialize.
+func (s *Store) Migrate(ctx context.Context) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(728190041)`); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS public.cairn_migration (
+        version integer PRIMARY KEY, digest bytea NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+		return err
+	}
+	files, err := schemas.ReadDir("schema")
+	if err != nil {
+		return err
+	}
+	var newest int
+	if err = tx.QueryRow(ctx, `SELECT COALESCE(max(version),0) FROM public.cairn_migration`).Scan(&newest); err != nil {
+		return err
+	}
+	if newest > len(files) {
+		return failure("SCHEMA_MISMATCH", "database is newer than this binary")
+	}
+	for index, file := range files {
+		contents, err := schemas.ReadFile("schema/" + file.Name())
+		if err != nil {
+			return err
+		}
+		digest := sha256.Sum256(contents)
+		var existing []byte
+		err = tx.QueryRow(ctx, `SELECT digest FROM public.cairn_migration WHERE version=$1`, index+1).Scan(&existing)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			if _, err = tx.Exec(ctx, string(contents)); err != nil {
+				return err
+			}
+			if _, err = tx.Exec(ctx, `INSERT INTO public.cairn_migration(version,digest) VALUES($1,$2)`, index+1, digest[:]); err != nil {
+				return err
+			}
+		case err != nil:
+			return err
+		case !bytes.Equal(existing, digest[:]):
+			return failure("SCHEMA_MISMATCH", "migration checksum differs")
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) begin(ctx context.Context) (pgx.Tx, error) {
+	return s.beginLevel(ctx, pgx.ReadCommitted)
+}
+func (s *Store) beginLevel(ctx context.Context, level pgx.TxIsoLevel) (pgx.Tx, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: level})
+	if err != nil {
+		return nil, err
+	}
+	witness := "testimony"
+	if s.channel.Instrumented {
+		witness = "instrumented"
+	}
+	_, err = tx.Exec(ctx, `SELECT set_config('cairn.caller',$1,true), set_config('cairn.witness',$2,true)`, s.channel.Principal, witness)
+	if err != nil {
+		tx.Rollback(context.Background())
+		return nil, err
+	}
+	if err = restoreAdmission(ctx, tx); err != nil {
+		tx.Rollback(context.Background())
+		return nil, err
+	}
+	return tx, nil
+}
+
+// One request lock covers lookup, effect and stored response. A lost response can
+// be retried without repeating the effect; a different intent cannot reuse a key.
+func mutate[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
+	return mutateOnce(ctx, s, operation, requestID, request, pgx.ReadCommitted, apply, guards...)
+}
+
+func privileged[T any](ctx context.Context, s *Store, operation, requestID string, request any, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
+	var zero T
+	for attempt := 0; attempt < 4; attempt++ {
+		result, err := mutateOnce(ctx, s, operation, requestID, request, pgx.Serializable, apply, guards...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || (pgErr.Code != "40001" && pgErr.Code != "40P01" && !(pgErr.Code == "23505" && pgErr.ConstraintName == "mutation_request_pkey")) {
+			return result, err
+		}
+		select {
+		case <-ctx.Done():
+			return zero, ctx.Err()
+		case <-time.After(time.Duration(attempt+1) * 5 * time.Millisecond):
+		}
+	}
+	return zero, failure("VERSION_CONFLICT", "serialization retry limit reached; retry the same request")
+}
+
+func mutateOnce[T any](ctx context.Context, s *Store, operation, requestID string, request any, level pgx.TxIsoLevel, apply func(pgx.Tx) (T, error), guards ...func(pgx.Tx) error) (T, error) {
+	var zero T
+	if err := validID(requestID); err != nil {
+		return zero, err
+	}
+	canonical, err := json.Marshal(request)
+	if err != nil {
+		return zero, err
+	}
+	digest := sha256.Sum256(canonical)
+	tx, err := s.beginLevel(ctx, level)
+	if err != nil {
+		return zero, err
+	}
+	defer tx.Rollback(context.Background())
+	if err = lock(ctx, tx, "request:"+s.channel.Principal+":"+operation+":"+requestID); err != nil {
+		return zero, err
+	}
+	// Disclosure mutations must recheck live authorization even when the
+	// request has already committed and its original response is cached.
+	for _, guard := range guards {
+		if err = guard(tx); err != nil {
+			return zero, err
+		}
+	}
+	var previousDigest, response []byte
+	var responseDeleted bool
+	err = tx.QueryRow(ctx, `SELECT request_digest,response,payload_deleted_by IS NOT NULL OR ordinary_deleted FROM cairn.mutation_request WHERE caller=$1 AND operation=$2 AND request_id=$3`, s.channel.Principal, operation, requestID).Scan(&previousDigest, &response, &responseDeleted)
+	if err == nil {
+		if !bytes.Equal(previousDigest, digest[:]) {
+			return zero, failure("IDEMPOTENCY_CONFLICT", "request UUID already used with different content")
+		}
+		if responseDeleted {
+			return zero, failure("PAYLOAD_UNAVAILABLE", "the original response payload was excluded by deletion; the mutation remains committed")
+		}
+		var original T
+		if err = json.Unmarshal(response, &original); err != nil {
+			return zero, err
+		}
+		return original, tx.Commit(ctx)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return zero, err
+	}
+	applied, err := apply(tx)
+	if err != nil {
+		return zero, err
+	}
+	response, err = json.Marshal(applied)
+	if err != nil {
+		return zero, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.mutation_request(caller,operation,request_id,request_digest,response) VALUES($1,$2,$3,$4,$5)`, s.channel.Principal, operation, requestID, digest[:], response)
+	if err != nil {
+		return zero, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return zero, err
+	}
+	return applied, nil
+}
+
+func lock(ctx context.Context, tx pgx.Tx, key string) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key)
+	return err
+}
+
+func (s *Store) Create(ctx context.Context, req CreateRequest) (Record, error) {
+	if req.Draft.Sensitivity == "" {
+		req.Draft.Sensitivity = "local"
+	}
+	if req.Draft.Sensitivity != "local" && req.Draft.Sensitivity != "shareable" {
+		return Record{}, failure("INVALID_REQUEST", "unknown sensitivity")
+	}
+	if err := s.checkRepo(req.Draft.Scope.Repo); err != nil {
+		return Record{}, err
+	}
+	if err := req.Draft.validate(); err != nil {
+		return Record{}, err
+	}
+	return mutate(ctx, s, "create", req.RequestID, req, func(tx pgx.Tx) (Record, error) {
+		if req.Draft.AttemptID != "" {
+			if err := lock(ctx, tx, "attempt:"+req.Draft.AttemptID); err != nil {
+				return Record{}, err
+			}
+		}
+		id := uuid.NewString()
+		if _, err := tx.Exec(ctx, `INSERT INTO cairn.memory_record(record_id,current_version,sensitivity) VALUES($1,1,$2)`, id, req.Draft.Sensitivity); err != nil {
+			return Record{}, err
+		}
+		return insertVersion(ctx, tx, id, 1, req.Draft)
+	})
+}
+
+func (s *Store) Edit(ctx context.Context, req EditRequest) (Record, error) {
+	if err := validID(req.RecordID); err != nil {
+		return Record{}, err
+	}
+	if err := req.Draft.validate(); err != nil {
+		return Record{}, err
+	}
+	if req.ExpectedVersion < 1 {
+		return Record{}, failure("INVALID_REQUEST", "expected_version must be positive")
+	}
+	return privileged(ctx, s, "edit", req.RequestID, req, func(tx pgx.Tx) (Record, error) {
+		return s.editVersion(ctx, tx, req)
+	})
+}
+
+func (s *Store) editVersion(ctx context.Context, tx pgx.Tx, req EditRequest) (Record, error) {
+	return s.editVersionWithCitations(ctx, tx, req, nil)
+}
+
+// A nil citations argument preserves existing references, including degraded
+// sources. An explicit list replaces them with newly checked source identities.
+func (s *Store) editVersionWithCitations(ctx context.Context, tx pgx.Tx, req EditRequest, citations *[]EvidenceCitationRequest) (Record, error) {
+	if req.Draft.AttemptID != "" {
+		if err := lock(ctx, tx, "attempt:"+req.Draft.AttemptID); err != nil {
+			return Record{}, err
+		}
+	}
+	var version int
+	err := tx.QueryRow(ctx, `SELECT current_version FROM cairn.memory_record WHERE record_id=$1 FOR UPDATE`, req.RecordID).Scan(&version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Record{}, failure("NOT_FOUND", "record not found")
+	}
+	if err != nil {
+		return Record{}, err
+	}
+	if version != req.ExpectedVersion {
+		return Record{}, failure("VERSION_CONFLICT", fmt.Sprintf("current version is %d", version))
+	}
+	old, err := readRecord(ctx, tx, req.RecordID)
+	if err != nil {
+		return Record{}, err
+	}
+	if err = s.checkRepo(old.Scope.Repo); err != nil {
+		return Record{}, err
+	}
+	if old.Class != "A" || old.Lifecycle != "active" {
+		return Record{}, failure("AUTHORITY_DENIED", "ordinary edit requires an active A record; use an audited transition")
+	}
+	if old.Scope != req.Draft.Scope || !sameApplicability(old.Pins, req.Draft.Pins) {
+		return Record{}, failure("AUTHORITY_DENIED", "scope changes require an authority path; exact scope is fixed in this slice")
+	}
+	if req.Draft.Sensitivity != "" && req.Draft.Sensitivity != old.Sensitivity {
+		return Record{}, failure("AUTHORITY_DENIED", "sensitivity changes require an audited transition")
+	}
+	if _, err = tx.Exec(ctx, `UPDATE cairn.memory_record SET current_version=current_version+1 WHERE record_id=$1 AND current_version=$2`, req.RecordID, req.ExpectedVersion); err != nil {
+		return Record{}, err
+	}
+	next, err := insertVersion(ctx, tx, req.RecordID, version+1, req.Draft)
+	if err != nil {
+		return Record{}, err
+	}
+	if citations == nil {
+		_, err = tx.Exec(ctx, `INSERT INTO cairn.evidence_ref(record_id,version,evidence_id,cited_digest,cited_spans)
+ SELECT record_id,$3,evidence_id,cited_digest,cited_spans FROM cairn.evidence_ref WHERE record_id=$1 AND version=$2`, req.RecordID, version, next.Version)
+	} else if len(*citations) > 0 {
+		err = linkEvidence(ctx, tx, next, nil, *citations)
+	}
+	return next, err
+}
+
+func insertVersion(ctx context.Context, tx pgx.Tx, id string, version int, draft Draft) (Record, error) {
+	var err error
+	draft.Entities, err = NormalizeEntities(draft.Entities)
+	if err != nil {
+		return Record{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.record_version(record_id,version,kind,body,repo,task_id,run_id,attributed_producer,attempt_id,result_ref,claim_type,version_class)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,$10,$11,(SELECT class FROM cairn.memory_record WHERE record_id=$1))`, id, version, draft.Kind, draft.Body, draft.Scope.Repo, draft.Scope.TaskID, draft.Scope.RunID, draft.AttributedProducer, draft.AttemptID, draft.ResultRef, draft.ClaimType)
+	if err != nil {
+		return Record{}, err
+	}
+	if draft.Pins != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.record_applicability(record_id,version,pins) VALUES($1,$2,$3)`, id, version, draft.Pins); err != nil {
+			return Record{}, err
+		}
+	}
+	if len(draft.Entities) > 0 {
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.record_entities(record_id,version,entities) VALUES($1,$2,$3)`, id, version, draft.Entities); err != nil {
+			return Record{}, err
+		}
+	}
+	if err = linkRelations(ctx, tx, id, version, draft); err != nil {
+		return Record{}, err
+	}
+	if err = queueContradictions(ctx, tx, draft.AttemptID); err != nil {
+		return Record{}, err
+	}
+	return readRecord(ctx, tx, id)
+}
+
+func queueContradictions(ctx context.Context, tx pgx.Tx, attemptID string) error {
+	if attemptID == "" {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO cairn.correction_docket(record_id,version,reason)
+        SELECT record_id,version,'ATTRIBUTION_CONTRADICTED' FROM cairn.version_attribution
+        WHERE attempt_id=$1 AND attribution_state='contradicted' ON CONFLICT DO NOTHING`, attemptID)
+	return err
+}
+
+func readRecord(ctx context.Context, tx pgx.Tx, id string) (Record, error) {
+	var r Record
+	err := tx.QueryRow(ctx, `SELECT v.record_id::text,v.version,m.class,m.lifecycle,m.sensitivity,
+        v.kind,v.body,v.repo,v.task_id,v.run_id,v.attributed_producer,COALESCE(v.attempt_id::text,''),v.result_ref,v.claim_type,
+        v.observed_writer,v.witness,v.written_at,v.attribution_state
+        FROM cairn.memory_record m JOIN cairn.version_attribution v ON v.record_id=m.record_id AND v.version=m.current_version
+        WHERE m.record_id=$1`, id).Scan(&r.RecordID, &r.Version, &r.Class, &r.Lifecycle, &r.Sensitivity, &r.Kind, &r.Body, &r.Scope.Repo, &r.Scope.TaskID, &r.Scope.RunID, &r.AttributedProducer, &r.AttemptID, &r.ResultRef, &r.ClaimType, &r.ObservedWriter, &r.Witness, &r.WrittenAt, &r.AttributionState)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return r, failure("NOT_FOUND", "record not found")
+	}
+	if err == nil {
+		pinErr := tx.QueryRow(ctx, `SELECT pins FROM cairn.record_applicability WHERE record_id=$1 AND version=$2`, id, r.Version).Scan(&r.Pins)
+		if pinErr != nil && !errors.Is(pinErr, pgx.ErrNoRows) {
+			return r, pinErr
+		}
+	}
+	if err == nil {
+		r.Relations, err = readRelations(ctx, tx, id, r.Version)
+	}
+	if err == nil {
+		r.Entities, err = readEntities(ctx, tx, id, r.Version)
+	}
+	r.Draft.Sensitivity = r.Sensitivity
+	return r, err
+}
+
+// Get is a local advisory inspection only. It does not grant destination access
+// or provide inputs for planning, placement, capability or security decisions.
+func (s *Store) Get(ctx context.Context, id string) (Record, error) {
+	if err := validID(id); err != nil {
+		return Record{}, err
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return Record{}, err
+	}
+	defer tx.Rollback(context.Background())
+	record, err := readRecord(ctx, tx, id)
+	if err != nil {
+		return Record{}, err
+	}
+	if err = s.checkRepo(record.Scope.Repo); err != nil {
+		return Record{}, err
+	}
+	if record.Lifecycle == "tombstoned" {
+		return Record{}, failure("PAYLOAD_UNAVAILABLE", "record was forgotten; operator deletion-status retains its effects")
+	}
+	return record, tx.Commit(ctx)
+}

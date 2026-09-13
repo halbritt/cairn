@@ -1,0 +1,31 @@
+package supervise
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// Inherited supervisor transport metadata must not become runtime overrides.
+func TestCairnInheritedMetadataDoesNotOverrideRuntime(t *testing.T) {
+	requireDelegation(t)
+	t.Setenv("CAIRN_ENV_PROBE", "inherited")
+	t.Setenv("STRIATUM_SUPERVISE_ENV_COUNT", "1")
+	t.Setenv("STRIATUM_SUPERVISE_ENV_0", "CAIRN_ENV_PROBE=metadata")
+	path := filepath.Join(t.TempDir(), "value")
+	proc, err := StartConfined(Spec{Argv: []string{"/bin/sh", "-c", `printf '%s' "$CAIRN_ENV_PROBE" > "$1"`, "probe", path}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proc.Cleanup()
+	if err := proc.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "inherited" {
+		t.Fatalf("runtime value %q, want ordinary inherited value", body)
+	}
+}

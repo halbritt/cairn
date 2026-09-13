@@ -1,0 +1,84 @@
+{
+  "schema": "cairn.summary-assessment-verification/1",
+  "trial": "/tmp/cairn-opencode-reviewed-20260908-m2",
+  "interpretation": "Read-only summary correction; process outcomes and versioned assessments unchanged.",
+  "before": {
+    "summary": {
+      "exposures": 0,
+      "available": 1,
+      "delivered": 0,
+      "outcomes": 1,
+      "exit_zero": 1,
+      "exit_nonzero": 0,
+      "unknown_task_outcomes": 1,
+      "citations": 0,
+      "interpretation": "Exposure and process outcomes are observational. Exit zero is not task acceptance; citation is testimony, not proof of benefit."
+    },
+    "assessments": [
+      {
+        "receipt_id": "3e9761d6-b75c-4a93-89e0-b6f511b5206b",
+        "version": 1,
+        "task_outcome": "unknown",
+        "failure_domain": "unknown",
+        "witness": "testimony"
+      },
+      {
+        "receipt_id": "3e9761d6-b75c-4a93-89e0-b6f511b5206b",
+        "version": 2,
+        "task_outcome": "rejected",
+        "failure_domain": "task",
+        "witness": "testimony"
+      }
+    ],
+    "binary_sha256": "a4c6cbb6f06ba90a7dd8b0abec84213c34c189aa010789e86e3fecfb2da0af96"
+  },
+  "after": {
+    "summary": {
+      "exposures": 0,
+      "available": 1,
+      "delivered": 0,
+      "outcomes": 1,
+      "exit_zero": 1,
+      "exit_nonzero": 0,
+      "unknown_task_outcomes": 0,
+      "citations": 0,
+      "interpretation": "Exposure and process outcomes are observational. Task outcome counts use the latest assessment when present. Exit zero is not task acceptance; citation is testimony, not proof of benefit."
+    },
+    "assessments": [
+      {
+        "receipt_id": "3e9761d6-b75c-4a93-89e0-b6f511b5206b",
+        "version": 1,
+        "task_outcome": "unknown",
+        "failure_domain": "unknown",
+        "witness": "testimony"
+      },
+      {
+        "receipt_id": "3e9761d6-b75c-4a93-89e0-b6f511b5206b",
+        "version": 2,
+        "task_outcome": "rejected",
+        "failure_domain": "task",
+        "witness": "testimony"
+      }
+    ],
+    "binary_sha256": "17f49746ae7f6c300186feb9c918d831d4e51308fe93fd1d13e54f768d376fee"
+  },
+  "verification_files": {
+    "core/inspection.go": "d83f5e82950369c2e25101d1263a99724806055462a134a2f8675eccf5a7b19c",
+    "core/report_test.go": "f04a134ca6304284a62a9fb7db064905f34321254fbb1f388aefe4c77e44116d",
+    "/tmp/cairn-summary-red.log": "48446f750ba979c6bf29de7c0a8be39d26d6e8e35b8dfe7e0ba0c9a7b165a6f8",
+    "/tmp/cairn-summary-green.log": "beb32d9aa98e3937cfdf7bbe4c4c4144e0f833c770b41739f930f1ebfdb07600",
+    "/tmp/cairn-summary-integration.log": "afac52d4a7e87d9529e39aa19e968298a9d30e772c84191ca4cd745c9466707e",
+    "/tmp/cairn-summary-repro.py": "638df5e65619e5a9bbb5d339536eaed08ce0208b286d99139914ac8180f25e0d",
+    "/tmp/cairn-summary-test.sh": "e415444352e2013f84c881d472da5f61bfbf0763df547e3ceb604621a298099e"
+  },
+  "installed": {
+    "revision": "cae34107ba1f84af96ec45502543853116ce7e8d",
+    "binary_sha256": "1015df7eceeae7c01a005e9e00a49c9fc27d0b23943aa0557746f6f437ae1eef",
+    "api_running_same_binary": true,
+    "record_version_digest_unchanged": true,
+    "migrations_unchanged": true,
+    "ci": "https://github.com/halbritt/cairn/actions/runs/34185911741",
+    "ci_status": "success",
+    "authenticated_agent_read": true
+  }
+}

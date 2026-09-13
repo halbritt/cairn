@@ -1,0 +1,192 @@
+{
+  "schema": "cairn.capture-pins-verification/1",
+  "date": "2026-09-09",
+  "baseline": "98e9c6551540867a4fa315c750fda39719d8cab8",
+  "result": "verified capability; no answering-model task or memory benefit assessment",
+  "checks": {
+    "check": 0,
+    "test": 0,
+    "integration": 0,
+    "final_cli": 0
+  },
+  "native_client": "OpenCode 1.18.21",
+  "doctrine": {
+    "packet_id": "pkt-313fca60e546c77f",
+    "content_sha256": "313fca60e546c77fc0987fd74f0bc1fa1d069aba8f60206481fd23cc2d213fc6",
+    "missing_nonmaterial": 6
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-capture-red-cli.log",
+      "sha256": "744f6056249025eb15932f2f148b49f24374bfc77227dd6e04c0e0af92288168"
+    },
+    {
+      "path": "/tmp/cairn-capture-red-mcp.log",
+      "sha256": "776f12b05f73205f8219cdb6dc2da1607b637f90989f52a16ef22e4fc1776fc0"
+    },
+    {
+      "path": "/tmp/cairn-capture-red-native.log",
+      "sha256": "82cd0f2ad489722dcf50e355ec195ecfb6150e487c2d292415a997425453d868"
+    },
+    {
+      "path": "/tmp/cairn-capture-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-capture-tests.log",
+      "sha256": "a22b8666ee35c7b1a133521e81b0e8fa9166e332fda8919f8723be24d52f6bd8"
+    },
+    {
+      "path": "/tmp/cairn-capture-integration.log",
+      "sha256": "5d46021792b9082e6b446f6402f7ea0caefef57697dd0f1ac2164d5bf62da429"
+    },
+    {
+      "path": "/tmp/cairn-capture-cli-final.log",
+      "sha256": "ebaab794582719e244e1d748f34f32ed74a7e49cda58d00a318367c061ba0eca"
+    },
+    {
+      "path": "/tmp/cairn-capture-doctrine.json",
+      "sha256": "b6c93c411c2dc8facbe9ad7d1af009f0447ee0aa1d8954ddb0d9207c129b725a"
+    },
+    {
+      "path": "/tmp/cairn-capture-doctrine-final.json",
+      "sha256": "62ccc9c4cd941866019c98e6a9d4b3918fd5a712a90776a4821789e08e315e49"
+    },
+    {
+      "path": "/tmp/cairn-capture-decision.json",
+      "sha256": "3c2b08203a272ff67dd1144efdaf2080b250d204ecb41e0e0ed2c10ee3014dce"
+    },
+    {
+      "path": "/tmp/cairn-capture-unmet.json",
+      "sha256": "2000ebf666b55fe278b516c57e4e56bd5f37438e8847d0a7beceedb24f6e1b2a"
+    },
+    {
+      "path": "/tmp/cairn-capture-citations-doctrine.json",
+      "sha256": "06a88a831daec8628c13ada245544a36fb3402e7bb5c5038383dce9cbc9e7a36"
+    },
+    {
+      "path": "/tmp/cairn-capture-citations-doctrine-final.json",
+      "sha256": "215a17a10ec9cb95ef79eab532a758fe037d8ba085b408eca34d4019a089d013"
+    }
+  ],
+  "implementation_commit": "215ecbf1e893afc530c31b9f773b243d851ccac3",
+  "installation": {
+    "source_commit": "215ecbf1e893afc530c31b9f773b243d851ccac3",
+    "installed_sha256": "0bd5304706293ef967d2ddb55a4bf15ab03b5e56c561ee77ad5a974c429bd780",
+    "clean_build": true,
+    "services": {
+      "cairn-api.service": {
+        "MainPID": "430775",
+        "ActiveState": "active",
+        "exe_sha256": "1a83019ee4645662225778cf0bd7df690006943509ba7c1e4b7852337b450f07"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "api_source_commit": "8f6864a0555097be6d99bb3ccd4592701f8c2316",
+    "settings_sha256": {
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8"
+    },
+    "adapter_sha256": "35ac51295b801db408d6250bee5866f369c58d62841e5c260921767857c4092e",
+    "migration_needed": false,
+    "api_restart_needed": false
+  },
+  "procedure": {
+    "record_id": "e2d3c2fd-92c1-42ce-8201-4348c94dfae1",
+    "previous_version": 1,
+    "version": 2,
+    "body_sha256": "b5340899b14dd5e14b54b82f30d01085b8338e8f70c67e778b4f4a8aef0d284f",
+    "unpinned": true,
+    "exact_retry": true
+  },
+  "ci": {
+    "conclusion": "success",
+    "headSha": "215ecbf1e893afc530c31b9f773b243d851ccac3",
+    "status": "completed",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34425510304"
+  },
+  "empty_pins_repair": {
+    "baseline": "be47add7affe49dee78dd1271f69f2047ad33946",
+    "problem": "Explicit empty --pins was treated as omission and reached Create with no pins.",
+    "repair": "Track flag presence independently of its value and decode every supplied JSON argument.",
+    "checks": {
+      "targeted_red_observed": true,
+      "pre_capture_refusals_pass": true,
+      "check": 0,
+      "test": 0,
+      "final_cli_tests": 0
+    },
+    "artifacts": [
+      {
+        "path": "/tmp/cairn-empty-pins-red.log",
+        "sha256": "ebca16a5ac216087a5ae18e6a3bdb6279a2c4991378f007c70f0fada83379c75"
+      },
+      {
+        "path": "/tmp/cairn-empty-pins-green.log",
+        "sha256": "2279f5766e1c6376eb019b405c14df3b377ddfb10ebbe5dfd5761f6602ffd2a5"
+      },
+      {
+        "path": "/tmp/cairn-empty-pins-check.log",
+        "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+      },
+      {
+        "path": "/tmp/cairn-empty-pins-tests.log",
+        "sha256": "9ef37d2ff218b4109bb23912ab61e82649ae553e8636c865ebbf6bb3a00deca7"
+      },
+      {
+        "path": "/tmp/cairn-empty-pins-cli-final.log",
+        "sha256": "fbb3acb8a3de9d06c40c780fcd96c71ec0e396e697a983004a3f299b1428277f"
+      },
+      {
+        "path": "/tmp/cairn-empty-pins-guidance-pull.json",
+        "sha256": "9a519469187519bb4bc5a356c830202da6d1485758c25a1666162547edf7e7e1"
+      }
+    ],
+    "installation": {
+      "source_commit": "397750b7ba886fc67dfb2159f8b2976e484bbc6b",
+      "cli_sha256": "bf680a75cf5165fc76ca6b7c842a564b3df24b5b5c7e7684e1065a2952fdb7bc",
+      "clean_build": true,
+      "api_pid": "430775",
+      "api_sha256": "1a83019ee4645662225778cf0bd7df690006943509ba7c1e4b7852337b450f07",
+      "worker_sha256": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+      "installed_refusals": [
+        {
+          "arguments": [
+            "--pins",
+            ""
+          ],
+          "exit_code": 2,
+          "response": {
+            "schema": "cairn.response/1",
+            "ok": false,
+            "status": "INVALID_REQUEST",
+            "message": "INVALID_REQUEST: EOF"
+          }
+        },
+        {
+          "arguments": [
+            "--pins="
+          ],
+          "exit_code": 2,
+          "response": {
+            "schema": "cairn.response/1",
+            "ok": false,
+            "status": "INVALID_REQUEST",
+            "message": "INVALID_REQUEST: EOF"
+          }
+        }
+      ],
+      "api_restarted": false
+    },
+    "ci": {
+      "conclusion": "success",
+      "headSha": "397750b7ba886fc67dfb2159f8b2976e484bbc6b",
+      "status": "completed",
+      "url": "https://github.com/halbritt/cairn/actions/runs/34427884310"
+    }
+  }
+}

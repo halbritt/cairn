@@ -1,0 +1,381 @@
+{
+  "date": "2026-09-10",
+  "baseline_revision": "1c587cd7eb4e1418f29ef2d3eeda72a2958375e1",
+  "native_attempt": {
+    "run_receipt_id": "01d12586-8d71-4652-b5d9-fad27176675a",
+    "attempt_id": "14821772-44ea-4f08-aa41-82a4c8aee966",
+    "process_state": "timeout",
+    "task_outcome": "unknown",
+    "failure_domain": "binding",
+    "failure_kind": "adapter",
+    "candidate_present": false,
+    "controller_text_flag_means": "Interim text existed; not a final candidate",
+    "tool_counts": {
+      "read:error": 5,
+      "cairn_cairn_search:completed": 6,
+      "cairn_cairn_pull:completed": 7
+    },
+    "linked_retrievals": [
+      "e3f4970f-7c30-4cc3-931a-880a941947ca",
+      "ec1ff6e3-e7bf-4c59-a80b-75d03ee57048",
+      "99913aeb-0349-4740-8c82-ff06a2a888c7",
+      "9b900fbf-bbf5-4da9-a3cb-1d7a6e491de9",
+      "dd5a26b7-c93c-4ba8-a4dd-0a3eac669e17",
+      "43ab424e-5ade-4bc9-b4a3-69927216b512"
+    ],
+    "pulls": [
+      {
+        "record_id": "25adf0b0-7246-4f63-8687-7ccf2770f12a",
+        "version": 1,
+        "body_sha256": "b4ca91d980ab00ac774081d5ab931d9bedb91659e944c10bcf969430f8ac1220"
+      },
+      {
+        "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+        "version": 11,
+        "body_sha256": "713a3c9449dc51edbca0180155f2cdea098d76ff8a9a59f36b73bd7c29d38388"
+      },
+      {
+        "record_id": "e2d3c2fd-92c1-42ce-8201-4348c94dfae1",
+        "version": 2,
+        "body_sha256": "b5340899b14dd5e14b54b82f30d01085b8338e8f70c67e778b4f4a8aef0d284f"
+      },
+      {
+        "record_id": "2923953f-80c2-46ff-aea6-1e5b5fd1743c",
+        "version": 3,
+        "body_sha256": "2bb4e8901f0376d79b7ed26a6354646c247845de1beb46f8874928da5f5b6671"
+      },
+      {
+        "record_id": "bbf8593d-0b9e-470e-b55e-c500ed9e1dca",
+        "version": 1,
+        "body_sha256": "11ad2bd5939dc94f3dc659483526d94eb4400a80464b419292d3d0bb8c0b02d5"
+      },
+      {
+        "record_id": "cd6217ad-2f69-45f1-bcfb-a01066909855",
+        "version": 4,
+        "body_sha256": "3d3f9e19c6941d0347720eb464cff1c08322a8e400bc21556b816a763db11e22"
+      },
+      {
+        "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+        "version": 10,
+        "body_sha256": "1bc6b294dd00918fe130bd7ebd52cf97ab7b399ebf7c1a9173c885216e2aa0e0"
+      }
+    ],
+    "assessment_version": 1,
+    "observer": "observer:cairn-hosted",
+    "witness": "instrumented",
+    "relay_requests": 10,
+    "relay_completed": 9,
+    "relay_failed": 1,
+    "reported_cost_usd": 0.007250116,
+    "cost_limit": "Reported usage for completed requests only; final failed request and review work are not priced",
+    "net_memory_benefit": "unknown"
+  },
+  "example_verification": {
+    "literal_doc_blocks_passed": true,
+    "source_sha256": "bec9f6e5cf4f3ebb634913ee5941e75fd0d27af23b5eae9ac1d9ef446792915e",
+    "unicode_reason_roundtrip": true,
+    "unknown_acceptance": true,
+    "ordinary_witness": "testimony",
+    "empty_history_then_versions": [
+      1,
+      2
+    ],
+    "same_request_retry_same_version": true,
+    "stale_new_request": "VERSION_CONFLICT",
+    "client_database_access": false,
+    "cairn_sha256": "c4dad27b95018daaed9ab5cc1a5d84dfd53f9c8345ee47c3e92343f0d6fced0e",
+    "root": "/tmp/cairn-qualitative-example-20260910/disposable"
+  },
+  "permission_calibration": [
+    {
+      "case": "original",
+      "statuses": {
+        "/work/docs/use-outcome-loop.md": "error",
+        "/work/docs/local-api.md": "error",
+        "/work/core/assessment.go": "error",
+        "/work/cmd/cairn/agent.go": "error",
+        "/work/core/authority.go": "error"
+      },
+      "scripted_requests": 3,
+      "answering_model_calls": 0
+    },
+    {
+      "case": "relative",
+      "statuses": {
+        "/work/core/authority.go": "error",
+        "/work/docs/use-outcome-loop.md": "completed",
+        "/work/docs/local-api.md": "completed",
+        "/work/core/assessment.go": "completed",
+        "/work/cmd/cairn/agent.go": "completed"
+      },
+      "scripted_requests": 3,
+      "answering_model_calls": 0
+    }
+  ],
+  "private_artifacts": {
+    "run.py": {
+      "path": "/tmp/cairn-qualitative-example-20260910/run.py",
+      "sha256": "b7872d711736009406afca46b98e1444dec218c96383aa1f684f7ff5a06b4bf7"
+    },
+    "task.txt": {
+      "path": "/tmp/cairn-qualitative-example-20260910/task.txt",
+      "sha256": "17e8b0128bfc651ba651f9cde18d28845ff25a2bb85c9c9625c8b19f7d0e1102"
+    },
+    "review-criteria.txt": {
+      "path": "/tmp/cairn-qualitative-example-20260910/review-criteria.txt",
+      "sha256": "d5ed780cff63850006d8b74851dfd3f2dafe2c37c0ce4ab47d3db78dd1526779"
+    },
+    "native-a/run.json": {
+      "path": "/tmp/cairn-qualitative-example-20260910/native-a/run.json",
+      "sha256": "cbccad7650308c0d3c3059ffdc06759b6dc6dd08c2b17e5add8535529d3f13bf"
+    },
+    "native-a/relay.json": {
+      "path": "/tmp/cairn-qualitative-example-20260910/native-a/relay.json",
+      "sha256": "eefc61ac42f9082a7d61cd034fa70ee13dc1350c96a0bbe27640e440248dcf4c"
+    },
+    "native-a/stdout.jsonl": {
+      "path": "/tmp/cairn-qualitative-example-20260910/native-a/stdout.jsonl",
+      "sha256": "4f320312524753edd3604736fe12b0293e042bd2ad6894be45ff3236af5c1e41"
+    },
+    "native-a/stderr.txt": {
+      "path": "/tmp/cairn-qualitative-example-20260910/native-a/stderr.txt",
+      "sha256": "bf2ccb7de64aa524eb4813793756a6d3c2dc1fbf7816bc04c9d69118d87f55ab"
+    },
+    "native-a/source-manifest.json": {
+      "path": "/tmp/cairn-qualitative-example-20260910/native-a/source-manifest.json",
+      "sha256": "4ba1a11cddb9ac99fc61dd46bfa68d1e114c6daa6d4de2c1734232d5a0e08bcd"
+    },
+    "review/result.json": {
+      "path": "/tmp/cairn-qualitative-example-20260910/review/result.json",
+      "sha256": "67a395f08e7fe62637d5eb0d6f6ae95bd43118036b9f814e4c56d4db19f31800"
+    },
+    "review/assessment-request.json": {
+      "path": "/tmp/cairn-qualitative-example-20260910/review/assessment-request.json",
+      "sha256": "c668ab6a849702aba891cbdf0ffb5e7a1a46894debbc001ffd174c09e34cf2e9"
+    },
+    "review/assessment.json": {
+      "path": "/tmp/cairn-qualitative-example-20260910/review/assessment.json",
+      "sha256": "a2e6ea64b628b0641a6c6889e0270a1ff18891364d80df8e672383c321ce5f4c"
+    },
+    "check-example.py": {
+      "path": "/tmp/cairn-qualitative-example-20260910/check-example.py",
+      "sha256": "d88926b7ba0af94d401ff13369c075431fa4ed65e52d57796194bd769a05024f"
+    },
+    "disposable/result.json": {
+      "path": "/tmp/cairn-qualitative-example-20260910/disposable/result.json",
+      "sha256": "d5c992024d7f75a813676feb3bc0b7ebd45b36f7dad451256fdb29062d449713"
+    },
+    "check-read-permission.py": {
+      "path": "/tmp/cairn-qualitative-example-20260910/check-read-permission.py",
+      "sha256": "0f1cbb893fff5cda1e42453912bb00182f9fc7a68e50a31ba730ccfe9bd33fd3"
+    },
+    "check-read-permission-git.py": {
+      "path": "/tmp/cairn-qualitative-example-20260910/check-read-permission-git.py",
+      "sha256": "34ece977ec8f3208467705905d6c72830722adeac9ab6dfaf5f7cf066ff9d661"
+    },
+    "read-preflight-git/result.json": {
+      "path": "/tmp/cairn-qualitative-example-20260910/read-preflight-git/result.json",
+      "sha256": "ed08ef938333a6986e37fc0c8e3354f00e46cd5423bcb2ed408ba820dd6cd0b0"
+    },
+    "read-preflight/original/stdout.jsonl": {
+      "path": "/tmp/cairn-qualitative-example-20260910/read-preflight/original/stdout.jsonl",
+      "sha256": "b4ad4d903b592018e021163b0d81b40174421fc972d53f1f3ea996274019e0bf"
+    },
+    "read-preflight/relative/stdout.jsonl": {
+      "path": "/tmp/cairn-qualitative-example-20260910/read-preflight/relative/stdout.jsonl",
+      "sha256": "65f4e47570b4ac9aa1c39af1ccf3867fc04e67558678137186e95acda6c30675"
+    },
+    "read-preflight-git/original/stdout.jsonl": {
+      "path": "/tmp/cairn-qualitative-example-20260910/read-preflight-git/original/stdout.jsonl",
+      "sha256": "78426fe8f9b0d525c9e0ce51b626f67a154d0131f1781f5b41f05486d3e818d1"
+    },
+    "read-preflight-git/relative/stdout.jsonl": {
+      "path": "/tmp/cairn-qualitative-example-20260910/read-preflight-git/relative/stdout.jsonl",
+      "sha256": "0cb982e44ac3946ce0b74c4cf1044418d42d98c7461bcef5cf8175d84303174c"
+    }
+  },
+  "limits": [
+    "No native candidate or task acceptance",
+    "Reported provider cost excludes the final interrupted request and review work",
+    "Root-authored example validated against synthetic state, not a measured task-value gain",
+    "Project-relative permission calibration is specific to the pinned native build and isolated Git fixture",
+    "No production binary, adapter or database schema change"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-259a02c3ad4cf930",
+    "packet_content_sha256": "259a02c3ad4cf93018e42a018b466e33d7eeb8b0698d74e8c1525014e5f2d7b6",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-e5969900d0a1474a",
+        "required_by": "implementation-repository-language-conformance",
+        "requirement": "CI and build matrix",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-93e5516757747391",
+        "required_by": "implementation-repository-language-conformance",
+        "requirement": "behavior tests",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-6beb33575d727362",
+        "required_by": "implementation-repository-language-conformance",
+        "requirement": "formatter and static-tool configuration",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ed729ace2ba83b77",
+        "required_by": "python-mutable-ownership",
+        "requirement": "concurrency",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-c9337452b0edfa33",
+        "required_by": "python-mutable-ownership",
+        "requirement": "identity and equality contract",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-315deea4a753d213",
+        "required_by": "python-mutable-ownership",
+        "requirement": "lifetime and size",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-cb0eed1457c77f98",
+        "required_by": "python-mutable-ownership",
+        "requirement": "mutation sites",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a2c90d1d82d1a459",
+        "required_by": "python-mutable-ownership",
+        "requirement": "nested object graph",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-2944a68f95f6881b",
+        "required_by": "python-mutable-ownership",
+        "requirement": "object and ownership graph",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-7a342184b4a54bb7",
+        "required_by": "python-repository-shaped-idiom",
+        "requirement": "Python and dependency version matrix",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-886b16ae2adaee03",
+        "required_by": "python-repository-shaped-idiom",
+        "requirement": "formatter linter and type-checker configuration",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-9532e1849c7db686",
+        "required_by": "python-repository-shaped-idiom",
+        "requirement": "public API and tests",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-6f6a205dd9d52fc6",
+        "required_by": "python-runtime-static-boundary",
+        "requirement": "annotation maintenance cost",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bbd2600c2b12afd0",
+        "required_by": "python-runtime-static-boundary",
+        "requirement": "boundary trust model",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ecce2283e1ba3e84",
+        "required_by": "python-runtime-static-boundary",
+        "requirement": "checker and trust-boundary evidence",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-24f184dfb17363dc",
+        "required_by": "python-runtime-static-boundary",
+        "requirement": "configured checker and Python version",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-6972412975e4b6a7",
+        "required_by": "python-runtime-static-boundary",
+        "requirement": "observed defect class",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-2a09993578e1ecef",
+        "required_by": "python-runtime-static-boundary",
+        "requirement": "runtime invariant",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python module, type annotation, shared mutable object or build configuration changes. The standard-library example is checked against the existing API with literal executable blocks; scratch controller checks do not claim general harness compatibility or application architecture changes."
+      }
+    ],
+    "decision_receipt": {
+      "path": "/tmp/cairn-qualitative-example-20260910/decision-receipt.json",
+      "sha256": "d900bb91d0b1bce47adf4f197bb964c7b63e54b2260cbfaf14c0e79962e34c3e"
+    },
+    "consumption": "Both discovery and evidence-backed packets closed"
+  }
+}

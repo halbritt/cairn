@@ -1,0 +1,34 @@
+{
+  "schema": "cairn.agent-search-trial/1",
+  "scope": {
+    "repo": "trial:agent-search",
+    "task_id": "host-integration",
+    "run_id": "native-cli-a"
+  },
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "sources": [
+    {
+      "path": "docs/index-and-pull.md",
+      "sha256": "0e4f8a107f8dd4ec19aee6e4f263f2e6f5140b0fcb45757b1f15135c3f396c08"
+    },
+    {
+      "path": "docs/use-outcome-loop.md",
+      "sha256": "539e8a884bb89d054ca98fb0c6da34aa517966d9b822e046317e1a585f4ab90d"
+    }
+  ],
+  "limits": {
+    "requests": 10,
+    "output_tokens": 8192,
+    "process_seconds": 240
+  },
+  "task": "I am integrating Cairn into an agent host. From the available Cairn sources, determine whether an ordinary agent may link a retrieval to a host run, which operation the observer uses, whether matching scope automatically creates that link, whether exit zero establishes task acceptance, how many host runs one retrieval can belong to, and how many execution rows a single run with three linked retrievals produces. Use the available memory tools to inspect full source bodies before citing them. Return one final JSON object with ordinary_agent_can_link (boolean or null), link_operation (string or null), automatic_link_by_scope (boolean or null), exit_zero_is_acceptance (boolean or null), hosts_per_retrieval (integer or null), executions_for_one_run_three_retrievals (integer or null), sources (array of record UUIDs actually pulled), and explanation (brief text). Do not invent unavailable information.",
+  "expected": {
+    "ordinary_agent_can_link": false,
+    "link_operation": "link-run-retrieval",
+    "automatic_link_by_scope": false,
+    "exit_zero_is_acceptance": false,
+    "hosts_per_retrieval": 1,
+    "executions_for_one_run_three_retrievals": 1
+  },
+  "interpretation": "One prospective source-answering integration check on a different documentation question. Actual OpenCode invokes the reusable CLI directly; trusted host observes tool results and links source receipts to actual process/assessment. No no-memory baseline rerun, causal improvement, durable transfer or general usefulness claim. Sources are explicitly selected shareable Cairn documentation; no operational memory."
+}

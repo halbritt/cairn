@@ -1,0 +1,454 @@
+{
+  "date": "2026-09-10",
+  "source_commit": "61dab0ebd9c191fe45437c6e951b07bc80fe4c61",
+  "status": "experiment supports implementation; not installed",
+  "current_observation": {
+    "first_seconds": 22.629,
+    "repeat_seconds": 0.125,
+    "worker_absent_before_first": true,
+    "worker_rss_kib": 224836,
+    "discovery": {
+      "state": "ready",
+      "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+      "algorithm": "bge-max-chunk/1",
+      "scores_sha256": "f3e210df37a1de0968ff8a82488bfc37198aff63484a58d1736dfe98cf2257d1"
+    },
+    "limits": "Wall times rounded from captured tool output; a single dependent pair"
+  },
+  "workload": [
+    {
+      "path": "docs/semantic-discovery.md",
+      "sha256": "ee0c65eb940596390a120206ee0d34d87da6bcc82e63c9576b3d6ec4eca170ae",
+      "body_bytes": 12513
+    },
+    {
+      "path": "docs/opencode-tools.md",
+      "sha256": "53e23edd469f4145e0eaef02ce473c8f115b2df29aa460fca44c41d1dbb30292",
+      "body_bytes": 19146
+    }
+  ],
+  "query": "How does task memory continue across sessions and idle workers?",
+  "measurements": [
+    {
+      "case": "seed",
+      "seconds": 12.099297147942707,
+      "user_seconds": 23.38,
+      "system_seconds": 0.12,
+      "peak_rss_kib": 222648,
+      "embedded_inputs": 25,
+      "state_bytes": 51014,
+      "result_sha256": "c5e7095be8540cfd8d81ddec06f33e875ebd6e7e02869a2cc9023b7462f3eb37"
+    },
+    {
+      "case": "pair-0-cold",
+      "seconds": 11.408653665101156,
+      "user_seconds": 23.39,
+      "system_seconds": 0.09,
+      "peak_rss_kib": 222900,
+      "embedded_inputs": 25,
+      "state_bytes": 51014,
+      "result_sha256": "c5e7095be8540cfd8d81ddec06f33e875ebd6e7e02869a2cc9023b7462f3eb37"
+    },
+    {
+      "case": "pair-0-restored",
+      "seconds": 0.5936372340656817,
+      "user_seconds": 1.77,
+      "system_seconds": 0.1,
+      "peak_rss_kib": 196848,
+      "embedded_inputs": 1,
+      "state_bytes": 51014,
+      "result_sha256": "c5e7095be8540cfd8d81ddec06f33e875ebd6e7e02869a2cc9023b7462f3eb37"
+    },
+    {
+      "case": "pair-1-restored",
+      "seconds": 0.582885840209201,
+      "user_seconds": 1.71,
+      "system_seconds": 0.1,
+      "peak_rss_kib": 196724,
+      "embedded_inputs": 1,
+      "state_bytes": 51014,
+      "result_sha256": "c5e7095be8540cfd8d81ddec06f33e875ebd6e7e02869a2cc9023b7462f3eb37"
+    },
+    {
+      "case": "pair-1-cold",
+      "seconds": 11.410381647059694,
+      "user_seconds": 23.48,
+      "system_seconds": 0.09,
+      "peak_rss_kib": 222904,
+      "embedded_inputs": 25,
+      "state_bytes": 51014,
+      "result_sha256": "c5e7095be8540cfd8d81ddec06f33e875ebd6e7e02869a2cc9023b7462f3eb37"
+    },
+    {
+      "case": "pair-2-cold",
+      "seconds": 11.653356636874378,
+      "user_seconds": 23.91,
+      "system_seconds": 0.1,
+      "peak_rss_kib": 222784,
+      "embedded_inputs": 25,
+      "state_bytes": 51014,
+      "result_sha256": "c5e7095be8540cfd8d81ddec06f33e875ebd6e7e02869a2cc9023b7462f3eb37"
+    },
+    {
+      "case": "pair-2-restored",
+      "seconds": 0.6591492041479796,
+      "user_seconds": 1.7,
+      "system_seconds": 0.1,
+      "peak_rss_kib": 196860,
+      "embedded_inputs": 1,
+      "state_bytes": 51014,
+      "result_sha256": "c5e7095be8540cfd8d81ddec06f33e875ebd6e7e02869a2cc9023b7462f3eb37"
+    },
+    {
+      "case": "changed-cold",
+      "seconds": 11.529775038128719,
+      "user_seconds": 23.5,
+      "system_seconds": 0.11,
+      "peak_rss_kib": 223292,
+      "embedded_inputs": 25,
+      "state_bytes": 51014,
+      "result_sha256": "0526cfb6e3227554c54eb56474ed29735998c67c5f8b2cfb8533ccdb8e71d6fb"
+    },
+    {
+      "case": "changed-restored",
+      "seconds": 0.9675342319533229,
+      "user_seconds": 2.5,
+      "system_seconds": 0.09,
+      "peak_rss_kib": 208504,
+      "embedded_inputs": 2,
+      "state_bytes": 51014,
+      "result_sha256": "0526cfb6e3227554c54eb56474ed29735998c67c5f8b2cfb8533ccdb8e71d6fb"
+    },
+    {
+      "case": "removed-restored",
+      "seconds": 0.5902366158552468,
+      "user_seconds": 1.78,
+      "system_seconds": 0.08,
+      "peak_rss_kib": 196788,
+      "embedded_inputs": 1,
+      "state_bytes": 31934,
+      "result_sha256": "aea0f32caedcd536661dba4b996fc693e1830918b5fc372c6f3a848d0b71fefb"
+    },
+    {
+      "case": "removed-cold",
+      "seconds": 7.3095516338944435,
+      "user_seconds": 15.21,
+      "system_seconds": 0.09,
+      "peak_rss_kib": 220204,
+      "embedded_inputs": 16,
+      "state_bytes": 31934,
+      "result_sha256": "aea0f32caedcd536661dba4b996fc693e1830918b5fc372c6f3a848d0b71fefb"
+    },
+    {
+      "case": "model-mismatch",
+      "seconds": 11.583612435963005,
+      "user_seconds": 23.34,
+      "system_seconds": 0.11,
+      "peak_rss_kib": 223112,
+      "embedded_inputs": 25,
+      "state_bytes": 51014,
+      "result_sha256": "c5e7095be8540cfd8d81ddec06f33e875ebd6e7e02869a2cc9023b7462f3eb37"
+    }
+  ],
+  "summary": {
+    "pairs": [
+      {
+        "pair": 0,
+        "speedup": 19.218224549302562,
+        "latency_target": true,
+        "memory_target": true,
+        "complete_response_equal": true
+      },
+      {
+        "pair": 1,
+        "speedup": 19.57567135781587,
+        "latency_target": true,
+        "memory_target": true,
+        "complete_response_equal": true
+      },
+      {
+        "pair": 2,
+        "speedup": 17.679391196318864,
+        "latency_target": true,
+        "memory_target": true,
+        "complete_response_equal": true
+      }
+    ],
+    "selected_for_implementation": true,
+    "complete_response_equality": true,
+    "changed_and_removed_preserved": true,
+    "model_mismatch_recomputes": true,
+    "max_state_bytes": 51014,
+    "no_disk_cache": true,
+    "limits": [
+      "Fixed public-document workload; dependent pairs on a shared host",
+      "No API retention lifecycle implemented or tested yet",
+      "No downstream task-value attribution"
+    ]
+  },
+  "artifacts": {
+    "plan.md": {
+      "path": "/tmp/cairn-semantic-restart-20260910/plan.md",
+      "sha256": "2f918d9e7531c43c8795619f9ecdf674ac44fa14d69090d7cd6f1c1aea17e1f8"
+    },
+    "prototype.py": {
+      "path": "/tmp/cairn-semantic-restart-20260910/prototype.py",
+      "sha256": "5a129b8d2051954e3acac8fb1306141049b55c3eaccd73c8a8e5cc5806919a2b"
+    },
+    "compare.py": {
+      "path": "/tmp/cairn-semantic-restart-20260910/compare.py",
+      "sha256": "fc6e58b5a9d6a29f83d1e010a398c5c02062361709c4590c13f07fb07d95bf4a"
+    },
+    "measurements.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/measurements.json",
+      "sha256": "a11613f0572f2e63e2fb160bdbf1481640efe110559fe0cf2ea1c294f132ac44"
+    },
+    "summary.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/summary.json",
+      "sha256": "2102200f6de0dc0ce78be068888a24e62adce33ce2f17109b9fae704387ae03a"
+    },
+    "workload.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/workload.json",
+      "sha256": "b9938ca0842522e5e11f5cd4644d313cbb9cd9e31b0e09607cf9d5bddef37d2e"
+    },
+    "comparison.log": {
+      "path": "/tmp/cairn-semantic-restart-20260910/comparison.log",
+      "sha256": "a9876298dfd31a37313064ddd7b3b585f1d7971e3599c13029adcb26d91e9981"
+    },
+    "changed-cold-response.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/changed-cold-response.json",
+      "sha256": "35ccec390060941bdde8dd5ac9b9668f65f299b9e76dbef121717635d25e62d9"
+    },
+    "changed-restored-response.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/changed-restored-response.json",
+      "sha256": "981405da670b3a855673ff8952c981cb6b92c7806b3711c0c5e8cd9e0e61345c"
+    },
+    "model-mismatch-response.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/model-mismatch-response.json",
+      "sha256": "284f6d833f1447db3f17d8acbbacc3edc71f17ab797f37293fcea4c481137dd3"
+    },
+    "pair-0-cold-response.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/pair-0-cold-response.json",
+      "sha256": "284f6d833f1447db3f17d8acbbacc3edc71f17ab797f37293fcea4c481137dd3"
+    },
+    "pair-0-restored-response.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/pair-0-restored-response.json",
+      "sha256": "682107b776efbfa304b2e40deed012ac929c5629443ee577e64ec69d832d82f7"
+    },
+    "pair-1-cold-response.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/pair-1-cold-response.json",
+      "sha256": "284f6d833f1447db3f17d8acbbacc3edc71f17ab797f37293fcea4c481137dd3"
+    },
+    "pair-1-restored-response.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/pair-1-restored-response.json",
+      "sha256": "682107b776efbfa304b2e40deed012ac929c5629443ee577e64ec69d832d82f7"
+    },
+    "pair-2-cold-response.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/pair-2-cold-response.json",
+      "sha256": "284f6d833f1447db3f17d8acbbacc3edc71f17ab797f37293fcea4c481137dd3"
+    },
+    "pair-2-restored-response.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/pair-2-restored-response.json",
+      "sha256": "682107b776efbfa304b2e40deed012ac929c5629443ee577e64ec69d832d82f7"
+    },
+    "removed-cold-response.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/removed-cold-response.json",
+      "sha256": "4bbae81c2d55fc190b179b6d675f6443519e8aee6f0c01b668180c10b0312d27"
+    },
+    "removed-restored-response.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/removed-restored-response.json",
+      "sha256": "788b380f34908e25acb92282be456a7777c7f4cee1996761b769462d966ca437"
+    },
+    "seed-response.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/seed-response.json",
+      "sha256": "284f6d833f1447db3f17d8acbbacc3edc71f17ab797f37293fcea4c481137dd3"
+    },
+    "decision-receipt.json": {
+      "path": "/tmp/cairn-semantic-restart-20260910/decision-receipt.json",
+      "sha256": "a60720f558cbc59fa689f40f591bcc65acc678d9415a49c8482b972a2a96fb1e"
+    }
+  },
+  "source_hashes": {
+    "scripts/semantic_rank.py": "2d85715d25ea9dbc5deb86d37e3ad9e640ba11dfe08f4e920a52453e2aab240f",
+    "semantic/stream.go": "4dbe1bdc9d039234577c80275d33c5410fc0b1da01c525bdaf248aac84bb9045",
+    "semantic/command.go": "1b9e5af1824afbb308b55aa02ccdfe151eed194c5fb8e7c59f2c72c380114d14"
+  },
+  "remaining": [
+    "Actual transport lifetime, cancellation and shutdown checks",
+    "Protocol compatibility and independently bounded score output",
+    "Actual API privacy/currentness and real-model verification",
+    "Implementation, CI and installation"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-299df56f8e3a70cc",
+    "packet_content_sha256": "299df56f8e3a70cc8a6da58f4e5e753d99bcfc534d268b9d745c3ea4e621d9f7",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Go interface or import direction changes in this experiment; compatibility remains required before implementation is installed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Go interface or import direction changes in this experiment; compatibility remains required before implementation is installed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Go interface or import direction changes in this experiment; compatibility remains required before implementation is installed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Go interface or import direction changes in this experiment; compatibility remains required before implementation is installed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-df2509951851d31f",
+        "required_by": "performance-algorithm-and-work-first",
+        "requirement": "representative empirical comparison",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "The result is limited to the fixed document workload; broad workload representativeness is not established."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-e5d5683f663216c1",
+        "required_by": "performance-profile-causal-bottleneck",
+        "requirement": "representative workload, version, and profile interval",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "The new experiment observes eliminated model inputs and paired time directly; no broader population or independently replicated bottleneck claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b7f9a3ec8e8395df",
+        "required_by": "performance-profile-causal-bottleneck",
+        "requirement": "reproducibility or independent corroboration",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "The new experiment observes eliminated model inputs and paired time directly; no broader population or independently replicated bottleneck claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-9a9217831a47b527",
+        "required_by": "python-streaming-iteration",
+        "requirement": "cancellation and partial-consumption behavior",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "The bounded fresh-process experiment completed; new streaming lifecycle and partial-consumption behavior are not implemented or claimed. They remain material installation gates."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-e87fb92977b45643",
+        "required_by": "python-streaming-iteration",
+        "requirement": "cardinality",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "The bounded fresh-process experiment completed; new streaming lifecycle and partial-consumption behavior are not implemented or claimed. They remain material installation gates."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a7499994209dcfdc",
+        "required_by": "python-streaming-iteration",
+        "requirement": "consumer and lifecycle contract",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "The bounded fresh-process experiment completed; new streaming lifecycle and partial-consumption behavior are not implemented or claimed. They remain material installation gates."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-d18591f324249d8d",
+        "required_by": "python-streaming-iteration",
+        "requirement": "consumer pass count and access",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "The bounded fresh-process experiment completed; new streaming lifecycle and partial-consumption behavior are not implemented or claimed. They remain material installation gates."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-5f50d71eaf823678",
+        "required_by": "python-streaming-iteration",
+        "requirement": "exception timing",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "The bounded fresh-process experiment completed; new streaming lifecycle and partial-consumption behavior are not implemented or claimed. They remain material installation gates."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-510e6dcee310c326",
+        "required_by": "python-streaming-iteration",
+        "requirement": "resource owner",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "The bounded fresh-process experiment completed; new streaming lifecycle and partial-consumption behavior are not implemented or claimed. They remain material installation gates."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-acf7d5264d06112f",
+        "required_by": "python-structured-cleanup",
+        "requirement": "acquisition and release paths",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production retention owner changes yet. Cancellation, state disposal and API shutdown remain material installation gates, not claims established by this prototype."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ab25f6e64ed25e78",
+        "required_by": "python-structured-cleanup",
+        "requirement": "exception and cancellation behavior",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production retention owner changes yet. Cancellation, state disposal and API shutdown remain material installation gates, not claims established by this prototype."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-1b29a58262baaf69",
+        "required_by": "python-structured-cleanup",
+        "requirement": "nesting order",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production retention owner changes yet. Cancellation, state disposal and API shutdown remain material installation gates, not claims established by this prototype."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-7cba9db416b2433e",
+        "required_by": "python-structured-cleanup",
+        "requirement": "owner and lifetime",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production retention owner changes yet. Cancellation, state disposal and API shutdown remain material installation gates, not claims established by this prototype."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-4103a6c27d8238f5",
+        "required_by": "python-structured-cleanup",
+        "requirement": "resource ownership and failure policy",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production retention owner changes yet. Cancellation, state disposal and API shutdown remain material installation gates, not claims established by this prototype."
+      }
+    ]
+  }
+}

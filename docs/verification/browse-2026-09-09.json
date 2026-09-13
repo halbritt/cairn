@@ -1,0 +1,166 @@
+{
+  "schema": "cairn.explicit-browse-verification/1",
+  "baseline_commit": "d457b294f4dc7445128b3554f36e092dc83352db",
+  "interfaces": [
+    "agent search --browse",
+    "MCP cairn_search browse=true",
+    "native OpenCode cairn_search browse=true"
+  ],
+  "installed_cli_sha256": "0d7e2a225e7710a0506c37b275c63e8a03c3c53a45a12ab4474689be73078a3f",
+  "installed_adapter_sha256": "c1b6970b6b48bd4925c2f4fada916b958b3c51ddf0ec0dedda5e59cad0dc8669",
+  "opencode_version": "1.18.21",
+  "codex_version": "0.153.4",
+  "model_inference_calls": 0,
+  "full_native_api_integration_pass": true,
+  "make_check_pass": true,
+  "make_test_pass": true,
+  "operational_browse": {
+    "default_room": 32000,
+    "default_returned": 6,
+    "default_packing_omissions": 3,
+    "larger_room": 64000,
+    "larger_returned": 9,
+    "larger_packing_omissions": 0,
+    "storage_note_in_default_browse": false,
+    "storage_note_in_larger_browse": true,
+    "exact_body_sha256_verified": true
+  },
+  "artifacts": [
+    {
+      "path": "cmd/cairn/agent_search.go",
+      "sha256": "eb1386f3a0e367115c28d42b12954ce6a59d667ded8727b791a5e9b5f0709156"
+    },
+    {
+      "path": "cmd/cairn/agent_search_test.go",
+      "sha256": "bd028d8bdba2b324aa2b9ea75fb1d9ea452a8fb8e13958c2387fe2733af7de5f"
+    },
+    {
+      "path": "mcpapi/server.go",
+      "sha256": "1fb95b9c4a605d1159667381a04ef8da420e920eb501ce9ec1b13c3fcfda8d0c"
+    },
+    {
+      "path": "mcpapi/server_test.go",
+      "sha256": "01509a4c82a07dcbae73a5f4a9d9b57cc32ed6196ec29052073a3324c39d898c"
+    },
+    {
+      "path": "integrations/opencode/cairn.ts",
+      "sha256": "c1b6970b6b48bd4925c2f4fada916b958b3c51ddf0ec0dedda5e59cad0dc8669"
+    },
+    {
+      "path": "scripts/check_agent_search.py",
+      "sha256": "d1db5507535d8935ab71d4fb0a1c7141f6e1be26462dbbc6b6f91da5939e6c76"
+    },
+    {
+      "path": "scripts/check_opencode_tools.py",
+      "sha256": "0ed93dbf4997b4c7c3314a797a131e1f4d8f1ae9bf3605bdc8db1c64866323d6"
+    },
+    {
+      "path": "scripts/check_opencode_defaults.py",
+      "sha256": "1a4605f552b0f3a0a96d0035a51c0bf9d00dcd15569ba8bba50d049b7212087e"
+    },
+    {
+      "path": "core/testdata/retrieval-quality.json",
+      "sha256": "30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0"
+    },
+    {
+      "path": "/tmp/cairn-retrieval-v4-20260909.json",
+      "sha256": "e4b0371d4a9cbba47b576197f7d163b7994c4b11648edf6226ba391ddf67f03f"
+    },
+    {
+      "path": "/tmp/cairn-retrieval-v4-20260909.log",
+      "sha256": "ed84c66ce854e567f838f1c3e1ed5e0d7ed078b7bd23b01311cfbd50dc2f8f8b"
+    },
+    {
+      "path": "/tmp/cairn-browse-before-20260909.json",
+      "sha256": "9410b6c5a2123efed087e79bd23d324171fc392706c140e70fbddcc1798ae44c"
+    },
+    {
+      "path": "/tmp/cairn-browse-integration-20260909.log",
+      "sha256": "14d04bffbd543e85acba46761058a68eb1fc823dcbb8965e766d3cfff171e5fe"
+    },
+    {
+      "path": "/tmp/cairn-browse-check-20260909.log",
+      "sha256": "b0ea022a3c3cbbe3ce6fee217ec5ece61f56bab9d7b7270dfac51fdb32ff50e3"
+    },
+    {
+      "path": "/tmp/cairn-browse-tests-20260909.log",
+      "sha256": "bbccecda26217a2ec26a491a887dd03937fa855e1d089d85d8f96006fcd95221"
+    },
+    {
+      "path": "/tmp/cairn-browse-cli-20260909/report.json",
+      "sha256": "a53668aa0b85260983b93141dc8e20c2c79ec9fb013f58302bc3f85dc76205c4"
+    },
+    {
+      "path": "/tmp/cairn-browse-cli-20260909/browse-32000.json",
+      "sha256": "dba4b26b799e312621886659266128da90485bb4680895939bb61e1be7708b73"
+    },
+    {
+      "path": "/tmp/cairn-browse-cli-20260909/browse-64000.json",
+      "sha256": "f163797e18fc66533c8187b54407bbf7ceb9f99e5deac71024fa77e5f0fd23e7"
+    },
+    {
+      "path": "/tmp/cairn-browse-cli-20260909/storage-pull.json",
+      "sha256": "5803b23e36cefaf265552a4ac0ad6da3798fabc9cd3d57a3124b1a8e8b92e9c7"
+    },
+    {
+      "path": "/tmp/cairn-browse-opencode-20260909/report.json",
+      "sha256": "9dfacd097dc5cd8efb381948312a46c72b2b030ac9ea24350ed9c8ac884e1a7b"
+    },
+    {
+      "path": "/tmp/cairn-browse-opencode-20260909/cairn_search.stdout.json",
+      "sha256": "1b4956e1018d37802b2b5b6c42a636863ad73c8b31c27a2fc75ab56bff21b519"
+    },
+    {
+      "path": "/tmp/cairn-browse-opencode-20260909/cairn_pull.stdout.json",
+      "sha256": "acf1c30868c4da062c9641967d703edc23b413879563792c277b7370fcb75219"
+    },
+    {
+      "path": "/tmp/cairn-codex-browse-20260909.py",
+      "sha256": "846b441fbcab6d2ee8af6e42cf1ae9fc41b60627d6b8070ecdbfcad702602d71"
+    },
+    {
+      "path": "/tmp/cairn-codex-browse-20260909/report.json",
+      "sha256": "b4dc22ad4ce4395dbfffbcf85a65db52b01aaf9ac2cb13d5bff703fb97280f54"
+    },
+    {
+      "path": "/tmp/cairn-browse-normal-session-20260909/report.json",
+      "sha256": "27959ae9c4aaac0d09b326960dc23a1d3fb857539e2a1b63811ec23e4d7ec15e"
+    },
+    {
+      "path": "/tmp/cairn-browse-final.json",
+      "sha256": "cc3e0af55a265bb1f7a8602ad79e0112ea04c760937e2ab71769d11cdd9a57cc"
+    },
+    {
+      "path": "/tmp/cairn-browse-decision.json",
+      "sha256": "3d3623909f083a381d0b9dcdef18b316eca59b7e371d79471b749d50fb94b087"
+    },
+    {
+      "path": "/tmp/cairn-browse-residuals.json",
+      "sha256": "48b72f1fb66547928d904e9397268f00c8af7b94c89499782b922de1ea918466"
+    },
+    {
+      "path": "/tmp/cairn-browse-citation-result.json",
+      "sha256": "fa677458d47efda1525e6e8cedb0a17d31bea752910697cdf53f10c29d6b1a2d"
+    }
+  ],
+  "design_review": {
+    "packet_id": "pkt-58f1cc7cd97f5741",
+    "packet_content_sha256": "58f1cc7cd97f5741d45e155b35b1eadcd9a0090489b636ccd0de3b26ef263aaa",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_receipt": "/tmp/cairn-browse-decision.json",
+    "nonmaterial_obligations": {
+      "count": 21,
+      "artifact": "/tmp/cairn-browse-residuals.json"
+    }
+  },
+  "limits": [
+    "No independent model selection or task-benefit comparison",
+    "Default input room omitted three of nine eligible operational previews",
+    "No pagination or guarantee that older memory fits",
+    "No standalone TypeScript typecheck"
+  ],
+  "core_ranker_or_store_schema_changed": false,
+  "tool_input_schema_extended": true
+}

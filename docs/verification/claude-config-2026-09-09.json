@@ -1,0 +1,141 @@
+{
+  "schema": "cairn.claude-config-verification/1",
+  "date": "2026-09-09",
+  "claude_version": "2.1.265",
+  "checks": {
+    "argument_fidelity": true,
+    "no_output_refusals": true,
+    "writer_failure_propagation": true,
+    "generated_command_search_exact_pull": true,
+    "native_registration_and_connection": true,
+    "postgres_race": true,
+    "go_python_vet_build": true
+  },
+  "doctrine": {
+    "packet_id": "pkt-e955701fa38db8bc",
+    "packet_content_sha256": "e955701fa38db8bc4cea9d2c574b3e8134376d609aa606309e547787e925e544",
+    "nonmaterial_residuals": 9
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-claude-config-plan.md",
+      "sha256": "752a49e64ade03729ded2e2cab767ac86fe9b9b84042836cce8008c86706cf14"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-native-help.txt",
+      "sha256": "1e7fbf669ea9097e150ddfb0904ccb98326e27b927c77cf8343bad787b0a49b5"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-baseline.log",
+      "sha256": "39ec2e6df64445273ea9c043929541f8bc0c63e946a8157ca7ef2fe5afa38969"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-integration.log",
+      "sha256": "2e3ea647483617ec42383a4fe9cb796a3624aef250a35d93f54c42c51bd8abab"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-check.log",
+      "sha256": "cf907dc31e9867ea5d22daaea8ac7e8c7bae4e2076a43630324caeddbf067935"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-final-check.log",
+      "sha256": "7e9bbc361fc3c1f98d20aec476936b4cd2eaecb7adec63bdd38519d225c274a0"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-final.json",
+      "sha256": "0eabddb457c05bba0e047f53833f6d852dabb33daedeb2598688656bf9041e9f"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-residuals.json",
+      "sha256": "0d05fa1463a16110dedb40e12a83b10480359cc36bd61353195e9e38ac63b50b"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-decision.json",
+      "sha256": "6422589a06d52c3030fa8851fd78c52d05a505bbf68d0188709f7a0bd6655d97"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-citation-closure.json",
+      "sha256": "dffb87a346fe1921a34e6b40d8511732e928f167429626abd1949169eccc1527"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-deployment/installation.json",
+      "sha256": "354e4429ad54d1b6c2122a26b6cc75b3557b37d19e2b1b7b9a1a56d31ee22fd6"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-deployment/build.txt",
+      "sha256": "1270fc53a4278b197b050ef61eb7b12693444188202594abb086abec75704dff"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-deployment/cairn.json",
+      "sha256": "641de74f1e197579c6c41b7de4c7484f8d8b6702a40cce945d7ea075accf6009"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-deployment/lesson-search.json",
+      "sha256": "7cef4e6d0172b348280f2e2429287f697ef9f6f6d79b6424b415a715c8d4afcc"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-deployment/lesson-request.json",
+      "sha256": "978bec5b44e592b86c5e0f64c286897f9d3ba250b7e5cf3d902b8deabd0be498"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-deployment/lesson-created.json",
+      "sha256": "0f17ff5802f548a9e1a8a790208a8f34d653af57af60352b17209d4e53af9be1"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-deployment/lesson-fresh-search.json",
+      "sha256": "55ec46a5b8b1d1d2a412be709e2c5311b877fbc8e6d024b3e56877bc79edeae8"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-deployment/lesson-pull.json",
+      "sha256": "48229c8d3b5c8c0a620f53aebfc3b8bae1ef6bc67bf67990a52160ce9f8d9c46"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-deployment/lesson.json",
+      "sha256": "84a56c4d451cda78249cf16fe3882f3325ebfec9c3721c09e60d4434a62562d4"
+    },
+    {
+      "path": "/tmp/cairn-claude-config-ci-result.json",
+      "sha256": "1f1e0ddf6e306df8a2fbdea75f9db2d0f2dd9df723b3fb1bb446dafe8a3b52ad"
+    }
+  ],
+  "limits": [
+    "Native Claude-selected tool use and useful Claude task remain unverified.",
+    "No reliable native session scope is claimed.",
+    "Explicit scope must change for distinct executions.",
+    "No operational Claude settings changed by this slice."
+  ],
+  "deployment": {
+    "installed_cli_revision": "cee290ea5dc36febd7250230994571a38664117e",
+    "installed_cli_sha256": "92f896699367d4e7238980b590dfff995df5ff83417a33b8d555ff3bdfdee6d8",
+    "api_revision": "6dbca8b6a2a2b57c2197a9d00dc8f8a9362da7c7",
+    "before": {
+      "cli_sha256": "b77490a86e70b64af63e21edec3986b3d301f334a14f3ffbb679e76320078174",
+      "api_pid": "3757403",
+      "api_sha256": "b77490a86e70b64af63e21edec3986b3d301f334a14f3ffbb679e76320078174"
+    },
+    "api_restarted": false,
+    "schema_migration": false,
+    "settings_preserved": {
+      "/home/halbritt/.claude.json": "a244e8d2da4d40a9ab9f410223870473faf69efcbec07b5efe81938aa8045294",
+      "/home/halbritt/git/cairn/.mcp.json": null,
+      "/home/halbritt/git/cairn/.claude/settings.local.json": null,
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.opencode/tools/cairn.ts": "926bcd54dcf62cff3d474ced38f79c9f03ce2e6b37adf21d4244a8ccb0822797"
+    },
+    "generated_configuration": "/tmp/cairn-claude-config-deployment/cairn.json",
+    "selected_procedure": {
+      "record_id": "c41b3b32-1cd5-4a11-a96d-6ac0f4f85ad5",
+      "version": 1,
+      "body_sha256": "f785f1c72aca56693021d6389674146c1a4040d370391cda26dcabcd5e9c5fe3",
+      "fresh_exact_pull": true
+    }
+  },
+  "ci": {
+    "run_id": 34400988285,
+    "conclusion": "success",
+    "headSha": "cee290ea5dc36febd7250230994571a38664117e",
+    "status": "completed",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34400988285"
+  }
+}

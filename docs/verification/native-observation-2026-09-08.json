@@ -1,0 +1,67 @@
+{
+  "schema": "cairn.native-observation-verification/1",
+  "date": "2026-09-08",
+  "repository": "https://github.com/halbritt/striatum-next",
+  "branch": "cairn-native-observation",
+  "producer_commit": "88b2c4f85f843e71a0017412309c82a884ce5509",
+  "issuance_commit": "6937b12361738e95547113b19918db6a48120927",
+  "base_commit": "5ea87ca65c1bd25f228c0447110d991a3f0de8c8",
+  "go_version": "go1.23.4 linux/amd64",
+  "cairn_test_client_sha256": "756cd084be0430eb9059d401aa45dc1974be1e2c52030711a9c9151990be3089",
+  "checks": [
+    {
+      "name": "producer-full-check",
+      "result": "passed",
+      "log": "/tmp/cairn-native-observation-check.log",
+      "sha256": "9c46824767b7ae367068369668e61836969c6daa417c5af69c009247ac998255"
+    },
+    {
+      "name": "producer-focused-race",
+      "result": "passed",
+      "log": "/tmp/cairn-native-observation-focused-final.log",
+      "sha256": "0198b5c750c9051d8d1b406f613a7d7d27ce81f7a0781e757bd67aeb39ba05dc"
+    },
+    {
+      "name": "producer-real-service",
+      "result": "passed",
+      "log": "/tmp/cairn-native-observation-service.log",
+      "sha256": "dd5be5b7e105d15811cdae7385de9015132a18856e0f974a1c9d05493082b4e3"
+    },
+    {
+      "name": "issuance-full-check",
+      "result": "passed",
+      "log": "/tmp/cairn-native-issuance-check.log",
+      "sha256": "76dc815294f1f23dc696fbf7ba4de1358bd91072c75e5e8fd182a59a69863b69"
+    },
+    {
+      "name": "issuance-focused-race",
+      "result": "passed",
+      "log": "/tmp/cairn-native-issuance-focused-final.log",
+      "sha256": "4eacc169a6810daa49efc41889290741f784f553f808474cb8ac929b345940d6"
+    },
+    {
+      "name": "issuance-real-service",
+      "result": "passed",
+      "log": "/tmp/cairn-native-issuance-service.log",
+      "sha256": "cc5bf3f30ece598b5427cec2827275a6069725035da54d49ab169ab92e407429"
+    }
+  ],
+  "claims": {
+    "exact_capture_environment": true,
+    "deterministic_ecr_production": true,
+    "source_correspondence_at_admission": true,
+    "trusted_native_request_frontend": true,
+    "driver_request_to_admitted_ecr_fixture": true,
+    "real_cairn_service_cli_issuance": true,
+    "accepted_native_contracts": false,
+    "operational_native_enablement": false,
+    "packet_named_build_consumption": false,
+    "actual_native_host_correspondence": false,
+    "model_task_benefit": false
+  },
+  "limitations": [
+    "Tests admit observation@2 only in isolated fixture catalogs; operational catalog remains observation@1.",
+    "Driver-chain test uses a configured synthetic client; real-service test separately exercises public CLI acquisition and offline ECR production.",
+    "No operational database fixtures, model task, deployment or accepted Decision regeneration."
+  ]
+}

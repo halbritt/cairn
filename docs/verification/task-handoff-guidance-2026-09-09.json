@@ -1,0 +1,133 @@
+{
+  "schema": "cairn.task-handoff-guidance-review/1",
+  "date": "2026-09-09",
+  "source_commit": "e830ff4b88640d98d1fb579ad28cffc8a6bb7344",
+  "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+  "previous_version": 11,
+  "version": 12,
+  "body_sha256": "694dd8d524e1454b3ff1988a78e92908fe2ff7537dcc691312b7d0876f0f33bb",
+  "previous_body_bytes": 5810,
+  "body_bytes": 6707,
+  "before": {
+    "lexical": {
+      "rank": null,
+      "returned": 5,
+      "discovery": null
+    },
+    "semantic": {
+      "rank": null,
+      "returned": 5,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "8c2c7cdaefd493130a3ea66cd32bc0b7bfcdf52c6caa33c3e71efeef0f26e3d0"
+      }
+    }
+  },
+  "after": {
+    "lexical": {
+      "rank": 1,
+      "returned": 5,
+      "discovery": null
+    },
+    "semantic": {
+      "rank": 1,
+      "returned": 5,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "cb5ceb1d3d18fa0867905c3348ef08c091ca0309f72809f740f48cd17565a8ad"
+      }
+    }
+  },
+  "targeted_passage_bytes": 897,
+  "earlier_prose_preserved": true,
+  "metadata_preserved": true,
+  "exact_revision_retry": true,
+  "task_file_validation": "Rechecked retained57-byte live delivery artifact and its hash, current source delta and the recent full integration that includes exact task-file carriers; no fresh model or launcher trial.",
+  "limits": [
+    "Selected-query diagnostic on an intentionally updated note; no independent relevance benchmark",
+    "Older guide pointed to correct source docs but omitted the direct task-file option",
+    "Previous source reading and this agent authored the correction; incremental task benefit unknown"
+  ],
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-task-handoff-review/before-lexical.json",
+      "sha256": "de4cc6c34eba0f42e6de6b493adc1013fd2267f209dc7400b2b782e2918c32b1"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-review/revision-request.json",
+      "sha256": "36b73dc99109ebcccd094cc22be87ad9e933dc4d10f48fc72ff01696e46cb381"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-review/results.json",
+      "sha256": "24a66567fd73920a16551387a21b6d318eb24ca33900eba21429d6e615b7c262"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-review/before-semantic.json",
+      "sha256": "3fb52daa205b56e945dbf8f8a9a43b07625aacc268b8ee4f167c154ed502c8a9"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-review/after-lexical.json",
+      "sha256": "c1e928acd1655496eb45dadacff75c6d186c2ad6b131eaf58c2600350cef0ca8"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-review/after-semantic.json",
+      "sha256": "6f6a7a1fc045e2e4889d9036d4b60e18334a6dd10e0beb0104d38f80f4deda01"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-review/revision.json",
+      "sha256": "a35da8f66a1a208cbdd425a3f88f3de92f7d93712b09a490598b33d23110e451"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-review/pull-semantic.json",
+      "sha256": "bac4e8b5d55e8ef869b8e0ebbb365307d6c760af5ad2ba2def9514acca20218f"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-review/pull-lexical.json",
+      "sha256": "bac4e8b5d55e8ef869b8e0ebbb365307d6c760af5ad2ba2def9514acca20218f"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-review/targeted-pull.json",
+      "sha256": "59b77ce934bf91205f2846cb550a060a5aef6c489a87dcf1070e8c1689361480"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-review/plan.json",
+      "sha256": "fe635d2e292926f9467fd58abc8b559a511c94ac4fcf5fa6b5ec91df67e380f1"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-opencode.json",
+      "sha256": "7e6a08218306a28827c6ab9ecf2bc83f8f68160d7dc8a95c825c86e362eeb7dc"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-codex.json",
+      "sha256": "12d82da3fa3d96fad89c357bf3a3d3db7da638e004c34b309870e76b2cd499a9"
+    },
+    {
+      "path": "/tmp/cairn-task-handoff-newline.json",
+      "sha256": "b29fde9189764e6d86a5f8c4faa134fbed19c205b1ba91680a5e0de2f744614a"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-deployment/startup.txt",
+      "sha256": "dcd22b28aa85a68a923982bf1bc02ca62bf6654780c56e3d03c713bca570fe9b"
+    },
+    {
+      "path": "/tmp/cairn-vector-cache-integration.log",
+      "sha256": "66cc102feb4f58da71c40df7a2421a6966d135d83f3d214d359cf7fcbf6659c2"
+    },
+    {
+      "path": "docs/compact-start.md",
+      "sha256": "c0fb359e43ebde113ff051ad5a7b4aeaa073223cd706254bd8a1f39f1139f71b"
+    },
+    {
+      "path": "cmd/cairn/agent_start.go",
+      "sha256": "ebe2c4990e092fdb5f58b5e86a2299b4db76e7b10dcec356c8b9ff99c9991b6d"
+    },
+    {
+      "path": "scripts/check_agent_start.py",
+      "sha256": "c35c152cdfb53f716f70a99540c0941c45a991e7afe8641328dc54050c57d4f6"
+    }
+  ]
+}

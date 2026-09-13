@@ -1,0 +1,192 @@
+{
+  "schema": "cairn.native-startup-investigation/1",
+  "baseline_commit": "13c7859556c2febc8c598a53237c1877aa358b27",
+  "opencode_version": "1.18.21",
+  "diagnostic": {
+    "seconds": 7.1933068570215255,
+    "timed_out": false,
+    "exit_code": 0,
+    "binary_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+    "model_inference": false,
+    "cairn_api_calls": 0
+  },
+  "original_timeout_cause": "unknown",
+  "production_changes": false,
+  "decision": "Document startup dependencies; abstain from causal attribution or speculative repair",
+  "source": {
+    "tag": "anomalyco/opencode v1.18.21",
+    "tree": "826d9ad46a22bef0294998e08daa3c4904fea28f",
+    "config_blob": "86238f1a844c1df3ae0c765bc787eeb05d70b165",
+    "provider_blob": "dba9cbece552227b753272747be7176d9da8c87a"
+  },
+  "doctrine": {
+    "packet_id": "pkt-35de08a41b76d012",
+    "packet_content_sha256": "35de08a41b76d01229758c4bf0ea231c86d2d35fc4b53c4a4b60c2c0026e3996",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "unmet_obligations": {
+      "data-dedup-key-identity-completeness": [
+        "an explicit enumeration of the record's identity dimensions matched against the key's columns",
+        "logical-identity definition of the affected record",
+        "the conflict-handling semantics at that key - abort update or silent drop"
+      ],
+      "data-ingest-population-scoping": [
+        "a dry-run enumeration with counts compared against expectation",
+        "the discovery pattern shown to match the specification's depth and class constraints",
+        "the input population specification",
+        "the specified input population stated precisely"
+      ],
+      "implementation-async-ui-state-design": [
+        "an enumeration of lifecycle phases with a designed state for each",
+        "content lifecycle phases enumerated",
+        "explicit handlers where platform defaults were overridden",
+        "geometry reserved independent of the async payload"
+      ],
+      "implementation-attention-budget-presentation": [
+        "a prioritization key tied to the consumer's decision",
+        "proof canonical data is unchanged by presentation",
+        "the bound stated and enforced",
+        "the consumer and budget named",
+        "the consumer and their budget named"
+      ],
+      "implementation-config-reference-validation": [
+        "a load-time or gate check resolving every reference against them",
+        "a named-identifier failure on mismatch",
+        "the consumer's defined identifier and enum sets"
+      ],
+      "implementation-rank-before-truncate": [
+        "the match-text composition enumerated field by field",
+        "the scan shown to score the full bounded set before truncation",
+        "the selection contract stated",
+        "the selection contract stated - relevance-ordered top-N versus first-N"
+      ],
+      "operations-external-capability-verification": [
+        "access to the real device or endpoint",
+        "an end-to-end verification artifact against the actual device or endpoint",
+        "or an explicit record that verification is provisional",
+        "the real system's own statement of its capability - device configuration output wire capture or endpoint self-description"
+      ],
+      "operations-symptom-cause-monitoring": [
+        "current page inventory classified symptom-versus-cause",
+        "golden-signal coverage with the error definition stated",
+        "the service's user-visible failure modes"
+      ],
+      "python-repository-shaped-idiom": [
+        "Python and dependency version matrix",
+        "adjacent code",
+        "formatter linter and type-checker configuration",
+        "public API and tests",
+        "repository toolchain inspection"
+      ],
+      "universal-preserve-behavior-by-default": [
+        "accepted desired behavior and semantic authority",
+        "preservation matrix and consumers",
+        "proc-establish-preservation-boundaries",
+        "tests, characterization, probes, or explicit residual risk"
+      ],
+      "universal-separate-semantic-structural-change": [
+        "change-type classification",
+        "checkpoint verification",
+        "per-edit change classification",
+        "preservation boundary and semantic authority"
+      ]
+    },
+    "classification": "nonmaterial to the bounded observations and abstention",
+    "reason": "No product code, ingestion, deduplication, UI, ranking, gate, monitoring or Python API change is proposed. These broader obligations do not establish the missing timeout cause and cannot justify a repair."
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-native-startup-authority.json",
+      "sha256": "e7c750765a6e30acff46de2dc009f9f3b1df9ed6724b6fc02c6c5574596928f5"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-contracts.json",
+      "sha256": "71284200ecea3918ab6108354e506e938227f2990e8b339e304e333490e179bd"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-observation.json",
+      "sha256": "78ed5087a10c18649c8a8c0a73fbde0ea18d56c7bee1f9209aac3a31254de4a1"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-source.json",
+      "sha256": "01ab572e175a7c916cb31e7d29a0105cc86fb3610142166f1401ff8ad5604508"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-decision.json",
+      "sha256": "ecac235bfcba5a3c38f96805b6331b694f1fa729515c43a643b1ea02e7002da0"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-incident.json",
+      "sha256": "706766b26d9a1ff8ee21dfe1d1c18ee0d344742e0efba6f1ba8e85d78a261681"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-runtime.json",
+      "sha256": "61b5175a93514f2fda74447517a98aabdd8107a96d7a1ea8a44a29da2567a908"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-probe.py",
+      "sha256": "ae575a928ea1f7016fe37e2c16f37fbb7515c96321e5111711585df4f1fc2071"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-decision-receipt.json",
+      "sha256": "0a201ae9ab2696be0d43894d017b1eb560483e4d3d98c8ea5f883d3cf2adb64a"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-doctrine.json",
+      "sha256": "65bb19f51c944aa28cd07df3311fcdd11f95fef08ac60525987dbb244e932121"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-doctrine-verified.json",
+      "sha256": "139b78c161091fc61965adfe3b403aed5e4472346e418d7a6633af934ac71709"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-doctrine-final.json",
+      "sha256": "f3dbc1a768a681070122492bd21c48b9d21efa3b368d3d74c7d1dd1d8b474029"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-citations.json",
+      "sha256": "eb774713286923ba706528a1bf55f970d5ee1a1094c35b62a6b6f50d5764df97"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-citations-verified.json",
+      "sha256": "b3ae2a4375c12f5362e1fac3dab98e5a5472b8fc5f8ef9cc83232caec333622b"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-citations-final.json",
+      "sha256": "3464d39908b7ed4d49f27f52dc9e27a17c4b571c0f30792aac75e7e0046afa38"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-probe/cold.json",
+      "sha256": "094752ed44079a3c271675c3c7b5d153e46892dbf1474d2943f036641fa2fdde"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-probe/cold.stdout",
+      "sha256": "00a46164a44db31576634897a86cf38b1c9820e4382efcc730e9dfb0a72e4b16"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-probe/cold.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-probe/cold.strace",
+      "sha256": "1269d24851aa273b5a7a681f08a54a4286410b393e7b82a05f5e1a3a6f0c1803"
+    },
+    {
+      "path": "/tmp/cairn-native-startup-probe/data/opencode/log/opencode.log",
+      "sha256": "32857944c08f4c0bd7a90173fb517bb8e48bcd64fcbd036b587bf4ed965e2d33"
+    },
+    {
+      "path": "/tmp/cairn-search-context-native-red.log",
+      "sha256": "739d562474f63676008a5cf2bdf43f1427bbfe8d0445a5ec2566bac58f6f84d4"
+    },
+    {
+      "path": "/tmp/cairn-search-context-api.log",
+      "sha256": "0024fab4ecfeea6f2d425a7ef17411290cc3023c7e03f713180b0cfd7ca340cd"
+    },
+    {
+      "path": "/tmp/cairn-search-context-api-final.log",
+      "sha256": "77b06de5d6a32c0df1fea84f2a16334ad997995ce8760b62c483506fc7ad41e5"
+    }
+  ]
+}

@@ -1,0 +1,214 @@
+{
+  "schema": "cairn.semantic-thread-comparison/1",
+  "baseline_commit": "fec0f2c2b9db478240f76c301990c8dee37cc8b7",
+  "summary": {
+    "cases": 21,
+    "completed_pairs": 21,
+    "exact_pairs": 21,
+    "median_paired_speedup": 0.972258596815541,
+    "conditions": {
+      "baseline": {
+        "wall_seconds": 3.2335573208983988,
+        "user_seconds": 6.03,
+        "system_seconds": 0.12,
+        "max_rss_kib": 203784
+      },
+      "candidate": {
+        "wall_seconds": 3.119844736997038,
+        "user_seconds": 3.75,
+        "system_seconds": 0.11,
+        "max_rss_kib": 203844
+      }
+    },
+    "target_met": false,
+    "special_cases": [
+      {
+        "id": "long-tail",
+        "exact_scores_equal": true,
+        "conditions": {
+          "baseline": {
+            "user_seconds": 8.27,
+            "system_seconds": 0.13,
+            "max_rss_kib": 220988,
+            "wall_seconds": 4.014289774000645,
+            "exit_code": 0
+          },
+          "candidate": {
+            "user_seconds": 5.1,
+            "system_seconds": 0.1,
+            "max_rss_kib": 221100,
+            "wall_seconds": 4.105296412948519,
+            "exit_code": 0
+          }
+        }
+      },
+      {
+        "id": "64-short",
+        "exact_scores_equal": true,
+        "conditions": {
+          "baseline": {
+            "user_seconds": 21.07,
+            "system_seconds": 0.11,
+            "max_rss_kib": 209860,
+            "wall_seconds": 10.684800531016663,
+            "exit_code": 0
+          },
+          "candidate": {
+            "user_seconds": 11.72,
+            "system_seconds": 0.12,
+            "max_rss_kib": 211460,
+            "wall_seconds": 11.305899424944073,
+            "exit_code": 0
+          }
+        }
+      },
+      {
+        "id": "repeat-storage-0",
+        "exact_scores_equal": true,
+        "conditions": {
+          "baseline": {
+            "user_seconds": 5.28,
+            "system_seconds": 0.1,
+            "max_rss_kib": 203872,
+            "wall_seconds": 2.378792539006099,
+            "exit_code": 0
+          },
+          "candidate": {
+            "user_seconds": 3.3,
+            "system_seconds": 0.11,
+            "max_rss_kib": 203620,
+            "wall_seconds": 2.493656520964578,
+            "exit_code": 0
+          }
+        }
+      },
+      {
+        "id": "repeat-storage-1",
+        "exact_scores_equal": true,
+        "conditions": {
+          "baseline": {
+            "user_seconds": 5.23,
+            "system_seconds": 0.1,
+            "max_rss_kib": 203800,
+            "wall_seconds": 2.3644115978386253,
+            "exit_code": 0
+          },
+          "candidate": {
+            "user_seconds": 3.46,
+            "system_seconds": 0.09,
+            "max_rss_kib": 203744,
+            "wall_seconds": 2.485356230987236,
+            "exit_code": 0
+          }
+        }
+      }
+    ]
+  },
+  "deployed_change": false,
+  "worker_sha256": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954",
+  "comparison_script_sha256": "dc2cf265ad742dee5aa331f6ed5b74f82299fc64d50d5f384b95acb07ca5e2de",
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-semantic-threads/decision-plan.json",
+      "sha256": "af6431becb2ede7f5602d67e6685fc1b9ff70e87d3752ccf5a65a8a864147d2a"
+    },
+    {
+      "path": "/tmp/cairn-semantic-threads/baseline.py",
+      "sha256": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954"
+    },
+    {
+      "path": "/tmp/cairn-semantic-threads/candidate.py",
+      "sha256": "7623ce9fc96acdef7f6893e609b2f66c5dd4af3435c2cdde6bf78e2da2649c53"
+    },
+    {
+      "path": "/tmp/cairn-semantic-threads/comparison/plan.json",
+      "sha256": "f3744647367708627ea1c70c8c4f6aadd5f4585805570b9048c686547a258a66"
+    },
+    {
+      "path": "/tmp/cairn-semantic-threads/comparison/report.json",
+      "sha256": "d6cf103ac5b1382405ef6cef5ed7f8d93f8874ca8dea2013c99b4c28a6a150e5"
+    },
+    {
+      "path": "/tmp/cairn-semantic-threads/summary.json",
+      "sha256": "54b4b8aba7018efbf240a136c12e23ce48f20b5c70cc18fac5ec922424825b2e"
+    },
+    {
+      "path": "/tmp/cairn-semantic-threads-comparison.log",
+      "sha256": "70b7d89ffc3d08a7cdd57f4a8df661f16f5680d606633eea03f3b9f5c488c4da"
+    }
+  ],
+  "model_answering_calls": 0,
+  "doctrine": {
+    "packet_id": "pkt-4cbf30509af6123f",
+    "packet_content_sha256": "4cbf30509af6123fef2683cda06e762b6f4614d47bd47ef6e64c088573e4c032",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_path": "/tmp/cairn-semantic-threads-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-d2573b0d4d8293f7",
+        "required_by": "python-text-bytes-boundary",
+        "requirement": "external format and domain text contract",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No text/bytes boundary, codec, normalization or external protocol change; the candidate is not deployed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-547f84d7398569bf",
+        "required_by": "python-text-bytes-boundary",
+        "requirement": "normalization requirements",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No text/bytes boundary, codec, normalization or external protocol change; the candidate is not deployed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-0ae1be4d7859dd39",
+        "required_by": "python-text-bytes-boundary",
+        "requirement": "protocol or file metadata",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No text/bytes boundary, codec, normalization or external protocol change; the candidate is not deployed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-1ee5a03cb67562cf",
+        "required_by": "python-text-bytes-boundary",
+        "requirement": "representative non-ASCII data",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No text/bytes boundary, codec, normalization or external protocol change; the candidate is not deployed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-2ceada95d4c08a3e",
+        "required_by": "python-text-bytes-boundary",
+        "requirement": "round-trip and failure tests",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No text/bytes boundary, codec, normalization or external protocol change; the candidate is not deployed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No separate generic named procedure is claimed; pre-run criteria and no-change decision are directly recorded."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No separate generic named procedure is claimed; pre-run criteria and no-change decision are directly recorded."
+      }
+    ]
+  }
+}

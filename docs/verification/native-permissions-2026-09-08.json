@@ -1,0 +1,339 @@
+{
+  "schema": "cairn.native-permissions-verification/1",
+  "original_cohort": {
+    "root": "/tmp/cairn-native-recurrence-model-a",
+    "report_sha256": "156bfb337c0197d4ad6ec41f5afa7a53d8d5345cfd663b5433557456a6ebbfc3",
+    "execution_pins": {
+      "driver_binary_sha256": "cee6184e65ca24029e028633701434dddc3bcea6ba75f8745db4ed2055aa0a73",
+      "go_paths": [
+        "/home/halbritt/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64",
+        "/home/halbritt/go/pkg/mod"
+      ],
+      "go_binary_sha256": "b93cdfdbc72f1afc3f21498c80bf3d155a44a9b95e2d690c940511051574bc25",
+      "striatum_head": "ee8a463c9978833bc53d2726eef63eb9417fcb91",
+      "striatum_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "cairn_scripts": {
+        "trial_native_executor.py": "937c6b77868469a8b7eb76c0e65e19a0222eaead1e0f375c9befb19ffe24d994",
+        "trial_native_runtime.py": "73272ee235619a3e07de1ee0cb3e9dd87b7bb281c2cf2d90426fc17693990659",
+        "trial_native_recurrence.py": "3fb75e379d799e4143c7e98c58742d5f1b4f595c284bb2dc5e87e1eb575cc40c",
+        "trial_agent_env.py": "99aa09abf6ecf0efaf74de2e0241ff2208f150514f54e8f7ecdbcfdc9931480a",
+        "trial_repair_assessment.py": "99442405923d0209cccfa94dac4c9b4ddc44e2cd2f40f9492cf986531f0f85a2",
+        "trial_openrouter.py": "6eb38d165448bacced6f67924c4aed871b1b167a6fe2e842579a5052cfeaba0a",
+        "trial_retrieval_tools.py": "1ce9cdb4dbbc53d290cca7036ee414c9033702de2300e5b68e9527c789606fff"
+      },
+      "fixture_source_sha256": "6878e07235f36146f7f78706af9148b0a328691b2800663baf993906a09a86b1"
+    },
+    "scenario_sha256": "20d8fcc3081aadf3f0e8b88d7a07b44d2fa834c5ab69326cbe150bee14d3c797",
+    "arms": [
+      {
+        "mode": "no_memory",
+        "invocations": 1,
+        "provider_requests": 27,
+        "process_exit": null,
+        "change_set_admitted": false,
+        "change_set_checked": false,
+        "gate": {
+          "passed": false,
+          "reason": "no_candidate"
+        },
+        "assessment": {
+          "task_outcome": "unknown",
+          "failure_domain": "unknown",
+          "failure_kind": "",
+          "reason": "Run exited nonzero without a classified binding cause; candidate checks remain separate."
+        },
+        "exact_prompt_received": true,
+        "prompt_sha256": "101743dc21b124fa7d491d1acc13d02a875718bca1060dd241abcfaf73bf4438",
+        "transcript_sha256": "7d751bb175230f83bab9ae7453ce0828a441bc25963b5cff8d60984f8c8d890b",
+        "lesson_occurrences": 0,
+        "process_state": "timeout",
+        "runtime_error": "wall-clock invocation limit exceeded",
+        "tool_calls": 33,
+        "permission_denials": 7,
+        "relay_summary": {
+          "report_sha256": "852470725af57a18de1c02b76ab886ed41047f008af6e0b7605eb85b22dd96b9",
+          "request_statuses": {
+            "failed": 3,
+            "completed": 24
+          },
+          "failure_types": {
+            "TimeoutError": 2,
+            "BrokenPipeError": 1
+          },
+          "rejections": 0,
+          "requests_with_usage": 24,
+          "requests_without_usage": 3,
+          "reported_prompt_tokens": 1154678,
+          "reported_completion_tokens": 28739,
+          "reported_cost_field_sum": "0.09205264",
+          "usage_boundary": "Sum of the last reported usage object per request. Missing request usage is excluded, not treated as zero. Cost is the provider-reported field, not a complete billing reconciliation."
+        }
+      },
+      {
+        "mode": "direct_context",
+        "invocations": 1,
+        "provider_requests": 32,
+        "process_exit": null,
+        "change_set_admitted": false,
+        "change_set_checked": false,
+        "gate": {
+          "passed": false,
+          "reason": "no_candidate"
+        },
+        "assessment": {
+          "task_outcome": "unknown",
+          "failure_domain": "unknown",
+          "failure_kind": "",
+          "reason": "Run exited nonzero without a classified binding cause; candidate checks remain separate."
+        },
+        "exact_prompt_received": true,
+        "prompt_sha256": "a9fc5425059e6c22fc1cadb6730ce8a4afe36bb256a153b697e6d15298ceb5ad",
+        "transcript_sha256": "1f65d5d786d499f54265e472752f7d36a07ee5a8559b5657866aded31714bdad",
+        "lesson_occurrences": 2,
+        "process_state": "timeout",
+        "runtime_error": "wall-clock invocation limit exceeded",
+        "tool_calls": 28,
+        "permission_denials": 1,
+        "relay_summary": {
+          "report_sha256": "bd2715fa7bd2c85909fd358799acb85726899fee972fcd4660ef92f65d9dd879",
+          "request_statuses": {
+            "completed": 30,
+            "failed": 2
+          },
+          "failure_types": {
+            "TimeoutError": 2
+          },
+          "rejections": 3,
+          "requests_with_usage": 30,
+          "requests_without_usage": 2,
+          "reported_prompt_tokens": 1064883,
+          "reported_completion_tokens": 11402,
+          "reported_cost_field_sum": "0.042865775",
+          "usage_boundary": "Sum of the last reported usage object per request. Missing request usage is excluded, not treated as zero. Cost is the provider-reported field, not a complete billing reconciliation."
+        }
+      },
+      {
+        "mode": "native_context",
+        "invocations": 1,
+        "provider_requests": 29,
+        "process_exit": null,
+        "change_set_admitted": false,
+        "change_set_checked": false,
+        "gate": {
+          "passed": false,
+          "reason": "no_candidate"
+        },
+        "assessment": {
+          "task_outcome": "unknown",
+          "failure_domain": "unknown",
+          "failure_kind": "",
+          "reason": "Run exited nonzero without a classified binding cause; candidate checks remain separate."
+        },
+        "exact_prompt_received": true,
+        "prompt_sha256": "f2830994059a298e40f41d4ae6c75374a4cb0a09d71fb58039c46b5443790eed",
+        "transcript_sha256": "a1e70ba9752de8fcd9001b2520942d5304112314717e1a3d4cfd36cdba767bfc",
+        "lesson_occurrences": 1,
+        "process_state": "timeout",
+        "runtime_error": "wall-clock invocation limit exceeded\nexit status 143",
+        "tool_calls": 26,
+        "permission_denials": 0,
+        "native_observation": {
+          "run_ref": 48,
+          "claim_confirmed": true,
+          "invocation_started": true,
+          "receipt_id": "d3c65f5e-04b1-484a-a95c-4b4af682ba87",
+          "attempt_id": "15878d67-c69a-834e-8cb9-15cc8ba7fb76",
+          "delivery_observation_id": "583e1f8e-b2bc-436a-bbba-4d2e1e703fae",
+          "outcome_observation_id": "2f5fc051-ddb0-4d94-ba09-f0e82b4eb4da",
+          "outcome": {
+            "exit_code": null,
+            "duration_ms": 600157,
+            "process_state": "timeout",
+            "stdout_sha256": "a1e70ba9752de8fcd9001b2520942d5304112314717e1a3d4cfd36cdba767bfc",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "admitted_input_matches": true
+        },
+        "relay_summary": {
+          "report_sha256": "abfa1de083696b8e030d54aa3dc95d2b3af98f6656d2b4681fb76892834269ec",
+          "request_statuses": {
+            "completed": 26,
+            "failed": 3
+          },
+          "failure_types": {
+            "TimeoutError": 2,
+            "ConnectionResetError": 1
+          },
+          "rejections": 0,
+          "requests_with_usage": 26,
+          "requests_without_usage": 3,
+          "reported_prompt_tokens": 857810,
+          "reported_completion_tokens": 9082,
+          "reported_cost_field_sum": "0.036571857",
+          "usage_boundary": "Sum of the last reported usage object per request. Missing request usage is excluded, not treated as zero. Cost is the provider-reported field, not a complete billing reconciliation."
+        }
+      }
+    ]
+  },
+  "permission_regression": {
+    "original": {
+      "path": "/tmp/cairn-native-permission-probe-d/report.json",
+      "report_sha256": "2957108bdcaa73abae15bd5ca9e9fdb6e93db89ed4329a0617156ff21edccce6",
+      "passed": false,
+      "process_exit": 0,
+      "scripted_requests": 6,
+      "model_requests": 0,
+      "scratch_written": false,
+      "sealed_input_unchanged": true,
+      "outside_scratch_absent": true
+    },
+    "corrected": {
+      "path": "/tmp/cairn-native-permission-probe-c/report.json",
+      "report_sha256": "cc7faf7dec7af6495f223d0ac00fae57a05ba407c62809cf42d21137ed21e79c",
+      "passed": true,
+      "process_exit": 0,
+      "scripted_requests": 6,
+      "model_requests": 0,
+      "scratch_written": true,
+      "sealed_input_unchanged": true,
+      "outside_scratch_absent": true
+    }
+  },
+  "corrected_fixture": {
+    "root": "/tmp/cairn-native-executor-fixture-m",
+    "report_sha256": "d61029dcbd59327b1deac42b0084b25000c1d87badd746ad36513ef6eb5c4fe7",
+    "execution_pins": {
+      "driver_binary_sha256": "cee6184e65ca24029e028633701434dddc3bcea6ba75f8745db4ed2055aa0a73",
+      "go_paths": [
+        "/home/halbritt/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64",
+        "/home/halbritt/go/pkg/mod"
+      ],
+      "go_binary_sha256": "b93cdfdbc72f1afc3f21498c80bf3d155a44a9b95e2d690c940511051574bc25",
+      "striatum_head": "ee8a463c9978833bc53d2726eef63eb9417fcb91",
+      "striatum_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "cairn_scripts": {
+        "trial_native_executor.py": "c7ac4c013d7d22959b00d0edabe1db48dde73de8a6d841719a7425308d24c85b",
+        "trial_native_runtime.py": "73272ee235619a3e07de1ee0cb3e9dd87b7bb281c2cf2d90426fc17693990659",
+        "trial_native_permissions.py": "2beb981357ab7b93fd12aa26ae9ba16a81742f988f6130389e8e2fc22e9475a4",
+        "trial_native_recurrence.py": "3fb75e379d799e4143c7e98c58742d5f1b4f595c284bb2dc5e87e1eb575cc40c",
+        "trial_agent_env.py": "99aa09abf6ecf0efaf74de2e0241ff2208f150514f54e8f7ecdbcfdc9931480a",
+        "trial_repair_assessment.py": "99442405923d0209cccfa94dac4c9b4ddc44e2cd2f40f9492cf986531f0f85a2",
+        "trial_openrouter.py": "6eb38d165448bacced6f67924c4aed871b1b167a6fe2e842579a5052cfeaba0a",
+        "trial_retrieval_tools.py": "1ce9cdb4dbbc53d290cca7036ee414c9033702de2300e5b68e9527c789606fff"
+      },
+      "fixture_source_sha256": "6878e07235f36146f7f78706af9148b0a328691b2800663baf993906a09a86b1"
+    },
+    "permission_probe": {
+      "passed": true,
+      "process_exit": 0,
+      "scripted_requests": 6,
+      "model_requests": 0,
+      "scratch_written": true,
+      "sealed_input_unchanged": true,
+      "outside_scratch_absent": true
+    },
+    "arms": [
+      {
+        "mode": "no_memory",
+        "invocations": 1,
+        "change_set_checked": true,
+        "process_exit": 0,
+        "provider_requests": 0,
+        "exact_prompt_received": true,
+        "gate": {
+          "passed": false,
+          "exit_code": 1,
+          "gate_actions": [
+            "fail"
+          ],
+          "formatted": true,
+          "skipped_tests": 193,
+          "stdout_sha256": "6ed2f9c38779efbef600b10b86b8501facc81c6502f2ca32969e0d56f1acb156",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "boundary": "All Go tests with no test DSN; database-dependent tests skip. Hidden gate uses real Unix HTTP transport."
+        }
+      },
+      {
+        "mode": "direct_context",
+        "invocations": 1,
+        "change_set_checked": true,
+        "process_exit": 0,
+        "provider_requests": 0,
+        "exact_prompt_received": true,
+        "gate": {
+          "passed": false,
+          "exit_code": 1,
+          "gate_actions": [
+            "fail"
+          ],
+          "formatted": true,
+          "skipped_tests": 193,
+          "stdout_sha256": "ceddd52163ef0e9f09fcae97fe5f7c06f2c04acb38494e5650efb5ae8d09de77",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "boundary": "All Go tests with no test DSN; database-dependent tests skip. Hidden gate uses real Unix HTTP transport."
+        }
+      },
+      {
+        "mode": "native_context",
+        "invocations": 1,
+        "change_set_checked": true,
+        "process_exit": 0,
+        "provider_requests": 0,
+        "exact_prompt_received": true,
+        "gate": {
+          "passed": false,
+          "exit_code": 1,
+          "gate_actions": [
+            "fail"
+          ],
+          "formatted": true,
+          "skipped_tests": 193,
+          "stdout_sha256": "eeec584cd8e44c5f6109a18be5e3512a18d2dbb466ddeaf8209e7471e57dfb05",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "boundary": "All Go tests with no test DSN; database-dependent tests skip. Hidden gate uses real Unix HTTP transport."
+        }
+      }
+    ]
+  },
+  "checks": {
+    "check": {
+      "path": "/tmp/cairn-native-permissions-check.log",
+      "sha256": "b0ea022a3c3cbbe3ce6fee217ec5ece61f56bab9d7b7270dfac51fdb32ff50e3",
+      "exit_code": 0
+    },
+    "tests": {
+      "path": "/tmp/cairn-native-permissions-tests.log",
+      "sha256": "8d1275da64fba7a0476a5980a255776eb139745a3118d2730f1432a6f6c7938b",
+      "exit_code": 0
+    }
+  },
+  "doctrine": {
+    "packet_id": "pkt-7d12afd94ce2c487",
+    "packet_content_sha256": "7d12afd94ce2c487457d11575adcb9904857baf7221118ec90ab1cc3e932f713",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "operational_lesson": {
+    "classification": "A",
+    "sensitivity": "shareable",
+    "body_sha256": "29332b2401226c409fbc01d996465e2149ecdd42c21f5981803ef8993cc1e3e8",
+    "fresh_task_search_rank": 1,
+    "exact_body_retrieved": true,
+    "evidence": {
+      "capture.json": {
+        "path": "/tmp/cairn-native-permission-lesson/capture.json",
+        "sha256": "a8a5218afb947f0f8f1b675059a3489e1092967543d67c47992e2f76e40da5bf"
+      },
+      "search.json": {
+        "path": "/tmp/cairn-native-permission-lesson/search.json",
+        "sha256": "a92b5ff54b0e320b8125f8a888c299d7fe62340d9231d2e913fe9f73cd6c3493"
+      },
+      "pull.json": {
+        "path": "/tmp/cairn-native-permission-lesson/pull.json",
+        "sha256": "9fbd8d1563c3456e4acd42aab10583fa0d666215d0f1ebae7d6f84e811e7fe21"
+      }
+    },
+    "boundary": "Selected capture and fresh-task retrieval by the same coding agent through the operational hosted profile; no independent model use or outcome claim."
+  }
+}

@@ -1,0 +1,332 @@
+{
+  "date": "2026-09-10",
+  "baseline_commit": "be718e94e14dcb92306e0042241c4a56c5ad0dd7",
+  "installed_baseline": "797aafedd70cfea2fb56f6f10087ac5519f04e14",
+  "opencode_version": "1.18.21",
+  "baseline": [
+    {
+      "command": "opencode-config",
+      "case": "oversized-task",
+      "exit_code": 0,
+      "raw_output_contains_literal_replacement": false,
+      "decoded_argument": "ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+      "decoded_argument_contains_replacement": false
+    },
+    {
+      "command": "opencode-config",
+      "case": "invalid-utf8-revision",
+      "exit_code": 0,
+      "raw_output_contains_literal_replacement": false,
+      "decoded_argument": "change-\ufffd",
+      "decoded_argument_contains_replacement": true
+    },
+    {
+      "command": "opencode-config",
+      "case": "invalid-utf8-path",
+      "exit_code": 0,
+      "raw_output_contains_literal_replacement": false,
+      "decoded_argument": "/missing/\ufffd.token",
+      "decoded_argument_contains_replacement": true
+    },
+    {
+      "command": "codex-config",
+      "case": "oversized-task",
+      "exit_code": 0,
+      "raw_output_contains_literal_replacement": false
+    },
+    {
+      "command": "codex-config",
+      "case": "invalid-utf8-revision",
+      "exit_code": 1,
+      "raw_output_contains_literal_replacement": false
+    },
+    {
+      "command": "codex-config",
+      "case": "invalid-utf8-path",
+      "exit_code": 1,
+      "raw_output_contains_literal_replacement": false
+    },
+    {
+      "command": "claude-config",
+      "case": "oversized-task",
+      "exit_code": 0,
+      "raw_output_contains_literal_replacement": false
+    },
+    {
+      "command": "claude-config",
+      "case": "invalid-utf8-revision",
+      "exit_code": 1,
+      "raw_output_contains_literal_replacement": false
+    },
+    {
+      "command": "claude-config",
+      "case": "invalid-utf8-path",
+      "exit_code": 1,
+      "raw_output_contains_literal_replacement": false
+    }
+  ],
+  "checks": {
+    "baseline.json": {
+      "path": "/tmp/cairn-mcp-setup-20260910/baseline.json",
+      "sha256": "6df0c6916444ccef3f28f8efb6ba4c13956f967c70d47e90e16fa92e15c73e2b"
+    },
+    "text-red.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/text-red.log",
+      "sha256": "72a8f337242cac960692086f882051c87a5a23c043d22cf87daf5ace41b91430"
+    },
+    "text-green.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/text-green.log",
+      "sha256": "a9360bdbcf5b2957ba65869dc4bc85c95b44aa8e7e0ed28219352f174145964c"
+    },
+    "install-red.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/install-red.log",
+      "sha256": "05c1d78dff61d3b96e5b39b6157fcd77ff541d43d326fe36bbfd28c9a97b2ce2"
+    },
+    "install-green.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/install-green.log",
+      "sha256": "a9360bdbcf5b2957ba65869dc4bc85c95b44aa8e7e0ed28219352f174145964c"
+    },
+    "scope-red.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/scope-red.log",
+      "sha256": "4158c09eac4ecef5aee4e1214d09b9e5d834a325d4bbc189b878b991360724dc"
+    },
+    "scope-green.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/scope-green.log",
+      "sha256": "c3a6512bb1fa69492e8a501c00066f2130ba43dcceeab00840b7200df80a08ff"
+    },
+    "expanded-tests.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/expanded-tests.log",
+      "sha256": "f3dab053bd9596d29cdb7fc8d20fdf8b8b4c1eeb6ffca42a108dae5812041f49"
+    },
+    "refactor-tests.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/refactor-tests.log",
+      "sha256": "75d3028622f141306ab1e1d1e3ea8f72d6cca2716aa32fa98697d576d57c419d"
+    },
+    "cli-check.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/cli-check.log",
+      "sha256": "b14dfe60fa7aba751e5a4fd1ca10654a065b8168e69ab647ffee8e42af35f830"
+    },
+    "integration.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/integration.log",
+      "sha256": "69562ad2482187669ebdf9b9e9ddd2e056d498f3d37fe4df689002e2930482eb"
+    },
+    "integration-rerun.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/integration-rerun.log",
+      "sha256": "eca0aae70eed9af09a44d45634ec50c04382db08232f194fd2ab09062a5c72fd"
+    },
+    "integration-diagnostic.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/integration-diagnostic.log",
+      "sha256": "188fb594ad3ffe65488c9659ba03fefac30cc8b6b9c5b8d847850be290cd96cd"
+    },
+    "isolated-native.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/isolated-native.log",
+      "sha256": "52258f8f90849430be8bac79dfe6fe84e7ba6abdba97b8de2b832f23eb1b9365"
+    },
+    "isolated-recent.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/isolated-recent.log",
+      "sha256": "549902d5d898de86267e8d503b248649762327fcb7967034bcfabc330f20a31a"
+    },
+    "integration-standard.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/integration-standard.log",
+      "sha256": "1fb3b9da04f876dc1c361cb32753af397985cb434c03918e4e2876cec7ad2fd8"
+    },
+    "check.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    "python.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/python.log",
+      "sha256": "2bc3922d98b3707c5b6e33132d2c0912b205db7b30cd94d2fe1c633d80a7246c"
+    },
+    "decision-receipt.json": {
+      "path": "/tmp/cairn-mcp-setup-20260910/decision-receipt.json",
+      "sha256": "d98005d9ee147382bdf8209cdd689cd8eea8b952d809ce78320e4cdb64480360"
+    },
+    "installed-check.log": {
+      "path": "/tmp/cairn-mcp-setup-20260910/installed-check.log",
+      "sha256": "b14dfe60fa7aba751e5a4fd1ca10654a065b8168e69ab647ffee8e42af35f830"
+    }
+  },
+  "source_hashes": {
+    "mcpapi/server.go": "d262d65ec4d3be5232f202c392fce7e0ca1c050378106f0a2ceb32b94e604fdf",
+    "cmd/cairn/mcp_config.go": "f0360aa23dd906beda4a7cd1feb5b3e2847a728fe775c2840334fe75ef48d43f",
+    "cmd/cairn/mcp.go": "7398e0b6ec8262e20644cd934868549dc9c6898039ffb270a45d2a22bd1f49af",
+    "cmd/cairn/opencode_install.go": "458f5da26c3b6ec1afacdf3ba9eae7641f050a407e59e023e4948c2462259bb4",
+    "mcpapi/config_test.go": "238c10b3351cbac583524571cffd661f6b699bd31854ec4fc825f53a127b8ba4",
+    "cmd/cairn/harness_text_test.go": "1f1adc2f257b65a2c672e774dfdd86c63185a8ce28242d5029fdc12b7edd8e78",
+    "scripts/check_harness_configuration.py": "cce239c81258f51a597c3a8dec9155e862a618a28935b7fec425f1fbb31c3bd0"
+  },
+  "verification": {
+    "standard_integration": "passed",
+    "static": "passed",
+    "python_tests": 43,
+    "isolated_large_note": "passed",
+    "isolated_recent_file_cases": 5,
+    "full_native": "three timeouts; cause unresolved",
+    "inference_calls": 0
+  },
+  "retained_failure_root": "/tmp/cairn-postgres.MgGdolnc",
+  "limits": [
+    "No full optional native-suite pass claimed",
+    "No answering-model task or incremental memory-benefit claim",
+    "No API/schema/native adapter change",
+    "Scratch evidence is not a durable archive"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-e1b160846aa32435",
+    "packet_content_sha256": "e1b160846aa32435c946bec0fdac22bc91029aee991af4c8daa1b5ab3cd52fc6",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No Go interface, substitution contract or import direction changes; existing concrete callers remain."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No Go interface, substitution contract or import direction changes; existing concrete callers remain."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No Go interface, substitution contract or import direction changes; existing concrete callers remain."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No Go interface, substitution contract or import direction changes; existing concrete callers remain."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-59b5c0f0f6ce0429",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "caller nil checks and method use",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No interface absence representation, typed nil, receiver or method-set behavior changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-27f0f91281da2f0e",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "documented absence semantics",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No interface absence representation, typed nil, receiver or method-set behavior changes."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-902e6d5b9ae03361",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "dynamic type and dynamic value at the return",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No interface absence representation, typed nil, receiver or method-set behavior changes."
+      }
+    ]
+  },
+  "installation": {
+    "commit": "208c1c81a861555ba64808c2b194e55ecbb63cb0",
+    "cli_sha256": "71897b3b9ffce4f3eb84c500f66bc134d98a1ac48a526a2e22c274aad642668d",
+    "adapter_sha256": "92de49181e3a7ff0117364ec6d2556ad593e82a0b2caae183f3a009f2a6bd8b0",
+    "version_pair": {
+      "schema": "cairn.version/1",
+      "client": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260911021657-208c1c81a861",
+        "vcs": "git",
+        "vcs_revision": "208c1c81a861555ba64808c2b194e55ecbb63cb0",
+        "vcs_time": "2026-09-11T02:16:57Z",
+        "vcs_modified": false
+      },
+      "server": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260910235756-b171a8b78b9b",
+        "vcs": "git",
+        "vcs_revision": "b171a8b78b9b0a889a7718974cb0b4e60b71bfba",
+        "vcs_time": "2026-09-10T23:57:56Z",
+        "vcs_modified": false
+      }
+    },
+    "services": {
+      "cairn-api.service": {
+        "MainPID": "4138687",
+        "ActiveState": "active",
+        "exe_sha256": "55c9428a7870422053fbe5eb0eba7fa60faccb3aceddbce2f0e3484fce406ec7"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "record_versions_before": {
+      "versions": 86,
+      "sha256": "c0f475ad0e4cea6cd16e9a2437e74a3708e8a3bf95f393cab523e814b6726749"
+    },
+    "record_versions_after_install": {
+      "versions": 86,
+      "sha256": "c0f475ad0e4cea6cd16e9a2437e74a3708e8a3bf95f393cab523e814b6726749"
+    },
+    "record_versions_after_guidance": {
+      "versions": 87,
+      "sha256": "225c45eb866437e2038b272da898f4f3998cd9ff709b63acc3fe85340b4e2fd8"
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "0fc3226320370f8db9b214e4ba042bed802347b450a2481b2e9a87b13b46b8a3",
+      "/home/halbritt/.local/share/cairn/identities.json": "4e38155909afe7c58886fc5f789128af8a7230e22a17a32bf615678dd6f38b5d",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb",
+      "/home/halbritt/.config/opencode/opencode.json": "d207573666654ade4f08e9daf54da70567e4031d183ef108ff24756fbed5879f",
+      "/home/halbritt/git/cairn/.opencode/plugins/cairn-recent-files.ts": "7b30fe4c636abbc25f360fb445425b27347d0b79127e0767bfd8db514728f4b0",
+      "/home/halbritt/.local/share/cairn/semantic/worker": "ae97c97e9dca97c3435cd61f77223f9f25cf635b010b2f230e0a84d1537c6d72",
+      "/home/halbritt/.local/share/cairn/semantic/worker-stream": "33a97b9b1b6a86d1ec462ed375b412364361a60dbff189eaeab122d0fb90fcd0",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "2d85715d25ea9dbc5deb86d37e3ad9e640ba11dfe08f4e920a52453e2aab240f"
+    }
+  },
+  "guidance_update": {
+    "record_id": "104519b5-82cd-44b3-ba73-1def2ad42e8c",
+    "previous_version": 3,
+    "version": 4,
+    "previous_body_sha256": "ce672b1e53835ff7cf8bd81c0ef1e3d7cc1cbe7190b2e89d1fa5d6ab70155843",
+    "body_sha256": "b9f930dc30643554222b171b5205530376b0a77ddd7fe4818a317a921dfb7c2f",
+    "previous_body_preserved": true
+  },
+  "ci": {
+    "run_id": 34554012895,
+    "head_sha": "208c1c81a861555ba64808c2b194e55ecbb63cb0",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "postgres",
+        "conclusion": "success"
+      },
+      {
+        "name": "opencode-plugin",
+        "conclusion": "success"
+      }
+    ]
+  }
+}

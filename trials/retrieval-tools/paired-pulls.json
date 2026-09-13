@@ -1,0 +1,11 @@
+{
+  "schema": "cairn.tool-retrieval-followup/1",
+  "base_scenario_sha256": "e1452814ee978d1209ccc4bcfb28bcfdf3181e2fd36f9dc1cc3671fd725b6e02",
+  "observation": "In the first actual model tool run, the storage query missed, a refined query found the answer, and three pulls failed before one succeeded. The model used a record UUID as receipt_id, then a handle UUID, then an index request UUID. The eventual answer was correct and cited the pulled source. No-memory produced malformed tool-call text; it is not a clean answer baseline.",
+  "intervention": "Show each existing index entry with one complete pull_command composed from its actual receipt and version-matched handle. Keep summary, record/version, body digest, class/kind, mandatory bootstrap and session limits. Raw canonical responses remain in the private host log. All authority and live checks remain in the unchanged server.",
+  "command_options": ["--arm", "tool_retrieval", "--paired-pulls"],
+  "unchanged": ["task questions", "source bodies", "model", "provider ceiling", "initial storage query", "process and request bounds", "eight memory calls", "server version and schema", "source-answer criteria"],
+  "prospective_observations": ["same source-supported answer fields", "source UUID corresponds to successful full-body pull", "number and error codes of failed pulls", "total tool calls and model requests", "duration and reported provider cost", "price remains unavailable"],
+  "limits": "One additional trial on an already-used development question. Differences may include stochastic model behavior, different UUIDs, provider routing and latency. Fewer errors in this run would support this presentation choice, not establish a general or causal advantage. Retain original failures; do not rerun the no-memory arm until it happens to pass.",
+  "production_scope": "Experimental tool adapter presentation only. No core API, ranker, credential, storage or recovery change. Broader packaging for real harnesses requires its own usage and contract checks."
+}

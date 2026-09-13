@@ -1,0 +1,42 @@
+{
+  "schema": "cairn.agent-env-trial/1",
+  "base": "45e37cf9d55c0b85c93e1b5532780a05cb03b4d1",
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "arms": [
+    "no_memory",
+    "direct_context",
+    "retrieval"
+  ],
+  "limits": {
+    "requests": 16,
+    "output_tokens": 8192,
+    "process_seconds": 300
+  },
+  "gate_sha256": "d914a1ed45329733e48f41fd5b81ab6863a89d7085550fdf86a66111d3c84475",
+  "cairn_sha256": "dbcee2e64c675ef4f13a433440822befd515892bcef15218d725eec4405a48c4",
+  "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+  "snapshot_paths": [
+    "cmd",
+    "core",
+    "localapi",
+    "runner",
+    "artifacts",
+    "go.mod",
+    "go.sum",
+    "README.md",
+    "AGENTS.md",
+    "docs/design-review.md"
+  ],
+  "lesson": {
+    "record_id": "16a90b22-ae29-436c-a73f-343c7a2dc273",
+    "version": 1,
+    "body": "In Go exec.Cmd.Env, duplicate environment keys keep the last value. Append explicit runtime overrides after the inherited environment. In the observed repair trial the opposite order preserved inherited GOCACHE and lost explicit values despite correct stale-marker handling. The original candidate failed actual confined-runtime tests; a separate reviewer diagnostic reversing only that order passed those checks. This is a reviewed A lesson, not a promoted claim or accepted model recovery. Evidence f2ca6a4d-dd00-4eb9-9148-1327eec54c5e; source receipt ad4f4fad-1400-425c-810b-b08d10513b58. Cross-UID and all preparation paths remain unverified.",
+    "body_sha256": "32a49cce9065b3d8fbc7bd97fb7978aec04889a2850fd7335afd8cb6f1c2157c",
+    "source_receipt": "ad4f4fad-1400-425c-810b-b08d10513b58",
+    "evidence_id": "f2ca6a4d-dd00-4eb9-9148-1327eec54c5e",
+    "reviewed_dump_sha256": "ff2c80e54eca292c231212ac1ec243a3ad4ac19425cd69d4cea17b0cf245bd7a",
+    "admission": "Exact reviewer-authored A lesson copied as explicitly shareable into this owned disposable trial only; original remains local and unpromoted."
+  },
+  "task": "Repair Cairn agent connection configuration in this source snapshot. With HOME and CAIRN_HOME unset, cairn agent --socket /absolute/api.sock --token-file /absolute/agent.token get currently fails even when both paths are valid. Explicit connection paths must work independently of defaults. Preserve HOME/CAIRN_HOME defaults for each omitted flag, including mixed explicit/default options. Explicit empty paths must return INVALID_REQUEST rather than silently using a default; an invalid flag must return INVALID_REQUEST even without HOME. An invalid explicitly supplied token path must not fall back to another token. Preserve authentication, operation validation, JSON response behavior and the agent path that does not open the operator database. Do not mutate the environment to achieve this. Only modify cmd/cairn/agent.go; you may add new *_test.go files under cmd/cairn. Do not edit existing tests, other source, dependencies or docs. Run relevant existing tests and keep changed Go files gofmt-formatted. Temporary files and generated binaries must stay under /tmp, not the workspace. Return a concise explanation of the change and validation; no particular final-answer format is required.",
+  "interpretation": "One prospective real repair per arm. The old lesson concerns exec.Cmd.Env duplicate ordering, not CLI default resolution. Delivery and repair acceptance do not establish helpful transfer. All arms receive the same defect description and limits; retrieval includes explicit search instruction and resulting metadata overhead. No general benefit or statistical superiority can be established by n=1."
+}

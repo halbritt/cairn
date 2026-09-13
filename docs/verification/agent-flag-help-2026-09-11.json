@@ -1,0 +1,85 @@
+{
+  "schema": "cairn.agent-flag-help-verification/1",
+  "date": "2026-09-11",
+  "base_revision": "c3208eb32c59071fae2ebb6a7d0f6b5942774209",
+  "baseline": {
+    "operations": [
+      "search",
+      "remember",
+      "pull",
+      "pull-evidence"
+    ],
+    "exit_code": 2,
+    "status": "INVALID_REQUEST",
+    "independent_check_failed": true
+  },
+  "model_trial": {
+    "receipt_id": "7bea52f5-991c-4b07-81f4-ce1e9b7fb65c",
+    "attempt_id": "1fe7acaf-f1ac-41b9-9bc1-456964ae69e5",
+    "model": "deepseek/deepseek-v4-flash-0731",
+    "request_limit": 24,
+    "timeout_seconds": 600,
+    "elapsed_seconds": 461.58415440307,
+    "process_exit": 1,
+    "provider_steps": 23,
+    "cairn_searches": 1,
+    "cairn_pulls": 0,
+    "shell_completed": 7,
+    "shell_errors": 7,
+    "permission_denials": 7,
+    "worktree_status": "?? cmd/cairn/scratch_help_probe_test.go\n",
+    "stdout_sha256": "848f878e220111c1872722808cbdb44c53ff4fa02e2eea96a28c31a511eb34b2",
+    "outcome_evidence_sha256": "9c42ffc502104641da6b9333f7cf77b14c19d671c0048d46d5c7f1ee8833ccd2",
+    "assessment": {
+      "version": 2,
+      "task_outcome": "rejected",
+      "failure_domain": "capability",
+      "failure_kind": "incomplete_implementation",
+      "witness": "instrumented"
+    }
+  },
+  "implementation": {
+    "source_files": [
+      "cmd/cairn/agent_help.go",
+      "cmd/cairn/agent_search.go",
+      "cmd/cairn/everyday.go"
+    ],
+    "test_files": [
+      "cmd/cairn/agent_help_test.go",
+      "scripts/check_agent_help.py"
+    ],
+    "shared_flag_definitions": true,
+    "api_changed": false,
+    "schema_changed": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-1fda759a1a719776",
+    "packet_content_sha256": "1fda759a1a7197768816af4a6b2dea18fc247ec10d57283d9a7fab02ec48a605",
+    "decision_receipt_status": "verified",
+    "citation_observations_closed": true
+  },
+  "checks": [
+    {
+      "command": "go test ./cmd/cairn -run '^(TestAgentHelp|TestAgentFlagOperationHelp|TestAgentSearch|TestAgentRemember|TestAgentPull)' -count=1",
+      "status": "passed"
+    },
+    {
+      "command": "python3 /tmp/cairn-native-flag-help-20260910/check-candidate.py /tmp/cairn-native-help-check",
+      "status": "passed"
+    },
+    {
+      "command": "make test-integration",
+      "status": "passed",
+      "database": "disposable PostgreSQL cluster"
+    },
+    {
+      "command": "make check",
+      "status": "passed"
+    }
+  ],
+  "limits": [
+    "source checkpoint is not installation acceptance",
+    "one failed model run is not a general capability estimate",
+    "memory benefit and setup-time savings remain unmeasured"
+  ]
+}

@@ -1,0 +1,308 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-local-loop-2026-09-07",
+  "question": "How should Cairn add authorized memory, deterministic retrieval and observable task delivery without allowing advisory claims to become binding instructions?",
+  "scope": [
+    "Local Cairn alpha: authority, compiler, process wrapper, inspection and dedicated store"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "halbritt",
+    "authority_source": "User explicitly delegated remaining decisions and continued work toward useful Cairn",
+    "authorized_scope": [
+      "Set operating defaults",
+      "Implement and test local memory loop",
+      "Install dedicated local alpha and push repository changes"
+    ]
+  },
+  "evidence": [
+    {
+      "evidence_class": "evidence-repository-contracts",
+      "id": "cairn-loop-contract",
+      "provenance": [
+        {
+          "content_sha256": "b0705de80e5ec329bed831542ac9e318aaf834c7495d21d2a58f461f9b6586f0",
+          "locator": "/home/halbritt/git/cairn/AGENTS.md",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "d61378e0a5fed729da6c4d58ccd882574c93a57d9cbc27875eb06a75a4e69a41",
+          "locator": "/home/halbritt/git/cairn/docs/decisions/0002-local-memory-loop.md",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "fbbdfd26fc7e90062ab92534c22897b4673b17025e8f8e81704fc098995ec54e",
+          "locator": "/home/halbritt/git/cairn/README.md",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "6883c655d6ed3681f64abf309884d8613be8195c1e2cfd8a6842c9c20a6f5058",
+          "locator": "/home/halbritt/git/cairn/docs/implementation-status.md",
+          "method": "direct requirement, source, or test-result inspection"
+        }
+      ],
+      "satisfies": [
+        "a bounded decision question",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "accepted desired behavior and semantic authority",
+        "actual current cost/risk or absence within a stated interval",
+        "alternatives including no change where viable",
+        "change-type classification",
+        "checkpoint verification",
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "current source, configuration, and relevant runtime state",
+        "evidence connecting the proposed action to the condition",
+        "expected future change from accepted plans",
+        "intervention cost and uncertainty",
+        "latent security, safety, data, durability, and compatibility check",
+        "per-edit change classification",
+        "preservation boundary and semantic authority",
+        "preservation matrix and consumers",
+        "proc-decide-leave-code-alone",
+        "proc-establish-preservation-boundaries",
+        "repository instructions from root through target path",
+        "target repository and task scope",
+        "tests, characterization, probes, or explicit residual risk",
+        "user instruction and authority"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "Current repository instructions and decision 0002 select local PostgreSQL, scoped channel identity, manual bounded authority, local/shareable destination policy, H0 availability, and explicit unimplemented limits."
+    },
+    {
+      "evidence_class": "evidence-static-source-structure",
+      "id": "cairn-loop-source",
+      "provenance": [
+        {
+          "content_sha256": "a6b5c27e9a504a415d99fb9f826035514ce4c65255ace2aa58c66dfd1427e147",
+          "locator": "/home/halbritt/git/cairn/core/store.go",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "e4a890ded44534d840f74ca126a55bd9e5a5b4b3d90454a455e1169bdd8b3ffb",
+          "locator": "/home/halbritt/git/cairn/core/authority.go",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "e75e2c4723f1adc13cf656e51bcabfad182b5a9031fcf20cfae66f944652d780",
+          "locator": "/home/halbritt/git/cairn/core/transitions.go",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "c2738853b60c98dde3af47e9d7525e080d91ace92843d0e27d3d254af89cd54c",
+          "locator": "/home/halbritt/git/cairn/core/compiler.go",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "f9be42c32c1ada0baeb7679d9c0b5fe2c8c96e4dd24fe2729b6659e4824fd312",
+          "locator": "/home/halbritt/git/cairn/core/observations.go",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "778a4d4cc6b2e0bd29ec1b5b3569672d5b06c6888f15688f539c07fa6e162d1e",
+          "locator": "/home/halbritt/git/cairn/runner/runner.go",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "e444399b804b814bdd6b6408066445e7ebc091d062986505d48db605b68877f5",
+          "locator": "/home/halbritt/git/cairn/cmd/cairn/commands.go",
+          "method": "direct requirement, source, or test-result inspection"
+        }
+      ],
+      "satisfies": [
+        "accepted policy or current relied-upon constraint",
+        "actual consumers",
+        "all mutation/creation paths and authority",
+        "callee contract",
+        "caller recovery behavior",
+        "caller recovery needs",
+        "cleanup and failure tests",
+        "cleanup obligations",
+        "compatibility tests",
+        "complete read-modify-write scope",
+        "current Go version and repository convention",
+        "data and invariant ownership",
+        "failure and recovery requirements",
+        "identified authoritative owner",
+        "language and repository convention",
+        "mechanism guaranteeing atomicity at that scope",
+        "module and dependency policy",
+        "named observer and invariant",
+        "observer and indivisible invariant",
+        "operation and caller contract",
+        "package call and import graph",
+        "product correctness and availability policy",
+        "repository package and consumer inventory",
+        "side effects and idempotency"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "Inspected core mutation, authority, compiler, runner, and CLI paths. They own transaction scope, lock ordering, rollback, channel stamping, selected-byte sealing, process groups, and outcome persistence."
+    },
+    {
+      "evidence_class": "evidence-explicit-user-requirements",
+      "id": "cairn-loop-user",
+      "provenance": [
+        {
+          "locator": "conversation:2026-09-07:operator-afk-delegation",
+          "method": "direct requirement, source, or test-result inspection"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "decision owner",
+        "explicit task authority",
+        "repository contract",
+        "reversibility and verification",
+        "task scope and authority statement"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "Operator explicitly delegated remaining decisions and asked for continued work toward useful Cairn while away."
+    },
+    {
+      "evidence_class": "evidence-tests",
+      "id": "cairn-loop-verification",
+      "provenance": [
+        {
+          "content_sha256": "b5b72cb5dc56a51cc327d4b39686d400767d9b0aa812c3e44359ab5a99a23619",
+          "locator": "/tmp/cairn-final-tests.log",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "e464ef2418f3d4fa28531ea5730a53197a01c1b661aeb5e8b36a543ec87b57ca",
+          "locator": "/tmp/cairn-lifecycle-results.log",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "912311fd8a0e24377744a82ad922a42efd8dd1819bca146b4bd4d65753aee385",
+          "locator": "/home/halbritt/git/cairn/docs/verification/opencode-1.18.21.json",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "fcc8efc2b9ed61d2d92fbaef7d5a80c53f06b2e4946327f259af75673979ab33",
+          "locator": "/home/halbritt/git/cairn/runner/runner_test.go",
+          "method": "direct requirement, source, or test-result inspection"
+        },
+        {
+          "content_sha256": "f26b29a542227efcda7b4cf2902cb319ddedf50731e4a79da3bff8b6f7c7e675",
+          "locator": "/home/halbritt/git/cairn/core/compiler_test.go",
+          "method": "direct requirement, source, or test-result inspection"
+        }
+      ],
+      "satisfies": [
+        "cancellation and error paths",
+        "creation-to-completion control flow",
+        "discriminating checks",
+        "expected behavior and authority to observe",
+        "expected contract",
+        "hypothesis ledger",
+        "leak race and shutdown tests",
+        "lifecycle and ownership inventory",
+        "observations",
+        "owner and transfer",
+        "stable reproduction or explicit inability"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "Real PostgreSQL tests, migration fixture, revocation races, process/outcome recovery tests, startup/backup/restore/replay/restart drill, and installed OpenCode first-request fixture passed. Tests do not establish full runtime mediation or model usefulness."
+    }
+  ],
+  "assertions": [
+    {
+      "id": "authorized-work",
+      "type": "observation",
+      "text": "The operator requested continued autonomous implementation and delegated remaining decisions.",
+      "evidence": [
+        "cairn-loop-user"
+      ]
+    },
+    {
+      "id": "selected-local-loop",
+      "type": "decision",
+      "text": "Select the defaults in decision 0002 and implement a local manual-authority memory loop with observable H0 delivery.",
+      "depends_on": [
+        "authorized-work"
+      ],
+      "owner": "halbritt via delegated implementation agent",
+      "authority": "Current explicit user delegation"
+    },
+    {
+      "id": "executed-local-loop",
+      "type": "execution",
+      "text": "Implemented the loop, started the dedicated private-socket store, installed the CLI and captured three repository notes.",
+      "depends_on": [
+        "selected-local-loop"
+      ],
+      "scope": [
+        "/home/halbritt/git/cairn",
+        "/home/halbritt/.local/share/cairn",
+        "/home/halbritt/.local/bin/cairn"
+      ]
+    },
+    {
+      "id": "verification",
+      "type": "verification",
+      "text": "PostgreSQL race tests, upgrade and restore checks, process recovery tests, local smoke and actual OpenCode fixture ingress passed.",
+      "depends_on": [
+        "executed-local-loop"
+      ],
+      "criteria": [
+        "make test-integration",
+        "make test-lifecycle",
+        "make check build",
+        "installed OpenCode first-request probe"
+      ],
+      "evidence": [
+        "cairn-loop-verification"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Wait for operator decisions",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-loop-user"
+      ]
+    },
+    {
+      "option": "Local manual-authority loop with explicit delivery limits",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-loop-contract",
+        "cairn-loop-verification"
+      ]
+    },
+    {
+      "option": "Grooming or richer runtime mediation before usefulness measurement",
+      "disposition": "deferred",
+      "evidence": [
+        "cairn-loop-contract"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/decisions/0002-local-memory-loop.md",
+    "docs/implementation-status.md",
+    "docs/verification/opencode-1.18.21.json",
+    "pincite:pkt-538106aadc5ff8d2#sha256=538106aadc5ff8d260e2fca761e852e01b3eff408e37cd76b13db77a43882709"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "No current safety or authority claim from a historical replay",
+    "No consequential Class A input",
+    "No successful execution fabricated from delivery or exit metadata"
+  ],
+  "reopening_conditions": [
+    "Actual harness or provider configuration changes",
+    "Real-history trials do not show benefit",
+    "New sensitive-data or retention requirements"
+  ],
+  "residual_risk": [
+    "Authenticated agent transport and Striatum callbacks are not wired",
+    "Redaction, evidence lifecycle and automatic retention are unimplemented",
+    "Runtime mediation and model usefulness are not established",
+    "Go method-set and import-direction compatibility: nonmaterial; no new user-defined interface or alternate store is introduced. Concrete core and standard io interfaces are retained.",
+    "current consumer call sets and ownership: nonmaterial; no new user-defined interface or alternate store is introduced. Concrete core and standard io interfaces are retained.",
+    "current consumer inventory: nonmaterial; no new user-defined interface or alternate store is introduced. Concrete core and standard io interfaces are retained.",
+    "observed substitution, volatility, or cross-boundary pressure: nonmaterial; no new user-defined interface or alternate store is introduced. Concrete core and standard io interfaces are retained."
+  ]
+}

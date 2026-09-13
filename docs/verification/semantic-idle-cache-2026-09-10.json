@@ -1,0 +1,381 @@
+{
+  "date": "2026-09-10",
+  "baseline_commit": "3db42c880481d3099a9ab6f2bc780ea12c9cc004",
+  "api_check": {
+    "cases": [
+      {
+        "case": "cold",
+        "seconds": 11.837946217041463,
+        "pid": 220102
+      },
+      {
+        "case": "restored",
+        "seconds": 0.6050506548490375,
+        "pid": 220535
+      },
+      {
+        "case": "changed",
+        "seconds": 0.5828538320492953,
+        "pid": 220616
+      }
+    ],
+    "identical_score_digest": true,
+    "changed_body_pulled": true,
+    "stale_handle_refused": true,
+    "private_note_excluded": true,
+    "cache_not_in_response": true,
+    "restored_below_half_cold": true
+  },
+  "older_api_compatibility": {
+    "cases": [
+      {
+        "case": "cold",
+        "seconds": 12.74509383784607,
+        "pid": 225437
+      },
+      {
+        "case": "restored",
+        "seconds": 11.859260200057179,
+        "pid": 225583
+      },
+      {
+        "case": "changed",
+        "seconds": 7.448107218835503,
+        "pid": 225921
+      }
+    ],
+    "identical_score_digest": true,
+    "changed_body_pulled": true,
+    "stale_handle_refused": true,
+    "private_note_excluded": true,
+    "cache_not_in_response": true,
+    "restored_below_half_cold": false
+  },
+  "model": {
+    "state": "ready",
+    "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+    "algorithm": "bge-max-chunk/1",
+    "scores_sha256": "061e79dd593196372167a9097f70de217a917ebe1e9464c3b627b1734f46fc4e"
+  },
+  "checks": {
+    "go-red.log": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/go-red.log",
+      "sha256": "b81e3a2b216d78b4cf227e56dfe810fe0399d4770579d9fee069ff322eb6320d"
+    },
+    "go-green.log": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/go-green.log",
+      "sha256": "d4aafacdbd247319ad1308a6e2bbc4425e3262fc0c0d5aad8d86de49a1c80c50"
+    },
+    "go-final.log": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/go-final.log",
+      "sha256": "3ba6f6a14409df27f913ab2c6b9a8acd55ab6dbb8b15c4091e6b56bea87943a3"
+    },
+    "go-cache-final.log": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/go-cache-final.log",
+      "sha256": "c1ac414b55c6071c2e68bc1da940ad84a45b09faa6691b2076f4d1fe26457a53"
+    },
+    "python-red.log": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/python-red.log",
+      "sha256": "4e4164edfe4a8d716d8d05127dd74050cc40d5d2c9428ac99cf77dfdb1cb4889"
+    },
+    "python-green.log": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/python-green.log",
+      "sha256": "c346f1228fe88f4ab3cb336ffa610dc3a34ec7c7bb7d05df7a1c222f2d928881"
+    },
+    "python-final.log": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/python-final.log",
+      "sha256": "13bd9f8a14da875a8cbb331cafce3e038a84865b088911a948d6a12959146f6a"
+    },
+    "python-all.log": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/python-all.log",
+      "sha256": "da0ea6f3cfaf424dd1d4428b4090a6169250d9764c7722c4ba2d86953d9efd30"
+    },
+    "integration.log": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/integration.log",
+      "sha256": "1b727f36534cedc24e8310ac1092c545f22fb8cae04b41a7047e7af66870783f"
+    },
+    "check.log": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    "old-api.log": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/old-api.log",
+      "sha256": "e7ee186862a86063eb0b9722d41f87df6defb345ccf4ff801f19e97cffbebd66"
+    },
+    "decision-receipt.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/decision-receipt.json",
+      "sha256": "d89e81fcefb249df6f3af63be3d83bab7949677ade4d89a315cd8bcb27c7a7b7"
+    },
+    "api-check/report.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/api-check/report.json",
+      "sha256": "67fd84ed13729350b23fa169622bbfc47e08dbf2ea5f32faac60d67749a78ff1"
+    },
+    "api-check/idle-restart/report.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/api-check/idle-restart/report.json",
+      "sha256": "5fcaa7f8b914a247d9b131c7c99ec955d9e6c7c39461910c149d51cb0f287f94"
+    },
+    "api-check/idle-restart/cold.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/api-check/idle-restart/cold.json",
+      "sha256": "47be87821e8a352e5a274af44647bca4e027e73175cf487ce400e5c3a39d78c5"
+    },
+    "api-check/idle-restart/restored.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/api-check/idle-restart/restored.json",
+      "sha256": "26227aca85dbf3736f8e66874139049f12647cc09c2e7f6213fcbc914b1b7d49"
+    },
+    "api-check/idle-restart/changed.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/api-check/idle-restart/changed.json",
+      "sha256": "3f25890293d84ac610c7593c3051e820df32501994d93f366a0e494e1ef9fcbd"
+    },
+    "old-api-check/report.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/old-api-check/report.json",
+      "sha256": "47e2bdf4ad3f5fa25655bf4d30cf5a604738b5a8c1682fee663adca033f6c4e8"
+    },
+    "old-api-check/idle-restart/report.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/old-api-check/idle-restart/report.json",
+      "sha256": "dba3acadc3e266f8c1b9dc7fd3d028e3296dd7aa1f5b5eb6a0c8f89cf40d6cbf"
+    },
+    "installed-check.log": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/installed-check.log",
+      "sha256": "043f795de2c187a384d909fed2dafcdaf3c6bf2b84c8e30a3b8d97a66e2293ce"
+    },
+    "installed-check.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/installed-check.json",
+      "sha256": "1c76cb7c7c89cd8c3901b91ab1562453b044aad5b412ce75b5a058f240786787"
+    },
+    "installed-cold.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/installed-cold.json",
+      "sha256": "2d5d1b8370f516df2ce622dd009860a186de5ef86037f41f91f877a4ce2220de"
+    },
+    "installed-after-idle.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/installed-after-idle.json",
+      "sha256": "e8ad40417236a2f73c5db1e1ff39b2a4be3ea997e760ec8c804391b16cb23d31"
+    },
+    "guidance-update.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/guidance-update.json",
+      "sha256": "850d33fad61a8f36d70b39cca9341be4e305421257b592cf25d931c9297e6334"
+    },
+    "post-capture.json": {
+      "path": "/tmp/cairn-semantic-idle-cache-20260910/post-capture.json",
+      "sha256": "d159f6c84d6cc4a388daf77d0d646186c4791d55df4663b36d7911e4082d0fb5"
+    }
+  },
+  "source_hashes": {
+    "semantic/stream.go": "d5da2cfcfc0a8039c72e63cf14e944ec693e25613cbda10b831c6237f0adc001",
+    "semantic/stream_cache_test.go": "20cc832075bf2899078d94fa11396da96f6baab32fe112f5d7f80173be293fe2",
+    "scripts/semantic_rank.py": "4f70d19c1442bebe812cf0fab667a214992575d68737b981189783211916de95",
+    "scripts/test_semantic_cache_resume.py": "fd2a8ecc097dd6afd786ecb8b5bf847fcb1257c990e92f8e3a3e76ffad62d161",
+    "scripts/check_semantic_api.py": "e3855e9c2f0d3e834b1f09ddd0ff85fd3ab83de6bae2dd8dbba443b165b94059",
+    "scripts/check_semantic_idle.py": "42b925eba30125d89164dbd46593eb73a1d823423f7abf5bb62955039c59d775"
+  },
+  "limits": [
+    "No persistent cache or model-query/note-text snapshot",
+    "Transport snapshot can outlive idle worker until another exchange or owner shutdown",
+    "No allocator erasure promise",
+    "Fixed public-document observations; no broad service percentile or downstream task-value claim"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-c43c53a89e17325a",
+    "packet_content_sha256": "c43c53a89e17325a83cbec9479e08d7652c948a09be87761e66d3ee40702c8e2",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No exported Go interface or import direction changes; private transport state remains with its current owner."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No exported Go interface or import direction changes; private transport state remains with its current owner."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No exported Go interface or import direction changes; private transport state remains with its current owner."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No exported Go interface or import direction changes; private transport state remains with its current owner."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-df2509951851d31f",
+        "required_by": "performance-algorithm-and-work-first",
+        "requirement": "representative empirical comparison",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Measurements cover fixed documents and one shared host; no general traffic distribution or percentile claim."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-e5d5683f663216c1",
+        "required_by": "performance-profile-causal-bottleneck",
+        "requirement": "representative workload, version, and profile interval",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Prior profiling and direct model input counts support this selected workload; independently replicated/general bottleneck claims remain unestablished."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b7f9a3ec8e8395df",
+        "required_by": "performance-profile-causal-bottleneck",
+        "requirement": "reproducibility or independent corroboration",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "Prior profiling and direct model input counts support this selected workload; independently replicated/general bottleneck claims remain unestablished."
+      }
+    ]
+  },
+  "installation": {
+    "commit": "ed29cbcb70907dbc0e275ebe90e198e450accfcc",
+    "previous_manifest": "/tmp/cairn-mcp-setup-20260910/deployment/installation.json",
+    "before": {
+      "cairn-api.service": {
+        "MainPID": "4138687",
+        "ActiveState": "active",
+        "exe_sha256": "55c9428a7870422053fbe5eb0eba7fa60faccb3aceddbce2f0e3484fce406ec7"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "previous_cli_sha256": "71897b3b9ffce4f3eb84c500f66bc134d98a1ac48a526a2e22c274aad642668d",
+    "previous_worker_sha256": "2d85715d25ea9dbc5deb86d37e3ad9e640ba11dfe08f4e920a52453e2aab240f",
+    "preserved": {
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "0fc3226320370f8db9b214e4ba042bed802347b450a2481b2e9a87b13b46b8a3",
+      "/home/halbritt/.local/share/cairn/identities.json": "4e38155909afe7c58886fc5f789128af8a7230e22a17a32bf615678dd6f38b5d",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb",
+      "/home/halbritt/.config/opencode/opencode.json": "d207573666654ade4f08e9daf54da70567e4031d183ef108ff24756fbed5879f",
+      "/home/halbritt/git/cairn/.opencode/plugins/cairn-recent-files.ts": "7b30fe4c636abbc25f360fb445425b27347d0b79127e0767bfd8db514728f4b0",
+      "/home/halbritt/.local/share/cairn/semantic/worker": "ae97c97e9dca97c3435cd61f77223f9f25cf635b010b2f230e0a84d1537c6d72",
+      "/home/halbritt/.local/share/cairn/semantic/worker-stream": "33a97b9b1b6a86d1ec462ed375b412364361a60dbff189eaeab122d0fb90fcd0",
+      "/home/halbritt/git/cairn/.opencode/tools/cairn.ts": "92de49181e3a7ff0117364ec6d2556ad593e82a0b2caae183f3a009f2a6bd8b0"
+    },
+    "record_versions_before": {
+      "versions": 87,
+      "sha256": "225c45eb866437e2038b272da898f4f3998cd9ff709b63acc3fe85340b4e2fd8"
+    },
+    "api_restart_required": true,
+    "after": {
+      "cairn-api.service": {
+        "MainPID": "235929",
+        "ActiveState": "active",
+        "exe_sha256": "7ec93898471c0ebfc877eca959c1052aad344b1a8a2e127efc2edbef2412fd3c"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "version_pair": {
+      "schema": "cairn.version/1",
+      "client": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260911025209-ed29cbcb7090",
+        "vcs": "git",
+        "vcs_revision": "ed29cbcb70907dbc0e275ebe90e198e450accfcc",
+        "vcs_time": "2026-09-11T02:52:09Z",
+        "vcs_modified": false
+      },
+      "server": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260911025209-ed29cbcb7090",
+        "vcs": "git",
+        "vcs_revision": "ed29cbcb70907dbc0e275ebe90e198e450accfcc",
+        "vcs_time": "2026-09-11T02:52:09Z",
+        "vcs_modified": false
+      }
+    },
+    "record_versions_after": {
+      "versions": 87,
+      "sha256": "225c45eb866437e2038b272da898f4f3998cd9ff709b63acc3fe85340b4e2fd8"
+    },
+    "installed_cli_sha256": "7ec93898471c0ebfc877eca959c1052aad344b1a8a2e127efc2edbef2412fd3c",
+    "installed_worker_sha256": "4f70d19c1442bebe812cf0fab667a214992575d68737b981189783211916de95",
+    "installed_adapter_sha256": "92de49181e3a7ff0117364ec6d2556ad593e82a0b2caae183f3a009f2a6bd8b0"
+  },
+  "installed_observation": {
+    "api_pid": 235929,
+    "cold": {
+      "case": "cold",
+      "seconds": 24.2276764921844,
+      "worker_pid": 236311,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "0881bb249b2dcf02b190d495fa7885aac11f04650426e078328519249ff3950c"
+      }
+    },
+    "after_idle": {
+      "case": "after-idle",
+      "seconds": 0.6124461179133505,
+      "worker_pid": 242915,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "057e65f9a513a73360112a43676db6aff5faf047e6822d1302ffc2c6de6b4a3b",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "0881bb249b2dcf02b190d495fa7885aac11f04650426e078328519249ff3950c"
+      }
+    },
+    "idle_seconds": 300.34063107403927,
+    "score_digest_and_ordered_sources_equal": true,
+    "api_not_restarted": true,
+    "configured_idle": "5m",
+    "source_sha256": "4f70d19c1442bebe812cf0fab667a214992575d68737b981189783211916de95"
+  },
+  "guidance_update": {
+    "record_id": "225ad6f4-87ab-41af-a19c-1d38b53232c3",
+    "previous_version": 10,
+    "version": 11,
+    "previous_body_sha256": "f3de9e6ab9428ec10219e6611956f984ac85af3f2aca7d4af31ae33e8dd5dede",
+    "body_sha256": "713a3c9449dc51edbca0180155f2cdea098d76ff8a9a59f36b73bd7c29d38388",
+    "old_body_retained": true
+  },
+  "record_versions_after_guidance": {
+    "versions": 88,
+    "sha256": "c0e0844eccc96fb0928f41dfcfa77b248fe3d120ba28a404e3787cf064d896ec",
+    "all_previous_versions_unchanged": true
+  },
+  "ci": {
+    "run_id": 34556271313,
+    "head_sha": "ed29cbcb70907dbc0e275ebe90e198e450accfcc",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "postgres",
+        "conclusion": "success"
+      },
+      {
+        "name": "opencode-plugin",
+        "conclusion": "success"
+      }
+    ]
+  }
+}

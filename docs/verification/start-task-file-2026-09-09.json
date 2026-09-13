@@ -1,0 +1,158 @@
+{
+  "schema": "cairn.start-task-file-verification/1",
+  "source_base_commit": "02dba4211c45719cb3088e7e8097044cd86a17d5",
+  "behavior": "Bounded regular-file task source for existing compact startup",
+  "checks": [
+    "Exact UTF8/CRLF/trailing-newline text through stdin and argv",
+    "Mandatory memory and existing startup process/permission/budget tests",
+    "Invalid task-file refusal before retrieval",
+    "Go tests, 34 Python tests and vet/format; actual disposable CLI/API suite"
+  ],
+  "native_inference_calls": 0,
+  "prior_memory": {
+    "records": [
+      "30681751-37ae-4c70-9543-3697f95d3fdc",
+      "91c075c2-32d2-4fc7-83dd-68a4956fff8d"
+    ],
+    "versions": [
+      1,
+      1
+    ],
+    "contribution": "Recalled owner priorities before choosing work; current roadmap confirmed them. No incremental task-value inference."
+  },
+  "doctrine": {
+    "packet_id": "pkt-4b7c3fbe9876b630",
+    "packet_content_sha256": "4b7c3fbe9876b63094fb85de2f6ddca4bc511c2420de2b645d3d9b9c08498b0b",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "typed_evidence_passes": 1,
+    "unmet": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "classification": "nonmaterial",
+        "rationale": "No interface, exported Go API or absence contract changes; regular-file input remains private to the concrete CLI."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "classification": "nonmaterial",
+        "rationale": "No interface, exported Go API or absence contract changes; regular-file input remains private to the concrete CLI."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "classification": "nonmaterial",
+        "rationale": "No interface, exported Go API or absence contract changes; regular-file input remains private to the concrete CLI."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "classification": "nonmaterial",
+        "rationale": "No interface, exported Go API or absence contract changes; regular-file input remains private to the concrete CLI."
+      },
+      {
+        "requirement": "caller nil checks and method use",
+        "classification": "nonmaterial",
+        "rationale": "No interface, exported Go API or absence contract changes; regular-file input remains private to the concrete CLI."
+      },
+      {
+        "requirement": "documented absence semantics",
+        "classification": "nonmaterial",
+        "rationale": "No interface, exported Go API or absence contract changes; regular-file input remains private to the concrete CLI."
+      },
+      {
+        "requirement": "dynamic type and dynamic value at the return",
+        "classification": "nonmaterial",
+        "rationale": "No interface, exported Go API or absence contract changes; regular-file input remains private to the concrete CLI."
+      },
+      {
+        "requirement": "recurring change evidence when available",
+        "classification": "nonmaterial",
+        "rationale": "Direct task-input limitation and shell byte-loss observation justify a local additive feature; recurring structural churn is not required."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "cmd/cairn/agent_start.go",
+      "sha256": "84b42d7d0ecb826e6bad6b51e6d9ddc76cd721759f48548ec9763402009e933b"
+    },
+    {
+      "path": "cmd/cairn/agent_start_test.go",
+      "sha256": "52911c60b8afcfbc6dfab458546567781be07eb40832952419d616a08ad307d4"
+    },
+    {
+      "path": "scripts/check_agent_start.py",
+      "sha256": "0233382faacec07ec8c408e5d50afacc0ccbc0d8f012415e016b72703fe9b10f"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-baseline.json",
+      "sha256": "9f76f67fb9c828beaee100d9e561672ecd44b223003c9fbb48900a1e5b4191e6"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-shell.json",
+      "sha256": "63abd76ab2b86effba0769fcbbbdfdbd10b698a3b3a71840ad824f9c441cefad"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-unit.log",
+      "sha256": "74dfcc4e06630cf285ca82a6c1cd326cf9d6f16f8db21c754a5a3ea5f4ddb16f"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-api.log",
+      "sha256": "5720a54c5f5cbff4d8d2aa57cf74efca8c1a02b49e6eb8e405a5a99018eb44db"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-tests.log",
+      "sha256": "d880d15b11d4983464783789ade6d05757b9a4926b82c1083d7173dd2c8ecc66"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-decision.json",
+      "sha256": "fa88d7308ed21b164cce480e32ebb48a8dd7287cd84346adb1790cb7430f4fc1"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-doctrine-final.json",
+      "sha256": "17b84653bd9a99829cbb75be5e0b8dff9bb95c86c40f51a39c667a68b134f18e"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-citation-closure.json",
+      "sha256": "35985d037bd2fd78b9814315fdbcb063212e6c81c0e3c88e0b694852d9c1106e"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-ci.json",
+      "sha256": "4590cb4b32cb1b346a2a34d57b6032caf2c5c49727aca449eb78d3082a65c878"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-deployment/installation.json",
+      "sha256": "e032855216d84dac7cf377e9a39d26290633ce2a2e198c41cc82dc072c5e68e3"
+    },
+    {
+      "path": "/tmp/cairn-start-task-file-deployment/startup.txt",
+      "sha256": "dcd22b28aa85a68a923982bf1bc02ca62bf6654780c56e3d03c713bca570fe9b"
+    }
+  ],
+  "limits": [
+    "No model-selected use or incremental memory-value claim",
+    "Source file retained by caller; no snapshot guarantee for concurrent edits",
+    "Existing combined initial budget and downstream harness behavior remain"
+  ],
+  "installation": {
+    "cli_revision": "291557105d036b806a31c3fedee3ff702dc2a95c",
+    "cli_sha256": "08f9579d251baeed1ee120e76a916ddee09e04ddc0304b2246d1847c86e2b0e2",
+    "previous_cli": "/tmp/cairn-start-task-file-deployment/previous-cli",
+    "api_pid": 4121278,
+    "api_sha256": "a58d8258296382e6a81b100574ecf65685c62cf88a42682fc23e9afc7c9c7026",
+    "api_restarted": false,
+    "startup_bytes": 2728,
+    "task_bytes": 57,
+    "exact_task_bytes": true,
+    "receipt_id": "3645c612-466e-47ca-a38a-c5dcfef7a7db",
+    "model_inference_calls": 0
+  },
+  "ci": {
+    "run_id": 34418879903,
+    "commit": "291557105d036b806a31c3fedee3ff702dc2a95c",
+    "conclusion": "success"
+  }
+}

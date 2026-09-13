@@ -1,0 +1,215 @@
+"""Exercise reusable agent search/pull commands against the disposable Unix API."""
+import hashlib
+import json
+import os
+import shlex
+import subprocess
+import uuid
+
+
+def check(binary, root, environment, grant, claim, support):
+    def call(args, payload=None, check=True):
+        p = subprocess.run([binary, *args], input=None if payload is None else json.dumps(payload),
+                           env=environment, capture_output=True, text=True, timeout=15, check=check)
+        return json.loads(p.stdout)
+
+    scope = dict(repo='fixture:socket', task_id='agent-search', run_id='agent-search')
+    instruction = call(['issue'], dict(request_id=str(uuid.uuid4()), grant_id=grant['grant_id'],
+                       draft=dict(kind='instruction', body='Keep the fixture source provenance with the answer.',
+                                  claim_type='self', sensitivity='shareable', scope=scope),
+                       mandatory=True, policy_key='agent-search-fixture', category='workflow',
+                       reason='Exercise mandatory context in the reusable agent search view'))['data']
+    # Client-only commands must work with an unusable database address.
+    client_env = dict(environment, CAIRN_DATABASE_URL='host=/absent-agent-search-db dbname=denied')
+    token = root / "agent ' $(printf injected).token"
+    token.write_bytes((root / 'agent.token').read_bytes())
+    token.chmod(0o600)
+    agent = ['agent', '--socket', str(root / 'api.sock'), '--token-file', str(token)]
+    # The encoded CLI/API envelope must fit the existing decoded evidence limit.
+    escaped_source = '\x00' * 1048576
+    capture = dict(request_id=str(uuid.uuid4()), repo=scope['repo'], body=escaped_source,
+                   source='selected escaped source fixture', sensitivity='shareable')
+    captured = []
+    for _ in range(2):
+        result = subprocess.run([binary, *agent, 'evidence'], input=json.dumps(capture),
+                                env=client_env, capture_output=True, text=True, check=True, timeout=15)
+        captured.append(json.loads(result.stdout)['data'])
+    assert captured[0] == captured[1]
+    assert captured[0]['sha256'] == hashlib.sha256(escaped_source.encode()).hexdigest()
+    print('Authenticated agent CLI captures an exact escaped 1 MiB source and preserves retry identity without database access')
+    request_id = str(uuid.uuid4())
+    p = subprocess.run([binary, *agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'],
+                        '--run', scope['run_id'], '--request-id', request_id, 'socket'], env=client_env,
+                       capture_output=True, text=True, check=True, timeout=15)
+    view = json.loads(p.stdout)['data']
+    assert view['schema'] == 'cairn.agent-search/1' and view['scope'] == scope
+    assert view['credits_remaining'] == 4 and view['bytes_remaining'] <= 24000
+    assert len(p.stdout.encode()) <= view['available_tokens']
+    canonical = call([*agent, 'index'], dict(request_id=request_id, scope=scope, query='socket',
+                     purpose='context', available_tokens=32000, context={}))['data']
+    assert view['selected'] == canonical['package']['semantic']['selected']
+    assert any(s['mandatory'] and s['record']['record_id'] == instruction['record_id'] for s in view['selected'])
+    assert [{k: v for k, v in e.items() if k not in ('pull_command', 'pull_arguments')} for e in view['index']] == canonical['package']['semantic']['index']
+    entry = next(e for e in view['index'] if e['record_id'] == claim['record_id'])
+    def pull():
+        return json.loads(subprocess.run(entry['pull_command'], shell=True, env=client_env, capture_output=True,
+                                        text=True, check=True, timeout=15).stdout)['data']
+    body = pull()
+    assert body['selection']['record']['record_id'] == claim['record_id'] and body['credits_remaining'] == 3
+    assert pull() == body  # Repeating the displayed command keeps its request ID.
+    assert call([*agent, 'expand'], entry['pull_arguments'])['data'] == body
+    assert call([*agent, 'pull'], entry['pull_arguments'])['data'] == body
+    words = shlex.split(entry['pull_command'])
+    receipt, handle = words[-2:]
+    evidence_args = [*agent, 'pull-evidence', '--request-id', str(uuid.uuid4()), receipt, handle,
+                     support['evidence_id'], support['sha256']]
+    evidence = call(evidence_args)['data']
+    assert evidence['evidence']['body'] == 'explicit supporting socket evidence' and evidence['credits_remaining'] == 2
+    assert call(evidence_args)['data'] == evidence
+    evidence_json = dict(request_id=evidence_args[evidence_args.index('--request-id') + 1], receipt_id=receipt, handle=handle,
+                         evidence_id=support['evidence_id'], expected_sha256=support['sha256'])
+    assert call([*agent, 'pull-evidence'], evidence_json)['data'] == evidence
+    for flags in [['--offset', '0'], ['--length', '0'], ['--offset', '-1', '--length', '2']]:
+        assert call([*agent, 'pull-evidence', *flags, receipt, handle,
+                     support['evidence_id'], support['sha256']], check=False)['status'] == 'INVALID_REQUEST'
+    citation = body['selection']['evidence'][0]['citation']
+    assert citation == dict(sha256=support['sha256'], relation='supports', spans=[dict(offset=9, length=10)])
+    cited_span = citation['spans'][0]
+    span_id = str(uuid.uuid4())
+    span_args = [*agent, 'pull-evidence', '--request-id', span_id, '--offset', str(cited_span['offset']), '--length', str(cited_span['length']),
+                 receipt, handle, support['evidence_id'], support['sha256']]
+    span = call(span_args)['data']
+    assert span['span']['body'] == 'supporting' and span['span']['offset'] == 9 and span['span']['end'] == 19
+    assert span['span']['sha256'] == hashlib.sha256(b'supporting').hexdigest()
+    assert span['evidence']['body'] == '' and span['evidence']['sha256'] == support['sha256']
+    assert span['evidence']['citation'] == citation
+    span_json = dict(evidence_json, request_id=span_id, span=cited_span)
+    assert call([*agent, 'pull-evidence'], span_json)['data'] == span
+    assert span['credits_remaining'] == 1 and call(span_args)['data'] == span
+    assert call([*agent, 'expand-evidence'], dict(request_id=span_id, receipt_id=receipt, handle=handle,
+                evidence_id=support['evidence_id'], expected_sha256=support['sha256'],
+                span=dict(offset=9, length=10)))['data'] == span
+    prefix = call([*agent, 'pull-evidence', '--length', '8', receipt, handle,
+                   support['evidence_id'], support['sha256']])['data']
+    assert prefix['span']['body'] == 'explicit' and prefix['credits_remaining'] == 0
+    foreign = call(['agent', '--token-file', str(root / 'observer.token'), 'pull', receipt, handle], check=False)
+    assert foreign['status'] == 'AUTHORITY_DENIED'
+    assert call(['agent', '--token-file', str(root / 'observer.token'), 'pull'],
+                dict(entry['pull_arguments'], request_id=str(uuid.uuid4())), check=False)['status'] == 'AUTHORITY_DENIED'
+    assert call([*agent, 'pull'], dict(entry['pull_arguments'], unknown_field=True), check=False)['status'] == 'INVALID_REQUEST'
+    hosted = call(['agent', '--token-file', str(root / 'hosted.token'), 'search', '--repo', scope['repo'],
+                   '--task', scope['task_id'], '--run', scope['run_id'], 'socket'])['data']
+    assert hosted['destination'] == dict(name='hosted', allow_local=False)
+    assert all(e['record_id'] == claim['record_id'] for e in hosted['index'])
+    empty = call([*agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'], '--run', scope['run_id'], 'unmatchedmarker'])['data']
+    assert empty['index'] == [] and empty['selected'] == view['selected']
+    browse_args = [*agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'], '--run', scope['run_id'], '--browse']
+    browse = call(browse_args)['data']
+    assert browse['selected'] == view['selected'] and browse['scope'] == scope
+    browsed = next(entry for entry in browse['index'] if entry['record_id'] == claim['record_id'])
+    assert call([*agent, 'expand'], browsed['pull_arguments'])['data']['selection']['record']['record_id'] == claim['record_id']
+    assert call([*browse_args, 'unexpected query'], check=False)['status'] == 'INVALID_REQUEST'
+    end_page = call([*browse_args, '--offset', '10000'])['data']
+    assert end_page['browse'] == dict(offset=10000) and end_page['index'] == []
+    assert end_page['selected'] == browse['selected'] and end_page['scope'] == scope
+    for flags in [[], ['--task', '*', '--run', 'run'], ['--task', 'task']]:
+        refused = call([*agent, 'search', *flags, 'socket'], check=False)
+        assert refused['status'] == 'INVALID_REQUEST'
+    marker = 'largesource' + uuid.uuid4().hex
+    tail = 'TAIL: use the explicit override'
+    source = 'SOURCE START\n' + 'retained source line\n' * 3000 + tail
+    large = call(['capture-evidence'], dict(request_id=str(uuid.uuid4()), repo=scope['repo'],
+                 body=source, source='synthetic large source', sensitivity='shareable'))['data']
+    draft = call([*agent, 'remember', '--repo', scope['repo'], '--shareable', marker])['data']
+    large_claim = call(['promote'], dict(request_id=str(uuid.uuid4()), record_id=draft['record_id'],
+                       expected_version=draft['version'], grant_id=grant['grant_id'],
+                       evidence_ids=[large['evidence_id']], reason='Inspect a larger retained source'))['data']
+    large_view = call([*agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'],
+                      '--run', scope['run_id'], marker])['data']
+    entry = next(e for e in large_view['index'] if e['record_id'] == large_claim['record_id'])
+    args = dict(entry['pull_arguments'], evidence_id=large['evidence_id'], expected_sha256=large['sha256'])
+    assert call([*agent, 'expand-evidence'], args, check=False)['status'] == 'BUDGET_REFUSED'
+    result = call([*agent, 'pull-evidence', '--offset', str(len(source)-len(tail)), '--length', '4096',
+                   args['receipt_id'], args['handle'], large['evidence_id'], large['sha256']])['data']
+    assert result['span']['body'] == tail and result['span']['end'] == len(source)
+    assert result['span']['total_bytes'] == len(source) and result['credits_remaining'] == 3
+    assert result['span']['sha256'] == hashlib.sha256(tail.encode()).hexdigest()
+    assert result['evidence']['body'] == '' and result['evidence']['sha256'] == large['sha256']
+    note_marker = 'longnote' + uuid.uuid4().hex
+    note_tail = note_marker + ': Keep the complete implementation history.'
+    long_body = 'retained selected procedure\n' * 2000 + note_tail
+    note = call([*agent, 'remember', '--repo', scope['repo'], '--request-id', str(uuid.uuid4()), '--', long_body])['data']
+    note_index = call([*agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'], '--run', scope['run_id'], '--tokens', '1000000', note_marker])['data']
+    note_entry = next(e for e in note_index['index'] if e['record_id'] == note['record_id'])
+    note_pull = note_entry['pull_arguments']
+    assert call([*agent, 'expand'], note_pull, check=False)['status'] == 'BUDGET_REFUSED'
+    location = note_entry['summary_span']
+    assert location['offset'] > 24000
+    tail_args = [*agent, 'pull', '--request-id', str(uuid.uuid4()), '--offset', str(location['offset']), '--length', str(location['length']), note_pull['receipt_id'], note_pull['handle']]
+    selected = call(tail_args)['data']
+    expected = long_body.encode()[location['offset']:location['offset']+location['length']]
+    assert selected['span']['body'].encode() == expected and note_tail in selected['span']['body']
+    assert selected['selection']['record']['body'] == ''
+    assert selected['span']['source_sha256'] == hashlib.sha256(long_body.encode()).hexdigest()
+    assert selected['span']['sha256'] == hashlib.sha256(expected).hexdigest()
+    assert selected['span']['total_bytes'] == len(long_body.encode()) and selected['credits_remaining'] == 3
+    assert call(tail_args)['data'] == selected
+    assert call([*agent, 'pull'], dict(note_pull, request_id=tail_args[tail_args.index('--request-id') + 1],
+                                     span=location))['data'] == selected
+    for flags in [['--offset', '0'], ['--length', '0'], ['--offset', '-1', '--length', '2']]:
+        assert call([*agent, 'pull', *flags, note_pull['receipt_id'], note_pull['handle']], check=False)['status'] == 'INVALID_REQUEST'
+    call([*agent, 'revise'], dict(request_id=str(uuid.uuid4()), repo=scope['repo'], record_id=note['record_id'],
+                                expected_version=note['version'], body=long_body + '\nRevised selected guidance.'))
+    stale_request = dict(note_pull, request_id=tail_args[tail_args.index('--request-id') + 1], span=location)
+    assert call([*agent, 'pull'], stale_request, check=False)['status'] == 'STALE_HANDLE'
+    assert call(tail_args, check=False)['status'] == 'STALE_HANDLE'
+    print('An accepted long note refuses whole expansion and exposes its exact selected tail through the agent CLI/API')
+    previous = os.environ.get('CAIRN_PREVIOUS_BINARY')
+    if previous:
+        def old_call(command, payload):
+            return json.loads(subprocess.run([previous, command], input=json.dumps(payload),
+                              env=environment, capture_output=True, text=True, check=True, timeout=15).stdout)['data']
+        old_index = old_call('index', dict(request_id=str(uuid.uuid4()), scope=scope,
+                                          query='socket', purpose='context', available_tokens=64000))
+        old_handle = next(h['handle'] for h in old_index['handles'] if h['record_id'] == claim['record_id'])
+        old_args = dict(request_id=str(uuid.uuid4()), receipt_id=old_index['package']['receipt_id'],
+                        handle=old_handle, evidence_id=support['evidence_id'], expected_sha256=support['sha256'])
+        old_body_args = {k:old_args[k] for k in ('request_id','receipt_id','handle')}
+        old_body_args['request_id'] = str(uuid.uuid4())
+        original_body = old_call('expand',old_body_args)
+        assert 'span' not in original_body and call(['expand'],old_body_args)['data'] == original_body
+        print('Previous binary whole-body cached response and retry budget remain identical')
+        original = old_call('expand-evidence', old_args)
+        assert 'span' not in original and call(['expand-evidence'], old_args)['data'] == original
+        print('Previous binary whole-evidence cached response survives new binary retry in disposable database')
+    print('Reusable agent search/pull/evidence CLI preserves mandatory context, scoped index order, exact handles, quoted paths, retry credits and hosted filtering')
+
+    # A known label reaches direction notes without loading matching procedures.
+    marker = 'kindfilter' + uuid.uuid4().hex
+    kinds = {}
+    for kind in ('decision', 'preference', 'procedure'):
+        kinds[kind] = call([*agent, 'remember', '--repo', scope['repo'], '--kind', kind,
+                            '--shareable', marker + ': selected ' + kind])['data']['record_id']
+    filtered = call([*agent, 'search', '--repo', scope['repo'], '--task', scope['task_id'],
+                     '--run', scope['run_id'], '--kind', 'preference', '--kind', 'decision', marker])['data']
+    assert filtered['kinds'] == ['decision', 'preference']
+    assert {e['record_id'] for e in filtered['index']} == {kinds['decision'], kinds['preference']}
+    assert filtered['selected'] == view['selected']
+    assert call([*agent, 'expand'], filtered['index'][0]['pull_arguments'])['data']['selection']['record']['kind'] in filtered['kinds']
+    previous = environment.get('CAIRN_PREVIOUS_BINARY')
+    if previous:
+        for operation in ('compile', 'index'):
+            request = dict(request_id=str(uuid.uuid4()), scope=scope, query=marker,
+                           purpose='context', available_tokens=32000)
+            old = subprocess.run([previous, operation], input=json.dumps(request), env=environment,
+                                 capture_output=True, text=True, check=True, timeout=15)
+            old = json.loads(old.stdout)['data']
+            new = call([operation], request)['data']
+            old_package = old['package'] if operation == 'index' else old
+            new_package = new['package'] if operation == 'index' else new
+            assert old_package == new_package
+            historical = call(['recompile'], dict(receipt_id=old_package['receipt_id'], query=marker))['data']
+            assert historical["historical"] is True and historical["package"] == old_package
+        print('Previous-binary unfiltered compile/index retry and historical reconstruction preserve exact packages')
+    print('Agent search filters direction labels, keeps mandatory context, and pulls the selected record')
+    token.unlink()

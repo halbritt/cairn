@@ -1,0 +1,229 @@
+{
+  "schema": "cairn.native-integration/1",
+  "date": "2026-09-10",
+  "cairn_base": "ef162e1782af67d389ea56d477961f0ebd5ee25d",
+  "striatum_base": "5ea87ca65c1bd25f228c0447110d991a3f0de8c8",
+  "striatum_preparation": "ee8a463c9978833bc53d2726eef63eb9417fcb91",
+  "striatum_integrated": "5848b23f1800e7051e59f4f70303244c711e0575",
+  "merged_to_main": true,
+  "pushed": true,
+  "branch_and_worktree_removed": true,
+  "installed_driver": "a6b1ae71d95cdf99200c10d8c6ce855d9da70a69",
+  "deployed": false,
+  "accepted_catalog_changed": false,
+  "graph_mutated": false,
+  "native_accepted": false,
+  "opening_request": {
+    "seq": 408328,
+    "subject": "striatum-next/passes/cairn-native-context-input-20260908",
+    "target": "captured",
+    "target_hash": "65912d3c34efa9bceee40b210ecd8e83364b9a90785661dbe6848b931139a416",
+    "phase": "satisfied",
+    "evaluation_bound": "graph_complete",
+    "claim_level": "Designed"
+  },
+  "model_inference_calls": 0,
+  "checks": {
+    "make check": 0,
+    "native race suite": 0,
+    "make test-supervision": 0,
+    "make lint after docs": 0,
+    "driver compatibility race": 0,
+    "pre-fix overlay": 1
+  },
+  "check_logs": {
+    "corrected-fixtures-red.log": "3f94b9e0216585a36417a8df587ad7e3d75d860a49a581115d590091e07b3f0b",
+    "compatibility-green.log": "3569a8d4d593d3a7c3590f54ade5d50d1c473f1e9ddcbb764f947b022c866c5f",
+    "check.log": "3ed99d7298ce90f7c54455196d9e864b2926b7eeb0ea4506b8517e2da23e2806",
+    "native-race.log": "a878115979f0894d8bf739590866631640a6e9dfa7b7cc51de6619a13ca692fb",
+    "supervision.log": "b14ea269296ca3b43494da47784d79710e2f286ccffb7371f042ea5f5f3154d2",
+    "lint-final.log": "0d5f9a2cec241072c304740163ed4375101c60271c2d7c0d9ddf5b5b43d1be7e"
+  },
+  "preservation": {
+    "base": "5ea87ca65c1bd25f228c0447110d991a3f0de8c8",
+    "branch_base": "ee8a463c9978833bc53d2726eef63eb9417fcb91",
+    "protected_diff_bytes": 0,
+    "protected": [
+      "catalog",
+      "decisions",
+      "policy",
+      "backends"
+    ],
+    "new_schemas": [
+      "schema/proposed/cairn-host-observation-v1.schema.json",
+      "schema/proposed/cairn-host-v1.schema.json",
+      "schema/proposed/cairn-observation-v1.schema.json"
+    ],
+    "unrelated_file_sha256": "c462e8b294a3445dd52bc521bf58dcc4b0c2b40e505e2f401046c16a2cf95e0d"
+  },
+  "memory_maintenance": {
+    "record_id": "82fcfec8-474b-48fe-9a00-a36f59d34ac1",
+    "before_version": 2,
+    "after_version": 3,
+    "before_bytes": 2433,
+    "after_bytes": 2920,
+    "before_sha256": "5b61db446a8ef03c252c5cbbafb9a22b47ab77111e901f682c84ba63ee5b5d85",
+    "after_sha256": "5ea75ea639fad0ab80809db3ea24cd36e269a76cf92011c61177510d78e80b87",
+    "unrelated_text_preserved": true,
+    "earlier_body_unchanged": true,
+    "fresh_search_and_pull_verified": true,
+    "source_commit": "5848b23f1800e7051e59f4f70303244c711e0575",
+    "independent_downstream_benefit": "unmeasured"
+  },
+  "doctrine": {
+    "packet_id": "pkt-a80609a7700cd409",
+    "packet_sha256": "a80609a7700cd4094fbbdb943dfdcb5b95fa4b60d6a982b8cad5c2f7a682f8d8",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "decision_receipt_validated": true,
+    "citation_loops_closed": true,
+    "missing_obligations": [
+      {
+        "requirement": "an explicit enumeration of the record's identity dimensions matched against the key's columns",
+        "required_by": "data-dedup-key-identity-completeness",
+        "classification": "nonmaterial",
+        "reason": "No deduplication key or collision policy changes; these guards preserve old interpretation before native resolution."
+      },
+      {
+        "requirement": "logical-identity definition of the affected record",
+        "required_by": "data-dedup-key-identity-completeness",
+        "classification": "nonmaterial",
+        "reason": "No deduplication key or collision policy changes; these guards preserve old interpretation before native resolution."
+      },
+      {
+        "requirement": "the conflict-handling semantics at that key - abort update or silent drop",
+        "required_by": "data-dedup-key-identity-completeness",
+        "classification": "nonmaterial",
+        "reason": "No deduplication key or collision policy changes; these guards preserve old interpretation before native resolution."
+      },
+      {
+        "requirement": "a dry-run enumeration with counts compared against expectation",
+        "required_by": "data-ingest-population-scoping",
+        "classification": "nonmaterial",
+        "reason": "No ingest, backfill or data traversal is introduced."
+      },
+      {
+        "requirement": "the discovery pattern shown to match the specification's depth and class constraints",
+        "required_by": "data-ingest-population-scoping",
+        "classification": "nonmaterial",
+        "reason": "No ingest, backfill or data traversal is introduced."
+      },
+      {
+        "requirement": "the input population specification",
+        "required_by": "data-ingest-population-scoping",
+        "classification": "nonmaterial",
+        "reason": "No ingest, backfill or data traversal is introduced."
+      },
+      {
+        "requirement": "the specified input population stated precisely",
+        "required_by": "data-ingest-population-scoping",
+        "classification": "nonmaterial",
+        "reason": "No ingest, backfill or data traversal is introduced."
+      },
+      {
+        "requirement": "complete read-modify-write scope",
+        "required_by": "implementation-atomicity-scope",
+        "classification": "nonmaterial",
+        "reason": "No new compound transaction or recovery guarantee is claimed; integration uses ordinary Git and leaves live runtime and graph acceptance unchanged."
+      },
+      {
+        "requirement": "mechanism guaranteeing atomicity at that scope",
+        "required_by": "implementation-atomicity-scope",
+        "classification": "nonmaterial",
+        "reason": "No new compound transaction or recovery guarantee is claimed; integration uses ordinary Git and leaves live runtime and graph acceptance unchanged."
+      },
+      {
+        "requirement": "named observer and invariant",
+        "required_by": "implementation-atomicity-scope",
+        "classification": "nonmaterial",
+        "reason": "No new compound transaction or recovery guarantee is claimed; integration uses ordinary Git and leaves live runtime and graph acceptance unchanged."
+      },
+      {
+        "requirement": "observer and indivisible invariant",
+        "required_by": "implementation-atomicity-scope",
+        "classification": "nonmaterial",
+        "reason": "No new compound transaction or recovery guarantee is claimed; integration uses ordinary Git and leaves live runtime and graph acceptance unchanged."
+      },
+      {
+        "requirement": "a load-time or gate check resolving every reference against them",
+        "required_by": "implementation-config-reference-validation",
+        "classification": "nonmaterial",
+        "reason": "No accepted declaration or live host configuration changes. Proposed configuration acceptance is outside this preparatory integration decision."
+      },
+      {
+        "requirement": "a named-identifier failure on mismatch",
+        "required_by": "implementation-config-reference-validation",
+        "classification": "nonmaterial",
+        "reason": "No accepted declaration or live host configuration changes. Proposed configuration acceptance is outside this preparatory integration decision."
+      },
+      {
+        "requirement": "the consumer's defined identifier and enum sets",
+        "required_by": "implementation-config-reference-validation",
+        "classification": "nonmaterial",
+        "reason": "No accepted declaration or live host configuration changes. Proposed configuration acceptance is outside this preparatory integration decision."
+      },
+      {
+        "requirement": "the match-text composition enumerated field by field",
+        "required_by": "implementation-rank-before-truncate",
+        "classification": "nonmaterial",
+        "reason": "No ranking or truncation behavior changes."
+      },
+      {
+        "requirement": "the scan shown to score the full bounded set before truncation",
+        "required_by": "implementation-rank-before-truncate",
+        "classification": "nonmaterial",
+        "reason": "No ranking or truncation behavior changes."
+      },
+      {
+        "requirement": "the selection contract stated",
+        "required_by": "implementation-rank-before-truncate",
+        "classification": "nonmaterial",
+        "reason": "No ranking or truncation behavior changes."
+      },
+      {
+        "requirement": "the selection contract stated - relevance-ordered top-N versus first-N",
+        "required_by": "implementation-rank-before-truncate",
+        "classification": "nonmaterial",
+        "reason": "No ranking or truncation behavior changes."
+      },
+      {
+        "requirement": "credential inventory",
+        "required_by": "operations-credential-custody",
+        "classification": "nonmaterial",
+        "reason": "No credentials are provisioned, relocated or deployed. Native host configuration remains disabled by the accepted catalog; a full custody audit is outside the compatibility claim."
+      },
+      {
+        "requirement": "credential storage location and permission audit",
+        "required_by": "operations-credential-custody",
+        "classification": "nonmaterial",
+        "reason": "No credentials are provisioned, relocated or deployed. Native host configuration remains disabled by the accepted catalog; a full custody audit is outside the compatibility claim."
+      },
+      {
+        "requirement": "memory and dump hygiene for credential-bearing processes",
+        "required_by": "operations-credential-custody",
+        "classification": "nonmaterial",
+        "reason": "No credentials are provisioned, relocated or deployed. Native host configuration remains disabled by the accepted catalog; a full custody audit is outside the compatibility claim."
+      },
+      {
+        "requirement": "vault key-separation design where vaulting is used",
+        "required_by": "operations-credential-custody",
+        "classification": "nonmaterial",
+        "reason": "No credentials are provisioned, relocated or deployed. Native host configuration remains disabled by the accepted catalog; a full custody audit is outside the compatibility claim."
+      },
+      {
+        "requirement": "evidence-co-change",
+        "required_by": "task:repository-assessment",
+        "classification": "nonmaterial",
+        "reason": "No co-change or hotspot inference is used; direct source comparison and regressions establish these two defects."
+      }
+    ]
+  },
+  "source_sha256": {
+    "internal/driver/verbs.go": "c6ec0414f103193635a8e6461308a98be6dba343b66dd8eb7716dca79abf12ce",
+    "internal/driver/cairn_input.go": "97313275dc67e577a56ea732b60501c70b59fdfdc85d476405dfbabc87255c9b",
+    "internal/driver/cairn_input_test.go": "39adb0bfdd35f1d418eaeec7db22425c0ff41be2742de348279173d70a167b29",
+    "internal/driver/cairn_request_test.go": "1376df73bcb06e83ea987653482b23fe814307c51fc5a65731b8aaf2cc1e0e14"
+  }
+}

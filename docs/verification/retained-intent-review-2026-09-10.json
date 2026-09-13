@@ -1,0 +1,132 @@
+{
+  "schema": "cairn.retained-intent-review/1",
+  "date": "2026-09-10",
+  "source_commit": "4ec28691bbb22c88e7d82514863c97399766ca83",
+  "production_changed": false,
+  "model_inference_calls": 0,
+  "operational_records_mutated": false,
+  "decision": "No additional retrieval-intent guard warranted by this source review",
+  "scope": "Enumerated current CompileRequest fields and existing retained/index boundaries; not full execution acceptance",
+  "checks": {
+    "/tmp/cairn-retained-intent-review-20260910/runner.log": "63a9f1820307c1f5ee7c35d6447232bcd75adfdf61cae4a627fd373d4edfc455"
+  },
+  "source_sha256": {
+    "core/compiler.go": "940a176cdaa60dc4989c44cd71ff8c126859a5464d5a9eb05ea1a3daf5d73d8c",
+    "core/entities.go": "a44fc396979eacec3ca8a932475d508db53085325e4731c2d0626e01bc6da4e4",
+    "runner/runner.go": "be26d8ec78e6b61705072588cbeafb552d07bac4ce40320f9283bba5ec037fde",
+    "runner/index.go": "681005939eaaaae61929efcef6482a4aa40989905df0d78a8e0515a63bd1da7a",
+    "runner/retained_test.go": "16872b4a069ec3560ac4c1cb31b81b2a6299a36e409d38187957560d2d3e5200",
+    "runner/index_test.go": "609812f13db4e0eb812da906baf933cce7ace67fbd4b342ce8a0318eb9a8f601"
+  },
+  "native_state": {
+    "main": "5ea87ca65c1bd25f228c0447110d991a3f0de8c8",
+    "integration": "ee8a463c9978833bc53d2726eef63eb9417fcb91",
+    "installed_driver": "a6b1ae71d95cdf99200c10d8c6ce855d9da70a69",
+    "catalog": {
+      "observation": 1,
+      "build": 3
+    },
+    "opening_request": {
+      "seq": 408328,
+      "subject": "striatum-next/passes/cairn-native-context-input-20260908",
+      "target": "captured",
+      "target_hash": "65912d3c34efa9bceee40b210ecd8e83364b9a90785661dbe6848b931139a416",
+      "phase": "satisfied",
+      "evaluation_bound": "graph_complete",
+      "claim_level": "Designed"
+    },
+    "status_file": "/tmp/cairn-striatum-status-20260910.json",
+    "status_sha256": "69dc4965e41c5ab9d4c12f4ab225c2e34d0b56d4e5bcadd4ec3e676529e1d582",
+    "graph_mutated": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-1422f59f1bf8ee44",
+    "packet_sha256": "1422f59f1bf8ee44a973c2f499a24f00a05f36a74a85ebcd0ddaaca47af13a37",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "missing_obligations": [
+      {
+        "requirement": "attribution recorded at discharge",
+        "required_by": "domain-authorization-embodied-in-action",
+        "classification": "nonmaterial",
+        "reason": "No new authority gate or discharge is selected. The review checks request-field preservation, not full authorization or acceptance design."
+      },
+      {
+        "requirement": "the decision each gate protects and its authorized principal",
+        "required_by": "domain-authorization-embodied-in-action",
+        "classification": "nonmaterial",
+        "reason": "No new authority gate or discharge is selected. The review checks request-field preservation, not full authorization or acceptance design."
+      },
+      {
+        "requirement": "the decision the gate protects and its authorized principal",
+        "required_by": "domain-authorization-embodied-in-action",
+        "classification": "nonmaterial",
+        "reason": "No new authority gate or discharge is selected. The review checks request-field preservation, not full authorization or acceptance design."
+      },
+      {
+        "requirement": "the surface's declared purpose",
+        "required_by": "domain-authorization-embodied-in-action",
+        "classification": "nonmaterial",
+        "reason": "No new authority gate or discharge is selected. The review checks request-field preservation, not full authorization or acceptance design."
+      },
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No interface or substitution architecture changes are proposed."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No interface or substitution architecture changes are proposed."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No interface or substitution architecture changes are proposed."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No interface or substitution architecture changes are proposed."
+      },
+      {
+        "requirement": "a prioritization key tied to the consumer's decision",
+        "required_by": "implementation-attention-budget-presentation",
+        "classification": "nonmaterial",
+        "reason": "No output presentation or budget policy changes are proposed; field preservation is the bounded review question."
+      },
+      {
+        "requirement": "proof canonical data is unchanged by presentation",
+        "required_by": "implementation-attention-budget-presentation",
+        "classification": "nonmaterial",
+        "reason": "No output presentation or budget policy changes are proposed; field preservation is the bounded review question."
+      },
+      {
+        "requirement": "the bound stated and enforced",
+        "required_by": "implementation-attention-budget-presentation",
+        "classification": "nonmaterial",
+        "reason": "No output presentation or budget policy changes are proposed; field preservation is the bounded review question."
+      },
+      {
+        "requirement": "the consumer and budget named",
+        "required_by": "implementation-attention-budget-presentation",
+        "classification": "nonmaterial",
+        "reason": "No output presentation or budget policy changes are proposed; field preservation is the bounded review question."
+      },
+      {
+        "requirement": "the consumer and their budget named",
+        "required_by": "implementation-attention-budget-presentation",
+        "classification": "nonmaterial",
+        "reason": "No output presentation or budget policy changes are proposed; field preservation is the bounded review question."
+      }
+    ],
+    "decision_receipt_validated": true,
+    "citation_loops_closed": true
+  }
+}

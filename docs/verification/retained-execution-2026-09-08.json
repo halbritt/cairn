@@ -1,0 +1,64 @@
+{
+  "schema": "cairn.retained-execution-verification/1",
+  "code_commit": "93bc66a972222fa47dec97e87beecdb5e82b8a82",
+  "verification": {
+    "make_test_integration": "passed",
+    "make_check": "passed",
+    "python_unit_tests": 17,
+    "retained_compile_calls": 0,
+    "child_carriers": [
+      "stdin",
+      "argv"
+    ],
+    "unix_api_profiles": [
+      "local",
+      "hosted"
+    ],
+    "post_load_freshness_refusal": "passed",
+    "duplicate_launch_refusal": "passed",
+    "code_ci_run": 34291788540,
+    "code_ci_result": "success"
+  },
+  "logs": {
+    "/tmp/cairn-retained-execution-checked.log": {
+      "sha256": "c96a3a3adbc48adf1ba2bef30f9ded3004be0e8028eda1503f0247f611034488",
+      "result": "passed"
+    },
+    "/tmp/cairn-retained-execution-runner.log": {
+      "sha256": "728e776d7bc274a27365c37809a355d6bbd4b0e596db3405e8df4754e90f36a9",
+      "result": "passed"
+    },
+    "/tmp/cairn-retained-execution-check.log": {
+      "sha256": "b0ea022a3c3cbbe3ce6fee217ec5ece61f56bab9d7b7270dfac51fdb32ff50e3",
+      "result": "passed"
+    },
+    "/tmp/cairn-retained-execution-python.log": {
+      "sha256": "065ebaac0a88dc4b87c3716c31ed07bd41364aa2753a2e598609e1ecde71481c",
+      "result": "passed"
+    }
+  },
+  "installed": {
+    "code_commit": "93bc66a972222fa47dec97e87beecdb5e82b8a82",
+    "cli_and_api_sha256": "756cd084be0430eb9059d401aa45dc1974be1e2c52030711a9c9151990be3089",
+    "api_pid": 179782,
+    "previous": {
+      "api_pid": 113704,
+      "cli_sha256": "c8ed14d8f378167e04d1f1ad2443bf024e803330cc0a2693276264aab77b6fa2",
+      "api_sha256": "c8ed14d8f378167e04d1f1ad2443bf024e803330cc0a2693276264aab77b6fa2"
+    },
+    "api_and_store": "active",
+    "hosted_agent_retrieval": "passed",
+    "schema_changed": false,
+    "profiles_changed": false
+  },
+  "native_striatum_delivery_implemented": false,
+  "model_task_benefit_measured": false,
+  "doctrine": {
+    "packet_id": "pkt-6ecce711886311eb",
+    "packet_content_sha256": "6ecce711886311eb401e62bbb3f5ec14c4cc0e15f2f386bf53515b52ba843198",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "nonmaterial_unmatched_obligations": 20
+  }
+}

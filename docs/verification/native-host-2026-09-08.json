@@ -1,0 +1,61 @@
+{
+  "schema": "cairn.native-host-verification/1",
+  "date": "2026-09-08",
+  "source_repository": "halbritt/striatum-next",
+  "source_commit": "9d49fa55fcc41f9486b43739a4d558a7b1559dbb",
+  "branch": "cairn-native-observation",
+  "go_version": "go version go1.25.0 linux/amd64",
+  "checks": [
+    {
+      "command": "make check",
+      "scope": "All production changes; began before final v2 relaunch test-fixture correction",
+      "exit_code": 0,
+      "log_path": "/tmp/cairn-native-host-check.log",
+      "log_sha256": "9b108358656f9424dcc69376cfeb8d2228830551009782c663ed65fc29b73064"
+    },
+    {
+      "command": "systemd-run --user --scope --quiet -p Delegate=yes make test-supervision",
+      "scope": "Final source and corrected v2 fixture; full delegated supervision suite",
+      "exit_code": 0,
+      "log_path": "/tmp/cairn-native-host-supervision-final.log",
+      "log_sha256": "23018cb62d1387e1d7431a5c183af5c8ba857d6c92d27d970eb7f01cbbdaeec0"
+    },
+    {
+      "command": "systemd-run --user --scope --quiet -p Delegate=yes env STRIATUM_REQUIRE_CGROUP=1 STRIATUM_CAIRN_TEST_BINARY=/home/halbritt/.local/bin/cairn go test -race ./internal/cairn ./internal/backend/llm ./internal/store ./tools/cairn-capture -run '^(TestExecution|TestNativeCairn|TestCairn)' -count=1",
+      "scope": "Final production code; focused tests include real confined child and disposable Cairn service",
+      "exit_code": 0,
+      "log_path": "/tmp/cairn-native-host-final-focused.log",
+      "log_sha256": "c56cdca319c5464eda170ed04470df210b58275816406a5613b3df5a89bdfec3"
+    },
+    {
+      "command": "make fmtcheck build lint",
+      "scope": "Final source including corrected fixture and changed Striatum docs/schemas",
+      "exit_code": 0,
+      "log_path": "/tmp/cairn-native-host-final-build.log",
+      "log_sha256": "07e610f75fa6949f7044ebbf82c2640d3b2af05dc69e9655f6f30f09ba311115"
+    }
+  ],
+  "cairn_binary_sha256": "756cd084be0430eb9059d401aa45dc1974be1e2c52030711a9c9151990be3089",
+  "additional_checks": [
+    "Proposed host schemas valid Draft202012 JSON Schema",
+    "Host configuration example validates against proposed schema",
+    "Changed Striatum documentation local link targets exist",
+    "Ordinary invoke implementation unchanged from parent; accepted catalog/Decisions/backend declarations/policy unchanged"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-5db99521e8928474",
+    "packet_content_sha256": "5db99521e89284748fdd028de7fdbba1a7697ddc3f5b0f03832ac3a9c8b5ed38",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "doctrine_residual_obligations": 11,
+  "doctrine_scope": "Focused behavior and supervision verification; repository-wide check completed subsequently and is recorded separately above",
+  "limits": [
+    "Accepted native contracts and generated Decisions unchanged",
+    "No native enablement or deployment",
+    "Host exhaust is a backend attestation; admission does not independently authenticate Cairn service IDs",
+    "Real shell fixture, not a model or accepted Work Graph build",
+    "No new task-benefit claim"
+  ]
+}

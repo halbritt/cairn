@@ -1,0 +1,161 @@
+{
+  "schema": "cairn.opencode-install-verification/1",
+  "baseline_commit": "7beaaab53980c4b5326c81e9e9e35ce432842b97",
+  "offline": {
+    "binary_sha256": "17059e987dfec3103e9f4bb72de7f62e018b68c74af0cfd74f1f124d83b3a7c2",
+    "no_home_or_database": true,
+    "missing_credentials_not_opened": true,
+    "literal_paths": true,
+    "initial_install": true,
+    "identical_repeat_unchanged": true,
+    "filesystem_failure_status": "INSTALL_FAILED",
+    "filesystem_failure_exit": 7
+  },
+  "native_opencode_version": "1.18.21",
+  "native_all_five_tools": true,
+  "model_inference_calls": 0,
+  "source_hashes": {
+    "cmd/cairn/opencode_install.go": "2233b92b50258c3ff503d720c1cc7281d35248e0814e4ca7f10fb017a1df45f5",
+    "cmd/cairn/opencode_install_test.go": "f1bbf76a57984231449425a5bc0bf09907dfc12815a233a1d6da81a7f9c5407d",
+    "integrations/opencode/embed.go": "988d973e9d6ed8d094902f920e7c8bffc7ca720cf7e165d7f83b74a47b57881c",
+    "integrations/opencode/cairn.ts": "e7888f9ce4f4eac83fbcbcdffd05956f44da090c0e2e1ce7f8e20a6fb169e274",
+    "scripts/check_opencode_tools.py": "197a72b29bc8644117a4a9d149a2c0acd828baadd96388346a6eacdcc04dd8f2"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-native-install-unit.log",
+      "sha256": "f4667c5257b20deff7d263112972a3a2a86ae310cabcf504492e43f506ed6338"
+    },
+    {
+      "path": "/tmp/cairn-native-install-tests.log",
+      "sha256": "24276b0386c5c407e3025d64881df16ab87b81541acf0c72081a5eeb891a6fad"
+    },
+    {
+      "path": "/tmp/cairn-native-install-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-native-install-integration.log",
+      "sha256": "31a60c521509e2146fd2db870dba8a38cd5a08ed616fb61db3b819d22e670bdc"
+    },
+    {
+      "path": "/tmp/cairn-native-install-offline/report.json",
+      "sha256": "525fdc4318be4f95c9163a6ea42aea2975c96a555230db392dd664154e8b63a4"
+    },
+    {
+      "path": "/tmp/cairn-native-install-offline/results.json",
+      "sha256": "6f4fdbc467a8fc14f7f3a49ef8b15df51ecf393b2a87c4ef3b59c270c152050f"
+    },
+    {
+      "path": "/tmp/cairn-native-install-offline/failure.json",
+      "sha256": "28d16cb75defb097ee0846f5968c9bc7e9021224cd869186d2d35ffcba569449"
+    }
+  ],
+  "limits": [
+    "Explicit operator installation does not establish automatic adoption or model task benefit",
+    "Each file replacement is atomic; pair is not transactional",
+    "Concurrent installation/editing not qualified",
+    "API capability remains independently deployed"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-7cf60a527d7b142a",
+    "packet_content_sha256": "7cf60a527d7b142a577a0461584d5a5b41df90a2be3259ed830df9b3ed6378a6",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_path": "/tmp/cairn-native-install-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-55947e2c9b11e87a",
+        "required_by": "architecture-policy-mechanism-separation",
+        "requirement": "independently meaningful policy",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new policy-mechanism split or replaceable provider is proposed. The direct installer packages an existing adapter; host policy remains outside it."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-5a26c08d16c0b0f7",
+        "required_by": "architecture-policy-mechanism-separation",
+        "requirement": "volatile or replaceable mechanism",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new policy-mechanism split or replaceable provider is proposed. The direct installer packages an existing adapter; host policy remains outside it."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "The generic named procedure is not a separate ceremony here. Allowed file effects, no-change alternative and existing consumer checks are recorded directly; no broad refactoring claim is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "The generic named procedure is not a separate ceremony here. Allowed file effects, no-change alternative and existing consumer checks are recorded directly; no broad refactoring claim is made."
+      }
+    ]
+  },
+  "deployment": {
+    "source_commit": "aedc0163d03d89385f1840b48102d9d0b1b82c7f",
+    "binary_sha256": "e319a23ac666e03b54dbfa1ec3b93b47405d5941497ea5e597790361fa53b3fc",
+    "old_binary_sha256": "d3bebe8f7535e8b68f54f7ba3efb6d1cdbc7c85f0fc9c5f4ef28888f74fc8bb7",
+    "adapter_sha256": "e7888f9ce4f4eac83fbcbcdffd05956f44da090c0e2e1ce7f8e20a6fb169e274",
+    "settings_preserved": true,
+    "services_unchanged": true,
+    "service_state": "MainPID=2055296\nActiveState=active\n\nMainPID=163669\nActiveState=active\n",
+    "fresh_project": "/tmp/cairn-native-install-deployment/fresh-project",
+    "vcs_modified": false,
+    "api_source_commit": "ecbcc54c5ae0c177ea83bab660b083f5ba8f29ab",
+    "native_fresh_project": {
+      "route": "normal opencode run with scripted loopback completions",
+      "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+      "version": 8,
+      "exact_saved_body": true,
+      "discovery": {
+        "state": "ready",
+        "model_sha256": "3315b6465bf9f1f35e585afbe72a90d3f5e113a78804dcfb543cad7f2a83b679",
+        "algorithm": "bge-max-chunk/1",
+        "scores_sha256": "109943d9af45e7829dec23929d5650060e5a8e37ed857ba3054540485ebb334a"
+      },
+      "scope": {
+        "repo": "/home/halbritt/git/cairn",
+        "task_id": "opencode/ses_f7a4e31f3ffekZ9bRXP2JQm0sJ",
+        "run_id": "ses_f7a4e31f3ffekZ9bRXP2JQm0sJ"
+      },
+      "procedure_rank": 1,
+      "model_inference_calls": 0,
+      "exit_code": 0,
+      "adapter_sha256": "e7888f9ce4f4eac83fbcbcdffd05956f44da090c0e2e1ce7f8e20a6fb169e274"
+    },
+    "artifacts": [
+      {
+        "path": "/tmp/cairn-native-install-deployment/plan.json",
+        "sha256": "169c4409f8bfe64ade45ab1af2c875d95a92e318ff84a8d79d1c5acf99706f16"
+      },
+      {
+        "path": "/tmp/cairn-native-install-deployment/local-install.json",
+        "sha256": "6b4a80c3e10ba80ab12b2ed47523105b14489592ed940966a26b7e4b4753fa0d"
+      },
+      {
+        "path": "/tmp/cairn-native-install-deployment/fresh-install.json",
+        "sha256": "38c616dd84c2f35fb80ca7c1a44fbd4adc64711866260ba1bea4c57a443905b2"
+      },
+      {
+        "path": "/tmp/cairn-native-install-deployment/build-info.txt",
+        "sha256": "6509458bf24d51d53e153dfa53cb0efd5630a77dd347ba3abe3af4c32955848b"
+      },
+      {
+        "path": "/tmp/cairn-opencode-install-verify/report.json",
+        "sha256": "7b6b8f8a067fec7adac3f43fe31b8e019cae1fd72fada893a11a83bd847d0c3e"
+      }
+    ]
+  }
+}

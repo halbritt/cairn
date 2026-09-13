@@ -1,0 +1,99 @@
+# Keep a named task available across native OpenCode sessions
+
+Native OpenCode searches can now use an explicitly configured task ID across
+sessions. A note restricted to that task remains discoverable and pullable when
+the session changes. Without configuration, task `opencode/<sessionID>` and run
+`<sessionID>` remain the defaults.
+
+This addresses a mismatch with compact startup: the launcher accepts a declared
+task/run, but subsequent native searches previously had no way to keep those
+labels. The existing guide documented the switch to native session scope. The
+change adds an explicit host choice; it does not infer a task from a session or
+propagate startup flags automatically.
+
+## Interface and boundaries
+
+`opencode-install --task TASK_ID` writes optional `task_id` in the existing
+connection file. Native run IDs still come from each session. Optional `--run`
+fixes the run too and requires a task. The native adapter validates these settings
+and uses them in the ordinary authenticated search. Agents cannot override them
+through tool arguments. [Usage](../opencode-tools.md#continue-a-task-across-sessions)
+explains reconfiguration and alignment with startup or another harness.
+
+Labels retain exact UTF-8 bytes, subject to the 256-byte bound, nonblank text,
+no NUL and refusal of the wildcard `*`. Invalid installer arguments refuse before
+filesystem effects. A fixed task applies to every session using that connection
+file until the host changes it. These labels are declarations, not independently
+observed execution identities. Existing native session validation still applies.
+
+There is no API or database schema change. Scope matching, profile/repository
+checks and destination filtering stay in the existing core. Captures do not
+inherit search scope. Retained pulls keep their original receipt and current
+eligibility checks. Changing effective search scope under a reused request UUID
+continues to refuse rather than silently change the request.
+
+## Executed checks
+
+The new installer test first failed because `--task` was unknown, then passed.
+An older invalid-arguments test also expected `--task` to be unknown; it now checks
+an actually unknown flag, while the new tests establish the intended optional
+scope behavior. Go tests verify exact Unicode/punctuation, default omission,
+task-only configuration, run-only refusal and invalid labels without side effects.
+
+A disposable PostgreSQL/API check used actual OpenCode 1.18.21 custom tools:
+
+- Default native scope omitted the seeded named-task note.
+- Two distinct fresh native session IDs searched and pulled its exact body after
+  the task was configured; each retained its own native run ID.
+- Fixing the run additionally retrieved its run-restricted note. Unrelated-task
+  and local-only notes remained excluded.
+- Caller attempts to override scope through tool arguments refused. Changing
+  configured scope with an existing request UUID refused; a fresh request used
+  the new task. Removing the settings restored default exclusion.
+- Invalid host settings refused, including oversized UTF-8, NUL, lone surrogate,
+  blank/wildcard labels and a run without a task.
+
+The full disposable PostgreSQL/race suite and native OpenCode suite passed,
+including existing exact body/evidence/history, currentness, permission, Unicode,
+context-room and normal scripted-session checks. Python checks and `make check`
+passed. The native tests made no answering-model calls and used no production
+store. Distinct native sessions do not establish independent model-task benefit.
+
+[Metadata](opencode-task-scope-2026-09-10.json) retains the actual generated scopes,
+source/check hashes and evidence pointers under
+`/tmp/cairn-opencode-task-scope-20260910/`. Doctrine packet
+`pkt-2f98d7bcf21730ce` informed identity distinctions and preservation boundaries;
+its receipt and two citation closures validate. Twenty-one residual obligations
+concern architecture or domain-model redesign outside this change.
+
+The retained startup procedure and owner evaluation guidance helped keep this
+work focused on an access gap. Full task-context accounting, automatic propagation,
+native observed execution and sustained task value remain open.
+
+
+## Installation
+
+Clean feature `50e4935567aef0d9b267f288422ca71d267a82ea` passed CI run
+34547465329, with both jobs and all steps checked. The CLI and bundled native
+adapter are installed from that commit. CLI SHA-256 is
+`f0f6fd27ac1e2376c579bec48b8b413c1af643039c5a56ae24d60f2d0fe46d1b`;
+adapter SHA-256 is
+`e18aec232eb34af4d8e4d2c4109cf942d84c95c2e834d6bed54dd35aa6ec39df`.
+
+The API remains clean `b171a8b`, PID 4138687; this feature uses its existing
+search scope contract. No API or database restart occurred. PostgreSQL stayed
+PID 163669, at migration 034. Host configuration, identities, native recent-file
+plugin and semantic worker were preserved. All 82 retained note versions matched
+before/after installation. The project still uses native session defaults.
+
+A separate temporary project installed by the new CLI used the real ordinary
+hosted profile and actual native OpenCode client. Its search returned the exact
+configured task/run labels and pulled the current semantic worker lesson v10
+with its matching source hash. No memory fixture was written to the operational
+store and no model inference occurred. This verifies installed compatibility with
+the older running API; it does not establish task benefit.
+
+The saved ordinary OpenCode procedure then advanced v17→v18 by replacing one
+unique scope-description passage. A fresh pull confirmed the revision, with
+unrelated text/metadata and the retained v17 body preserved. That deliberate
+selected-guidance update adds one version after the installation inventory.

@@ -1,0 +1,130 @@
+{
+  "schema": "cairn.run-report-verification/1",
+  "population": "One row per receipt with a launch claim or process outcome",
+  "results": [
+    {
+      "trial": "m2",
+      "arm": "repo_only",
+      "source_files_unchanged": true,
+      "row": {
+        "receipt_id": "3e9761d6-b75c-4a93-89e0-b6f511b5206b",
+        "scope": {
+          "repo": "trial:repo_only",
+          "task_id": "striatum-lane-go-cache-reviewed-recurrence",
+          "run_id": "repo_only"
+        },
+        "compiled_at": "2026-09-07T18:34:52.774148-07:00",
+        "launch_claimed": true,
+        "binding_observed": true,
+        "outcome_observed": true,
+        "task_class": "historical-go-cache-repair",
+        "binding_id": "opencode-openrouter",
+        "capability_id": "deepseek/deepseek-v4-pro-0813",
+        "revision": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af",
+        "workspace_sha256": "",
+        "command_sha256": "1ba242836c4f34c1ae0d561ecfc6ed1d276bed5de614c4ec1818f6aadd8745da",
+        "exposure_rows": 0,
+        "process_state": "exited",
+        "exit_code": 0,
+        "duration_ms": 695920,
+        "task_outcome": "rejected",
+        "assessment_version": 2,
+        "assessment_witness": "testimony",
+        "assessment_method": "cairn.reviewed-recurrence/1; operator testimony",
+        "failure_domain": "task",
+        "failure_kind": "inherited_environment_override",
+        "error_signature_sha256": ""
+      }
+    },
+    {
+      "trial": "n",
+      "arm": "native_excerpt",
+      "source_files_unchanged": true,
+      "row": {
+        "receipt_id": "2f3720ee-8cf4-44a1-b1bb-a73813f7dcd7",
+        "scope": {
+          "repo": "trial:native_excerpt",
+          "task_id": "striatum-lane-go-cache-reviewed-recurrence",
+          "run_id": "native_excerpt"
+        },
+        "compiled_at": "2026-09-07T20:42:41.545163-07:00",
+        "launch_claimed": true,
+        "binding_observed": true,
+        "outcome_observed": true,
+        "task_class": "historical-go-cache-repair",
+        "binding_id": "opencode-openrouter",
+        "capability_id": "deepseek/deepseek-v4-pro-0813",
+        "revision": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af",
+        "workspace_sha256": "",
+        "command_sha256": "602c45b78e4690688786bb234be868c276c152d81bd0a96b65c080b813c301ef",
+        "exposure_rows": 0,
+        "process_state": "timeout",
+        "exit_code": null,
+        "duration_ms": 900058,
+        "task_outcome": "unknown",
+        "assessment_version": 2,
+        "assessment_witness": "testimony",
+        "assessment_method": "cairn.reviewed-recurrence/1; operator testimony",
+        "failure_domain": "unknown",
+        "failure_kind": "",
+        "error_signature_sha256": ""
+      }
+    },
+    {
+      "trial": "o",
+      "arm": "cairn_h0",
+      "source_files_unchanged": true,
+      "row": {
+        "receipt_id": "66c85151-6577-4d81-bb6e-115a2c3af465",
+        "scope": {
+          "repo": "trial:cairn_h0",
+          "task_id": "striatum-lane-go-cache-reviewed-recurrence",
+          "run_id": "cairn_h0"
+        },
+        "compiled_at": "2026-09-07T20:58:49.969622-07:00",
+        "launch_claimed": true,
+        "binding_observed": true,
+        "outcome_observed": true,
+        "task_class": "historical-go-cache-repair",
+        "binding_id": "opencode-openrouter",
+        "capability_id": "deepseek/deepseek-v4-pro-0813",
+        "revision": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af",
+        "workspace_sha256": "",
+        "command_sha256": "7961f8d012d58fe56fdbc81859c75b57f61ea68f46cdac375cfc46a283e55157",
+        "exposure_rows": 1,
+        "process_state": "exited",
+        "exit_code": 0,
+        "duration_ms": 891095,
+        "task_outcome": "unknown",
+        "assessment_version": 2,
+        "assessment_witness": "testimony",
+        "assessment_method": "cairn.reviewed-recurrence/1; operator testimony",
+        "failure_domain": "unknown",
+        "failure_kind": "",
+        "error_signature_sha256": ""
+      }
+    }
+  ],
+  "original_trial_files_unchanged": true,
+  "stores_stopped": true,
+  "installation": {
+    "schema": "cairn.run-report-install/1",
+    "revision": "9c65d324c105d4bb4a0c4b4db53b6881300f1057",
+    "binary_sha256": "057ca7ba4a451a0b5a465d6f56f372d7413ed0683b3661adeba024ec17f09a11",
+    "api_pid": 1548155,
+    "api_running_same_binary": true,
+    "agent_get": {
+      "ok": true,
+      "record_id": "e6321836-e12d-49af-8a66-04d6d6c8abff",
+      "version": 1
+    },
+    "record_version_digest_unchanged": true,
+    "record_version_sha256": "1bd01848904e3739a3e748601d3ccce45ec009f8a451fc1b8f3937efd4279ce6",
+    "preupgrade_backup_pointer": "/tmp/cairn-pre-run-report-backup.txt",
+    "migration_version": 20,
+    "ci": "https://github.com/halbritt/cairn/actions/runs/34189273876",
+    "ci_status": "success",
+    "cli_api_run_report_equal": true,
+    "run_report_rows": 3
+  }
+}

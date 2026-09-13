@@ -1,0 +1,233 @@
+{
+  "schema": "cairn.file-evidence-capture-verification/1",
+  "baseline_commit": "3f591bb005c25001480aae5f49650eff5ea30727",
+  "checks": {
+    "initial_full_integration": "Go/race phase passed; operator dispatch failed",
+    "final_disposable_cli_api": true,
+    "final_cli_race": true,
+    "final_static": true,
+    "earlier_go_python": true,
+    "python_tests": 40,
+    "stdio_mcp": true,
+    "answering_model": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-b5ff5437b1f5c524",
+    "packet_content_sha256": "b5ff5437b1f5c5243263b8690c4fc8c98611c4e794d594c8553cabaad98cd647",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or background accumulator introduced. Existing caller-driven evidence retention remains open; synchronous read buffers are bounded per invocation."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or background accumulator introduced. Existing caller-driven evidence retention remains open; synchronous read buffers are bounded per invocation."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or background accumulator introduced. Existing caller-driven evidence retention remains open; synchronous read buffers are bounded per invocation."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or background accumulator introduced. Existing caller-driven evidence retention remains open; synchronous read buffers are bounded per invocation."
+      },
+      {
+        "requirement": "accumulation inventory",
+        "required_by": "operations-bounded-accumulation",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or background accumulator introduced. Existing caller-driven evidence retention remains open; synchronous read buffers are bounded per invocation."
+      },
+      {
+        "requirement": "caller-side bounds on result sizes",
+        "required_by": "operations-bounded-accumulation",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or background accumulator introduced. Existing caller-driven evidence retention remains open; synchronous read buffers are bounded per invocation."
+      },
+      {
+        "requirement": "growth rate per accumulation point",
+        "required_by": "operations-bounded-accumulation",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or background accumulator introduced. Existing caller-driven evidence retention remains open; synchronous read buffers are bounded per invocation."
+      },
+      {
+        "requirement": "longevity evidence covering at least a release cycle",
+        "required_by": "operations-bounded-accumulation",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or background accumulator introduced. Existing caller-driven evidence retention remains open; synchronous read buffers are bounded per invocation."
+      },
+      {
+        "requirement": "recycling mechanism and its trigger",
+        "required_by": "operations-bounded-accumulation",
+        "classification": "nonmaterial",
+        "reason": "No Go interface or background accumulator introduced. Existing caller-driven evidence retention remains open; synchronous read buffers are bounded per invocation."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-file-capture-evidence-authority.json",
+      "sha256": "87c4c05a71db78159c5a212d479f677bb87400aaee90e88e4aec530cc7f88881"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-evidence-implementation.json",
+      "sha256": "fcb223ca6006130b4567b230366dc0b4f5c5234f496676b201546808fb2dc6de"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-evidence-contracts.json",
+      "sha256": "58eb5b499bf429a5031d62bf117d590f062182b11e01b4c00b1e192cdb279e1f"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-evidence-tests.json",
+      "sha256": "bb59082105ff36ccd80aba67a21eb3316fe360d4212fa9d0c92e472d5e4a6c70"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-red.log",
+      "sha256": "f6fd713cf1521269f6f476f40fabcb480bc6b74a2cb186e4a4cef11d2b997b2c"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-target.log",
+      "sha256": "0c2aa7d8cc2726340274986a0e798352ceef17deaa1f47cd02c85a82cc3bfaa5"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-integration.log",
+      "sha256": "b2af420ec64b0b69e4812e871d5edcfbe5d5082fc7d836b7fb88db76e53cc6fe"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-api-green.log",
+      "sha256": "307bef21371ad81d010b6488f2642f510b9aaf76b8441f13b2f27ef84992e3a7"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-check-final.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-cli-final.log",
+      "sha256": "9ab720f25484907732ddfdd1c2b0cc4f4ad201f79ced8dee692432cba3c531bc"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-tests.log",
+      "sha256": "c42e3425f779191bd70ce6657bfdfdd0ffdc95c5d300ef576bd1aa2022cab526"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-decision.json",
+      "sha256": "5da87a2854b31b01cb8f2087f1d53fd7fe456a2c6cd57f5fa1e6aa2a29d69270"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-doctrine.json",
+      "sha256": "6abf6ca9713c86e327ff1c612254b279b0755f2b684a87ed5b00c6507d244dcc"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-doctrine-final.json",
+      "sha256": "3aa4c4ad7b1b05e8025e3f3c171bbadaad0e745dd7ce4882ed7d7ad53d521049"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-citations.json",
+      "sha256": "54eb6e7b2311be51c650bbb311e9268a6d5db1be443f6dd725a4a4e076723d11"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-citations-final.json",
+      "sha256": "6b2bef374ee16c222b9381287e139a32563a406fdb81b676ba6b952d126da40f"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-deployment/installation.json",
+      "sha256": "4d2ed1beedeafadcd7af16054af8cc3f6de50eebe39be72b9b9dd87c83e40249"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-deployment/versions.json",
+      "sha256": "040b77fca5cc3cea14a0cfbc8dca2931ac15eb59ac20bd313a67c84ec7fb69ca"
+    },
+    {
+      "path": "/tmp/cairn-file-capture-deployment/guidance.json",
+      "sha256": "f8775429b6aabdea0b5cba94729a35affb380e97e30eb9b354fb96cdb52e161d"
+    }
+  ],
+  "installation": {
+    "source_commit": "57164ce4f5f6782c1b115257afc1afc0a2ac8994",
+    "installed_sha256": "c9309a9eef2fa509ef2276e09240efc76909bc40313b5016ab7f4fe9a570130a",
+    "before": {
+      "cairn-api.service": {
+        "MainPID": "825681",
+        "ActiveState": "active",
+        "exe_sha256": "332601448045c160ca95c88de27100a6bcf9104e6bfb120403d0f609a68d8260"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "after": {
+      "cairn-api.service": {
+        "MainPID": "825681",
+        "ActiveState": "active",
+        "exe_sha256": "332601448045c160ca95c88de27100a6bcf9104e6bfb120403d0f609a68d8260"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.opencode/tools/cairn.ts": "e0b2c2d4dba5a5daaec53f55643f2cbba34d459e1c0b013d97275c3232519ecd",
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "bb97a6690041a004c3385743b3b860394f635995d8b63781501900527b2793cd"
+    },
+    "versions": {
+      "schema": "cairn.version/1",
+      "client": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260910034237-57164ce4f5f6",
+        "vcs": "git",
+        "vcs_revision": "57164ce4f5f6782c1b115257afc1afc0a2ac8994",
+        "vcs_time": "2026-09-10T03:42:37Z",
+        "vcs_modified": false
+      },
+      "server": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260910032959-386eae14cb1a",
+        "vcs": "git",
+        "vcs_revision": "386eae14cb1ad4d44e6bd61a56601217c14d4fe4",
+        "vcs_time": "2026-09-10T03:29:59Z",
+        "vcs_modified": false
+      }
+    },
+    "empty_file_refused": true,
+    "api_restarted": false,
+    "migration": false
+  },
+  "guidance": {
+    "record_id": "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+    "previous_version": 5,
+    "version": 6,
+    "sha256": "c2f4a0938ca00aaca5b97ccf0ec80b3a312bc2209243ef9835f8b22415b0731f",
+    "previous_body_preserved": true,
+    "metadata_preserved": true,
+    "exact_retry": true,
+    "fresh_pull": true
+  },
+  "ci_observation": [
+    {
+      "conclusion": "",
+      "databaseId": 34434364680,
+      "headSha": "57164ce4f5f6782c1b115257afc1afc0a2ac8994",
+      "status": "in_progress"
+    }
+  ]
+}

@@ -1,0 +1,194 @@
+{
+  "schema": "cairn.extended-calibration-verification/1",
+  "private_artifacts": "/tmp/cairn-opencode-calibration-20260908-i",
+  "trial": "I",
+  "binding": "opencode-openrouter",
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "lease_id": null,
+  "base": "9757fddf68ba3d731a9e3d874e601a0ce2ce17af",
+  "fix": "56840cf694ecf451980abbd694fd3c8c01cbc7d7",
+  "settings": {
+    "arms": [
+      "repo_only"
+    ],
+    "disable_thinking": false,
+    "context_tokens": 131072,
+    "output_limit": 8192,
+    "process_seconds": 900,
+    "steps": 60,
+    "work_budget": "extended"
+  },
+  "preflight": {
+    "broken": {
+      "exit_code": 1,
+      "actions": [
+        "fail"
+      ],
+      "passed": false,
+      "stdout_sha256": "63264f81281936e1113d204e30c9def8dce9d5c61b22d1ae2a24cdd16ec92ccc",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "reference": {
+      "exit_code": 0,
+      "actions": [
+        "pass"
+      ],
+      "passed": true,
+      "stdout_sha256": "8b6b794efe9b42608c8ad0737e165ab72f7deec1fdebb007782bbbd29d7eedba",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "executed_files": {
+    "executed-controller.py": "64bc7cdd944530a27cfffa20a58817a015c2fc0b9cbb3c4e84ba46a7194be182",
+    "executed-relay.py": "c7dbb56d039a5f48d0e70004d7eb907f19e743b2b9cbb9ff9de42e7ff5d4b5a3",
+    "scenario.json": "576b42d5fb6e5c1a3062e26e6a5ab96017fa3e7a4b53174284f36f2b91cc4ff7",
+    "gate.go": "96b0f07a560343ad0e9533f8eb47eb3c2415e9850d07d6c88f0e3a7e9a416c7d"
+  },
+  "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+  "cairn_sha256": "a4c6cbb6f06ba90a7dd8b0abec84213c34c189aa010789e86e3fecfb2da0af96",
+  "result": {
+    "arm": "repo_only",
+    "process_exit": 0,
+    "duration_seconds": 640.966,
+    "receipt": {
+      "receipt_id": "a26b9e32-d393-4432-81e3-d2d83233cdd4",
+      "seal": "blake3:f1b633626aecfc7e9e9aef7153f151d8a0a907c9ec157a9ae85793f28ef2cadc",
+      "process_state": "exited",
+      "exit_code": 0,
+      "outcome_id": "136ec031-d50f-4aca-8b3f-730069754a15",
+      "artifacts": "/tmp/cairn-opencode-calibration-20260908-i/store/runs/a26b9e32-d393-4432-81e3-d2d83233cdd4"
+    },
+    "gate": {
+      "exit_code": 1,
+      "actions": [
+        "fail"
+      ],
+      "passed": false,
+      "stdout_sha256": "a59767757d7ae4b93db9229eb5a80bc2ced74a118db82ae72fc05a403b06ca46",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "changed_paths": [],
+    "outside_scope": [],
+    "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "runtime_observed": true,
+    "trace_summary": {
+      "tool_events": {
+        "bash:error": 14,
+        "bash:completed": 9,
+        "read:completed": 21,
+        "grep:completed": 8
+      },
+      "finish_reasons": {
+        "tool-calls": 37,
+        "length": 1,
+        "stop": 1
+      },
+      "reported_tokens": {
+        "input": 186231,
+        "output": 3445,
+        "reasoning": 37955
+      },
+      "cited_record_ids": [],
+      "citation_method": "exact selected UUID in OpenCode text event; testimony only"
+    },
+    "selected_records": []
+  },
+  "assessment": {
+    "receipt_id": "a26b9e32-d393-4432-81e3-d2d83233cdd4",
+    "version": 1,
+    "task_outcome": "rejected",
+    "failure_domain": "task",
+    "failure_kind": "historical_cache_gate",
+    "method": "cairn.historical-cache-gate/1; operator testimony",
+    "evidence_ids": [
+      "f634a299-b33f-463e-9ab1-e0ec00d6c2f5"
+    ],
+    "reason": "The candidate failed a necessary cache-lifetime condition or the authorized write scope. This is bounded trial assessment, not a Striatum verdict or a capability diagnosis.",
+    "witness": "testimony",
+    "observer": "local-uid:1000",
+    "observed_at": "2026-09-07T17:32:00.416489-07:00"
+  },
+  "relay": {
+    "limits": {
+      "requests": 64,
+      "request_bytes": 1048576,
+      "response_bytes": 8388608,
+      "output_tokens": 8192,
+      "response_seconds": 300,
+      "socket_seconds": 45,
+      "provider": {
+        "max_price": {
+          "prompt": 0.2,
+          "completion": 0.5,
+          "request": 0
+        },
+        "data_collection": "deny",
+        "require_parameters": true
+      }
+    },
+    "requests": 40,
+    "rejections": 0,
+    "statuses": {
+      "completed": 40
+    },
+    "http_statuses": {
+      "200": 40
+    },
+    "providers": {
+      "Morph": 1,
+      "Relace": 36,
+      "Sail Research": 1,
+      "DeepInfra": 2
+    },
+    "largest_request_bytes": 440852,
+    "longest_response_seconds": 235.586,
+    "reported_cost_usd": 0.060409952642,
+    "cost_coverage": "Last numeric usage per request; not an independently verified invoice."
+  },
+  "native_partial_observation": {
+    "coverage": "partial live native inspection",
+    "part_counts": {
+      "text": 1,
+      "step-start": 36,
+      "reasoning": 31,
+      "tool": 49,
+      "step-finish": 35,
+      "compaction": 1
+    },
+    "read_paths": {
+      "/work/internal/backend/llm/supervisor.go": 1,
+      "/work/internal/backend/supervise/supervise.go": 1,
+      "/work/internal/backend/supervise/init.go": 1,
+      "/work/internal/backend/supervise/supervise_test.go": 1,
+      "/work/internal/backend/supervise/isolation_test.go": 1,
+      "/work/internal/backend/supervise/doc.go": 1,
+      "/work/Makefile": 1,
+      "/work/internal/backend/llm/supervisor_test.go": 1,
+      "/work/internal/backend/llm/adapter.go": 1,
+      "/work/internal/backend/llm/config.go": 1,
+      "/work/internal/backend/llm/supervisor_bounds_internal_test.go": 1,
+      "/work/internal/backend/spool.go": 1,
+      "/work/go.mod": 1,
+      "/work/go.sum": 1,
+      "/work/backends/agy-gemini-3-5-flash-low/backend.yaml": 1,
+      "/work/internal/backend/local/verify.go": 1,
+      "/work/backends/codex-terra-medium/backend.yaml": 1,
+      "/work/backends/claude-code/backend.yaml": 1,
+      "/work/internal/backend/llm/adapter_test.go": 3
+    }
+  },
+  "artifacts": {
+    "report.json": "31e8cb7d665918366546664f9164c4cc42ccb8bf1b717d25afb10b3ef8ff6892",
+    "hosted-relay.json": "55b43d1e37f37bb78fb92507f234499d2fe9d932ff79ed37ce976e5ba9de7990",
+    "trial.dump": "07f6f7e000adbef7f6761e8b67f7f68ac13b6380ca79281b163301b2d87bb792",
+    "repo_only.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native-observation.json": "433a060cda6f5f5859e679ed3cf4b877a8c9b31116e5d5eff7aa921a66411f93"
+  },
+  "cleanup": {
+    "postgres_stopped": true,
+    "relay_closed": true,
+    "native_home_and_cache_removed": true,
+    "derived_go_cache_removed": true
+  },
+  "interpretation": "Normal process completion before aggregate budget exhaustion, but no repair. One model step ended at its output length limit. No memory treatment, general capability diagnosis or causal benefit claim."
+}

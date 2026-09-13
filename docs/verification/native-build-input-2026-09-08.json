@@ -1,0 +1,64 @@
+{
+  "schema": "cairn.native-build-input-verification/1",
+  "date": "2026-09-08",
+  "source_repository": "halbritt/striatum-next",
+  "source_commit": "5d9e0b9aabff49067b8f4f681b17a7517a299dc8",
+  "branch": "cairn-native-observation",
+  "go_version": "go1.23.4 linux/amd64",
+  "checks": [
+    {
+      "command": "make check",
+      "scope": "Before final store prompt-admission addition; all other source changes present",
+      "exit_code": 0,
+      "log_path": "/tmp/cairn-native-consumer-check.log",
+      "log_sha256": "442468b22b9e1d3d79aada70ca9e15bca63aa64a9bbb149709a2052290599d67"
+    },
+    {
+      "command": "make fmtcheck build lint",
+      "scope": "Final source tree",
+      "exit_code": 0,
+      "log_path": "/tmp/cairn-native-consumer-final-build.log",
+      "log_sha256": "07e610f75fa6949f7044ebbf82c2640d3b2af05dc69e9655f6f30f09ba311115"
+    },
+    {
+      "command": "go test -timeout 30m ./internal/store",
+      "scope": "Final source tree; full store suite",
+      "exit_code": 0,
+      "log_path": "/tmp/cairn-native-consumer-final-store.log",
+      "log_sha256": "390fa72886e7855708e9dec98607ccebfbf311c3898c1aaf04567a4241a85b7c"
+    },
+    {
+      "command": "go test -race ./internal/cairn ./internal/backend/llm ./internal/driver -run 'Test(ReadObservation|Cairn)' -count=1",
+      "scope": "Final source tree; focused race checks",
+      "exit_code": 0,
+      "log_path": "/tmp/cairn-native-consumer-final-focused.log",
+      "log_sha256": "ec3157ac9d53ddf1d6a8e104701153cef6e6a15eb7326898eb978cdb76ccf427"
+    },
+    {
+      "command": "go test -race ./internal/store -run '^TestCairn' -count=1",
+      "scope": "Final source tree; native store boundary race checks",
+      "exit_code": 0,
+      "log_path": "/tmp/cairn-native-consumer-admission.log",
+      "log_sha256": "934f110b0b5a9e8a580b8196f5424659f0f142e4e0b6c81dee308582df100799"
+    }
+  ],
+  "claims": {
+    "packet_named_input_preparation": true,
+    "complete_prompt_projection": true,
+    "prompt_correspondence_admission_check": true,
+    "real_service_to_provider_build_trial": false,
+    "native_host_mediation": false,
+    "native_contract_acceptance": false,
+    "runtime_deployed": false,
+    "task_benefit": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-2d94afb3acda9f4b",
+    "packet_content_sha256": "2d94afb3acda9f4be74030e1a78a3d1376d96d9b0247bc3309f4ce864e91310e",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "residual_obligations": 9,
+    "conclusion_scope": "Implemented branch path and exercised local verification only"
+  }
+}

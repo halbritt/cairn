@@ -1,0 +1,205 @@
+{
+  "schema": "cairn.native-unicode-repair/1",
+  "baseline_commit": "527807e1dc0186ef090149b66a48736179410f10",
+  "opencode_version": "1.18.21",
+  "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+  "checks": {
+    "red": "Native search incorrectly returned a successful receipt with replacement binding",
+    "first_full_native": "passed",
+    "expanded_full_native": "passed",
+    "scripted_normal_session": "passed",
+    "go_and_40_python_tests": "passed",
+    "static": "passed",
+    "answering_model_calls": 0,
+    "production_fixture_writes": false
+  },
+  "memory": {
+    "record_id": "104519b5-82cd-44b3-ba73-1def2ad42e8c",
+    "version": 2,
+    "body_sha256": "9de3c4ccf6f77cc51d844068f86ee6123c9713a24d13f5e26e0c9e8e609b3e83",
+    "initial_receipt": "335c3787-047b-4dda-b46b-9a65ba482500",
+    "role": "Informed argument-boundary review and normal-session verification; incremental and net benefit unknown"
+  },
+  "doctrine": {
+    "packet_id": "pkt-9d999e162b2eb351",
+    "packet_content_sha256": "9d999e162b2eb351438b62515a5926914e82701a37671c74c08fa32d2d97e15c",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "unmet_obligations": {
+      "domain-authorization-embodied-in-action": [
+        "attribution recorded at discharge",
+        "the decision each gate protects and its authorized principal",
+        "the decision the gate protects and its authorized principal",
+        "the surface's declared purpose"
+      ],
+      "go-consumer-owned-interfaces": [
+        "Go method-set and import-direction compatibility",
+        "current consumer call sets and ownership",
+        "current consumer inventory",
+        "observed substitution, volatility, or cross-boundary pressure"
+      ],
+      "go-package-api-simplicity": [
+        "module and dependency policy",
+        "package call and import graph",
+        "repository package and consumer inventory"
+      ],
+      "go-semantics-before-performance-constructs": [
+        "causal profile and representative benchmark for speed claims",
+        "escape or build analysis when relevant"
+      ],
+      "implementation-attention-budget-presentation": [
+        "a prioritization key tied to the consumer's decision",
+        "proof canonical data is unchanged by presentation",
+        "the bound stated and enforced",
+        "the consumer and budget named",
+        "the consumer and their budget named"
+      ]
+    },
+    "classification": "nonmaterial",
+    "reason": "No Go package/interface, authorization-discharge gate, prioritization/presentation budget or performance change is made or claimed. These broader obligations cannot change the bounded reproduced corruption and verified rejection decision."
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-context-review-authority.json",
+      "sha256": "d52704e7e964bdb9211b0293a3c16c3511a4bff35b137e6c4322561efcb0124a"
+    },
+    {
+      "path": "/tmp/cairn-context-review-contract.json",
+      "sha256": "06aab8919887550e633fc4a86e896ca47fd4c628686263c5f4efc3364ca86cd3"
+    },
+    {
+      "path": "/tmp/cairn-context-review-source.json",
+      "sha256": "c46613bafe9dcfe6da999ebc3f05a5dcb0a9b4fc264d08c1bd55bee77e8fcef3"
+    },
+    {
+      "path": "/tmp/cairn-context-review-reproduction.json",
+      "sha256": "7d86909248338870ce249ae42360905ff84ccdee5329db75e671dbdfad7e3db9"
+    },
+    {
+      "path": "/tmp/cairn-context-review-decision.json",
+      "sha256": "f8604ce5929d6451278d4bf02446c4078380262d01ca3254c4feecca87bc3722"
+    },
+    {
+      "path": "/tmp/cairn-context-review-verification.json",
+      "sha256": "ecc6ead9d0453860d1e78f4596feaa512ec5ad803305e28674100ea1ea0fc917"
+    },
+    {
+      "path": "/tmp/cairn-context-review-evidence.py",
+      "sha256": "da8267d7b6e8e5534debf5a5bd6faeabd0ec461d435cb9ca191f9c754a2555b5"
+    },
+    {
+      "path": "/tmp/cairn-context-review-final-evidence.py",
+      "sha256": "204c368c3e6c5911d2f63ac903f0bf5b7d663e52f125f553e43169e98d456d1e"
+    },
+    {
+      "path": "/tmp/cairn-context-review-decision-receipt.json",
+      "sha256": "f7f5108fc6d846cab6b6c66cd8ad7c6bc77fd74a591273ee029386f90801d022"
+    },
+    {
+      "path": "/tmp/cairn-context-review-doctrine.json",
+      "sha256": "7a06e9d329ec07f53353cba785a2f18b80e8b045f8d296e30489a8b7083bbdb7"
+    },
+    {
+      "path": "/tmp/cairn-context-review-doctrine-verified.json",
+      "sha256": "ce1547e012c5e07da6e118acff65954fd37523e1c1153ecd32077a9ec8f7334b"
+    },
+    {
+      "path": "/tmp/cairn-context-review-doctrine-final.json",
+      "sha256": "e9af5d7172756e5b7079205bf61be4471eb0d6713cc1caa514d6e92941961067"
+    },
+    {
+      "path": "/tmp/cairn-context-review-citations.json",
+      "sha256": "dc03cc54fc5d2585220bb0ebc3599c9351a5c8e0a817247de63bf678822576ea"
+    },
+    {
+      "path": "/tmp/cairn-context-review-citations-verified.json",
+      "sha256": "732cd82d92d554750e670f1c8356685e5ffa237aed120bcc3da471afd2f9ab76"
+    },
+    {
+      "path": "/tmp/cairn-context-review-citations-final.json",
+      "sha256": "56feac3498632e07719c2b91ba138f99f64538e07f3e131378a4361a7a59cefa"
+    },
+    {
+      "path": "/tmp/cairn-context-unicode-red.log",
+      "sha256": "52952a975ec87654c7cfe7e1deb8676afbb9b0f9cbfe0e644d1f19432cbcf25d"
+    },
+    {
+      "path": "/tmp/cairn-context-unicode-green.log",
+      "sha256": "c30e6fd7787c6e39bbef311c5f6518ff8038f5a865941308d64b74ea2e0417fc"
+    },
+    {
+      "path": "/tmp/cairn-context-unicode-final.log",
+      "sha256": "70e2c2a5487895b28c57422d4651f1961b39ea5ea251d1f3931fafecab900062"
+    },
+    {
+      "path": "/tmp/cairn-context-unicode-check.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-context-unicode-tests.log",
+      "sha256": "fce973f05188d52368b31bcd4aae35e5505db90fc0e219353b3b758b8937eab4"
+    },
+    {
+      "path": "/tmp/cairn-native-unicode-deployment/preflight.json",
+      "sha256": "2c8c908b6d0c44091cc7cc99e291dd911467f86e77ac6df52472925e09c7b5d5"
+    },
+    {
+      "path": "/tmp/cairn-native-unicode-deployment/installation.json",
+      "sha256": "5fddba933019caa7850dc43273b0a60f7daf13137a1abbcf4b224dffbfb02d75"
+    },
+    {
+      "path": "/tmp/cairn-native-unicode-deployment/installed-check.json",
+      "sha256": "d82a2d55583dbb854e6cc5c157389530d0cf760cc55ad362e643303954bb47d4"
+    },
+    {
+      "path": "/tmp/cairn-native-unicode-deployment/lesson-update.json",
+      "sha256": "484f00637477830695b294f74be837912886cb64f5669b2733a0e186a5c69c94"
+    },
+    {
+      "path": "/tmp/cairn-native-unicode-ci-state.json",
+      "sha256": "fa2d024c5ff3c0c63fb39f9380cea9b0a337333c5cbd137cf539c1a7cd3c9e88"
+    }
+  ],
+  "deployment": {
+    "commit": "6c48411991b55cd766fcb2c738b4750445c04b98",
+    "installed_sha256": "46af962e0d036bbf0b1fd084e2f997a03939757c44854f8e42eac1edc492912d",
+    "api_pid": "1894822",
+    "postgres_pid": "163669",
+    "migration": 33,
+    "adapter_sha256": "81237fdda36dee94f2733318195b806a781ee5cb5a62b5543c8c64aee81245ab",
+    "protected_configuration_preserved": true,
+    "installed_native_check": {
+      "schema": "cairn.native-unicode-installed-check/1",
+      "adapter_sha256": "81237fdda36dee94f2733318195b806a781ee5cb5a62b5543c8c64aee81245ab",
+      "invalid_query_refused": true,
+      "valid_query_reuses_refused_request": true,
+      "request_id": "2b5985d5-ed44-4cc3-9e83-1ee3f2f0d763",
+      "receipt_id": "8b91caef-c5ea-4221-a798-96d58ee890b8",
+      "scope": {
+        "repo": "/home/halbritt/git/cairn",
+        "task_id": "opencode/ses_f754c0de1ffeeMEwBliJiQ4gTL",
+        "run_id": "ses_f754c0de1ffeeMEwBliJiQ4gTL"
+      },
+      "retrieved_validation_lesson": true,
+      "model_calls": 0,
+      "fixture_notes_created": 0
+    },
+    "retained_lesson_update": {
+      "record_id": "104519b5-82cd-44b3-ba73-1def2ad42e8c",
+      "from_version": 2,
+      "to_version": 3,
+      "request_id": "64ba6f53-9008-4d3e-9fb0-99e39d74cb87",
+      "receipt_id": "40426c5d-774d-49c4-9dbc-4c8110a7c25b",
+      "body_sha256": "ce672b1e53835ff7cf8bd81c0ef1e3d7cc1cbe7190b2e89d1fa5d6ab70155843",
+      "metadata_preserved": true,
+      "exact_retry": true
+    }
+  },
+  "ci": {
+    "run_id": 34462181728,
+    "commit": "6c48411991b55cd766fcb2c738b4750445c04b98",
+    "conclusion": "success",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34462181728"
+  }
+}

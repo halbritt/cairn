@@ -1,0 +1,332 @@
+{
+  "schema": "cairn.codex-config-verification/1",
+  "base_commit": "aa0a84592786fbcada3afd530528b60eaed2e792",
+  "source": [
+    {
+      "path": "cmd/cairn/codex_config.go",
+      "sha256": "15330cab849611149511a56f6dd60b329263dbccabbd21d6bb9d64a3ce5b3c65"
+    },
+    {
+      "path": "cmd/cairn/mcp_config.go",
+      "sha256": "e4f59dc9b36dd783a8d8f42a8ecf6d7dd8d0e292e888f045e227d780635f4afc"
+    },
+    {
+      "path": "cmd/cairn/main.go",
+      "sha256": "3079de8dc260e3ec929806bc50cb56dfaf45014abaf29fc0981098f63bd9d085"
+    },
+    {
+      "path": "cmd/cairn/opencode_config.go",
+      "sha256": "8fa28383405e1cf5115db96ae8e19fbb2eee52f9ad646e6adbbe1b9298c5ecd7"
+    },
+    {
+      "path": "cmd/cairn/codex_config_test.go",
+      "sha256": "cfc2ceb433082958f25a903f87450c6c5a3a0ef63260fe5f82af6fdd9081e0b5"
+    },
+    {
+      "path": "scripts/test_codex_config.py",
+      "sha256": "b4983a04b9fdb79932e061f06de4f3f3a330300532a809e81051754938c67722"
+    }
+  ],
+  "checks": {
+    "go_tests": "passed",
+    "python_tests": 30,
+    "vet_format_build": "passed",
+    "local_database_integration_rerun": false,
+    "ci": {
+      "url": "https://github.com/halbritt/cairn/actions/runs/34381023579",
+      "commit": "9e6f6d3e3452e84b74006245489cb4dcf61134c2",
+      "conclusion": "success",
+      "postgres_race_integration": true
+    }
+  },
+  "native": {
+    "codex_version": "codex-cli 0.153.4",
+    "binary_sha256": "49a23587ea7861ebebb75a9e6105859452fee956591f4e3e20a2bd594ab87c2e",
+    "cases": [
+      {
+        "mode": "conversation-optional",
+        "config_sha256": "35ae1d13a9c541ad6ba436c702db6b0357acbeb21e21a1ec3fe6f00e44275c62",
+        "threads": [
+          {
+            "thread_id": "01a0871d-878b-7f91-bc3e-a24d8b2b3b57",
+            "scope": {
+              "repo": "/home/halbritt/git/cairn",
+              "task_id": "codex/01a0871d-878b-7f91-bc3e-a24d8b2b3b57",
+              "run_id": "01a0871d-878b-7f91-bc3e-a24d8b2b3b57"
+            },
+            "exact_version": 5,
+            "body_sha256": "f5b4e0c2b32ccf53a1702dfdb71c94acede7a512a080ea9ce0edb66ad7304344"
+          },
+          {
+            "thread_id": "01a0871d-87bb-70e1-9518-98afdb021932",
+            "scope": {
+              "repo": "/home/halbritt/git/cairn",
+              "task_id": "codex/01a0871d-87bb-70e1-9518-98afdb021932",
+              "run_id": "01a0871d-87bb-70e1-9518-98afdb021932"
+            },
+            "exact_version": 5,
+            "body_sha256": "f5b4e0c2b32ccf53a1702dfdb71c94acede7a512a080ea9ce0edb66ad7304344"
+          }
+        ],
+        "tools": [
+          "cairn_edit",
+          "cairn_pull",
+          "cairn_pull_evidence",
+          "cairn_remember",
+          "cairn_search"
+        ],
+        "config_loaded_from_file": true,
+        "mcp_overrides": false
+      },
+      {
+        "mode": "explicit-required",
+        "config_sha256": "2c25d109f14f9382cd3e65c158cf85dcb2654c91156376568451261b5d9fa776",
+        "threads": [
+          {
+            "thread_id": "01a0871d-89e5-76f1-b270-70bea893ae55",
+            "scope": {
+              "repo": "/home/halbritt/git/cairn",
+              "task_id": "codex-config-native",
+              "run_id": "codex-config-20260909"
+            },
+            "exact_version": 5,
+            "body_sha256": "f5b4e0c2b32ccf53a1702dfdb71c94acede7a512a080ea9ce0edb66ad7304344"
+          }
+        ],
+        "tools": [
+          "cairn_edit",
+          "cairn_pull",
+          "cairn_pull_evidence",
+          "cairn_remember",
+          "cairn_search"
+        ],
+        "config_loaded_from_file": true,
+        "mcp_overrides": false
+      }
+    ],
+    "model_turns_started": 0
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-codex-config-plan.json",
+      "sha256": "aee4294e28545c2a925dfcc9fed33b9a80255448456ed9f48786ddc4653365b9"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-native.py",
+      "sha256": "ec1ef8970f37e63be5f06589bd668079da29dd46dc9eab4edacae7b399f80112"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-native/report.json",
+      "sha256": "e3055bd0ec7fc403a8387ae470b34e441cd5f4244e4d30eb582bed52ddd5cacb"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-native.log",
+      "sha256": "a8e17548c97e58ad92a777b5992508b155445762ab3e4924ccbeb7c7c72873e3"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-tests.log",
+      "sha256": "4e8983afa9f8680fc3fee11c035850ca0184e8a37f5b77530a202d9c8e0dadbe"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-check.log",
+      "sha256": "7e9bbc361fc3c1f98d20aec476936b4cd2eaecb7adec63bdd38519d225c274a0"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-deployment/installation.json",
+      "sha256": "8dd94b6402a5eda4d5274baaf26e88591163b4239d5877e42a7e49df034520f8"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-deployment/verify-client.py",
+      "sha256": "580b0a76ff59591bcf811b56581412731e44e44dae33c03b3eddc663cbe70793"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-deployment/client/report.json",
+      "sha256": "29cc07133d20c7be5c7cc5d23d0195c83a9b8771dfc71e452f992822bef2443e"
+    },
+    {
+      "path": "/tmp/cairn-codex-config-deployment/procedure/after-pull.json",
+      "sha256": "ddcd4f7cca060279f80fcbc38af7e828b1d102116524910a8825692d195e5f95"
+    }
+  ],
+  "doctrine": {
+    "packet_id": "pkt-b4ca516843c7bb6a",
+    "packet_content_sha256": "b4ca516843c7bb6aa2d2bafea4f3d593537e739ba83bbe63678ea1cb4860a4bc",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "decision_path": "/tmp/cairn-codex-config-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-59b5c0f0f6ce0429",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "caller nil checks and method use",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-27f0f91281da2f0e",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "documented absence semantics",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-902e6d5b9ae03361",
+        "required_by": "go-interface-nil-semantics",
+        "requirement": "dynamic type and dynamic value at the return",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No new interface, substitution boundary, typed-nil return or cross-package dependency; existing io.Writer contract is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No generic named procedure completion claimed; explicit preservation, alternatives and failure boundaries are retained in the scoped decision plan."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No generic named procedure completion claimed; explicit preservation, alternatives and failure boundaries are retained in the scoped decision plan."
+      }
+    ]
+  },
+  "deployment": {
+    "before": {
+      "api_pid": "3208567",
+      "api_sha256": "50c2f23d43e2be6a04ce51f379b927f63f084b4440986dad1ed7b210304c6b31",
+      "cli_sha256": "50c2f23d43e2be6a04ce51f379b927f63f084b4440986dad1ed7b210304c6b31",
+      "preserved": {
+        "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+        "/home/halbritt/git/cairn/.opencode/tools/cairn.ts": "623a17b16f7924c25e0795875af27ad9c0546cbdfde7eb1cf18310f8e55b128d",
+        "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d"
+      }
+    },
+    "installed_revision": "9e6f6d3e3452e84b74006245489cb4dcf61134c2",
+    "installed_sha256": "2c07838ee7d78b50b6ecb9c5cba3fd62194d32ed9fda1dd1944e2f0eadab6c67",
+    "installed_build": "bin/cairn: go1.25.0\n\tpath\tgithub.com/halbritt/cairn/cmd/cairn\n\tmod\tgithub.com/halbritt/cairn\tv0.0.0-20260909170723-9e6f6d3e3452\t\n\tdep\tgithub.com/fxamacker/cbor/v2\tv2.9.3\th1:oQBnFATpNdY8gJHTndDDv5Xl4QqNaz51G5LLEPhng3Q=\n\tdep\tgithub.com/google/jsonschema-go\tv0.4.3\th1:/DBOLZTfDow7pe2GmaJNhltueGTtDKICi8V8p+DQPd0=\n\tdep\tgithub.com/google/uuid\tv1.6.0\th1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=\n\tdep\tgithub.com/jackc/pgpassfile\tv1.0.0\th1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=\n\tdep\tgithub.com/jackc/pgservicefile\tv0.0.0-20240606120523-5a60cdf6a761\th1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=\n\tdep\tgithub.com/jackc/pgx/v5\tv5.10.0\th1:VhSvgU2jSli8o3AqIEOTJr7rZwAEUVo4E4XhR94Zfr0=\n\tdep\tgithub.com/jackc/puddle/v2\tv2.2.2\th1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo=\n\tdep\tgithub.com/klauspost/cpuid/v2\tv2.0.12\th1:p9dKCg8i4gmOxtv35DvrYoWqYzQrvEVdjQ762Y0OqZE=\n\tdep\tgithub.com/modelcontextprotocol/go-sdk\tv1.7.0\th1:yqjY2dsbKAC0LSuWZVBMrHgiG8ukXv6NRo0JiALay44=\n\tdep\tgithub.com/segmentio/asm\tv1.1.3\th1:WM03sfUOENvvKexOLp+pCqgb/WDjsi7EK8gIsICtzhc=\n\tdep\tgithub.com/segmentio/encoding\tv0.5.4\th1:OW1VRern8Nw6ITAtwSZ7Idrl3MXCFwXHPgqESYfvNt0=\n\tdep\tgithub.com/x448/float16\tv0.8.4\th1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=\n\tdep\tgithub.com/yosida95/uritemplate/v3\tv3.0.2\th1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=\n\tdep\tgithub.com/zeebo/blake3\tv0.2.4\th1:KYQPkhpRtcqh0ssGYcKLG1JYvddkEA8QwCM/yBqhaZI=\n\tdep\tgolang.org/x/oauth2\tv0.35.0\th1:Mv2mzuHuZuY2+bkyWXIHMfhNdJAdwW3FuWeCPYN5GVQ=\n\tdep\tgolang.org/x/sync\tv0.20.0\th1:e0PTpb7pjO8GAtTs2dQ6jYa5BWYlMuX047Dco/pItO4=\n\tdep\tgolang.org/x/sys\tv0.41.0\th1:Ivj+2Cp/ylzLiEU89QhWblYnOE9zerudt9Ftecq2C6k=\n\tdep\tgolang.org/x/text\tv0.29.0\th1:1neNs90w9YzJ9BocxfsQNHKuAT4pkghyXc4nhZ6sJvk=\n\tdep\tgolang.org/x/time\tv0.15.0\th1:bbrp8t3bGUeFOx08pvsMYRTCVSMk89u4tKbNOZbp88U=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\tCGO_ENABLED=1\n\tbuild\tCGO_CFLAGS=\n\tbuild\tCGO_CPPFLAGS=\n\tbuild\tCGO_CXXFLAGS=\n\tbuild\tCGO_LDFLAGS=\n\tbuild\tGOARCH=amd64\n\tbuild\tGOOS=linux\n\tbuild\tGOAMD64=v1\n\tbuild\tvcs=git\n\tbuild\tvcs.revision=9e6f6d3e3452e84b74006245489cb4dcf61134c2\n\tbuild\tvcs.time=2026-09-09T17:07:23Z\n\tbuild\tvcs.modified=false\n",
+    "api_restarted": false,
+    "host_configs_changed": false,
+    "schema_changed": false,
+    "native_verification": {
+      "codex_version": "codex-cli 0.153.4",
+      "binary_sha256": "2c07838ee7d78b50b6ecb9c5cba3fd62194d32ed9fda1dd1944e2f0eadab6c67",
+      "cases": [
+        {
+          "mode": "conversation-optional",
+          "config_sha256": "a7ec1f5d0a6f2f17f5eec5b10e7c7ff7253cf8911151af2ca47cee414f99eb4c",
+          "threads": [
+            {
+              "thread_id": "01a08723-e5dc-7250-8e5e-0b53e710458d",
+              "scope": {
+                "repo": "/home/halbritt/git/cairn",
+                "task_id": "codex/01a08723-e5dc-7250-8e5e-0b53e710458d",
+                "run_id": "01a08723-e5dc-7250-8e5e-0b53e710458d"
+              },
+              "exact_version": 5,
+              "body_sha256": "f5b4e0c2b32ccf53a1702dfdb71c94acede7a512a080ea9ce0edb66ad7304344"
+            },
+            {
+              "thread_id": "01a08723-e65e-7200-a581-6a3c74cc4ddc",
+              "scope": {
+                "repo": "/home/halbritt/git/cairn",
+                "task_id": "codex/01a08723-e65e-7200-a581-6a3c74cc4ddc",
+                "run_id": "01a08723-e65e-7200-a581-6a3c74cc4ddc"
+              },
+              "exact_version": 5,
+              "body_sha256": "f5b4e0c2b32ccf53a1702dfdb71c94acede7a512a080ea9ce0edb66ad7304344"
+            }
+          ],
+          "tools": [
+            "cairn_edit",
+            "cairn_pull",
+            "cairn_pull_evidence",
+            "cairn_remember",
+            "cairn_search"
+          ],
+          "config_loaded_from_file": true,
+          "mcp_overrides": false
+        },
+        {
+          "mode": "explicit-required",
+          "config_sha256": "e2c542d48c4810a21906e4a9d20956e23abf25f812a01c42a538fd5a5e864040",
+          "threads": [
+            {
+              "thread_id": "01a08723-e9f1-7232-a4a6-20764df4f0ad",
+              "scope": {
+                "repo": "/home/halbritt/git/cairn",
+                "task_id": "codex-config-native",
+                "run_id": "codex-config-20260909"
+              },
+              "exact_version": 5,
+              "body_sha256": "f5b4e0c2b32ccf53a1702dfdb71c94acede7a512a080ea9ce0edb66ad7304344"
+            }
+          ],
+          "tools": [
+            "cairn_edit",
+            "cairn_pull",
+            "cairn_pull_evidence",
+            "cairn_remember",
+            "cairn_search"
+          ],
+          "config_loaded_from_file": true,
+          "mcp_overrides": false
+        }
+      ],
+      "model_turns_started": 0
+    },
+    "procedure_revision": {
+      "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+      "version": 6,
+      "exact_fresh_pull": true
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema": "cairn.index-preview-verification/1",
+  "code_commit": "b511f267b02ea79f151d63f4912351e2ae0fae96",
+  "ci_run": 34283302285,
+  "ci_conclusion": "success",
+  "installed_binary_sha256": "ce2f7dcd073ad58101eac735b56199aaafea9926c7ce97612bd0b813cf73c284",
+  "api_same_binary": true,
+  "api_restarted": true,
+  "profiles_unchanged": true,
+  "format": {
+    "index_before": "cairn.semantic/4",
+    "index_after": "cairn.semantic/5",
+    "ranking": "lexical-scope-recency/4",
+    "body": "cairn.semantic/3",
+    "migration": false
+  },
+  "checks": {
+    "full_postgres_integration": "passed",
+    "vet_format": "passed",
+    "fuzz_executions": 531720,
+    "old_packages_recompiled": 10,
+    "new_packages_recompiled": 10,
+    "hosted_mcp_matching_preview": true,
+    "exact_prior_body": true,
+    "pull_retry_credits_unchanged": true,
+    "mcp_clean_eof": true
+  },
+  "limits": [
+    "Source excerpts can omit important surrounding context.",
+    "Encoded preview lengths can alter pointer count within the existing budget.",
+    "No model, measured pull savings or task benefit in this change."
+  ],
+  "doctrine": {
+    "packet_id": "pkt-20e3297d3d29a442",
+    "packet_content_sha256": "20e3297d3d29a442a12e6f6b8e6858077b7850e79a886f701fdfa8e5ac42756d",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "nonmaterial_obligations": 16
+}

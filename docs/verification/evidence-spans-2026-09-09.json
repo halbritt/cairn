@@ -1,0 +1,151 @@
+{
+  "schema": "cairn.evidence-spans-verification/1",
+  "baseline_commit": "9f985e6cacaea783da311309104a2c09a346838a",
+  "previous_binary_commit": "6e604ce24e1697d939dbd9f17893bc9fa8c752fe",
+  "checks": {
+    "integration": "passed",
+    "test": "passed",
+    "check": "passed",
+    "native_opencode": "passed",
+    "old_binary_retry": "passed"
+  },
+  "source_hashes": {
+    "core/evidence_expansion.go": "34dddeb874a96c4011a1eb9bff6d125217dd1ab554d7609443abaf0b029c4102",
+    "core/evidence_span_test.go": "440a1f5701646e2056157aa8b6c8c6c51f632652917948e2576689292da0beae",
+    "core/evidence_expansion_test.go": "fbb08f8118f54584194ad44e920470b0ecd5137533eb19af0f64c03a14509fde",
+    "cmd/cairn/agent_search.go": "0ef5861a57dc200848536a013daf2ea3706ee9b6ab27d9369e3489ea249f43f7",
+    "mcpapi/server.go": "55bad313ce29fc67b10453aceb0614699ff76104d4c33c092841429694a7eb40",
+    "integrations/opencode/cairn.ts": "623a17b16f7924c25e0795875af27ad9c0546cbdfde7eb1cf18310f8e55b128d",
+    "scripts/check-local-api.py": "329aa6f19281c033b6c0c7e865c3e4d3ceb1dd8e7363c594ce0801228c530201",
+    "scripts/check_agent_search.py": "eaaa0ce5fa56efffd292555edb1ca8d7f103e114ba401625ca6f06302f09510f",
+    "scripts/check_mcp.py": "10f8891d62576d73eead54f12c7fc4d9b19675c0e6f1b98b26f2c86643ca8d99",
+    "scripts/check_opencode_tools.py": "da8365da7289bfba4a73bbf10c4bc43bef292aa0d5b697a9f0e12289f86d769e"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-evidence-span-integration-c.log",
+      "sha256": "a8e5635192689b00404fb8a899dc0bda3fce6135539b934f93ed5386e74997aa"
+    },
+    {
+      "path": "/tmp/cairn-evidence-span-tests.log",
+      "sha256": "fe21b704969036d4785c398b605584169a776c9819c8adf888de3314e2276f58"
+    },
+    {
+      "path": "/tmp/cairn-evidence-span-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    }
+  ],
+  "fixture": {
+    "source_bytes": 63044,
+    "tail_bytes": 31,
+    "credits_after_refusal_and_tail": 3,
+    "whole_pull_status": "BUDGET_REFUSED"
+  },
+  "model_calls": 0,
+  "limits": [
+    "Full object still read and hashed",
+    "Four shared credits and encoded byte budget limit traversal",
+    "No downstream model-task benefit measurement",
+    "Go method-set and import-direction compatibility: No Go interface, method set or import direction is changed; the existing concrete core operation is used by all current consumers. No substitution is proposed.",
+    "current consumer call sets and ownership: No Go interface, method set or import direction is changed; the existing concrete core operation is used by all current consumers. No substitution is proposed.",
+    "current consumer inventory: No Go interface, method set or import direction is changed; the existing concrete core operation is used by all current consumers. No substitution is proposed.",
+    "observed substitution, volatility, or cross-boundary pressure: No Go interface, method set or import direction is changed; the existing concrete core operation is used by all current consumers. No substitution is proposed.",
+    "proc-decide-leave-code-alone: No separate generic named procedure claim. Alternatives and preservation boundaries are directly documented and tested.",
+    "proc-establish-preservation-boundaries: No separate generic named procedure claim. Alternatives and preservation boundaries are directly documented and tested."
+  ],
+  "doctrine": {
+    "packet_id": "pkt-6350b9da3f9b0c7d",
+    "packet_content_sha256": "6350b9da3f9b0c7d61425d926c2e6657e6b2490f3ff06cb17e5b7458f180a426",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "decision_path": "/tmp/cairn-evidence-span-decision.json",
+    "residuals": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-b23fb54acb224114",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "Go method-set and import-direction compatibility",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface, method set or import direction is changed; the existing concrete core operation is used by all current consumers. No substitution is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a229db4e3de33ea3",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer call sets and ownership",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface, method set or import direction is changed; the existing concrete core operation is used by all current consumers. No substitution is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bf91b8cf91b6f6d6",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "current consumer inventory",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface, method set or import direction is changed; the existing concrete core operation is used by all current consumers. No substitution is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ded900a2e3ee73df",
+        "required_by": "go-consumer-owned-interfaces",
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface, method set or import direction is changed; the existing concrete core operation is used by all current consumers. No substitution is proposed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a89dd32d7271dec4",
+        "required_by": "universal-no-change-option",
+        "requirement": "proc-decide-leave-code-alone",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No separate generic named procedure claim. Alternatives and preservation boundaries are directly documented and tested."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-125d0b69ca2b7b70",
+        "required_by": "universal-preserve-behavior-by-default",
+        "requirement": "proc-establish-preservation-boundaries",
+        "status": "missing",
+        "classification": "nonmaterial",
+        "rationale": "No separate generic named procedure claim. Alternatives and preservation boundaries are directly documented and tested."
+      }
+    ]
+  },
+  "deployment": {
+    "commit": "45ca33b9bd2431bffe9c83a44efa51de134d7220",
+    "before": {
+      "api_pid": "3117151",
+      "store_pid": "163669",
+      "binary_sha256": "1adc2afa7feebf3da4cd40662dc8d071c4dac92ad9e2e2cfe144c687252ec62c",
+      "worker_sha256": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954",
+      "dropin_sha256": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d"
+    },
+    "after": {
+      "api_pid": "3208567",
+      "store_pid": "163669",
+      "binary_sha256": "50c2f23d43e2be6a04ce51f379b927f63f084b4440986dad1ed7b210304c6b31",
+      "worker_sha256": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954",
+      "dropin_sha256": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d",
+      "adapter_sha256": "623a17b16f7924c25e0795875af27ad9c0546cbdfde7eb1cf18310f8e55b128d"
+    },
+    "backup_log": "/tmp/cairn-evidence-span-deployment/backup.log",
+    "hosted_smoke": {
+      "record_id": "dee7b299-8c17-4a32-8a9b-09ee77850f15",
+      "version": 2,
+      "body_sha256": "851b0b7ba575aa769eb64896491694da66861001d5e03aa43e4d5662b65594b4",
+      "span_unattached_status": "EVIDENCE_UNAVAILABLE"
+    },
+    "curated_lesson": {
+      "record_id": "8a47da19-dd71-43b2-a4cc-9cef9d113c81",
+      "version": 1,
+      "body_sha256": "b0a935b149b7b7b34bba03605c988a31566c1c89b9431717f115bcbdbc5c9008"
+    }
+  }
+}

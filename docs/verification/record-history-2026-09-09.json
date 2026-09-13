@@ -1,0 +1,236 @@
+{
+  "schema": "cairn.record-history-verification/1",
+  "date": "2026-09-09",
+  "base_commit": "21c891fdaabe1ebed5ec41a436ccc6618d54c841",
+  "source_sha256": {
+    "core/record_history.go": "0b94ed3c1e4ab568a5edd0c185bff512073710cbb65e4a74f536add085ec6b21",
+    "localapi/server.go": "3b047e00519193d4c65cc0158acfbcd147eb11d834ddf0b7012b58e06247a154",
+    "cmd/cairn/agent.go": "9f36f4d7309d1f42892faecadbcadea685921118bcd8a7a1f386a4515e31772a",
+    "cmd/cairn/commands.go": "54292aad3f876c7b6522f49934b0745c6e3c1e341e027a7ce8bcde1125cdb9df",
+    "core/record_history_test.go": "c1f3a5dcf2693bd88520f38ec3a641f1bc28560198106d6f6aeee5db40206f2f",
+    "localapi/record_history_test.go": "6fab48b1414967e9cb5c965e48f1cc79375a8485c157c66b09f70c38b7304781",
+    "core/restore_session_test.go": "c01c8f0f6cc88dd71f709ccb32770d1011304656d8abd25baace5e8f9315cada",
+    "scripts/check_agent_remember.py": "677a3534b6b79c085ca40e4b2a9b7a11c5cbf856058c0ce968c857a60a1d6aa4"
+  },
+  "checks": {
+    "missing_route_baseline_failed": true,
+    "full_disposable_postgres_race": true,
+    "actual_cli_without_database_access": true,
+    "focused_deleted_payload_and_restore_pause": true,
+    "go_and_30_python_tests": true,
+    "vet_format_build": true,
+    "migration_required": false,
+    "new_model_trials": 0
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-record-history-baseline.log",
+      "sha256": "dd32ce46dab994880ad933e6785c361a099570abc6fac405e551484b515ecf59"
+    },
+    {
+      "path": "/tmp/cairn-record-history-integration.log",
+      "sha256": "db69327360f83e45a6327fd9bfff24ac5e82067c6b90af10398e2b136d14a8ea"
+    },
+    {
+      "path": "/tmp/cairn-record-history-cli.log",
+      "sha256": "20a3c60566f9eab2276f0e2989e342a450d06d938268b766275da40095617a1f"
+    },
+    {
+      "path": "/tmp/cairn-record-history-exclusion.log",
+      "sha256": "b08856b258ec65d9cf237888b44ccdd64ce0629927805707c8a6b159fcda97d9"
+    },
+    {
+      "path": "/tmp/cairn-record-history-restore.log",
+      "sha256": "1d804c08ad1ed4987b232c825605e001fbef8383d6ca1af211035e8748c52208"
+    },
+    {
+      "path": "/tmp/cairn-record-history-tests.log",
+      "sha256": "c394de103a43d7a261ddfc940b9146e8d2703e75edae827717f101ad61f08346"
+    },
+    {
+      "path": "/tmp/cairn-record-history-check.log",
+      "sha256": "7e9bbc361fc3c1f98d20aec476936b4cd2eaecb7adec63bdd38519d225c274a0"
+    },
+    {
+      "path": "/tmp/cairn-record-history-final-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    }
+  ],
+  "doctrine": {
+    "packet_id": "pkt-d8fd36a096563901",
+    "packet_content_sha256": "d8fd36a096563901e7fa8532278f5d72fe4d272c08e488d91ccceea3973865c7",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "residual_obligations": [
+    {
+      "requirement": "architecture significance and scope",
+      "classification": "nonmaterial",
+      "reason": "This extends an existing inspection owner without a new service, storage representation or architectural boundary. The bounded plan and decision receipt retain implementation authority, scope, alternatives and verification; no separate architecture decision is proposed."
+    },
+    {
+      "requirement": "authority owner",
+      "classification": "nonmaterial",
+      "reason": "This extends an existing inspection owner without a new service, storage representation or architectural boundary. The bounded plan and decision receipt retain implementation authority, scope, alternatives and verification; no separate architecture decision is proposed."
+    },
+    {
+      "requirement": "decision authority and affected stakeholders",
+      "classification": "nonmaterial",
+      "reason": "This extends an existing inspection owner without a new service, storage representation or architectural boundary. The bounded plan and decision receipt retain implementation authority, scope, alternatives and verification; no separate architecture decision is proposed."
+    },
+    {
+      "requirement": "decision scope",
+      "classification": "nonmaterial",
+      "reason": "This extends an existing inspection owner without a new service, storage representation or architectural boundary. The bounded plan and decision receipt retain implementation authority, scope, alternatives and verification; no separate architecture decision is proposed."
+    },
+    {
+      "requirement": "ranked drivers and alternatives",
+      "classification": "nonmaterial",
+      "reason": "This extends an existing inspection owner without a new service, storage representation or architectural boundary. The bounded plan and decision receipt retain implementation authority, scope, alternatives and verification; no separate architecture decision is proposed."
+    },
+    {
+      "requirement": "verification and reversal plan",
+      "classification": "nonmaterial",
+      "reason": "This extends an existing inspection owner without a new service, storage representation or architectural boundary. The bounded plan and decision receipt retain implementation authority, scope, alternatives and verification; no separate architecture decision is proposed."
+    },
+    {
+      "requirement": "Go method-set and import-direction compatibility",
+      "classification": "nonmaterial",
+      "reason": "No Go interface, import direction or package boundary is introduced or moved."
+    },
+    {
+      "requirement": "current consumer call sets and ownership",
+      "classification": "nonmaterial",
+      "reason": "No Go interface, import direction or package boundary is introduced or moved."
+    },
+    {
+      "requirement": "current consumer inventory",
+      "classification": "nonmaterial",
+      "reason": "No Go interface, import direction or package boundary is introduced or moved."
+    },
+    {
+      "requirement": "observed substitution, volatility, or cross-boundary pressure",
+      "classification": "nonmaterial",
+      "reason": "No Go interface, import direction or package boundary is introduced or moved."
+    },
+    {
+      "requirement": "recurring change evidence when available",
+      "classification": "nonmaterial",
+      "reason": "The observed operator-only maintenance step and absent authenticated route justify the bounded read without a recurring-change study."
+    },
+    {
+      "requirement": "proc-decide-leave-code-alone",
+      "classification": "nonmaterial",
+      "reason": "Keeping operator SQL and receipt-only replay was considered explicitly in the bounded plan; no general no-change campaign is needed."
+    }
+  ],
+  "limits": [
+    "Direct inspection, not current eligibility or authority",
+    "No automatic grooming or ranking changes",
+    "No new native MCP/OpenCode tool",
+    "No aggregate context budget or reconstruction of pruned versions",
+    "Task-benefit attribution not established by these software checks"
+  ],
+  "installation": {
+    "installed_revision": "9fb278b025e1a0897e0efcc8282831e5f738d68a",
+    "clean_build": true,
+    "before": {
+      "api_pid": "3558785",
+      "store_pid": "163669",
+      "binary_sha256": "01b27975441815ddd656699688ff02bc6be2d8a4af20530774bb18dd5814c940"
+    },
+    "after": {
+      "api_pid": "3615987",
+      "store_pid": "163669",
+      "binary_sha256": "c912496c4fd12b75f9996367bfdd7fb8e7ca8701877c6a6711d137e62ec9b66b"
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.opencode/tools/cairn.ts": "4d07a80fd26585b5a9a71744da2f0598b2d751cccabbe8ed8b96355bb0c444d0",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d",
+      "/home/halbritt/.local/share/cairn/semantic/worker": "ae97c97e9dca97c3435cd61f77223f9f25cf635b010b2f230e0a84d1537c6d72",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954"
+    },
+    "schema_changed": false,
+    "ordinary_hosted_history_review": [
+      {
+        "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+        "version": 6,
+        "body_sha256": "6e9f70f013c0643a7881bca001c36ada3d749686e5f8f8b8fe0bde2c5b532c1c",
+        "exact": true
+      },
+      {
+        "record_id": "be11369a-4ae6-4600-9345-5ff36446d5ff",
+        "version": 7,
+        "body_sha256": "12f1227233ec1e6e74eb8ce5dadd1d68a0a8ceb1413284b07a10de338d49ba13",
+        "exact": true
+      },
+      {
+        "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+        "version": 8,
+        "body_sha256": "c82ec6ddb689f3f6267370f9dd1c611ba813c75658a264e1897965258e370fc2",
+        "exact": true
+      },
+      {
+        "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+        "version": 9,
+        "body_sha256": "942ff26d54d6aa4390751320ddb0db7d5292b7ef29d509f00e71ec299e6fa199",
+        "exact": true
+      }
+    ],
+    "operator_sql_for_review": false,
+    "operational_record_mutations": 0
+  },
+  "maintained_guidance": {
+    "record_id": "cd6217ad-2f69-45f1-bcfb-a01066909855",
+    "version": 1,
+    "body_sha256": "e31d4d277eee3cf0169e5f1193a9a85c9b318e4f7a658552901143c0f223bad0",
+    "fresh_scope_exact_full_pull": true
+  },
+  "deployment_artifacts": [
+    {
+      "path": "/tmp/cairn-record-history-deployment/before.json",
+      "sha256": "be3e33fc39930c25430d6a5ae2c51d7e986308d09a777f31f081c6fce395dd85"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/codex-page.json",
+      "sha256": "38adc38dbc2cec4eb8dc1310a6e93310db01bcc3c81c901d9682ad101163797f"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/codex-version-6.json",
+      "sha256": "85e088aae530266bec5b13ca6ea95fee45a98f306ce41b07348aa84c7d44bfc9"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/codex-version-7.json",
+      "sha256": "85aa99626cb8658d5b12eadb5a8ff651d28bf28005ede3cd11dfdb5512fc5d05"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/guidance-verification.json",
+      "sha256": "ff4322b0fc09f9936e718b91a50066fdc379235a9fbde2961c6e6d5f84f79a73"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/installation.json",
+      "sha256": "783850f860c1199e5ae613168f7c297da6b690926e9e8fe95dd5933ab2a4fd56"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/opencode-page.json",
+      "sha256": "3b01025e96c3f072ac2b9533a1db06b683e3803b5b78d88bb0d29c948f396099"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/opencode-version-8.json",
+      "sha256": "6435f8f19cdc2972dc4ee7e795ad596c19a55cb7670d8a75385e6a0ca83bf0ab"
+    },
+    {
+      "path": "/tmp/cairn-record-history-deployment/opencode-version-9.json",
+      "sha256": "daeae89c92c0b4a7d212071cc4fddee8180967a5540b9ca22c7be39628e110d5"
+    }
+  ],
+  "ci": {
+    "run_id": 34392942583,
+    "commit": "9fb278b025e1a0897e0efcc8282831e5f738d68a",
+    "conclusion": "success",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34392942583"
+  }
+}

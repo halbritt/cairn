@@ -1,0 +1,62 @@
+{
+  "schema": "cairn.agent-remember-verification/1",
+  "revision": "6a21da9f4a2b587ecca49b4ad22077a077acea44",
+  "ci": {
+    "conclusion": "success",
+    "databaseId": 34269006799,
+    "headSha": "6a21da9f4a2b587ecca49b4ad22077a077acea44",
+    "status": "completed"
+  },
+  "binary_sha256": "40a34e975732791d21ae50d6c6842c6b55357ceaab31ab7e40405a5a94715c02",
+  "api_pid": 3673676,
+  "hosted_profile": {
+    "repo": "/home/halbritt/git/cairn",
+    "role": "agent",
+    "destination": "hosted",
+    "existing_profiles_preserved": true
+  },
+  "schema_changed": false,
+  "record_versions_preserved_during_install": true,
+  "verification": {
+    "integration": "make test-integration passed",
+    "check": "make check passed",
+    "python_tests": 17,
+    "actual_api_capture_and_retry": true,
+    "hosted_cross_writer_search_and_pull": true,
+    "stdin_body_preserved": true,
+    "home_variables_absent_for_capture": true,
+    "operator_database_address_unusable": true
+  },
+  "operational_use": {
+    "selected_notes_written": 2,
+    "record_class": "A",
+    "witness": "testimony",
+    "sensitivity": "shareable",
+    "first_raw_create_attempt": "INVALID_REQUEST; wrong JSON shape; no record created",
+    "raw_create_corrected": true,
+    "identical_remember_retry": true,
+    "prior_lesson_retrieved_before_implementation": true,
+    "native_hosted_search_and_pull_after_install": true,
+    "new_procedure_search_and_pull_after_capture": true,
+    "automatic_promotion": false,
+    "independently_observed_host_run": false,
+    "model_performance_benefit_established": false
+  },
+  "private_evidence": [
+    "/tmp/cairn-agent-remember-install-verification.json",
+    "/tmp/cairn-agent-remember-live-capture-proof.json",
+    "/tmp/cairn-agent-remember-native-search.json",
+    "/tmp/cairn-agent-remember-native-pull.json",
+    "/tmp/cairn-agent-remember-live-note-search.json",
+    "/tmp/cairn-agent-remember-live-note-pull.json",
+    "/tmp/cairn-agent-remember-integration.log",
+    "/tmp/cairn-agent-remember-check.log"
+  ],
+  "doctrine": {
+    "packet_id": "pkt-0a31723404bfd9b4",
+    "packet_content_sha256": "0a31723404bfd9b4cc0144530bfba40716c68e2cfcbbf923269227696edc4a99",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  }
+}

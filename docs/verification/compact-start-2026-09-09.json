@@ -1,0 +1,345 @@
+{
+  "schema": "cairn.compact-start-verification/1",
+  "source_base_commit": "6292ad7f71e8cc5157d1ea3906b51959e2556901",
+  "native": {
+    "opencode_version": "1.18.21",
+    "model_inference_calls": 0,
+    "cases": [
+      {
+        "case": "allowed",
+        "native_exit_code": 0,
+        "main_requests": 2,
+        "tool_results": 1,
+        "startup_bytes": 2961,
+        "receipt_id": "5b5a0baa-d61b-4e14-a00a-08ba74917496",
+        "scoped_mandatory_context_preserved": true
+      },
+      {
+        "case": "denied",
+        "native_exit_code": 0,
+        "main_requests": 1,
+        "tool_results": 0,
+        "startup_bytes": 2961,
+        "receipt_id": "3d079a9a-0618-43f8-881d-3e2556ca41e1",
+        "scoped_mandatory_context_preserved": true
+      },
+      {
+        "case": "stale",
+        "native_exit_code": 0,
+        "main_requests": 2,
+        "tool_results": 1,
+        "startup_bytes": 2961,
+        "receipt_id": "583dedf8-4bfb-4fe4-a841-29728431bae9",
+        "scoped_mandatory_context_preserved": true
+      }
+    ]
+  },
+  "model_inference_calls": 0,
+  "storage_changes": false,
+  "observer_execution_changes": false,
+  "initial_budget_bytes": 16000,
+  "smaller_budget_bytes": 8192,
+  "prior_memory": {
+    "record_id": "2923953f-80c2-46ff-aea6-1e5b5fd1743c",
+    "version": 3,
+    "body_sha256": "2bb4e8901f0376d79b7ed26a6354646c247845de1beb46f8874928da5f5b6671",
+    "read_before_implementation": true,
+    "contribution": "Reinforced fresh source checks and keeping observer authority separate; native execution discovered argv requoting."
+  },
+  "checks": [
+    "Full disposable PostgreSQL/race integration",
+    "Final focused CLI/API/native checks including closed stdin and Unicode/quotes",
+    "Go unit tests, 34 Python tests, vet and formatting",
+    "Exact body/span identity, refused local destination and foreign caller, unchanged tool permission decisions",
+    "Literal argv, PID replacement, exit23 and SIGTERM, credential environment filtering"
+  ],
+  "failed_development_checks": [
+    "Initial whole-body pull expectation exceeded the small fixture allowance; final test explicitly checks refusal and a span",
+    "Initial native argv route added quotes/escaping; fixture HTTP500 errors led to native retries and timeout. Final native route uses stdin and fixture errors are retained with HTTP400."
+  ],
+  "artifacts": [
+    {
+      "path": "cmd/cairn/agent_start.go",
+      "sha256": "1765855085b695a0ef85423d63e699fcd99004ef47393c73307fd55e98ffdb02"
+    },
+    {
+      "path": "cmd/cairn/agent_start_test.go",
+      "sha256": "24a6652b9d3b6f466236f26d9c40e2b4929aaf7b8d0f24e55199150dc2c63f4c"
+    },
+    {
+      "path": "cmd/cairn/agent_search.go",
+      "sha256": "a19a0640f6e952f362a25a995a79bac0488ff823bdc115f62c5d07556ac63f86"
+    },
+    {
+      "path": "cmd/cairn/agent.go",
+      "sha256": "75182c9b44af8dedd7b11eaa25ec2ed7e1b8c5e67681f9f740adaadd1e4ea7b0"
+    },
+    {
+      "path": "cmd/cairn/main.go",
+      "sha256": "6ca739a1e75dbaca8f5037fee6955cc93fac42a77159a179d6d098e03f0ad7b3"
+    },
+    {
+      "path": "runner/runner.go",
+      "sha256": "bd53b01227d558f708c10f27e18c54af66f1f93cb4300c3ccec8e97e51a75cf2"
+    },
+    {
+      "path": "go.mod",
+      "sha256": "ba43e503a3bb15f07b23aa9430349d379cf8a8d9ff53381e42778fb7356e0b3a"
+    },
+    {
+      "path": ".github/workflows/test.yml",
+      "sha256": "ab200628658d2b8ad38cf9bfd5ec27fdd6131bd51df4fa7ee869b8d68e402450"
+    },
+    {
+      "path": "scripts/check_agent_start.py",
+      "sha256": "ec63b69ef3e128cabbdcea33fb0be240a8627481c6821fc8121045a009ba49ce"
+    },
+    {
+      "path": "scripts/check_agent_start_native.py",
+      "sha256": "d68e49f295f7d4e98c60203606802057301db8b0e93c45ad9fcccf616530260b"
+    },
+    {
+      "path": "scripts/check-local-api.py",
+      "sha256": "9ab131fb10fa58d8b8c94277ac9081d9a42c05efa56697b439d2c1977c331e8d"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-integration.log",
+      "sha256": "c256b8121064da09b0f18682881bf32c36123d5f6294abe72bd001286454e9fb"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-integration-final.log",
+      "sha256": "2923663174420d178428da6e71b7e7f7578afead1af19e14baf1e6e1d1e10066"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-integration-stdin.log",
+      "sha256": "2aff7c36b1aec8460ab1ec29359c48c79fcaa598b239f02fdc48c413fcb02afe"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-api-final.log",
+      "sha256": "af53eb87ecc319566bd4133297947fb17a1855cd83b6c36988f7645cc0db8a59"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-native-final/report.json",
+      "sha256": "e7570f006e7ebd1a830b666ba518f27f3897dfe2ed0e432789b85cd2b827b44c"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-unit-final.log",
+      "sha256": "df58ecf60260e83a16e9fa1e10dd6f0e61c73df8a898abb0aa0dabd46594f51d"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-python.log",
+      "sha256": "016692f2127689f91ae875d5aa5f0d1cdca8718de845aa6dfa5f74b36a852ea0"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-check-final.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-vet-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-decision.json",
+      "sha256": "a0c6c676f5fbba6d4485ca20229fb3bf4c488f97a9179db7f59ee94331eca9ae"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-doctrine-final.json",
+      "sha256": "88b353ae609b489807e6367f98753e223dc2c70a5e7f7b956b08fb2725f8ce3c"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-citation-closure.json",
+      "sha256": "70b2f9406eae950b8121ee4c0f098484a3bee9137a68b16ec7e3cd49fd24451c"
+    },
+    {
+      "path": "/tmp/cairn-startup-native-source/packages/opencode/src/cli/cmd/run.ts",
+      "sha256": "bde848ca17f30834beb4ef0dfecb3b819730746ec2023c1ac55ecef7ca25dd37"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-native-final/allowed/request-1.json",
+      "sha256": "0906bc4d5aa65da03d7eb11dddb850b93a63f037cd786f4b29a3a860df1b8963"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-native-final/allowed/request-2.json",
+      "sha256": "7090da7f5c273918a439743bdb0e7453dfeb07ec55eb4980a69c21895dbb9876"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-native-final/allowed/request-3.json",
+      "sha256": "4fdab92f505e90fcc2f1908f16c45d539007db38b2af2ba17b2c47095b65fdd0"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-native-final/denied/request-1.json",
+      "sha256": "45169f3428f3bf8096f800ff66d9458127c6b46d6925dbb2920ce877e39770eb"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-native-final/denied/request-2.json",
+      "sha256": "d66f5f4745ef13b918ff113c5d127accde204eb4a29d3bb2d2dd847032f4e6e9"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-native-final/stale/request-1.json",
+      "sha256": "9327976918c49b25453fa21e9360154e110b145127458e03711024348b367dbb"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-native-final/stale/request-2.json",
+      "sha256": "e5fc2d01c9e13600352e7198aa0f9e90771d57b68c6157a751bab8a4767d9267"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-native-final/stale/request-3.json",
+      "sha256": "ea80290c208894a861992298f4c291c401ce7b03a2a2ee318f8edd36bc38e5eb"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-native/allowed/request-2.json",
+      "sha256": "495848bff6c77d3bcb03cbc10fc8467b1f79e10fb557104b1533c955074dcb35"
+    }
+  ],
+  "design_review": {
+    "packet_id": "pkt-714d59a6efade238",
+    "packet_content_sha256": "714d59a6efade238f02d19abbf8703efa2f54c799155996708c7e59ad6d55a20",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "typed_passes": 2,
+    "decision_receipt": "/tmp/cairn-controlled-bootstrap-decision.json",
+    "citation_closure": "/tmp/cairn-controlled-bootstrap-citation-closure.json",
+    "nonmaterial_obligations": [
+      {
+        "requirement": "query frequency and latency distribution",
+        "classification": "nonmaterial",
+        "rationale": "The feature consumes the existing bounded memory index; it adds no database index, cache or storage policy and claims no latency or net token improvement."
+      },
+      {
+        "requirement": "query plan or profile showing the access path",
+        "classification": "nonmaterial",
+        "rationale": "The feature consumes the existing bounded memory index; it adds no database index, cache or storage policy and claims no latency or net token improvement."
+      },
+      {
+        "requirement": "representative query workload",
+        "classification": "nonmaterial",
+        "rationale": "The feature consumes the existing bounded memory index; it adds no database index, cache or storage policy and claims no latency or net token improvement."
+      },
+      {
+        "requirement": "write and storage budget",
+        "classification": "nonmaterial",
+        "rationale": "The feature consumes the existing bounded memory index; it adds no database index, cache or storage policy and claims no latency or net token improvement."
+      },
+      {
+        "requirement": "write rate, storage, compaction, and maintenance overhead",
+        "classification": "nonmaterial",
+        "rationale": "The feature consumes the existing bounded memory index; it adds no database index, cache or storage policy and claims no latency or net token improvement."
+      },
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface ownership or method set is changed. An existing environment-filter function is exported for two concrete callers; full Go/race checks compile and exercise both launch paths."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface ownership or method set is changed. An existing environment-filter function is exported for two concrete callers; full Go/race checks compile and exercise both launch paths."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface ownership or method set is changed. An existing environment-filter function is exported for two concrete callers; full Go/race checks compile and exercise both launch paths."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "classification": "nonmaterial",
+        "rationale": "No Go interface ownership or method set is changed. An existing environment-filter function is exported for two concrete callers; full Go/race checks compile and exercise both launch paths."
+      },
+      {
+        "requirement": "recurring change evidence when available",
+        "classification": "nonmaterial",
+        "rationale": "The accepted E2 capability gap, native quoting observation and explicit launch contract establish placement; recurring refactoring churn is not necessary to this additive CLI feature."
+      }
+    ]
+  },
+  "limits": [
+    "No model-selected use, task acceptance or durable task-value claim",
+    "Initial input bound is not whole-task or auxiliary-request budgeting",
+    "Tool names and matching ordinary principal are caller configuration requirements",
+    "Generic observed/retained H0 runner remains body-only",
+    "Unsupported kernels and OS resource exhaustion not fault-injected",
+    "Normal title generation can include the preloaded task input"
+  ],
+  "deployment": {
+    "implementation_commit": "9c349a3ebf4b2de0da7a9d95e34fa3f101454c96",
+    "installation": {
+      "cli_revision": "a92820a5d1deabff215ffa5c7af15585879915d5",
+      "cli_sha256": "6fd53ab0c4692e25aabc7e0ee7d7ddc4660dc696821cf2bbc4158f1929575f7e",
+      "previous_cli_path": "/tmp/cairn-controlled-bootstrap-deployment/previous-cli-9c349a3",
+      "previous_cli_sha256": "dc594f6e6749c52923230e122065320fa65c7409b94d82348959556dbac3cdb6",
+      "api_pid": 4121278,
+      "api_sha256": "a58d8258296382e6a81b100574ecf65685c62cf88a42682fc23e9afc7c9c7026",
+      "api_restarted": false,
+      "native_adapter_sha256": "b7590a3e061133ef55ae41b949147bd30b6a6773c51edf820a76bf54b992b53d",
+      "native_config_sha256": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "codex_config_sha256": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "ci_run": 34417847517,
+      "api_revision": "cf66e1c3cc26b65d4f143f59f0f1070f7b56ec3b",
+      "initial_installation": "/tmp/cairn-controlled-bootstrap-deployment/installation.json"
+    },
+    "procedure_update": {
+      "record_id": "73537cbd-0ec3-4311-98c9-23e58a685b2f",
+      "version": 11,
+      "body_sha256": "467c05f031a4d345bac17c05c73f0df4315abc1355cea7d76a2e0df5476851b2",
+      "body_bytes": 5810,
+      "before_version": 10,
+      "full_prior_body_and_metadata_preserved": true,
+      "bootstrap_bytes": 2809,
+      "fresh_receipt_id": "5a8ddfbd-1217-4cd7-a907-93f920fbfee9",
+      "source_seal": "blake3:e36594693a463d46f90bbf13b41582a066d023e06ad70d84ffab973dc3cf8899"
+    },
+    "installed_smoke": {
+      "carrier": "stdin",
+      "command": "/bin/cat",
+      "bytes": 2776,
+      "receipt_id": "b5af28d5-a564-45cf-9485-2415014b6a57",
+      "current_procedure_found": true,
+      "model_inference_calls": 0
+    }
+  },
+  "ci": {
+    "initial": {
+      "run_id": 34417454430,
+      "commit": "9c349a3ebf4b2de0da7a9d95e34fa3f101454c96",
+      "conclusion": "failure",
+      "reason": "New CLI suite reused the Go test database whose root authority was already installed."
+    },
+    "corrected": {
+      "run_id": 34417847517,
+      "commit": "a92820a5d1deabff215ffa5c7af15585879915d5",
+      "conclusion": "success",
+      "correction": "Create and migrate cairn_cli_test in the job-owned PostgreSQL service before CLI fixtures; preserve bootstrap authority contract."
+    }
+  },
+  "deployment_artifacts": [
+    {
+      "path": ".github/workflows/test.yml",
+      "sha256": "ae30f2320ef7ba541cb19683033d57fc9f24e6688e87bb27032a67ed38ad2f27"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-ci-success.json",
+      "sha256": "59f20fc622fd97f847a1ec58e7477f379cc9aa930fbb57ba2937d732390b8111"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-ci-failure.log",
+      "sha256": "9ac3b84c4b5c63ad9a75e819ba376b3f2296ae548fbbb0d94f3f3cb1a970ead6"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-deployment/installation.json",
+      "sha256": "0f95f56708c411ed17236ad0a9fd4177f72ad64f5d20f985bb2b1db1ff76daa7"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-deployment/installation-ci.json",
+      "sha256": "b37eabca97ce34b00653f05ae20ef6ad39550ee7daa4aefa55b9c6d26bd9e785"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-deployment/procedure-update.json",
+      "sha256": "144c5c4b21d972a612c96c8f9b1933bbb591d6c8ade5dfc2bfecb7cf53b4299c"
+    },
+    {
+      "path": "/tmp/cairn-controlled-bootstrap-deployment/ci-installed-start.txt",
+      "sha256": "8c92b9d80bfda87cb34705a850556d2f7b4959a48ca40eb2281a182d1c22cb92"
+    }
+  ]
+}

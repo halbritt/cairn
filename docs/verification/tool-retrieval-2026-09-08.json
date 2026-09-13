@@ -1,0 +1,204 @@
+{
+  "schema": "cairn.tool-retrieval-observations/1",
+  "scenario_sha256": "e1452814ee978d1209ccc4bcfb28bcfdf3181e2fd36f9dc1cc3671fd725b6e02",
+  "followup_sha256": "3ee0f759b7f6699f443c4a8eb13f8c893a092859d4f254612d8f156e2d835127",
+  "arms": [
+    {
+      "condition": "initial",
+      "arm": "no_memory",
+      "process_exit": 0,
+      "timed_out": false,
+      "duration_seconds": 6.023139687022194,
+      "checks": {
+        "parsed_json": false,
+        "default_home": false,
+        "home_override": false,
+        "database_url_scope": false,
+        "price_explicitly_unavailable": false,
+        "storage_source_cited": false
+      },
+      "model_requests": 2,
+      "model_request_statuses": [
+        "failed",
+        "completed"
+      ],
+      "requests_with_cost": 1,
+      "reported_cost_usd": 0.00015828,
+      "cost_complete_for_observed_requests": false,
+      "memory_calls": 0,
+      "failed_pull_statuses": [],
+      "storage_body_pulled": false,
+      "source_body_sha256": "a3b3f6411f77461a6ca272e7268ae497f16b2a2729c9ec93b9bb0c24173f2d92",
+      "controller_sha256": "7c3b24966386f579920ae91890e78c561e2ce2d80afb5fe6f6f40c672a23c74a",
+      "cairn_sha256": "436c00630a724ffa3052439bb69e2cfe922928fb7f5ae130fde0cdb08d765b44",
+      "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+      "queries": []
+    },
+    {
+      "condition": "initial",
+      "arm": "direct_context",
+      "process_exit": 0,
+      "timed_out": false,
+      "duration_seconds": 22.305717990966514,
+      "checks": {
+        "parsed_json": true,
+        "default_home": true,
+        "home_override": true,
+        "database_url_scope": true,
+        "price_explicitly_unavailable": true,
+        "storage_source_cited": true
+      },
+      "model_requests": 2,
+      "model_request_statuses": [
+        "completed",
+        "completed"
+      ],
+      "requests_with_cost": 2,
+      "reported_cost_usd": 0.000672948,
+      "cost_complete_for_observed_requests": true,
+      "memory_calls": 0,
+      "failed_pull_statuses": [],
+      "storage_body_pulled": false,
+      "source_body_sha256": "a3b3f6411f77461a6ca272e7268ae497f16b2a2729c9ec93b9bb0c24173f2d92",
+      "controller_sha256": "7c3b24966386f579920ae91890e78c561e2ce2d80afb5fe6f6f40c672a23c74a",
+      "cairn_sha256": "436c00630a724ffa3052439bb69e2cfe922928fb7f5ae130fde0cdb08d765b44",
+      "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+      "queries": []
+    },
+    {
+      "condition": "initial",
+      "arm": "tool_retrieval",
+      "process_exit": 0,
+      "timed_out": false,
+      "duration_seconds": 26.02984692202881,
+      "checks": {
+        "parsed_json": true,
+        "default_home": true,
+        "home_override": true,
+        "database_url_scope": true,
+        "price_explicitly_unavailable": true,
+        "storage_source_cited": true
+      },
+      "model_requests": 10,
+      "model_request_statuses": [
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed"
+      ],
+      "requests_with_cost": 10,
+      "reported_cost_usd": 0.0021249504,
+      "cost_complete_for_observed_requests": true,
+      "memory_calls": 8,
+      "failed_pull_statuses": [
+        "NOT_FOUND",
+        "NOT_FOUND",
+        "STALE_HANDLE"
+      ],
+      "storage_body_pulled": true,
+      "source_body_sha256": "a3b3f6411f77461a6ca272e7268ae497f16b2a2729c9ec93b9bb0c24173f2d92",
+      "controller_sha256": "7c3b24966386f579920ae91890e78c561e2ce2d80afb5fe6f6f40c672a23c74a",
+      "cairn_sha256": "436c00630a724ffa3052439bb69e2cfe922928fb7f5ae130fde0cdb08d765b44",
+      "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+      "queries": [
+        "storage",
+        "cairn home directory",
+        "cairn subscription price pricing",
+        "price per month dollars"
+      ],
+      "initial_storage_miss": true,
+      "later_index_found_storage": true
+    },
+    {
+      "condition": "paired",
+      "arm": "tool_retrieval",
+      "process_exit": 0,
+      "timed_out": false,
+      "duration_seconds": 30.009153590071946,
+      "checks": {
+        "parsed_json": true,
+        "default_home": true,
+        "home_override": true,
+        "database_url_scope": true,
+        "price_explicitly_unavailable": true,
+        "storage_source_cited": true
+      },
+      "model_requests": 9,
+      "model_request_statuses": [
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed"
+      ],
+      "requests_with_cost": 9,
+      "reported_cost_usd": 0.0018624636,
+      "cost_complete_for_observed_requests": true,
+      "memory_calls": 8,
+      "failed_pull_statuses": [],
+      "storage_body_pulled": true,
+      "source_body_sha256": "a3b3f6411f77461a6ca272e7268ae497f16b2a2729c9ec93b9bb0c24173f2d92",
+      "controller_sha256": "9418017671f6de993375d1d25a74035260a6f224bb0ad1107885ec870eb3769b",
+      "cairn_sha256": "436c00630a724ffa3052439bb69e2cfe922928fb7f5ae130fde0cdb08d765b44",
+      "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+      "queries": [
+        "storage",
+        "database",
+        "subscription",
+        "price",
+        "local-store",
+        "pricing",
+        "cost"
+      ],
+      "initial_storage_miss": true,
+      "later_index_found_storage": true,
+      "presentation_checks": [
+        {
+          "result_count": 0,
+          "shown_bytes": 226,
+          "raw_bytes": 1131
+        },
+        {
+          "result_count": 1,
+          "shown_bytes": 687,
+          "raw_bytes": 1594
+        },
+        {
+          "result_count": 0,
+          "shown_bytes": 226,
+          "raw_bytes": 1131
+        },
+        {
+          "result_count": 0,
+          "shown_bytes": 226,
+          "raw_bytes": 1131
+        },
+        {
+          "result_count": 4,
+          "shown_bytes": 2091,
+          "raw_bytes": 2970
+        },
+        {
+          "result_count": 0,
+          "shown_bytes": 226,
+          "raw_bytes": 1131
+        },
+        {
+          "result_count": 0,
+          "shown_bytes": 226,
+          "raw_bytes": 1131
+        }
+      ]
+    }
+  ]
+}

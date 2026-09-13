@@ -1,0 +1,37 @@
+{
+  "schema": "cairn.pull-reason-install/1",
+  "revision": "2d526a17ed175a194d5e80c9a0af7fb85905012a",
+  "ci": {
+    "conclusion": "success",
+    "databaseId": 34271098584,
+    "headSha": "2d526a17ed175a194d5e80c9a0af7fb85905012a",
+    "status": "completed"
+  },
+  "binary_sha256": "8e3550fe8d5572fa9410fba44ba151f231a10dcdc7af5d572c4a56aaec2f145a",
+  "api_pid": 3727105,
+  "old_reason": "lexical matches=0; scope specificity=0",
+  "new_reason": "indexed record; current eligibility revalidated",
+  "old_request_response_preserved": true,
+  "new_request_retry_identical": true,
+  "one_credit_for_new_request": true,
+  "index_seal_preserved": true,
+  "record_body_preserved": true,
+  "record_versions_unchanged": true,
+  "profiles_unchanged": true,
+  "operator_database_address_unusable": true,
+  "previous_binary": "/tmp/cairn-before-pull-reason-2d526a1",
+  "verification": {
+    "regression_red": "/tmp/cairn-pull-reason-red.log",
+    "regression_green": "/tmp/cairn-pull-reason-green.log",
+    "integration": "/tmp/cairn-pull-reason-integration.log",
+    "check": "/tmp/cairn-pull-reason-check.log",
+    "all_passed_after_fix": true
+  },
+  "doctrine": {
+    "packet_id": "pkt-3ba9967c06e038bf",
+    "packet_content_sha256": "3ba9967c06e038bfd6837b353c3555713daf21c00ec78104ec649d092333d396",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  }
+}

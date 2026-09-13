@@ -1,0 +1,171 @@
+{
+  "schema": "cairn.kind-filter-verification/1",
+  "date": "2026-09-09",
+  "baseline_commit": "2a93a9e632d114530889359b51527f8068147dd8",
+  "feature": "Optional kind selection through existing retrieval paths",
+  "verification": {
+    "failing_baseline": true,
+    "postgres_race": true,
+    "go_tests": true,
+    "python_tests": 30,
+    "vet_format": true,
+    "native_opencode_scripted": true,
+    "independent_mcp": true,
+    "previous_binary_unfiltered_compatibility": true
+  },
+  "doctrine": {
+    "packet_id": "pkt-9bf566d0dee72fd3",
+    "packet_content_sha256": "9bf566d0dee72fd3ee2030dab0ca1665bfa230f02efc621ca3923d9b07743061",
+    "nonmaterial_residuals": 13
+  },
+  "model_inference": false,
+  "task_value_demonstrated": false,
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-kind-filter-plan.md",
+      "sha256": "5ddea992b3aee852f6983a3e987899e6f28837617a06d59f34468e2b16575241"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-red.log",
+      "sha256": "b48d725633f789756e165a49f1b29ddacac69733d5b23ca61786ecb77fc0b7a4"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-integration.log",
+      "sha256": "31f116c11d0d01626b00a934712ebd91f3915b36a754954152db2781ea6476c0"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-integration-b.log",
+      "sha256": "12159c86089e6acec6f5a244060fccf8194000bf37bf06f123cfc7068308639e"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-integration-c.log",
+      "sha256": "374349d8f0a2c3c50a87da73826fc99a01afed7276e41f78fda4abbda32d3bc7"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-unit.log",
+      "sha256": "083cbe3fa86b3b1a6709f9abeaf2be87c40fd36db27a43a9ca3e6c514f49a7e8"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-check-final.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-final.json",
+      "sha256": "cc6a08d2fbe06b0776875974f824d81bf846f05598dcc9d2c35590d5eb9d561a"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-decision.json",
+      "sha256": "79c6960e2dae606a22b3a9b53e0d674e0923fda828af0f71609b4dafe9a50db7"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-residuals.json",
+      "sha256": "169b6762a77a1a59ac6a6383ee91cbfa6712f2b6022e568c836dd2aba5b4f628"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-citation-result.json",
+      "sha256": "32a673a32f57a05fc8ec946f95bd7d2fc079f14c62f3e8ab6393ca139d2af21c"
+    },
+    {
+      "path": "/tmp/cairn-decision-retrieval-browse.json",
+      "sha256": "f9dd1d7830abbc80cd1e09ef21ede09c85079a0b86ca9bcdc4e0dc7c146d0654"
+    },
+    {
+      "path": "/tmp/cairn-decision-retrieval-page2.json",
+      "sha256": "f13f0761e514f016422a1f9d174c391c01479532cf19f00aa346e4fd4b7d7f22"
+    },
+    {
+      "path": "/tmp/cairn-decision-retrieval-query.json",
+      "sha256": "fae3ef84884d5362c5b1eddf6f211922561fd58d284dc70f368b3e89f1e23b0b"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-deployment/installation.json",
+      "sha256": "91bec4005829226ad890537649999f74a3f56912e5a4d9e417ceca9144ba5060"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-deployment/build.txt",
+      "sha256": "87bcf8c9a754eb83ceddfd1f9edb8d2a4715fd8b573ed20169b720a11f3bd9e2"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-deployment/search.json",
+      "sha256": "52daf77c2d135f8eca3f0a14bdda7fa328f93be645b70abaad9b8b09021eb907"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-deployment/mcp-search.json",
+      "sha256": "bf46b540190ffbd5e6f7072b43ca5e6759b7edd0dac12a8318bf661c376a267f"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-deployment/semantic-search.json",
+      "sha256": "3b87645c44efe87c422df6119ec00672c786266d842e5b9d3af480c98069dc67"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-deployment/database-version.txt",
+      "sha256": "2340481cd87625483e262ec8790704f785896be42cb3a0e8ef5c16db03dda3f3"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-deployment/migrations.txt",
+      "sha256": "ad9b88b520e1a13a2e328ad7b079704e7868a53a1e5c7a77abd1812eff46d07a"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-ci.log",
+      "sha256": "5eadc60a287594a18f1c3b469dec5b2858863dc9dec4c928d7ffe0521b28d8b8"
+    },
+    {
+      "path": "/tmp/cairn-kind-filter-ci-result.json",
+      "sha256": "9827a86476798e6c60fde8975b546439b92c9489a67552ed848f88fb90a79908"
+    }
+  ],
+  "installation": {
+    "schema": "cairn.kind-filter-installation/1",
+    "commit": "2d6718112551095caa4fa1c65048702de70d450c",
+    "before": {
+      "api_pid": "3757403",
+      "store_pid": "163669",
+      "cli_sha256": "92f896699367d4e7238980b590dfff995df5ff83417a33b8d555ff3bdfdee6d8",
+      "adapter_sha256": "926bcd54dcf62cff3d474ced38f79c9f03ce2e6b37adf21d4244a8ccb0822797",
+      "api_sha256": "b77490a86e70b64af63e21edec3986b3d301f334a14f3ffbb679e76320078174"
+    },
+    "after": {
+      "api_pid": "3917563",
+      "store_pid": "163669",
+      "binary_sha256": "7dd724bbf6878bb011d753167eba1447c5ab0e6812ff3bfa7c56e0b6906c3173",
+      "adapter_sha256": "b7590a3e061133ef55ae41b949147bd30b6a6773c51edf820a76bf54b992b53d"
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "a9e33d8e516b25f7453bf2121decff9e1bc6e549f8325fea13664dd512f09d5d",
+      "/home/halbritt/.local/share/cairn/semantic/worker": "ae97c97e9dca97c3435cd61f77223f9f25cf635b010b2f230e0a84d1537c6d72",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "d042326bc0f1bea838434b354fa21484222277092e6db1a7c1f475212e410954"
+    },
+    "first_page_direction_records": [
+      {
+        "record_id": "5dd22562-20c7-4267-957b-d8f463cbb177",
+        "version": 1,
+        "body_sha256": "241e44fe5cc9b509a7539fee2087c23919e761ea2a342be0c6772aee9ccb424c",
+        "credits_remaining": 3
+      },
+      {
+        "record_id": "30681751-37ae-4c70-9543-3697f95d3fdc",
+        "version": 1,
+        "body_sha256": "ce957a3027dce0f09fa9654ff36ba6ce0f29826d802e92fe441fac43b8466111",
+        "credits_remaining": 2
+      },
+      {
+        "record_id": "91c075c2-32d2-4fc7-83dd-68a4956fff8d",
+        "version": 1,
+        "body_sha256": "9c52b70d75265b3ca972d4280086beafd8b7faea450630bd32255cea996231a8",
+        "credits_remaining": 1
+      }
+    ],
+    "new_notes_created": false,
+    "model_inference": false,
+    "task_value_claim": false
+  },
+  "ci": {
+    "conclusion": "success",
+    "databaseId": 34405630245,
+    "headSha": "2d6718112551095caa4fa1c65048702de70d450c",
+    "status": "completed",
+    "url": "https://github.com/halbritt/cairn/actions/runs/34405630245"
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "schema": "cairn.opencode-config-verification/1",
+  "baseline": "78ce80706e790dacaeea000d3821a21c19998834",
+  "checks": {
+    "unit": "passed",
+    "full_disposable_integration": "passed",
+    "make_check": "passed",
+    "python_tests": 17
+  },
+  "native": {
+    "opencode_version": "1.18.21",
+    "binary_sha256": "c6566e1c8fa3bd2903547acebda035406ae91cb7c5ca25a2e4f7bd954492be98",
+    "executable_path_with_spaces_and_quote": true,
+    "launched_from_different_cwd": true,
+    "generator_without_home_or_db": true,
+    "results": [
+      {
+        "memory_only": false,
+        "connected": true,
+        "exit_code": 0,
+        "config_sha256": "edb4f655d178009d89c9b067a9207a54f92802323a78e6eb7208864bae8fc7f1"
+      },
+      {
+        "memory_only": true,
+        "connected": true,
+        "exit_code": 0,
+        "config_sha256": "1034c7408fcb48eca1735a6d43fc42c27abfa802945650ff2badb83992fe0f16"
+      }
+    ]
+  },
+  "doctrine": {
+    "packet_id": "pkt-d4a5e1c2743c8462",
+    "packet_content_sha256": "d4a5e1c2743c84626db3930b4097497034b4c4e9273306a67e5eb76c76b1dc9f",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8"
+  },
+  "unmet_obligations": [
+    {
+      "requirement": "Go method-set and import-direction compatibility",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "rationale": "No consumer interface or substitution abstraction is introduced; concrete MCP Config gains shared validation for two present callers."
+    },
+    {
+      "requirement": "current consumer call sets and ownership",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "rationale": "No consumer interface or substitution abstraction is introduced; concrete MCP Config gains shared validation for two present callers."
+    },
+    {
+      "requirement": "current consumer inventory",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "rationale": "No consumer interface or substitution abstraction is introduced; concrete MCP Config gains shared validation for two present callers."
+    },
+    {
+      "requirement": "observed substitution, volatility, or cross-boundary pressure",
+      "required_by": "go-consumer-owned-interfaces",
+      "classification": "nonmaterial",
+      "rationale": "No consumer interface or substitution abstraction is introduced; concrete MCP Config gains shared validation for two present callers."
+    },
+    {
+      "requirement": "caller nil checks and method use",
+      "required_by": "go-interface-nil-semantics",
+      "classification": "nonmaterial",
+      "rationale": "No interface-valued absence contract is added. Nil optional context and omitted permissions are covered by actual generated-command checks."
+    },
+    {
+      "requirement": "documented absence semantics",
+      "required_by": "go-interface-nil-semantics",
+      "classification": "nonmaterial",
+      "rationale": "No interface-valued absence contract is added. Nil optional context and omitted permissions are covered by actual generated-command checks."
+    },
+    {
+      "requirement": "dynamic type and dynamic value at the return",
+      "required_by": "go-interface-nil-semantics",
+      "classification": "nonmaterial",
+      "rationale": "No interface-valued absence contract is added. Nil optional context and omitted permissions are covered by actual generated-command checks."
+    },
+    {
+      "requirement": "recurring change evidence when available",
+      "required_by": "implementation-placement-by-ownership",
+      "classification": "nonmaterial",
+      "rationale": "No recurring-change or maintainability improvement is claimed beyond the observed setup failure and two concrete flag consumers."
+    },
+    {
+      "requirement": "actual current cost/risk or absence within a stated interval",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial",
+      "rationale": "This bounded feature replaces the demonstrated manual configuration task. No broader optimization, total-cost or general task-benefit claim is made."
+    },
+    {
+      "requirement": "expected future change from accepted plans",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial",
+      "rationale": "This bounded feature replaces the demonstrated manual configuration task. No broader optimization, total-cost or general task-benefit claim is made."
+    },
+    {
+      "requirement": "intervention cost and uncertainty",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial",
+      "rationale": "This bounded feature replaces the demonstrated manual configuration task. No broader optimization, total-cost or general task-benefit claim is made."
+    },
+    {
+      "requirement": "latent security, safety, data, durability, and compatibility check",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial",
+      "rationale": "This bounded feature replaces the demonstrated manual configuration task. No broader optimization, total-cost or general task-benefit claim is made."
+    },
+    {
+      "requirement": "proc-decide-leave-code-alone",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial",
+      "rationale": "This bounded feature replaces the demonstrated manual configuration task. No broader optimization, total-cost or general task-benefit claim is made."
+    }
+  ],
+  "limits": [
+    "Generates a configuration fragment; no task launch, automatic merge or host-run association.",
+    "No model was required or invoked for this deterministic setup check.",
+    "Native output compatibility verified with installed OpenCode1.18.21."
+  ],
+  "installation": {
+    "revision": "ea2324f2c8cd350c568cb7b7aede7157ff428e57",
+    "binary_sha256": "a471294df74cfda683f064ef69be988751e44e1ea8e808fca7636506533a4926",
+    "ci": {
+      "conclusion": "success",
+      "headSha": "ea2324f2c8cd350c568cb7b7aede7157ff428e57",
+      "status": "completed"
+    },
+    "api_pid": 3934153,
+    "api_binary_sha256": "e2b67b2b7061db1991f2d25ebe58e5b61ab57d80f26137f4d6be3da7ed4ab3e9",
+    "api_restarted": false,
+    "profiles_unchanged": true,
+    "generated_command_retrieves_exact_procedure_v2": true,
+    "pull_retry_identical": true,
+    "native_opencode_connected": true,
+    "clean_eof": true,
+    "generator_without_home_or_database": true,
+    "ci_run": 34281053830
+  },
+  "selected_procedure_updated_and_retrieved": true
+}

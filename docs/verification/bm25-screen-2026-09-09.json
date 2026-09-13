@@ -1,0 +1,1507 @@
+{
+  "schema": "cairn.bm25-screen-verification/1",
+  "baseline_commit": "6ccd793297cb0ed9021a411fbfb46160131c9a34",
+  "plan": {
+    "schema": "cairn.bm25-screen/1",
+    "workload_sha256": "30b9b9852c91bac38836c8d121244ee3e762445ac505d5845dc454bae90eaec0",
+    "script_sha256": "f2d473aaafc006fe8aa05bd5529e7b5f438b7622c99c5bfe5af5f4703b7a1d9a",
+    "shared_comparator_sha256": "3973c77ca080cdec4c93db7e27b6afc49711f785390baedd9e8d15c4426e38ae",
+    "python": "3.12.3",
+    "k1": 1.2,
+    "b": 0.75,
+    "idf": "log(N/df)",
+    "length": "expanded non-stopword token occurrences",
+    "query_terms": "distinct lexical-v4 terms",
+    "ties": "forward/reverse insertion recency",
+    "metrics": [
+      "first relevant rank",
+      "top one",
+      "top three",
+      "no-answer candidates"
+    ],
+    "decision": "Screen only; no parameter tuning or production selection from this corpus",
+    "source": "https://nlp.stanford.edu/IR-book/html/htmledition/okapi-bm25-a-non-binary-model-1.html",
+    "lengths": {
+      "storage": 38,
+      "pulls": 54,
+      "currentness": 110,
+      "evidence": 96,
+      "outcomes": 50,
+      "runner": 70,
+      "status": 32,
+      "supersession": 50,
+      "conflict": 45,
+      "demand": 126,
+      "delete": 19,
+      "scope": 48
+    }
+  },
+  "summary": [
+    {
+      "method": "lexical-v4",
+      "order": "forward",
+      "answerable": 15,
+      "first": 11,
+      "top_three": 13
+    },
+    {
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answerable": 15,
+      "first": 10,
+      "top_three": 12
+    },
+    {
+      "method": "bm25",
+      "order": "forward",
+      "answerable": 15,
+      "first": 10,
+      "top_three": 13
+    },
+    {
+      "method": "bm25",
+      "order": "reverse",
+      "answerable": 15,
+      "first": 10,
+      "top_three": 13
+    }
+  ],
+  "queries": [
+    {
+      "query_id": "storage-topic",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": null,
+      "top_three": []
+    },
+    {
+      "query_id": "storage-topic",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": null,
+      "top_three": []
+    },
+    {
+      "query_id": "storage-topic",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": null,
+      "top_three": []
+    },
+    {
+      "query_id": "storage-topic",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": null,
+      "top_three": []
+    },
+    {
+      "query_id": "storage-location",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 11,
+      "top_three": [
+        {
+          "id": "runner",
+          "score": 3
+        },
+        {
+          "id": "demand",
+          "score": 2
+        },
+        {
+          "id": "evidence",
+          "score": 2
+        }
+      ]
+    },
+    {
+      "query_id": "storage-location",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 4,
+      "top_three": [
+        {
+          "id": "runner",
+          "score": 3
+        },
+        {
+          "id": "evidence",
+          "score": 2
+        },
+        {
+          "id": "demand",
+          "score": 2
+        }
+      ]
+    },
+    {
+      "query_id": "storage-location",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 5,
+      "top_three": [
+        {
+          "id": "runner",
+          "score": 3.8059957186965216
+        },
+        {
+          "id": "evidence",
+          "score": 1.152980999328512
+        },
+        {
+          "id": "conflict",
+          "score": 0.7786036822728153
+        }
+      ]
+    },
+    {
+      "query_id": "storage-location",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 5,
+      "top_three": [
+        {
+          "id": "runner",
+          "score": 3.8059957186965216
+        },
+        {
+          "id": "evidence",
+          "score": 1.152980999328512
+        },
+        {
+          "id": "conflict",
+          "score": 0.7786036822728153
+        }
+      ]
+    },
+    {
+      "query_id": "storage-env-exact",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "storage",
+          "score": 3
+        },
+        {
+          "id": "delete",
+          "score": 1
+        },
+        {
+          "id": "demand",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "storage-env-exact",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "storage",
+          "score": 3
+        },
+        {
+          "id": "pulls",
+          "score": 1
+        },
+        {
+          "id": "evidence",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "storage-env-exact",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "storage",
+          "score": 6.652252020871428
+        },
+        {
+          "id": "pulls",
+          "score": 0.5773157498240952
+        },
+        {
+          "id": "delete",
+          "score": 0.5652697488617686
+        }
+      ]
+    },
+    {
+      "query_id": "storage-env-exact",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "storage",
+          "score": 6.652252020871428
+        },
+        {
+          "id": "pulls",
+          "score": 0.5773157498240952
+        },
+        {
+          "id": "delete",
+          "score": 0.5652697488617686
+        }
+      ]
+    },
+    {
+      "query_id": "storage-env-words",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "storage",
+          "score": 2
+        },
+        {
+          "id": "delete",
+          "score": 1
+        },
+        {
+          "id": "demand",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "storage-env-words",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "storage",
+          "score": 2
+        },
+        {
+          "id": "pulls",
+          "score": 1
+        },
+        {
+          "id": "evidence",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "storage-env-words",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "storage",
+          "score": 3.7069355976010243
+        },
+        {
+          "id": "pulls",
+          "score": 0.5773157498240952
+        },
+        {
+          "id": "delete",
+          "score": 0.5652697488617686
+        }
+      ]
+    },
+    {
+      "query_id": "storage-env-words",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "storage",
+          "score": 3.7069355976010243
+        },
+        {
+          "id": "pulls",
+          "score": 0.5773157498240952
+        },
+        {
+          "id": "delete",
+          "score": 0.5652697488617686
+        }
+      ]
+    },
+    {
+      "query_id": "evidence-retry",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 2,
+      "top_three": [
+        {
+          "id": "evidence",
+          "score": 4
+        },
+        {
+          "id": "pulls",
+          "score": 3
+        },
+        {
+          "id": "scope",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "evidence-retry",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 2,
+      "top_three": [
+        {
+          "id": "evidence",
+          "score": 4
+        },
+        {
+          "id": "pulls",
+          "score": 3
+        },
+        {
+          "id": "currentness",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "evidence-retry",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 2,
+      "top_three": [
+        {
+          "id": "evidence",
+          "score": 6.499893269221722
+        },
+        {
+          "id": "pulls",
+          "score": 6.387071039202086
+        },
+        {
+          "id": "scope",
+          "score": 2.7300679635916887
+        }
+      ]
+    },
+    {
+      "query_id": "evidence-retry",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 2,
+      "top_three": [
+        {
+          "id": "evidence",
+          "score": 6.499893269221722
+        },
+        {
+          "id": "pulls",
+          "score": 6.387071039202086
+        },
+        {
+          "id": "scope",
+          "score": 2.7300679635916887
+        }
+      ]
+    },
+    {
+      "query_id": "revision",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "currentness",
+          "score": 2
+        },
+        {
+          "id": "supersession",
+          "score": 1
+        },
+        {
+          "id": "status",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "revision",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "currentness",
+          "score": 2
+        },
+        {
+          "id": "status",
+          "score": 1
+        },
+        {
+          "id": "supersession",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "revision",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "currentness",
+          "score": 4.675269885653372
+        },
+        {
+          "id": "status",
+          "score": 3.091566618081071
+        },
+        {
+          "id": "supersession",
+          "score": 2.6907392534319046
+        }
+      ]
+    },
+    {
+      "query_id": "revision",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "currentness",
+          "score": 4.675269885653372
+        },
+        {
+          "id": "status",
+          "score": 3.091566618081071
+        },
+        {
+          "id": "supersession",
+          "score": 2.6907392534319046
+        }
+      ]
+    },
+    {
+      "query_id": "tampering",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "evidence",
+          "score": 4
+        },
+        {
+          "id": "demand",
+          "score": 1
+        },
+        {
+          "id": "supersession",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "tampering",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "evidence",
+          "score": 4
+        },
+        {
+          "id": "pulls",
+          "score": 1
+        },
+        {
+          "id": "currentness",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "tampering",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "evidence",
+          "score": 8.345156857254116
+        },
+        {
+          "id": "pulls",
+          "score": 2.2369186292131333
+        },
+        {
+          "id": "status",
+          "score": 1.3668252198326
+        }
+      ]
+    },
+    {
+      "query_id": "tampering",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "evidence",
+          "score": 8.345156857254116
+        },
+        {
+          "id": "pulls",
+          "score": 2.2369186292131333
+        },
+        {
+          "id": "status",
+          "score": 1.3668252198326
+        }
+      ]
+    },
+    {
+      "query_id": "citation-count",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "outcomes",
+          "score": 2
+        },
+        {
+          "id": "evidence",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "citation-count",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "outcomes",
+          "score": 2
+        },
+        {
+          "id": "evidence",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "citation-count",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "outcomes",
+          "score": 5.381478506863809
+        },
+        {
+          "id": "evidence",
+          "score": 2.0210872841377605
+        }
+      ]
+    },
+    {
+      "query_id": "citation-count",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "outcomes",
+          "score": 5.381478506863809
+        },
+        {
+          "id": "evidence",
+          "score": 2.0210872841377605
+        }
+      ]
+    },
+    {
+      "query_id": "agent-launch",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "runner",
+          "score": 4
+        },
+        {
+          "id": "supersession",
+          "score": 2
+        },
+        {
+          "id": "evidence",
+          "score": 2
+        }
+      ]
+    },
+    {
+      "query_id": "agent-launch",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "runner",
+          "score": 4
+        },
+        {
+          "id": "currentness",
+          "score": 2
+        },
+        {
+          "id": "evidence",
+          "score": 2
+        }
+      ]
+    },
+    {
+      "query_id": "agent-launch",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "runner",
+          "score": 9.536620502889557
+        },
+        {
+          "id": "supersession",
+          "score": 3.1297903068695567
+        },
+        {
+          "id": "currentness",
+          "score": 2.847063610438325
+        }
+      ]
+    },
+    {
+      "query_id": "agent-launch",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "runner",
+          "score": 9.536620502889557
+        },
+        {
+          "id": "supersession",
+          "score": 3.1297903068695567
+        },
+        {
+          "id": "currentness",
+          "score": 2.847063610438325
+        }
+      ]
+    },
+    {
+      "query_id": "lost-reply",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "status",
+          "score": 3
+        },
+        {
+          "id": "demand",
+          "score": 1
+        },
+        {
+          "id": "currentness",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "lost-reply",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "status",
+          "score": 3
+        },
+        {
+          "id": "currentness",
+          "score": 1
+        },
+        {
+          "id": "demand",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "lost-reply",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "status",
+          "score": 9.274699854243213
+        },
+        {
+          "id": "currentness",
+          "score": 1.3547083329787977
+        },
+        {
+          "id": "demand",
+          "score": 1.2538146169462416
+        }
+      ]
+    },
+    {
+      "query_id": "lost-reply",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "status",
+          "score": 9.274699854243213
+        },
+        {
+          "id": "currentness",
+          "score": 1.3547083329787977
+        },
+        {
+          "id": "demand",
+          "score": 1.2538146169462416
+        }
+      ]
+    },
+    {
+      "query_id": "replacement",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 2,
+      "top_three": [
+        {
+          "id": "scope",
+          "score": 2
+        },
+        {
+          "id": "supersession",
+          "score": 2
+        },
+        {
+          "id": "delete",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "replacement",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "supersession",
+          "score": 2
+        },
+        {
+          "id": "scope",
+          "score": 2
+        },
+        {
+          "id": "pulls",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "replacement",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 2,
+      "top_three": [
+        {
+          "id": "scope",
+          "score": 4.013045707041271
+        },
+        {
+          "id": "supersession",
+          "score": 3.373339498491082
+        },
+        {
+          "id": "delete",
+          "score": 2.4979397855389576
+        }
+      ]
+    },
+    {
+      "query_id": "replacement",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 2,
+      "top_three": [
+        {
+          "id": "scope",
+          "score": 4.013045707041271
+        },
+        {
+          "id": "supersession",
+          "score": 3.373339498491082
+        },
+        {
+          "id": "delete",
+          "score": 2.4979397855389576
+        }
+      ]
+    },
+    {
+      "query_id": "original-conflict",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "conflict",
+          "score": 3
+        },
+        {
+          "id": "status",
+          "score": 3
+        },
+        {
+          "id": "evidence",
+          "score": 3
+        }
+      ]
+    },
+    {
+      "query_id": "original-conflict",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 3,
+      "top_three": [
+        {
+          "id": "evidence",
+          "score": 3
+        },
+        {
+          "id": "status",
+          "score": 3
+        },
+        {
+          "id": "conflict",
+          "score": 3
+        }
+      ]
+    },
+    {
+      "query_id": "original-conflict",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "conflict",
+          "score": 8.499533577092146
+        },
+        {
+          "id": "status",
+          "score": 7.30626327622857
+        },
+        {
+          "id": "evidence",
+          "score": 3.8081896905915658
+        }
+      ]
+    },
+    {
+      "query_id": "original-conflict",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "conflict",
+          "score": 8.499533577092146
+        },
+        {
+          "id": "status",
+          "score": 7.30626327622857
+        },
+        {
+          "id": "evidence",
+          "score": 3.8081896905915658
+        }
+      ]
+    },
+    {
+      "query_id": "failure-lessons",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "demand",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "failure-lessons",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "demand",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "failure-lessons",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "demand",
+          "score": 2.6384765133711316
+        }
+      ]
+    },
+    {
+      "query_id": "failure-lessons",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "demand",
+          "score": 2.6384765133711316
+        }
+      ]
+    },
+    {
+      "query_id": "remove-note",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "delete",
+          "score": 4
+        },
+        {
+          "id": "demand",
+          "score": 3
+        },
+        {
+          "id": "currentness",
+          "score": 2
+        }
+      ]
+    },
+    {
+      "query_id": "remove-note",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "delete",
+          "score": 4
+        },
+        {
+          "id": "demand",
+          "score": 3
+        },
+        {
+          "id": "currentness",
+          "score": 2
+        }
+      ]
+    },
+    {
+      "query_id": "remove-note",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "delete",
+          "score": 9.421306426998738
+        },
+        {
+          "id": "demand",
+          "score": 3.1939814342156616
+        },
+        {
+          "id": "conflict",
+          "score": 2.012661321598637
+        }
+      ]
+    },
+    {
+      "query_id": "remove-note",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "delete",
+          "score": 9.421306426998738
+        },
+        {
+          "id": "demand",
+          "score": 3.1939814342156616
+        },
+        {
+          "id": "conflict",
+          "score": 2.012661321598637
+        }
+      ]
+    },
+    {
+      "query_id": "broaden-scope",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": 1,
+      "top_three": [
+        {
+          "id": "scope",
+          "score": 1
+        },
+        {
+          "id": "demand",
+          "score": 1
+        },
+        {
+          "id": "supersession",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "broaden-scope",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": 6,
+      "top_three": [
+        {
+          "id": "currentness",
+          "score": 1
+        },
+        {
+          "id": "evidence",
+          "score": 1
+        },
+        {
+          "id": "outcomes",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "broaden-scope",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": 3,
+      "top_three": [
+        {
+          "id": "demand",
+          "score": 1.738856321263597
+        },
+        {
+          "id": "supersession",
+          "score": 1.433162978390595
+        },
+        {
+          "id": "scope",
+          "score": 1.282977743449582
+        }
+      ]
+    },
+    {
+      "query_id": "broaden-scope",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": 3,
+      "top_three": [
+        {
+          "id": "demand",
+          "score": 1.738856321263597
+        },
+        {
+          "id": "supersession",
+          "score": 1.433162978390595
+        },
+        {
+          "id": "scope",
+          "score": 1.282977743449582
+        }
+      ]
+    },
+    {
+      "query_id": "absent-gpu",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": null,
+      "top_three": [
+        {
+          "id": "delete",
+          "score": 1
+        },
+        {
+          "id": "demand",
+          "score": 1
+        },
+        {
+          "id": "status",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "absent-gpu",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": null,
+      "top_three": [
+        {
+          "id": "storage",
+          "score": 1
+        },
+        {
+          "id": "pulls",
+          "score": 1
+        },
+        {
+          "id": "evidence",
+          "score": 1
+        }
+      ]
+    },
+    {
+      "query_id": "absent-gpu",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": null,
+      "top_three": [
+        {
+          "id": "storage",
+          "score": 0.7616191743306211
+        },
+        {
+          "id": "pulls",
+          "score": 0.5773157498240952
+        },
+        {
+          "id": "delete",
+          "score": 0.5652697488617686
+        }
+      ]
+    },
+    {
+      "query_id": "absent-gpu",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": null,
+      "top_three": [
+        {
+          "id": "storage",
+          "score": 0.7616191743306211
+        },
+        {
+          "id": "pulls",
+          "score": 0.5773157498240952
+        },
+        {
+          "id": "delete",
+          "score": 0.5652697488617686
+        }
+      ]
+    },
+    {
+      "query_id": "absent-price",
+      "method": "lexical-v4",
+      "order": "forward",
+      "answer_rank": null,
+      "top_three": []
+    },
+    {
+      "query_id": "absent-price",
+      "method": "lexical-v4",
+      "order": "reverse",
+      "answer_rank": null,
+      "top_three": []
+    },
+    {
+      "query_id": "absent-price",
+      "method": "bm25",
+      "order": "forward",
+      "answer_rank": null,
+      "top_three": []
+    },
+    {
+      "query_id": "absent-price",
+      "method": "bm25",
+      "order": "reverse",
+      "answer_rank": null,
+      "top_three": []
+    }
+  ],
+  "verification": {
+    "baseline_comparisons": 34,
+    "baseline_complete_rankings_equal": true,
+    "repeated_report_byte_identical": true,
+    "existing_output_refused_and_preserved": true,
+    "finite_scores": true
+  },
+  "decision": "Inconclusive; retain lexical v4 and stop tuning this reused workload.",
+  "doctrine": {
+    "packet_id": "pkt-c1ab8d857b855205",
+    "packet_content_sha256": "c1ab8d857b85520553d5c62c38d9c0565ec91443ac5f3e9125ee0c3d5e8f5811",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "representative input distribution and resource limits",
+        "required_by": "performance-benchmark-validity",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production selection, latency/resource claim or representative task-benefit claim is made."
+      },
+      {
+        "requirement": "setup/measurement boundary and warmup policy",
+        "required_by": "performance-benchmark-validity",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production selection, latency/resource claim or representative task-benefit claim is made."
+      },
+      {
+        "requirement": "accepted workload and operation boundary",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production selection, latency/resource claim or representative task-benefit claim is made."
+      },
+      {
+        "requirement": "authority to inspect the target and identify the objective owner",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production selection, latency/resource claim or representative task-benefit claim is made."
+      },
+      {
+        "requirement": "environment, input distribution and scale, concurrency, and success/failure population",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production selection, latency/resource claim or representative task-benefit claim is made."
+      },
+      {
+        "requirement": "latency percentile, throughput, CPU, memory, I/O, network, cost, or other metric with a target",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production selection, latency/resource claim or representative task-benefit claim is made."
+      },
+      {
+        "requirement": "owner for the objective and any quality tradeoff",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production selection, latency/resource claim or representative task-benefit claim is made."
+      },
+      {
+        "requirement": "instrumentation overhead and data-loss limits",
+        "required_by": "performance-metric-semantics",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production selection, latency/resource claim or representative task-benefit claim is made."
+      },
+      {
+        "requirement": "known resource limits and warmup/cache state",
+        "required_by": "performance-representative-baseline",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production selection, latency/resource claim or representative task-benefit claim is made."
+      },
+      {
+        "requirement": "evidence-operational-constraints",
+        "required_by": "task:performance-optimization",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production selection, latency/resource claim or representative task-benefit claim is made."
+      },
+      {
+        "requirement": "evidence-profiling",
+        "required_by": "task:performance-optimization",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production selection, latency/resource claim or representative task-benefit claim is made."
+      },
+      {
+        "requirement": "evidence-runtime-observation",
+        "required_by": "task:performance-optimization",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production selection, latency/resource claim or representative task-benefit claim is made."
+      },
+      {
+        "requirement": "actual caller needs",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production module, interface or ownership change is proposed."
+      },
+      {
+        "requirement": "caller needs and decision owner",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production module, interface or ownership change is proposed."
+      },
+      {
+        "requirement": "decision owner and volatility",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production module, interface or ownership change is proposed."
+      },
+      {
+        "requirement": "leaked knowledge or coordinated change",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production module, interface or ownership change is proposed."
+      },
+      {
+        "requirement": "material cost/failure semantics callers require",
+        "required_by": "universal-information-hiding",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production module, interface or ownership change is proposed."
+      },
+      {
+        "requirement": "knowledge and navigation required by callers/maintainers",
+        "required_by": "universal-local-reasoning",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production module, interface or ownership change is proposed."
+      },
+      {
+        "requirement": "representative change or use scenario",
+        "required_by": "universal-local-reasoning",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production module, interface or ownership change is proposed."
+      },
+      {
+        "requirement": "representative change scenario",
+        "required_by": "universal-local-reasoning",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production module, interface or ownership change is proposed."
+      },
+      {
+        "requirement": "state, invariant, and dependency ownership",
+        "required_by": "universal-local-reasoning",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "No production module, interface or ownership change is proposed."
+      },
+      {
+        "requirement": "actual current cost/risk or absence within a stated interval",
+        "required_by": "universal-no-change-option",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "This defers this candidate only; it does not conclude Cairn has no problems or worthwhile improvements."
+      },
+      {
+        "requirement": "expected future change from accepted plans",
+        "required_by": "universal-no-change-option",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "This defers this candidate only; it does not conclude Cairn has no problems or worthwhile improvements."
+      },
+      {
+        "requirement": "intervention cost and uncertainty",
+        "required_by": "universal-no-change-option",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "This defers this candidate only; it does not conclude Cairn has no problems or worthwhile improvements."
+      },
+      {
+        "requirement": "latent security, safety, data, durability, and compatibility check",
+        "required_by": "universal-no-change-option",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "This defers this candidate only; it does not conclude Cairn has no problems or worthwhile improvements."
+      },
+      {
+        "requirement": "proc-decide-leave-code-alone",
+        "required_by": "universal-no-change-option",
+        "classification": "nonmaterial to bounded screening result",
+        "reason": "This defers this candidate only; it does not conclude Cairn has no problems or worthwhile improvements."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-bm25-screen/plan.json",
+      "sha256": "f3d67718f6b72039116722db3c21e86319e049c254dfad4faae997cb0fdb6a2b"
+    },
+    {
+      "path": "/tmp/cairn-bm25-screen/report.json",
+      "sha256": "932f0854eb7ff2f4c9acc977d8c1efecdf50122c6fded8e1228840b3228c8999"
+    },
+    {
+      "path": "/tmp/cairn-bm25-screen/verification.json",
+      "sha256": "8df7fa0ab1e64079e4860749a6967809daeb17e1585781cc47e8e841f81d23fb"
+    },
+    {
+      "path": "/tmp/cairn-bm25-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-bm25-decision.json",
+      "sha256": "91d4a0405500c4eb802f391dc8c0120833cee2337c03ce8516ad97fba345fb28"
+    },
+    {
+      "path": "/tmp/cairn-bm25-doctrine-initial.json",
+      "sha256": "db79343faa8d2818195a462672ead8c066ef7eeaaf85907e9d3edeacbd793813"
+    },
+    {
+      "path": "/tmp/cairn-bm25-doctrine-final.json",
+      "sha256": "63543a0fb344e01ff57e9d6c18eafd5a3b20c5b9f9fdea6fff7b00d3e8a08b1d"
+    },
+    {
+      "path": "/tmp/cairn-bm25-doctrine-reviewed.json",
+      "sha256": "7a489ac4d926f6d6616cbfbe5313ef44acc0b1e07a2fc103babd2c38e85c6a80"
+    },
+    {
+      "path": "/tmp/cairn-bm25-evidence.json",
+      "sha256": "17a0fc5d0a68de05994f81361414c68b305ebfcd67136405097f8d5ffc513a24"
+    },
+    {
+      "path": "/tmp/cairn-bm25-evidence-verification.json",
+      "sha256": "7ac34909bcd2828f020f62b274f6bfc32df07b53aae259cba88d7848192888b4"
+    },
+    {
+      "path": "/tmp/cairn-bm25-citations-initial.json",
+      "sha256": "6154c976f5dfc8f31f95da3233a7c3aea0a4cec69e2bf0175e1a4bbf905d0336"
+    },
+    {
+      "path": "/tmp/cairn-bm25-citations-final.json",
+      "sha256": "edc3c71eb0c059ca77c59c542c6bd722cff7ef36b35e9effa88560280942d4d2"
+    },
+    {
+      "path": "/tmp/cairn-bm25-citations-reviewed.json",
+      "sha256": "bdde345c8cc562f03547a21762263f328ee71fe67ef78c423c966f0fd1f6732f"
+    }
+  ]
+}

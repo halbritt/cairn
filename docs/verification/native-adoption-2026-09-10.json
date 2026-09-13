@@ -1,0 +1,308 @@
+{
+  "observed_at": "2026-09-10T23:35:05.370472+00:00",
+  "cairn_commit": "7ab80ac0840bf352fe2f1ff022a1b4f2ea5f6a05",
+  "striatum_commit": "5848b23f1800e7051e59f4f70303244c711e0575",
+  "installed_striatum": "a6b1ae71d95cdf99200c10d8c6ce855d9da70a69",
+  "contracts": {
+    "source": {
+      "observation": 1,
+      "build": 3
+    },
+    "installed": {
+      "observation": 1,
+      "build": 3
+    }
+  },
+  "opening_request": {
+    "seq": 408328,
+    "subject": "striatum-next/passes/cairn-native-context-input-20260908",
+    "target": "captured",
+    "target_hash": "65912d3c34efa9bceee40b210ecd8e83364b9a90785661dbe6848b931139a416",
+    "phase": "satisfied",
+    "evaluation_bound": "graph_complete",
+    "claim_level": "Designed"
+  },
+  "shared_subject_request": {
+    "seq": 408565,
+    "subject": "rfcs/0004-compiler-passes",
+    "target": "rfc-staged",
+    "target_hash": "a1a5f837ea0679d38310e8f01827de385ec1fbda7ec8fac84cf13d3c316d2e90",
+    "phase": "planned",
+    "evaluation_bound": "graph_complete"
+  },
+  "selected_ledger_facts": [
+    {
+      "seq": 408483,
+      "type": "compilation_request",
+      "written_at": "2026-09-08T22:50:52.886Z",
+      "record_json_sha256": "b934502a98773cc31f1a6fcb196d3e0915261e194484ad88168e715c15f0bc99",
+      "subject": "rfcs/0004-compiler-passes",
+      "target": "captured",
+      "note_bytes": 178184,
+      "note_sha256": "184989339052ccc229f8fd60bf3bb80b5160aa2088f87211e0f91e3946e1e49e",
+      "purpose": "review-conclusions-are-evidence-bound owning RFC amendment"
+    },
+    {
+      "seq": 408565,
+      "type": "compilation_request",
+      "written_at": "2026-09-08T22:57:34.702Z",
+      "record_json_sha256": "852fc6fb1b9b21cbadd1c47ee3d72081856b9cff15b064850e4d18915e5a37b1",
+      "subject": "rfcs/0004-compiler-passes",
+      "target": "rfc-staged",
+      "note_bytes": 178184,
+      "note_sha256": "184989339052ccc229f8fd60bf3bb80b5160aa2088f87211e0f91e3946e1e49e",
+      "purpose": "review-conclusions-are-evidence-bound owning RFC amendment"
+    },
+    {
+      "seq": 409639,
+      "type": "escalation",
+      "written_at": "2026-09-09T10:22:22.497Z",
+      "record_json_sha256": "cf01a2eb034988754127fccb590193e41b1ad65158b74801a91a2c2152f631fc",
+      "reason": "bounds_exhausted",
+      "blocking_scope": "rfcs/0004-compiler-passes/proposal",
+      "request_ref": 408565
+    },
+    {
+      "seq": 409640,
+      "type": "escalation",
+      "written_at": "2026-09-09T10:22:22.987Z",
+      "record_json_sha256": "4b8b98b500ca4c43bfa440646fadf9215e86f3965020462b15d9084699583def",
+      "reason": "ambiguous_goal",
+      "blocking_scope": "rfcs/0004-compiler-passes",
+      "request_ref": 408565
+    }
+  ],
+  "rfc_acceptance_queue": [],
+  "rfc_stale_heads": [
+    "rfcs/0007-agent-runtimes-and-execution-backends/decision-record"
+  ],
+  "status_sha256": "8171611df45af407633ba11518dcf3f1bf042366002aab63b963c14b25c699c5",
+  "ledger_extract_sha256": "a0224addd48c35544ede2f69031c652fe233ec554d2c78e017a5a23205424686",
+  "scope": "Read-only shared-RFC adoption preflight; no native enablement, unrelated request mutation, dispatch repair or model-task trial",
+  "verification": {
+    "status_exit": 0,
+    "ledger_cat_exit": 0,
+    "runtime_tests": "not run; documentation-only change",
+    "history_preserved": true
+  },
+  "selected_note_update": {
+    "record_id": "82fcfec8-474b-48fe-9a00-a36f59d34ac1",
+    "from_version": 3,
+    "to_version": 4,
+    "request_id": "d9c34cf6-20bc-4bb2-8a0b-9dd68d2b7fe8",
+    "appended_bytes": 855,
+    "suffix_sha256": "4e7240d1634fdfe97544effc1bcb8fc561d086db3cca235952755989021b1513",
+    "initial_missing_repo": "INVALID_REQUEST; corrected explicit repo before success",
+    "prefix_preserved": true,
+    "body_sha256": "0784394b51e91920c2ce489b6308b72c597e64a0a7d9dcbaa433f5bdf83efe60"
+  },
+  "doctrine": {
+    "packet_id": "pkt-72c6624849bea086",
+    "packet_content_sha256": "72c6624849bea086e3e85f8f4a92937f99b27d85d0670a944f9edb65938f3916",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "receipt": "/tmp/cairn-native-adoption-20260910/decision-receipt.json",
+    "receipt_sha256": "3fcc2471a12c3c253958015d4432eb2257d63b67811fcc493a83f4cce019e18c",
+    "unmet_obligations": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-3f4e856ad01addd5",
+        "required_by": "architecture-decision-record",
+        "requirement": "architecture significance and scope",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No constitutional clause or architectural design is selected or accepted; only the existing adoption sequence is clarified."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-241b65e45900ff77",
+        "required_by": "architecture-decision-record",
+        "requirement": "authority owner",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No constitutional clause or architectural design is selected or accepted; only the existing adoption sequence is clarified."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-2755f05d42dc61ea",
+        "required_by": "architecture-decision-record",
+        "requirement": "decision authority and affected stakeholders",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No constitutional clause or architectural design is selected or accepted; only the existing adoption sequence is clarified."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-63e2de92d6a723b1",
+        "required_by": "architecture-decision-record",
+        "requirement": "decision scope",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No constitutional clause or architectural design is selected or accepted; only the existing adoption sequence is clarified."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-49651af2ccc9d44c",
+        "required_by": "architecture-decision-record",
+        "requirement": "ranked drivers and alternatives",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No constitutional clause or architectural design is selected or accepted; only the existing adoption sequence is clarified."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-830abd35eb6d722a",
+        "required_by": "architecture-decision-record",
+        "requirement": "verification and reversal plan",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No constitutional clause or architectural design is selected or accepted; only the existing adoption sequence is clarified."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-f89b90678574333f",
+        "required_by": "operations-automation-safeguards",
+        "requirement": "actuator blast-radius inventory",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No actuator, runtime policy, request or escalation is changed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-725247c57a946590",
+        "required_by": "operations-automation-safeguards",
+        "requirement": "defined safe ranges rate limits and floors",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No actuator, runtime policy, request or escalation is changed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-1d6344a1952d5f52",
+        "required_by": "operations-automation-safeguards",
+        "requirement": "enumerated failure modes for wrong sensed state wrong desired state and impossible computed state",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No actuator, runtime policy, request or escalation is changed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-93996e4955fdc63c",
+        "required_by": "operations-automation-safeguards",
+        "requirement": "escalation path when observation and expectation diverge",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No actuator, runtime policy, request or escalation is changed."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-abad47f2ee933a0b",
+        "required_by": "task:repository-assessment",
+        "requirement": "evidence-co-change",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "This is exact intent attribution from current records, not a structural, generated-artifact, performance or test-coverage assessment."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-79f0096bfdc52afa",
+        "required_by": "task:repository-assessment",
+        "requirement": "evidence-generated-artifacts",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "This is exact intent attribution from current records, not a structural, generated-artifact, performance or test-coverage assessment."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-36b3d3ac53a15793",
+        "required_by": "task:repository-assessment",
+        "requirement": "evidence-tests",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "This is exact intent attribution from current records, not a structural, generated-artifact, performance or test-coverage assessment."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-31de86b55c022208",
+        "required_by": "task:repository-assessment",
+        "requirement": "evidence-version-history",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "This is exact intent attribution from current records, not a structural, generated-artifact, performance or test-coverage assessment."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-d1e9bc52c03bb6e0",
+        "required_by": "testing-deterministic-async-observation",
+        "requirement": "repeated or adversarial scheduling results",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No asynchronous implementation change or scheduling claim; the two read-only CLI processes reached terminal success."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-e747a32ecc17a8e0",
+        "required_by": "universal-explicit-invariants",
+        "requirement": "all mutation/creation paths and authority",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No creation, mutation or recovery implementation changes; existing authority is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-9d8c634d190fa202",
+        "required_by": "universal-explicit-invariants",
+        "requirement": "failure and recovery requirements",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No creation, mutation or recovery implementation changes; existing authority is preserved."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-10853c19f01226f6",
+        "required_by": "universal-information-hiding",
+        "requirement": "actual caller needs",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No module or interface design choice is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-c1e09438a10093c4",
+        "required_by": "universal-information-hiding",
+        "requirement": "caller needs and decision owner",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No module or interface design choice is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-0a506f1cf59a4e05",
+        "required_by": "universal-information-hiding",
+        "requirement": "decision owner and volatility",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No module or interface design choice is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-733a86bfcf974e5c",
+        "required_by": "universal-information-hiding",
+        "requirement": "leaked knowledge or coordinated change",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No module or interface design choice is made."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-394110b31c052712",
+        "required_by": "universal-information-hiding",
+        "requirement": "material cost/failure semantics callers require",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No module or interface design choice is made."
+      }
+    ]
+  }
+}

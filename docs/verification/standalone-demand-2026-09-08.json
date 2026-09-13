@@ -1,0 +1,52 @@
+{
+  "schema": "cairn.standalone-demand-verification/1",
+  "source_hashes": {
+    "/tmp/cairn-opencode-reviewed-20260908-m2/reviewed.dump": "0534f7a550981a13ef43b5ce25417f5d695622e4d4fd920e3dc0818b5aba42f1",
+    "/tmp/cairn-opencode-reviewed-20260908-m2/report.json": "09179fc4b5c90dcec5e3b4464c7f32d8c9782c36e10be70ca0827b89e6cecd4c",
+    "/tmp/cairn-opencode-reviewed-20260908-m2/reviewed-assessment.json": "0754bc579e5e6884c43caf781dee9925827a7943da0f07544057b2ea6bc99658"
+  },
+  "disposable_root": "/tmp/cairn-standalone-replay-uoey2qrn",
+  "receipt_id": "3e9761d6-b75c-4a93-89e0-b6f511b5206b",
+  "initial_proposal_count": 0,
+  "signature_text": "Inherited STRIATUM_SUPERVISE_COUNT=1 and STRIATUM_SUPERVISE_ENV_0 overwrite an ordinary child environment value when Spec.Env is absent.",
+  "signature_sha256": "299da207088f567865dbd1c93eafc8a215dad83423677da8f16a9bdd3bc91508",
+  "record_use_rows": 0,
+  "source_trial_unchanged": true,
+  "due_before_review": 1,
+  "due_after_review": 0,
+  "proposal_id": "b05cc35a-7a98-4303-8d1b-b780e94406c5",
+  "failure_version": 3,
+  "recovery_receipt": null,
+  "kind": "failure",
+  "review_version": 2,
+  "disposition": "dismissed",
+  "scope": "Disposable restored copy of reviewed repo-only recurrence M; original trial and operational store unchanged",
+  "checks": [
+    "Prior implementation fails standalone lifecycle assertion: standalone failure missing",
+    "Current PostgreSQL integration suite with race detector passes",
+    "Concurrent generation reuses one standalone proposal",
+    "Recovery pair precedence, dismissal, correction and standalone reappearance pass",
+    "Standalone conversion links Class A without promotion",
+    "Old pair JSON without kind remains readable",
+    "go vet and formatting pass",
+    "Local backup/restore lifecycle drill passes"
+  ],
+  "installation": {
+    "schema": "cairn.standalone-install/1",
+    "revision": "7bc9165b0b58dc46b0bc5021e62ea276c3c0affb",
+    "binary_sha256": "668ae51b25d95f2bb6c2ac5a3ee80eb2247a4efeb8106fca66e3629f6dc2f4b2",
+    "api_pid": 1510837,
+    "api_running_same_binary": true,
+    "agent_get": {
+      "ok": true,
+      "record_id": "e6321836-e12d-49af-8a66-04d6d6c8abff",
+      "version": 1
+    },
+    "record_version_digest_unchanged": true,
+    "record_version_sha256": "1bd01848904e3739a3e748601d3ccce45ec009f8a451fc1b8f3937efd4279ce6",
+    "preupgrade_backup_pointer": "/tmp/cairn-pre-standalone-backup.txt",
+    "migration_version": 19,
+    "ci": "https://github.com/halbritt/cairn/actions/runs/34187744968",
+    "ci_status": "success"
+  }
+}

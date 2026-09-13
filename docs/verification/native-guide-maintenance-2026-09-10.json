@@ -1,0 +1,378 @@
+{
+  "date": "2026-09-10",
+  "source_revision": "22fb9716cc99e9abf8eecb15b295464bd940c332",
+  "task": "Maintain the existing assessment-history guide from the new source workflow",
+  "reviewer": "Cairn coding agent",
+  "native_result": {
+    "process_exit": 0,
+    "elapsed_seconds": 100.5486005959101,
+    "record_id": "25adf0b0-7246-4f63-8687-7ccf2770f12a",
+    "previous_version": 1,
+    "current_version": 2,
+    "prior_body_sha256": "b4ca91d980ab00ac774081d5ab931d9bedb91659e944c10bcf969430f8ac1220",
+    "current_body_sha256": "2c502a2f0fb73c5b4ba13aa1e0066ea0f9b645188b0e894fed0fe4b8ccf61af3",
+    "prior_body_preserved": true,
+    "prior_version_body_preserved": true,
+    "unchanged_metadata": true,
+    "tool_counts": {
+      "cairn_cairn_search:completed": 2,
+      "read:completed": 1,
+      "cairn_cairn_pull:completed": 2,
+      "cairn_cairn_edit:completed": 1
+    },
+    "native_search_receipts": [
+      "80acf192-a9f7-4e63-a589-e85632f8fe6a",
+      "40709cc6-2eb8-4d4a-bbeb-ddf08e508659"
+    ],
+    "native_target_pull_versions": [
+      1,
+      2
+    ],
+    "native_edits": [
+      {
+        "request_id": "6f2a1c9d-8b4e-4a3c-9d5f-2e7c1a0b3f6a",
+        "record_id": "25adf0b0-7246-4f63-8687-7ccf2770f12a",
+        "expected_version": 1,
+        "modes": [
+          "append"
+        ],
+        "output": {
+          "record_id": "25adf0b0-7246-4f63-8687-7ccf2770f12a",
+          "version": 2,
+          "request_id": "6f2a1c9d-8b4e-4a3c-9d5f-2e7c1a0b3f6a"
+        }
+      }
+    ],
+    "suffix_words": 137,
+    "suffix_bytes": 1170,
+    "prior_inventory_rows_removed": [],
+    "provider_requests": 7,
+    "provider_completed": 7,
+    "provider_rejections": 0,
+    "reported_cost_usd": 0.004850411,
+    "editorial_acceptance": "Accepted substantive native maintenance with a paragraph-separation finding; root corrected only two newline bytes in v3",
+    "final_version": 3,
+    "final_body_sha256": "923520be657670312de74017d64d689ceecf868e1da69f3c031d82f98735ddc3",
+    "source_revision": "22fb9716cc99e9abf8eecb15b295464bd940c332",
+    "source_path": "docs/use-outcome-loop.md",
+    "source_sha256": "4cd16ea58b556db2868b48ec6c024a2154c604c5a9292847a418bd350b73d5c0",
+    "memory_benefit": "Native maintained an existing reusable guide; downstream task benefit and net savings remain unknown",
+    "reviewer": "Cairn coding agent",
+    "acceptance_authority": "Delegated routine implementation review, not a new human acceptance",
+    "prompt_source_overlap": "Task named the note and source revision; source documentation supplied the new procedure",
+    "native_output_limitations": "Final answer included prose around JSON; note append lacked separating whitespace"
+  },
+  "source_reads": [
+    {
+      "input": {
+        "filePath": "/work/docs/use-outcome-loop.md",
+        "offset": 240,
+        "limit": 180
+      },
+      "output_sha256": "102d1f2767cab9a510714e1225d93c0e77aa43588bc5b30ce5cde0aea618d22a"
+    }
+  ],
+  "run_receipt_id": "a8a7e72b-dba6-48a9-88b3-6475ec414bc7",
+  "attempt_id": "3806eed2-7088-4e09-b648-851cd333b3c9",
+  "assessment": {
+    "version": 1,
+    "task_outcome": "accepted",
+    "method": "source-and-native-maintenance-review/1",
+    "observer": "observer:cairn-hosted",
+    "witness": "instrumented",
+    "evidence_ids": [
+      "c917d680-b7f8-448c-beb0-d6cb068ac2c9"
+    ]
+  },
+  "selected_evidence": {
+    "evidence_id": "c917d680-b7f8-448c-beb0-d6cb068ac2c9",
+    "sha256": "7e5924eeaf8de098e3f36a35d4ce8ae4847141eeaf760584919297ef87a54621",
+    "witness": "instrumented",
+    "state": "resolvable"
+  },
+  "final_inventory": {
+    "before_versions": 89,
+    "after_versions": 91,
+    "prior_versions_unchanged": true,
+    "added_versions": [
+      2,
+      3
+    ],
+    "only_changed_record": "25adf0b0-7246-4f63-8687-7ccf2770f12a"
+  },
+  "private_artifacts": {
+    "task.txt": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/task.txt",
+      "sha256": "47c36ee0682be2fcad07ecec055301beebe9e32814cd6e1b131dd0d978758832"
+    },
+    "review-criteria.txt": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/review-criteria.txt",
+      "sha256": "bf4270e25bd7b31646e8cdace007309cf963d78694b72167faa80ca4ed428148"
+    },
+    "run.py": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/run.py",
+      "sha256": "ef8f8532be2638e27accb2c96e74f8e393f31ca4ec57ac525efe1609f380f71f"
+    },
+    "native-a/run.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/native-a/run.json",
+      "sha256": "482bb60e8e04f357bcf29e4f77dd8d6640a9876d1c15121359aa183c10ed9d2f"
+    },
+    "native-a/source-manifest.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/native-a/source-manifest.json",
+      "sha256": "4f479ed043a40d30002612a71a9712a8f7bb5bc6931bd4e7feab2ab1c9ad9ba4"
+    },
+    "native-a/relay.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/native-a/relay.json",
+      "sha256": "256791f9292cd10ab7514baa6b55bc0a962c571609cda0e77507387325384009"
+    },
+    "native-a/stdout.jsonl": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/native-a/stdout.jsonl",
+      "sha256": "8dc8564c7a8f8bd5c94ff3e02993dcf5ec9b41a98fb5a44595571c1fd5181559"
+    },
+    "native-a/stderr.txt": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/native-a/stderr.txt",
+      "sha256": "51f2dd24a9153ff6771c12a98748d6d7f786bb5cdb639909327030366beb6253"
+    },
+    "review-native.py": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/review-native.py",
+      "sha256": "df937ff630ad466cc6990c6fb2c97b787eabfd43aa9c7366a169b302eb7ec7f7"
+    },
+    "finish-review.py": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/finish-review.py",
+      "sha256": "4515c1eb20c55948ad6e45422df94b5cade3cd1834954a0c2f34640c60659506"
+    },
+    "verification.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/verification.json",
+      "sha256": "90dd1306aca62f3592afcc183a237918a15df0b58ef2b5eac06861c7fabdee48"
+    },
+    "format-request.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/format-request.json",
+      "sha256": "42cd01be3297356199d0523c696e7e7d22f20dad4a5cda7eb860e62ae5078401"
+    },
+    "format-response.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/format-response.json",
+      "sha256": "e20e0d3511fed8988312f84a2ed43ae662bdc1f16780e6e65f0add63b0f27562"
+    },
+    "before-pull.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/before-pull.json",
+      "sha256": "95683205d571fd53dd98a2403fbdafe52225525aa57561e72747dd9e6a4e82e5"
+    },
+    "after-pull.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/after-pull.json",
+      "sha256": "1652c29f6c87d6a98690603b27f13724a47bbc0f582dcaef51746abfe1a1d060"
+    },
+    "prior-history.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/prior-history.json",
+      "sha256": "48de61a00e3ade7094245237bf45116efe4ce9ff4d27914853ee03b72da2a255"
+    },
+    "final-pull.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/final-pull.json",
+      "sha256": "e40174ccb65d89d69d6c0708b055a7b993cdc00c19fde172efbf96b5d3984cfe"
+    },
+    "evidence-request.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/evidence-request.json",
+      "sha256": "bc3951ef8c658a5970ff61ee2458a9a01144ad3726b06f36ad3e0c44d8b0ca90"
+    },
+    "evidence-response.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/evidence-response.json",
+      "sha256": "aef210a2d483d44b03d16beb14a0e443a6eb8376abda25a6f9fc1725e069ec32"
+    },
+    "assessment-request.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/assessment-request.json",
+      "sha256": "04ab83b98d9714d488502fc4713e2f3b0bbca08e7e34e8ba428fcac4567862ed"
+    },
+    "assessment.json": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/assessment.json",
+      "sha256": "0fce4dd99011eccbeb0888924f7f4096093166d884f3f5d3e4388d7d9bae9eb9"
+    },
+    "before-inventory.txt": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/before-inventory.txt",
+      "sha256": "d9fbb8aa910cfc5c77ccfa1dfcf20175b2679a29ae1a8d991f77047cbba20831"
+    },
+    "after-inventory.txt": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/after-inventory.txt",
+      "sha256": "53aea76e86bd2e8b3f253946441b3749a4b60a3b0c080ecc3fa9b1e910db07d4"
+    },
+    "final-inventory.txt": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/final-inventory.txt",
+      "sha256": "5df83f78b94e6f50be7f3eb6bc364667788aa8eb80c9b5c326e6014c6091425f"
+    }
+  },
+  "doctrine": {
+    "packet_id": "pkt-c528c734889635fd",
+    "packet_content_sha256": "c528c734889635fd22d2d96e26f2d8508655a22a650b1dd529ee627781e63c1f",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-e5969900d0a1474a",
+        "required_by": "implementation-repository-language-conformance",
+        "requirement": "CI and build matrix",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-93e5516757747391",
+        "required_by": "implementation-repository-language-conformance",
+        "requirement": "behavior tests",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-6beb33575d727362",
+        "required_by": "implementation-repository-language-conformance",
+        "requirement": "formatter and static-tool configuration",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ed729ace2ba83b77",
+        "required_by": "python-mutable-ownership",
+        "requirement": "concurrency",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-c9337452b0edfa33",
+        "required_by": "python-mutable-ownership",
+        "requirement": "identity and equality contract",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-315deea4a753d213",
+        "required_by": "python-mutable-ownership",
+        "requirement": "lifetime and size",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-cb0eed1457c77f98",
+        "required_by": "python-mutable-ownership",
+        "requirement": "mutation sites",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-a2c90d1d82d1a459",
+        "required_by": "python-mutable-ownership",
+        "requirement": "nested object graph",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-2944a68f95f6881b",
+        "required_by": "python-mutable-ownership",
+        "requirement": "object and ownership graph",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-7a342184b4a54bb7",
+        "required_by": "python-repository-shaped-idiom",
+        "requirement": "Python and dependency version matrix",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-886b16ae2adaee03",
+        "required_by": "python-repository-shaped-idiom",
+        "requirement": "formatter linter and type-checker configuration",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-9532e1849c7db686",
+        "required_by": "python-repository-shaped-idiom",
+        "requirement": "public API and tests",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-6f6a205dd9d52fc6",
+        "required_by": "python-runtime-static-boundary",
+        "requirement": "annotation maintenance cost",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-bbd2600c2b12afd0",
+        "required_by": "python-runtime-static-boundary",
+        "requirement": "boundary trust model",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-ecce2283e1ba3e84",
+        "required_by": "python-runtime-static-boundary",
+        "requirement": "checker and trust-boundary evidence",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-24f184dfb17363dc",
+        "required_by": "python-runtime-static-boundary",
+        "requirement": "configured checker and Python version",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-6972412975e4b6a7",
+        "required_by": "python-runtime-static-boundary",
+        "requirement": "observed defect class",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      },
+      {
+        "evidence_ids": [],
+        "obligation_id": "obl-2a09993578e1ecef",
+        "required_by": "python-runtime-static-boundary",
+        "requirement": "runtime invariant",
+        "status": "missing",
+        "materiality": "nonmaterial",
+        "rationale": "No production Python, object ownership model, annotation, dependency or build configuration changes. This decision retains a source-reviewed ordinary note; existing API behavior and actual native execution are inspected directly. Generic Python implementation obligations do not change its acceptance or authority boundary."
+      }
+    ],
+    "decision_receipt": {
+      "path": "/tmp/cairn-native-guide-maintenance-20260910/decision-receipt.json",
+      "sha256": "b5c276f3a57898e2248a00cdbda0dd8a6f15afa5aadf7c21930ea90eb781b4b0"
+    },
+    "consumption": "Both discovery and evidence-backed packets closed"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "schema": "cairn.agent-search-verification/1",
+  "code_revision": "46eda160e240985b16c2d514e2e5e577ca859525",
+  "scenario_sha256": "cc5464e46dfb61c19cab620dd7f6746235909ffd1056f962193507b2ea6f71c1",
+  "controller_sha256": "48d72dfb7dc297dd0997bd53a02e7291b28eb8151b659de43706574ca3801906",
+  "cairn_sha256": "dbcee2e64c675ef4f13a433440822befd515892bcef15218d725eec4405a48c4",
+  "opencode_sha256": "c9485f62576606dbde6404647405df2401fada964b7f669f799dc125dbbeff99",
+  "source_sha256": [
+    "0e4f8a107f8dd4ec19aee6e4f263f2e6f5140b0fcb45757b1f15135c3f396c08",
+    "539e8a884bb89d054ca98fb0c6da34aa517966d9b822e046317e1a585f4ab90d"
+  ],
+  "process_exit": 0,
+  "duration_seconds": 58.89360855310224,
+  "searches": 4,
+  "body_pulls": 2,
+  "tool_failures": [],
+  "linked_retrievals": 4,
+  "execution_rows": 1,
+  "joined_exposures": 8,
+  "original_task_outcome": "rejected",
+  "original_parser_found_final_object": false,
+  "retrospective_content_checks": {
+    "ordinary_agent_can_link": true,
+    "link_operation": true,
+    "automatic_link_by_scope": true,
+    "exit_zero_is_acceptance": true,
+    "hosts_per_retrieval": true,
+    "executions_for_one_run_three_retrievals": true,
+    "cited_sources_were_pulled": true
+  },
+  "retrospective_review": "After the run, inspected the sole fenced JSON object preceded by prose. Facts and two source citations match the supplied documents and actual body pulls. This was not the prospective parser; original rejected assessment is retained. No model rerun or outcome rewrite.",
+  "model_requests": 4,
+  "reported_model_cost_usd": 0.0016908744000000001,
+  "cost_complete": true,
+  "stdout_sha256": "de00a3f635758b431c5340f94e9ae0b1c6b1e032ac6e5095cff299df2f1520b4",
+  "scope": "Actual native CLI and authenticated observer correspondence on a different source question. No no-memory/direct-context comparison, task transfer, coding benefit, speedup or general memory benefit established."
+}

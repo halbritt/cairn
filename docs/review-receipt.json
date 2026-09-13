@@ -1,0 +1,286 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-initial-design-review-2026-09-07",
+  "question": "Is this PostgreSQL agent-memory design ready for a bounded first implementation, and which contracts must precede authority and harness integration?",
+  "scope": [
+    "Cairn initial ordinary-record and attribution development slice"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "halbritt",
+    "authority_source": "Current user request to evaluate, start Cairn if acceptable, and create a remote",
+    "authorized_scope": [
+      "Evaluate supplied design",
+      "Build initial local Cairn implementation",
+      "Create private halbritt/cairn Git remote"
+    ]
+  },
+  "evidence": [
+    {
+      "evidence_class": "evidence-repository-contracts",
+      "id": "cairn-bounded-contract",
+      "provenance": [
+        {
+          "content_sha256": "49f7d3c016e0d48cb071331802601c186f234a45fd29d1d1c80935adb95e0a21",
+          "locator": "/home/halbritt/git/cairn/docs/design-review.md",
+          "method": "direct source inspection"
+        },
+        {
+          "content_sha256": "c9c2478023bf4135c969005248ac58bf63902e08f30689a47ea2c15d594aa06b",
+          "locator": "/home/halbritt/git/cairn/README.md",
+          "method": "direct source inspection"
+        },
+        {
+          "content_sha256": "b0705de80e5ec329bed831542ac9e318aaf834c7495d21d2a58f461f9b6586f0",
+          "locator": "/home/halbritt/git/cairn/AGENTS.md",
+          "method": "direct source inspection"
+        },
+        {
+          "content_sha256": "f8025b019e275ae4450ad009e784a5ae5183a1bbd3e20d7c11f30b824b4b6189",
+          "locator": "/home/halbritt/git/cairn/core/store.go",
+          "method": "direct source inspection"
+        },
+        {
+          "content_sha256": "ef8047407b7ba03d52ff35053b36241a03f7bd397246d11dba277dc917912e07",
+          "locator": "/home/halbritt/git/cairn/core/attempts.go",
+          "method": "direct source inspection"
+        },
+        {
+          "content_sha256": "11486dc0318ea66dd058ad3f3bc6a41fe0756d6044f059abd958bd1bec17f96c",
+          "locator": "/home/halbritt/git/cairn/core/schema/001_initial.sql",
+          "method": "direct source inspection"
+        }
+      ],
+      "satisfies": [
+        "a bounded decision question",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "accepted desired behavior and semantic authority",
+        "actual current cost/risk or absence within a stated interval",
+        "affected behavior and state",
+        "all mutation/creation paths and authority",
+        "alternatives including no change where viable",
+        "architecture significance and scope",
+        "authority owner",
+        "change-type classification",
+        "checkpoint verification",
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "complete mutation-path and data-authority inventory",
+        "decision authority and affected stakeholders",
+        "decision scope",
+        "evidence connecting the proposed action to the condition",
+        "expected future change from accepted plans",
+        "identified mutation paths",
+        "intervention cost and uncertainty",
+        "latent security, safety, data, durability, and compatibility check",
+        "per-edit change classification",
+        "preservation boundary and semantic authority",
+        "preservation matrix and consumers",
+        "proc-decide-leave-code-alone",
+        "proc-establish-preservation-boundaries",
+        "ranked drivers and alternatives",
+        "repository contract",
+        "reversibility and verification",
+        "tests, characterization, probes, or explicit residual risk",
+        "verification and reversal plan"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "The repository now records the bounded implementation decision, alternatives, user authority, explicit trust limits, exact mutation ownership and lock ordering, reversible isolated fixture procedure, and outstanding production gates. This establishes a development contract only."
+    },
+    {
+      "evidence_class": "evidence-accepted-design-decisions",
+      "id": "cairn-design",
+      "provenance": [
+        {
+          "content_sha256": "1308aaee75c8af7ed30bbc8717527532a88c68731a5d8b571c9127f7dbb49a19",
+          "locator": "/home/halbritt/council-artifacts/agent-memory/design/agent-memory-design.md",
+          "method": "direct read or command observation"
+        }
+      ],
+      "satisfies": [
+        "accepted data authority",
+        "identified authoritative owner",
+        "accepted policy or current relied-upon constraint",
+        "failure and recovery requirements",
+        "stable intent identity",
+        "atomic durable effect boundary",
+        "identity generation and propagation path",
+        "retention period and collision semantics",
+        "external-effect and retry behavior"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "Council design specifies PostgreSQL, local core/CLI, store-owned writer and witness, CAS, durable request idempotency and attempt-specific attribution. Unresolved operator choices gate authority, destinations and deployment."
+    },
+    {
+      "evidence_class": "evidence-runtime-observation",
+      "id": "cairn-postgres-verification",
+      "provenance": [
+        {
+          "locator": "/tmp/cairn-test-results.txt",
+          "method": "make test-integration with private PostgreSQL cluster"
+        }
+      ],
+      "satisfies": [
+        "atomic deduplication or uniqueness enforcement",
+        "checkpoint verification",
+        "tests, characterization, probes, or explicit residual risk",
+        "reversibility and verification"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "Disposable PostgreSQL integration tests passed under Go race detector, including concurrent retry deduplication, competing edits, failed mutation rollback, identity stamping and cleanup, exact attempt/result matching, terminal-ingestion race and failure recovery; CLI migration/create smoke passed. This does not verify production recovery or B/C/D paths."
+    },
+    {
+      "evidence_class": "evidence-explicit-user-requirements",
+      "id": "cairn-requirements",
+      "provenance": [
+        {
+          "locator": "conversation:user:current",
+          "method": "direct read or command observation"
+        }
+      ],
+      "satisfies": [
+        "explicit task authority",
+        "task scope and authority statement",
+        "decision owner",
+        "target repository and task scope",
+        "user instruction and authority"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "User authorizes evaluation, starting Cairn in current empty directory if acceptable, and creation of git remote. No production deployment requested."
+    },
+    {
+      "evidence_class": "evidence-runtime-observation",
+      "id": "cairn-workspace",
+      "provenance": [
+        {
+          "locator": "shell:2026-09-07:workspace-preflight",
+          "method": "direct read or command observation"
+        }
+      ],
+      "satisfies": [
+        "current source, configuration, and relevant runtime state",
+        "repository instructions from root through target path",
+        "consumer and persisted-data inventory",
+        "baseline"
+      ],
+      "schema_version": "evidence-record/1",
+      "summary": "Directory empty, no ancestor AGENTS.md found; local Go 1.23.4 and PostgreSQL 17 binaries available. Striatum has a Go module and OpenCode backend command. No existing Cairn consumers or persisted data observed."
+    }
+  ],
+  "assertions": [
+    {
+      "id": "observed-contract",
+      "type": "observation",
+      "text": "The supplied design specifies proportional PostgreSQL memory and exact service-owned attribution, with open production policy decisions.",
+      "evidence": [
+        "cairn-design",
+        "cairn-requirements"
+      ]
+    },
+    {
+      "id": "bounded-start",
+      "type": "recommendation",
+      "text": "Accept the architecture as an implementation direction and start with an isolated ordinary-record/attribution slice.",
+      "depends_on": [
+        "observed-contract"
+      ],
+      "alternatives": [
+        "Wait for all operator parameters",
+        "Build all authority and delivery paths immediately"
+      ],
+      "tradeoffs": [
+        "A working core is available sooner; no full Stage 1 or production readiness claim."
+      ]
+    },
+    {
+      "id": "implemented-slice",
+      "type": "execution",
+      "text": "Implemented transactional migration, ordinary records, CAS, request idempotency, store stamps, service attempts, attribution and failure recovery.",
+      "depends_on": [
+        "bounded-start"
+      ],
+      "scope": [
+        "core",
+        "cmd/cairn",
+        "scripts/test-postgres.sh"
+      ]
+    },
+    {
+      "id": "verified-slice",
+      "type": "verification",
+      "text": "The isolated PostgreSQL integration suite and CLI smoke passed with Go race detection.",
+      "depends_on": [
+        "implemented-slice"
+      ],
+      "criteria": [
+        "make test-integration",
+        "make check"
+      ],
+      "evidence": [
+        "cairn-postgres-verification"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Bounded PostgreSQL core slice",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-design",
+        "cairn-bounded-contract"
+      ]
+    },
+    {
+      "option": "Wait for every production choice",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-requirements",
+        "cairn-bounded-contract"
+      ]
+    },
+    {
+      "option": "Implement authority and live delivery immediately",
+      "disposition": "deferred",
+      "evidence": [
+        "cairn-design"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/design-review.md",
+    "docs/sources/manifest.json",
+    "pincite:pkt-d7aed633aeb3dedc#sha256=d7aed633aeb3dedc70766f1d3748a4d3b89fede67afd85b127b0854b27596ee0"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Real PostgreSQL concurrency and transaction tests; no SQLite or mocked store",
+    "No live task or production database mutation"
+  ],
+  "reopening_conditions": [
+    "Resolve authenticated host/root bootstrap before authority paths",
+    "Resolve scope/destination/capture policy before delivery",
+    "Measure real harness contact and usefulness before production acceptance"
+  ],
+  "residual_risk": [
+    "Full Stage 0/1/2 acceptance remains outstanding",
+    "No production authority, destination filtering, retention, or recovery acceptance",
+    "data-replication-guarantee-selection: acknowledgment and replication topology \u2014 Nonmaterial to a disposable single-cluster development slice; replication and production recovery are not selected or claimed.",
+    "data-replication-guarantee-selection: durability and availability objectives \u2014 Nonmaterial to a disposable single-cluster development slice; replication and production recovery are not selected or claimed.",
+    "data-replication-guarantee-selection: durability, latency, availability, and recovery objectives \u2014 Nonmaterial to a disposable single-cluster development slice; replication and production recovery are not selected or claimed.",
+    "data-replication-guarantee-selection: failure and failover behavior \u2014 Nonmaterial to a disposable single-cluster development slice; replication and production recovery are not selected or claimed.",
+    "data-replication-guarantee-selection: replication and failover topology \u2014 Nonmaterial to a disposable single-cluster development slice; replication and production recovery are not selected or claimed.",
+    "data-schema-evolution-compatibility: accepted compatibility interval \u2014 Nonmaterial to starting a fresh experimental schema with no previous Cairn consumers; cross-version compatibility remains a later gate.",
+    "data-schema-evolution-compatibility: current explicit schema and encoded-data contract \u2014 Nonmaterial to starting a fresh experimental schema with no previous Cairn consumers; cross-version compatibility remains a later gate.",
+    "data-schema-evolution-compatibility: number of formats that must coexist \u2014 Nonmaterial to starting a fresh experimental schema with no previous Cairn consumers; cross-version compatibility remains a later gate.",
+    "data-schema-evolution-compatibility: predeployment compatibility-check result \u2014 Nonmaterial to starting a fresh experimental schema with no previous Cairn consumers; cross-version compatibility remains a later gate.",
+    "data-schema-evolution-compatibility: required forward and backward compatibility directions \u2014 Nonmaterial to starting a fresh experimental schema with no previous Cairn consumers; cross-version compatibility remains a later gate.",
+    "data-system-of-record-derived-state: derivation, rebuild, reconciliation, and consumer behavior during lag \u2014 Nonmaterial to this direct-query implementation without caches or asynchronous projections; no performance benefit is claimed.",
+    "data-system-of-record-derived-state: measured read benefit plus write, storage, freshness, and consistency costs \u2014 Nonmaterial to this direct-query implementation without caches or asynchronous projections; no performance benefit is claimed.",
+    "refactoring-stop-backtrack-escalate: current diff \u2014 Nonmaterial as a refactoring obligation: this is a new implementation, not a behavior-preserving change to an existing system.",
+    "refactoring-stop-backtrack-escalate: failure output \u2014 Nonmaterial as a refactoring obligation: this is a new implementation, not a behavior-preserving change to an existing system.",
+    "refactoring-stop-backtrack-escalate: last known-good state \u2014 Nonmaterial as a refactoring obligation: this is a new implementation, not a behavior-preserving change to an existing system.",
+    "refactoring-stop-backtrack-escalate: ownership and authority \u2014 Nonmaterial as a refactoring obligation: this is a new implementation, not a behavior-preserving change to an existing system.",
+    "task:architecture-assessment: evidence-operational-constraints \u2014 Nonmaterial to the bounded start decision; full deployment assessment awaits real operational constraints and history.",
+    "task:architecture-assessment: evidence-version-history \u2014 Nonmaterial to the bounded start decision; full deployment assessment awaits real operational constraints and history."
+  ]
+}

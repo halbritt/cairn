@@ -1,0 +1,418 @@
+{
+  "schema": "cairn.advisory-conflicts-verification/1",
+  "date": "2026-09-10",
+  "baseline_commit": "16122b01faceb06d35b8ec75cde270ccc08fbeda",
+  "change": "Explicit complete advisory conflict delivery through existing ordinary tools",
+  "task_value": "Unmeasured; deterministic protocol and store behavior only",
+  "database_migration": 34,
+  "operational_conflicts_mutated": false,
+  "model_calls": 0,
+  "limits": {
+    "component_positions": 16,
+    "component_groups": 16,
+    "index_positions": 100,
+    "expansion_bytes": 24000
+  },
+  "checks": [
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/core-final-2.log",
+      "sha256": "0073217c30b7755cc833ed346278db193ac5caab321e0bf9f12d451c626a5b3b"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/integration-verified.log",
+      "sha256": "af576b9662e8c9b1f0450d162d8697bdaaa39a075ba2a9d48e151c366e631b70"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/native.log",
+      "sha256": "a4376074902066b15956aa2cacafed1a75924b6ac0f9f5da0022ac362db72964"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/check-final.log",
+      "sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/test.log",
+      "sha256": "c04c453479f730fa8cbc28ab77d658feb5e7e218d703d6711b1632aaba69dd50"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/signature-red.log",
+      "sha256": "0cc5180e9607ce67a0746989130021170456f4aeb464aa1b3068dab6a7513d13"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/delivery-red.log",
+      "sha256": "c5f5ab27e3ac8f92e2febbb333d19b9032f7101d56bd959645ea90b9951ad2e7"
+    },
+    {
+      "path": "/tmp/cairn-advisory-conflicts-20260910/core-final-3.log",
+      "sha256": "83e599e33f16e4f0956437b7d17037de3895a93bcf26e2e44bb04f018c8a2199"
+    }
+  ],
+  "doctrine": {
+    "packet_id": "pkt-72f7d6c8f27d0e4c",
+    "packet_sha256": "72f7d6c8f27d0e4ca730928ddf6c7dea9e3ebb0cfaecb508eb4c3135080aef70",
+    "corpus": "corpus-2026-07-12-a11702cc9217",
+    "version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever": "retriever-ec995ecdd083b2c8",
+    "missing_obligations": [
+      {
+        "requirement": "query frequency and latency distribution",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "query plan or profile showing the access path",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "representative query workload",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "write and storage budget",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "write rate, storage, compaction, and maintenance overhead",
+        "required_by": "data-index-workload-tradeoff",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "caller nil checks and method use",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "documented absence semantics",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "dynamic type and dynamic value at the return",
+        "required_by": "go-interface-nil-semantics",
+        "classification": "nonmaterial",
+        "reason": "Existing consumer interfaces and interface-valued absence behavior are unchanged; this feature adds data fields and concrete qualification/allocation behavior."
+      },
+      {
+        "requirement": "complexity and work-count model",
+        "required_by": "performance-algorithm-and-work-first",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "memory, latency, and semantic tradeoffs",
+        "required_by": "performance-algorithm-and-work-first",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "profile contribution and input distribution/scale",
+        "required_by": "performance-algorithm-and-work-first",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "representative empirical comparison",
+        "required_by": "performance-algorithm-and-work-first",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "accepted workload and operation boundary",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "authority to inspect the target and identify the objective owner",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "environment, input distribution and scale, concurrency, and success/failure population",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "latency percentile, throughput, CPU, memory, I/O, network, cost, or other metric with a target",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "owner for the objective and any quality tradeoff",
+        "required_by": "performance-measurable-objective",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "access to instrumentation definition or benchmark harness",
+        "required_by": "performance-metric-semantics",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "instrumentation definition and configuration",
+        "required_by": "performance-metric-semantics",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "instrumentation overhead and data-loss limits",
+        "required_by": "performance-metric-semantics",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "sanity check against actual runtime behavior",
+        "required_by": "performance-metric-semantics",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "unit, aggregation window, population, and sampling behavior",
+        "required_by": "performance-metric-semantics",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "direct versus cumulative contribution and concurrency boundary analysis",
+        "required_by": "performance-profile-causal-bottleneck",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "profile type and sampling/granularity semantics",
+        "required_by": "performance-profile-causal-bottleneck",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "representative workload, version, and profile interval",
+        "required_by": "performance-profile-causal-bottleneck",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      },
+      {
+        "requirement": "reproducibility or independent corroboration",
+        "required_by": "performance-profile-causal-bottleneck",
+        "classification": "nonmaterial",
+        "reason": "No database index, performance intervention, measurement or resource improvement claim is proposed."
+      }
+    ]
+  },
+  "source_commit": "4df17afa97d2c3d457932ebb2bc7373f2d0fe83a",
+  "installation": {
+    "commit": "4df17afa97d2c3d457932ebb2bc7373f2d0fe83a",
+    "before": {
+      "cairn-api.service": {
+        "MainPID": "3062046",
+        "ActiveState": "active",
+        "exe_sha256": "695b3fe7826a649dce3340544a6e8ec926369fe21c823faf690b17be6c3f9cdb"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "after": {
+      "cairn-api.service": {
+        "MainPID": "3338966",
+        "ActiveState": "active",
+        "exe_sha256": "db72860bd5a0606a28cc08a42e34e9bb94586d1cbf7c547e24211d51a05d9b03"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "version_pair": {
+      "schema": "cairn.version/1",
+      "client": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260910191150-4df17afa97d2",
+        "vcs": "git",
+        "vcs_revision": "4df17afa97d2c3d457932ebb2bc7373f2d0fe83a",
+        "vcs_time": "2026-09-10T19:11:50Z",
+        "vcs_modified": false
+      },
+      "server": {
+        "schema": "cairn.build/1",
+        "go_version": "go1.25.0",
+        "module_version": "v0.0.0-20260910191150-4df17afa97d2",
+        "vcs": "git",
+        "vcs_revision": "4df17afa97d2c3d457932ebb2bc7373f2d0fe83a",
+        "vcs_time": "2026-09-10T19:11:50Z",
+        "vcs_modified": false
+      }
+    },
+    "installed_sha256": "db72860bd5a0606a28cc08a42e34e9bb94586d1cbf7c547e24211d51a05d9b03",
+    "adapter_sha256": "ff10697cc1dcde11a8e2a62b068538166846c06355ffcd987fc24dd75c84aa56",
+    "plugin_sha256": "7b30fe4c636abbc25f360fb445425b27347d0b79127e0767bfd8db514728f4b0",
+    "migration": 34,
+    "api_restarted": true,
+    "record_versions_before": {
+      "versions": 77,
+      "sha256": "7baa02a0c48b1104e2f70dabc8113477e380aa97d967d48bb62c9e60b33bb634"
+    },
+    "record_versions_after": {
+      "versions": 77,
+      "sha256": "7baa02a0c48b1104e2f70dabc8113477e380aa97d967d48bb62c9e60b33bb634"
+    },
+    "hosted_search": {
+      "source_schema": "cairn.semantic/14",
+      "receipt_id": "b068ed57-f267-464d-a2af-f8a06359d096",
+      "record_id": "81751203-8768-49ee-bfce-895efb69889d",
+      "version": 2,
+      "body_sha256": "617555818bf48ce98cdfdfb3204c4cbf821685e6d718c1006c4ab96dd26374ca"
+    },
+    "preserved_configuration_hashes": {
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "0fc3226320370f8db9b214e4ba042bed802347b450a2481b2e9a87b13b46b8a3",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+      "/home/halbritt/.local/share/cairn/identities.json": "4e38155909afe7c58886fc5f789128af8a7230e22a17a32bf615678dd6f38b5d",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "42f1b41e0d9e899a37a6fa45232bd5f5ee6f24cc18d1d5c88cdcfed855a818fb",
+      "/home/halbritt/.config/opencode/opencode.json": "d207573666654ade4f08e9daf54da70567e4031d183ef108ff24756fbed5879f"
+    },
+    "backup_sha256": "dcc458b322f3d968b28bfb6274efa1423d55fe64a24cea20243574a5649b6e04",
+    "manifest_sha256": "f3df54a309ab77cfc9738085028f8b6891ad79d1fd95eafd670b75f5f839262d"
+  },
+  "ci": {
+    "run_id": 34518961970,
+    "url": "https://github.com/halbritt/cairn/actions/runs/34518961970",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "postgres",
+        "conclusion": "success",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Initialize containers",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run go test -race -count=1 -p 1 ./...",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run python3 -B -m unittest discover -s scripts -p 'test_*.py'",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run make check build",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run CAIRN_DATABASE_URL=\"$CAIRN_TEST_DATABASE_URL\" python3 scripts/check_use_report.py bin/cairn",
+            "conclusion": "success"
+          },
+          {
+            "name": "Check authenticated CLI and compact startup",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "conclusion": "success"
+          },
+          {
+            "name": "Stop containers",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "name": "opencode-plugin",
+        "conclusion": "success",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run node scripts/check_opencode_recent_files.mjs",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,216 @@
+{
+  "schema": "cairn.build-identity-verification/1",
+  "baseline_commit": "9e8c4fb6e83b3ba4b7add0c80270a4cc9509ed21",
+  "checks": {
+    "static": true,
+    "go_python": true,
+    "python_tests": 40,
+    "disposable_pg_race_integration": true,
+    "stdio_mcp": true,
+    "profile_types": 4,
+    "older_api_failure_preserved": true,
+    "answering_model": false
+  },
+  "doctrine": {
+    "packet_id": "pkt-793ce08ff845c498",
+    "packet_content_sha256": "793ce08ff845c4984285db6b1900d8201ef4eddd286688243d3dafdade020c65",
+    "corpus_version": "corpus-2026-07-12-a11702cc9217",
+    "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+    "retriever_version": "retriever-ec995ecdd083b2c8",
+    "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "unmet_obligations": [
+      {
+        "requirement": "Go method-set and import-direction compatibility",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface introduced; a concrete metadata function serves existing consumers."
+      },
+      {
+        "requirement": "current consumer call sets and ownership",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface introduced; a concrete metadata function serves existing consumers."
+      },
+      {
+        "requirement": "current consumer inventory",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface introduced; a concrete metadata function serves existing consumers."
+      },
+      {
+        "requirement": "observed substitution, volatility, or cross-boundary pressure",
+        "required_by": "go-consumer-owned-interfaces",
+        "classification": "nonmaterial",
+        "reason": "No Go interface introduced; a concrete metadata function serves existing consumers."
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/cairn-build-identity-evidence-authority.json",
+      "sha256": "624eea21536aca7cc8dd2d087d05dceb04a9d1ca9621fb6ba83f2e55b9587016"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-evidence-implementation.json",
+      "sha256": "51f6c57d36dda69bd0e81e1205d9d5db18f04e95f338e05ad69639a414e7c750"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-evidence-compatibility.json",
+      "sha256": "f8e523cd89c3b31bceda19e5b9beba66588176838510d21e25da9901d4c9e144"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-evidence-tests.json",
+      "sha256": "eda3d51ae86d6f6e25a11dea03ca5aa4247a566e6aa40eaa613e7d12913e10ec"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-cli-red.log",
+      "sha256": "3369e20c3c8ef4d37e66d1f33e292ffa384404e4a283e856312d60b9647d9d1b"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-api-red.log",
+      "sha256": "711f98f3cad4622a1e3238409ee35a04c599decab4cbb30f3e6ffcbd7d6617d3"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-agent-red.log",
+      "sha256": "67e13487c7a5749e5a5934b5bb3023f76f052ddcbf9ea8c63aa55e1376d696b6"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-mcp-red.log",
+      "sha256": "85a12fdebcc8375b1e10afe4d594de0d1ecd0db3fc9aa206f174cac0e662b71c"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-target.log",
+      "sha256": "8bc985d6b96a3d32270eafe910609921bce3daf9c38fac9695606afb76421c0d"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-check.log",
+      "sha256": "a3b6fcb88a0c988b3d5df5ea426a99a3df9d6f2ae51667b361fa5cccbba100c1"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-tests.log",
+      "sha256": "8403c345df21ddcef2ff49d72de3884b08bbc3727c6efb63e4783effb5bbe92a"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-integration.log",
+      "sha256": "b6bd4471dba730bc7303d9b0c12914953b0c0694f0f5e8f3e77a5af4e9c13256"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-older-api.json",
+      "sha256": "4f54d457e25f61ad2fd7cdd3b5b07a649abc7f393e601fa4dea2bb7cebd717f0"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-decision.json",
+      "sha256": "b335bd0c411c9ca45cab2774526f9bb0c77b1d03018280c325462067a6ad68b8"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-doctrine.json",
+      "sha256": "b7ba7f61438aa6c8f28142eebe84cd3df15f50c190317aa6f1821971b6b2f7f6"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-doctrine-final.json",
+      "sha256": "9245415152fbd8b5f1e1b79054215aad8f4253d193aff25cee91eae40a2b100d"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-citations.json",
+      "sha256": "e993ff56d5d1a9adf077cd714a675b7cdd19fc9ce4592e9d0a4bc86762cc9080"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-citations-final.json",
+      "sha256": "e08075a8c327280409f92ea4140e6283300552ba9c6e9360da4e5dc7785c2f3f"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-deployment/installation.json",
+      "sha256": "15b5951f44176448969858203cba362c12bf8076112d3820947a0c0d0fa66643"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-deployment/versions.json",
+      "sha256": "edfe0f810299dbee75dc96334acc836238b06481b73d0e0d4cb0bd4dce834c9b"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-deployment/unstamped-client.json",
+      "sha256": "44ef615c321cb1678ad2dfde8324d14ef0545b7b83ff7303b4d2f46469307e9b"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-deployment/mcp-initialization.json",
+      "sha256": "2d84371dde90e60eaf2c0c95928efcff6e3c2306acc45d959a2d5bf4b0dda97d"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-deployment/guidance.json",
+      "sha256": "7cef6723119a0b6e9876cfae7c6b1b07a5c7b6dfa686540b600babae4c0bb1ab"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-ci.json",
+      "sha256": "8e816ea76ea076c4924a48aa0806ff8c63955ac82f1108ef179128d5dd35d7bd"
+    },
+    {
+      "path": "/tmp/cairn-build-identity-ci-current.json",
+      "sha256": "c91436895c459c1cdc1d50296ef5446e570ec07f41c83a87f8ea09ed1938cf43"
+    }
+  ],
+  "installation": {
+    "source_commit": "605be1a59b1e5ede65cc9a940df06cff0603167b",
+    "installed_sha256": "e73a06fe06c0983b3e88ab329f3a666fc0ef1336ea6e58447ef8662a6bd501dc",
+    "before": {
+      "cairn-api.service": {
+        "MainPID": "680757",
+        "ActiveState": "active",
+        "exe_sha256": "5b1123987348931eeb914907bf2e77bc78cd74b5688b10b969e82a4262e52005"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "after": {
+      "cairn-api.service": {
+        "MainPID": "736082",
+        "ActiveState": "active",
+        "exe_sha256": "e73a06fe06c0983b3e88ab329f3a666fc0ef1336ea6e58447ef8662a6bd501dc"
+      },
+      "cairn-store.service": {
+        "MainPID": "163669",
+        "ActiveState": "active",
+        "exe_sha256": "17d7196825748828d8f87836c58654dde77e76536b325d1b837d3e75304c4e01"
+      }
+    },
+    "preserved": {
+      "/home/halbritt/git/cairn/.opencode/tools/cairn.ts": "e0b2c2d4dba5a5daaec53f55643f2cbba34d459e1c0b013d97275c3232519ecd",
+      "/home/halbritt/git/cairn/.opencode/cairn.json": "12e0200bcb227ae9de1a5f16763901471c712fa801ba692912e52132819a9fde",
+      "/home/halbritt/git/cairn/.codex/config.toml": "1546a3ab94125bd12d36871459d6edd99dcb222d16ab85b2a68970c36b9188b8",
+      "/home/halbritt/.local/share/cairn/semantic/semantic_rank.py": "80935856c0273ce9b6e65a0420a23dd9320a604dde575e1e9c1ed0a5d60e04e9",
+      "/home/halbritt/.config/systemd/user/cairn-api.service.d/semantic.conf": "bb97a6690041a004c3385743b3b860394f635995d8b63781501900527b2793cd"
+    },
+    "backup": {
+      "path": "/home/halbritt/.local/share/cairn/backups/cairn-20260910T025650-734259.dump",
+      "sha256": "7855e8c031ab5957911624501ed1f5f5a88c31c2ab81a55353a9bb3b36bceb59"
+    },
+    "version": {
+      "schema": "cairn.build/1",
+      "go_version": "go1.25.0",
+      "module_version": "v0.0.0-20260910025625-605be1a59b1e",
+      "vcs": "git",
+      "vcs_revision": "605be1a59b1e5ede65cc9a940df06cff0603167b",
+      "vcs_time": "2026-09-10T02:56:25Z",
+      "vcs_modified": false
+    },
+    "separate_unstamped_client_verified": true,
+    "mcp_implementation_version": "605be1a59b1e5ede65cc9a940df06cff0603167b",
+    "migration": false
+  },
+  "guidance_correction": {
+    "record_id": "fa323deb-099a-4ced-aac5-b606a51e29a9",
+    "previous_version": 1,
+    "current_version": 2,
+    "body_sha256": "607c347f0a921fd0844f78243289c37c3e391c35657a1fc7b45f4a713ac53481",
+    "retry_exact": true,
+    "metadata_preserved": true,
+    "correction": "Qualify phase schema by ranked pagination; add explicit installed-build diagnosis."
+  },
+  "ci": {
+    "databaseId": 34431391693,
+    "status": "completed",
+    "conclusion": "success",
+    "headSha": "605be1a59b1e5ede65cc9a940df06cff0603167b"
+  }
+}
