@@ -1,11 +1,11 @@
 # Shared memory across projects
 
-Cairn is installed for Codex, OpenCode, Agy, and Claude Code at user scope on
+Cairn is installed for Codex, OpenCode, Agy, Claude Code, and Hermes at user scope on
 the owner's host. Start a fresh agent session in any project and use its Cairn
 tools to search, pull, save, and correct shared notes. There is no per-project
 registration step.
 
-All four use the existing collection, whose stored name is
+All use the existing collection, whose stored name is
 `/home/halbritt/git/cairn`. That name is independent of the working directory.
 Keeping it preserves the existing notes without copying or migrating them.
 Use the default `repository` capture scope for shared notes; include the actual
@@ -18,11 +18,14 @@ selected notes intended for these hosted agents.
 | OpenCode | `~/.config/opencode/tools/cairn.ts` and `~/.config/opencode/cairn.json` |
 | Agy | `cairn` entry in `~/.gemini/config/mcp_config.json` |
 | Claude Code | `cairn` user-scope entry in `~/.claude.json` |
+| Hermes CLI and Slack gateway | `~/.hermes/config.yaml`, native provider in `plugins/cairn`, and shared skill |
 
 Codex and OpenCode use their native conversation/session labels. Agy and Claude
 launch `~/.local/bin/cairn-shared-mcp`, which selects the existing connection and
 generates a fresh label for each MCP process. No manual task/run selection is
-needed. These labels organize retrievals; ordinary shared notes outlive them.
+needed. Hermes explicit MCP tools use profile labels, while its automatic
+lifecycle requests use actual session labels. These labels organize retrievals;
+ordinary shared notes outlive them, and labels do not authenticate a caller.
 
 Existing agent processes can retain their previous tool configuration. Start a
 new session after installation. A project's explicit configuration can override
@@ -35,8 +38,8 @@ The shared `cairn` skill now guides proactive recall and selected storage of
 owner corrections, decisions, verified fixes and unfinished-work checkpoints.
 [Claude lifecycle hooks](claude-lifecycle.md) add automatic task/resume retrieval
 and selected capture before compaction or exit. They are installed in both
-Claude user profiles; start a fresh session to load them. Other harnesses use the skill
-and existing native tools.
+Claude user profiles; start a fresh session to load them. OpenCode and Hermes
+also use the shared engine, as described below.
 
 ## Installed use, 2026-09-11
 
@@ -70,10 +73,11 @@ installed customization guide documents its global MCP configuration at
 
 ## Optional lifecycle memory
 
-The owner's Claude profiles and OpenCode use the shared lifecycle engine for
+The owner's Claude profiles, OpenCode, and Hermes CLI/Slack use the shared lifecycle engine for
 selective ambient recall, separate durable memories and named workstream handoffs.
 Unchanged conversation content skips model selection after a confirmed capture.
-See [Claude setup](claude-lifecycle.md), [OpenCode setup](opencode-lifecycle.md) and
+See [Claude setup](claude-lifecycle.md), [OpenCode setup](opencode-lifecycle.md),
+[Hermes setup](hermes-lifecycle.md), [Hermes verification](verification/hermes-integration-2026-09-13.md), and
 [verification](verification/lifecycle-improvements-2026-09-13.md). Codex and Agy
 continue using their ordinary tools and proactive skill; their supported hook
 routes are [documented separately](lifecycle-hook-assessment.md).

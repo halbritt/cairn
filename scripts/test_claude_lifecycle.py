@@ -369,5 +369,43 @@ class LifecycleTests(unittest.TestCase):
             self.assertNotIn("file guidance", result)
 
 
+class CandidateBudgetTests(unittest.TestCase):
+    def test_only_explicit_budget_refusal_has_the_budget_type(self):
+        for status, expected in [('BUDGET_REFUSED', hook.BudgetRefused), ('UNAUTHORIZED', hook.HookError)]:
+            response = subprocess.CompletedProcess([], 2, json.dumps(dict(ok=False, status=status)), 'private payload')
+            with patch.object(hook.subprocess, 'run', return_value=response):
+                with self.assertRaises(expected) as raised:
+                    hook.run_json(['cairn'])
+                self.assertNotIn('private', str(raised.exception))
+                self.assertIs(type(raised.exception), expected)
+
+    def test_optional_candidate_budget_preserves_read_records_but_transport_failure_propagates(self):
+        from unittest.mock import Mock
+        event = dict(cwd='/tmp/cairn-budget-project', hook_event_name='SessionEnd')
+        entries = [dict(summary='PostgreSQL validation', pull_arguments=dict(handle=str(n))) for n in range(3)]
+        with patch.object(hook, 'relevant', return_value=True):
+            for function, kind in [(hook.handoff_candidates, 'note'), (hook.durable_candidates, 'decision')]:
+                record = dict(record_id='read', kind=kind, body=hook.workstream_prefix(event)+'Validation\n\nRead body', **{'class':'A'})
+                memory = Mock()
+                memory.search.return_value = dict(index=entries)
+                memory.call.side_effect = [dict(selection=dict(record=record)), hook.BudgetRefused('budget')]
+                args = (memory,event,[],{}) if kind=='note' else (memory,event,[])
+                self.assertEqual(function(*args), [record])
+                self.assertEqual(memory.call.call_count, 2)
+                memory.call.side_effect = hook.HookError('transport failed')
+                with self.assertRaisesRegex(hook.HookError, 'transport failed'):
+                    function(*args)
+
+    def test_unsupplied_matching_handoff_is_never_overwritten_after_candidate_budget_stop(self):
+        from unittest.mock import Mock
+        event = dict(cwd='/tmp/cairn-budget-project')
+        memory = Mock()
+        memory.checkpoint.return_value = dict(body=hook.workstream_prefix(event)+'Validation\n\nUnread old body')
+        selected = dict(workstream='Validation', checkpoint='New body', memories=[])
+        with self.assertRaisesRegex(hook.HookError, 'needs reconciliation'):
+            hook.selected_writes(memory,event,selected,None,[],[])
+        memory.call.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

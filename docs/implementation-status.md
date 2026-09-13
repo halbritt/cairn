@@ -3,7 +3,7 @@
 The [Hermes provider](hermes-lifecycle.md) adds explicit tools, ambient recall and
 selected capture for interactive CLI and the configured Slack gateway. Native
 fixtures cover both entry points, cross-agent continuation, compression, routing,
-restart and failures; 87 Python tests and the full Cairn integration suite pass.
+restart and failures; 90 Python tests and the full Cairn integration suite pass.
 The [Hermes verification report](verification/hermes-integration-2026-09-13.md)
 records the installed revision and distinguishes native mechanics from usefulness.
 

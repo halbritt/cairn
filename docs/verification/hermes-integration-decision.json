@@ -199,6 +199,34 @@
         "inventory of remote calls with their timeout and failure behavior",
         "response validation at the boundary"
       ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-deployment-budget-repair",
+      "evidence_class": "evidence-tests",
+      "summary": "Live configured-model CLI and captured GatewayRunner searches/pulls succeeded but automatic selection aborted when a second optional candidate exceeded receipt bytes. The repair preserves already-read optional candidates on explicit BUDGET_REFUSED only; transport errors and unsupplied matching-topic revision still fail. Three added boundary tests pass; all 90 Python tests, make check, native Hermes and complete disposable integration including native Claude/OpenCode pass again. A chosen live-collection lookup completed real selection in 3.489 seconds with no writes. This follow-up preserves the existing receipt budget rather than refreshing it or blindly overwriting omitted notes.",
+      "provenance": [
+        {
+          "locator": "integrations/lifecycle/memory.py",
+          "method": "Observed live refusal, inspected final repair and reran checks, 2026-09-13"
+        },
+        {
+          "locator": "scripts/test_claude_lifecycle.py",
+          "method": "Observed live refusal, inspected final repair and reran checks, 2026-09-13"
+        },
+        {
+          "locator": "docs/verification/hermes-integration-2026-09-13.md",
+          "method": "Observed live refusal, inspected final repair and reran checks, 2026-09-13"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-budget-integration.log",
+          "method": "Observed live refusal, inspected final repair and reran checks, 2026-09-13"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-budget-native.log",
+          "method": "Observed live refusal, inspected final repair and reran checks, 2026-09-13"
+        }
+      ]
     }
   ],
   "assertions": [

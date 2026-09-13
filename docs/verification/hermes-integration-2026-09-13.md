@@ -58,7 +58,7 @@ native memory and recalled sidecars. Original dialogue is bounded to 24,000 byte
 
 Final checks passed:
 
-- All 87 Python tests, including 13 Hermes and 26 existing lifecycle tests.
+- All 90 Python tests, including 13 Hermes and 29 shared lifecycle tests.
 - `make check`.
 - `make test-integration` with disposable PostgreSQL/race, CLI/API/MCP, native
   Claude and native OpenCode lifecycle checks enabled.
@@ -75,7 +75,35 @@ and makes no claim for a new abstraction or economic optimization.
 
 ## Deployment
 
-Deployment status will be recorded after installation and gateway restart.
+Installed the clean adapter commit `beabd9286c439eb08f3897241fa6b85d136be7c2`
+in the default `~/.hermes` profile. Repeated installation preserved all unrelated
+configuration values and the hashes of both native memory files. Existing
+`wigolo`, plugins, model and native-memory settings remain present. The gateway
+restarted and logged Slack Socket Mode connected at 15:27:37 PDT. No external
+test messages were sent. CI passed for that exact commit:
+[run 34786855951](https://github.com/halbritt/cairn/actions/runs/34786855951).
+
+A fresh Hermes CLI using the configured OpenRouter DeepSeek model searched and
+pulled the current Cairn handoff. A native GatewayRunner with the installed
+profile and model did the same through a captured outbound adapter; only its
+local session index/SQLite path was redirected to scratch space. Both discovered
+eight Cairn tools. The model recovered an initial explicit pull-budget refusal
+by obtaining a new search receipt. The one-shot `hermes -z -t mcp-cairn` launcher
+rejected the dynamic toolset before discovery; the verified CLI path explicitly
+performed native MCP discovery before constructing HermesCLI.
+
+These live lookups exposed a shared candidate-discovery bug: a second optional
+candidate could exhaust a receipt's expansion bytes after the first had been
+read, aborting all selection. The repair distinguishes `BUDGET_REFUSED`, stops
+expanding optional candidates at that bound, and preserves already-read records.
+It does not swallow transport failures or permit blind revision of an unsupplied
+matching topic. Three regression tests cover those boundaries. Repeating the
+chosen lookup against the live collection then completed real selection in
+3.489 seconds and correctly returned no writes.
+
+The repair passed all 90 Python tests, `make check`, the native Hermes fixture
+(`/tmp/cairn-hermes-budget-native`) and the full disposable integration suite
+with native Claude/OpenCode enabled. Final installation identity follows below.
 
 ## Limits
 

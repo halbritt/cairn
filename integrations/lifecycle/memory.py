@@ -67,6 +67,10 @@ class HookError(Exception):
     """An expected host, transport or format failure, safe to report without payloads."""
 
 
+class BudgetRefused(HookError):
+    """The receipt cannot expand another optional candidate."""
+
+
 def encoded(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
@@ -85,6 +89,12 @@ def run_json(command, *, body=None, timeout=5, env=None, cwd=None):
         raise HookError("could not start memory command") from exc
     if process.returncode:
         # CLI stderr and model failures may echo submitted text. Do not log them.
+        try:
+            refusal = json.loads(process.stdout)
+        except ValueError:
+            refusal = None
+        if isinstance(refusal, dict) and refusal.get("status") == "BUDGET_REFUSED":
+            raise BudgetRefused("memory expansion budget exhausted")
         raise HookError(f"memory command exited {process.returncode}; operation not confirmed")
     try:
         result = json.loads(process.stdout)
@@ -366,7 +376,10 @@ def handoff_candidates(memory, event, messages, state):
     records = []
     entries = [e for e in result.get("index", []) if relevant(e, intent)][:2]
     for entry in entries:
-        record = memory.call("pull", payload=entry["pull_arguments"])["selection"]["record"]
+        try:
+            record = memory.call("pull", payload=entry["pull_arguments"])["selection"]["record"]
+        except BudgetRefused:
+            break  # Keep already-read optional candidates within this receipt's budget.
         if record.get("class") == "A" and record["body"].startswith(workstream_prefix(event)) and " / Claude session " not in record["body"].split("\n", 1)[0]:
             records.append(record)
     return records
@@ -379,7 +392,10 @@ def durable_candidates(memory, event, messages):
     result = memory.search(intent["query"], room=32000, entities=intent["files"], kinds=DURABLE_KINDS)
     records = []
     for entry in [e for e in result.get("index", []) if relevant(e, intent)][:3]:
-        record = memory.call("pull", payload=entry["pull_arguments"])["selection"]["record"]
+        try:
+            record = memory.call("pull", payload=entry["pull_arguments"])["selection"]["record"]
+        except BudgetRefused:
+            break  # Unsupplied matching topics still require reconciliation before a write.
         if record.get("class") == "A" and record["kind"] in DURABLE_KINDS and len(record["body"].encode()) <= NOTE_BYTES:
             records.append(record)
     return records

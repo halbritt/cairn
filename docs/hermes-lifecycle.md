@@ -84,7 +84,10 @@ Capture reads at most 64 recent messages and the shared engine bounds selected
 original user/assistant text to 24,000 UTF-8 bytes. It excludes tool results,
 assistant tool-call narration, reasoning, compaction summaries and `api_content`.
 Reusable decisions/corrections and unfinished-work checkpoints are saved
-separately; existing candidate notes are read before revision. There is no
+separately; existing candidate notes are read before revision. When an optional
+candidate expansion exhausts its receipt budget, selection uses the candidates
+already read. Other failures still propagate. A matching topic outside that
+set requires explicit reconciliation before any revision. There is no
 adapter transcript spool, background capture worker or new daemon.
 
 Each provider serializes its own operations. The engine also uses a per-session
