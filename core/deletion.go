@@ -229,7 +229,7 @@ func (s *Store) DeletionStatus(ctx context.Context, id string) (Deletion, error)
 func (s *Store) deletionAccess(ctx context.Context, tx pgx.Tx, id string) error {
 	var repo string
 	err := tx.QueryRow(ctx, `SELECT repo FROM cairn.deletion_request WHERE deletion_id=$1`, id).Scan(&repo)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return failure("NOT_FOUND", "deletion request not found")
 	}
 	if err != nil {

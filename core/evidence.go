@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -112,7 +113,7 @@ func linkEvidence(ctx context.Context, tx pgx.Tx, r Record, ids []string, citati
 		var body, digest []byte
 		var repo, sensitivity, state string
 		err := tx.QueryRow(ctx, `SELECT body,digest,repo,sensitivity,state FROM cairn.evidence WHERE evidence_id=$1 FOR SHARE`, id).Scan(&body, &digest, &repo, &sensitivity, &state)
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return failure("EVIDENCE_UNAVAILABLE", "evidence not found")
 		}
 		if err != nil {
@@ -208,7 +209,7 @@ func (s *Store) readEvidenceTx(ctx context.Context, tx pgx.Tx, id string) (Evide
 	var body, digest []byte
 	doc.ID = id
 	err := tx.QueryRow(ctx, `SELECT repo,source,sensitivity,body,digest,witness,state,check_generation,checked_at FROM cairn.evidence WHERE evidence_id=$1 FOR SHARE`, id).Scan(&doc.Repo, &doc.Source, &doc.Sensitivity, &body, &digest, &doc.Witness, &doc.State, &doc.CheckGeneration, &doc.CheckedAt)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return doc, failure("NOT_FOUND", "evidence not found")
 	}
 	if err != nil {

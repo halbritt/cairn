@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -170,7 +171,7 @@ func inspectWithdrawal(ctx context.Context, tx pgx.Tx, w RecoveryWithdrawal) (st
 		var repo string
 		var revoked bool
 		err := tx.QueryRow(ctx, `SELECT repo,revoked FROM cairn.authority_grant WHERE grant_id=$1`, w.SubjectID).Scan(&repo, &revoked)
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return "GRANT_MISSING", nil
 		}
 		if err != nil {
@@ -186,7 +187,7 @@ func inspectWithdrawal(ctx context.Context, tx pgx.Tx, w RecoveryWithdrawal) (st
 	}
 	var repo, lifecycle string
 	err := tx.QueryRow(ctx, `SELECT v.repo,m.lifecycle FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id AND v.version=m.current_version WHERE m.record_id=$1`, w.SubjectID).Scan(&repo, &lifecycle)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "RECORD_MISSING", nil
 	}
 	if err != nil {
@@ -237,7 +238,7 @@ func inspectWithdrawal(ctx context.Context, tx pgx.Tx, w RecoveryWithdrawal) (st
 func captureRecoveryTx(ctx context.Context, tx pgx.Tx) (RecoveryRecord, error) {
 	var err error
 	record := RecoveryRecord{Schema: recoverySchema, Withdrawals: []RecoveryWithdrawal{}, Contexts: []RecoveryContext{}}
-	if err = tx.QueryRow(ctx, `SELECT grant_id::text,transaction_timestamp() FROM cairn.authority_grant WHERE parent_id IS NULL`).Scan(&record.RootGrantID, &record.CapturedAt); err == pgx.ErrNoRows {
+	if err = tx.QueryRow(ctx, `SELECT grant_id::text,transaction_timestamp() FROM cairn.authority_grant WHERE parent_id IS NULL`).Scan(&record.RootGrantID, &record.CapturedAt); errors.Is(err, pgx.ErrNoRows) {
 		return record, failure("RECOVERY_UNINITIALIZED", "install the operator root before capturing a recovery record")
 	} else if err != nil {
 		return record, err
@@ -321,7 +322,7 @@ func (s *Store) inspectRecoveryTx(ctx context.Context, tx pgx.Tx, record Recover
 	report := RecoveryInspection{RootGrantID: record.RootGrantID, RecordSHA256: record.SHA256, Gaps: []RecoveryGap{}, Coverage: "Known governance/C/D audit metadata, irreversible withdrawals and retained context custody at the external capture. Does not establish capture freshness, physical file state, complete recovery or permission to resume service."}
 	var root string
 	err = tx.QueryRow(ctx, `SELECT grant_id::text FROM cairn.authority_grant WHERE parent_id IS NULL`).Scan(&root)
-	if err != nil && err != pgx.ErrNoRows {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return report, err
 	}
 	if root != record.RootGrantID {
@@ -357,7 +358,7 @@ func (s *Store) inspectRecoveryTx(ctx context.Context, tx pgx.Tx, record Recover
  WHERE a.source_root=$1 AND action->>'event_id'=$2 AND action->>'source_digest'=$3
  AND action->>'subject_id'=$4 AND action->>'repo'=$5 AND action->>'kind'='forget'
  AND d.record_id=$4::uuid AND d.event_id::text=action->>'current_event_id' LIMIT 1`, record.RootGrantID, w.EventID, expectedDigests[w.EventID], w.SubjectID, w.Repo).Scan(&mapped)
-			if err != nil && err != pgx.ErrNoRows {
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return report, err
 			}
 			if err == nil {

@@ -38,8 +38,12 @@ For memory captured before dispatch, use [retained execution](retained-execution
 with `--receipt-id` and `--seal`. It consumes the exact owned package without
 recompiling, while preserving the same launch and outcome checks.
 
-OpenCode still requires `--destination hosted`, even when its current provider
-is local. The API profile must also be configured `hosted`. The wrapper compares
+Known `opencode` and `opencode.exe` launchers, including resolvable renamed
+symlinks, require `--destination hosted`, even when the current provider is local.
+Other names containing `opencode` are not treated as that launcher. Arbitrary
+wrapper scripts cannot be identified this way: declare `--destination hosted`
+when they forward memory to a hosted provider. Launcher names do not establish
+provider identity. The API profile must also be configured `hosted`. The wrapper compares
 the compiled destination against the declared run destination before launch;
 it cannot turn a local-profile package into hosted input. For OpenCode 1.18.21,
 use `--carrier stdin` to preserve literal JSON. The positional prompt route adds
@@ -138,3 +142,9 @@ host invocations. It does not wire Striatum's sealed inputs, infer internal harn
 tool events or compaction, prove instruction obedience, or turn process exit into
 an acceptance decision. See [verification](verification/authenticated-runner-2026-09-08.md)
 and [local API](local-api.md).
+
+If process-group cleanup fails after the child exits, Cairn still writes the
+pending outcome and attempts to commit it. The command reports the cleanup error
+alongside any persistence failure. A retained `outcome.pending.json` can be retried
+with `cairn recover-run RECEIPT_UUID`; successful outcome persistence does not
+claim that process-group cleanup succeeded.

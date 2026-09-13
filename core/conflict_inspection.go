@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -72,7 +73,7 @@ func (s *Store) Conflict(ctx context.Context, id string) (ConflictDetail, error)
 	var detail ConflictDetail
 	var resolutionID string
 	err = tx.QueryRow(ctx, `SELECT g.conflict_id::text,g.repo,g.version,g.opened_by,g.opened_at,g.reason,g.resolved_event IS NOT NULL,(SELECT count(*) FROM cairn.conflict_member WHERE conflict_id=g.conflict_id),COALESCE(g.resolved_event::text,'') FROM cairn.conflict_group g WHERE g.conflict_id=$1`, id).Scan(&detail.ID, &detail.Repo, &detail.Version, &detail.OpenedBy, &detail.OpenedAt, &detail.Reason, &detail.Resolved, &detail.MemberCount, &resolutionID)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return ConflictDetail{}, failure("NOT_FOUND", "conflict not found")
 	}
 	if err != nil {
@@ -116,11 +117,11 @@ func (s *Store) Conflict(ctx context.Context, id string) (ConflictDetail, error)
 	return detail, tx.Commit(ctx)
 }
 func (s *Store) Conflicts(ctx context.Context, req ConflictsRequest) (ConflictPage, error) {
-	if err := s.checkRepo(req.Repo); err != nil {
-		return ConflictPage{}, err
-	}
 	if req.Repo == "" || req.Limit < 1 || req.Limit > 200 || req.Offset < 0 {
 		return ConflictPage{}, failure("INVALID_REQUEST", "repo, limit 1-200 and nonnegative offset required")
+	}
+	if err := s.checkRepo(req.Repo); err != nil {
+		return ConflictPage{}, err
 	}
 	if req.RecordID != "" {
 		if err := validID(req.RecordID); err != nil {

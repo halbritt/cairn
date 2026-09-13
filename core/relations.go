@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
 	"slices"
@@ -59,7 +60,7 @@ func linkRelations(ctx context.Context, tx pgx.Tx, id string, version int, draft
 		// lifecycle lock before inspecting its restrictions. Targets lock by ID.
 		var repo, task, run, sensitivity, lifecycle string
 		err := tx.QueryRow(ctx, `SELECT v.repo,v.task_id,v.run_id,m.sensitivity,m.lifecycle FROM cairn.record_version v JOIN cairn.memory_record m USING(record_id) WHERE v.record_id=$1 AND v.version=$2 FOR UPDATE OF m`, ref.RecordID, ref.Version).Scan(&repo, &task, &run, &sensitivity, &lifecycle)
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return failure("NOT_FOUND", "referenced record version not found")
 		}
 		if err != nil {
@@ -73,7 +74,7 @@ func linkRelations(ctx context.Context, tx pgx.Tx, id string, version int, draft
 		}
 		var sourcePins *Applicability
 		err = tx.QueryRow(ctx, `SELECT pins FROM cairn.record_applicability WHERE record_id=$1 AND version=$2`, ref.RecordID, ref.Version).Scan(&sourcePins)
-		if err != nil && err != pgx.ErrNoRows {
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
 		if !applicabilityContains(sourcePins, draft.Pins) {

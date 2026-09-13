@@ -107,11 +107,11 @@ type ProposalGroup struct {
 }
 
 func (s *Store) ProposalGroup(ctx context.Context, req ProposalGroupRequest) (ProposalGroup, error) {
-	if err := s.checkRepo(req.Repo); err != nil {
-		return ProposalGroup{}, err
-	}
 	if req.Repo == "" || !digestValid(req.Key) || req.Limit < 1 || req.Limit > 200 || req.Offset < 0 {
 		return ProposalGroup{}, failure("INVALID_REQUEST", "repo, group digest, limit 1-200 and nonnegative offset required")
+	}
+	if err := s.checkRepo(req.Repo); err != nil {
+		return ProposalGroup{}, err
 	}
 	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
 	if err != nil {

@@ -61,17 +61,31 @@ func Present(result core.IndexResult, request string, command []string, room int
 		}
 		view.Index = append(view.Index, Entry{entry, pullCommand, pull})
 	}
-	encoded, err := json.Marshal(struct {
-		Schema string `json:"schema"`
-		OK     bool   `json:"ok"`
-		Status string `json:"status"`
-		Data   View   `json:"data"`
-	}{"cairn.response/1", true, "OK", view})
+	encode := func() ([]byte, error) {
+		return json.Marshal(struct {
+			Schema string `json:"schema"`
+			OK     bool   `json:"ok"`
+			Status string `json:"status"`
+			Data   View   `json:"data"`
+		}{"cairn.response/1", true, "OK", view})
+	}
+	encoded, err := encode()
 	if err != nil {
 		return View{}, err
 	}
+	if len(encoded)+1 > room && len(command) != 0 {
+		// Shell commands duplicate the complete structured arguments. Keep every
+		// semantic entry and its handle when the convenience strings do not fit.
+		for i := range view.Index {
+			view.Index[i].PullCommand = ""
+		}
+		encoded, err = encode()
+		if err != nil {
+			return View{}, err
+		}
+	}
 	if len(encoded)+1 > room {
-		return View{}, &core.Error{Code: "BUDGET_REFUSED", Message: "search response with pull commands exceeds input room; shorten socket/token paths or increase --tokens"}
+		return View{}, &core.Error{Code: "BUDGET_REFUSED", Message: "search response with structured pull arguments exceeds input room; increase --tokens"}
 	}
 	return view, nil
 }

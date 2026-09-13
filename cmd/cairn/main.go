@@ -154,7 +154,7 @@ func decodeBounded(input io.Reader, target any, limit int64) error {
 		return err
 	}
 	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return errors.New("expected exactly one JSON request")
 	}
 	return nil

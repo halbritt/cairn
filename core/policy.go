@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -145,7 +146,7 @@ func (s *Store) RevisePolicy(ctx context.Context, req RevisePolicyRequest) (Poli
 func readPolicyRevision(ctx context.Context, tx pgx.Tx, id string) (PolicyRevision, error) {
 	var p PolicyRevision
 	err := tx.QueryRow(ctx, `SELECT p.revision_id::text,p.repo,p.version,p.engine,COALESCE(p.previous_revision_id::text,''),COALESCE(p.restores_revision_id::text,''),p.rules,p.grant_id::text,p.event_id::text,e.actor,e.occurred_at FROM cairn.policy_revision p JOIN cairn.authority_event e USING(event_id) WHERE p.revision_id=$1`, id).Scan(&p.RevisionID, &p.Repo, &p.Version, &p.Engine, &p.PreviousRevisionID, &p.RestoresRevisionID, &p.Rules, &p.GrantID, &p.EventID, &p.Actor, &p.WrittenAt)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return p, failure("NOT_FOUND", "policy revision not found")
 	}
 	return p, err
@@ -154,7 +155,7 @@ func readPolicyRevision(ctx context.Context, tx pgx.Tx, id string) (PolicyRevisi
 func currentPolicy(ctx context.Context, tx pgx.Tx, repo string) (*PolicyRevision, error) {
 	var id string
 	err := tx.QueryRow(ctx, `SELECT revision_id::text FROM cairn.policy_revision WHERE repo=$1 ORDER BY version DESC LIMIT 1`, repo).Scan(&id)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {

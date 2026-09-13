@@ -1,0 +1,351 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-ultrareview-repairs-2026-09-13",
+  "question": "How should the verified Cairn review defects be repaired while preserving outcome recovery, destination declarations and bounded inspection contracts?",
+  "scope": [
+    "Nine ultrareview findings and index presentation budget lead",
+    "Existing CLI, core store and runner contracts"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "halbritt",
+    "authority_source": "Owner requested first addressing Cairn note 32a814a4-9d16-4099-ad8f-b3eef73153d0; prior land/deploy authorization persists.",
+    "authorized_scope": [
+      "Verify and repair findings",
+      "Run disposable regression checks and land/deploy the repairs"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "review-authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner requested addressing Cairn note 32a814a4-9d16-4099-ad8f-b3eef73153d0 before Hermes. This authorizes bounded repairs to the nine findings and investigation of the budget lead, carrying forward land/deploy. No new harness integration or unrelated broad audit is part of this repair.",
+      "provenance": [
+        {
+          "locator": "current owner request; Cairn finding note v1",
+          "method": "Read current source or observed command result on 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "decision owner",
+        "explicit task authority",
+        "task scope and authority statement",
+        "accepted desired behavior and semantic authority",
+        "user instruction and authority",
+        "target repository and task scope",
+        "expected behavior and authority to observe"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "review-choice",
+      "evidence_class": "evidence-accepted-design-decisions",
+      "summary": "Bounded repairs address confirmed source defects. Outcome persistence retains observed child state even if cleanup fails. No-change remains appropriate for arbitrary wrapper provider detection and the unreviewed 78-script inventory; wrapper destination is explicitly declared. Presentation preserves the sealed package and full structured pull arguments, omitting only optional shell convenience strings. Increasing budget or silently trimming semantic entries was rejected. No production failure frequency or general usefulness is claimed. Refusal candidate count is absent for historical unknown and explicit for newly observed zero.",
+      "provenance": [
+        {
+          "locator": "docs/verification/ultrareview-repairs-2026-09-13.md",
+          "method": "Inspected completed regression checks or recorded bounded decision on 2026-09-13"
+        },
+        {
+          "locator": "docs/authenticated-runner.md",
+          "method": "Inspected completed regression checks or recorded bounded decision on 2026-09-13"
+        },
+        {
+          "locator": "docs/index-and-pull.md",
+          "method": "Inspected completed regression checks or recorded bounded decision on 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "alternatives including no change where viable",
+        "actual current cost/risk or absence within a stated interval",
+        "expected future change from accepted plans",
+        "intervention cost and uncertainty",
+        "latent security, safety, data, durability, and compatibility check",
+        "proc-decide-leave-code-alone",
+        "documented absence semantics"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "review-contracts",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "AGENTS.md and README require disposable PostgreSQL integration and make check, preserve store-owned identity and authority, and separate process observation from task acceptance. runner recovery retries the exact pending outcome; core List and Impact already provide bounded pagination. CLI destination is a declaration constrained by authenticated profile, not verified provider detection.",
+      "provenance": [
+        {
+          "locator": "AGENTS.md",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "README.md",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "docs/authenticated-runner.md",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "cmd/cairn/commands.go:recoverRun",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "core/inspection.go",
+          "method": "Read current source or observed command result on 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "repository contract",
+        "repository instructions from root through target path",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "expected contract",
+        "operation and caller contract",
+        "product correctness and availability policy",
+        "caller recovery needs",
+        "caller recovery behavior",
+        "side effects and idempotency",
+        "preservation matrix and consumers",
+        "proc-establish-preservation-boundaries"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "review-reproduction",
+      "evidence_class": "evidence-runtime-observation",
+      "summary": "Before changing indexview, TestCoreReservationWithPullCommands failed with BUDGET_REFUSED for a synthetic 5126-byte core reservation. After omitting only redundant commands it passes. Native go run ./cmd/cairn help now prints plain text and paging flags. Source diagnoses each retained finding; no production occurrence rate has been measured. Complete integration verification remains pending.",
+      "provenance": [
+        {
+          "locator": "internal/indexview/view_test.go",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "/tmp/cairn-help-fixed.txt",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "/tmp/cairn-review-unit.log",
+          "method": "Read current source or observed command result on 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "discriminating checks",
+        "stable reproduction or explicit inability",
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "evidence connecting the proposed action to the condition",
+        "hypothesis ledger",
+        "a bounded decision question"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "review-source",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Source at 06975ed returns untyped help and short-circuits after post-Wait kill failure before pending write/outcome; source confirms raw missing-conflict sentinel, input validation order, missing candidate count, fixed CLI paging and substring launcher check. Index core reserves 160 bytes per entry plus 512; presentation duplicates full shell commands beyond this reservation. Repairs preserve source seal, required selections, per-record identity, outcome request idempotency and existing nonzero child exit semantics; no schema migration or new concurrency.",
+      "provenance": [
+        {
+          "locator": "runner/runner.go",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "cmd/cairn/commands.go",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "cmd/cairn/everyday.go",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "core/refusals.go",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "core/conflicts.go",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "core/index.go",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "internal/indexview/view.go",
+          "method": "Read current source or observed command result on 2026-09-13"
+        },
+        {
+          "locator": "go.mod",
+          "method": "Read current source or observed command result on 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "observations",
+        "callee contract",
+        "current Go version and repository convention",
+        "cleanup obligations",
+        "language and repository convention",
+        "current source, configuration, and relevant runtime state",
+        "change-type classification",
+        "per-edit change classification",
+        "preservation boundary and semantic authority",
+        "named ordering requirement",
+        "named required order",
+        "synchronization or protocol edge enforcing it",
+        "caller decisions that depend on the failure",
+        "aggregation and observability design",
+        "containment guarantee",
+        "natural total semantics"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "review-tests",
+      "evidence_class": "evidence-tests",
+      "summary": "make test-integration passed all Go packages under race detection and CLI/API/MCP checks using a disposable PostgreSQL cluster. New regressions verify cleanup EPERM plus successful outcome persistence, simultaneous outcome-store failure and exact retry recovery; 101-item CLI paging; missing conflict; scoped invalid input; 0/1000/1001 candidate counts and historical unknown; and real core/presentation budget disagreement preserving mandatory selections. make check and all 74 Python tests pass. Changes use forward-compatible refusal JSON, no migration, and can be reverted without data cleanup.",
+      "provenance": [
+        {
+          "locator": "runner/cleanup_test.go",
+          "method": "Inspected completed regression checks or recorded bounded decision on 2026-09-13"
+        },
+        {
+          "locator": "core/review_regression_test.go",
+          "method": "Inspected completed regression checks or recorded bounded decision on 2026-09-13"
+        },
+        {
+          "locator": "cmd/cairn/inspection_paging_test.go",
+          "method": "Inspected completed regression checks or recorded bounded decision on 2026-09-13"
+        },
+        {
+          "locator": "internal/indexview/budget_integration_test.go",
+          "method": "Inspected completed regression checks or recorded bounded decision on 2026-09-13"
+        },
+        {
+          "locator": "/tmp/cairn-ultrareview-integration.log",
+          "method": "Inspected completed regression checks or recorded bounded decision on 2026-09-13"
+        },
+        {
+          "locator": "/tmp/cairn-ultrareview-check.log",
+          "method": "Inspected completed regression checks or recorded bounded decision on 2026-09-13"
+        },
+        {
+          "locator": "/tmp/cairn-ultrareview-python.log",
+          "method": "Inspected completed regression checks or recorded bounded decision on 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "cleanup and failure tests",
+        "adversarial scheduling or deterministic completion tests",
+        "reversibility and verification",
+        "tests, characterization, probes, or explicit residual risk",
+        "checkpoint verification"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "verified-source",
+      "type": "observation",
+      "text": "Current source confirms the reported help, runner, consistency and inspection findings; a budget boundary fixture reproduced presentation refusal.",
+      "evidence": [
+        "review-source",
+        "review-reproduction"
+      ]
+    },
+    {
+      "id": "repair-decision",
+      "type": "decision",
+      "text": "Persist observed process outcomes despite cleanup failure, expose existing paging, align error classification and preserve structured pull arguments when optional shell commands overflow.",
+      "depends_on": [
+        "verified-source"
+      ],
+      "owner": "halbritt",
+      "authority": "Current repair request"
+    },
+    {
+      "id": "repair-executed",
+      "type": "execution",
+      "text": "Implemented bounded repairs with no database migration or Hermes integration.",
+      "depends_on": [
+        "repair-decision"
+      ],
+      "scope": [
+        "cmd/cairn",
+        "core",
+        "runner",
+        "internal/indexview"
+      ]
+    },
+    {
+      "id": "repair-verified",
+      "type": "verification",
+      "text": "Disposable PostgreSQL integration with race detection, make check and 74 Python tests pass.",
+      "depends_on": [
+        "repair-executed"
+      ],
+      "criteria": [
+        "Durable outcome or exact retry survives cleanup failure",
+        "Existing core paging is reachable from CLI",
+        "Structured index preserves required context within input room"
+      ],
+      "evidence": [
+        "review-tests"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Bounded repairs at existing boundaries",
+      "disposition": "selected",
+      "evidence": [
+        "review-source",
+        "review-tests"
+      ]
+    },
+    {
+      "option": "Change sealed compiler allocation or increase user budget to fit convenience strings",
+      "disposition": "rejected",
+      "evidence": [
+        "review-choice"
+      ]
+    },
+    {
+      "option": "Infer provider destinations through arbitrary wrapper scripts or commission a broad script review",
+      "disposition": "deferred",
+      "evidence": [
+        "review-authority",
+        "review-choice"
+      ]
+    }
+  ],
+  "source_locators": [
+    "runner/runner.go",
+    "core/refusals.go",
+    "cmd/cairn/commands.go",
+    "internal/indexview/view.go",
+    "docs/verification/ultrareview-repairs-2026-09-13.md",
+    "pincite:pkt-08467984d9052110@sha256:08467984d905211059e244df153665d7f2faaa4f2cc446b982460b42620b35e4"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "make test-integration",
+    "make check",
+    "74 Python tests",
+    "native top-level help"
+  ],
+  "reopening_conditions": [
+    "Regression of outcome recovery or inspection pagination",
+    "Structured pull arguments alone fail a valid supported presentation budget",
+    "Owner requests a broader harness/provider detection contract"
+  ],
+  "residual_risk": [
+    "caller nil checks and method use: Nonmaterial: no interface-valued nil return is changed; the new count is an optional integer with historical-absence regression coverage.",
+    "dynamic type and dynamic value at the return: Nonmaterial: no interface-valued nil return is changed; the new count is an optional integer with historical-absence regression coverage.",
+    "backing-array sharing and ownership: Nonmaterial: existing refusal sorting/truncation ownership is unchanged; presentation allocates its own entries and the regression checks original semantic entries remain intact.",
+    "len and cap at the mutation boundary: Nonmaterial: existing refusal sorting/truncation ownership is unchanged; presentation allocates its own entries and the regression checks original semantic entries remain intact.",
+    "slice ownership and mutation path: Nonmaterial: existing refusal sorting/truncation ownership is unchanged; presentation allocates its own entries and the regression checks original semantic entries remain intact.",
+    "tests that observe both aliased views: Nonmaterial: existing refusal sorting/truncation ownership is unchanged; presentation allocates its own entries and the regression checks original semantic entries remain intact.",
+    "encoding and semantic-unit contract: Nonmaterial: existing JSON encoding and UTF-8 byte accounting are unchanged; the repair removes whole convenience fields and tests the encoded response limit.",
+    "encoding contract at ingress: Nonmaterial: existing JSON encoding and UTF-8 byte accounting are unchanged; the repair removes whole convenience fields and tests the encoded response limit.",
+    "invalid-encoding behavior: Nonmaterial: existing JSON encoding and UTF-8 byte accounting are unchanged; the repair removes whole convenience fields and tests the encoded response limit.",
+    "required semantic unit: bytes, code points, or graphemes: Nonmaterial: existing JSON encoding and UTF-8 byte accounting are unchanged; the repair removes whole convenience fields and tests the encoded response limit.",
+    "evidence-incidents: Nonmaterial: no production incident frequency or occurrence is claimed; source and disposable reproductions establish the bounded repair."
+  ]
+}

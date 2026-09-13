@@ -43,7 +43,7 @@ Everyday commands:
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
   proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST
-  list REPO | get UUID | use-report [--record UUID] [--limit N] [--offset N] REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
+  list [--limit N] [--offset N] REPO | get UUID | use-report [--record UUID] [--limit N] [--offset N] REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact [--offset N] UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
   create edit revise append replace delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
@@ -101,7 +101,7 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return buildinfo.Read(), nil
 	}
 	if len(args) == 1 && (args[0] == "help" || args[0] == "--help") {
-		return help, nil
+		return commandHelp(help), nil
 	}
 	if len(args) == 0 {
 		return nil, invalid("expected a command; use --help")
@@ -184,6 +184,27 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return remember(ctx, store, args[1:], input)
 	case "search":
 		return search(ctx, store, args[1:])
+	case "list":
+		f := flags("list")
+		limit := f.Int("limit", 100, "maximum records (1-200)")
+		offset := f.Int("offset", 0, "records to skip")
+		if err := f.Parse(args[1:]); err != nil {
+			return nil, invalid(err.Error())
+		}
+		if f.NArg() != 1 {
+			return nil, invalid("list requires one repository")
+		}
+		return store.List(ctx, core.ListRequest{Repo: f.Arg(0), Limit: *limit, Offset: *offset})
+	case "impact":
+		f := flags("impact")
+		offset := f.Int("offset", 0, "exposures to skip (100 per page)")
+		if err := f.Parse(args[1:]); err != nil {
+			return nil, invalid(err.Error())
+		}
+		if f.NArg() != 1 {
+			return nil, invalid("impact requires one record UUID")
+		}
+		return store.Impact(ctx, f.Arg(0), *offset)
 	case "evidence-impact":
 		f := flags("evidence-impact")
 		recordOffset := f.Int("record-offset", 0, "affected record versions to skip")
@@ -263,7 +284,7 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return store.InstructionPolicy(ctx, args[1])
 		}
 		return store.PolicyRevision(ctx, args[1])
-	case "get", "replay", "report", "list", "impact", "docket", "explain", "preview-retract", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict", "supersession", "scope-authorization":
+	case "get", "replay", "report", "docket", "explain", "preview-retract", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict", "supersession", "scope-authorization":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
 		}
@@ -306,10 +327,6 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			}{true, p}, err
 		case "report":
 			return store.Report(ctx, args[1])
-		case "list":
-			return store.List(ctx, core.ListRequest{Repo: args[1], Limit: 100})
-		case "impact":
-			return store.Impact(ctx, args[1], 0)
 		}
 	}
 	if len(args) != 1 {

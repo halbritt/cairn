@@ -109,7 +109,7 @@ func (s *Store) receiptAccess(ctx context.Context, tx pgx.Tx, id string) error {
 	}
 	var caller, repo string
 	err := tx.QueryRow(ctx, `SELECT caller,scope->>'repo' FROM cairn.retrieval_receipt WHERE receipt_id=$1`, id).Scan(&caller, &repo)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return failure("NOT_FOUND", "receipt not found")
 	}
 	if err != nil {

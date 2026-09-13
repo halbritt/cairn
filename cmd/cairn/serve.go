@@ -69,7 +69,7 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 		return invalid("invalid identity configuration")
 	}
 	var extra any
-	if err = decoder.Decode(&extra); err != io.EOF {
+	if err = decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return invalid("expected one identity array")
 	}
 	var ranker core.SemanticRanker

@@ -58,11 +58,11 @@ type UseReport struct {
 // observation stream before joining, so repeated delivery/citation observations
 // cannot multiply the unit of analysis. Absence of H0 use telemetry is unknown.
 func (s *Store) UseReport(ctx context.Context, req UseReportRequest) (UseReport, error) {
-	if err := s.checkRepo(req.Repo); err != nil {
-		return UseReport{}, err
-	}
 	if req.Repo == "" || req.Limit < 1 || req.Limit > 200 || req.Offset < 0 {
 		return UseReport{}, failure("INVALID_REQUEST", "repo, limit 1-200 and nonnegative offset required")
+	}
+	if err := s.checkRepo(req.Repo); err != nil {
+		return UseReport{}, err
 	}
 	if req.RecordID != "" {
 		if err := validID(req.RecordID); err != nil {

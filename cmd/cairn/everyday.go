@@ -5,6 +5,7 @@ import (
 	"flag"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -204,7 +205,7 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 		*query = *prompt
 	}
 	command := f.Args()
-	if strings.Contains(strings.ToLower(filepath.Base(command[0])), "opencode") && *dest != "hosted" {
+	if isOpenCodeCommand(command[0]) && *dest != "hosted" {
 		return runner.Result{}, invalid("OpenCode must use --destination hosted; its provider is not a trusted local binding")
 	}
 	artifacts, err := dataDirectory()
@@ -238,4 +239,25 @@ func runTask(ctx context.Context, s runner.Store, args []string) (runner.Result,
 		err = &core.Error{Code: "RUN_FAILED", Message: "wrapped task failed; inspect process_state and the run artifact directory", Cause: err}
 	}
 	return result, err
+}
+
+// This catches known launchers and renamed symlinks, not arbitrary wrappers or
+// their provider configuration. The operator still declares the destination.
+func isOpenCodeCommand(command string) bool {
+	knownName := func(path string) bool {
+		switch strings.ToLower(filepath.Base(path)) {
+		case "opencode", "opencode.exe":
+			return true
+		}
+		return false
+	}
+	if knownName(command) {
+		return true
+	}
+	path, err := exec.LookPath(command)
+	if err != nil {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	return err == nil && knownName(resolved)
 }

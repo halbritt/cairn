@@ -19,11 +19,11 @@ type RecordPage struct {
 }
 
 func (s *Store) List(ctx context.Context, req ListRequest) (RecordPage, error) {
-	if err := s.checkRepo(req.Repo); err != nil {
-		return RecordPage{}, err
-	}
 	if req.Repo == "" || req.Limit < 1 || req.Limit > 200 || req.Offset < 0 {
 		return RecordPage{}, failure("INVALID_REQUEST", "exact repo, limit 1-200 and nonnegative offset required")
+	}
+	if err := s.checkRepo(req.Repo); err != nil {
+		return RecordPage{}, err
 	}
 	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
 	if err != nil {

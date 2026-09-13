@@ -91,7 +91,7 @@ func readRecoveryFile(path string) (record core.RecoveryRecord, err error) {
 	if err = decoder.Decode(&record); err != nil {
 		return record, invalid("invalid recovery record JSON")
 	}
-	if decoder.Decode(new(any)) != io.EOF {
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
 		return record, invalid("expected exactly one recovery record")
 	}
 	return record, nil

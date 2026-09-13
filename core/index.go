@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -320,7 +321,7 @@ func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandReque
 	}
 	var expires, now time.Time
 	err := tx.QueryRow(ctx, `SELECT expires_at,credits,remaining_bytes,clock_timestamp() FROM cairn.index_session WHERE receipt_id=$1 FOR UPDATE`, req.ReceiptID).Scan(&expires, &credits, &remaining, &now)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return failure("STALE_HANDLE", "no expansion session for receipt")
 	}
 	if err != nil {
@@ -353,7 +354,7 @@ func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandReque
 	}
 	var id string
 	var version int
-	if err = tx.QueryRow(ctx, `SELECT record_id::text,version FROM cairn.index_handle WHERE receipt_id=$1 AND handle=$2`, req.ReceiptID, req.Handle).Scan(&id, &version); err == pgx.ErrNoRows {
+	if err = tx.QueryRow(ctx, `SELECT record_id::text,version FROM cairn.index_handle WHERE receipt_id=$1 AND handle=$2`, req.ReceiptID, req.Handle).Scan(&id, &version); errors.Is(err, pgx.ErrNoRows) {
 		return failure("STALE_HANDLE", "handle is not part of this index")
 	}
 	if err != nil {
@@ -438,7 +439,7 @@ func (s *Store) expansionAccess(ctx context.Context, tx pgx.Tx, id string) error
 	err := tx.QueryRow(ctx, `SELECT r.caller,r.scope->>'repo',COALESCE(i.expansion_reader,'')
 		FROM cairn.retrieval_receipt r LEFT JOIN cairn.index_session i USING(receipt_id)
 		WHERE r.receipt_id=$1`, id).Scan(&owner, &repo, &reader)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return failure("NOT_FOUND", "receipt not found")
 	}
 	if err != nil {
@@ -564,7 +565,7 @@ func (s *Store) InvalidateHandles(ctx context.Context, req InvalidateHandlesRequ
 func indexSessionCurrent(ctx context.Context, tx pgx.Tx, id string) error {
 	var expired bool
 	err := tx.QueryRow(ctx, `SELECT expires_at<=clock_timestamp() FROM cairn.index_session WHERE receipt_id=$1`, id).Scan(&expired)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
 	if err != nil {

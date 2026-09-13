@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -76,7 +77,7 @@ func (s *Store) BeginRestore(ctx context.Context, req BeginRestoreRequest) (Rest
 		if err == nil && !cachedCurrent {
 			return failure("STALE_RESTORE", "begin request belongs to a completed or superseded session; use a fresh request UUID for a new restore")
 		}
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
 		return err

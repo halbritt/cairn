@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"github.com/jackc/pgx/v5"
 	"time"
 )
@@ -37,7 +38,7 @@ func (s *Store) CheckEvidence(ctx context.Context, req EvidenceCheckRequest) (Ev
 		var body, digest []byte
 		var repo string
 		err := tx.QueryRow(ctx, `SELECT body,digest,repo,check_generation FROM cairn.evidence WHERE evidence_id=$1 FOR UPDATE`, req.EvidenceID).Scan(&body, &digest, &repo, &result.Generation)
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return result, failure("NOT_FOUND", "evidence not found")
 		}
 		if err != nil {
@@ -95,7 +96,7 @@ func (s *Store) EvidenceChecks(ctx context.Context, id string) ([]EvidenceCheck,
 	defer tx.Rollback(ctx)
 	var repo string
 	err = tx.QueryRow(ctx, `SELECT repo FROM cairn.evidence WHERE evidence_id=$1`, id).Scan(&repo)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, failure("NOT_FOUND", "evidence not found")
 	}
 	if err != nil {

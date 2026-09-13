@@ -114,8 +114,8 @@ Update the Cairn API service as well as clients before using paged browsing.
 
 The `cairn.agent-search/1` view retains the index order and metadata, full
 mandatory `selected` entries, scope/currentness/policy fields, omission counts
-and session limits. Each index entry includes a complete `pull_command` with
-the correct receipt and version-bound handle. Run that command to inspect the
+and session limits. When space permits, each index entry includes a complete
+`pull_command` with the correct receipt and version-bound handle. Run it to inspect the
 body; it carries the executable/socket/token-file paths used by search. Paths
 are shell-quoted. The token contents never appear in the command. The included
 pull request UUID lets the exact displayed command be retried without spending
@@ -129,7 +129,10 @@ without parsing shell text. The CLI also accepts it directly on stdin with
 This is a presentation view, not a new sealed semantic package. `source_schema`
 and `source_seal` identify the underlying package; `receipt_id` identifies the
 original retrieval for host observation. The entire encoded view is checked
-against the declared input room. If command paths make it too large, it refuses
+against the declared input room. If the repeated shell commands make it too large,
+the view omits all `pull_command` strings and retains the complete `pull_arguments`
+for every entry. Pass those arguments on stdin to `agent pull` using the same
+connection profile. If the structured view still exceeds the room, it refuses
 without truncating entries or mandatory context. The original index may already
 be recorded; this refusal does not erase exposure history or prove delivery.
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"path"
 	"slices"
 	"strings"
@@ -71,7 +72,7 @@ func EntityIntentSHA256(refs []EntityRef) (string, error) {
 func readEntities(ctx context.Context, tx pgx.Tx, id string, version int) ([]EntityRef, error) {
 	var refs []EntityRef
 	err := tx.QueryRow(ctx, `SELECT entities FROM cairn.record_entities WHERE record_id=$1 AND version=$2`, id, version).Scan(&refs)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	return refs, err

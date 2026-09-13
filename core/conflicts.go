@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"slices"
 
 	"github.com/google/uuid"
@@ -92,6 +93,9 @@ func (s *Store) Resolve(ctx context.Context, req ResolveRequest) (Conflict, erro
 		var c Conflict
 		c.ID = req.ConflictID
 		if err := tx.QueryRow(ctx, `SELECT repo FROM cairn.conflict_group WHERE conflict_id=$1`, req.ConflictID).Scan(&c.Repo); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return c, failure("NOT_FOUND", "conflict not found")
+			}
 			return c, err
 		}
 		chain, err := s.authorize(ctx, tx, req.GrantID, "resolve", c.Repo)

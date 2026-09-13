@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -159,7 +160,7 @@ func verifyCheckpoint(ctx context.Context, tx pgx.Tx, req VerifyCheckpointReques
 	result := CheckpointVerification{CheckpointID: req.CheckpointID, Missing: []string{}, Altered: []string{}, Limit: "Verifies the expected emitted C/D audit metadata set only. Payloads, state projections, and newer lost commits require separate verification."}
 	var cp AuditCheckpoint
 	err := tx.QueryRow(ctx, `SELECT manifest FROM cairn.audit_checkpoint WHERE checkpoint_id=$1`, req.CheckpointID).Scan(&cp)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return result, failure("CHECKPOINT_MISMATCH", "expected checkpoint is missing from the restore")
 	}
 	if err != nil {

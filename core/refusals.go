@@ -19,6 +19,7 @@ type Refusal struct {
 	OptionalLimit      int                   `json:"optional_limit,omitempty"`
 	Ranking            string                `json:"ranking,omitempty"`
 	Candidates         []CandidateEvaluation `json:"candidates,omitempty"`
+	CandidatesCount    *int                  `json:"candidates_count,omitempty"`
 	ID                 string                `json:"refusal_id"`
 	RequestID          string                `json:"request_id"`
 	Operation          string                `json:"operation"`
@@ -75,7 +76,7 @@ func (s *Store) retainRefusal(ctx context.Context, request any, r Refusal, cause
 		if err == nil {
 			return existing, tx.Commit(ctx)
 		}
-		if err != pgx.ErrNoRows {
+		if !errors.Is(err, pgx.ErrNoRows) {
 			return "", err
 		}
 		r.ID = uuid.NewString()
@@ -101,6 +102,8 @@ func (s *Store) retainRefusal(ctx context.Context, request any, r Refusal, cause
 			}
 			return a.Version - b.Version
 		})
+		candidatesCount := len(r.Candidates)
+		r.CandidatesCount = &candidatesCount
 		if len(r.Candidates) > 1000 {
 			r.Candidates = r.Candidates[:1000]
 		}
@@ -128,7 +131,7 @@ func (s *Store) Refusal(ctx context.Context, id string) (Refusal, error) {
 	var r Refusal
 	var caller string
 	err = tx.QueryRow(ctx, `SELECT caller,detail FROM cairn.refusal WHERE refusal_id=$1`, id).Scan(&caller, &r)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return r, failure("NOT_FOUND", "refusal not found")
 	}
 	if err != nil {

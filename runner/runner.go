@@ -78,6 +78,10 @@ type Store interface {
 }
 
 func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer) (Result, error) {
+	return run(ctx, store, req, stdout, stderr, syscall.Kill)
+}
+
+func run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer, kill func(int, syscall.Signal) error) (Result, error) {
 	outputs, err := prepareOutputArtifacts(req.Directory, req.OutputArtifacts, req.ShareArtifactEvidence)
 	if err != nil {
 		return Result{}, err
@@ -195,7 +199,7 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	command := exec.CommandContext(runCtx, req.Command[0], req.Command[1:]...)
 	command.Dir = req.Directory
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
+	command.Cancel = func() error { return kill(-command.Process.Pid, syscall.SIGKILL) }
 	command.WaitDelay = 2 * time.Second
 	command.Env = ChildEnvironment()
 	if req.Carrier == "stdin" {
@@ -211,21 +215,21 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	}
 	started := time.Now()
 	startErr := command.Start()
-	var waitErr, deliveryErr error
+	var waitErr, deliveryErr, cleanupErr error
 	if startErr == nil {
 		delivery.RequestID = uuid.NewString()
 		delivery.Assurance = "available"
 		if _, err = store.RecordDelivery(ctx, delivery); err != nil {
 			deliveryErr = fmt.Errorf("delivery persistence failed after launch: %w", err)
-			if killErr := syscall.Kill(-command.Process.Pid, syscall.SIGKILL); killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
+			if killErr := kill(-command.Process.Pid, syscall.SIGKILL); killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
 				deliveryErr = errors.Join(deliveryErr, killErr)
 			}
 		}
 		waitErr = command.Wait()
 		// The run owns its process group, including children that survived the main
 		// process. ESRCH means it has already disappeared.
-		if killErr := syscall.Kill(-command.Process.Pid, syscall.SIGKILL); killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
-			return result, killErr
+		if killErr := kill(-command.Process.Pid, syscall.SIGKILL); killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
+			cleanupErr = fmt.Errorf("process group cleanup failed: %w", killErr)
 		}
 	}
 	state := "exited"
@@ -242,26 +246,31 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	}
 	result.ProcessState = state
 	result.ExitCode = exitCode
+	processErr := errors.Join(startErr, deliveryErr, cleanupErr)
+	var exitErr *exec.ExitError
+	if state == "exited" && waitErr != nil && !errors.As(waitErr, &exitErr) {
+		processErr = errors.Join(processErr, waitErr)
+	}
 	outcome := core.OutcomeRequest{RequestID: uuid.NewString(), ReceiptID: pkg.ReceiptID, ExitCode: exitCode, DurationMS: time.Since(started).Milliseconds(), ProcessState: state, StdoutSHA256: hex.EncodeToString(outHash.Sum(nil)), StderrSHA256: hex.EncodeToString(errHash.Sum(nil))}
 	// A cancelled task still needs a durable outcome. If the DB is down, preserve
 	// the exact retry request locally and report the persistence failure.
 	encoded, err := json.MarshalIndent(outcome, "", "  ")
 	if err != nil {
-		return result, err
+		return result, errors.Join(processErr, err)
 	}
 	pending := filepath.Join(result.Artifacts, "outcome.pending.json")
 	if err = os.WriteFile(pending, encoded, 0600); err != nil {
-		return result, err
+		return result, errors.Join(processErr, err)
 	}
 	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer finishCancel()
 	observation, err := store.RecordOutcome(finishCtx, outcome)
 	if err != nil {
-		return result, fmt.Errorf("outcome not committed; retry request retained at %s: %w", pending, err)
+		return result, errors.Join(processErr, fmt.Errorf("outcome not committed; retry request retained at %s: %w", pending, err))
 	}
 	result.OutcomeID = observation.ID
 	if err = os.Rename(pending, filepath.Join(result.Artifacts, "outcome.json")); err != nil {
-		return result, err
+		return result, errors.Join(processErr, err)
 	}
 	if startErr != nil {
 		return result, startErr
@@ -272,19 +281,10 @@ func Run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 			result.ArtifactEvidence = &evidence
 		}
 		if err != nil {
-			return result, errors.Join(deliveryErr, waitErr, err)
+			return result, errors.Join(processErr, waitErr, err)
 		}
 	}
-	if deliveryErr != nil {
-		return result, deliveryErr
-	}
-	if state == "exited" {
-		var exitErr *exec.ExitError
-		if waitErr != nil && !errors.As(waitErr, &exitErr) {
-			return result, waitErr
-		}
-	}
-	return result, nil
+	return result, processErr
 }
 
 // Preparation failed before Start was called. Retain that known non-execution

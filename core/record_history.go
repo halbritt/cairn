@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -74,7 +75,7 @@ func (s *Store) History(ctx context.Context, req RecordHistoryRequest, dest Dest
 	defer tx.Rollback(ctx)
 	// Hold the source identity against edits/forgetting until this read completes.
 	var id string
-	if err = tx.QueryRow(ctx, `SELECT record_id::text FROM cairn.memory_record WHERE record_id=$1 FOR SHARE`, req.RecordID).Scan(&id); err == pgx.ErrNoRows {
+	if err = tx.QueryRow(ctx, `SELECT record_id::text FROM cairn.memory_record WHERE record_id=$1 FOR SHARE`, req.RecordID).Scan(&id); errors.Is(err, pgx.ErrNoRows) {
 		return RecordHistory{}, failure("NOT_FOUND", "record not found")
 	} else if err != nil {
 		return RecordHistory{}, err

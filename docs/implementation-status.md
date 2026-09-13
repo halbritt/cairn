@@ -1,5 +1,11 @@
 # Implementation status — 2026-09-13
 
+The [2026-09-13 ultrareview repair](verification/ultrareview-repairs-2026-09-13.md)
+addresses outcome recovery, CLI help and pagination, error classification, refusal
+counts and tight index presentation. The disposable integration suite, race checks
+and 74 Python tests pass. The CLI and API need the repaired build; no migration
+is required. Earlier installation identities below are historical snapshots.
+
 [Claude lifecycle hooks](claude-lifecycle.md) and the optional [OpenCode lifecycle
 plugin](opencode-lifecycle.md) now share selective recall, separate reusable notes,
 named workstreams and unchanged-capture suppression. Native OpenCode continued

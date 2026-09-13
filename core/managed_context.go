@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -125,7 +126,7 @@ func (s *Store) ContextPurgeTarget(ctx context.Context, deletionID, receiptID st
  UNION
  SELECT receipt_id,directory,directory_device,directory_inode,body_sha256,ownership_id FROM cairn.recovery_context WHERE deletion_id=$1 AND receipt_id=$2
  ) c JOIN cairn.deletion_effect e ON e.target_id=c.receipt_id::text AND e.target_type='managed_context' WHERE e.deletion_id=$1 AND c.receipt_id=$2`, deletionID, receiptID).Scan(&result.ReceiptID, &result.Directory, &result.DirectoryDevice, &result.DirectoryInode, &result.BodySHA256, &result.OwnershipID, &result.Status)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return result, failure("NOT_FOUND", "no authorized managed context effect")
 	}
 	if err != nil {
@@ -163,7 +164,7 @@ func (s *Store) RecordContextPurge(ctx context.Context, req ContextPurgeResult) 
 		}
 		var status string
 		err := tx.QueryRow(ctx, `SELECT status FROM cairn.deletion_effect WHERE deletion_id=$1 AND target_type='managed_context' AND target_id=$2 FOR UPDATE`, req.DeletionID, req.ReceiptID).Scan(&status)
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return Deletion{}, failure("NOT_FOUND", "no authorized managed context effect")
 		}
 		if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/jackc/pgx/v5"
@@ -103,7 +104,7 @@ func recompileDestination(ctx context.Context, tx pgx.Tx, pkg Package, dest Dest
 
 func historicalRecord(ctx context.Context, tx pgx.Tx, e *CandidateEvaluation) (Record, error) {
 	var deleted bool
-	if err := tx.QueryRow(ctx, `SELECT payload_deleted_by IS NOT NULL FROM cairn.record_version WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&deleted); err != nil && err != pgx.ErrNoRows {
+	if err := tx.QueryRow(ctx, `SELECT payload_deleted_by IS NOT NULL FROM cairn.record_version WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&deleted); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return Record{}, err
 	}
 	if deleted {
@@ -111,7 +112,7 @@ func historicalRecord(ctx context.Context, tx pgx.Tx, e *CandidateEvaluation) (R
 	}
 	r := Record{RecordID: e.RecordID, Version: e.Version, Class: e.Class, Lifecycle: "active", Sensitivity: e.Facts.Sensitivity, WrittenAt: e.WrittenAt, AttributionState: e.Facts.AttributionState}
 	err := tx.QueryRow(ctx, `SELECT kind,body,repo,task_id,run_id,attributed_producer,COALESCE(attempt_id::text,''),result_ref,claim_type,observed_writer,witness FROM cairn.record_version WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&r.Kind, &r.Body, &r.Scope.Repo, &r.Scope.TaskID, &r.Scope.RunID, &r.AttributedProducer, &r.AttemptID, &r.ResultRef, &r.ClaimType, &r.ObservedWriter, &r.Witness)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return r, failure("REPLAY_INCOMPLETE", "historical record version is missing")
 	}
 	if err != nil {
@@ -123,7 +124,7 @@ func historicalRecord(ctx context.Context, tx pgx.Tx, e *CandidateEvaluation) (R
 	}
 	r.Draft.Sensitivity = r.Sensitivity
 	err = tx.QueryRow(ctx, `SELECT pins FROM cairn.record_applicability WHERE record_id=$1 AND version=$2`, e.RecordID, e.Version).Scan(&r.Pins)
-	if err != nil && err != pgx.ErrNoRows {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return r, err
 	}
 	r.Entities, err = readEntities(ctx, tx, r.RecordID, r.Version)

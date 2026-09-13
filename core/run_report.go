@@ -53,11 +53,11 @@ type RunReport struct {
 }
 
 func (s *Store) RunReport(ctx context.Context, req RunReportRequest) (RunReport, error) {
-	if err := s.checkRepo(req.Repo); err != nil {
-		return RunReport{}, err
-	}
 	if req.Repo == "" || req.Limit < 1 || req.Limit > 200 || req.Offset < 0 {
 		return RunReport{}, failure("INVALID_REQUEST", "repo, limit 1-200 and nonnegative offset required")
+	}
+	if err := s.checkRepo(req.Repo); err != nil {
+		return RunReport{}, err
 	}
 	if req.PolicyRevision != "" && req.PolicyRevision != "local-loop/1" {
 		if err := validID(req.PolicyRevision); err != nil {

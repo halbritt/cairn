@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -156,7 +157,7 @@ func (s *Store) AuthorizeScope(ctx context.Context, req AuthorizeScopeRequest) (
 func scopeAuthority(ctx context.Context, tx pgx.Tx, id string) ([]Grant, error) {
 	var grant string
 	err := tx.QueryRow(ctx, `SELECT grant_id::text FROM cairn.scope_authorization WHERE record_id=$1 ORDER BY version DESC LIMIT 1`, id).Scan(&grant)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -190,7 +191,7 @@ func (s *Store) ScopeAuthorization(ctx context.Context, id string) (ScopeAuthori
 func readScopeAuthorization(ctx context.Context, tx pgx.Tx, id string) (ScopeAuthorization, error) {
 	var result ScopeAuthorization
 	err := tx.QueryRow(ctx, `SELECT s.record_id::text,s.previous_version,s.version,v.repo,v.task_id,v.run_id,p.pins,s.grant_id::text,s.event_id::text,e.actor,e.occurred_at FROM cairn.scope_authorization s JOIN cairn.record_version v ON v.record_id=s.record_id AND v.version=s.version LEFT JOIN cairn.record_applicability p ON p.record_id=s.record_id AND p.version=s.version JOIN cairn.authority_event e USING(event_id) WHERE s.record_id=$1 ORDER BY s.version DESC LIMIT 1`, id).Scan(&result.RecordID, &result.PreviousVersion, &result.Version, &result.Scope.Repo, &result.Scope.TaskID, &result.Scope.RunID, &result.Pins, &result.GrantID, &result.EventID, &result.Actor, &result.AuthorizedAt)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return result, failure("NOT_FOUND", "record has no scope authorization")
 	}
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"strings"
 	"time"
 
@@ -211,7 +212,7 @@ func checkAssessmentEvidence(ctx context.Context, tx pgx.Tx, id, repo string) er
 	var body, digest []byte
 	var sourceRepo, state string
 	err := tx.QueryRow(ctx, `SELECT body,digest,repo,state FROM cairn.evidence WHERE evidence_id=$1 FOR SHARE`, id).Scan(&body, &digest, &sourceRepo, &state)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return failure("EVIDENCE_UNAVAILABLE", "assessment evidence missing")
 	}
 	if err != nil {

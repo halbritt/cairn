@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -197,7 +198,7 @@ func (s *Store) Supersession(ctx context.Context, id string) (Supersession, erro
 func readSupersession(ctx context.Context, tx pgx.Tx, id string) (Supersession, error) {
 	var result Supersession
 	err := tx.QueryRow(ctx, `SELECT record_id::text,previous_version,retired_version,replacement_id::text,replacement_version,actor,reason,created_at,COALESCE(event_id::text,'') FROM cairn.record_supersession WHERE record_id=$1`, id).Scan(&result.RecordID, &result.PreviousVersion, &result.RetiredVersion, &result.Replacement.RecordID, &result.Replacement.Version, &result.Actor, &result.Reason, &result.CreatedAt, &result.EventID)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return result, failure("NOT_FOUND", "record has no supersession")
 	}
 	return result, err

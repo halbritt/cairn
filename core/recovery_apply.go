@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"sort"
 
 	"github.com/google/uuid"
@@ -128,7 +129,7 @@ func (s *Store) reapplyWithdrawal(ctx context.Context, tx pgx.Tx, root, reason s
 		var version int
 		var revoked bool
 		err := tx.QueryRow(ctx, `SELECT repo,version,revoked,event_id::text FROM cairn.authority_grant WHERE grant_id=$1`, w.SubjectID).Scan(&repo, &version, &revoked, &action.CurrentEventID)
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			action.Outcome = "absent"
 			return action, nil
 		}
@@ -277,7 +278,7 @@ func retainRecoveryContext(ctx context.Context, tx pgx.Tx, applicationID string,
 	}
 	var deletion string
 	err := tx.QueryRow(ctx, `SELECT deletion_id::text FROM cairn.deletion_request WHERE record_id=$1`, c.RecordID).Scan(&deletion)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return failure("INTEGRITY_FAILURE", "external context custody requires a retained forgotten record")
 	}
 	if err != nil {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"time"
@@ -115,7 +116,7 @@ func readProposal(ctx context.Context, tx pgx.Tx, id string) (Proposal, error) {
 	var disposition, result string
 	var due *time.Time
 	err := tx.QueryRow(ctx, `SELECT detail,version,disposition,due_at,COALESCE(result_record::text,''),COALESCE((SELECT review.result_version FROM cairn.proposal_review review WHERE review.proposal_id=lesson_proposal.proposal_id AND review.version=lesson_proposal.version AND review.result_record=lesson_proposal.result_record),0),COALESCE((SELECT review.signature_shareable FROM cairn.proposal_review review WHERE review.proposal_id=lesson_proposal.proposal_id AND review.version=lesson_proposal.version AND review.result_record=lesson_proposal.result_record),false),failure_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=failure_receipt) AND (recovery_receipt IS NULL OR recovery_version=(SELECT max(version) FROM cairn.run_assessment WHERE receipt_id=recovery_receipt)) FROM cairn.lesson_proposal WHERE proposal_id=$1`, id).Scan(&p, &version, &disposition, &due, &result, &p.ResultVersion, &p.SignatureShareable, &p.SourceCurrent)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return p, failure("NOT_FOUND", "proposal not found")
 	}
 	p.Version = version
