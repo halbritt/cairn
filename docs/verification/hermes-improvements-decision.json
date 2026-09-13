@@ -1,0 +1,347 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-hermes-improvements-2026-09-13",
+  "question": "How should the shared Cairn lifecycle engine and Hermes adapter reduce capture latency and add explicit workstream context, inspectable memory status, bounded semantic fallback and current concise checkpoints while preserving selected-write correctness?",
+  "scope": [
+    "Five ordered Hermes memory improvements for CLI and deployed Slack gateway, shared-engine regression and host deployment"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "halbritt",
+    "authority_source": "Owner goal: take tasks 1 through 5 in order, complete them and deploy the changes.",
+    "authorized_scope": [
+      "Implement and deploy the five memory improvements; preserve unrelated configuration and selected-memory authority boundaries"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-improvements-checks",
+      "evidence_class": "evidence-tests",
+      "summary": "101 Python tests and make check passed; focused final lifecycle tests pass (53). Full make test-integration exited 0 with disposable PostgreSQL/race/API/MCP plus installed Claude/OpenCode native checks. Native Hermes fixture with real Cairn API/PG and installed embedding worker exited 0: CLI and real Slack parser/GatewayRunner use captured transport/scripted model responses; test includes cold commands, independent project binding, cross-thread isolation, restart persistence, status with no model call, exact native-history retry/mismatch refusal, semantic paraphrase/full-body delivery and unrelated rejection, completed checkpoint same-ID revision and exact prior history. Existing duplicate/concurrent/reset/expiry/compaction/interruption/timeout/opt-out checks pass. Unit tests check status-write failure without false memory failure, stale status overwrite, process-group cancellation and budget/refusal boundaries. Live installed provider loaded native status and performed ordinary read-only recall; installed hashes/config comparison passed and gateway reconnected Slack Socket Mode with zero restart retries. External model/Slack substitutions limit native accuracy/delivery claims; real selector quality is checked separately.",
+      "provenance": [
+        {
+          "locator": "scripts/test_claude_lifecycle.py",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "757999794825db50a44c2e54f6a86232efb5956332a98ddcd835bc483d680dcb"
+        },
+        {
+          "locator": "scripts/test_hermes_lifecycle.py",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "8d68be120be55eb53d201ff48a87dc92ea24ec28ca58f105b6684249b9b91d5e"
+        },
+        {
+          "locator": "scripts/check_hermes_lifecycle.py",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "9ef1beb8be06f0b42c252ca8d910e354e7ff9eedbcedc7b58fd7b9fa3e607996"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-improvements-final.log",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "3bb5bdb65371f769baa0cd1a2b99d201ab4b5f373b69be990500ded678fe61f8"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-improvements-integration.log",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "c507dfff9d0fda9fe757e8575dd5bcf0b234d3911490be75a8cfc2b1b8f67a2f"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-improvements-python.log",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "8d3d9e0132012d1625903757fe95d5cc2d11ec299d0afd2dde0bb4903aad9cea"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-improvements-check.log",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+        }
+      ],
+      "satisfies": [
+        "out-of-process dependency map and unit-coverage evidence",
+        "the longest happy path touching all out-of-process dependencies per scenario",
+        "whether a candidate failure manifests immediately without corrupting state",
+        "which edge cases unit tests already cover",
+        "cancellation, shutdown, and cleanup tests",
+        "tests, characterization, probes, or explicit residual risk",
+        "sanity check against actual runtime behavior",
+        "reproducibility or independent corroboration"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-improvements-contracts",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "AGENTS.md, README and design review require PostgreSQL, disposable tests, store-owned identity and selected shareable memory. No API/authentication/store code changed. Protected consumers are Claude, OpenCode and Hermes: original-text filtering, receipt budgets, CAS identity/history, scope/destination, timeout/cancellation and opt-outs. Intentional changes are the five plan items; semantic fallback is enabled by the Hermes installer only. Native fixture and full disposable integration cover those consumers. Configuration comparison after install found no unrelated changes. No external Slack test messages were sent; full design acceptance and task benefit are unclaimed.",
+      "provenance": [
+        {
+          "locator": "AGENTS.md",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "c27e830a649a2bbc1a84d97ca28cb8c9bcdf1bf11ec02705f6da9cef41a96504"
+        },
+        {
+          "locator": "README.md",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "c791dca21a0296ed9f574c4c041505f9b3f4102916b1116196ef3f5feb7a66b3"
+        },
+        {
+          "locator": "docs/design-review.md",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "49f7d3c016e0d48cb071331802601c186f234a45fd29d1d1c80935adb95e0a21"
+        },
+        {
+          "locator": "docs/hermes-lifecycle.md",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "19b23f39e61a3fd18f4d8fb79f0bceb964fdd65bf5ea1ad7963296ed4c33beeb"
+        },
+        {
+          "locator": "scripts/check_hermes_lifecycle.py",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "9ef1beb8be06f0b42c252ca8d910e354e7ff9eedbcedc7b58fd7b9fa3e607996"
+        }
+      ],
+      "satisfies": [
+        "accepted desired behavior and semantic authority",
+        "preservation matrix and consumers",
+        "proc-establish-preservation-boundaries",
+        "tests, characterization, probes, or explicit residual risk",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "current source, configuration, and relevant runtime state",
+        "repository instructions from root through target path",
+        "target repository and task scope",
+        "user instruction and authority"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-improvements-measurements",
+      "evidence_class": "evidence-benchmarks",
+      "summary": "Serial wall-time observations use time.monotonic around capture and selector invocation, with lookup/write boundaries replaced in the synthetic benchmark. Six chosen cases (decision, correction, lookup, exclusion, unfinished work, courtesy), two per baseline/current and Haiku model; all passed. Baseline current model all-case median 3.874s; Haiku 7.303s. Courtesy baseline 3.481\u20133.530s; exact shortcut 0.413\u20130.467ms in low-effort comparison and 0.674ms final. The target is zero selection for confirmed courtesy/unchanged dialogue while preserving corrections/checkpoints. Final six-case run passed on final prompt. Low effort gave no consistent advantage; no production model/effort change. Real relevance selector passed paraphrase, unrelated and injected instructions twice (3.15\u20137.17s); real checkpoint cases passed partial/full completion and no reopening, bodies 408/472 bytes. Every attempted case and failure is reported; successful results are not sampled from fastest runs. Bounds are synthetic chosen scenarios, not production distribution or a general latency SLO. Timing instrumentation has no nested profiler; its exact overhead and internal CPU/network decomposition were not measured. CLI version startup 6.7\u201310ms is a lower-bound probe only. No persistent selector/cache was introduced.",
+      "provenance": [
+        {
+          "locator": "scripts/check_selector_performance.py",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "8cce5094165794b7108fd349e6b7338f4720e382ee32be21fe230f1662e4f497"
+        },
+        {
+          "locator": "scripts/check_relevance_selector.py",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "0cfd2388df8b209c2c15cbb52ab675bcc2e03a2a231c132359c43e7007877374"
+        },
+        {
+          "locator": "scripts/check_checkpoint_selector.py",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "5c7f9a6cbe3fc10210b26b8c3c38141d63dc5992050db766e6f4a2b590f003e0"
+        },
+        {
+          "locator": "/tmp/cairn-selector-baseline.json",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "f76c0e254e460545f7705b687dfb3280c9a0dfce3224a656ca13036d90fe3f95"
+        },
+        {
+          "locator": "/tmp/cairn-selector-low.json",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "46d258aae6003309ce4663f0e4351053fd294ea8fa731a6e6973065809cafceb"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-relevance-real.log",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "046d1002c8115869a18ed1c4dc46919980e7e9585780a5f0f129b54aed0a969d"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-checkpoint-final-real.log",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "4bbda57747e55f629a54b235d71d4955467fbe7aaa894fa9b67aa9745b71c77c"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-final-capture.json",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "f35f000f3d779c53212225a79d0c9e51f66b444b9cea8840496d98f0e17def3e"
+        }
+      ],
+      "satisfies": [
+        "accepted workload and operation boundary",
+        "environment, input distribution and scale, concurrency, and success/failure population",
+        "latency percentile, throughput, CPU, memory, I/O, network, cost, or other metric with a target",
+        "access to instrumentation definition or benchmark harness",
+        "instrumentation definition and configuration",
+        "unit, aggregation window, population, and sampling behavior",
+        "representative empirical comparison"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-improvements-scope",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner halbritt authorized taking tasks 1 through 5 in order, completing and deploying them. Slack is the only deployed gateway; interactive CLI remains included. The plan names latency, explicit thread context, status/retry, bounded semantic recall and concise current checkpoints. Semantic changes to those surfaces are authorized. Preserve store-owned identity, shared hosted scope, native memory, task/selector models and unrelated plugins/configuration. Reversal uses installed-file/configuration backups and a gateway restart; checks cover selected writes and native request boundaries.",
+      "provenance": [
+        {
+          "locator": "docs/plans/hermes-improvements.md",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "9eb397ac6408b2dd3d6a780b23fa3501fb67e13681cbd588959b70d204593be9"
+        },
+        {
+          "locator": "AGENTS.md",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "c27e830a649a2bbc1a84d97ca28cb8c9bcdf1bf11ec02705f6da9cef41a96504"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "decision owner",
+        "explicit task authority",
+        "repository contract",
+        "reversibility and verification",
+        "task scope and authority statement",
+        "authority to inspect the target and identify the objective owner",
+        "owner for the objective and any quality tradeoff",
+        "expected future change from accepted plans"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-improvements-structure",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Five ordered commits implement semantic features and supporting tests/docs. The capture shortcut only removes selector calls for exact courtesy pairs after a confirmed prefix (or entire courtesy dialogue); substantive capture still selects. Atomic hashed conversation controls persist binding/status/digest with no raw spool. One profile command plugin owns commands; provider instances own/dispose hooks. Retry uses the live pending snapshot or at most 64 active native history rows with exact digest match. Semantic fallback makes at most one search, one pull and one 8-second relevance selection; combined delivered context stays 12000 bytes and failures retain no unverified optional candidate. Checkpoints are complete replacements under 3000 bytes; completion only revises a supplied topic. Shared-model helper extraction is structural supporting reuse. No daemon, model change, new generic adapter interface, database migration or broad memory rewrite was introduced. Leave-all-unchanged misses the authorized features; retaining the current model avoids unsupported quality/performance tradeoffs. Larger persistence/concurrency designs add lifecycle costs without measured benefit. Reopen if native Hermes contracts change, misses recur or representative latency warrants a different selector.",
+      "provenance": [
+        {
+          "locator": "integrations/lifecycle/memory.py",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "8952ce0676c8f081dcd893df32cf1b06372201447536e644c7db7e78f8774f70"
+        },
+        {
+          "locator": "integrations/hermes/__init__.py",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "8aca35708584ed7436dc6b1fa1fe0c91d151a219187d8db49b421a7b40672f26"
+        },
+        {
+          "locator": "integrations/hermes/controls.py",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "2d7b1210256a1fda4110b5a258c1f36419e2407536fd026e9c76e4be0f351ed0"
+        },
+        {
+          "locator": "integrations/hermes/commands.py",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "215ad8e123c585b6e7677983bbf85828748724eb38fc717c1e5a138b13cfbb84"
+        },
+        {
+          "locator": "scripts/install-hermes-integration.py",
+          "method": "Source inspection and named completed checks, 2026-09-13",
+          "content_sha256": "a9e79e714cf509e6c1834fec1921d153287d97438b21637bc6d3950ef55d5035"
+        }
+      ],
+      "satisfies": [
+        "a bounded decision question",
+        "alternatives including no change where viable",
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "evidence connecting the proposed action to the condition",
+        "actual current cost/risk or absence within a stated interval",
+        "expected future change from accepted plans",
+        "intervention cost and uncertainty",
+        "latent security, safety, data, durability, and compatibility check",
+        "proc-decide-leave-code-alone",
+        "change-type classification",
+        "checkpoint verification",
+        "per-edit change classification",
+        "preservation boundary and semantic authority",
+        "complexity and work-count model",
+        "memory, latency, and semantic tradeoffs",
+        "capacity/backpressure and error propagation",
+        "explicit lifecycle and failure policy",
+        "ownership and lifecycle map"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "observed-improvements",
+      "type": "observation",
+      "text": "Focused, native and full integration checks passed for the five changes; real selector cases verify the named courtesy, relevance and checkpoint behaviors.",
+      "evidence": [
+        "hermes-improvements-checks",
+        "hermes-improvements-measurements"
+      ]
+    },
+    {
+      "id": "selected-route",
+      "type": "decision",
+      "text": "Keep the current selector model; skip confirmed courtesy work, bind explicit conversations, expose status/exact retry, verify one semantic fallback candidate, and replace current checkpoint progress at the same record.",
+      "evidence": [
+        "hermes-improvements-scope",
+        "hermes-improvements-structure",
+        "hermes-improvements-checks",
+        "hermes-improvements-measurements"
+      ],
+      "depends_on": [
+        "observed-improvements"
+      ],
+      "owner": "halbritt",
+      "authority": "Owner-authorized implementation and deployment; bounded implementation choices within that scope."
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Five bounded changes using current native contracts and selector",
+      "disposition": "selected",
+      "evidence": [
+        "hermes-improvements-structure",
+        "hermes-improvements-checks"
+      ]
+    },
+    {
+      "option": "Switch selector to Haiku or low effort",
+      "disposition": "rejected",
+      "evidence": [
+        "hermes-improvements-measurements"
+      ]
+    },
+    {
+      "option": "Leave all five requested behaviors unchanged",
+      "disposition": "rejected",
+      "evidence": [
+        "hermes-improvements-scope"
+      ]
+    },
+    {
+      "option": "Persistent selector, background raw-dialogue queue or broad memory rewrite",
+      "disposition": "rejected",
+      "evidence": [
+        "hermes-improvements-structure"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/plans/hermes-improvements.md",
+    "docs/hermes-lifecycle.md",
+    "scripts/check_hermes_lifecycle.py",
+    "pincite:pkt-04746f2ffaeac3c6@sha256:04746f2ffaeac3c6a647a8935d75b3dd111440fd8972e6df59e7f392e740f0e0"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "101 Python tests, make check, full disposable PostgreSQL/native Claude/OpenCode integration",
+    "Native Hermes CLI/Slack lifecycle and installed embedding-worker path",
+    "Real selector synthetic correctness cases; installed hashes/configuration, ordinary recall and gateway reconnection"
+  ],
+  "reopening_conditions": [
+    "Hermes changes command/provider/session/history contracts",
+    "Repeated semantic misses or relevance errors warrant revised checks",
+    "Representative end-to-end measurements demonstrate a different model or resource design is needed"
+  ],
+  "residual_risk": [
+    "concrete dependency harm: nonmaterial to this narrowed decision because no new dependency-inversion interface is proposed; native concrete contracts and the existing shared engine are retained.",
+    "consumer contract sketch: nonmaterial to this narrowed decision because no new dependency-inversion interface is proposed; native concrete contracts and the existing shared engine are retained.",
+    "consumer policy and provider volatility: nonmaterial to this narrowed decision because no new dependency-inversion interface is proposed; native concrete contracts and the existing shared engine are retained.",
+    "narrow contract and owner: nonmaterial to this narrowed decision because no new dependency-inversion interface is proposed; native concrete contracts and the existing shared engine are retained.",
+    "net cost comparison: nonmaterial to this narrowed decision because no new dependency-inversion interface is proposed; native concrete contracts and the existing shared engine are retained.",
+    "real implementation, substitution, release, or legacy-seam need: nonmaterial to this narrowed decision because no new dependency-inversion interface is proposed; native concrete contracts and the existing shared engine are retained.",
+    "profile contribution and input distribution/scale: nonmaterial to this narrowed decision because the performance claim is limited to eliminating one selector invocation for tested exact courtesy cases. No internal bottleneck, general production latency distribution or precise timing-overhead claim is made; the selector/model remain unchanged.",
+    "instrumentation overhead and data-loss limits: nonmaterial to this narrowed decision because the performance claim is limited to eliminating one selector invocation for tested exact courtesy cases. No internal bottleneck, general production latency distribution or precise timing-overhead claim is made; the selector/model remain unchanged.",
+    "direct versus cumulative contribution and concurrency boundary analysis: nonmaterial to this narrowed decision because the performance claim is limited to eliminating one selector invocation for tested exact courtesy cases. No internal bottleneck, general production latency distribution or precise timing-overhead claim is made; the selector/model remain unchanged.",
+    "profile type and sampling/granularity semantics: nonmaterial to this narrowed decision because the performance claim is limited to eliminating one selector invocation for tested exact courtesy cases. No internal bottleneck, general production latency distribution or precise timing-overhead claim is made; the selector/model remain unchanged.",
+    "representative workload, version, and profile interval: nonmaterial to this narrowed decision because the performance claim is limited to eliminating one selector invocation for tested exact courtesy cases. No internal bottleneck, general production latency distribution or precise timing-overhead claim is made; the selector/model remain unchanged.",
+    "retention and contention measurement where reused: nonmaterial to this narrowed decision because no persistent selector or reusable pool was introduced. Control records persist until operator removal; their long-term disk footprint was not measured and no retention/resource improvement is claimed.",
+    "Native model responses and Slack outbound transport are substituted in fixtures. Separate real-model checks cover only the named synthetic inputs; actual external Slack delivery and sustained task usefulness are unmeasured.",
+    "Selection/relevance are fallible. Multi-note writes are not atomic; abrupt death can lose pending text. Cold retry refuses missing, changed or compacted original history.",
+    "Fallback adds one bounded relevance-model call after a lexical miss; typical-turn latency and long-term control-file retention were not measured."
+  ]
+}
