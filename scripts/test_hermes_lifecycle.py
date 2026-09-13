@@ -102,6 +102,41 @@ class HermesBoundaryTests(unittest.TestCase):
         self.assertEqual(run.call_count,2)
         self.assertNotIn('PRIVATE',str(logs.output))
 
+    def test_status_tracks_failure_then_retry_without_stale_recall_overwrite(self):
+        original = [dict(role='user', content='PRIVATE selected work')]
+        with patch.object(plugin, 'run_engine', return_value=types.SimpleNamespace(returncode=1, stdout='PRIVATE')):
+            with self.assertLogs(plugin.logger, level='WARNING'):
+                self.provider.post_turn(session_id=self.provider.session_id, conversation_history=original)
+        record = plugin.read_control(self.home, self.provider.control_key)
+        self.assertTrue(record['pending'])
+        self.assertEqual(record['last_capture']['outcome'], 'failed')
+        self.assertNotIn('PRIVATE', json.dumps(record))
+        response = dict(cairn_status=dict(last_recall=dict(outcome='empty', records=[]),
+                                         last_capture=dict(outcome='saved', records=['obsolete'])))
+        with patch.object(plugin, 'run_engine', return_value=types.SimpleNamespace(returncode=0, stdout=json.dumps(response))):
+            self.provider.invoke('UserPromptSubmit', prompt='continue')
+        self.assertEqual(plugin.read_control(self.home, self.provider.control_key)['last_capture']['outcome'], 'failed')
+        response = dict(cairn_status=dict(last_capture=dict(outcome='saved', records=['confirmed'])))
+        with patch.object(plugin, 'run_engine', return_value=types.SimpleNamespace(returncode=0, stdout=json.dumps(response))):
+            self.provider.pre_command(command='cairn', cairn_retry=True, surface='gateway',
+                                      session_key=self.provider.gateway_session_key or 'unmatched')
+            self.assertTrue(self.provider.capture_pending)
+            self.provider.pre_command(command='cairn', cairn_retry=True, surface='cli', session_key=self.provider.session_id)
+        record = plugin.read_control(self.home, self.provider.control_key)
+        self.assertFalse(record['pending'])
+        self.assertEqual(record['last_capture']['records'], ['confirmed'])
+
+    def test_status_storage_failure_does_not_turn_success_into_failed_capture(self):
+        with patch.object(plugin, 'change_control', side_effect=OSError('PRIVATE')), patch.object(
+                plugin, 'run_engine', return_value=types.SimpleNamespace(returncode=0,
+                stdout=json.dumps(dict(cairn_status=dict(last_capture=dict(outcome='saved')))))):
+            with self.assertLogs(plugin.logger, level='WARNING') as logs:
+                result = self.provider.invoke('SessionEnd', messages=[])
+                self.provider.capture_result(result)
+        self.assertIsNotNone(result)
+        self.assertFalse(self.provider.capture_pending)
+        self.assertNotIn('PRIVATE', str(logs.output))
+
     def test_timeout_kills_engine_and_selector_child(self):
         pidfile = self.home / 'child.pid'
         command = [sys.executable, '-c', 'import subprocess,sys,time,pathlib; p=subprocess.Popen([sys.executable,"-c","import time; time.sleep(60)"]); pathlib.Path(sys.argv[1]).write_text(str(p.pid)); time.sleep(60)', str(pidfile)]

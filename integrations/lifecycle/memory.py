@@ -312,6 +312,7 @@ def recall(memory, event, state=None):
     result = memory.search(intent["query"], entities=intent["files"], kinds=kinds)
     entries = [entry for entry in result.get("index", []) if relevant(entry, intent)
                and seen.get(entry["record_id"]) != entry["version"]]
+    state["last_recall"] = dict(at=time.time(), outcome="empty", records=[], bytes=0)
     view = {"selected": result.get("selected", []), "index": [
         {key: entry[key] for key in ("record_id", "version", "summary", "pull_arguments")}
         for entry in entries]}
@@ -342,6 +343,9 @@ def recall(memory, event, state=None):
     if expanded_id:
         seen[expanded_id] = entries[0]["version"]
         state["seen"] = dict(list(seen.items())[-256:])
+    state["last_recall"] = dict(at=time.time(), outcome="recalled", bytes=len(text.encode()),
+                                 records=[{key: entry[key] for key in ("record_id", "version")} for entry in entries],
+                                 expanded=expanded_id)
     return {"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
 
 
@@ -497,21 +501,29 @@ def courtesy_only(messages):
                for index, message in enumerate(messages))
 
 
+def record_capture_status(state, outcome, records=(), selector_calls=0):
+    state["last_capture"] = dict(at=time.time(), outcome=outcome,
+                                  records=list(records), selector_calls=selector_calls)
+
+
 def capture(memory, event, state=None):
     state = state if state is not None else {}
     messages = bounded_dialogue(event["messages"]) if "messages" in event else conversation(event["transcript_path"])
     if not messages:
+        record_capture_status(state, "empty")
         return {}
     def fingerprint(dialogue):
         return hashlib.sha256(encoded([CAPTURE_PROMPT, CAPTURE_SCHEMA, memory.config.get("model"), dialogue]).encode()).hexdigest()
     digest = fingerprint(messages)
     if state.get("captured_digest") == digest:
+        record_capture_status(state, "unchanged")
         return {}
     previous_count = state.get("captured_messages", 0)
     confirmed_prefix = (0 < previous_count <= len(messages)
                         and fingerprint(messages[:previous_count]) == state.get("captured_digest"))
     if courtesy_only(messages[previous_count:] if confirmed_prefix else messages):
         state.update(captured_digest=digest, captured_messages=len(messages))
+        record_capture_status(state, "courtesy")
         return {}
     previous = memory.checkpoint(state.get("workstream", title_for(event)))
     handoffs = handoff_candidates(memory, event, messages, state)
@@ -551,6 +563,7 @@ def capture(memory, event, state=None):
     # On failure, retain the old digest so a subsequent event can retry.
     state["captured_digest"] = digest
     state["captured_messages"] = len(messages)
+    record_capture_status(state, "saved" if saved else "nothing_selected", saved, selector_calls=1)
     return {"systemMessage": "Cairn selected memories saved: " + ", ".join(saved)} if saved else {}
 
 
@@ -608,6 +621,8 @@ def handle(config, event):
         else:
             result = capture(memory, event, state)
         save_state(path, state)
+        if config.get("harness") == "hermes":
+            result = dict(result, cairn_status={key: state[key] for key in ("last_recall", "last_capture", "workstream") if key in state})
         return result
 
 

@@ -69,3 +69,17 @@ capture must be retried before changing its context.
 and persistence through restart. Native profile callbacks retrieved the bound
 project while their actual terminal cwd was an unrelated directory. Existing
 CLI, gateway, compaction, correction, interruption and timeout checks still pass.
+
+## Task 3 evidence
+
+Status records engine-confirmed recall/capture metadata and elapsed duration.
+Failed capture remains pending; a later recall cannot overwrite that failure with
+an older successful capture. Local status storage errors warn without converting
+a confirmed shared-memory operation into a failed write. Opt-out clears pending
+capture; provider shutdown preserves failed retry metadata.
+
+49 focused lifecycle tests pass. The native Hermes fixture verifies Slack status
+without a model call, CLI status registration, restart recovery from the exact
+bounded native-history snapshot, and refusal of changed history. Existing gateway
+and CLI lifecycle checks pass. No raw conversation is added to control files.
+A pending retry can be explicitly discarded when original history is unavailable.

@@ -14,7 +14,7 @@ from agent.context_compressor import is_compaction_summary_message
 from hermes_constants import get_hermes_home
 from tools.terminal_tool import get_session_cwd, resolve_task_overrides
 from .memory import bounded_dialogue, project_for
-from .controls import conversation_key, read_control, change_control
+from .controls import conversation_key, read_control, change_control, dialogue_digest
 
 logger = logging.getLogger(__name__)
 CONTEXT_BYTES = 12000
@@ -110,10 +110,18 @@ class CairnProvider(MemoryProvider):
             messages = messages[start:]
         return dialogue(messages)
 
+    def update_control(self, **fields):
+        try:
+            with change_control(self.home, self.control_key) as record:
+                record.update(fields)
+        except (OSError, ValueError):
+            logger.warning('Cairn status could not be stored; memory outcome is unavailable in /cairn status')
+
     def capture_result(self, result):
         self.capture_pending = result is None
-        with change_control(self.home, self.control_key) as record:
-            record['pending'] = self.capture_pending
+        self.update_control(pending=self.capture_pending, session_id=self.session_id,
+                            cwd=self.cwd(), platform=self.platform,
+                            pending_digest=dialogue_digest(self.last_dialogue))
 
     def cwd(self):
         # The gateway uses per-task environment overrides; never another chat's cwd.
@@ -127,10 +135,12 @@ class CairnProvider(MemoryProvider):
         cwd = Path(self.cwd())
         return not any((path / '.cairn-no-memory').exists() for path in (cwd,project_for(cwd),Path(self.binding["project_path"]) if self.binding else cwd))
 
-    def discard_dialogue(self):
+    def discard_dialogue(self, disabled=True):
         self.context = ''
         self.last_dialogue = []
         self.capture_pending = False
+        if disabled:
+            self.update_control(pending=False, last_capture=dict(outcome='disabled', at=time.time()))
 
     def matches(self, session_id):
         return session_id in self.session_ids and get_hermes_home().resolve() == self.home.resolve()
@@ -140,7 +150,8 @@ class CairnProvider(MemoryProvider):
             return None
         started = time.monotonic()
         try:
-            payload = dict(hook_event_name=event, session_id=self.session_id, cwd=self.cwd(), **fields)
+            payload = dict(hook_event_name=event, session_id=self.session_id, cwd=self.cwd())
+            payload.update(fields)
             if self.binding:
                 payload.update(self.binding)
             process = run_engine([sys.executable, self.config['script'], '--config', self.config['engine_config']],
@@ -150,12 +161,21 @@ class CairnProvider(MemoryProvider):
             result = json.loads(process.stdout)
             if not isinstance(result, dict):
                 raise ValueError('invalid engine response')
+            field = 'last_recall' if event == 'UserPromptSubmit' else 'last_capture'
+            status = result.get('cairn_status', {})
+            if event in ('UserPromptSubmit', 'PreCompact', 'SessionEnd') and field in status:
+                self.update_control(**{field: dict(status[field], seconds=time.monotonic()-started)})
+            if status.get('workstream'):
+                self.update_control(workstream=status['workstream'])
             logger.info('Cairn %s completed in %.3fs', event, time.monotonic() - started)
             return result
         except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, RuntimeError):
             # Subprocess output can contain private dialogue. Only report operation/status.
             warning = f'Cairn {event} failed or timed out; use explicit memory tools or retry the checkpoint.'
             logger.warning(warning)
+            if event in ('UserPromptSubmit', 'PreCompact', 'SessionEnd'):
+                field = 'last_recall' if event == 'UserPromptSubmit' else 'last_capture'
+                self.update_control(**{field: dict(outcome='failed', seconds=time.monotonic()-started, at=time.time())})
             if self.warning_callback:
                 self.warning_callback(warning)
             return None
@@ -209,11 +229,24 @@ class CairnProvider(MemoryProvider):
             self.last_dialogue = self.selected_dialogue(conversation_history or [])
             self.capture_result(self.invoke('SessionEnd', messages=self.last_dialogue))
 
-    def pre_command(self, command='', session_key='', surface='', **kwargs):
+    def pre_command(self, command='', session_key='', surface='', cairn_retry=False, cairn_discard=False, **kwargs):
         key = self.gateway_session_key if surface=='gateway' else self.session_id
-        if command!='compress' or not key or key!=session_key or not self.matches(self.session_id):
+        retry = command == 'cairn' and cairn_retry
+        discard = command == 'cairn' and cairn_discard
+        if (command!='compress' and not retry and not discard) or not key or key!=session_key or not self.matches(self.session_id):
             return
         with self.lock:
+            if discard:
+                self.discard_dialogue(disabled=False)
+                return
+            if retry:
+                if not self.active():
+                    self.discard_dialogue()
+                    return {'cairn_retry': 'attempted'}
+                if self.capture_pending and self.last_dialogue:
+                    self.capture_result(self.invoke('SessionEnd', messages=self.last_dialogue))
+                    return {'cairn_retry': 'attempted'}
+                return
             if not self.active():
                 self.discard_dialogue()
                 return
@@ -273,7 +306,7 @@ class CairnProvider(MemoryProvider):
     def shutdown(self):
         with self.lock:
             self.enabled = False
-            self.discard_dialogue()
+            self.discard_dialogue(disabled=False)
             for handle in reversed(self.registrations):
                 handle.dispose()
             self.registrations.clear()

@@ -345,6 +345,7 @@ def run_fixture(args, output, store, operator_env):
         assert not errors, errors
         print('Unrelated recall, environment/file opt-out and unavailable-service task continuation pass')
         profile_fixture(home,output,native,installer,args,work)
+        retry_fixture(home, work)
         from concurrent.futures import ThreadPoolExecutor
         agent = AIAgent(api_key='fixture-only',base_url=endpoint,provider='custom',api_mode='chat_completions',model='probe',
             platform='slack',session_id='interrupted-native',quiet_mode=True,enabled_toolsets=['mcp-cairn'],skip_context_files=True,skip_background_review=True)
@@ -413,6 +414,39 @@ def profile_fixture(home,output,native,installer,args,work):
         for provider in providers:
             provider.shutdown()
     print('Native context-local profiles isolate labels; explicit project recall works from an unrelated terminal directory')
+
+
+def retry_fixture(home, work):
+    from hermes_state import SessionDB
+    from hermes_cli.plugins import get_plugin_command_handler
+    from hermes_cli.lifecycle import invoke_hook
+    controls = load('native_retry_controls', ROOT/'integrations/hermes/controls.py')
+    session = 'cold-retry-snapshot'
+    messages = [dict(role='user', text='Thanks.'), dict(role='assistant', text="You're welcome.")]
+    db = SessionDB()
+    try:
+        db.create_session(session, 'slack')
+        for message in messages:
+            db.append_message(session, message['role'], message['text'])
+    finally:
+        db.close()
+    key = 'gateway/cold-retry-thread'
+    with controls.change_control(home, key) as record:
+        record.update(pending=True, session_id=session, platform='slack', cwd=str(work),
+                      pending_digest=controls.dialogue_digest(messages))
+    handler = get_plugin_command_handler('cairn')
+    assert handler is not None, 'native command registration missing'
+    invoke_hook('pre_command', command='cairn', surface='gateway', session_key='cold-retry-thread')
+    status = handler('retry')
+    assert 'Pending: no.' in status and 'courtesy' in status, status
+    with controls.change_control(home, key) as record:
+        record.update(pending=True, pending_digest='different-snapshot')
+    invoke_hook('pre_command', command='cairn', surface='gateway', session_key='cold-retry-thread')
+    assert 'exact pending turn' in handler('retry'), 'changed history was accepted'
+    assert controls.read_control(home, key)['pending']
+    # CLI plugin dispatch does not emit pre_command; process identity is its key.
+    assert 'Recall:' in handler('status'), 'CLI status command unavailable'
+    print('Native CLI status and cold gateway retry verify bounded exact-history recovery and mismatch refusal')
 
 
 def timeout_fixture(AIAgent,endpoint,engine_path,original_engine,output,selections):
@@ -564,6 +598,9 @@ async def gateway_fixture(requests, selections, errors):
     assert not errors, errors
     assert 'Hermes continued PostgreSQL validation' in deliveries[-1]['content'], deliveries[-1]
     before_controls = (len(requests),len(selections))
+    await slack._handle_slack_message(raw('!cairn status'))
+    await drain()
+    assert 'Recall:' in deliveries[-1]['content'] and 'Pending:' in deliveries[-1]['content']
     for channel, topic in [('D-ALPHA','Alpha work'),('D-BRAVO','Bravo work')]:
         await slack._handle_slack_message(raw('!cairn context '+str(project)+' '+topic,channel))
         await drain()

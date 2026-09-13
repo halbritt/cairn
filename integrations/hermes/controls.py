@@ -56,6 +56,32 @@ def describe_context(record):
     return 'Cairn project: ' + binding['project_path'] + '\nWorkstream: ' + (binding.get('workstream') or 'automatic')
 
 
+def dialogue_digest(messages):
+    return hashlib.sha256(json.dumps(messages, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+
+
+def describe_status(record):
+    lines = [describe_context(record)]
+    recall = record.get('last_recall')
+    if recall:
+        records = ', '.join(r['record_id'] + ' v' + str(r['version']) for r in recall.get('records', []))
+        lines.append('Recall: ' + recall['outcome'] + (' — ' + records if records else ''))
+    else:
+        lines.append('Recall: no turn observed.')
+    capture = record.get('last_capture')
+    names = {'nothing_selected':'nothing to save', 'courtesy':'courtesy exchange; selection skipped',
+             'unchanged':'unchanged; selection skipped', 'empty':'no dialogue', 'saved':'saved', 'failed':'failed'}
+    if capture:
+        description = names.get(capture['outcome'], capture['outcome'])
+        lines.append('Capture: ' + description + ' (' + str(round(capture.get('seconds', 0), 2)) + 's).')
+        if capture.get('records'):
+            lines.append('Saved: ' + ', '.join(capture['records']))
+    else:
+        lines.append('Capture: no completed capture observed.')
+    lines.append('Pending: yes; use /cairn retry.' if record.get('pending') else 'Pending: no.')
+    return '\n'.join(lines)
+
+
 def set_context(home, key, arguments):
     if not arguments:
         return describe_context(read_control(home, key))

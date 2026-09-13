@@ -24,6 +24,7 @@ each separate profile, `--native-config` for another existing hosted profile, or
 
 The installer copies the adapter and engine into `plugins/cairn`, writes
 `cairn-lifecycle.json` and `cairn/engine.json`, and installs `skills/cairn/SKILL.md`.
+It also installs and enables the `cairn-controls` commands plugin.
 It adds `mcp_servers.cairn` and `memory.provider: cairn`, retaining other settings.
 It refuses to replace another external provider. The first original configuration
 is backed up as `config.yaml.before-cairn`; subsequent installation is idempotent.
@@ -35,10 +36,33 @@ Start fresh CLI processes and restart the affected gateway service to load it.
 modified, and hashes of the installed adapter, engine and skill.
 
 For uninstall, remove `mcp_servers.cairn` and `memory.provider` (when it is `cairn`)
-from the current configuration, then remove `plugins/cairn`, `skills/cairn`,
+from the current configuration, remove `cairn-controls` from `plugins.enabled`,
+then remove `plugins/cairn`, `plugins/cairn-controls`, `skills/cairn`,
 `cairn-lifecycle.json` and the profile's `cairn` directory. Restart the gateway and
 start a fresh CLI. Restore the backup wholesale only if no later settings need
 preserving. Uninstall does not delete shared notes or native Hermes memory.
+
+## Conversation controls
+
+Use `/cairn` in the CLI or `!cairn` in Slack. Commands work before the first
+agent turn. `status` shows the chosen context, last recalled IDs/versions, last
+capture outcome and duration, saved IDs and whether capture is pending. It makes
+no model calls. Routine successful turns remain quiet.
+
+`context <existing-project-directory> [workstream]` binds this conversation
+independently of its terminal directory. Quote paths containing spaces.
+`context` shows the choice; `context clear` restores automatic project selection.
+Slack choices persist across reset/restart and are isolated by Hermes's native
+conversation key. CLI choices belong to that process. These labels do not grant
+permissions or change the shared collection identity.
+
+`retry` retries pending capture using the live provider, or after restart reads
+at most 64 active messages from Hermes's existing history. The normalized snapshot
+must exactly match the saved digest. Compacted, changed or missing history is
+refused; use explicit memory tools if the original snapshot is unavailable.
+`discard` explicitly abandons that pending retry so context can be changed.
+It does not delete shared notes. Local control files contain context, identifiers,
+outcomes and digests, never another copy of conversation text.
 
 ## Event and identity contract
 
