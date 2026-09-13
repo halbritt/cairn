@@ -39,6 +39,11 @@ engine; see [OpenCode lifecycle memory](opencode-lifecycle.md),
 [remaining harness routes](lifecycle-hook-assessment.md). Advanced interlocks and
 whole-host budgeting remain open.
 
+Owner direction also includes Hermes CLI and messaging gateways in the first
+integration. The [native provider](hermes-lifecycle.md) now covers both, with
+[bounded verification](verification/hermes-integration-2026-09-13.md). This does
+not close the high-stakes runtime and destination requirements below.
+
 Cairn has a transactional PostgreSQL core and a manually fed process wrapper.
 The next product milestone is memory used in real Striatum/OpenCode builds, with
 record-specific observations showing whether it prevents recurring failures. Passing the
@@ -1019,7 +1024,7 @@ restore outside that procedure and complete reconstruction remain open.
 | X2 — native interlocks | partial | [Claude lifecycle hooks](claude-lifecycle.md) and [OpenCode lifecycle memory](opencode-lifecycle.md) now provide bounded task/resume retrieval, separate durable notes, named handoffs and unchanged-capture suppression. Codex/Agy hook routes are [assessed](lifecycle-hook-assessment.md). Remaining: Codex lifecycle integration, per-run attestation and privilege forfeiture on failed refresh. Require adapter-specific evidence. Ordinary Claude Code access is tracked separately under lower-priority U8. |
 | X3 — groomer | open | Only after join → replay → demand docket: bounded offline proposals from instrumented session-close/idle extraction and nightly consolidation, with review and no automatic authority gain. |
 | X4 — ranking experiments | optional | Learned ranking/decay only after measurable outcomes and explicit policy. Counterfactual experiments opt-in and never during incidents. Deterministic lexical ranking is the baseline. |
-| X5 — selective H3 and sharing | open | Runtime mediation for selected high-stakes paths, then broader sharing with enforced destinations. Hermes remains interactive outside initial build adapters. |
+| X5 — selective H3 and sharing | open | Runtime mediation for selected high-stakes paths, then broader sharing with enforced destinations. Hermes interactive CLI/gateway memory is available; consequential runtime mediation remains open. |
 
 ## Deliberately excluded
 

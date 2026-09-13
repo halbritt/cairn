@@ -1,0 +1,280 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-hermes-implementation-2026-09-13",
+  "question": "How should the Cairn Hermes adapter own bounded recall and synchronous selected capture across CLI and Slack gateway session lifecycle without changing Hermes core?",
+  "scope": [
+    "Native interactive Hermes CLI and configured Slack gateway adapter mechanics; deployment authorized by owner"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "halbritt",
+    "authority_source": "Owner goal: complete the hermes integration according to the plan then deploy; initial scope explicitly CLI and messaging gateways.",
+    "authorized_scope": [
+      "Implement, verify, land and deploy the Hermes integration",
+      "Preserve native memory and unrelated host configuration; no real Slack test messages"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-implementation-boundary",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "This is an additive interactive adapter, not a behavior-preserving refactor. User requested completing and deploying both surfaces. No change leaves Hermes without automatic Cairn memory. MCP-only offers explicit tools but cannot meet that request; generic hooks alone miss the proven native pre-compression callback. The provider reuses existing selection policy, occupies one external-provider slot, adds synchronous model latency and cannot guarantee capture after abrupt death. Installer preserves native files/configuration values, backups and uninstall; native probes verify timeout, label isolation, retry, correction and no sidecar echo. Cairn API/PostgreSQL/owned adapter are managed and run as real disposable components; externally operated model inference and Slack delivery are substituted at those external boundaries only. Other agents observe versioned notes through authenticated Cairn API, not fixture database tables. Shared engine edits are two compatibility additions (Hermes label/hash and bare-resume project anchor); existing native Claude/OpenCode regression passes. Test-helper repo argument only parameterizes the same fixture behavior. Supporting installer, tests and documentation implement the requested slice. The design does not introduce a new dependency-inversion abstraction or claim net economic benefit.",
+      "provenance": [
+        {
+          "locator": "docs/plans/hermes-integration.md",
+          "method": "Review of final diff, completed native tests and explicit plan, 2026-09-13"
+        },
+        {
+          "locator": "docs/hermes-lifecycle.md",
+          "method": "Review of final diff, completed native tests and explicit plan, 2026-09-13"
+        },
+        {
+          "locator": "scripts/check_hermes_lifecycle.py",
+          "method": "Review of final diff, completed native tests and explicit plan, 2026-09-13"
+        },
+        {
+          "locator": "integrations/lifecycle/memory.py",
+          "method": "Review of final diff, completed native tests and explicit plan, 2026-09-13"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-full-integration.log",
+          "method": "Review of final diff, completed native tests and explicit plan, 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "availability of a real managed dependency for tests",
+        "out-of-process dependency classification with ownership evidence",
+        "per-dependency classification as managed or unmanaged with ownership evidence",
+        "which database tables or channels other systems observe",
+        "a bounded decision question",
+        "alternatives including no change where viable",
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "evidence connecting the proposed action to the condition",
+        "actual current cost/risk or absence within a stated interval",
+        "expected future change from accepted plans",
+        "intervention cost and uncertainty",
+        "latent security, safety, data, durability, and compatibility check",
+        "proc-decide-leave-code-alone",
+        "change-type classification",
+        "checkpoint verification",
+        "per-edit change classification",
+        "preservation boundary and semantic authority"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-implementation-contracts",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Desired change is native interactive Hermes recall/capture. Existing Claude/OpenCode selection policy and PostgreSQL contracts remain. Installer backup and native fixture compare all unrelated configuration values, native memory canaries and repeated installs. Full make test-integration (including native Claude/OpenCode), make check and 87 Python tests pass. Shared engine adds Hermes label validation and hashed state paths plus project-handoff relevance on fresh resume. No authority or destination behavior changes.",
+      "provenance": [
+        {
+          "locator": "docs/design-review.md",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        },
+        {
+          "locator": "integrations/lifecycle/memory.py",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        },
+        {
+          "locator": "scripts/check_hermes_lifecycle.py",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-full-integration.log",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "accepted desired behavior and semantic authority",
+        "preservation matrix and consumers",
+        "proc-establish-preservation-boundaries",
+        "tests, characterization, probes, or explicit residual risk"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-implementation-native",
+      "evidence_class": "evidence-tests",
+      "summary": "Final installed-Hermes native fixture passed against disposable PostgreSQL and real Cairn/Claude processes with scripted model endpoints and captured Slack transport. CLI and real GatewayRunner/Slack parsing discover ordinary tools, search/pull/create/revise notes, inject bounded request context, save selected decisions/checkpoints, correct existing records and continue across agents. Manual CLI/gateway compression and native compressor path pass. Duplicate delivery, concurrent chats, same-label context-local profiles, reset, expiry, simulated transport reconnect, runner restart, stale switch callbacks and interrupted shutdown pass. Two actual 35-second selector timeouts preserve task completion and retry after recovery. Unit tests kill the entire hung subprocess group and check per-instance registration cleanup and opt-out buffer discard. Original dialogue excludes tool results, reasoning, recalled sidecars and native memory. 97 fixture requests, 17 selector calls; 19 successful recall operations take 43-99ms; fixture-only latency is not production inference cost. Actual Slack network delivery and long-term task benefit are outside this verification claim.",
+      "provenance": [
+        {
+          "locator": "scripts/check_hermes_lifecycle.py",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        },
+        {
+          "locator": "scripts/test_hermes_lifecycle.py",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-release-native.log",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        },
+        {
+          "locator": "/tmp/cairn-hermes-release-native/native.log",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "access to the real device or endpoint",
+        "an end-to-end verification artifact against the actual device or endpoint",
+        "or an explicit record that verification is provisional",
+        "the real system's own statement of its capability - device configuration output wire capture or endpoint self-description",
+        "cancellation, shutdown, and cleanup tests",
+        "capacity/backpressure and error propagation",
+        "explicit lifecycle and failure policy",
+        "ownership and lifecycle map",
+        "retention and contention measurement where reused",
+        "out-of-process dependency map and unit-coverage evidence",
+        "the longest happy path touching all out-of-process dependencies per scenario",
+        "whether a candidate failure manifests immediately without corrupting state",
+        "which edge cases unit tests already cover"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-implementation-scope",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner authorized completing the Hermes plan and deployment; first release includes CLI and messaging gateways. AGENTS.md preserves PostgreSQL, store-owned identity and selected hosted memory. The plan limits delivery to interactive memory, preserves native files/model/unrelated integrations and documents uninstall; no core/API/database change or external Slack message is authorized by this adapter work.",
+      "provenance": [
+        {
+          "locator": "AGENTS.md",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        },
+        {
+          "locator": "docs/plans/hermes-integration.md",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        },
+        {
+          "locator": "docs/hermes-lifecycle.md",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "decision owner",
+        "explicit task authority",
+        "repository contract",
+        "reversibility and verification",
+        "task scope and authority statement",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "current source, configuration, and relevant runtime state",
+        "repository instructions from root through target path",
+        "target repository and task scope",
+        "user instruction and authority"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-implementation-structure",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Existing shared lifecycle engine owns bounded relevance, selected extraction, current-record revision and digest confirmation; Hermes provider translates actual lifecycle labels and original dialogue. Cairn calls have five-second deadlines, selector 35 seconds, complete adapter process group 150 seconds. Results require successful exit and JSON object; diagnostics omit raw subprocess content. Errors leave pending capture retryable. Only provider registers per-instance callbacks; request middleware appends at most 12000 bytes without editing persisted sidecars. Each instance has a lock, bounded original dialogue (24000 bytes) and 32 labels. Native MCP scope is profile-level, automatic operations session-labelled, neither is authentication. API refusal and unavailable socket, selector hangs, malformed engine output and outer process-group timeout are covered in shared/focused/native tests.",
+      "provenance": [
+        {
+          "locator": "integrations/hermes/__init__.py",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        },
+        {
+          "locator": "integrations/lifecycle/memory.py",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        },
+        {
+          "locator": "scripts/test_hermes_lifecycle.py",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        },
+        {
+          "locator": "docs/hermes-lifecycle.md",
+          "method": "Source inspection or completed native/regression check, 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "identified policy",
+        "independently meaningful policy",
+        "mechanism semantics",
+        "mechanism semantics that callers must still observe",
+        "stable semantic crossing data",
+        "volatile or replaceable mechanism",
+        "evidence of how each dependency fails - refused hung slow or malformed",
+        "integration inventory",
+        "inventory of remote calls with their timeout and failure behavior",
+        "response validation at the boundary"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "native-boundary",
+      "type": "observation",
+      "text": "Native CLI and gateway fixtures pass recall, explicit tools, selected correction/checkpoints, compression, concurrency, session transitions, failure and continuity checks on the installed Hermes revision.",
+      "evidence": [
+        "hermes-implementation-native"
+      ]
+    },
+    {
+      "id": "adapter-route",
+      "type": "decision",
+      "text": "Use the existing MemoryProvider extension with instance-owned hooks, request middleware and synchronous completed-turn capture; add pre_command for gateway manual compression.",
+      "evidence": [
+        "hermes-implementation-structure",
+        "hermes-implementation-native"
+      ],
+      "depends_on": [
+        "native-boundary"
+      ],
+      "owner": "halbritt",
+      "authority": "Owner-authorized implementation and deployment of the plan; routine adapter choice within that scope."
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Native provider with hooks and request middleware",
+      "disposition": "selected",
+      "evidence": [
+        "hermes-implementation-boundary"
+      ]
+    },
+    {
+      "option": "MCP and skill only",
+      "disposition": "rejected",
+      "evidence": [
+        "hermes-implementation-boundary"
+      ]
+    },
+    {
+      "option": "Generic hooks only",
+      "disposition": "rejected",
+      "evidence": [
+        "hermes-implementation-boundary"
+      ]
+    },
+    {
+      "option": "Leave Hermes unchanged",
+      "disposition": "rejected",
+      "evidence": [
+        "hermes-implementation-boundary"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/hermes-lifecycle.md",
+    "scripts/check_hermes_lifecycle.py",
+    "integrations/hermes/__init__.py",
+    "pincite:pkt-87513a815a1fd59a@sha256:87513a815a1fd59aff46b1dc7df47f7c711cf81e492e776a325a8d5f3fb2d621"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "reopening_conditions": [
+    "Hermes changes provider, callback, session or request semantics",
+    "Another external memory provider must coexist",
+    "A new profile, gateway platform or API format needs native verification"
+  ],
+  "residual_risk": [
+    "concrete dependency harm: nonmaterial to this bounded adapter choice; no new dependency-inversion abstraction is introduced, and no net-cost optimization is claimed.",
+    "consumer contract sketch: nonmaterial to this bounded adapter choice; no new dependency-inversion abstraction is introduced, and no net-cost optimization is claimed.",
+    "consumer policy and provider volatility: nonmaterial to this bounded adapter choice; no new dependency-inversion abstraction is introduced, and no net-cost optimization is claimed.",
+    "narrow contract and owner: nonmaterial to this bounded adapter choice; no new dependency-inversion abstraction is introduced, and no net-cost optimization is claimed.",
+    "net cost comparison: nonmaterial to this bounded adapter choice; no new dependency-inversion abstraction is introduced, and no net-cost optimization is claimed.",
+    "real implementation, substitution, release, or legacy-seam need: nonmaterial to this bounded adapter choice; no new dependency-inversion abstraction is introduced, and no net-cost optimization is claimed.",
+    "Scripted model endpoints verify mechanics, not selection quality or task benefit. Slack transport is captured, not delivered externally. Abrupt process death can lose pending capture."
+  ]
+}

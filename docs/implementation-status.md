@@ -1,5 +1,12 @@
 # Implementation status — 2026-09-13
 
+The [Hermes provider](hermes-lifecycle.md) adds explicit tools, ambient recall and
+selected capture for interactive CLI and the configured Slack gateway. Native
+fixtures cover both entry points, cross-agent continuation, compression, routing,
+restart and failures; 87 Python tests and the full Cairn integration suite pass.
+The [Hermes verification report](verification/hermes-integration-2026-09-13.md)
+records the installed revision and distinguishes native mechanics from usefulness.
+
 The [2026-09-13 ultrareview repair](verification/ultrareview-repairs-2026-09-13.md)
 addresses outcome recovery, CLI help and pagination, error classification, refusal
 counts and tight index presentation. The disposable integration suite, race checks

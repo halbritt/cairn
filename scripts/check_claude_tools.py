@@ -25,7 +25,7 @@ def response_events(message_id, model, block):
     return ''.join('event: ' + event['type'] + '\ndata: ' + json.dumps(event) + '\n\n' for event in events).encode()
 
 
-def session(claude, binary, root, output, run_id, cases, allowed):
+def session(claude, binary, root, output, run_id, cases, allowed, repo='fixture:socket'):
     output.mkdir(mode=0o700)
     work = output / 'workspace'
     work.mkdir()
@@ -35,7 +35,7 @@ def session(claude, binary, root, output, run_id, cases, allowed):
         path.mkdir(mode=0o700)
         env[key] = str(path)
     generated = subprocess.run([binary, 'claude-config', '--socket', str(root / 'api.sock'),
-                               '--token-file', str(root / 'hosted-agent.token'), '--repo', 'fixture:socket',
+                               '--token-file', str(root / 'hosted-agent.token'), '--repo', repo,
                                '--task', 'claude-native-tools', '--run', run_id],
                               env=env, capture_output=True, text=True, check=True, timeout=5).stdout
     config = output / 'cairn.json'

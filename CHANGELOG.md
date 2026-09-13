@@ -18,6 +18,14 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-13
 
+- **Connect Hermes CLI and messaging gateways to shared memory.** The native
+  provider adds bounded ambient recall, selected completed-turn capture and
+  compaction checkpoints. Explicit tools use the existing hosted MCP profile;
+  native Hermes memory and task-model settings remain available. Install the
+  Python provider and restart Hermes; no API upgrade or migration is required.
+  [Setup](docs/hermes-lifecycle.md) and
+  [verification](docs/verification/hermes-integration-2026-09-13.md).
+
 - **Repair the ultrareview findings.** Top-level help prints text; runner cleanup
   errors preserve outcomes and recovery requests. CLI `list` accepts `--limit`
   and `--offset`, and `impact` accepts `--offset`. Missing conflicts and invalid

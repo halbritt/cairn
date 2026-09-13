@@ -1,0 +1,253 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-hermes-plan-2026-09-13",
+  "question": "Which Hermes extension path should be probed first for Cairn recall and selected capture while preserving native memory and reusing the existing lifecycle engine?",
+  "scope": [
+    "Plan a native Hermes compatibility probe and staged Cairn integration covering CLI and messaging gateways in the first release"
+  ],
+  "status": "recommended",
+  "authority_boundary": {
+    "owner": "halbritt",
+    "authority_source": "Owner requested a Hermes integration plan, then explicitly selected CLI and messaging gateways for the first integration.",
+    "authorized_scope": [
+      "Inspect current source and prior findings",
+      "Write an implementation plan; host changes are outside this planning turn"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-plan-boundary",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "The written plan recommends a native provider-plus-hook probe first and treats route acceptance, lifecycle capture completion, scope propagation and retained-context budgeting as explicit subsequent gates. Alternatives are MCP-only useful baseline and a hooks-only adapter if compaction coverage is proven. Existing provider slot and builtin memory coexistence are documented; no Hermes config or code has changed. Cairn/PostgreSQL and owned adapters are managed dependencies; model endpoints are external boundaries substituted only in native fixtures. Source lifecycle tests already cover unchanged capture and note revision for other harnesses; Hermes-specific behavior is still provisional.",
+      "provenance": [
+        {
+          "locator": "docs/plans/hermes-integration.md",
+          "method": "Wrote and reviewed staged plan and acceptance conditions on 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "reversibility and verification",
+        "alternatives including no change where viable",
+        "actual current cost/risk or absence within a stated interval",
+        "expected future change from accepted plans",
+        "intervention cost and uncertainty",
+        "latent security, safety, data, durability, and compatibility check",
+        "proc-decide-leave-code-alone",
+        "tests, characterization, probes, or explicit residual risk",
+        "change-type classification",
+        "per-edit change classification",
+        "out-of-process dependency classification with ownership evidence",
+        "per-dependency classification as managed or unmanaged with ownership evidence"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-plan-contracts",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Repository instructions preserve PostgreSQL, authenticated hosted profiles and selected capture. Existing integration runner provisions disposable PostgreSQL and has native Claude/OpenCode scripted-provider checks; no database change is planned. Existing core/API are installed at d9c0884. Plan leaves Hermes builtin memory, task model and other agents intact.",
+      "provenance": [
+        {
+          "locator": "AGENTS.md",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        },
+        {
+          "locator": "docs/opencode-lifecycle.md",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        },
+        {
+          "locator": "scripts/test-postgres.sh",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        },
+        {
+          "locator": "docs/verification/lifecycle-improvements-2026-09-13.md",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "repository contract",
+        "repository instructions from root through target path",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "database delivery pipeline evidence",
+        "instance isolation for developers and test runs",
+        "migration history and its discipline",
+        "schema and reference data location and authority",
+        "availability of a real managed dependency for tests",
+        "preservation matrix and consumers",
+        "proc-establish-preservation-boundaries",
+        "preservation boundary and semantic authority"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-plan-scope",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner asks for a plan for Hermes after completed Cairn review repairs. Planning only in this turn. Existing direction: one shared collection, concise skill, reuse useful lifecycle behavior, keep native private memory imports deliberate. Owner clarification on 2026-09-13 explicitly includes CLI and messaging gateways in the first release, superseding the CLI-first assumption.",
+      "provenance": [
+        {
+          "locator": "Current owner request",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        },
+        {
+          "locator": "AGENTS.md",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        },
+        {
+          "locator": "docs/shared-memory.md",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        },
+        {
+          "locator": "Owner scope clarification, 2026-09-13",
+          "method": "Explicit selection: CLI and messaging gateways"
+        }
+      ],
+      "satisfies": [
+        "decision owner",
+        "explicit task authority",
+        "task scope and authority statement",
+        "accepted desired behavior and semantic authority",
+        "user instruction and authority",
+        "target repository and task scope",
+        "a bounded decision question"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "hermes-plan-source",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Installed Hermes source exposes provider registration plus real PluginContext register_hook forwarding, builtin memory alongside one external provider, pre_llm_call context injection and provider on_pre_compress. Provider prefetch skips continue; plugin hook does not share that skip. API context is stored separately as api_content, so extraction must use original content to avoid memory echo. Memory-manager shutdown drains background tasks for five seconds; lifecycle extraction may need 35 seconds. Cairn existing handle() validates Claude UUID or OpenCode IDs; Hermes requires explicit normalization and original scope labels. These are source observations, not native Hermes integration proof.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/.hermes/hermes-agent/plugins/memory/__init__.py:545",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        },
+        {
+          "locator": "/home/halbritt/.hermes/hermes-agent/agent/agent_init.py:1868",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        },
+        {
+          "locator": "/home/halbritt/.hermes/hermes-agent/agent/turn_context.py:1243",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        },
+        {
+          "locator": "/home/halbritt/.hermes/hermes-agent/agent/memory_provider.py",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        },
+        {
+          "locator": "/home/halbritt/.hermes/hermes-agent/agent/memory_manager.py",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        },
+        {
+          "locator": "integrations/lifecycle/memory.py",
+          "method": "Read current instructions, installed source or existing verification report on 2026-09-13"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "current source, configuration, and relevant runtime state",
+        "the real system's own statement of its capability - device configuration output wire capture or endpoint self-description",
+        "integration inventory",
+        "adapter chain inventory",
+        "the chain of owned types leading to the external system",
+        "out-of-process dependency map and unit-coverage evidence",
+        "inventory of remote calls with their timeout and failure behavior",
+        "explicit lifecycle and failure policy",
+        "ownership and lifecycle map",
+        "capacity/backpressure and error propagation",
+        "response validation at the boundary",
+        "or an explicit record that verification is provisional",
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "evidence connecting the proposed action to the condition"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "source-contract",
+      "type": "observation",
+      "text": "Installed Hermes exposes provider lifecycle plus hook registration, but prefetch filtering, retained API context and shutdown deadlines require native verification.",
+      "evidence": [
+        "hermes-plan-source"
+      ]
+    },
+    {
+      "id": "probe-first",
+      "type": "recommendation",
+      "text": "Probe the provider-plus-pre-turn-hook route first, then implement explicit tools, ambient recall, selected capture and deployment in validated stages. Route choice remains provisional.",
+      "depends_on": [
+        "source-contract"
+      ],
+      "alternatives": [
+        "MCP and skill only",
+        "General hooks plugin with verified compaction coverage"
+      ],
+      "tradeoffs": [
+        "Cairn occupies the single external-provider slot",
+        "Reuse of the existing Claude selector adds capture calls but preserves shared selection behavior",
+        "Native proof is required before claiming reliable compaction or exit capture"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Provider plugin plus pre-turn hook, verified first",
+      "disposition": "selected",
+      "evidence": [
+        "hermes-plan-source",
+        "hermes-plan-boundary"
+      ]
+    },
+    {
+      "option": "MCP and skill alone",
+      "disposition": "deferred",
+      "evidence": [
+        "hermes-plan-boundary"
+      ]
+    },
+    {
+      "option": "Hooks-only plugin",
+      "disposition": "deferred",
+      "evidence": [
+        "hermes-plan-boundary"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/plans/hermes-integration.md",
+    "integrations/lifecycle/memory.py",
+    "/home/halbritt/.hermes/hermes-agent/agent/memory_provider.py",
+    "/home/halbritt/.hermes/hermes-agent/plugins/memory/__init__.py",
+    "pincite:pkt-065672483169d69f@sha256:065672483169d69f932497874478786b640c00519b323ee7123be117d907e34d"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Native event and context probe before adapter selection",
+    "Explicit tools against disposable Cairn",
+    "Cross-agent continuation, compaction, session switch, no duplicate capture",
+    "Existing lifecycle regression checks and installation idempotency",
+    "Native CLI and gateway entry points both pass tools, recall, capture and compaction checks",
+    "Gateway routing, concurrent conversations, duplicate delivery, idle expiry, reconnect and graceful restart",
+    "CLI-to-gateway and gateway-to-CLI workstream continuation"
+  ],
+  "reopening_conditions": [
+    "Native callback or provider registration differs from source",
+    "Retained API context cannot be bounded using supported interfaces",
+    "An existing external provider must remain active, or a configured gateway lacks a required lifecycle callback"
+  ],
+  "residual_risk": [
+    "access to the real device or endpoint: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5.",
+    "an end-to-end verification artifact against the actual device or endpoint: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5.",
+    "evidence of how each dependency fails - refused hung slow or malformed: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5.",
+    "cancellation, shutdown, and cleanup tests: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5.",
+    "retention and contention measurement where reused: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5.",
+    "evidence-tests: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5.",
+    "the longest happy path touching all out-of-process dependencies per scenario: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5.",
+    "whether a candidate failure manifests immediately without corrupting state: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5.",
+    "which edge cases unit tests already cover: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5.",
+    "the backward-compatibility strictness of the outgoing contract: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5.",
+    "whether asserted values are independent of production constants: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5.",
+    "which database tables or channels other systems observe: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5.",
+    "checkpoint verification: nonmaterial to recommending the first probe; implementation acceptance remains gated by the corresponding native, failure, lifecycle or boundary test in milestones 1-5."
+  ]
+}

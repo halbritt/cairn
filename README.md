@@ -28,7 +28,7 @@ failures, alternative explanations and unknown net costs.
 
 [Claude Code setup](docs/claude-code.md) can generate the same ordinary MCP
 interface with explicit task/run scope.
-[Claude lifecycle hooks](docs/claude-lifecycle.md) and the [OpenCode lifecycle plugin](docs/opencode-lifecycle.md) provide selective ambient recall, reusable notes and named workstream checkpoints. Unchanged dialogue skips capture calls. [Codex/Agy hook routes](docs/lifecycle-hook-assessment.md) are assessed separately. Broader task-value evidence remains open.
+[Claude lifecycle hooks](docs/claude-lifecycle.md), the [OpenCode lifecycle plugin](docs/opencode-lifecycle.md), and the [Hermes CLI/gateway provider](docs/hermes-lifecycle.md) provide selective ambient recall, reusable notes and named workstream checkpoints. Unchanged dialogue skips capture calls. [Codex/Agy hook routes](docs/lifecycle-hook-assessment.md) are assessed separately. Broader task-value evidence remains open.
 
 The [roadmap](docs/roadmap.md) tracks accepted requirements, remaining gaps and
 acceptance evidence.

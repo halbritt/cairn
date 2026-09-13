@@ -248,6 +248,8 @@ def retrieval_intent(event, state):
     anchors = list(dict.fromkeys([*paths, *phrases, *error_terms]))
     if event.get("source") in ("resume", "compact"):
         anchors.insert(0, state.get("workstream", title_for(event)))
+        if "workstream" not in state:
+            anchors.append(workstream_prefix(event).rstrip())
     anchors = [a for a in anchors if len(a.encode()) <= 256 and '"' not in a][:8]
     search_anchors = anchors
     if re.search(r"\b(?:continue|resume|handoff)\b", prompt, re.IGNORECASE):
@@ -515,6 +517,9 @@ def handle(config, event):
     if config.get("harness") == "opencode":
         if not re.fullmatch(r"ses_[A-Za-z0-9]+", event["session_id"]):
             raise HookError("invalid OpenCode session identity")
+    elif config.get("harness") == "hermes":
+        if any(ord(c) < 32 for c in event["session_id"]):
+            raise HookError("invalid Hermes session identity")
     else:
         try:
             uuid.UUID(event["session_id"])
@@ -528,14 +533,17 @@ def handle(config, event):
     if any((path / ".cairn-no-memory").exists() for path in (Path(event["cwd"]), project_for(event["cwd"]))):
         return {}
     memory = Memory(config, event["session_id"])
+    # Host labels remain intact in Cairn scope; Hermes labels need not be paths.
+    state_key = (hashlib.sha256(event["session_id"].encode()).hexdigest()
+                 if config.get("harness") == "hermes" else event["session_id"])
     lock_dir = Path(config["state_dir"])
     lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with (lock_dir / (event["session_id"] + ".lock")).open("a") as lock:
+    with (lock_dir / (state_key + ".lock")).open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise HookError("a memory hook is already running for this session") from exc
-        path = lock_dir / (event["session_id"] + ".json")
+        path = lock_dir / (state_key + ".json")
         state = json.loads(path.read_text()) if path.exists() else {}
         if event_name in ("SessionStart", "UserPromptSubmit"):
             result = recall(memory, event, state)
