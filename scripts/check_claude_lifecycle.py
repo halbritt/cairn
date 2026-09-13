@@ -157,11 +157,16 @@ def check(claude, binary, root, environment):
         continued = memory.checkpoint(hook.workstream_prefix(event) + "PostgreSQL lifecycle validation")
         assert continued['record_id'] == previous['record_id'] and continued['version'] == previous['version'] + 1, continued
         checkpoint = 'Goal: verify lifecycle memory. Decision: disposable PostgreSQL. Verification: startup and resume passed. Next: inspect compaction.'
-        run('compact', ['--resume', session_id, '--', '/compact'])
+        run('progress', ['--resume', session_id, '--', 'PostgreSQL lifecycle checks now pass; inspect compaction next.'])
+        capture_count = len(captures)
+        before_compact = memory.checkpoint(hook.workstream_prefix(event) + "PostgreSQL lifecycle validation")
+        compact_result = run('compact', ['--resume', session_id, '--', '/compact'])
         after = memory.checkpoint(hook.workstream_prefix(event) + "PostgreSQL lifecycle validation")
         assert after and after['record_id'] == previous['record_id'] and after['version'] > previous['version'], after
         assert after['body'].endswith(checkpoint)
-        assert any('PreCompact' in json.dumps(r['messages']) for r in captures), 'Native PreCompact did not run'
+        assert after['version'] == before_compact['version'], 'Compaction without new work revised memory'
+        assert len(captures) == capture_count, 'Unchanged PreCompact/SessionEnd repeated model selection'
+        assert 'PreCompact' in compact_result.stdout, 'Native PreCompact did not run'
         print('Claude native startup, task context, MCP pull, resume, PreCompact and SessionEnd selected capture pass')
     finally:
         server.shutdown()

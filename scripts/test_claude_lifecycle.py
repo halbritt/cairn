@@ -252,6 +252,42 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(call.call_args.args[0], "create")
             self.assertIn("Editor layout", call.call_args.kwargs["payload"]["draft"]["body"])
 
+    def test_unchanged_compaction_exit_skips_model_but_new_content_triggers_it(self):
+        messages = [dict(type="user", uuid="owner", message=dict(content="Transaction checks pass; deploy next."))]
+        self.write_dialogue(messages)
+        memory = hook.Memory(self.config, "session")
+        state = {}
+        selection = dict(checkpoint="Deploy next.", workstream="Storage", memories=[])
+        with patch.object(memory, "checkpoint", return_value=None), \
+             patch.object(hook, "run_json", return_value=dict(structured_output=selection)) as model, \
+             patch.object(memory, "call", return_value=dict(record_id="saved")):
+            hook.capture(memory, self.event, state)
+            self.write_dialogue(messages + [
+                dict(type="user", isCompactSummary=True, message=dict(content="Host-generated summary")),
+                dict(type="user", message=dict(content="<command-name>/compact</command-name>")),
+                messages[0]])
+            hook.capture(memory, dict(self.event, hook_event_name="SessionEnd"), state)
+            self.assertEqual(model.call_count, 1)
+            self.write_dialogue(messages + [dict(type="assistant", uuid="new", message=dict(content="Deployment verified."))])
+            hook.capture(memory, self.event, state)
+            self.assertEqual(model.call_count, 2)
+
+    def test_null_selection_is_cached_but_failed_save_can_retry(self):
+        self.write_dialogue([dict(type="user", message=dict(content="Useful decision"))])
+        memory = hook.Memory(self.config, "session")
+        state = {}
+        with patch.object(memory, "checkpoint", return_value=None), \
+             patch.object(hook, "run_json", return_value=dict(structured_output=dict(
+                 checkpoint="Deploy next.", workstream="Storage", memories=[]))) as model, \
+             patch.object(memory, "call", side_effect=hook.HookError("write failed")):
+            with self.assertRaises(hook.HookError):
+                hook.capture(memory, self.event, state)
+            self.assertNotIn("captured_digest", state)
+            model.return_value = dict(structured_output=dict(checkpoint=None, workstream=None, memories=[]))
+            hook.capture(memory, self.event, state)
+            hook.capture(memory, self.event, state)
+            self.assertEqual(model.call_count, 2)
+
     def test_retrieved_handoff_binds_resume_to_workstream(self):
         memory = hook.Memory(self.config, "session")
         title = hook.workstream_prefix(self.event) + "Storage migration"

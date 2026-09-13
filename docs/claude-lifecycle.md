@@ -81,8 +81,7 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   most 24,000 bytes of serialized dialogue. A clipped boundary message is labelled.
   Older context can be missing; the previous saved checkpoint helps continuity.
 - Selection has 35 seconds; individual Cairn commands have 5 seconds. Capture
-  hooks have a 150-second host timeout to cover bounded candidate reads and up to four selected writes. Each capture event may incur one separate
-  model selection conversation. Nested lifecycle hooks and transcript persistence
+  hooks have a 150-second host timeout to cover bounded candidate reads and up to four selected writes. Capture hashes the selected dialogue and selector contract before any memory/model call. An unchanged excerpt after a confirmed save or null selection skips extraction entirely. Host compaction summaries, local-command wrappers and duplicate transcript UUIDs do not count as new work. Failed writes leave the digest unchanged so another event can retry. A changed model/selector contract also invalidates the digest. Nested lifecycle hooks and transcript persistence
   are disabled for that call. Temporary working directories are removed on exit.
 - Checkpoints are at most 6,000 body bytes plus their title. Identical selected
   bodies do not create revisions. Request IDs remain stable for an identical
@@ -94,7 +93,7 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
 
 There is no continuous transcript watcher, background groomer, or guarantee of a
 checkpoint after an abrupt process kill. Capture can miss tool work that has not
-yet been summarized in dialogue. Session locks and bounded metadata files remain in the installed `state` directory. They retain note IDs/versions, recent filenames and diagnostic identifiers, without transcript or file bodies.
+yet been summarized in dialogue. Session locks and bounded metadata files remain in the installed `state` directory. They retain note IDs/versions, recent filenames, diagnostic identifiers, workstream title and capture digest, without transcript or file bodies. If transcript truncation changes the bounded excerpt, an additional selection can occur even without new work.
 
 Claude's [hook reference](https://code.claude.com/docs/en/hooks) defines these
 lifecycle events. The installed behavior is checked separately in the

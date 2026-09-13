@@ -59,3 +59,16 @@ queries remain below the API's 4096-byte limit without cutting quoted phrases.
 Artifacts: `/tmp/cairn-lifecycle-workstream-3`. Cross-harness native continuation
 will be checked with OpenCode in step 5; semantic matching and long-term usefulness
 are not established by this fixture.
+
+## 4. Skip unchanged capture
+
+A successful selection, including an intentional null, records a digest of the
+bounded dialogue and selector contract. Subsequent identical content requires no
+lookup, selector call or save. Host compaction summaries, local command wrappers
+and duplicate UUID records are excluded. Failed selection/writes remain retryable.
+
+Validation: 24 focused tests include unchanged compaction/exit, new content, null
+selection and failed-write retry. Native Claude added a meaningful progress turn,
+saved it, then performed manual compaction and exit with zero further selector
+requests and no revision. Artifacts: `/tmp/cairn-lifecycle-unchanged-1`.
+This reduces calls for the tested unchanged boundary; it is not a latency benchmark.

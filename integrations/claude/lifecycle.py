@@ -138,16 +138,24 @@ def conversation(path):
         if size > TRANSCRIPT_BYTES:
             stream.readline()  # discard the first partial JSONL record
         raw = stream.read(TRANSCRIPT_BYTES)
-    messages = []
+    messages, seen = [], set()
     for line in raw.splitlines():
         record = json.loads(line)
-        if record.get("type") not in ("user", "assistant") or record.get("isSidechain"):
+        if (record.get("type") not in ("user", "assistant") or record.get("isSidechain")
+                or record.get("isCompactSummary") or record.get("isMeta")):
             continue
         content = record.get("message", {}).get("content", [])
         if isinstance(content, str):
             text = content
         else:
             text = "\n".join(block["text"] for block in content if block.get("type") == "text")
+        if text.startswith(("<command-name>", "<local-command-stdout>", "<local-command-caveat>")):
+            continue
+        identity = record.get("uuid")
+        if identity and identity in seen:
+            continue
+        if identity:
+            seen.add(identity)
         if text.strip():
             messages.append({"role": record["type"], "text": text})
     # Keep complete recent messages where possible; mark a clipped large message.
@@ -433,6 +441,9 @@ def capture(memory, event, state=None):
     messages = conversation(event["transcript_path"])
     if not messages:
         return {}
+    digest = hashlib.sha256(encoded([CAPTURE_PROMPT, CAPTURE_SCHEMA, memory.config.get("model"), messages]).encode()).hexdigest()
+    if state.get("captured_digest") == digest:
+        return {}
     previous = memory.checkpoint(state.get("workstream", title_for(event)))
     handoffs = handoff_candidates(memory, event, messages, state)
     candidates = durable_candidates(memory, event, messages)
@@ -466,6 +477,9 @@ def capture(memory, event, state=None):
             state["workstream"] = body.split("\n", 1)[0]
         if identity:
             saved.append(identity)
+    # Only a fully confirmed selection (including null) suppresses later calls.
+    # On failure, retain the old digest so a subsequent event can retry.
+    state["captured_digest"] = digest
     return {"systemMessage": "Cairn selected memories saved: " + ", ".join(saved)} if saved else {}
 
 
