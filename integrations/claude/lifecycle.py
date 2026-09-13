@@ -5,10 +5,12 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 CONTEXT_BYTES = 12000
@@ -90,8 +92,10 @@ class Memory:
             raise HookError("Cairn did not confirm the operation")
         return result["data"]
 
-    def search(self, query, room=SEARCH_ROOM):
-        result = self.call("search", [*self.scope, "--tokens", str(room), "--", query])
+    def search(self, query, room=SEARCH_ROOM, entities=(), kinds=()):
+        hints = [flag for entity in entities for flag in ("--entity-file", entity)]
+        hints += [flag for kind in kinds for flag in ("--kind", kind)]
+        result = self.call("search", [*self.scope, "--tokens", str(room), *hints, "--", query])
         if result.get("status") not in ("READY", "SCOPE_EMPTY"):
             raise HookError("Cairn retrieval is not ready")
         if result.get("destination", {}).get("name") != "hosted":
@@ -159,38 +163,137 @@ def title_for(event):
     return f"Handoff: {project} / Claude session {event['session_id']}"
 
 
-def recall(memory, event):
-    source = event.get("source", "")
+STOP_WORDS = set("a an and are as at be before can check continue could do does for from have how i in into is it its make me memory need next of on or please project task test tests that the then these this to use using want was we what when which with work would you your".split())
+
+
+def terms(text):
+    return {word for word in re.findall(r"[\w.-]+", text.lower()) if len(word) >= 3 and word not in STOP_WORDS}
+
+
+def file_hint(value, cwd):
+    value = value.strip("`\"'.,;:()[]")
+    if not value or "\n" in value:
+        return None
+    path = Path(value)
+    project = project_for(cwd)
+    if not path.is_absolute():
+        path = Path(cwd) / path
+    try:
+        name = path.resolve().relative_to(project).as_posix()
+    except ValueError:
+        return None
+    if name == "." or len(name.encode()) > 512:
+        return None
+    return name
+
+
+def retrieval_intent(event, state):
+    project = project_for(event["cwd"]).name
     prompt = event.get("prompt", "")
-    if event["hook_event_name"] == "SessionStart" and source in ("resume", "compact"):
-        # Exact session checkpoint first; other project notes remain lexical matches.
-        query = '"' + title_for(event) + '"'
-    else:
-        project = project_for(event["cwd"]).name
-        query = clip(project + " " + prompt.replace('"', " "), 600)
-    result = memory.search(query)
+    paths = []
+    for value in re.findall(r"[\w./-]+\.[A-Za-z0-9_]+", prompt):
+        name = file_hint(value, event["cwd"])
+        if name and name not in paths:
+            paths.append(name)
+    now = time.time()
+    hints = state.get("hints", {})
+    for name, seen_at in hints.get("files", {}).items():
+        if now - seen_at < 900 and name not in paths:
+            paths.append(name)
+    paths = paths[-16:]
+    phrases = [p for p in re.findall(r'["`]([^"`\n]{3,160})["`]', prompt) if terms(p)]
+    error_terms = hints.get("errors", []) if now - hints.get("error_at", 0) < 900 else []
+    # Scan all supplied prompt text so a file/error after a long preamble survives.
+    keywords = sorted(word for word in terms(prompt) - terms(project) if len(word.encode()) <= 128)
+    anchors = list(dict.fromkeys([*paths, *phrases, *error_terms]))
+    if event.get("source") in ("resume", "compact"):
+        anchors.insert(0, title_for(event))
+    anchors = [a for a in anchors if len(a.encode()) <= 256 and '"' not in a][:8]
+    query = " ".join([project, *('"' + item + '"' for item in anchors), *error_terms, *keywords[:48]])
+    return dict(query=query, files=paths, phrases=anchors,
+                words=set(keywords) | terms(" ".join(error_terms)), project=project,
+                startup=event["hook_event_name"] == "SessionStart")
+
+
+def relevant(entry, intent):
+    summary = entry.get("summary", "")
+    associated = {e["name"] for e in entry.get("entities", []) if e.get("kind") == "file"}
+    if associated & set(intent["files"]):
+        return True
+    if any(phrase in summary for phrase in intent["phrases"]):
+        return True
+    overlap = terms(summary) & intent["words"]
+    if len(overlap) >= 2:
+        return True
+    # With no task yet, only clearly project-labelled direction is ambient.
+    return (intent["startup"] and entry.get("kind") in ("decision", "preference")
+            and re.match(re.escape(intent["project"].lower()) + r"(?:\s|:)", summary.lower()) is not None)
+
+
+def recall(memory, event, state=None):
+    state = state if state is not None else {}
+    if event["hook_event_name"] == "SessionStart":
+        state["seen"] = {}  # new/resumed/compacted context needs fresh delivery
+    seen = state.setdefault("seen", {})
+    intent = retrieval_intent(event, state)
+    kinds = ("decision", "preference") if intent["startup"] and event.get("source") not in ("resume", "compact") else ()
+    result = memory.search(intent["query"], entities=intent["files"], kinds=kinds)
+    entries = [entry for entry in result.get("index", []) if relevant(entry, intent)
+               and seen.get(entry["record_id"]) != entry["version"]]
     view = {"selected": result.get("selected", []), "index": [
         {key: entry[key] for key in ("record_id", "version", "summary", "pull_arguments")}
-        for entry in result.get("index", [])]}
+        for entry in entries]}
+    if not view["selected"] and not entries:
+        return {}  # no guidance boilerplate or weak matches added to the conversation
     text = GUIDANCE + encoded(view)
     if len(text.encode("utf-8")) > CONTEXT_BYTES:
         raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")
-    if view["index"]:
+    expanded_id = None
+    if entries:
         try:
-            pulled = memory.call("pull", payload=view["index"][0]["pull_arguments"])
-            expanded = dict(view, expanded=pulled)
-            candidate = GUIDANCE + encoded(expanded)
+            pulled = memory.call("pull", payload=entries[0]["pull_arguments"])
+            candidate = GUIDANCE + encoded(dict(view, expanded=pulled))
             if len(candidate.encode("utf-8")) <= CONTEXT_BYTES:
                 text = candidate
+                expanded_id = entries[0]["record_id"]
         except HookError:
-            # A source can change between index and pull; deliver the valid index
-            # with an explicit refresh instruction, never cached stale body text.
             warning = "Optional body unavailable; search again before relying on its preview.\n"
-            if len((warning + text).encode("utf-8")) <= CONTEXT_BYTES:
-                text = warning + text
-            else:
+            if len((warning + text).encode("utf-8")) > CONTEXT_BYTES:
                 raise HookError("optional body unavailable and context budget exhausted")
+            text = warning + text
+    # Remember body delivery only. A preview with an expiring handle must remain
+    # discoverable until its body has actually been offered to this context.
+    if expanded_id:
+        seen[expanded_id] = entries[0]["version"]
+        state["seen"] = dict(list(seen.items())[-256:])
     return {"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
+
+
+def observe(event, state):
+    hints = state.setdefault("hints", {})
+    if event["hook_event_name"] == "PostToolUse" and event.get("tool_name") in ("Read", "Edit", "Write"):
+        name = file_hint(event.get("tool_input", {}).get("file_path", ""), event["cwd"])
+        if name:
+            files = hints.setdefault("files", {})
+            files.pop(name, None)
+            files[name] = time.time()
+            hints["files"] = dict(list(files.items())[-16:])
+    elif event["hook_event_name"] == "PostToolUseFailure":
+        # Retain diagnostic identifiers, not command output or arbitrary values.
+        hints["errors"] = list(dict.fromkeys(re.findall(r"\b(?:E[A-Z_]{3,40}|[A-Za-z]{3,40}(?:Error|Exception))\b", event.get("error", ""))))[:8]
+        hints["error_at"] = time.time()
+    return {}
+
+
+def save_state(path, state):
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False, encoding="utf-8") as output:
+        temporary = Path(output.name)
+        try:
+            output.write(encoded(state))
+            output.close()
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def capture(memory, event):
@@ -253,23 +356,30 @@ def handle(config, event):
     except ValueError as exc:
         raise HookError("host session identity must be a UUID") from exc
     event_name = event.get("hook_event_name")
-    if event_name not in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd"):
+    if event_name not in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse", "PostToolUseFailure"):
         return {}
     if not Path(event["cwd"]).is_dir():
         raise HookError("host working directory is unavailable")
     if any((path / ".cairn-no-memory").exists() for path in (Path(event["cwd"]), project_for(event["cwd"]))):
         return {}
     memory = Memory(config, event["session_id"])
-    if event_name in ("SessionStart", "UserPromptSubmit"):
-        return recall(memory, event)
     lock_dir = Path(config["state_dir"])
     lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (lock_dir / (event["session_id"] + ".lock")).open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise HookError("checkpoint selection is already running for this session") from exc
-        return capture(memory, event)
+            raise HookError("a memory hook is already running for this session") from exc
+        path = lock_dir / (event["session_id"] + ".json")
+        state = json.loads(path.read_text()) if path.exists() else {}
+        if event_name in ("SessionStart", "UserPromptSubmit"):
+            result = recall(memory, event, state)
+        elif event_name in ("PostToolUse", "PostToolUseFailure"):
+            result = observe(event, state)
+        else:
+            result = capture(memory, event)
+        save_state(path, state)
+        return result
 
 
 def main():

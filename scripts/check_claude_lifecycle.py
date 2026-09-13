@@ -27,6 +27,9 @@ def check(claude, binary, root, environment):
     seed = operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=dict(
         kind='decision', body=marker + ': use a disposable PostgreSQL cluster for validation.',
         claim_type='self', sensitivity='shareable', scope=dict(repo='fixture:socket', task_id='*', run_id='*'))))
+    task_seed = operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=dict(
+        kind='lesson', body='For ' + marker + '/lifecycle.py: verify the native task hook with a file hint.',
+        claim_type='self', sensitivity='shareable', scope=dict(repo='fixture:socket', task_id='*', run_id='*'))))
     operator(binary, environment, 'create', dict(request_id=str(uuid.uuid4()), draft=dict(
         kind='note', body=marker + ': PRIVATE-NATIVE-CANARY', claim_type='self', sensitivity='local',
         scope=dict(repo='fixture:socket', task_id='*', run_id='*'))))
@@ -81,10 +84,9 @@ def check(claude, binary, root, environment):
                         candidates = [b['text'] for m in request['messages'] if isinstance(m.get('content'), list)
                                       for b in m['content'] if b.get('type') == 'text' and 'Cairn lifecycle memory:' in b['text']]
                         assert candidates, 'No native context block'
-                        text = candidates[-1]
-                        start = text.index('{"selected":')
-                        view, _ = json.JSONDecoder().raw_decode(text[start:])
-                        entry = next(e for e in view['index'] if e['record_id'] == seed['record_id'])
+                        views = [json.JSONDecoder().raw_decode(text[text.index('{"selected":'):])[0]
+                                 for text in candidates]
+                        entry = next(e for view in views for e in view['index'] if e['record_id'] == seed['record_id'])
                         block = dict(type='tool_use', id='pull_' + str(len(requests)), name='mcp__cairn__cairn_pull', input=entry['pull_arguments'])
                     else:
                         block = dict(type='text', text=checkpoint)
@@ -126,8 +128,9 @@ def check(claude, binary, root, environment):
             assert 'hook [' not in completed.stderr or 'failed:' not in completed.stderr, completed.stderr
             return completed
 
-        run('startup', ['--session-id', session_id, '--', 'Continue the ' + marker + ' PostgreSQL lifecycle task.'])
+        run('startup', ['--session-id', session_id, '--', 'Continue the ' + marker + ' PostgreSQL lifecycle task in ' + marker + '/lifecycle.py.'])
         assert json.dumps(requests[0]).count('Cairn lifecycle memory:') >= 2, 'Startup and submitted-task hooks must both inject'
+        assert task_seed['record_id'] in json.dumps(requests[0]), 'Task file hint did not retrieve its lesson'
         assert results and any(not b.get('is_error') and seed['body'] in json.dumps(b) for b in results), results
         assert captures, 'SessionEnd did not trigger selected checkpoint extraction'
         memory = hook.Memory(config, session_id)

@@ -28,10 +28,11 @@ class LifecycleTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        (self.root / ".git").mkdir()
         self.transcript = self.root / "conversation.jsonl"
         self.event = dict(hook_event_name="PreCompact", session_id="caed9473-b01a-41e7-95ce-c3c1f28d66b3", cwd=str(self.root),
                           transcript_path=str(self.transcript))
-        self.config = dict(cairn="cairn", claude="claude", socket="socket", token_file="token", repo="shared")
+        self.config = dict(cairn="cairn", claude="claude", socket="socket", token_file="token", repo="shared", state_dir=str(self.root / "state"))
 
     def write_dialogue(self, messages):
         self.transcript.write_text("\n".join(json.dumps(m) for m in messages) + "\n")
@@ -53,7 +54,7 @@ class LifecycleTests(unittest.TestCase):
     def test_recall_injects_real_index_handles_without_connection_arguments(self):
         memory = hook.Memory(self.config, "session-one")
         result = dict(status="READY", destination=dict(name="hosted"), selected=[{"mandatory": True}],
-                      index=[dict(record_id="record", version=1, summary="useful", pull_arguments={"handle": "exact"},
+                      index=[dict(record_id="record", version=1, summary="fix startup failure", pull_arguments={"handle": "exact"},
                                   pull_command="private paths")])
         with patch.object(memory, "call", side_effect=[result, {"selection": {"record": {"body": "useful body"}}}]) as call:
             output = hook.recall(memory, dict(self.event, hook_event_name="UserPromptSubmit", prompt="fix startup"))
@@ -69,7 +70,7 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(hook, "run_json", return_value=empty):
             self.assertIsNone(memory.checkpoint(hook.title_for(self.event)))
             output = hook.recall(memory, dict(self.event, hook_event_name="SessionStart"))
-            self.assertIn('"index":[]', output["hookSpecificOutput"]["additionalContext"])
+            self.assertEqual(output, {})
 
     def test_local_profile_and_oversize_mandatory_context_refused(self):
         memory = hook.Memory(self.config, "session-one")
@@ -83,7 +84,7 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(memory, "search", return_value={}) as search:
             for source in ("resume", "compact"):
                 hook.recall(memory, dict(self.event, hook_event_name="SessionStart", source=source))
-                self.assertEqual(search.call_args.args[0], '"' + hook.title_for(self.event) + '"')
+                self.assertIn( '"' + hook.title_for(self.event) + '"', search.call_args.args[0])
 
     def test_capture_updates_one_note_and_null_does_not_write(self):
         self.write_dialogue([dict(type="user", message=dict(content="Use PostgreSQL; tests are pending."))])
@@ -124,7 +125,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(hook.handle(self.config, self.event), {})
 
     def test_project_checkpoint_and_opt_out_survive_subdirectory_work(self):
-        (self.root / ".git").mkdir()
+        (self.root / ".git").mkdir(exist_ok=True)
         subdir = self.root / "src"
         subdir.mkdir()
         nested = dict(self.event, cwd=str(subdir))
@@ -162,10 +163,10 @@ class LifecycleTests(unittest.TestCase):
 
     def test_stale_optional_body_keeps_index_with_refresh_notice(self):
         memory = hook.Memory(self.config, "session-one")
-        view = dict(selected=[], index=[dict(record_id="r", version=1, summary="preview", pull_arguments={})])
+        view = dict(selected=[], index=[dict(record_id="r", version=1, summary="startup failure preview", pull_arguments={})])
         with patch.object(memory, "search", return_value=view), \
              patch.object(memory, "call", side_effect=hook.HookError("stale")):
-            output = hook.recall(memory, dict(self.event, hook_event_name="UserPromptSubmit"))
+            output = hook.recall(memory, dict(self.event, hook_event_name="UserPromptSubmit", prompt="startup failure"))
         self.assertIn("search again", output["hookSpecificOutput"]["additionalContext"])
         self.assertIn("preview", output["hookSpecificOutput"]["additionalContext"])
 
@@ -183,6 +184,55 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(updated["permissions"], original["permissions"])
         self.assertEqual(updated["hooks"]["SessionStart"][0], original["hooks"]["SessionStart"][0])
         self.assertEqual(json.loads(settings.with_name("settings.json.before-cairn-lifecycle").read_text()), original)
+
+    def test_weak_matches_omitted_and_delivered_versions_reset_with_context(self):
+        memory = hook.Memory(self.config, "session-one")
+        entry = dict(record_id="r", version=1, summary="startup failure fix", pull_arguments={})
+        state = {}
+        event = dict(self.event, hook_event_name="UserPromptSubmit", prompt="startup failure")
+        with patch.object(memory, "search", return_value=dict(index=[entry])), \
+             patch.object(memory, "call", return_value=dict(selection=dict(record=dict(body="saved fix")))):
+            self.assertEqual(hook.recall(memory, dict(event, prompt="unrelated layout"), state), {})
+            self.assertIn("saved fix", str(hook.recall(memory, event, state)))
+            self.assertEqual(hook.recall(memory, event, state), {})
+            entry["version"] = 2
+            self.assertIn("saved fix", str(hook.recall(memory, event, state)))
+            self.assertIn("saved fix", str(hook.recall(memory,
+                dict(event, hook_event_name="SessionStart", source="compact"), state)))
+
+    def test_file_and_error_hints_survive_long_prompt_and_expire(self):
+        state = {}
+        hook.observe(dict(self.event, hook_event_name="PostToolUse", tool_name="Read",
+                          tool_input=dict(file_path=str(self.root / "core/currentness.go")),
+                          tool_response="RAW FILE CONTENT"), state)
+        hook.observe(dict(self.event, hook_event_name="PostToolUseFailure",
+                          error="EADDRINUSE: RAW OUTPUT"), state)
+        event = dict(self.event, hook_event_name="UserPromptSubmit",
+                     prompt="please " * 300 + 'repair "client/socket.go"')
+        intent = hook.retrieval_intent(event, state)
+        self.assertIn("core/currentness.go", intent["files"])
+        self.assertIn('"client/socket.go"', intent["query"])
+        self.assertIn("eaddrinuse", intent["words"])
+        self.assertNotIn("RAW", str(state))
+        self.assertTrue(hook.relevant(dict(summary="repair EADDRINUSE"), intent))
+        with patch.object(hook.time, "time", return_value=hook.time.time() + 901):
+            intent = hook.retrieval_intent(event, state)
+        self.assertNotIn("core/currentness.go", intent["files"])
+        self.assertNotIn("eaddrinuse", intent["words"])
+
+    def test_associated_files_and_mandatory_context_are_retained(self):
+        memory = hook.Memory(self.config, "session-one")
+        entry = dict(record_id="r", version=1, summary="opaque summary", pull_arguments={},
+                     entities=[dict(kind="file", name="core/store.go")])
+        event = dict(self.event, hook_event_name="UserPromptSubmit", prompt="core/store.go")
+        with patch.object(memory, "search", return_value=dict(selected=["required"], index=[entry])) as search, \
+             patch.object(memory, "call", return_value=dict(selection=dict(record=dict(body="file guidance")))):
+            state = {}
+            self.assertIn("file guidance", str(hook.recall(memory, event, state)))
+            self.assertEqual(search.call_args.kwargs["entities"], ["core/store.go"])
+            result = str(hook.recall(memory, event, state))
+            self.assertIn("required", result)
+            self.assertNotIn("file guidance", result)
 
 
 if __name__ == "__main__":

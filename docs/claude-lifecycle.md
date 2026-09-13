@@ -7,12 +7,13 @@ normal sessions in other projects use the same shared collection.
 | Event | Behavior |
 | --- | --- |
 | `SessionStart` | Retrieve project guidance on startup or clear; on resume or after compaction, prefer this session's checkpoint. |
-| `UserPromptSubmit` | Search using the current project name and a bounded portion of the submitted prompt. |
+| `UserPromptSubmit` | Search using project, task keywords, quoted phrases and file/error hints; omit weak matches and unchanged bodies already delivered. |
+| `PostToolUse` / `PostToolUseFailure` | Retain recent Read/Edit/Write filenames and diagnostic identifiers for the next search; omit tool output. |
 | `PreCompact` | Select and save a checkpoint before either manual or automatic compaction. |
 | `SessionEnd` | Select remaining useful context before normal exit, clear, or switching sessions. |
 
 Retrieval delivers required selected context, optional previews with native pull
-arguments, and the first optional source's full body when it fits. The agent can
+arguments, and the first optional source's full body when it fits. Optional matches must share a file association, quoted phrase or at least two task terms. At startup, project-labelled decisions and preferences also qualify. Hints expire after 15 minutes. A delivered body is suppressed at the same version until startup, resume or compaction resets the context; required selected context is always retained. Empty or weak results add no boilerplate. These lexical heuristics can miss relevant notes, so explicit search remains available. The agent can
 pull other sources through its existing Cairn MCP tools. The hook and tools must
 use the same authenticated principal for those handles. Session labels identify
 host conversations; shared captures remain repository-scoped.
@@ -31,7 +32,7 @@ python3 scripts/install-claude-hooks.py
 ```
 
 The installer copies the hook into `~/.local/share/cairn/claude-hooks` and merges
-its four command hooks into Claude's user `settings.json`. It preserves existing
+its six command hooks into Claude's user `settings.json`. It preserves existing
 hooks, permissions and unrelated settings, and keeps the first settings backup
 as `settings.json.before-cairn-lifecycle`. Start a fresh Claude session afterward.
 Rerunning the same command updates this installation without duplicating hooks.
@@ -46,7 +47,7 @@ and collection. The installer never provisions credentials or changes policy.
 
 To disable hooks for one launch, set `CAIRN_LIFECYCLE_DISABLED=1`. A
 `.cairn-no-memory` file in the working directory or nearest Git root disables both retrieval and
-capture there. To uninstall, remove this installation's commands from the four
+capture there. To uninstall, remove this installation's commands from the six
 hook lists; leave other hooks intact. Do not restore the entire backup over newer
 settings changes.
 
@@ -97,8 +98,7 @@ cannot run together. Explicit workstream handoffs remain available through the
 
 There is no continuous transcript watcher, background groomer, or guarantee of a
 checkpoint after an abrupt process kill. Capture can miss tool work that has not
-yet been summarized in dialogue. Empty session lock files remain in the installed
-`state` directory; they contain no memory or transcript content.
+yet been summarized in dialogue. Session locks and bounded metadata files remain in the installed `state` directory. They retain note IDs/versions, recent filenames and diagnostic identifiers, without transcript or file bodies.
 
 Claude's [hook reference](https://code.claude.com/docs/en/hooks) defines these
 lifecycle events. The installed behavior is checked separately in the

@@ -29,7 +29,7 @@ def install(settings_path, destination, config):
     script = destination / "lifecycle.py"
     config_path = destination / "config.json"
     command = shlex.join([sys.executable, str(script), "--config", str(config_path)])
-    for event in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd"):
+    for event in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse", "PostToolUseFailure"):
         groups = hooks.setdefault(event, [])
         # Replace only this installation's exact command; retain every other hook.
         for group in groups:
