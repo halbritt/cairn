@@ -45,7 +45,7 @@ def install(home, native, claude, skill, model=None):
     if 'cairn-controls' not in enabled:
         enabled.append('cairn-controls')
     engine = dict(cairn=native['executable'], socket=native['socket'], token_file=native['token_file'],
-                  repo=native['repo'], harness='hermes', claude=claude, state_dir=str(home / 'cairn/state'))
+                  repo=native['repo'], harness='hermes', semantic_fallback=True, claude=claude, state_dir=str(home / 'cairn/state'))
     if model:
         engine['model'] = model
     if native.get('context'):

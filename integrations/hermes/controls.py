@@ -65,7 +65,7 @@ def describe_status(record):
     recall = record.get('last_recall')
     if recall:
         records = ', '.join(r['record_id'] + ' v' + str(r['version']) for r in recall.get('records', []))
-        lines.append('Recall: ' + recall['outcome'] + (' — ' + records if records else ''))
+        lines.append('Recall: ' + recall['outcome'] + ' (' + recall.get('discovery', 'lexical') + ')' + (' — ' + records if records else ''))
     else:
         lines.append('Recall: no turn observed.')
     capture = record.get('last_capture')

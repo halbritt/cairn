@@ -83,3 +83,20 @@ without a model call, CLI status registration, restart recovery from the exact
 bounded native-history snapshot, and refusal of changed history. Existing gateway
 and CLI lifecycle checks pass. No raw conversation is added to control files.
 A pending retry can be explicitly discarded when original history is unavailable.
+
+## Task 4 evidence
+
+Hermes enables one semantic search only after optional lexical relevance misses
+on a substantive prompt without precise file/quoted/error hints. One complete
+candidate is pulled and checked by the existing tool-free selector, with an
+eight-second deadline. Similarity does not authorize injection. Both searches'
+required context and the complete candidate share the 12000-byte ceiling; an
+oversized mandatory set refuses delivery. Other harnesses retain lexical defaults.
+
+52 focused tests pass. A disposable native Hermes/API fixture with the installed
+embedding worker verifies a paraphrased backend question, full-body delivery,
+unrelated rejection and the context ceiling. Its relevance response is synthetic.
+Separately, the installed real selector passed paraphrase, unrelated and embedded
+instruction cases twice each (3.15–7.17 seconds). Status labels semantic discovery,
+verification, rejection, timeout/failure and worker unavailability. These bounded
+cases establish behavior, not general relevance accuracy or long-term benefit.

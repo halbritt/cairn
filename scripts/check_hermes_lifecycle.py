@@ -39,6 +39,7 @@ def main():
     parser.add_argument('--binary', type=Path, required=True)
     parser.add_argument('--claude', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--semantic-worker', type=Path)
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(mode=0o700)
@@ -64,7 +65,7 @@ def main():
             principal='agent:hermes-fixture', repo='fixture:hermes', role='agent', destination='hosted')]))
         (root / 'identities.json').chmod(0o600)
         api_log = (root / 'api.log').open('w')
-        api = subprocess.Popen([binary, 'serve'], env=env, stdout=api_log, stderr=api_log)
+        api = subprocess.Popen([binary, 'serve', *(['--semantic-stream-command', str(args.semantic_worker.resolve())] if args.semantic_worker else [])], env=env, stdout=api_log, stderr=api_log)
         deadline = time.monotonic() + 10
         while not (root / 'api.sock').exists():
             assert api.poll() is None and time.monotonic() < deadline, 'fixture API not ready'
@@ -134,30 +135,38 @@ def run_fixture(args, output, store, operator_env):
                 return
             try:
                 if self.path.startswith('/v1/messages'):
-                    selections.append(data)
                     excerpt = json.loads(data['messages'][0]['content'])
-                    assert 'Cairn lifecycle memory:' not in json.dumps(excerpt['messages'])
-                    assert 'NATIVE_MEMORY_CANARY' not in json.dumps(excerpt['messages'])
-                    names = [t['name'] for t in data.get('tools', [])]
-                    selection = dict(checkpoint='Goal: PostgreSQL validation. State: Hermes continued the shared handoff. Next: verify gateway continuity.',
-                                     workstream='PostgreSQL validation', memories=[])
-                    latest = next(m['text'] for m in reversed(excerpt['messages']) if m['role']=='user')
-                    if 'SAVE_DECISION' in latest:
-                        selection['memories'] = [dict(record_id=None,kind='decision',title='PostgreSQL validation isolation',
-                            body='Use disposable PostgreSQL clusters. Source: synthetic Hermes owner instruction.')]
-                    if 'OWNER_CORRECTION' in latest:
-                        old = next(r for r in excerpt['existing_memories'] if 'PostgreSQL validation isolation' in r['body'])
-                        assert 'disposable PostgreSQL clusters' in old['body']
-                        selection['memories'] = [dict(record_id=old['record_id'],kind='decision',title='PostgreSQL validation isolation',
-                            body='hermesfixture: PostgreSQL validation isolation\n\nUse disposable PostgreSQL 17 clusters. This supersedes the unversioned fixture instruction. Source: synthetic Hermes owner correction.')]
-                    if 'after gateway restart' in latest:
-                        selection['checkpoint']='Goal: PostgreSQL validation. State: gateway restart verified. Next: return to CLI.'
-                    if 'GATEWAY_TO_CLI' in latest:
-                        selection['checkpoint']=excerpt['previous_checkpoint'].split('\n',1)[1]
-                    if any(marker in latest for marker in ('UNRELATED_WEATHER','NO_MEMORY','SERVICE_DOWN')):
-                        selection = dict(checkpoint=None,workstream=None,memories=[])
-                    tool = next(n for n in names if n.lower() == 'structuredoutput')
-                    body = response_events('selected', data['model'], dict(type='tool_use', id='selected', name=tool, input=selection))
+                    if 'candidate' in excerpt:
+                        names = [t['name'] for t in data.get('tools', [])]
+                        tool = next(n for n in names if n.lower() == 'structuredoutput')
+                        verdict = 'durable backend' in excerpt.get('request', '').lower()
+                        body = response_events('relevance', data['model'], dict(type='tool_use', id='relevance',
+                                               name=tool, input=dict(relevant=verdict)))
+                    else:
+                        selections.append(data)
+                        excerpt = json.loads(data['messages'][0]['content'])
+                        assert 'Cairn lifecycle memory:' not in json.dumps(excerpt['messages'])
+                        assert 'NATIVE_MEMORY_CANARY' not in json.dumps(excerpt['messages'])
+                        names = [t['name'] for t in data.get('tools', [])]
+                        selection = dict(checkpoint='Goal: PostgreSQL validation. State: Hermes continued the shared handoff. Next: verify gateway continuity.',
+                                         workstream='PostgreSQL validation', memories=[])
+                        latest = next(m['text'] for m in reversed(excerpt['messages']) if m['role']=='user')
+                        if 'SAVE_DECISION' in latest:
+                            selection['memories'] = [dict(record_id=None,kind='decision',title='PostgreSQL validation isolation',
+                                body='Use disposable PostgreSQL clusters. Source: synthetic Hermes owner instruction.')]
+                        if 'OWNER_CORRECTION' in latest:
+                            old = next(r for r in excerpt['existing_memories'] if 'PostgreSQL validation isolation' in r['body'])
+                            assert 'disposable PostgreSQL clusters' in old['body']
+                            selection['memories'] = [dict(record_id=old['record_id'],kind='decision',title='PostgreSQL validation isolation',
+                                body='hermesfixture: PostgreSQL validation isolation\n\nUse disposable PostgreSQL 17 clusters. This supersedes the unversioned fixture instruction. Source: synthetic Hermes owner correction.')]
+                        if 'after gateway restart' in latest:
+                            selection['checkpoint']='Goal: PostgreSQL validation. State: gateway restart verified. Next: return to CLI.'
+                        if 'GATEWAY_TO_CLI' in latest:
+                            selection['checkpoint']=excerpt['previous_checkpoint'].split('\n',1)[1]
+                        if any(marker in latest for marker in ('UNRELATED_WEATHER','NO_MEMORY','SERVICE_DOWN')):
+                            selection = dict(checkpoint=None,workstream=None,memories=[])
+                        tool = next(n for n in names if n.lower() == 'structuredoutput')
+                        body = response_events('selected', data['model'], dict(type='tool_use', id='selected', name=tool, input=selection))
                 else:
                     requests.append(data)
                     messages = data['messages']
@@ -346,6 +355,7 @@ def run_fixture(args, output, store, operator_env):
         print('Unrelated recall, environment/file opt-out and unavailable-service task continuation pass')
         profile_fixture(home,output,native,installer,args,work)
         retry_fixture(home, work)
+        semantic_fixture(home, work, bool(args.semantic_worker))
         from concurrent.futures import ThreadPoolExecutor
         agent = AIAgent(api_key='fixture-only',base_url=endpoint,provider='custom',api_mode='chat_completions',model='probe',
             platform='slack',session_id='interrupted-native',quiet_mode=True,enabled_toolsets=['mcp-cairn'],skip_context_files=True,skip_background_review=True)
@@ -414,6 +424,27 @@ def profile_fixture(home,output,native,installer,args,work):
         for provider in providers:
             provider.shutdown()
     print('Native context-local profiles isolate labels; explicit project recall works from an unrelated terminal directory')
+
+
+def semantic_fixture(home, work, configured):
+    engine = load('native_semantic_engine', ROOT/'integrations/lifecycle/memory.py')
+    config = json.loads((home/'cairn/engine.json').read_text())
+    memory = engine.Memory(config, 'semantic-native')
+    event = dict(hook_event_name='UserPromptSubmit', session_id='semantic-native',
+                 cwd=str(work), prompt='Which durable backend is used here?')
+    state = {}
+    result = engine.recall(memory, event, state)
+    if configured:
+        assert state['last_recall']['discovery'] == 'verified', state
+        assert 'PostgreSQL' in result['hookSpecificOutput']['additionalContext'], result
+        assert len(result['hookSpecificOutput']['additionalContext'].encode()) <= 12000
+        state = {}
+        result = engine.recall(memory, dict(event, prompt='Which tropical fruit tastes sweetest?'), state)
+        assert state['last_recall']['discovery'] == 'not_relevant' and not result, state
+    else:
+        assert state['last_recall']['discovery'] == 'unavailable' and not result, state
+    print('Native semantic fallback verifies paraphrase/full-body path and unrelated refusal' if configured
+          else 'Native unconfigured semantic worker returns labelled lexical fallback')
 
 
 def retry_fixture(home, work):

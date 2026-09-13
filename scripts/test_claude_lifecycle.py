@@ -443,3 +443,53 @@ class CandidateBudgetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class SemanticFallbackTests(unittest.TestCase):
+    def test_paraphrase_requires_full_body_verification_and_preserves_required_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = hook.Memory(dict(semantic_fallback=True, cairn='unused', socket='unused',
+                                      token_file='unused', repo='fixture'), 'semantic')
+            event = dict(hook_event_name='UserPromptSubmit', cwd=tmp, prompt='Which durable backend is used here?')
+            entry = dict(record_id='saved', version=2, summary='PostgreSQL operational store',
+                         pull_arguments=dict(handle='current'))
+            lexical = dict(index=[], selected=[dict(body='mandatory first')])
+            semantic = dict(index=[entry], selected=[dict(body='mandatory second')], discovery=dict(state='ready'))
+            pulled = dict(selection=dict(record=dict(body='Use PostgreSQL for this project.')))
+            for verdict in (True, False):
+                state = {}
+                with patch.object(memory, 'search', side_effect=[dict(lexical), semantic]) as search, \
+                     patch.object(memory, 'call', return_value=pulled) as pull, \
+                     patch.object(hook, 'select_json', return_value=dict(structured_output=dict(relevant=verdict))) as model:
+                    result = hook.recall(memory, event, state)
+                text = result['hookSpecificOutput']['additionalContext']
+                self.assertIn('mandatory first', text)
+                self.assertIn('mandatory second', text)
+                self.assertEqual('Use PostgreSQL' in text, verdict)
+                self.assertEqual(pull.call_count, 1)
+                self.assertTrue(search.call_args.kwargs['semantic'])
+                self.assertEqual(model.call_args.kwargs['timeout'], 8)
+                self.assertLessEqual(len(text.encode()), hook.CONTEXT_BYTES)
+                self.assertEqual(state['last_recall']['discovery'], 'verified' if verdict else 'not_relevant')
+
+    def test_worker_fallback_and_precise_requests_do_not_invoke_relevance_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = hook.Memory(dict(semantic_fallback=True, cairn='unused', socket='unused',
+                                      token_file='unused', repo='fixture'), 'semantic')
+            for prompt, calls in [('Which durable backend is used?', 2), ('repair core/store.go', 1), ('repair "ExactError"', 1)]:
+                state = {}
+                with patch.object(memory, 'search', return_value=dict(index=[], discovery=dict(state='unavailable'))) as search, \
+                     patch.object(hook, 'select_json') as model:
+                    result = hook.recall(memory, dict(hook_event_name='UserPromptSubmit', cwd=tmp, prompt=prompt), state)
+                self.assertEqual(result, {})
+                self.assertEqual(search.call_count, calls)
+                model.assert_not_called()
+                self.assertEqual(state['last_recall']['discovery'], 'unavailable' if calls == 2 else 'lexical')
+
+    def test_oversized_combined_mandatory_context_refuses_delivery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = hook.Memory(dict(semantic_fallback=True, cairn='unused', socket='unused',
+                                      token_file='unused', repo='fixture'), 'semantic')
+            with patch.object(memory, 'search', side_effect=[
+                    dict(selected=['a'*6500]), dict(selected=['b'*6500], discovery=dict(state='unavailable'))]):
+                with self.assertRaises(hook.HookError):
+                    hook.recall(memory, dict(hook_event_name='UserPromptSubmit', cwd=tmp, prompt='durable backend'), {})

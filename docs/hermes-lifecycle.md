@@ -153,3 +153,13 @@ The output directory must not exist. Synthetic transcripts and diagnostics stay
 outside the repository. Passing these mechanics does not measure long-term
 selection quality or task benefit. See the [verification report](verification/hermes-integration-2026-09-13.md)
 for tested revisions, remaining limits and deployment evidence.
+
+Hermes also enables bounded semantic fallback after an optional lexical miss.
+Precise file, quoted and diagnostic requests retain lexical retrieval. Fallback
+performs one semantic search and one full pull, then asks the existing tool-free
+selector whether that note directly helps this project/request. The relevance
+check has an eight-second deadline and adds latency only on that fallback path.
+Worker unavailability and rejected/failed checks appear in memory status; they
+do not inject an unverified optional candidate. Required context from both
+searches and any delivered body share the same 12000-byte ceiling. Other
+harnesses retain lexical defaults unless configured with `semantic_fallback`.
