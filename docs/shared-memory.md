@@ -29,6 +29,15 @@ new session after installation. A project's explicit configuration can override
 user settings; Cairn's existing project configuration points to the same shared
 collection.
 
+## Proactive use and lifecycle hooks, 2026-09-13
+
+The shared `cairn` skill now guides proactive recall and selected storage of
+owner corrections, decisions, verified fixes and unfinished-work checkpoints.
+[Claude lifecycle hooks](claude-lifecycle.md) add automatic task/resume retrieval
+and selected capture before compaction or exit. They are installed in both
+Claude user profiles; start a fresh session to load them. Other harnesses use the skill
+and existing native tools.
+
 ## Installed use, 2026-09-11
 
 A fresh Codex app-server in Pincite discovered the globally configured tools,

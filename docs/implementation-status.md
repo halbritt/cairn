@@ -1,4 +1,11 @@
-# Implementation status — 2026-09-11
+# Implementation status — 2026-09-13
+
+[Claude lifecycle hooks](claude-lifecycle.md) now supply bounded memory at startup,
+submitted tasks, resume and compaction, and select checkpoints before compaction
+or exit. The proactive Cairn skill is deployed across all four agents. The
+[native verification](verification/claude-lifecycle-2026-09-13.md) separates actual
+Claude/API transport checks from real model selection and broader usefulness.
+
 
 Cairn is a usable local alpha for explicitly selected agent memory. It stores
 versioned notes and supporting evidence, makes them available through CLI,

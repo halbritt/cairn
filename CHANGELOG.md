@@ -16,6 +16,17 @@ builds. Check an installation with `cairn version`; use
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
 See [build identity](docs/build-identity.md) for unstamped builds and MCP processes.
 
+## 2026-09-13
+
+- **Recall and checkpoint memory at Claude lifecycle boundaries.** Optional user
+  hooks inject bounded memory on startup, submitted tasks, resume and compaction.
+  Before compaction or exit, a tool-free model call selects a concise checkpoint
+  for the existing authenticated store. The installer preserves other settings;
+  no binary or database upgrade is required. [Setup and limits](docs/claude-lifecycle.md).
+- **Save useful memory proactively across agents.** The deployed Cairn skill now
+  includes owner corrections, decisions with reasons, verified fixes, and context
+  loss as capture triggers while excluding routine progress and lookup-only saves.
+
 ## 2026-09-11
 
 - **Use shared memory across projects in all four agents.** Codex, OpenCode,

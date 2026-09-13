@@ -194,6 +194,9 @@ def check(binary, root, environment, claim, support):
         check_claude(environment['CAIRN_CLAUDE_BINARY'], binary, root)
         from check_claude_tools import check as check_claude_tools
         check_claude_tools(environment['CAIRN_CLAUDE_BINARY'], binary, root, environment, claim, support)
+    if environment.get('CAIRN_CLAUDE_LIFECYCLE_BINARY'):
+        from check_claude_lifecycle import check as check_lifecycle
+        check_lifecycle(environment['CAIRN_CLAUDE_LIFECYCLE_BINARY'], binary, root, environment)
     # Startup failures must not put a Cairn response envelope on the MCP stream.
     failed = subprocess.run([binary, 'mcp'], capture_output=True, text=True, env=environment, timeout=5)
     assert failed.returncode != 0 and failed.stdout == '' and failed.stderr

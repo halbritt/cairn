@@ -27,8 +27,10 @@ comparison is not required for every useful observation. The reports preserve
 failures, alternative explanations and unknown net costs.
 
 [Claude Code setup](docs/claude-code.md) can generate the same ordinary MCP
-interface with explicit task/run scope. Native connection is verified; a completed
-Claude task using memory remains unverified.
+interface with explicit task/run scope.
+[Optional lifecycle hooks](docs/claude-lifecycle.md) supply ambient task/resume
+context and save selected checkpoints before compaction or exit. Broader Claude
+task-value evidence remains open.
 
 The [roadmap](docs/roadmap.md) tracks accepted requirements, remaining gaps and
 acceptance evidence.

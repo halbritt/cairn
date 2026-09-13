@@ -27,6 +27,12 @@ the earlier sequencing that deferred Agy and Claude until more Codex/OpenCode
 task-value work. Use one shared collection through user-level installations;
 include project context in notes when it affects their applicability.
 
+Owner direction, 2026-09-13: the cross-agent handoff workflow has been exercised.
+Next, make recall and capture routine: concise proactive skill guidance across
+all agents, then bounded ambient task/resume retrieval and selected checkpoints
+before context loss in one harness. The [Claude lifecycle implementation](claude-lifecycle.md)
+addresses these boundaries; advanced interlocks and whole-host budgeting remain open.
+
 Cairn has a transactional PostgreSQL core and a manually fed process wrapper.
 The next product milestone is memory used in real Striatum/OpenCode builds, with
 record-specific observations showing whether it prevents recurring failures. Passing the
@@ -1004,7 +1010,7 @@ restore outside that procedure and complete reconstruction remain open.
 | ID | Status | Entry condition and work |
 | --- | --- | --- |
 | X1 — advanced H1 integration | open | After useful ordinary ingress: richer query/expansion/candidate tools, expiring handles and driver conformance profiles. Ordinary Agy integration is tracked separately under lower-priority U7; it does not require this extension. |
-| X2 — native interlocks | open | Claude/Codex observed resume/compaction handling, reinjection, per-run attestation and privilege forfeiture on failed refresh. Require adapter-specific evidence. Ordinary Claude Code access is tracked separately under lower-priority U8. |
+| X2 — native interlocks | partial | [Claude lifecycle hooks](claude-lifecycle.md) now provide bounded startup/task/resume retrieval and selected pre-compaction/end checkpoints. Remaining: Codex lifecycle integration, per-run attestation and privilege forfeiture on failed refresh. Require adapter-specific evidence. Ordinary Claude Code access is tracked separately under lower-priority U8. |
 | X3 — groomer | open | Only after join → replay → demand docket: bounded offline proposals from instrumented session-close/idle extraction and nightly consolidation, with review and no automatic authority gain. |
 | X4 — ranking experiments | optional | Learned ranking/decay only after measurable outcomes and explicit policy. Counterfactual experiments opt-in and never during incidents. Deterministic lexical ranking is the baseline. |
 | X5 — selective H3 and sharing | open | Runtime mediation for selected high-stakes paths, then broader sharing with enforced destinations. Hermes remains interactive outside initial build adapters. |

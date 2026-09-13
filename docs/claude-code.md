@@ -7,6 +7,9 @@ settings and session labels automatically. A normal Claude session in Pincite
 read a setup note contributed by Codex and OpenCode, appended its own setup
 details, and read the saved revision on 2026-09-11.
 
+For automatic task/resume retrieval and selected checkpoints before compaction
+or exit, install the optional [lifecycle hooks](claude-lifecycle.md).
+
 ## Explicit configuration generator
 
 `cairn claude-config` generates the Claude Code MCP configuration for Cairn's
