@@ -36,7 +36,7 @@ def install(settings_path, destination, config):
             group["hooks"] = [hook for hook in group["hooks"] if hook.get("command") != command]
         groups[:] = [group for group in groups if group["hooks"]]
         groups.append({"hooks": [{"type": "command", "command": command,
-                                 "timeout": 55 if event in ("PreCompact", "SessionEnd") else 13}]})
+                                 "timeout": 150 if event in ("PreCompact", "SessionEnd") else 13}]})
     original = settings_path.read_bytes() if settings_path.exists() else None
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
     shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/claude/lifecycle.py", script)

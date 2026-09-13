@@ -26,3 +26,19 @@ was not forced by token exhaustion. Fixture artifacts: outside the checkout,
 These filters can miss a relevant note. The preview budget can omit candidates;
 explicit search/pagination remain available. Deduplication means the body was
 offered as hook context, not proof the model read or applied it.
+
+## 2. Separate durable notes and checkpoints
+
+Selection now returns up to three durable notes plus an optional unfinished-work
+checkpoint. Complete relevant existing notes are supplied for updates. Validation
+rejects unsupplied edit targets before writing; revisions preserve store metadata
+and use CAS. Stable new topic titles and identical-body checks avoid exact duplicates.
+This is bounded lexical discovery, not semantic deduplication across the collection.
+
+Validation: 20 focused tests; real configured Claude model with three synthetic
+cases (separate decision/checkpoint, lookup skip, exclusion skip) and no database
+writes; native Claude fixture with disposable PostgreSQL revised an existing
+lesson, retained its previous text, and created a separate session checkpoint.
+Artifacts remain outside git: `/tmp/cairn-lifecycle-durable-1` and
+`/tmp/cairn-durable-selection.log`. Partial multi-note saves are not transactional.
+An unconfirmed write reports failure rather than claiming the batch was saved.

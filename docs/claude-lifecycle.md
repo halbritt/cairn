@@ -56,14 +56,13 @@ settings changes.
 Capture makes a separate, tool-free Claude request using the existing provider
 credentials and configured model. It reads only a bounded excerpt of top-level
 user/assistant text from the host transcript, omitting tool payloads, reasoning
-blocks and sidechains. It supplies the previous checkpoint so the selector can
-retain useful context and revise superseded decisions. It saves only the selected
+blocks and sidechains. It supplies the previous checkpoint and up to three relevant complete durable notes so the selector can retain useful context and revise superseded guidance. It saves only the selected
 note, not the excerpt, transcript, or raw model response.
 
 The selector follows the Cairn skill's criteria: meaningful owner corrections,
 decisions and reasons, verified reusable fixes, and unfinished-work checkpoints.
 It must skip lookup-only exchanges, routine progress, excluded content, secrets,
-and private Council content. A null selection writes nothing. Selection remains
+and private Council content. A null checkpoint and empty memory list write nothing. Durable decisions, preferences, lessons and procedures are saved separately from unfinished-work checkpoints. Supplied existing notes are revised by record ID and current version; identical bodies are skipped. New notes use stable project/topic titles. A matching topic outside the supplied candidate set requires explicit reconciliation rather than a blind overwrite. Bounded lexical discovery can still miss semantically equivalent notes with different wording. Selection remains
 fallible model judgment; this is not a secret-redaction guarantee or an
 independent verification of the reported work.
 
@@ -85,7 +84,7 @@ cannot run together. Explicit workstream handoffs remain available through the
   most 24,000 bytes of serialized dialogue. A clipped boundary message is labelled.
   Older context can be missing; the previous saved checkpoint helps continuity.
 - Selection has 35 seconds; individual Cairn commands have 5 seconds. Capture
-  hooks have a 55-second host timeout. Each capture event may incur one separate
+  hooks have a 150-second host timeout to cover bounded candidate reads and up to four selected writes. Each capture event may incur one separate
   model selection conversation. Nested lifecycle hooks and transcript persistence
   are disabled for that call. Temporary working directories are removed on exit.
 - Checkpoints are at most 6,000 body bytes plus their title. Identical selected

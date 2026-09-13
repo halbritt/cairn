@@ -68,12 +68,18 @@ def check(claude, binary, root, environment):
                 names = {tool['name'] for tool in request.get('tools', [])}
                 if 'Select a concise Cairn handoff' in json.dumps(request.get('system')):
                     captures.append(request)
+                    excerpt = json.loads(request['messages'][0]['content'])
+                    existing = next((r for r in excerpt['existing_memories']
+                                     if r['record_id'] == task_seed['record_id']), None)
+                    notes = [dict(record_id=existing['record_id'], kind='lesson', title='Native task hook',
+                                  body=task_seed['body'] + '\n\nVerification: native file-directed retrieval passed.')]
+                    selection = dict(checkpoint=checkpoint, memories=notes if existing else [])
                     schema_tool = next((name for name in names if name.lower() == 'structuredoutput'), None)
                     if schema_tool:
                         block = dict(type='tool_use', id='capture_' + str(len(captures)), name=schema_tool,
-                                     input=dict(checkpoint=checkpoint))
+                                     input=selection)
                     else:
-                        block = dict(type='text', text=json.dumps(dict(checkpoint=checkpoint)))
+                        block = dict(type='text', text=json.dumps(selection))
                 elif 'mcp__cairn__cairn_pull' in names:
                     assert 'Cairn lifecycle memory:' in serialized, 'Native request missing hook context'
                     result_blocks = [b for m in request['messages'] if isinstance(m.get('content'), list)
@@ -134,6 +140,10 @@ def check(claude, binary, root, environment):
         assert results and any(not b.get('is_error') and seed['body'] in json.dumps(b) for b in results), results
         assert captures, 'SessionEnd did not trigger selected checkpoint extraction'
         memory = hook.Memory(config, session_id)
+        durable = memory.search('"' + marker + '/lifecycle.py"', room=16000, kinds=['lesson'])
+        entry = next(e for e in durable['index'] if e['record_id'] == task_seed['record_id'])
+        revised = memory.call('pull', payload=entry['pull_arguments'])['selection']['record']
+        assert revised['version'] == 2 and revised['body'].endswith('retrieval passed.'), revised
         previous = memory.checkpoint(hook.title_for(event))
         assert previous and previous['body'].endswith(checkpoint), (previous, captures)
         assert previous['observed_writer'] == 'agent:hosted-capture'

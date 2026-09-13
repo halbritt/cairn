@@ -31,11 +31,14 @@ def main():
                                   for role, text in zip(['user', 'assistant'], dialogue)) + '\n')
             event = dict(hook_event_name='PreCompact', session_id=session_id, cwd=tmp, transcript_path=str(transcript))
             with patch.object(memory, 'checkpoint', return_value=None), \
+                 patch.object(hook, 'durable_candidates', return_value=[]), \
                  patch.object(memory, 'call', return_value={'record_id': 'fixture-record'}) as write:
                 hook.capture(memory, event)
                 if name == 'decision':
-                    assert write.call_count == 1, 'Useful decision was not selected'
-                    body = write.call_args.kwargs['payload']['draft']['body']
+                    drafts = [c.kwargs['payload']['draft'] for c in write.call_args_list]
+                    assert any(d['kind'] == 'decision' for d in drafts), 'Decision was not separated'
+                    assert any(d['kind'] == 'note' for d in drafts), 'Unfinished work was not checkpointed'
+                    body = str(drafts)
                     assert 'PostgreSQL' in body and any(word in body.lower() for word in ('pending', 'unfinished', 'next')), 'Selection lost the decision or unfinished state'
                 else:
                     assert write.call_count == 0, name + ' incorrectly selected for capture'
