@@ -8,7 +8,27 @@ its title does not mean that the coordination work below is implemented.
 Implementation progress: [session registry contract](../agent-sessions.md) covers
 identity, presence, directory reads and recipient resolution. Native adapters,
 existing-session delivery and remaining operational milestones are still pending.
-Deployment evidence is recorded separately from this plan.
+Deployment evidence is in [the session verification report](../verification/agent-sessions-2026-09-15.md).
+
+| Milestone | Current progress |
+| --- | --- |
+| 1. Session identity | Registry, same-profile UUID inboxes and execution fencing deployed in migration 037. |
+| 2. Presence/context | Operations and directory deployed; native lifecycle adapters still pending. |
+| 3. Resolve/publish | Exact selectors/aliases, ambiguity and atomic freshness checks deployed in migration 038. |
+| 4. Session/pool delivery | Existing slot wakeups remain; native delivery and pool selection pending. |
+| 5. Wake operations | Structured context deployed; watch and expanded recovery views pending. |
+| 6. Scheduling/cancellation | Pending. |
+| 7. Bounded coordination | Response groups and required limits pending; conditional features retain their triggers. |
+
+Next adapter implementation: native hooks supply conversation identity and observed
+context; a host watcher maintains presence while the associated process is alive.
+Bind process observations to PID, process start time and host boot identity so PID
+reuse cannot keep an old session live. Keep account bindings separate for both
+Codex and Claude homes. Hook updates must preserve selected task metadata and use
+context revisions. API outages expire presence; watcher heartbeats must not
+silently replace a newer execution. Deliver queued work at supported lifecycle
+boundaries using the session inbox and explicit handling, with no new profile
+credentials. This describes the next work, not installed adapter behavior.
 
 ## Required user behavior
 

@@ -43,3 +43,12 @@ passed for this follow-up. The fresh lifecycle database caught an initial bug:
 resolution validation rejected database generation zero. Validation now accepts
 the schema's initial zero, and both the lifecycle and complete integration checks
 passed afterward. Deployment is recorded separately from the foundation above.
+
+
+Build `f8f6dba278242ddaab6057168edb1f2237687451` and migration 038 were then
+deployed. All seven profiles again had no active wake attempts before shutdown.
+The new pre-upgrade backup matched its catalog digest. API and CLI reported the
+same clean revision, and the API plus all seven supervisors were active after
+restart. A read-only Codex/Rhumb resolve returned `no-match`, correctly reflecting
+that native sessions are not registered yet. Skillpack `95cc5bf` was pushed and
+all eight Cairn skill installations matched its source.
