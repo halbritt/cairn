@@ -16,7 +16,10 @@ bash scripts/local-store.sh start
 export CAIRN_DATABASE_URL="host=$CAIRN_HOME/socket dbname=cairn sslmode=disable"
 # Retain actual event traffic in the backup, including subscriptions and handling.
 CAIRN_TEST_DATABASE_URL="$CAIRN_DATABASE_URL" python3 scripts/check_agent_events.py "$PWD/bin/cairn" "$test_root/event-home"
-event_snapshot_sql="SELECT jsonb_build_object('events',(SELECT jsonb_agg(to_jsonb(e) ORDER BY position) FROM cairn.agent_event e),'deliveries',(SELECT jsonb_agg(to_jsonb(d) ORDER BY delivery_id) FROM cairn.agent_delivery d),'subscriptions',(SELECT jsonb_agg(to_jsonb(s) ORDER BY repo,consumer,topic) FROM cairn.agent_subscription s),'changes',(SELECT jsonb_agg(to_jsonb(c) ORDER BY change_id) FROM cairn.agent_subscription_change c))"
+if [[ -n "${XDG_RUNTIME_DIR:-}" ]] && systemctl --user show-environment >/dev/null 2>&1; then
+    CAIRN_TEST_DATABASE_URL="$CAIRN_DATABASE_URL" python3 scripts/check_wakeups.py "$PWD/bin/cairn" "$test_root/wake-home"
+fi
+event_snapshot_sql="SELECT jsonb_build_object('wakes',(SELECT jsonb_agg(to_jsonb(w) ORDER BY attempt_id) FROM cairn.agent_wake_attempt w),'events',(SELECT jsonb_agg(to_jsonb(e) ORDER BY position) FROM cairn.agent_event e),'deliveries',(SELECT jsonb_agg(to_jsonb(d) ORDER BY delivery_id) FROM cairn.agent_delivery d),'subscriptions',(SELECT jsonb_agg(to_jsonb(s) ORDER BY repo,consumer,topic) FROM cairn.agent_subscription s),'changes',(SELECT jsonb_agg(to_jsonb(c) ORDER BY change_id) FROM cairn.agent_subscription_change c))"
 "$pg_bin/psql" -h "$CAIRN_HOME/socket" -d cairn -Atqc "$event_snapshot_sql" > "$test_root/events-before.json"
 python3 - "$test_root" <<'PYBOOT'
 import json, pathlib, subprocess, sys, uuid

@@ -423,7 +423,7 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 		return out, err
 	}
 	var id string
-	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
+	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND `+wakeHold+` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, nil
 	}

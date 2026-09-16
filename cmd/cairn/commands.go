@@ -19,6 +19,7 @@ import (
 const help = `Cairn: local memory for agents
 
 Everyday commands:
+  wake --help (automatic request workers)
   publish --help | inbox --help (durable agent notifications)
   subscribe | unsubscribe | subscriptions | events | event-status | event-stats
   ack | complete | retry | renew (leased event handling; use --help)
@@ -108,6 +109,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	}
 	if len(args) == 0 {
 		return nil, invalid("expected a command; use --help")
+	}
+	if args[0] == "wake" {
+		return wakeCommand(ctx, args[1:])
 	}
 	if args[0] == "agent" {
 		return agentRequest(ctx, args[1:], input)

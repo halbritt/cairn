@@ -24,6 +24,8 @@ Everyday operations:
   version      Identify the CLI and running API builds
 
 JSON operations (one request on stdin):
+  wake-attempts Inspect current or historical wake attempts
+  wake-claim, wake-change Host supervisor coordination
   revise       Replace only a note's body
   append       Add text verbatim, including your chosen paragraph separators
   replace      Replace one uniquely matching passage
@@ -49,6 +51,15 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	}
 	var detail, example string
 	switch operation {
+	case "wake-attempts":
+		detail = "Inspect this profile's wake attempts. active=true selects the unfinished attempt; attempt_id selects one UUID. Paging uses after and limit."
+		example = `{"active":true}`
+	case "wake-claim":
+		detail = "Host supervisor only: claim one request and establish a durable hold. The request UUID identifies the attempt. An empty result has no durable effect."
+		example = `{"request_id":"NEW_UUID"}`
+	case "wake-change":
+		detail = "Host supervisor only: start, enter, link, report or finish an attempt. finish requires host confirmation that its entire unit has stopped. Reports do not attest task success."
+		example = `{"request_id":"NEW_UUID","attempt_id":"ATTEMPT_UUID","operation":"finish","reason":"operator_confirmed_stopped"}`
 	case "search":
 		f, _ := newAgentSearchFlags()
 		return agentFlagHelp(

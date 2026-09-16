@@ -168,8 +168,10 @@ Optional kind values include update, request, response and notice. Event kind
 strings are bounded to the same topic-name syntax. CLI output follows the
 existing `cairn.response/1` envelope; an empty inbox returns `delivery: null`.
 
-Environment-based wake context, watch, priority, TTL, wildcard subscriptions,
-automatic harness invocation, scheduling, response aggregation, distributed
+[Automated wakeups](agent-wakeups.md) are a separate host-side layer with a
+durable hold on claimed deliveries; ordinary claims respect those holds and retry
+delays. Environment-based wake context, watch, priority, TTL, wildcard
+subscriptions, scheduling, response aggregation, distributed
 transactions and a NATS adapter are deferred. Polling provides the complete v1
 delivery contract without them.
 

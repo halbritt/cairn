@@ -18,6 +18,13 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-15
 
+- **Wake fresh agents for durable requests.** Owner-configured OpenCode and Hermes
+  bindings poll their inboxes and launch systemd-managed workers. Durable attempts
+  hold deliveries across lease expiry, link runner receipts, and reconcile stopped
+  process groups before another launch. Explicit completion is required; uncertain
+  execution is not replayed. Apply migration 036 and update CLI/API together.
+  [Contract and installation](docs/agent-wakeups.md).
+
 - **Deliver durable agent notifications.** Direct inboxes and topic subscriptions
   use PostgreSQL-backed polling, exact source versions, expiring leases and
   retry-safe publication. Atomic completion saves one result with its handling

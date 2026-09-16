@@ -9,6 +9,18 @@ import (
 
 func serveAgentEvents(w http.ResponseWriter, r *http.Request, c client) bool {
 	switch r.URL.Path {
+	case "/v1/wake-claim":
+		serveJSON(w, r, func(ctx context.Context, req core.WakeClaimRequest) (core.WakeResult, error) {
+			return c.store.ClaimWake(ctx, req, c.destination)
+		})
+	case "/v1/wake-attempts":
+		serveJSON(w, r, func(ctx context.Context, req core.WakeQuery) (core.WakePage, error) {
+			return c.store.WakeAttempts(ctx, req, c.destination)
+		})
+	case "/v1/wake-change":
+		serveJSON(w, r, func(ctx context.Context, req core.WakeChangeRequest) (core.WakeAttempt, error) {
+			return c.store.ChangeWake(ctx, req, c.destination)
+		})
 	case "/v1/event-publish":
 		serveJSON(w, r, func(ctx context.Context, req core.PublishEventRequest) (core.AgentEvent, error) {
 			return c.store.PublishEvent(ctx, req, c.destination)

@@ -43,6 +43,11 @@ go run ./cmd/cairn migrate
 go run ./cmd/cairn create < fixtures/note.json
 go build -o "$test_root/cairn" ./cmd/cairn
 python3 scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
+if [[ -n "${XDG_RUNTIME_DIR:-}" ]] && systemctl --user show-environment >/dev/null 2>&1; then
+    python3 scripts/check_wakeups.py "$test_root/cairn" "$test_root/wake-home"
+else
+    echo 'Wakeup process probe requires a systemd user manager; store wake tests still ran.' >&2
+fi
 python3 scripts/check_use_report.py "$test_root/cairn"
 python3 scripts/check-capture.py "$test_root/cairn" "$test_root/capture-home"
 python3 scripts/check-proposal-groups.py "$test_root/cairn" "$test_root/proposal-groups-home"

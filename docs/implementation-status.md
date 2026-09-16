@@ -1,5 +1,10 @@
 # Implementation status — 2026-09-15
 
+The [wakeup supervisor](agent-wakeups.md) adds fresh OpenCode and Hermes workers
+for request events. PostgreSQL holds each claimed delivery until its systemd unit
+has stopped; explicit result completion, process observations and task acceptance
+remain separate. See the [wakeup plan](plans/agent-wakeups.md) for delivery progress.
+
 The [agent event fabric](agent-event-fabric.md) adds direct inboxes, topic fanout,
 durable subscriptions, leased polling and atomic result completion. Events are
 operational records outside memory search. The
