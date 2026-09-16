@@ -26,6 +26,10 @@ an installation-timing explanation; it is not evidence that metadata routing
 failed for a registered session. The active conversation was not restarted,
 fabricated, renamed or replaced to manufacture a passing result.
 
+On September 16 the owner directed us to wait until this Rhumb session is idle
+before restarting and resuming the same conversation to load the hooks. Preserve
+that boundary; an observer timeout does not establish that its work has ended.
+
 ## Next work and conditional features
 
 Investigate a supported Agy provider-error envelope and add automatic health
