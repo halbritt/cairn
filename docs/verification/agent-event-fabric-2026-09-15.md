@@ -52,5 +52,19 @@ probes), `make check`, `make test-lifecycle` (including exact event-table
 backup/restore), and all 101 Python tests. The final integration run includes
 nine event-store tests and the actual CLI restart/profile probe.
 
-The operational store was backed up before installation. Installation and
-profile checks are recorded below after the deployed build is verified.
+The operational store was backed up before installation. Migration 035 and clean
+source build `e40fb88c6170d02efcda80c4b3e4462770b496f1` are installed. The CLI
+and running API report the same revision and `vcs_modified: false`. The existing
+semantic worker configuration was preserved. The first version probe immediately
+after restart raced socket startup; the following probe succeeded against the
+same running service without another restart.
+
+Named hosted profiles `codex`, `opencode`, `agy`, `claude` and `hermes` are
+provisioned as `agent/NAME`. Read-only `event-stats --profile NAME` succeeded for
+all five and showed empty inboxes. No test traffic was published to the operational
+collection. Existing shared-memory profiles remain configured. Test traffic,
+including all handling and restart checks, used disposable databases.
+
+The full event delivery contract is implemented and the above checks passed.
+Real coordination usefulness, broker scaling and automatic agent wakeups are
+not claimed; polling is the selected v1 interface.

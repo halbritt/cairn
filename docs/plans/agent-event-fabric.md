@@ -32,4 +32,6 @@ or sent a real work request as part of verification.
 
 - Specification, schema, store, API, CLI and named profile provisioning implemented.
 - Full integration, static checks, lifecycle backup/restore and 101 Python tests passed.
-- Operational backup completed; installation and final profile verification in progress.
+- Operational backup completed. Migration 035 and clean build `e40fb88` installed;
+  CLI/API revisions match, and all five named profiles passed read-only checks.
+- Delivered. [Verification and limits](../verification/agent-event-fabric-2026-09-15.md).
