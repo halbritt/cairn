@@ -73,3 +73,37 @@ Selected local evidence is in `/tmp/cairn-claude-go-probe/verification.json` and
 `/tmp/cairn-claude-channel-probe/hook-events.jsonl`. The registry regression uses
 `/tmp/cairn-channel-review-overlay.json`; its temporary child processes were
 cleaned up. No raw model transcript or generated binary is committed.
+
+## Native rejection of a joined channel message
+
+A separate owned Claude Code 2.1.273 session tested `UserPromptSubmit` exit code
+2. Its observer remembered the active prompt ID and rejected a channel submission
+only when that ID was already active. The observer recorded event metadata and
+prompt hashes, without storing prompt or tool-input bodies.
+
+The owner prompt requested a bounded `sleep 20`, a second tool call writing a
+test marker, and a final reply. A channel notification was written about one
+second after the first tool's `PreToolUse`. The observed sequence was:
+
+1. The owner tool finished normally.
+2. The channel's submission hook ran with the owner's existing prompt ID and
+   exited 2. Claude displayed the hook rejection for that channel message.
+3. The owner's second tool call wrote its marker, and the owner received the
+   requested final reply. Both tool calls and the final Stop used the original
+   prompt ID.
+4. The unsubmitted test draft remained in the composer. The channel's requested
+   reply was not produced as an assistant reply.
+
+This establishes that rejecting the joined channel did not erase or stop the
+active owner task in this native trial. The adapter can now implement a durable
+refusal followed by a later idle retry, instead of relying on instructions in a
+notice that reaches the model. Integration still needs to prove the actual
+Cairn delivery stays pending and is claimed once on a fresh prompt. This trial
+does not establish cancellation, the inverse owner-input ordering, or deployment.
+
+Selected evidence and the probe hook are under
+`/tmp/cairn-claude-join-rejection-probe/verification.json` and `observe.py`.
+The isolated bridge binary had SHA-256
+`5826e9e6792ac146cd7d35c1f19fb65320879eab88e0af090609cb36212ea8f0`;
+this was a native protocol probe, not a rollout of the current registry repair.
+The earlier owned conversation and its draft were untouched.
