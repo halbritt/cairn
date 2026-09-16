@@ -37,6 +37,16 @@ reporting only from verified native observations. Complete the existing-session
 Rhumb trial after that conversation loads the installed hooks. Keep account
 launch success, recorded quota failures and task acceptance separate.
 
+A September 16 loopback-provider probe of Agy captured an ordinary HTTP 400
+failure with exit code 1 and a terminal JSON object using `event: "result"`
+and `result.status: "ERROR"`. This contradicts the reviewer's inferred
+`type`/`data` envelope. The HTTP 429 probe made ten local requests and timed out
+after 260 seconds without a terminal result; its repeated `error_message` step
+events contain no provider classification. This does not verify automatic quota
+reporting. Selected local evidence is in `/tmp/agy_nonquota_result.json` and
+`/tmp/agy_quota_result.json`; the probe used a private settings bind mount and a
+loopback endpoint. No Agy classifier was added from these incomplete observations.
+
 Priority aging, new trust-boundary policy, recurrence, wildcard subscriptions,
 batching, a broker, cross-host leadership and general workflows retain the plan's
 explicit triggers. Their absence is not silently treated as completed work.
