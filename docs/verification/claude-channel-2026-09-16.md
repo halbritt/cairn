@@ -37,6 +37,15 @@ message can join an active prompt after a tool boundary. The identifier does not
 provide exclusive ownership of one notification or one Cairn request. A watcher
 observing idle before submission cannot rule out this race by itself.
 
+A second probe started the bounded tool from an ordinary owner prompt, then sent
+a channel notification during the tool call. The first submission hook labelled
+the prompt as ordinary input; the second labelled it as channel input. Both used
+the same `prompt_id`, followed by one Stop and replies to both messages. A new
+unsubmitted test draft remained unchanged. This directly establishes that the
+shared prompt can include unrelated owner work, rather than only two channel
+notifications. Selected evidence is `owner-busy-verification.json` in the same
+local probe directory.
+
 The adapter needs a consumption-time admission contract that prevents a wake from
 claiming work inside an unrelated active prompt, with explicit handling of a
 refused notification. Per-request cancellation also needs exclusive ownership
