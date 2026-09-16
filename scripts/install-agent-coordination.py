@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 import queue
+import re
 import threading
 import time
 import tempfile
@@ -37,6 +38,7 @@ def install(root, settings, config):
     script = root / 'coordination.py'
     engine.write_state(config_path, config)
     engine.load_config(config_path)
+    shutil.copyfile(ROOT / 'integrations/lifecycle/codex_queue.py', root / 'codex_queue.py')
     shutil.copyfile(ROOT / 'integrations/lifecycle/coordination.py', script)
     script.chmod(0o700)
     command = [sys.executable, str(script), 'hook', '--config', str(config_path)]
@@ -149,6 +151,73 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
             reader.join(timeout=1)
 
 
+# Idle wakeup matches a native conversation through Herdr's own integration in
+# the selected account home. Codex is absent: watcher matching identifies it by
+# its unique open rollout file and needs no Herdr hooks.
+HERDR_WAKE_INTEGRATIONS = {
+    'claude': ('claude', 'CLAUDE_CONFIG_DIR'),
+    'agy': ('antigravity-cli', 'ANTIGRAVITY_CLI_CONFIG_DIR'),
+    'hermes': ('hermes', 'HERMES_HOME'),
+    'opencode': ('opencode', None),  # Herdr only reads ~/.config/opencode.
+}
+
+
+def herdr_integration(herdr, environment, target):
+    result = subprocess.run([herdr, 'integration', 'status'], env=environment,
+                            capture_output=True, text=True, timeout=15)
+    if result.returncode:
+        raise RuntimeError(f'herdr integration status failed: {result.stderr.strip()}')
+    for line in result.stdout.splitlines():
+        label, _, rest = line.partition(': ')
+        if label != target:
+            continue
+        state = rest.split(' (', 1)[0]
+        found = re.search(r'\(([^()]+)\)\s*$', rest)
+        if not found:
+            break
+        return state, Path(found.group(1))
+    raise RuntimeError(f'herdr did not report its {target} integration')
+
+
+def ensure_herdr_integration(herdr, harness, settings):
+    """Cover the selected account home with Herdr's installed native integration.
+
+    Status and installation go through the installed Herdr CLI so Herdr keeps
+    owning its private assets and its merge preserves unrelated hooks/config.
+    """
+    mapped = HERDR_WAKE_INTEGRATIONS.get(harness)
+    if mapped is None:
+        return None  # Codex rollout-file matching needs no Herdr hooks.
+    target, variable = mapped
+    config_home = settings if harness in ('opencode', 'hermes') else settings.parent
+    environment = {k: v for k, v in os.environ.items() if not k.startswith('HERDR_')}
+    if variable:
+        environment[variable] = str(config_home)
+    manual = shlex.join((['env', f'{variable}={config_home}'] if variable else []) +
+                        [str(herdr), 'integration', 'install', target])
+    state = None
+    for attempt in (1, 2):
+        state, path = herdr_integration(herdr, environment, target)
+        if harness == 'opencode' and path.parent.parent != settings:
+            raise RuntimeError(f'Herdr only reads its OpenCode integration from '
+                               f'{path.parent.parent}; --settings {settings} cannot be woken. '
+                               f'Install with --settings {path.parent.parent}')
+        if config_home not in path.parents:
+            raise RuntimeError(f'herdr reported its {target} integration at {path}, '
+                               f'outside the selected account home {config_home}')
+        if state == 'current':
+            return target
+        if attempt == 2:
+            break
+        result = subprocess.run([herdr, 'integration', 'install', target], env=environment,
+                                capture_output=True, text=True, timeout=60)
+        if result.returncode:
+            raise RuntimeError(f'herdr integration install {target} failed: {result.stderr.strip()}; '
+                               f'repair manually with: {manual}')
+    raise RuntimeError(f'herdr {target} integration is "{state}" after installation; '
+                       f'repair manually with: {manual}')
+
+
 def install_service(root):
     service = Path.home() / '.config/systemd/user/cairn-presence.service'
     service.parent.mkdir(parents=True, exist_ok=True)
@@ -186,7 +255,7 @@ def main():
     parser.add_argument('--repo', default=str(home / 'git/cairn'))
     parser.add_argument('--model', default='')
     parser.add_argument('--native-delivery', action='store_true', help='enable turn-boundary inbox handling (requires schema 039 and matching API)')
-    parser.add_argument('--idle-wakeup', action='store_true', help='automatically prompt eligible idle Herdr sessions with pending inbox work')
+    parser.add_argument('--idle-wakeup', action='store_true', help='automatically prompt eligible idle Herdr sessions with pending inbox work; also installs Herdr\'s native integration in the selected account home through the installed herdr CLI when missing')
     parser.add_argument('--herdr', default=shutil.which('herdr'), help='Herdr executable for --idle-wakeup')
     parser.add_argument('--no-service', action='store_true', help='prepare hooks without installing/restarting the watcher')
     args = parser.parse_args()
@@ -200,9 +269,15 @@ def main():
     if args.idle_wakeup:
         if not args.native_delivery or not args.herdr or not Path(args.herdr).is_file():
             parser.error('--idle-wakeup requires --native-delivery and an installed Herdr executable')
+        if args.harness == 'codex' and importlib.util.find_spec('websocket') is None:
+            parser.error('Codex native queue wakeups require websocket-client in this Python environment (Ubuntu: python3-websocket)')
         config['idle_wakeup'] = str(Path(args.herdr).resolve())
     if args.harness in ('codex', 'claude'):
         config['config_home'] = str(args.settings.resolve().parent)
+    if args.idle_wakeup:
+        target = ensure_herdr_integration(Path(args.herdr).resolve(), args.harness, args.settings.resolve())
+        if target:
+            print(f'Herdr {target} integration is current in the selected {args.harness} account home.')
     installed = install(args.root.resolve(), args.settings.resolve(), config)
     if args.harness == 'codex':
         command = shlex.join([sys.executable, str(args.root.resolve() / 'coordination.py'), 'hook', '--config', str(installed)])

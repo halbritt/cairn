@@ -22,9 +22,14 @@ home keeps its own binding; agents keep their conversation UUIDs across resume.
 The host delivers at most one inbox item during a native turn/Stop continuation.
 Further messages wait for the next supported boundary. With `--idle-wakeup`
 enabled at installation, the presence watcher can create that boundary by
-prompting an eligible idle Herdr conversation with pending inbox work. See
+prompting an eligible idle Herdr conversation with pending inbox work.
+Installation verifies Herdr's native integration in that account home and
+installs it through the installed `herdr` CLI when needed; see
+[native presence adapters](agent-sessions.md). See
 [the idle wakeup contract](plans/idle-session-wakeups.md) for process/session
-checks, focused-pane deferral and host limitations. The native hook still owns
+checks, focused-pane deferral and host limitations. Codex processes with an
+explicit native Unix listener use the native queue described there, preserving
+the TUI draft. Other sessions retain the Herdr terminal route. The native hook still owns
 the claim. Sessions without this enabled host capability wait for another
 boundary. Native delivery never starts a fresh worker to consume a conversation's inbox.
 

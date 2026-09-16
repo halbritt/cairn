@@ -127,6 +127,13 @@ def prepare_idle_wake(config, state, path):
     prior = state.get('idle_wake', {})
     if prior.get('delivery_id') == delivery and prior.get('session') == session_ref(agent):
         return None  # Submitted or uncertain; only native handling permits a new nudge.
+    endpoint = codex_queue_endpoint(config, state['process'])
+    if endpoint:
+        state['idle_wake'] = dict(delivery_id=delivery, session=session_ref(agent),
+            transport='codex-queue', endpoint=endpoint, native_id=agent['native_session_id'],
+            status='uncertain', attempted_at=time.time())
+        write_state(path, state)
+        return dict(wake=state['idle_wake'], process=state['process'])
     environment = herdr_environment(state['process'])
     if environment is None:
         return None
@@ -149,6 +156,24 @@ def prepare_idle_wake(config, state, path):
     return dict(environment=environment, wake=state['idle_wake'], process=state['process'])
 
 
+def codex_queue_endpoint(config, process):
+    if config['harness'] != 'codex':
+        return None
+    argv = Path(f"/proc/{process['pid']}/cmdline").read_bytes().decode().split('\0')
+    if 'app-server' not in argv:
+        return None
+    for i, argument in enumerate(argv):
+        if argument == '--listen' and i+1 < len(argv):
+            address = argv[i+1]
+        elif argument.startswith('--listen='):
+            address = argument.removeprefix('--listen=')
+        else:
+            continue
+        if address.startswith('unix://') and Path(address[7:]).is_absolute():
+            return address[7:]
+    return None
+
+
 def submit_idle_wake(config, path, prepared):
     # No session lock spans terminal submission: its prompt hook needs that lock.
     wake = prepared['wake']
@@ -162,16 +187,33 @@ def submit_idle_wake(config, path, prepared):
             "explicitly complete/acknowledge it, and send any requested response using that context. "
             "If no matching native context was supplied, report that and stop. "
             "Do not register, manually claim an inbox, or launch a replacement conversation.")
-    response = herdr_call(config, prepared['environment'], 'agent', 'prompt', wake['target']['pane_id'], text)
-    confirmed = response.get('agent', {})
-    if (response.get('type') != 'agent_prompted' or
-            any(confirmed.get(k) != wake['target'][k] for k in ('pane_id', 'terminal_id'))):
-        raise CoordinationError('WAKE_UNCERTAIN', 'host did not confirm prompt submission; no automatic resend')
+    queued_id = None
+    if wake.get('transport') == 'codex-queue':
+        import codex_queue
+        try:
+            queued_id = codex_queue.enqueue(wake['endpoint'], prepared['process'], wake['native_id'], text, wake['delivery_id'])
+        except codex_queue.QueueUnavailable:
+            with session_lock(path):
+                state = json.loads(path.read_text())
+                if state.get('idle_wake') == wake:
+                    state.pop('idle_wake')
+                    write_state(path, state)
+            return
+        except codex_queue.QueueError as exc:
+            raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
+    else:
+        response = herdr_call(config, prepared['environment'], 'agent', 'prompt', wake['target']['pane_id'], text)
+        confirmed = response.get('agent', {})
+        if (response.get('type') != 'agent_prompted' or
+                any(confirmed.get(k) != wake['target'][k] for k in ('pane_id', 'terminal_id'))):
+            raise CoordinationError('WAKE_UNCERTAIN', 'host did not confirm prompt submission; no automatic resend')
     try:
         with session_lock(path):
             state = json.loads(path.read_text())
             if state.get('idle_wake') == wake:
                 state['idle_wake']['status'] = 'submitted'
+                if queued_id:
+                    state['idle_wake']['queued_submission_id'] = queued_id
                 write_state(path, state)
     except CoordinationError as exc:
         if exc.code != 'SESSION_BUSY':

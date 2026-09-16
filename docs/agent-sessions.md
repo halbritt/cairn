@@ -135,6 +135,26 @@ For Claude, `--settings` names its `settings.json`; for Agy, its `hooks.json`.
 For OpenCode and Hermes it names the configuration directory. Start a fresh
 native process to load installed hooks. Hermes CLI/gateway require restart.
 
+With `--idle-wakeup`, installation also covers the selected account home with
+Herdr's own native integration: it checks `herdr integration status` and runs
+the installed `herdr integration install <target>` when that integration is
+missing or outdated, never copying Herdr's private assets. Claude selects the
+home through `CLAUDE_CONFIG_DIR`, Agy through `ANTIGRAVITY_CLI_CONFIG_DIR` and
+Hermes through `HERMES_HOME`; OpenCode has one integration home at
+`~/.config/opencode`, and an OpenCode `--settings` directory elsewhere is
+refused because Herdr cannot observe it. Codex needs no Herdr hooks: idle
+matching identifies it by its unique open rollout file. Both installers
+preserve unrelated hooks and settings.
+
+Hook installation follows `CLAUDE_CONFIG_DIR`. The installed Claude 2.1.273
+still lists memory from the default `~/.claude/CLAUDE.md` in the second
+account, so a configured directory is not proof that second-home memory loads.
+Omit the variable when launching the default account: an explicit `~/.claude`
+there redirects onboarding JSON and falsely triggers login. Native inbox
+handling remains an owner-authorized read/completion/reply capability; the
+owner-installed trusted-host coordination guidance in each account's
+`CLAUDE.md` describes that workflow. This installer never modifies memory files.
+
 Hooks associate the real native conversation ID with a process PID, start time
 and host boot ID. The watcher heartbeats every 30 seconds while that process
 lives. A dead process is stopped; unavailable API calls allow the existing

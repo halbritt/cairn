@@ -45,6 +45,38 @@ drains the entire inbox or interrupts a busy turn.
 
 ## Host limitations and recovery
 
+### Codex with an explicit native Unix listener
+
+When the registered process is Codex `app-server --listen unix:///absolute/path`,
+the watcher uses its native queue instead of terminal input. The installer copies
+`codex_queue.py` alongside the watcher. Its Python environment needs
+`websocket-client` (`python3-websocket` on Ubuntu); Codex idle-wakeup installation
+checks for that dependency.
+
+The adapter checks the connected Unix peer's PID, start time and boot ID against
+the registered process, and requires the conversation to be already loaded.
+It never loads or resumes a conversation. It adds one text-only wake signal with
+`thread/queue/add`, then calls `thread/queue/start` for that exact queued item.
+The explicit start handles queues left paused by an interrupted turn. Installed
+Codex 0.154.0 refuses this start while another turn is active or pending; the
+item then waits in the native queue. Neither operation edits the TUI composer.
+This route needs no focused-pane exclusion because it does not submit terminal
+input. The earlier Cairn readiness and retained submission marker still apply.
+
+Codex does not durably deduplicate `clientUserMessageId` after consumption.
+The marker remains essential: connection loss or an unrecognized native error
+does not authorize another add or a terminal fallback. A checked unloaded
+conversation clears the marker because no queue submission was attempted.
+Queue acceptance is separate from native handling and explicit completion.
+
+This route requires an already-running explicit Unix listener. It does not
+migrate embedded TUI sessions or restart a busy conversation. Existing embedded
+Codex and other harnesses still use the Herdr route below. Exact native request
+cancellation remains incomplete: a turn interrupt can leave a tool process
+running, and an inbox request can still arrive at an owner-prompt boundary.
+
+### Herdr terminal route
+
 Herdr 0.9.0 has no atomic idle-only prompt or native composer reservation.
 Snapshot checks cannot prevent a user action or process change in the final
 interval before terminal submission. Deferring focused panes and verifying both

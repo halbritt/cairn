@@ -103,6 +103,47 @@ class IdleWakeup(unittest.TestCase):
         self.assertIn('agent-one',self.prompts()[0][-1])
         self.assertEqual(json.loads(self.path.read_text())['idle_wake']['status'],'submitted')
 
+    def test_native_codex_queue_preserves_the_terminal_input_path(self):
+        self.stop_native()
+        endpoint = self.root/'native.sock'
+        program = '''
+import json, os, pathlib, sys, time
+from test_codex_queue import NativeQueue
+fixture = NativeQueue()
+fixture.setUp()
+os.rename(fixture.path, sys.argv[-1][7:])
+fixture.listener.settimeout(10)
+fixture.serve()
+print('ready', flush=True)
+fixture.join()
+pathlib.Path(sys.argv[-1][7:]).with_suffix('.requests').write_text(json.dumps(fixture.requests))
+print('submitted', flush=True)
+time.sleep(30)
+'''
+        self.native = subprocess.Popen([sys.executable, '-c', program, 'app-server', '--listen', 'unix://'+str(endpoint)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            env=dict(os.environ, PYTHONPATH=str(ROOT/'scripts')))
+        self.addCleanup(self.native.stdout.close)
+        self.addCleanup(self.native.stderr.close)
+        self.assertEqual(self.native.stdout.readline().strip(), 'ready')
+        self.config['harness'] = 'codex'
+        self.agent['metadata']['harness'] = 'codex'
+        self.save_fixture()
+        coordination.write_state(self.path, dict(process=coordination.process_reference(self.native.pid),
+            agent=self.agent, workspace=str(self.root)))
+        result = self.watch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, '')
+        self.assertEqual(self.native.stdout.readline().strip(), 'submitted')
+        requests = json.loads(endpoint.with_suffix('.requests').read_text())
+        self.assertEqual(len([r for r in requests if r['method'] == 'thread/queue/add']), 1)
+        wake = json.loads(self.path.read_text())['idle_wake']
+        self.assertEqual(wake['status'], 'submitted')
+        self.assertEqual(wake['queued_submission_id'], 'queued-one')
+        self.assertEqual(self.prompts(), [], 'Native queue must never fall back to terminal submission')
+        self.watch()
+        self.assertEqual(self.prompts(), [])
+
     def test_uncertain_submission_is_not_repeated(self):
         self.fixture['lost_reply']=True
         self.save_fixture()
