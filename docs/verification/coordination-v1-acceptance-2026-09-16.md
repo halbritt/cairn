@@ -10,7 +10,7 @@ implemented behavior, observed native use and remaining work against the
 | Existing-session delivery while busy | Installed Codex/Claude loopback-provider probes and an opted-in Agy real-model probe passed. The live Codex/Rhumb trial remains open. |
 | Real metadata-selected review exchange | Parent resolved the offered Agy session by harness/project, sent a real v1 review and read its result. Its explicit reply filled the deployed response group; see [response groups](response-groups-2026-09-16.md). |
 | Two Codex and two Claude accounts | Separate bindings, principals and health are implemented. Earlier real account probes include successful completion and a Codex account-limit failure; [the wakeup report](agent-wakeups-2026-09-15.md) records these. They do not establish current capacity or all native failure paths for both homes. |
-| Provider failures | Selected Codex, Claude, OpenCode and Hermes observations are implemented and tested. Agy automatic provider-failure observation is missing; [current coverage](../provider-failures.md) remains explicit. |
+| Provider failures | Selected Codex, Claude, OpenCode, Hermes and Agy observations are implemented and tested; [current coverage](../provider-failures.md) remains explicit. Agy's native recovery case requires step freshness because its final result retains an old 429. |
 | Fresh pools, watch and recovery | Deployed with bounded queues, retained process holds and independent task-assessment semantics. See [pools](worker-pools-2026-09-15.md), [watch](../inbox-watch.md) and [recovery](../event-recovery.md). |
 | Scheduling, admission expiry, task deadlines and cancellation | Deployed and tested on disposable databases and real cgroups. Active native/manual interruption returns `UNSUPPORTED_CONTROL` until the host has a per-request stop contract; see [controls](request-controls-2026-09-16.md). |
 | Response groups | Fixed recipients, explicit replies, deadline policy, duplicate/late handling, payload availability and restore fencing deployed and verified. |
@@ -32,9 +32,8 @@ that boundary; an observer timeout does not establish that its work has ended.
 
 ## Next work and conditional features
 
-Investigate a supported Agy provider-error envelope and add automatic health
-reporting only from verified native observations. Complete the existing-session
-Rhumb trial after that conversation loads the installed hooks. Keep account
+Complete the existing-session Rhumb trial after that conversation loads the
+installed hooks. Keep account
 launch success, recorded quota failures and task acceptance separate.
 
 A September 16 loopback-provider probe of Agy captured an ordinary HTTP 400
@@ -45,7 +44,10 @@ after 260 seconds without a terminal result; its repeated `error_message` step
 events contain no provider classification. This does not verify automatic quota
 reporting. Selected local evidence is in `/tmp/agy_nonquota_result.json` and
 `/tmp/agy_quota_result.json`; the probe used a private settings bind mount and a
-loopback endpoint. No Agy classifier was added from these incomplete observations.
+loopback endpoint. No Agy classifier was added from those incomplete observations.
+A subsequent raw capture of print-timeout and recovery behavior supplied the
+missing evidence. The [Agy report](agy-provider-failures-2026-09-16.md) records the
+implemented classifier and successful native API/systemd checks.
 
 Priority aging, new trust-boundary policy, recurrence, wildcard subscriptions,
 batching, a broker, cross-host leadership and general workflows retain the plan's

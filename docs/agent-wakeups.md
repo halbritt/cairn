@@ -114,7 +114,7 @@ Fresh worker command shapes (model and profile choices belong to the binding):
 | --- | --- |
 | Codex | `codex exec --json --ephemeral --sandbox danger-full-access -c 'approval_policy="never"' -m MODEL --` |
 | Claude Code | `claude --print --verbose --output-format stream-json --permission-mode acceptEdits --permission-prompts none --allowedTools Bash --model MODEL --` |
-| Agy | `agy --model MODEL --output-format stream-json --print-timeout 10m --dangerously-skip-permissions --print` |
+| Agy | `agy --model MODEL --output-format stream-json --print-timeout 9m30s --dangerously-skip-permissions --print` (leaves a margin before the 600-second supervisor timeout) |
 | OpenCode | `opencode run --auto --format json -m PROVIDER/MODEL` |
 | Hermes | `hermes --provider PROVIDER --model MODEL -z` |
 

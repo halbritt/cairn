@@ -18,6 +18,10 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-16
 
+- Agy wake workers recognize selected native rate-limit results. Step ordering
+  prevents an old 429 diagnostic from suspending a recovered account; partial
+  timeout results remain separate from task success. Recovery stays explicit.
+
 - Codex wake workers recognize the installed CLI's subscription-limit diagnostics
   and suspend the owning slot. Displayed reset times remain informational;
   recovery stays explicit. Native loopback probes cover Plus/Pro variants.

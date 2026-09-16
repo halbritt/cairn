@@ -1,0 +1,331 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-agy-provider-failures-2026-09-16",
+  "question": "May the latest native Agy HTTP429 result suspend its worker slot when print mode exits with partial output?",
+  "scope": [
+    "Selected Agy rate-limit reporting with native step freshness",
+    "Installed native loopback and real supervisor verification"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Accepted coordination v1 implementation/deployment goal",
+    "authorized_scope": [
+      "Close provider failure coverage using observed installed-native interfaces"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-agy-provider-authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner authorized coordination v1 implementation and deployment under existing trusted-host model. Milestone4 requires independent provider failure reporting. Rhumb restart explicitly waits for idle. Scope adds selected Agy diagnostic classification and runtime verification, without new credentials or store changes.",
+      "provenance": [
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "ebd89aa9e2f13bc418c3bd754915c3cafbf0f145e9505a99c62939c40912c5ca"
+        },
+        {
+          "locator": "docs/verification/coordination-v1-acceptance-2026-09-16.md",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "d83ba1f06a1411504503371093366bb1170c4e9b32f41b57bd525ec25d2fcfc2"
+        }
+      ],
+      "satisfies": [
+        "explicit task authority",
+        "decision owner",
+        "task scope and authority statement",
+        "user instruction and authority",
+        "accepted desired behavior and semantic authority"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-agy-provider-contract",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Existing native observations are admission signals, not proof of capacity or task outcome. Slot suspension and observation commit atomically; explicit revision-checked recovery stays operator-owned. Latest Agy step/error association prevents stale errors from suspending recovered runs; no clock healing or broader replay.",
+      "provenance": [
+        {
+          "locator": "AGENTS.md",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "c27e830a649a2bbc1a84d97ca28cb8c9bcdf1bf11ec02705f6da9cef41a96504"
+        },
+        {
+          "locator": "docs/provider-failures.md",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "f19c0f96ed7c088d780962d0d29102757a722aa56448f7568489c88c4826096d"
+        },
+        {
+          "locator": "core/agent_wake_failure.go",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "03108266a76334265594df5703aaef8a14a83fc10224a4cc33826c6980ebc714"
+        },
+        {
+          "locator": "go.mod",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "ba43e503a3bb15f07b23aa9430349d379cf8a8d9ff53381e42778fb7356e0b3a"
+        },
+        {
+          "locator": "Makefile",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "11a9b33c9331ef6f81cca240607e5afd421c405ea923deeb2c0b39602fc4690e"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "repository contract",
+        "target repository and task scope",
+        "repository instructions from root through target path",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "caller recovery needs",
+        "operation and caller contract",
+        "product correctness and availability policy",
+        "language and repository convention"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-agy-provider-source",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Agy stream parser binds initialized conversation, tracks greatest step index, and classifies only latest DONE/error_message plus anchored HTTP429 RESOURCE_EXHAUSTED result.error. Subsequent steps and other result errors clear candidate; foreign conversations and text never classify. Existing selected observation callback persistence and supervisor cleanup remain owners. No exported API/schema change.",
+      "provenance": [
+        {
+          "locator": "internal/wakeup/provider_stream.go",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "d8cb4805b3583fe778145485bc874c833de09fd428edacc07819604304b8e876"
+        },
+        {
+          "locator": "internal/wakeup/provider_observation.go",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "b658b9c732bb6abaedb0f6b52ae6c647bddfa63489f71e7d1b628b0de2efcbea"
+        },
+        {
+          "locator": "internal/wakeup/wakeup.go",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "042696dc5bcaab2087e73d21efd9f5636e48c2cb202822d4393a39b3fef0392c"
+        }
+      ],
+      "satisfies": [
+        "cleanup obligations",
+        "side effects and idempotency",
+        "current source, configuration, and relevant runtime state",
+        "callee contract",
+        "caller recovery behavior",
+        "current Go version and repository convention"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-agy-provider-tests",
+      "evidence_class": "evidence-tests",
+      "summary": "Parent raw installed Agy1.2.4 loopback captures demonstrate partial429 exit0, ordinary400 exit1,429then400, and recovered200 with staleERROR429. New first regression failed before change, then wakeup race tests passed. Real API/systemd probe on disposable DB passed all four native cases, native session association and slot health; general make test and make check passed. Initial fixture refused project metadata write under read-only mount; corrected wholeGemini isolation passed.",
+      "provenance": [
+        {
+          "locator": "internal/wakeup/provider_stream_test.go",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "25128f37fe397d4a334f90003543aadda115aa25b3dabef1ede16d1d2d9298e9"
+        },
+        {
+          "locator": "scripts/check_agy_provider.py",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "dcfc26e23ac7f8576567f190ed50a0458931f623ab43a1a07338230bbe459e2b"
+        },
+        {
+          "locator": "scripts/check_worker_pools.py",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "9d67f1e34a3b67858d7bfe2c91ca74624408d0f75fc292c2e5cc7be4f7afeb71"
+        },
+        {
+          "locator": "/tmp/cairn-agy-provider-unit.log",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "58a1e4c5c74dfc9be9a0148abdaafb75294062f64829548b3a242e9b377c818f"
+        },
+        {
+          "locator": "/tmp/cairn-agy-provider-tests.log",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "523b784d01ee47e90487af33dd54d14af425a10f9a5b1f6aac173f3835fd1733"
+        },
+        {
+          "locator": "/tmp/cairn-agy-provider-check.log",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+        },
+        {
+          "locator": "/tmp/cairn-agy-provider-runtime-2.log",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "607cf6ad193c4108c00c8c79412cc4c1eb5b2b7c3dd4a7627c5dbeb39329c819"
+        },
+        {
+          "locator": "/tmp/cairn-agy-provider-qeyibo48/recovered/stdout.jsonl",
+          "method": "Inspected source, native loopback capture or collected completed test result",
+          "observed_at": "2026-09-16T10:37:25.099746+00:00",
+          "content_sha256": "b082ccc536212dea48bd66d06bcdfcb436cde9d050ab5a5ad9b49c2e9a286cb4"
+        }
+      ],
+      "satisfies": [
+        "reversibility and verification",
+        "behavior tests",
+        "cleanup and failure tests",
+        "tests, characterization, probes, or explicit residual risk",
+        "checkpoint verification"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "native-recovery",
+      "type": "observation",
+      "text": "Installed Agy1.2.4 retains an earlier HTTP429 error in a result after successful model output. Latest-step checking distinguishes this from unresolved rate limiting at print timeout.",
+      "evidence": [
+        "cairn-agy-provider-tests"
+      ]
+    },
+    {
+      "id": "selected-policy",
+      "type": "decision",
+      "text": "Classify the known native result as rate_limit only when the latest matching-conversation step is DONE/error_message. Preserve explicit recovery and cleanup. Do not claim subscription exhaustion or classify text mentions.",
+      "owner": "repository owner via delegated implementation",
+      "authority": "Accepted coordination v1 goal",
+      "depends_on": [
+        "native-recovery"
+      ],
+      "evidence": [
+        "cairn-agy-provider-contract",
+        "cairn-agy-provider-source"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Latest-step-gated native HTTP429 result classification",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-agy-provider-tests",
+        "cairn-agy-provider-contract"
+      ]
+    },
+    {
+      "option": "Result ERROR429 alone",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-agy-provider-tests",
+        "cairn-agy-provider-contract"
+      ]
+    },
+    {
+      "option": "Leave all Agy failures manual",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-agy-provider-tests",
+        "cairn-agy-provider-contract"
+      ]
+    },
+    {
+      "option": "Arbitrary quota substrings or process exit alone",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-agy-provider-tests",
+        "cairn-agy-provider-contract"
+      ]
+    }
+  ],
+  "source_locators": [
+    "packet:pkt-deee0124832b6b89",
+    "sha256:deee0124832b6b89e30526638fab89b947c44fa5bee744ebcc7ae4650c456f93",
+    "release:d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "docs/plans/agent-coordination-v1.md",
+    "docs/verification/coordination-v1-acceptance-2026-09-16.md",
+    "AGENTS.md",
+    "docs/provider-failures.md",
+    "core/agent_wake_failure.go",
+    "go.mod",
+    "Makefile",
+    "internal/wakeup/provider_stream.go",
+    "internal/wakeup/provider_observation.go",
+    "internal/wakeup/wakeup.go",
+    "internal/wakeup/provider_stream_test.go",
+    "scripts/check_agy_provider.py",
+    "scripts/check_worker_pools.py",
+    "/tmp/cairn-agy-provider-unit.log",
+    "/tmp/cairn-agy-provider-tests.log",
+    "/tmp/cairn-agy-provider-check.log",
+    "/tmp/cairn-agy-provider-runtime-2.log",
+    "/tmp/cairn-agy-provider-qeyibo48/recovered/stdout.jsonl"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Focused regression and package race checks",
+    "Installed Agy native API/systemd probe on disposable PostgreSQL covering rate limit, nonquota, different subsequent failure and successful recovery",
+    "make test and make check"
+  ],
+  "reopening_conditions": [
+    "Native step order or error formatting changes",
+    "A backend emits a different provider-error envelope",
+    "A recovered run is incorrectly classified"
+  ],
+  "residual_risk": [
+    "Selected native wording is not universal provider coverage; unknown diagnostics stay unclassified.",
+    "A hard deadline or host failure can prevent result emission.",
+    "No current provider capacity, task usefulness or full coordination acceptance claim.",
+    "No store/schema change; existing database and restore evidence covers unchanged durability.",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: go-consumer-owned-interfaces / Go method-set and import-direction compatibility",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: go-consumer-owned-interfaces / current consumer call sets and ownership",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: go-consumer-owned-interfaces / current consumer inventory",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: go-consumer-owned-interfaces / observed substitution, volatility, or cross-boundary pressure",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: go-interface-nil-semantics / caller nil checks and method use",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: go-interface-nil-semantics / documented absence semantics",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: go-interface-nil-semantics / dynamic type and dynamic value at the return",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: implementation-placement-by-ownership / accepted dependency direction",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: implementation-placement-by-ownership / behavior contract and ownership evidence",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: implementation-placement-by-ownership / data and policy ownership",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: implementation-placement-by-ownership / existing interfaces and callers",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: implementation-placement-by-ownership / recurring change evidence when available",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: implementation-placement-by-ownership / relevant invariants",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: implementation-repository-language-conformance / CI and build matrix",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: implementation-repository-language-conformance / adjacent code",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: implementation-repository-language-conformance / formatter and static-tool configuration",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: implementation-repository-language-conformance / repository version and dependency contract",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-evidence-before-intervention / a bounded decision question",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-evidence-before-intervention / alternatives including no change where viable",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-evidence-before-intervention / claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-evidence-before-intervention / evidence connecting the proposed action to the condition",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-information-hiding / actual caller needs",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-information-hiding / caller needs and decision owner",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-information-hiding / decision owner and volatility",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-information-hiding / leaked knowledge or coordinated change",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-information-hiding / material cost/failure semantics callers require",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-local-reasoning / knowledge and navigation required by callers/maintainers",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-local-reasoning / representative change or use scenario",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-local-reasoning / representative change scenario",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-local-reasoning / state, invariant, and dependency ownership",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-no-change-option / actual current cost/risk or absence within a stated interval",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-no-change-option / expected future change from accepted plans",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-no-change-option / intervention cost and uncertainty",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-no-change-option / latent security, safety, data, durability, and compatibility check",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-no-change-option / proc-decide-leave-code-alone",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-preserve-behavior-by-default / preservation matrix and consumers",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-preserve-behavior-by-default / proc-establish-preservation-boundaries",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-separate-semantic-structural-change / change-type classification",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-separate-semantic-structural-change / per-edit change classification",
+    "Nonmaterial to the bounded parser extension; no interface, structural redesign, optimization or universal preservation claim: universal-separate-semantic-structural-change / preservation boundary and semantic authority"
+  ]
+}

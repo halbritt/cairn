@@ -14,7 +14,7 @@ this adds no session credentials or local security boundary.
 | Claude Code | `system.api_retry` with `error_status:429` and `error:"rate_limit"` | Labelled `native-event`; requires a retry event. A later different retry failure, successful assistant message or successful result clears the candidate. |
 | OpenCode | JSON `error` containing `APIError.data.statusCode` 429 or 402 | Labelled `native-event`; 429 means rate limit, 402 means billing. |
 | Hermes | Native `api_request_error` hook with classifier reason `rate_limit` or `billing` | Labelled `native-hook`; subsequent successful `post_api_request` or a different error clears the candidate. Unverified billing classifications are excluded. |
-| Agy | No verified automatic provider observation yet | Use explicit `worker-health` after an operator observation. |
+| Agy | `stream-json` result with an anchored native HTTP 429 / `RESOURCE_EXHAUSTED` retry diagnostic, when the latest step is a completed error | Labelled `native-diagnostic`, kind `rate_limit`. Requires matching conversation and step history; other provider wording remains unclassified. |
 
 The two recognized Codex diagnostics are:
 
@@ -37,6 +37,22 @@ Successful completion clears the candidate. `available` permits admission; it do
 certify provider capacity. Parser coverage must be revisited when native versions
 change. Claude can exit zero after an API error; process exit alone is not used
 to classify it or complete the delivery.
+
+Agy 1.2.4 can return `status: ERROR` and an old 429 diagnostic after a successful
+response. The parser therefore tracks the greatest `step_index` in the initialized
+conversation and requires its type to be `error_message` with state `DONE` before
+classifying `result.error`. A later response or other step clears that condition;
+an older step update cannot revive it. Child conversation events and step text
+cannot classify a failure. The recognized diagnostic begins `API error (attempt
+N): Error 429, Message:` and includes `Status: RESOURCE_EXHAUSTED` and the native
+details field. It records `agy_http_429`, not a claim of exhausted subscription
+quota. A partial result at Agy's print timeout may carry this observation even
+with exit code zero. Unknown or missing envelopes remain unclassified.
+
+Configure Agy's print timeout below the supervisor timeout so it can emit its
+result before host cleanup; the installed 600-second worker uses `9m30s`.
+This leaves a margin, not a guarantee under arbitrary host stalls. Hard task
+deadlines can still stop a process before it emits a provider observation.
 
 ## Retention and recovery
 
@@ -81,4 +97,7 @@ backup/restore. Its `--hermes` option uses the installed native binary and a loc
 HTTP 429 provider. Its `--codex` option uses isolated Codex homes and a loopback
 `usage_limit_reached` provider for Plus/Pro variants, including native session
 association and slot suspension. No real account is charged or exhausted.
+The `--agy` option uses an isolated settings mount and loopback provider to check
+rate-limit reporting, ordinary errors, a later different error and successful
+recovery with a stale final diagnostic. See [Agy verification](verification/agy-provider-failures-2026-09-16.md).
 See [verification](verification/provider-failures-2026-09-16.md).

@@ -9,6 +9,99 @@ import (
 	"github.com/halbritt/cairn/core"
 )
 
+func TestAgyLatestStepControlsRateLimitObservation(t *testing.T) {
+	var failure *core.ProviderFailure
+	s := newProviderStream("agy", func(f *core.ProviderFailure) error { failure = f; return nil })
+	write := func(line string) {
+		t.Helper()
+		if _, err := s.Write([]byte(line + "\n")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`{"event":"init","conversation_id":"fixture-conversation"}`)
+	write(`{"event":"step_update","step_update":{"conversation_id":"fixture-conversation","step_index":1,"state":"DONE","step_type":"error_message"}}`)
+	result := `{"event":"result","result":{"conversation_id":"fixture-conversation","status":"ERROR","error":"API error (attempt 2): Error 429, Message: Resource has been exhausted (e.g. check quota)., Status: RESOURCE_EXHAUSTED, Details: []"}}`
+	write(result)
+	if failure == nil || failure.Harness != "agy" || failure.Source != "native-diagnostic" || failure.Kind != "rate_limit" || failure.Code != "agy_http_429" || failure.Status != 429 {
+		t.Fatalf("missing native rate-limit observation: %+v", failure)
+	}
+	// Agy retains the previous error in its result even after a successful model
+	// response. Step ordering, rather than result.status alone, proves recovery.
+	write(`{"event":"step_update","step_update":{"conversation_id":"fixture-conversation","step_index":2,"state":"DONE","step_type":"agent_response"}}`)
+	write(result)
+	if failure != nil {
+		t.Fatalf("stale result error suspended recovered account: %+v", failure)
+	}
+	write(`{"event":"step_update","step_update":{"conversation_id":"fixture-conversation","step_index":1,"state":"DONE","step_type":"error_message"}}`)
+	write(result)
+	if failure != nil {
+		t.Fatal("out-of-order old error revived the candidate")
+	}
+	write(`{"event":"init","conversation_id":"child"}`)
+	write(`{"event":"step_update","step_update":{"conversation_id":"child","step_index":10,"state":"DONE","step_type":"error_message"}}`)
+	write(strings.ReplaceAll(result, "fixture-conversation", "child"))
+	if failure != nil {
+		t.Fatal("child conversation replaced the native stream owner")
+	}
+	write(`{"event":"step_update","step_update":{"conversation_id":"fixture-conversation","step_index":3,"state":"DONE","step_type":"error_message"}}`)
+	write(result)
+	if failure == nil {
+		t.Fatal("later rate limit after recovery was lost")
+	}
+	write(strings.ReplaceAll(result, "Error 429", "Error 500"))
+	if failure != nil {
+		t.Fatal("different result failure did not clear rate limit")
+	}
+}
+
+func TestAgyRateLimitRequiresCurrentNativeDiagnostic(t *testing.T) {
+	const diagnostic = "API error (attempt 2): Error 429, Message: Resource has been exhausted (e.g. check quota)., Status: RESOURCE_EXHAUSTED, Details: []"
+	for _, test := range []struct {
+		name, message, status, session string
+		steps                          string
+		want                           bool
+	}{
+		{"native retry", diagnostic, "ERROR", "native", `{"step_index":2,"state":"DONE","step_type":"error_message"}`, true},
+		{"different failure", "agent executor error: generating and executing: Error 400, Message: quota 429 RESOURCE_EXHAUSTED, Status: INVALID_ARGUMENT, Details: []", "ERROR", "native", `{"step_index":2,"state":"DONE","step_type":"error_message"}`, false},
+		{"quoted diagnostic", "tool returned: " + diagnostic, "ERROR", "native", `{"step_index":2,"state":"DONE","step_type":"error_message"}`, false},
+		{"successful result", diagnostic, "SUCCESS", "native", `{"step_index":2,"state":"DONE","step_type":"error_message"}`, false},
+		{"foreign conversation", diagnostic, "ERROR", "child", `{"step_index":2,"state":"DONE","step_type":"error_message"}`, false},
+		{"running step", diagnostic, "ERROR", "native", `{"step_index":2,"state":"RUNNING","step_type":"error_message"}`, false},
+		{"missing index", diagnostic, "ERROR", "native", `{"state":"DONE","step_type":"error_message"}`, false},
+		{"tool text", diagnostic, "ERROR", "native", `{"step_index":2,"state":"DONE","step_type":"tool_result"}`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var failure *core.ProviderFailure
+			s := newProviderStream("agy", func(f *core.ProviderFailure) error { failure = f; return nil })
+			write := func(value any) {
+				t.Helper()
+				data, err := json.Marshal(value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := s.Write(append(data, '\n')); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write(map[string]any{"event": "init", "conversation_id": "native"})
+			var step map[string]any
+			if err := json.Unmarshal([]byte(test.steps), &step); err != nil {
+				t.Fatal(err)
+			}
+			step["conversation_id"] = "native"
+			step["text_delta"] = diagnostic // Never classify arbitrary step text.
+			write(map[string]any{"event": "step_update", "step_update": step})
+			if failure != nil {
+				t.Fatal("step text classified as provider failure")
+			}
+			write(map[string]any{"event": "result", "result": map[string]string{"conversation_id": test.session, "status": test.status, "error": test.message}})
+			if (failure != nil) != test.want {
+				t.Fatalf("failure=%+v, want classification=%v", failure, test.want)
+			}
+		})
+	}
+}
+
 func TestCodexSubscriptionLimitAndRecovery(t *testing.T) {
 	// Captured from the installed executable against a loopback provider returning
 	// usage_limit_reached. Plan and reset-time variants change the native wording.

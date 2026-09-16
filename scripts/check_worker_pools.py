@@ -38,7 +38,7 @@ def load_native_fixture():
     return None
 
 
-def check(binary, root, opencode=None, hermes=None, codex=None):
+def check(binary, root, opencode=None, hermes=None, codex=None, agy=None):
     assert os.environ.get("CAIRN_TEST_DATABASE_URL"), "CAIRN_TEST_DATABASE_URL required"
     assert os.environ["CAIRN_DATABASE_URL"] == os.environ["CAIRN_TEST_DATABASE_URL"], (
         "CAIRN_DATABASE_URL must be identical to CAIRN_TEST_DATABASE_URL"
@@ -318,6 +318,32 @@ subprocess.run(wake["completion"],input="Selected worker pool fixture result",te
                         expected_revision=slot['revision'], health='available', reason='Explicit fixture recovery after verified Codex subscription limit'))
             report.append('installed Codex Plus/Pro subscription-limit events retain native session and suspend the owning slot')
 
+        if agy:
+            from check_agy_provider import AgyProviderFixture
+            config['worker']['harness'] = 'agy'
+            for mode in ('quota', 'nonquota', 'later-error', 'recovered'):
+                with AgyProviderFixture(root / ('agy-' + mode), agy, dict(
+                    cairn=binary, socket=config['socket'], token_file=config['agent_token'],
+                    repo=repo, binding='probe-worker'), mode) as fixture:
+                    event = publish('NATIVE-AGY-' + mode, harness='agy')
+                    start(fixture.command)
+                    wait_for(lambda: status(event)['deliveries'] and status(event)['deliveries'][0]['state'] == 'failed', 90)
+                    wait_for(lambda: not active())
+                    stop()
+                    attempt = next(w for w in call('wake-attempts', {})['attempts'] if w['delivery']['event']['event_id'] == event['event_id'])
+                    assert fixture.requests and attempt.get('session'), ('missing native Agy provider/session', attempt)
+                    slot = next(w for w in call('worker-list', {})['workers'] if w['consumer'] == 'pool-probe/agent')
+                    if mode == 'quota':
+                        assert attempt['provider_failure'] == dict(harness='agy', source='native-diagnostic', kind='rate_limit', code='agy_http_429', status=429), attempt
+                        assert slot['health'] == 'unavailable', slot
+                        call('worker-health', dict(request_id=str(uuid.uuid4()), supervisor_id=slot['supervisor_id'],
+                            expected_revision=slot['revision'], health='available', reason='Explicit fixture recovery after observed Agy rate limit'))
+                    else:
+                        assert not attempt.get('provider_failure') and slot['health'] == 'available', (attempt, slot)
+                        if mode == 'recovered':
+                            assert any(r['main'] and r['status'] == 200 for r in fixture.requests), fixture.requests
+            report.append('installed Agy rate limit suspends its slot; different errors and recovered retries preserve availability')
+
         # Exercise the stream -> local observation -> report -> durable admission
         # path with selected synthetic native envelopes, without a provider call.
         config['worker']['harness'] = 'codex'
@@ -390,5 +416,6 @@ if __name__ == "__main__":
     parser.add_argument("--opencode", help="Optional path to opencode executable")
     parser.add_argument("--hermes", help="Optional path to Hermes executable for native quota probe")
     parser.add_argument("--codex", help="Optional path to Codex executable for native subscription quota probe")
+    parser.add_argument("--agy", help="Optional path to Agy executable for isolated native rate-limit probe (requires bwrap)")
     args = parser.parse_args()
-    check(args.binary, args.directory, opencode=args.opencode, hermes=args.hermes, codex=args.codex)
+    check(args.binary, args.directory, opencode=args.opencode, hermes=args.hermes, codex=args.codex, agy=args.agy)

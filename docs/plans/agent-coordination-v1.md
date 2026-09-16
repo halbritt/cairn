@@ -9,8 +9,9 @@ Implementation progress: [session registry contract](../agent-sessions.md) cover
 identity, presence, directory reads and recipient resolution. Native adapters are
 deployed and tested. Turn-boundary native inbox delivery is deployed in migration
 039. Pool queue/assignment and explicit availability are deployed in migration
-041. Migration 042 adds selected native provider failure ingestion; Agy and
-unrecognized diagnostics remain gaps. Scheduling, request controls and response
+041. Migration 042 adds selected native provider failure ingestion. Native Agy
+rate-limit reporting now has verified step-freshness checks; unrecognized
+diagnostics remain gaps. Scheduling, request controls and response
 groups are deployed through migration 047. Full acceptance remains open; see
 the [current checkpoint](../verification/coordination-v1-acceptance-2026-09-16.md).
 
@@ -19,7 +20,7 @@ the [current checkpoint](../verification/coordination-v1-acceptance-2026-09-16.m
 | 1. Session identity | Registry, same-profile UUID inboxes and execution fencing deployed in migration 037. |
 | 2. Presence/context | Native hooks and host watcher deployed for both Codex homes, both Claude homes, OpenCode, Agy and Hermes. |
 | 3. Resolve/publish | Exact selectors/aliases, ambiguity and atomic freshness checks deployed in migration 038. |
-| 4. Session/pool delivery | Native turn-boundary delivery deployed in migration 039; actual fresh-worker conversation links deployed in migration 040. A useful review exchange completed with an explicit host wake. Pool selection, bounded admission, fairness and explicit account availability are deployed in migration 041. Migration 042 adds supported native failure ingestion; Agy coverage and the full routing acceptance trial remain pending. |
+| 4. Session/pool delivery | Native turn-boundary delivery deployed in migration 039; actual fresh-worker conversation links deployed in migration 040. A useful review exchange completed with an explicit host wake. Pool selection, bounded admission, fairness and explicit account availability are deployed in migration 041. Migration 042 adds supported native failure ingestion, with later Codex/Agy parser coverage. The live Rhumb routing acceptance trial remains pending. |
 | 5. Wake operations | Structured context, per-slot launch spacing/backoff, read-only cursor watch and operator review/reissue deployed. |
 | 6. Scheduling/cancellation | One-shot scheduling, misfire audit and unpublished-intent cancellation deployed in migration 045 ([evidence](../verification/event-scheduling-2026-09-16.md)). Migration 046 adds admission TTL and managed fresh-worker deadlines/cancellation; active native/manual interruption remains unsupported ([evidence](../verification/request-controls-2026-09-16.md)). |
 | 7. Bounded coordination | Fixed response groups, explicit replies, deadline policies and collection limits deployed in migration 047 ([evidence](../verification/response-groups-2026-09-16.md)); conditional features retain their triggers. |

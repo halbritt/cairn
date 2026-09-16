@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 
 	"github.com/halbritt/cairn/core"
@@ -28,6 +29,9 @@ type providerStream struct {
 	retainedErr error
 	current     *core.ProviderFailure
 	closed      bool
+	agySession  string
+	agyStep     int
+	agyError    bool
 }
 
 func newProviderStream(harness string, changed func(*core.ProviderFailure) error) *providerStream {
@@ -157,9 +161,63 @@ func (s *providerStream) parseLine(raw []byte) error {
 		return s.parseClaude(raw)
 	case "opencode":
 		return s.parseOpenCode(raw)
+	case "agy":
+		return s.parseAgy(raw)
 	default:
 		return nil
 	}
+}
+
+var agyRateLimit = regexp.MustCompile(`^API error \(attempt [1-9][0-9]{0,5}\): Error 429, Message: [^\r\n]+, Status: RESOURCE_EXHAUSTED, Details: \[[^\r\n]*\]$`)
+
+func (s *providerStream) parseAgy(raw []byte) error {
+	var line struct {
+		Event        string `json:"event"`
+		Conversation string `json:"conversation_id"`
+		Step         *struct {
+			Conversation string `json:"conversation_id"`
+			Index        *int   `json:"step_index"`
+			State        string `json:"state"`
+			Type         string `json:"step_type"`
+		} `json:"step_update"`
+		Result *struct {
+			Conversation string `json:"conversation_id"`
+			Status       string `json:"status"`
+			Error        string `json:"error"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &line); err != nil {
+		return nil
+	}
+	switch line.Event {
+	case "init":
+		if s.agySession != "" && s.agySession != line.Conversation {
+			return nil
+		}
+		s.agySession, s.agyStep, s.agyError = line.Conversation, -1, false
+		return s.notify(nil)
+	case "step_update":
+		step := line.Step
+		if step == nil || s.agySession == "" || step.Conversation != s.agySession || step.Index == nil || *step.Index < 0 || *step.Index < s.agyStep {
+			return nil
+		}
+		s.agyStep = *step.Index
+		s.agyError = step.Type == "error_message" && step.State == "DONE"
+		// Agy's final result can retain a 429 from before a successful response.
+		// Only the latest step can make that diagnostic current. Step text itself
+		// never supplies a provider classification.
+		return s.notify(nil)
+	case "result":
+		result := line.Result
+		if result == nil || s.agySession == "" || result.Conversation != s.agySession {
+			return nil
+		}
+		if s.agyError && result.Status == "ERROR" && agyRateLimit.MatchString(result.Error) {
+			return s.notify(&core.ProviderFailure{Harness: "agy", Source: "native-diagnostic", Kind: "rate_limit", Code: "agy_http_429", Status: 429})
+		}
+		return s.notify(nil)
+	}
+	return nil
 }
 
 type codexLine struct {
