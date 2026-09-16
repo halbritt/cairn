@@ -7,8 +7,8 @@ its title does not mean that the coordination work below is implemented.
 
 Implementation progress: [session registry contract](../agent-sessions.md) covers
 identity, presence, directory reads and recipient resolution. Native adapters are
-deployed and tested. Turn-boundary native inbox delivery is implemented and tested;
-its rollout and the remaining operational milestones are still pending.
+deployed and tested. Turn-boundary native inbox delivery is deployed in migration
+039; the remaining operational milestones are still pending.
 Deployment evidence is in [the session verification report](../verification/agent-sessions-2026-09-15.md).
 
 | Milestone | Current progress |
@@ -16,7 +16,7 @@ Deployment evidence is in [the session verification report](../verification/agen
 | 1. Session identity | Registry, same-profile UUID inboxes and execution fencing deployed in migration 037. |
 | 2. Presence/context | Native hooks and host watcher deployed for both Codex homes, both Claude homes, OpenCode, Agy and Hermes. |
 | 3. Resolve/publish | Exact selectors/aliases, ambiguity and atomic freshness checks deployed in migration 038. |
-| 4. Session/pool delivery | Native turn-boundary delivery implemented/tested; rollout pending. Pool selection and useful cross-agent trial remain pending. |
+| 4. Session/pool delivery | Native turn-boundary delivery deployed in migration 039. Pool selection and useful cross-agent trial remain pending. |
 | 5. Wake operations | Structured context deployed; watch and expanded recovery views pending. |
 | 6. Scheduling/cancellation | Pending. |
 | 7. Bounded coordination | Response groups and required limits pending; conditional features retain their triggers. |
@@ -29,7 +29,7 @@ Codex and Claude homes. Hook updates preserve selected task metadata and use
 context revisions. API outages expire presence; watcher heartbeats cannot
 silently replace a newer execution. Native inbox delivery now uses supported
 lifecycle boundaries and explicit handling with no new profile credentials;
-see its [contract](../native-inbox.md). It awaits rollout. Idle processes without
+see its [contract](../native-inbox.md). Idle processes without
 a new supported boundary do not get an out-of-band wakeup from this adapter.
 
 ## Required user behavior

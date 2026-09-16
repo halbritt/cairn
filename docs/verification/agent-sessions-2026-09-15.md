@@ -130,8 +130,31 @@ renewal, response acknowledgment, and a logical SessionEnd during API outage.
 The end-intent fix was separately pushed/deployed as `4392d97`; 106 Python tests
 and the disposable API regression passed before its watcher restart.
 
-`make test-integration` passed for the native inbox store/API. Backup/restore,
-static checks, final adapter checks and rollout results are recorded below when
-complete. This implements supported turn-boundary delivery. Pool selection,
+`make test-integration`, `make test-lifecycle`, `make check`, and 106 Python tests
+passed. The final integration and lifecycle runs include the lost-claim restore
+regression: the host reconciles the old attempt without retrying acquisition
+through its fenced execution. Backup/restore snapshots include native attempts
+and durable poll outcomes. This implements supported turn-boundary delivery. Pool selection,
 out-of-band native idle wakeup and useful cross-agent task acceptance are not
 established by these fixtures.
+
+### Native inbox rollout
+
+Clean build `5d89355dbaefbc93f4b1db7110e1f482fd48f89c` was pushed and deployed
+with migration 039. No wake attempts were active before the rollout. The watcher
+and seven wake supervisors were stopped, and the pre-migration backup
+`cairn-20260916T051645-3679521.dump` passed digest/catalog and archive checks.
+The previous binary remains available as `cairn-before-native-inbox`.
+
+The API restarted with its existing semantic worker arguments. CLI and API
+reported the same clean revision. The installed engine matches source, and all
+seven owner-only binding files enable native delivery. Existing hook definitions
+and native plugins are unchanged; they invoke the new engine at their next
+supported lifecycle event. Hermes CLI/gateway had already been restarted for
+those plugins; another restart was unnecessary for this engine-only update.
+The API, watcher, seven supervisors and Hermes gateway were active, with no
+automatic restarts observed. No synthetic production messages were published.
+
+Skillpack `43c6dcd` documents structured native inbox handling and its limits;
+installation and validation passed at all existing harness locations. Full v1
+acceptance remains pending the operational milestones in the plan.
