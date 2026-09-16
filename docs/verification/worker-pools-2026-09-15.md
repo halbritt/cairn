@@ -42,11 +42,13 @@ events, deliveries, wake attempts and native sessions.
 ## Limits
 
 Availability permits admission; it does not demonstrate provider capacity.
-Structured automatic quota observation remains to be implemented. Current
-health observations and recovery are explicit, and retry time is informational.
+At this rollout, automatic quota observation remained to be implemented; health
+observations and recovery were explicit. Retry time remains informational.
 Generic unsuccessful handling applies a minimum 30-second binding delay without
 guessing a quota classification from stderr text. The current seven launchers
 map one slot to one independent account binding.
+
+Migration 042 later added [selected native provider observations](provider-failures-2026-09-16.md).
 
 The review proposed timed automatic recovery and fencing every cleanup call.
 Those suggestions were not adopted: recovery remains explicit, and blocking

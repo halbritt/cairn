@@ -70,4 +70,25 @@ atomicity/failure-policy review, evidence and remaining generic obligations.
 
 ## Deployment
 
-Deployment verification will be recorded after the release build is installed.
+Clean release `026a6052ed0305b3f7669b9e6628c6e904ecc454` is pushed and deployed.
+Its repeat runtime probe passed native OpenCode completion, synthetic Codex quota
+retention/restart and installed Hermes loopback 429 ingestion. Log:
+`/tmp/cairn-provider-release-runtime.log`.
+
+Production had zero active wake/native inbox attempts before upgrade. Backup
+`cairn-20260916T070513-4101561.dump` passed catalog, checksum and archive checks.
+The prior binary is retained as `cairn-before-provider-failures`; prior engine
+and Hermes plugin copies are in the coordination directory.
+
+Migration 042, the shared coordination engine and Hermes plugin were installed.
+The API answered at the new revision before the presence watcher, seven worker
+supervisors and Hermes gateway were started. All ten services are active/running
+with zero automatic restarts. CLI and API report clean revision `026a605`;
+installed engine/plugin bytes match the release source. The API's existing
+semantic-worker settings were preserved.
+
+All seven slots registered live and retained their admission health. This does
+not establish successful live provider calls. Skillpack `3e564f0` is pushed and
+installed; its check reports all 49 skills resolve across existing harnesses.
+The three selected reviewer responses were read and acknowledged. No review
+request remains pending for this slice.

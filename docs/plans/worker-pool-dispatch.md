@@ -2,9 +2,10 @@
 
 Status: queue, assignment, supervisor presence and explicit availability are
 deployed in migration 041. See [the contract](../worker-pools.md) and
-[verification](../verification/worker-pools-2026-09-15.md). Automatic structured
-quota ingestion remains outstanding. Native wake-session association is a
-separate deployed slice.
+[verification](../verification/worker-pools-2026-09-15.md). Automatic provider
+failure ingestion covers selected native envelopes in migration 042; see
+[provider failures](../provider-failures.md) for remaining gaps. Native wake-session
+association is a separate deployed slice.
 
 ## Queue and assignment
 
