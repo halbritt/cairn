@@ -46,3 +46,22 @@ The arrival feed does not report later state transitions. Cursor checkpointing
 can repeat delivery IDs after a crash. No throughput or usefulness measurement
 is claimed. Operator recovery, scheduling, cancellation and response groups remain
 open in the v1 plan.
+
+## Deployment
+
+Clean release `12140feb06937d50c3c286a24e1887007d33d0bf` is pushed and deployed.
+Production had no unfinished wake or native inbox attempts before the rollout.
+Backup `cairn-20260916T073500-2730.dump` passed catalog, checksum and archive
+checks; the earlier executable is retained as `cairn-before-inbox-watch`.
+
+The API, presence process, seven worker services and Hermes gateway were stopped
+before migration 043. Hermes exited with status 1 during shutdown and had no
+remaining main process. After migration, the clean API version responded before
+workers and Hermes were started. All ten services subsequently reported
+active/running with zero restarts. All seven slots reported current presence
+and available admission health; this does not measure provider capacity.
+
+A read-only production watch paged through the hosted profile's retained inbox,
+saved an owner-only cursor, and returned an empty page on resume. It neither
+claimed nor changed those deliveries. Hermes uses the upgraded shared Cairn
+binary; its native coordination plugin did not change in this slice.
