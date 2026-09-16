@@ -1,0 +1,458 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-idle-session-wakeups-2026-09-16",
+  "question": "How should the native session watcher wake an existing idle conversation on pending inbox work while preserving session identity, single consumer ownership and uncertain prompt outcomes?",
+  "scope": [
+    "Automatic advisory wakeups for existing idle Herdr conversations",
+    "Preserve native inbox ownership and uncertain submission history"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Owner instruction: continue on v1 until complete, including the identified idle wakeup gap",
+    "authorized_scope": [
+      "Implement, test and deploy automatic idle wakeup on the existing trusted host"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-idle-authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner explicitly continued v1 until complete after the remaining automatic idle-wakeup gap was identified. Same trusted-host UUID model, native claim ownership, no busy Rhumb restart, deployment authorized. New behavior is automatic advisory prompting for eligible idle Herdr conversations; execution remains native. Owner-selected ai-newsroom is the real acceptance target. Scope and host limitations are recorded in the plan. Disable idle_wakeup to reverse host prompting without changing delivery history.",
+      "provenance": [
+        {
+          "locator": "docs/plans/idle-session-wakeups.md",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "1b450b28ab8ba5291b8dd1a6b261d1ae2f231338024f1712d0b0ef7474893379"
+        },
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "792bf91323a6c39a6b5b14c869fbb9e05ffe48bd32a85a4ac9b1a10f41836cac"
+        }
+      ],
+      "satisfies": [
+        "decision owner",
+        "explicit task authority",
+        "task scope and authority statement",
+        "user instruction and authority",
+        "target repository and task scope",
+        "accepted desired behavior and semantic authority",
+        "preservation boundary and semantic authority",
+        "a bounded decision question",
+        "expected future change from accepted plans",
+        "affected behavior and state",
+        "reversibility and verification"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-idle-contract",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Inspected project instructions, PostgreSQL/native ownership contract and the implemented extension. Existing host watcher owns process liveness and now idle host prompting; store owns read-only eligibility via session/execution generation and native hook owns claims. Existing boundaries are reused, no new broker/credential/service/storage engine. Prompt checks use documented installed Herdr fields and defer unavailable identities and focused/busy targets. Herdr has no atomic idle-only submission; final state race is explicitly retained, no fabricated guarantee. Alternatives are documented: manual-only no-change fails requested automation, timed uncertain retry risks duplicate prompts, holding the lock through submission would collide with the hook. Full integration/check plus real deployment trial required; no migration needed.",
+      "provenance": [
+        {
+          "locator": "AGENTS.md",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "c27e830a649a2bbc1a84d97ca28cb8c9bcdf1bf11ec02705f6da9cef41a96504"
+        },
+        {
+          "locator": "docs/native-inbox.md",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "71f6e9e90ae0c78817e8fdcd5af1f12fe7a6bf55f7df9181df05be36fcd9825a"
+        },
+        {
+          "locator": "docs/plans/idle-session-wakeups.md",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "1b450b28ab8ba5291b8dd1a6b261d1ae2f231338024f1712d0b0ef7474893379"
+        },
+        {
+          "locator": "Makefile",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "11a9b33c9331ef6f81cca240607e5afd421c405ea923deeb2c0b39602fc4690e"
+        },
+        {
+          "locator": "/tmp/cairn-herdr-schema.json",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "5fb46b13fdaf39c88cf699b9806685868c7ee6b0142523d84391b1606416dc0a"
+        }
+      ],
+      "satisfies": [
+        "repository contract",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "repository instructions from root through target path",
+        "candidate contract and consumers",
+        "cohesive invariant and data ownership",
+        "cost comparison with direct collaboration",
+        "independent change, policy, semantic, ownership, release, trust, or quality force",
+        "preservation boundary",
+        "representative change or quality force",
+        "actual consumers and operations",
+        "consumer and contract inventory",
+        "invariants and failure semantics",
+        "ownership and lifecycle requirements",
+        "repository compatibility policy",
+        "accepted dependency direction",
+        "behavior contract and ownership evidence",
+        "data and policy ownership",
+        "relevant invariants",
+        "accepted policy or current relied-upon constraint",
+        "identified authoritative owner",
+        "failure and recovery requirements",
+        "alternatives including no change where viable",
+        "intervention cost and uncertainty",
+        "preservation matrix and consumers"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-idle-source",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Read all changed functions and their callers. prepare_idle_wake runs under the existing nonblocking session flock; it asks read-only readiness, checks process/socket/native identity and Herdr state twice, then persists a per-delivery/execution uncertain marker. It releases the flock before prompt submission; the native hook can claim under its own flock and clears the marker only when native inbox context is emitted. A fresh process reads persisted state; no shared mutable object crosses processes. The preparation record shares only local objects that are not subsequently mutated during submission; completion rereads state before conditional status replacement. Herdr subprocesses have four-second timeouts, registry calls retain existing timeouts. Single watcher owns sequential ticks; no new concurrent pool or lock order. SQL shares eligibility/hold predicates with native claims and returns at most one ID, excluding expired/offline/busy/fenced contexts. No new logical identity or schema, delivery attempt or effects during readiness. Existing profile/privacy, leases, restore fencing, native completion and all other harness behavior remain protected. Added wake-time opt-out checks for both observed and selected workspaces; hook and watcher share the existing ancestor marker semantics.",
+      "provenance": [
+        {
+          "locator": "integrations/lifecycle/coordination.py",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "e874a2701289a811612f1cca18e81ea30b5f702326288029b1f8e130943ecbf9"
+        },
+        {
+          "locator": "core/agent_session_inbox.go",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "a627773e0bbff7f97696f8ede9065475efad0e665b3bfec6bb353130b9104502"
+        },
+        {
+          "locator": "core/agent_sessions.go",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "e1b2001b251223691181e13da9f7dd0d7afd17f4aa94da4c312c421f7e7204df"
+        },
+        {
+          "locator": "localapi/agent_sessions.go",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "96d1a02ec08f0c584b8f62ccb3b910e53c8710bd9d6dfb9729a7cee9a2fe77bb"
+        },
+        {
+          "locator": "scripts/install-agent-coordination.py",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "361a033de59e3e5a9db36418fcf10bae7df4a7d24808af7cd87e174028ddbee8"
+        }
+      ],
+      "satisfies": [
+        "current source, configuration, and relevant runtime state",
+        "existing interfaces and callers",
+        "global lock or acquisition order",
+        "resource and wait-for graph",
+        "resource ownership and wait graph",
+        "operation and invariant inventory",
+        "ordering and uniqueness",
+        "ownership and mutation",
+        "required operations and invariants",
+        "concurrency",
+        "identity and equality contract",
+        "lifetime and size",
+        "mutation sites",
+        "nested object graph",
+        "object and ownership graph",
+        "all mutation/creation paths and authority",
+        "change-type classification",
+        "per-edit change classification"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-idle-tests",
+      "evidence_class": "evidence-tests",
+      "summary": "Observed red failures for missing readiness, expired-presence readiness, no idle prompt, and focused-pane prompting. Subsequent store checks, 120 Python tests, make check and full make test-integration completed successfully on disposable PostgreSQL. Real API probe with an external host-protocol fixture verified an automatic prompt while the delivery stayed pending/attempts0, followed by a real native hook claiming/completing exactly once. Watcher restarts suppress duplicates, including after lost host responses; changed process/session/foreground state and busy/blocked/unknown/focused targets prevent prompts. Separate real ai-newsroom host acceptance remains required before claiming deployment completion. Existing manual trial establishes the missing automated trigger, not autonomous delivery.",
+      "provenance": [
+        {
+          "locator": "/tmp/cairn-idle-ready-red.log",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "d5284a59a9713705062816b1760a071a76479086913a6513b2facf2cf2d09441"
+        },
+        {
+          "locator": "/tmp/cairn-idle-expired-red.log",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "2ae6fc9eef1486d568abd35c807dddd8d7069c89ccdbf23ac8533dff378dd513"
+        },
+        {
+          "locator": "/tmp/cairn-idle-wake-red.log",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "33f67530281ab8fb93ff0d0d64b1dae9242d2d13f059a6be3d28c8837d4e3ce0"
+        },
+        {
+          "locator": "/tmp/cairn-idle-focused-red.log",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "affba26f7630c75ca4858fbb012e2645bdd62ec8db565befcc04722a3beb9137"
+        },
+        {
+          "locator": "/tmp/cairn-idle-python.log",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "d50e165a70f9a8725e77bfee307cdc3e57d0f3c5509b5b8d7815d2e94fda4950"
+        },
+        {
+          "locator": "/tmp/cairn-idle-check.log",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+        },
+        {
+          "locator": "/tmp/cairn-idle-integration.log",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "dcf1f40f2d353507e1f7b1cb596544b0e71e92d1c665b7608b140fd8f0e31c42"
+        },
+        {
+          "locator": "/tmp/cairn-idle-wake-api-2.log",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "3a0ad73a1929db81076912c91b2ac0d1accea97edd0a589c3fab98fff6412d2f"
+        },
+        {
+          "locator": "scripts/test_idle_wakeup.py",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "c7366b901d9d9f6ba6715aa1ad0655bbc2beaf9fc6da4fe55eca3ded31ce725f"
+        },
+        {
+          "locator": "scripts/check_agent_coordination.py",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "a7cc0db216ae41095c6f78f9977e12eed97da44a38cc271e3a7c64843cb1c4d0"
+        },
+        {
+          "locator": "core/agent_session_inbox_test.go",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "945a84e5b155aad79bc6459fc91b7b00b2eb9f03d02ce8e700e76418299155cc"
+        },
+        {
+          "locator": "docs/verification/ai-newsroom-idle-wakeup-2026-09-16.md",
+          "method": "Read current source or collected completed test output",
+          "observed_at": "2026-09-16T15:01:19.079901+00:00",
+          "content_sha256": "48fab935edbb784eaadcd027b83ad377bcc58b289c25b0f8b832abeb645d23ef"
+        },
+        {
+          "locator": "/tmp/cairn-idle-python-final.log",
+          "method": "Completed Python suite after opt-out guard",
+          "content_sha256": "89198cdf8e1b115a00c09b07cb728fb8e558227a08332444a81a11fddfc5e860"
+        }
+      ],
+      "satisfies": [
+        "termination, retry, and fairness observations",
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "evidence connecting the proposed action to the condition",
+        "tests, characterization, probes, or explicit residual risk",
+        "checkpoint verification"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-idle-preservation",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Preservation review: native claims and renewals remain in the same hook path; readiness performs no writes; stale generation uses currentAgentSession; same API profile and sensitivity conditions apply; no raw transcript or credential values enter host prompts. Project exclusion markers are checked again at wake time, verified by a regression that failed before the guard and passed afterward. Named host limitations include the final observation/submission race and unknown composer drafts; no security or atomic-delivery claim. Existing manual-only behavior fails the owner-requested automation by construction; retaining it is not selected. Work is scoped to the existing single host and seven configured bindings; no throughput/latency improvement is claimed. Reversal disables idle_wakeup without resetting session or delivery state.",
+      "provenance": [
+        {
+          "locator": "docs/plans/idle-session-wakeups.md",
+          "method": "Inspected current contract and source; completed regression verification",
+          "observed_at": "2026-09-16T15:03:29.630232+00:00",
+          "content_sha256": "1b450b28ab8ba5291b8dd1a6b261d1ae2f231338024f1712d0b0ef7474893379"
+        },
+        {
+          "locator": "integrations/lifecycle/coordination.py",
+          "method": "Inspected current contract and source; completed regression verification",
+          "observed_at": "2026-09-16T15:03:29.630277+00:00",
+          "content_sha256": "e874a2701289a811612f1cca18e81ea30b5f702326288029b1f8e130943ecbf9"
+        },
+        {
+          "locator": "scripts/test_idle_wakeup.py",
+          "method": "Inspected current contract and source; completed regression verification",
+          "observed_at": "2026-09-16T15:03:29.630321+00:00",
+          "content_sha256": "5353eba47de7a376d7325ed6e6baa3f331d1a7c01829d418058844c7fb3563a2"
+        },
+        {
+          "locator": "/tmp/cairn-idle-optout-red.log",
+          "method": "Inspected current contract and source; completed regression verification",
+          "observed_at": "2026-09-16T15:03:29.630344+00:00",
+          "content_sha256": "6eec81a9ea4fc2080c4761b9e42656eb49fa5b5e8ca39704b6aa75913d1387c2"
+        },
+        {
+          "locator": "/tmp/cairn-idle-python-final.log",
+          "method": "Inspected current contract and source; completed regression verification",
+          "observed_at": "2026-09-16T15:03:29.630361+00:00",
+          "content_sha256": "89198cdf8e1b115a00c09b07cb728fb8e558227a08332444a81a11fddfc5e860"
+        }
+      ],
+      "satisfies": [
+        "expected scale",
+        "actual current cost/risk or absence within a stated interval",
+        "latent security, safety, data, durability, and compatibility check",
+        "proc-decide-leave-code-alone",
+        "proc-establish-preservation-boundaries"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-idle-review-followup",
+      "evidence_class": "evidence-tests",
+      "summary": "Post-packet code review identified closed unrelated candidate failure isolation. New regression failed before the specific missing-target error classification and passed afterward; all 121 Python tests passed. Other process-exit reports were already caught per state by watch_once. This refines host failure handling without changing the selected architecture or material obligations.",
+      "provenance": [
+        {
+          "locator": "integrations/lifecycle/coordination.py",
+          "method": "Read reviewed current source and collected regression/suite output",
+          "content_sha256": "bb8b51c779dce7452b07836d2bf9176939af534710fa5e7933483de692ec45e1"
+        },
+        {
+          "locator": "scripts/test_idle_wakeup.py",
+          "method": "Read reviewed current source and collected regression/suite output",
+          "content_sha256": "2395b7c7ee3a8f930b561be3f2a38dfaaf9b503f5510e516790c82d445e70413"
+        },
+        {
+          "locator": "/tmp/cairn-idle-candidate-red.log",
+          "method": "Read reviewed current source and collected regression/suite output",
+          "content_sha256": "5bf95b8b7066841facd957a5186ae9d6c5e79ab9a94e07cd22e94223b43ee42b"
+        },
+        {
+          "locator": "/tmp/cairn-idle-python-final-2.log",
+          "method": "Read reviewed current source and collected regression/suite output",
+          "content_sha256": "7f14f9c089d6ae1041aac24e18fbd68e2859e7f4b90fd5072dca3608d9a86876"
+        }
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "manual-gap",
+      "type": "observation",
+      "text": "Current native delivery needs a supported boundary; the ai-newsroom test supplied a manual Herdr prompt. Installed Herdr 0.9.0 has no atomic idle-only prompt.",
+      "evidence": [
+        "cairn-idle-contract",
+        "cairn-idle-tests"
+      ]
+    },
+    {
+      "id": "host-wakeup",
+      "type": "decision",
+      "text": "Use the existing watcher and a read-only eligibility query to submit one advisory host prompt, retaining uncertain attempts and leaving claims to native hooks. Recheck actual process/conversation, defer focused/unknown/busy targets and honor opt-outs. No new credentials, broker or store migration.",
+      "depends_on": [
+        "manual-gap"
+      ],
+      "owner": "repository owner via delegated implementation",
+      "authority": "Current v1 goal",
+      "evidence": [
+        "cairn-idle-authority",
+        "cairn-idle-contract",
+        "cairn-idle-source",
+        "cairn-idle-tests",
+        "cairn-idle-preservation"
+      ]
+    },
+    {
+      "id": "implementation-checks",
+      "type": "verification",
+      "text": "Disposable store/API tests and Python protocol fixtures verify eligibility, process/session selection, duplicate suppression and native claim ownership. These checks do not establish the pending production automatic-wakeup trial.",
+      "depends_on": [
+        "host-wakeup"
+      ],
+      "criteria": [
+        "Readiness changes no delivery state",
+        "One host attempt survives watcher restarts without resend",
+        "Native hook retains sole claim and completion ownership"
+      ],
+      "evidence": [
+        "cairn-idle-tests"
+      ]
+    },
+    {
+      "id": "review-followup",
+      "type": "verification",
+      "text": "Closed unrelated candidates are skipped without hiding other host errors. The final Python suite passed 121 tests after the review fix.",
+      "depends_on": [
+        "implementation-checks"
+      ],
+      "criteria": [
+        "An unrelated candidate closing does not hide a live eligible target"
+      ],
+      "evidence": [
+        "cairn-idle-review-followup"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Existing watcher with read-only readiness and retained host intent",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-idle-authority",
+        "cairn-idle-contract",
+        "cairn-idle-source",
+        "cairn-idle-tests",
+        "cairn-idle-preservation"
+      ]
+    },
+    {
+      "option": "Retain manual-only idle prompting",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-idle-authority"
+      ]
+    },
+    {
+      "option": "Automatically retry uncertain prompts on a cooldown",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-idle-contract"
+      ]
+    },
+    {
+      "option": "Hold session lock through terminal prompting",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-idle-source"
+      ]
+    }
+  ],
+  "source_locators": [
+    "packet:pkt-ab10c28bdd778d7b",
+    "sha256:ab10c28bdd778d7b4ec2443b52d08fd81d06edb3268b1bd61656c0fde01e2cab",
+    "release:d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "doctrine:doctrine-f6bbb5196a3f8bf9",
+    "docs/plans/idle-session-wakeups.md"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "make test-integration and make check",
+    "Python wakeup failure and process-identity tests",
+    "Real ai-newsroom publication wakes and replies without manual prompting after deployment"
+  ],
+  "reopening_conditions": [
+    "Herdr changes its prompt/session reporting contract",
+    "An observed submission reaches the wrong native session",
+    "Watcher retry or native ownership regression",
+    "Need an atomic idle/composer reservation guarantee"
+  ],
+  "residual_risk": [
+    "Herdr has no atomic idle-only prompt or composer reservation; snapshots cannot eliminate the final user/process race or prove no saved input draft. Focused panes defer. Native hooks still own delivery.",
+    "Sessions without a verified Herdr/native association retain boundary delivery. Gateway conversations without an interactive idle process are not targets.",
+    "A lost host response stays uncertain and suppressed; a real native boundary or operator investigation is required.",
+    "Nonmaterial: recurring change evidence when available. This is a newly required feature in the existing owner, not a restructuring justified by churn.",
+    "Nonmaterial: workload evidence for optimization. No performance optimization or measured latency guarantee is claimed."
+  ]
+}

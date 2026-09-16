@@ -40,6 +40,143 @@ def process_alive(ref):
             all(current[k] == ref[k] for k in ("pid", "start", "boot")))
 
 
+def herdr_environment(process):
+    """Select only the live native process's host socket, never another session."""
+    values = {}
+    with Path(f"/proc/{process['pid']}/environ").open('rb') as file:
+        raw = file.read(4 * 1024 * 1024 + 1)
+    if len(raw) > 4 * 1024 * 1024:
+        raise CoordinationError('INVALID_HOST', 'native environment exceeds limit')
+    for entry in raw.split(b'\0'):
+        key, _, value = entry.partition(b'=')
+        if key in (b'HERDR_ENV', b'HERDR_SOCKET_PATH'):
+            values[key.decode()] = value.decode()
+    if values.get('HERDR_ENV') != '1' or not Path(values.get('HERDR_SOCKET_PATH', '')).is_absolute():
+        return None
+    # Remove the watcher's inherited pane/remote context. The explicit target
+    # and the observed process's socket select this operation.
+    return dict({k: v for k, v in os.environ.items() if not k.startswith('HERDR_')}, **values)
+
+
+def herdr_call(config, environment, *args):
+    result = subprocess.run([config['idle_wakeup'], *args], env=environment,
+                            capture_output=True, text=True, timeout=4)
+    if result.returncode:
+        try:
+            code = json.loads(result.stderr).get('error', {}).get('code')
+        except (ValueError, AttributeError):
+            code = None
+        if code in ('pane_not_found', 'agent_not_found', 'agent_not_running'):
+            raise CoordinationError('HOST_TARGET_GONE', 'Herdr target no longer exists')
+        raise CoordinationError('HOST_UNAVAILABLE', 'Herdr refused the host operation')
+    try:
+        response = json.loads(result.stdout)
+        return response['result']
+    except (ValueError, KeyError, TypeError) as exc:
+        raise CoordinationError('HOST_UNAVAILABLE', 'Herdr returned an invalid response') from exc
+
+
+def host_matches(config, state, host, environment):
+    if (host.get('agent') != config['harness'] or host.get('agent_status') not in ('idle', 'done')
+            or host.get('focused') is not False):
+        return False
+    native = state['agent']['native_session_id']
+    session = host.get('agent_session')
+    if session:
+        if session.get('kind') != 'id' or session.get('value') != native or session.get('agent') != config['harness']:
+            return False
+    elif config['harness'] == 'codex':
+        # This installed Codex integration has no Herdr session field. Its open
+        # rollout path identifies the actual conversation without reading text.
+        sessions = set()
+        for path in Path(f"/proc/{state['process']['pid']}/fd").iterdir():
+            try:
+                match = re.search(r'/rollout-[^/]*-([0-9a-f-]{36})\.jsonl$', os.readlink(path))
+            except FileNotFoundError:
+                continue
+            if match:
+                sessions.add(match.group(1))
+        if sessions != {native}:
+            return False
+    else:
+        return False
+    try:
+        info = herdr_call(config, environment, 'pane', 'process-info', '--pane', host['pane_id'])['process_info']
+    except CoordinationError as exc:
+        if exc.code == 'HOST_TARGET_GONE':
+            return False  # A different candidate can still be the live target.
+        raise
+    return (info.get('foreground_process_group_id') == os.getpgid(state['process']['pid'])
+            and any(p['pid'] == state['process']['pid'] for p in info.get('foreground_processes', []))
+            and process_alive(state['process']))
+
+
+def prepare_idle_wake(config, state, path):
+    if (not config.get('idle_wakeup') or not config.get('native_delivery') or
+            state.get('inbox_intent') or state.get('ending') or state.get('retired')):
+        return None
+    agent = state['agent']
+    if coordination_excluded(state['workspace']) or coordination_excluded(agent['metadata']['workspace']):
+        return None
+    if agent['metadata']['state'] != 'idle' or agent['metadata']['delivery_mode'] != 'existing-session':
+        return None
+    ready = call(config, 'session-inbox-ready', session_ref(agent))
+    delivery = ready.get('delivery_id')
+    if not delivery:
+        return None
+    prior = state.get('idle_wake', {})
+    if prior.get('delivery_id') == delivery and prior.get('session') == session_ref(agent):
+        return None  # Submitted or uncertain; only native handling permits a new nudge.
+    environment = herdr_environment(state['process'])
+    if environment is None:
+        return None
+    candidates = herdr_call(config, environment, 'agent', 'list')['agents']
+    matches = [h for h in candidates if host_matches(config, state, h, environment)]
+    if len(matches) != 1:
+        return None
+    host = matches[0]
+    current = herdr_call(config, environment, 'agent', 'get', host['pane_id'])['agent']
+    keys = ('pane_id', 'terminal_id', 'revision', 'state_change_seq')
+    if any(current.get(k) != host.get(k) for k in keys) or not host_matches(config, state, current, environment):
+        return None
+    # Revalidate the Cairn execution and delivery after host observations. This
+    # remains a hint, not a lease; the prompt contains no source/work payload.
+    if call(config, 'session-inbox-ready', session_ref(agent)).get('delivery_id') != delivery:
+        return None
+    state['idle_wake'] = dict(delivery_id=delivery, session=session_ref(agent),
+        target={k: current[k] for k in keys}, status='uncertain', attempted_at=time.time())
+    write_state(path, state)
+    return dict(environment=environment, wake=state['idle_wake'], process=state['process'])
+
+
+def submit_idle_wake(config, path, prepared):
+    # No session lock spans terminal submission: its prompt hook needs that lock.
+    wake = prepared['wake']
+    if not process_alive(prepared['process']):
+        return
+    text = (f"Cairn inbox wakeup for agent {wake['session']['agent_id']}, "
+            f"execution {wake['session']['execution_id']}. "
+            "Handle the native inbox context supplied for this conversation and explicitly complete/acknowledge it. "
+            "If no matching native context was supplied, report that and stop. "
+            "Do not register, manually claim an inbox, or launch a replacement conversation.")
+    response = herdr_call(config, prepared['environment'], 'agent', 'prompt', wake['target']['pane_id'], text)
+    confirmed = response.get('agent', {})
+    if (response.get('type') != 'agent_prompted' or
+            any(confirmed.get(k) != wake['target'][k] for k in ('pane_id', 'terminal_id'))):
+        raise CoordinationError('WAKE_UNCERTAIN', 'host did not confirm prompt submission; no automatic resend')
+    try:
+        with session_lock(path):
+            state = json.loads(path.read_text())
+            if state.get('idle_wake') == wake:
+                state['idle_wake']['status'] = 'submitted'
+                write_state(path, state)
+    except CoordinationError as exc:
+        if exc.code != 'SESSION_BUSY':
+            raise
+        # A live hook owns this file. The retained uncertain marker already
+        # suppresses retries, and native handling clears it when delivered.
+
+
 def same_process(a, b):
     return all(a[k] == b[k] for k in ("pid", "start", "boot"))
 
@@ -330,6 +467,7 @@ def inbox_context(config, state, path, observation):
     target = Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')
     write_state(target, context)
     state['delivered_since_idle'] = True
+    state.pop('idle_wake', None)
     write_state(path, state)
     return (f"Cairn has a {event['kind']} from {event['from']} for this conversation. "
         f"Read the structured inbox context at {target}. Read its exact selected source with the read argv and read_input JSON. "
@@ -361,6 +499,12 @@ def finish_presence(config, state, path, timeout=4, reason='process_exited'):
     write_state(path, state)
 
 
+def coordination_excluded(workspace):
+    root = Path(workspace)
+    return any((p / name).exists() for p in [root, *root.parents]
+               for name in ('.cairn-no-memory', '.cairn-no-coordination'))
+
+
 def handle(config, event, event_name=None):
     if os.environ.get('CAIRN_COORDINATION_DISABLED') == '1':
         return {}
@@ -377,9 +521,7 @@ def handle(config, event, event_name=None):
     observation = normalize(config, event, event_name)
     if wake and wake.get('native_session_id') not in (None, observation['native_id']):
         return {}  # A child conversation must not inherit its parent's wake.
-    workspace = Path(observation["workspace"])
-    if any((p / name).exists() for p in [workspace, *workspace.parents]
-           for name in (".cairn-no-memory", ".cairn-no-coordination")):
+    if coordination_excluded(observation['workspace']):
         return {}
     process = owner_process(config, event)
     if observation['phase'] == 'provider':
@@ -486,6 +628,7 @@ def handle(config, event, event_name=None):
 def watch_once(config):
     for path in sorted(Path(config["state_dir"]).glob("*.json")):
         try:
+            prepared = None
             with session_lock(path):
                 state = json.loads(path.read_text())
                 if state.get("retired"):
@@ -498,6 +641,7 @@ def watch_once(config):
                     else:
                         state["agent"] = heartbeat(config, state)
                         watch_inbox(config, state, path)
+                        prepared = prepare_idle_wake(config, state, path)
                 elif not state.get("agent"):
                     # An uncertain registration may have committed; without an
                     # observed response it expires naturally within 90 seconds.
@@ -505,6 +649,8 @@ def watch_once(config):
                 else:
                     finish_presence(config, state, path)
                 write_state(path, state)
+            if prepared:
+                submit_idle_wake(config, path, prepared)
         except CoordinationError as exc:
             if exc.code == "SESSION_BUSY":
                 continue  # The hook owns presence until it releases this lock.
@@ -520,6 +666,9 @@ def validate_config(config):
     if config.get("harness") not in ("codex", "claude", "agy", "opencode", "hermes") or not config.get("repo") or not config.get("binding"):
         raise CoordinationError("INVALID_CONFIG", "harness, collection and binding required")
     binding = config['binding']
+    if config.get('idle_wakeup') is not None:
+        if not isinstance(config['idle_wakeup'], str) or not Path(config['idle_wakeup']).is_absolute() or not config.get('native_delivery'):
+            raise CoordinationError('INVALID_CONFIG', 'idle_wakeup requires an absolute Herdr executable and native_delivery')
     if not isinstance(binding, str) or len(binding) > 128 or binding in ('.', '..') or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-' for c in binding):
         raise CoordinationError("INVALID_CONFIG", "invalid binding name")
     return config

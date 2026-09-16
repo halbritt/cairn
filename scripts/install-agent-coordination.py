@@ -186,6 +186,8 @@ def main():
     parser.add_argument('--repo', default=str(home / 'git/cairn'))
     parser.add_argument('--model', default='')
     parser.add_argument('--native-delivery', action='store_true', help='enable turn-boundary inbox handling (requires schema 039 and matching API)')
+    parser.add_argument('--idle-wakeup', action='store_true', help='automatically prompt eligible idle Herdr sessions with pending inbox work')
+    parser.add_argument('--herdr', default=shutil.which('herdr'), help='Herdr executable for --idle-wakeup')
     parser.add_argument('--no-service', action='store_true', help='prepare hooks without installing/restarting the watcher')
     args = parser.parse_args()
     if not args.cairn or not args.token_file.is_file():
@@ -195,6 +197,10 @@ def main():
     config = dict(cairn=str(Path(args.cairn).resolve()), socket=str(args.socket.resolve()), token_file=str(args.token_file.resolve()),
                   repo=args.repo, harness=args.harness, binding=args.binding, model=args.model,
                   process_names=[args.harness], native_delivery=args.native_delivery)
+    if args.idle_wakeup:
+        if not args.native_delivery or not args.herdr or not Path(args.herdr).is_file():
+            parser.error('--idle-wakeup requires --native-delivery and an installed Herdr executable')
+        config['idle_wakeup'] = str(Path(args.herdr).resolve())
     if args.harness in ('codex', 'claude'):
         config['config_home'] = str(args.settings.resolve().parent)
     installed = install(args.root.resolve(), args.settings.resolve(), config)

@@ -47,6 +47,8 @@ lease renewal and systemd process cleanup. See the
 and [coordination v1 plan](docs/plans/agent-coordination-v1.md). Seven worker slots
 cover both Codex and both Claude accounts. Live session discovery and exact
 project/harness routing are implemented; delivery uses native turn boundaries.
+[Idle host wakeups](docs/plans/idle-session-wakeups.md) can trigger an eligible
+existing Herdr conversation when its inbox has work.
 [One-shot scheduling](docs/event-scheduling.md) adds durable future publication.
 [Request controls](docs/request-controls.md) add admission expiry, managed task
 deadlines and cancellation with retained process holds.

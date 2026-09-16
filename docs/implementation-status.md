@@ -23,8 +23,9 @@ The [live Rhumb trial](verification/rhumb-live-routing-2026-09-16.md) completed
 without this rollout interrupting or restarting the busy session. Its queued
 request arrived at an owner-prompt boundary and received an explicit reply.
 The owner-selected [ai-newsroom idle trial](verification/ai-newsroom-idle-wakeup-2026-09-16.md)
-also completed after an explicit host prompt. Implementation and rollout acceptance
-for the [v1 slice](verification/coordination-v1-acceptance-2026-09-16.md) is complete.
+also completed after an explicit host prompt. The owner’s continuation reopens
+[v1 completion](verification/coordination-v1-acceptance-2026-09-16.md) for automatic
+idle-session wakeup.
 Fully idle interactive sessions still need a host trigger; the native adapter does
 not automatically prompt them on inbox arrival. Native interactive hard stops
 remain an explicit capability limitation, and unknown provider diagnostics stay

@@ -74,7 +74,7 @@ def check(binary, root, repo, api_call):
             session={k: agent[k] for k in ("agent_id", "execution_id")},
             expected_revision=agent["context_revision"], metadata=metadata)))
         # A concurrent second process must not take the same native conversation.
-        second = owner()
+        second = owner(env=dict(os.environ, HERDR_ENV='1', HERDR_SOCKET_PATH=str(root/'fixture-host.sock')))
         refused = hook(second, event, code=1)
         assert "SESSION_BUSY" in refused["stderr"]
         first.terminate()
@@ -147,6 +147,48 @@ def check(binary, root, repo, api_call):
         assert hook(second, dict(event, session_id='native-delivery', hook_event_name='Stop')) == {}
         assert api_call('alice', 'event-status', message['event_id'])['deliveries'][0]['state'] == 'handled'
         hook(second, dict(event, session_id='native-delivery', hook_event_name='SessionEnd'))
+        # Read-only readiness drives one host nudge. The watcher must not claim
+        # work; the following real hook still owns the PostgreSQL delivery.
+        from test_idle_wakeup import HOST
+        idle_root = root/'idle-host'
+        idle_root.mkdir()
+        herdr = idle_root/'herdr'
+        herdr.write_text(HOST)
+        herdr.chmod(0o700)
+        installed_config = json.loads(config.read_text())
+        installed_config['idle_wakeup'] = str(herdr)
+        config.write_text(json.dumps(installed_config))
+        idle_native = dict(event, session_id='native-idle-host')
+        hook(second, idle_native)
+        hook(second, dict(idle_native, hook_event_name='Stop'))
+        idle_agent = next(a for a in api_call('bob','agents','list')['agents'] if a['native_session_id']=='native-idle-host')
+        (idle_root/'fixture.json').write_text(json.dumps(dict(host=dict(agent='codex',agent_status='idle',
+            pane_id='fixture:p1',terminal_id='fixture-terminal',revision=1,state_change_seq=1,focused=False,
+            agent_session=dict(agent='codex',kind='id',value='native-idle-host')),
+            process_info=dict(foreground_processes=[dict(pid=second.pid)],foreground_process_group_id=os.getpgid(second.pid)))))
+        idle_event = api_call('alice','publish','--request-id',str(uuid.uuid4()),'--to',idle_agent['inbox'],
+            '--kind','request','--version',str(source['version']),source['record_id'])
+        watch()
+        watch()
+        prompts = (idle_root/'prompts.jsonl').read_text().splitlines()
+        assert len(prompts)==1, 'watcher restart duplicated the idle nudge'
+        idle_status = api_call('alice','event-status',idle_event['event_id'])['deliveries'][0]
+        assert idle_status['state']=='pending' and idle_status['attempts']==0, 'watcher claimed native work'
+        injected = hook(second, idle_native)
+        assert 'structured inbox context' in injected['hookSpecificOutput']['additionalContext']
+        idle_context = next(json.loads(p.read_text()) for p in (state/'inbox').glob('*.json')
+                            if json.loads(p.read_text())['event_id']==idle_event['event_id'])
+        subprocess.run(idle_context['completion'], input='Selected automatic idle wake result',
+                       text=True,capture_output=True,check=True,timeout=10)
+        hook(second, dict(idle_native,hook_event_name='Stop'))
+        watch()
+        assert len((idle_root/'prompts.jsonl').read_text().splitlines())==1, 'handled work prompted again'
+        idle_status = api_call('alice','event-status',idle_event['event_id'])['deliveries'][0]
+        assert idle_status['state']=='handled' and idle_status['attempts']==1
+        print('Idle wakeup: read-only readiness, automatic host prompt, restart suppression and one native completion passed')
+        hook(second,dict(idle_native,hook_event_name='SessionEnd'))
+        installed_config.pop('idle_wakeup')
+        config.write_text(json.dumps(installed_config))
         crashed = owner()
         hook(crashed, dict(event, session_id='native-crashed-delivery'))
         crash_agent = next(a for a in api_call('bob', 'agents', 'list', '--harness', 'codex')['agents'] if a['native_session_id'] == 'native-crashed-delivery')

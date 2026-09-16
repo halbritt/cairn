@@ -12,8 +12,8 @@ deployed and tested. Turn-boundary native inbox delivery is deployed in migratio
 041. Migration 042 adds selected native provider failure ingestion. Native Agy
 rate-limit reporting now has verified step-freshness checks; unrecognized
 diagnostics remain gaps. Scheduling, request controls and response
-groups are deployed through migration 047. Implementation and rollout acceptance
-for these seven milestones is complete within their stated contracts; see
+groups are deployed through migration 047. The owner’s continuation requires automatic idle-session wakeup as well;
+that work reopens completion. See
 the [current checkpoint](../verification/coordination-v1-acceptance-2026-09-16.md).
 
 | Milestone | Current progress |

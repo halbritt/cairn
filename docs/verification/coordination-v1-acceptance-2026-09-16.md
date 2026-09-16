@@ -73,7 +73,9 @@ conversation, its native hook handled the queued request once, and its reply
 collected before the deadline. The parent read and checked both results, then
 acknowledged their replies; neither delivery retains a process hold.
 
-This closes implementation and rollout acceptance for the planned v1 slice.
+This closed the earlier turn-boundary slice. The owner’s subsequent instruction
+to continue v1 requires automatic idle-session wakeup; full completion is open
+until that path is implemented, deployed and verified without a manual prompt.
 Automatic prompting of fully idle interactive sessions is not implemented by the
 native adapter; fresh-worker automatic wakeups remain a separate supported path.
 The trials establish routing and handling mechanics, with useful metadata review,

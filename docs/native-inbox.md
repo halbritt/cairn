@@ -20,10 +20,13 @@ home keeps its own binding; agents keep their conversation UUIDs across resume.
   existing handling; they do not start another turn themselves.
 
 The host delivers at most one inbox item during a native turn/Stop continuation.
-Further messages wait for the next supported boundary. An idle process with no
-new boundary does not wake merely because its inbox changed. This is distinct
-from the existing automatic fresh-worker supervisors. Native delivery never
-starts a fresh worker to consume a conversation's inbox.
+Further messages wait for the next supported boundary. With `--idle-wakeup`
+enabled at installation, the presence watcher can create that boundary by
+prompting an eligible idle Herdr conversation with pending inbox work. See
+[the idle wakeup contract](plans/idle-session-wakeups.md) for process/session
+checks, focused-pane deferral and host limitations. The native hook still owns
+the claim. Sessions without this enabled host capability wait for another
+boundary. Native delivery never starts a fresh worker to consume a conversation's inbox.
 
 One unfinished native attempt owns the session inbox. A normal inbox consumer
 cannot claim another item while that hold exists. Fresh-worker claims reject

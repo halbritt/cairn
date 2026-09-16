@@ -8,6 +8,88 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestSessionInboxReadinessDoesNotClaimAndRespectsOwners(t *testing.T) {
+	ctx := context.Background()
+	sender, receiver, source, dest := eventFixture(t)
+	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "idle-probe", NativeSessionID: "idle-probe", Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
+	ready, err := receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.DeliveryID != "" {
+		t.Fatalf("empty readiness: %+v %v", ready, err)
+	}
+	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.DeliveryID == "" {
+		t.Fatalf("pending readiness: %+v %v", ready, err)
+	}
+	again, err := receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || again != ready {
+		t.Fatalf("read changed readiness: %+v %v", again, err)
+	}
+	status, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: event.EventID}, dest)
+	if err != nil || status.Deliveries[0].State != "pending" || status.Deliveries[0].Attempts != 0 {
+		t.Fatalf("read claimed work: %+v %v", status, err)
+	}
+	_, err = sender.SessionInboxReady(ctx, ref, dest)
+	requireCode(t, err, "NOT_FOUND")
+	claimed, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref}, dest)
+	if err != nil || claimed.Attempt == nil {
+		t.Fatalf("claim: %+v %v", claimed, err)
+	}
+	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.DeliveryID != "" {
+		t.Fatalf("held readiness: %+v %v", ready, err)
+	}
+}
+
+func TestSessionInboxReadinessRequiresCurrentIdlePresence(t *testing.T) {
+	ctx := context.Background()
+	sender, receiver, source, dest := eventFixture(t)
+	registration := RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "idle-state", NativeSessionID: "idle-state", Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "busy", DeliveryMode: "existing-session"}}
+	a, err := receiver.RegisterAgent(ctx, registration, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
+	_, err = sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "notice", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, err := receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.DeliveryID != "" {
+		t.Fatalf("busy: %+v %v", ready, err)
+	}
+	metadata := a.Metadata
+	metadata.State = "idle"
+	a, err = receiver.UpdateAgent(ctx, UpdateAgentRequest{RequestID: uuid.NewString(), Session: ref, ExpectedRevision: a.ContextRevision, Metadata: metadata}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.DeliveryID == "" {
+		t.Fatalf("idle notice: %+v %v", ready, err)
+	}
+	if _, err = receiver.pool.Exec(ctx, `UPDATE cairn.agent_session SET expires_at=clock_timestamp()-interval '1 second' WHERE agent_id=$1`, a.AgentID); err != nil {
+		t.Fatal(err)
+	}
+	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.DeliveryID != "" {
+		t.Fatalf("expired: %+v %v", ready, err)
+	}
+	registration.RequestID = uuid.NewString()
+	if _, err = receiver.RegisterAgent(ctx, registration, dest); err != nil {
+		t.Fatal(err)
+	}
+	_, err = receiver.SessionInboxReady(ctx, ref, dest)
+	requireCode(t, err, "STALE_SESSION")
+}
+
 func TestSessionInboxRetainsOneOwnerUntilExplicitCompletion(t *testing.T) {
 	ctx := context.Background()
 	sender, receiver, source, dest := eventFixture(t)

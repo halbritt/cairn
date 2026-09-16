@@ -31,7 +31,51 @@ type SessionInboxResult struct {
 	Attempt *SessionInboxAttempt `json:"attempt"`
 }
 
+type SessionInboxReadiness struct {
+	DeliveryID string `json:"delivery_id,omitempty"`
+}
+
 const sessionInboxHold = `NOT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id AND n.finished_at IS NULL)`
+
+const sessionInboxOccupied = `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE agent_id=$1 AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE (consumer=$2 OR agent_id=$1) AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_delivery WHERE consumer=$2 AND state='leased' AND lease_until>clock_timestamp())`
+
+const sessionInboxNext = `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND ` + requestAdmissionOpen + ` AND ` + wakeHold + ` AND ` + sessionInboxHold + ` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position`
+
+// SessionInboxReady is a bounded hint for an idle host wakeup, never a claim.
+// The native turn still acquires ownership through ClaimSessionInbox.
+func (s *Store) SessionInboxReady(ctx context.Context, ref AgentSessionRef, dest Destination) (SessionInboxReadiness, error) {
+	var out SessionInboxReadiness
+	if err := s.nativeInboxProfile(ref, dest); err != nil {
+		return out, err
+	}
+	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback(ctx)
+	a, err := currentAgentSession(ctx, tx, ref, s.channel.Principal, s.channel.Repo, false, dest)
+	if err != nil {
+		return out, err
+	}
+	if err = activeAgent(a); err != nil {
+		return out, err
+	}
+	if !a.Online || a.Metadata.DeliveryMode != "existing-session" || a.Metadata.State != "idle" {
+		return out, nil
+	}
+	var held bool
+	if err = tx.QueryRow(ctx, sessionInboxOccupied, a.AgentID, a.Inbox).Scan(&held); err != nil {
+		return out, err
+	}
+	if held {
+		return out, nil
+	}
+	err = tx.QueryRow(ctx, sessionInboxNext+` LIMIT 1`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&out.DeliveryID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return out, nil
+	}
+	return out, err
+}
 
 func (s *Store) nativeInboxProfile(ref AgentSessionRef, dest Destination) error {
 	if err := validEventDestination(dest); err != nil {
@@ -121,7 +165,7 @@ func (s *Store) ClaimSessionInbox(ctx context.Context, req SessionInboxClaim, de
 		return SessionInboxResult{attempt}, tx.Commit(ctx)
 	}
 	var exists bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE agent_id=$1 AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE (consumer=$2 OR agent_id=$1) AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_delivery WHERE consumer=$2 AND state='leased' AND lease_until>clock_timestamp())`, a.AgentID, a.Inbox).Scan(&exists); err != nil {
+	if err = tx.QueryRow(ctx, sessionInboxOccupied, a.AgentID, a.Inbox).Scan(&exists); err != nil {
 		return out, err
 	}
 	if exists {
@@ -131,7 +175,7 @@ func (s *Store) ClaimSessionInbox(ctx context.Context, req SessionInboxClaim, de
 		return out, err
 	}
 	var id string
-	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND `+requestAdmissionOpen+` AND `+wakeHold+` AND `+sessionInboxHold+` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&id)
+	err = tx.QueryRow(ctx, sessionInboxNext+` FOR UPDATE OF d SKIP LOCKED LIMIT 1`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return commit(nil)
 	}

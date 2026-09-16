@@ -25,7 +25,7 @@ Everyday operations:
 
 JSON operations (one request on stdin):
   agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory, agent-resolve
-  session-inbox-claim, session-inbox-reconcile Native host turn-boundary delivery
+  session-inbox-ready, session-inbox-claim, session-inbox-reconcile Native host delivery
   wake-attempts Inspect current or historical wake attempts
   wake-claim, wake-change Host supervisor coordination
   worker-register, worker-heartbeat, worker-health Host slot availability
@@ -56,6 +56,9 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	}
 	var detail, example string
 	switch operation {
+	case "session-inbox-ready":
+		detail = "Native host adapter only: read the first eligible delivery ID for a live idle execution without claiming or changing work. Empty when busy, held or unavailable. This is a snapshot; only the native hook claims ownership."
+		example = `{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}`
 	case "event-watch":
 		detail = "Read inbox arrivals without claiming. Cursor binds inbox, filter, read destination and database generation; STALE_CURSOR requires an explicit rescan."
 		example = `{"cursor":"RETURNED_CURSOR","limit":50}`
