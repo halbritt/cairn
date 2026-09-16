@@ -107,6 +107,12 @@ func (s *Store) ClaimWake(ctx context.Context, req WakeClaimRequest, dest Destin
 	if native {
 		return WakeResult{}, failure("INVALID_REQUEST", "session inboxes cannot be consumed by fresh wake workers")
 	}
+	// Direct/topic publication uses this same collection lock. Hold it through
+	// pool assignment commit so a watch cannot pass a later committed delivery
+	// while an earlier delivery position remains uncommitted.
+	if err = lock(ctx, tx, "agent-events:"+repo); err != nil {
+		return WakeResult{}, err
+	}
 	if err = lock(ctx, tx, "wake:"+repo+":"+s.channel.Principal); err != nil {
 		return WakeResult{}, err
 	}

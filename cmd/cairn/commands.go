@@ -22,6 +22,7 @@ Everyday commands:
   agents --help (live session identity, presence and directory)
   wake --help (automatic request workers)
   publish --help | inbox --help (durable agent notifications)
+  watch --help (read-only inbox arrivals with a saved cursor)
   subscribe | unsubscribe | subscriptions | events | event-status | event-stats
   ack | complete | retry | renew (leased event handling; use --help)
   agent --help | agent OPERATION --help (ordinary JSON request examples)
@@ -113,6 +114,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	}
 	if args[0] == "wake" {
 		return wakeCommand(ctx, args[1:])
+	}
+	if args[0] == "watch" {
+		return prepareWatch(args[1:])
 	}
 	if args[0] == "agents" {
 		return agentsCommand(ctx, args[1:])

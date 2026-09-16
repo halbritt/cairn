@@ -1,0 +1,320 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-inbox-watch-2026-09-16",
+  "question": "How should read-only inbox watch resume across late pool assignment, API restart and restore?",
+  "scope": [
+    "Durable inbox arrival cursor",
+    "Bounded CLI polling, checkpoint and cancellation"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Accepted v1 implementation/deployment goal and trusted-host correction",
+    "authorized_scope": [
+      "Implement and deploy milestone5 inbox watch"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-watch-contract",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Accepted milestone5 requires resumable durable inbox watch and bounded slow consumers. The selected scope adds read-only arrival observation, explicit restore rescan, same-cursor transport retries and at-least-once stdout checkpoints. Recovery/reissue remains separate unfinished work. Existing profile/privacy/session checks remain authoritative.",
+      "provenance": [
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:31:51.802695+00:00",
+          "content_sha256": "f698108826ed771a70fe7b8139248ff075d84d312f719eaf49f44b67bb082b2f"
+        },
+        {
+          "locator": "docs/inbox-watch.md",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:31:51.802695+00:00",
+          "content_sha256": "150bd9313d443788eb38e2f34d908bdf238628012e0c32fa58ca1c05af35db33"
+        },
+        {
+          "locator": "AGENTS.md",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:31:51.802695+00:00",
+          "content_sha256": "c27e830a649a2bbc1a84d97ca28cb8c9bcdf1bf11ec02705f6da9cef41a96504"
+        },
+        {
+          "locator": "Makefile",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:31:51.802695+00:00",
+          "content_sha256": "11a9b33c9331ef6f81cca240607e5afd421c405ea923deeb2c0b39602fc4690e"
+        }
+      ],
+      "satisfies": [
+        "repository contract",
+        "operation and caller contract",
+        "product correctness and availability policy",
+        "caller recovery needs",
+        "cleanup obligations",
+        "side effects and idempotency",
+        "accepted desired behavior and semantic authority",
+        "target repository and task scope",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "repository instructions from root through target path"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-watch-source",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "All current delivery creation paths hold the same collection lock through commit. Watch reads delivery order in a repeatable-read snapshot and binds cursor to inbox/filter/destination/generation. The CLI owns one page, one client and one cursor lock; output precedes fsynced atomic checkpoint. Only transport errors retry; structured refusals stop. Pipe cancellation closes a pollable descriptor; cleanup releases cursor lock and HTTP resources.",
+      "provenance": [
+        {
+          "locator": "core/agent_watch.go",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "43e009b1977ee7dc0393144bb1cbe726486b756e7e619c00c70d0d1bef0434b0"
+        },
+        {
+          "locator": "core/agent_wakeups.go",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "e2527ac8427c0e7b02ea28c15ee2e369f4473b054fe7b8a3cb7ce8a5c8a464ad"
+        },
+        {
+          "locator": "core/agent_events.go",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "adaeae1f6c28e211ae2d4416fc7ad2d645417cd9ec60defbf8489675379e2a69"
+        },
+        {
+          "locator": "cmd/cairn/agent_watch.go",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "0f6c43f4444f864e3d9a227cec727af1cbcaecf0d6498ed6f59903e9ee877ce8"
+        },
+        {
+          "locator": "cmd/cairn/main.go",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "a306b3ec950994b50a549fcfac2b6c5e8d584aa255114d6e783109ecfd5deda2"
+        },
+        {
+          "locator": "go.mod",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "ba43e503a3bb15f07b23aa9430349d379cf8a8d9ff53381e42778fb7356e0b3a"
+        }
+      ],
+      "satisfies": [
+        "language and repository convention",
+        "explicit lifecycle and failure policy",
+        "ownership and lifecycle map",
+        "capacity/backpressure and error propagation",
+        "current source, configuration, and relevant runtime state",
+        "state, invariant, and dependency ownership",
+        "complete read-modify-write scope",
+        "mechanism guaranteeing atomicity at that scope",
+        "named observer and invariant"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-watch-tests",
+      "evidence_class": "evidence-tests",
+      "summary": "Focused store/CLI tests passed: late pool arrival, forced concurrent commit ordering, bounded pages, privacy/filter mismatch, restore invalidation, current-session resumption, broken output checkpoint, cursor-file exclusion, full-pipe cancellation, transport reconnect. Full integration and lifecycle commands separately record wider results. Full disposable integration, backup/restore lifecycle, and final real CLI/API restart probe passed.",
+      "provenance": [
+        {
+          "locator": "core/agent_watch_test.go",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "6459eb691fd6eb4adfa88504422f0aaf359e8c6e2bb15f0589249e20e3711f91"
+        },
+        {
+          "locator": "cmd/cairn/agent_watch_test.go",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "3a0d80863720d14d02d48482f966f2e91d9cb7c4dbe29467c3161fbc61cb129c"
+        },
+        {
+          "locator": "/tmp/cairn-watch-core.log",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "15fe585c76e23e3988209da504217437d79e098569eb99645ac3821ea1ff7f0b"
+        },
+        {
+          "locator": "/tmp/cairn-watch-cli-final.log",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "03dea27e6e03e6d0e5e7a2bd728c8573869fa3a88d67c669053cbca1c422b2b4"
+        },
+        {
+          "locator": "/tmp/cairn-watch-check.log",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+        },
+        {
+          "locator": "/tmp/cairn-watch-integration.log",
+          "method": "Read passing command log and observed exit status zero",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "2424253a38db911aec1fe3b4f87f00b3aef81d7048aa4e386c283bdd6fa7b237"
+        },
+        {
+          "locator": "/tmp/cairn-watch-lifecycle.log",
+          "method": "Read passing command log and observed exit status zero",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "51dee8ca1e8fea5764fccb6472859ceff9f8322f6bcacfbe611510d9b1f67e51"
+        },
+        {
+          "locator": "/tmp/cairn-watch-runtime-final.log",
+          "method": "Read passing command log and observed exit status zero",
+          "observed_at": "2026-09-16T07:34:28.833487+00:00",
+          "content_sha256": "75512f897fb219d5e327637576925a06bfc6a4cae1136b4eaf117b0f61b3dc52"
+        }
+      ],
+      "satisfies": [
+        "cancellation, shutdown, and cleanup tests",
+        "behavior tests",
+        "reversibility and verification",
+        "concurrency and failure scenarios",
+        "explicit invariant scenarios",
+        "tests, characterization, probes, or explicit residual risk",
+        "checkpoint verification"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-watch-authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner authorized implementation/deployment of coordination v1, trusted-host UUID association and use of the supplied reviewer. This watch step changes arrival observation only; it does not approve uncertain execution replay or establish full-v1 acceptance.",
+      "provenance": [
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Read current source and selected verification output",
+          "observed_at": "2026-09-16T07:31:51.802695+00:00",
+          "content_sha256": "f698108826ed771a70fe7b8139248ff075d84d312f719eaf49f44b67bb082b2f"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "decision owner",
+        "explicit task authority",
+        "task scope and authority statement",
+        "user instruction and authority"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "arrival-order",
+      "type": "observation",
+      "text": "The forced concurrent PostgreSQL test observes publication waiting behind an earlier uncommitted pool assignment; delivery order includes late assignments.",
+      "evidence": [
+        "cairn-watch-source",
+        "cairn-watch-tests"
+      ]
+    },
+    {
+      "id": "checkpoint",
+      "type": "decision",
+      "text": "Use read-only bounded pages, output-before-checkpoint, same-cursor transport retry and explicit restore rescan. Keep lease ownership separate.",
+      "owner": "repository owner via delegated implementation",
+      "authority": "Accepted coordination v1 goal",
+      "depends_on": [
+        "arrival-order"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Delivery sequence with serialized insertion and bounded repeated reads",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-watch-source",
+        "cairn-watch-tests"
+      ]
+    },
+    {
+      "option": "Reuse publication positions",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-watch-tests"
+      ]
+    },
+    {
+      "option": "Retain manual publication-history polling only",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-watch-authority"
+      ]
+    },
+    {
+      "option": "Add long-poll notification infrastructure",
+      "disposition": "deferred",
+      "evidence": [
+        "cairn-watch-contract"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/inbox-watch.md",
+    "core/agent_watch.go",
+    "cmd/cairn/agent_watch.go",
+    "core/agent_watch_test.go",
+    "cmd/cairn/agent_watch_test.go",
+    "scripts/check_agent_events.py"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "make test-integration and make check",
+    "make test-lifecycle with populated delivery positions retained across backup/restore",
+    "Real CLI/API watch restart and saved-cursor resume"
+  ],
+  "reopening_conditions": [
+    "New delivery creation paths",
+    "Observed collection-lock contention",
+    "Changed downstream processing guarantee or delivery retention policy"
+  ],
+  "residual_risk": [
+    "Packet pkt-05a846badb56e7e5; SHA256 05a846badb56e7e5ad531a9e44a0a0572164ca5315d9ec97d88788dcb80fcc32; doctrine doctrine-f6bbb5196a3f8bf9; release d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "Selected doctrine: implementation-explicit-failure-policy and performance-resource-lifecycle. This verifies bounded resource ownership and explicit error policy, not throughput or measured usefulness.",
+    "Output-before-checkpoint can duplicate deliveries after a crash and does not attest downstream processing. Arrival feed does not report every state transition.",
+    "Recovery/reissue and scheduling remain unimplemented; full v1 is not accepted.",
+    "Independent offered-agent review checked creator lock order; its suggested same-event reissue is not adopted because the plan requires a new request and the current delivery uniqueness contract must be preserved.",
+    "Nonmaterial: domain-aggregate-invariant-boundary / atomic versus eventual consistency decision. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-aggregate-invariant-boundary / commands and mutation authority. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-aggregate-invariant-boundary / expert-validated invariants. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-aggregate-invariant-boundary / measured load when performance drives a split. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-language-model-loop / authoritative examples. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-language-model-loop / authoritative expert examples. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-language-model-loop / feedback from implementation and usage. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-language-model-loop / model expressed in executable behavior. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-language-model-loop / terms whose meanings affect decisions. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-modeling-investment-gate / business differentiation and product lifespan. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-modeling-investment-gate / business-value and expert-access evidence. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-modeling-investment-gate / expert access and feedback cadence. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-modeling-investment-gate / recurring ambiguity, contradiction, or rule defect. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: domain-modeling-investment-gate / team capacity to sustain the model. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: go-consumer-owned-interfaces / Go method-set and import-direction compatibility. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: go-consumer-owned-interfaces / current consumer call sets and ownership. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: go-consumer-owned-interfaces / current consumer inventory. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: go-consumer-owned-interfaces / observed substitution, volatility, or cross-boundary pressure. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: implementation-repository-language-conformance / CI and build matrix. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: implementation-repository-language-conformance / adjacent code. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: implementation-repository-language-conformance / formatter and static-tool configuration. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: implementation-repository-language-conformance / repository version and dependency contract. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: performance-resource-lifecycle / retention and contention measurement where reused. No pooled watch buffers/tasks or throughput claim; existing transport is per watcher. Serialized writer contention remains a measurement trigger.",
+    "Nonmaterial: universal-evidence-before-intervention / a bounded decision question. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-evidence-before-intervention / alternatives including no change where viable. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-evidence-before-intervention / claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-evidence-before-intervention / evidence connecting the proposed action to the condition. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-no-change-option / actual current cost/risk or absence within a stated interval. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-no-change-option / expected future change from accepted plans. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-no-change-option / intervention cost and uncertainty. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-no-change-option / latent security, safety, data, durability, and compatibility check. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-no-change-option / proc-decide-leave-code-alone. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-preserve-behavior-by-default / preservation matrix and consumers. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-preserve-behavior-by-default / proc-establish-preservation-boundaries. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-separate-semantic-structural-change / change-type classification. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-separate-semantic-structural-change / per-edit change classification. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim.",
+    "Nonmaterial: universal-separate-semantic-structural-change / preservation boundary and semantic authority. Outside the selected failure/resource contract; no broader modeling, interface redesign, optimization or behavior-preserving refactor claim."
+  ]
+}

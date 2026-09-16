@@ -171,8 +171,11 @@ const eventVisible = `(e.sensitivity='shareable' OR $3) AND (e.publisher=$2 OR E
 
 func scanEvent(row pgx.Row) (AgentEvent, error) {
 	var e AgentEvent
-	err := row.Scan(&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool)
+	err := row.Scan(eventScanFields(&e)...)
 	return e, err
+}
+func eventScanFields(e *AgentEvent) []any {
+	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool}
 }
 func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
 	e, err := scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.event_id=$1 AND `+eventVisible, id, s.channel.Principal, dest.AllowLocal))

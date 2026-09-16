@@ -202,6 +202,53 @@ def check(binary, directory):
         assert call("alice", "agents", "resolve", "--project", "missing")["state"] == "no-match"
         from check_agent_coordination import check as check_coordination
         check_coordination(binary, root, repo, call)
+        # Keep a real watch process alive across API restart. It must read the
+        # next arrival using the persisted cursor without claiming either page.
+        cursor_path = root / "bob-watch.cursor"
+        watch_args = [binary, "watch", "--token-file", str(root / "bob.token"),
+                      "--cursor-file", str(cursor_path)]
+        initial = subprocess.run(watch_args + ["--once"], env=env, capture_output=True,
+                                 text=True, timeout=10, check=True)
+        prior = json.loads(initial.stdout)
+        assert prior["cursor"] == cursor_path.read_text()
+        with (root / "watch.jsonl").open("w") as output, (root / "watch.stderr").open("w+") as diagnostic:
+            watcher = subprocess.Popen(watch_args, env=env, stdout=output, stderr=diagnostic)
+            def watch_pages(count):
+                deadline = time.monotonic() + 8
+                while time.monotonic() < deadline:
+                    assert watcher.poll() is None, "watch exited unexpectedly"
+                    lines = (root / "watch.jsonl").read_text().splitlines()
+                    try:
+                        pages = [json.loads(line) for line in lines]
+                    except json.JSONDecodeError:
+                        pages = []  # The writer may still be finishing a page.
+                    if len(pages) >= count:
+                        return pages
+                    time.sleep(0.02)
+                raise AssertionError("watch did not produce the expected bounded page")
+            try:
+                first_watch = watch_pages(1)[0]
+                assert first_watch["deliveries"] == [] and first_watch["cursor"] == prior["cursor"]
+                stop(process)
+                process = None
+                time.sleep(1.1)  # Cross a failed poll before restarting the real API.
+                process = start()
+                marker = publish(to="agent/bob")
+                arrivals = watch_pages(2)[1]["deliveries"]
+                assert len(arrivals) == 1 and arrivals[0]["event"]["event_id"] == marker["event_id"]
+                claim = call("bob", "inbox")["delivery"]
+                assert claim["delivery_id"] == arrivals[0]["delivery_id"] and claim["attempts"] == 1
+                call("bob", "ack", "--request-id", str(uuid.uuid4()), "--lease", claim["lease_id"], claim["delivery_id"])
+            finally:
+                watcher.terminate()
+                watcher.wait(timeout=5)
+            assert watcher.returncode == 0
+            diagnostic.seek(0)
+            assert (root / "bob.token").read_text() not in diagnostic.read()
+        resumed_watch = subprocess.run(watch_args + ["--once"], env=env, capture_output=True,
+                                      text=True, timeout=10, check=True)
+        assert json.loads(resumed_watch.stdout)["deliveries"] == []
+        print("Inbox watch: real CLI/API restart, cursor checkpoint, resume and read-only delivery passed")
         print("Agent resolution: exact aliases, ambiguity, pinned publication, retry and stale refusal passed")
         print("Agent sessions: stable identity, shared-profile inbox separation, completion and API restart passed")
         print("Agent events: CLI direct/offline delivery, replies, fanout, retry, leases and API restart passed")

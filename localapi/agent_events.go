@@ -66,6 +66,10 @@ func serveAgentEvents(w http.ResponseWriter, r *http.Request, c client) bool {
 		serveJSON(w, r, func(ctx context.Context, req core.EventQuery) (core.EventPage, error) {
 			return c.store.Events(ctx, req, c.destination)
 		})
+	case "/v1/event-watch":
+		serveJSON(w, r, func(ctx context.Context, req core.InboxWatchRequest) (core.InboxPage, error) {
+			return c.store.InboxEvents(ctx, req, c.destination)
+		})
 	case "/v1/event-inspect":
 		serveJSON(w, r, func(ctx context.Context, req core.EventStatusRequest) (core.EventStatus, error) {
 			return c.store.AgentEventStatus(ctx, req, c.destination)

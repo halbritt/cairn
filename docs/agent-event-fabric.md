@@ -197,3 +197,9 @@ principals and an API restart. No production database is used for tests.
 
 Delivery acceptance is separate from measuring whether notifications improve
 real agent work. No automatic task launch or usefulness claim follows from tests.
+
+## Watch arrivals
+
+Use [`cairn watch`](inbox-watch.md) for read-only, resumable inbox arrivals.
+Its delivery cursor includes late pool assignments; publication history positions
+from `events --after` are not inbox arrival cursors.

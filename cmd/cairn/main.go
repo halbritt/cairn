@@ -63,6 +63,23 @@ func main() {
 		}
 		return
 	}
+	watchOutput := false
+	if plan, ok := data.(watchPlan); ok {
+		watchOutput = true
+		data = nil
+		if err == nil {
+			var output *os.File
+			var cleanup func()
+			output, cleanup, err = watchOutputFile(ctx, os.Stdout)
+			if err == nil {
+				err = plan.execute(ctx, output, os.Stderr)
+				cleanup()
+			}
+		}
+		if err == nil || ctx.Err() != nil {
+			return
+		}
+	}
 	if plan, ok := data.(agentStartPlan); ok {
 		data = nil // Never echo prepared task or memory text in an error envelope.
 		if err == nil {
@@ -92,7 +109,7 @@ func main() {
 			exitCode = 2
 		case "NOT_FOUND":
 			exitCode = 3
-		case "STALE_LEASE", "STALE_RESTORE", "RESTORE_IN_PROGRESS", "RESTORE_NOT_PAUSED", "ARTIFACT_CHANGED", "ARTIFACT_UNSAFE", "PAYLOAD_UNAVAILABLE", "DEPENDENCY_CONFLICT", "STALE_HANDLE", "STALE_PROPOSAL", "STALE_PREVIEW", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "SCHEMA_MISMATCH", "STALE_PACKAGE", "RUN_ALREADY_STARTED", "ATTEMPT_TERMINAL":
+		case "STALE_CURSOR", "STALE_LEASE", "STALE_RESTORE", "RESTORE_IN_PROGRESS", "RESTORE_NOT_PAUSED", "ARTIFACT_CHANGED", "ARTIFACT_UNSAFE", "PAYLOAD_UNAVAILABLE", "DEPENDENCY_CONFLICT", "STALE_HANDLE", "STALE_PROPOSAL", "STALE_PREVIEW", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "SCHEMA_MISMATCH", "STALE_PACKAGE", "RUN_ALREADY_STARTED", "ATTEMPT_TERMINAL":
 			exitCode = 4
 		case "AUTHORITY_DENIED", "AUTHORITY_INACTIVE", "SCOPE_AUTHORITY_INACTIVE", "SELF_PROMOTION_DENIED":
 			exitCode = 6
@@ -105,6 +122,9 @@ func main() {
 		}
 	}
 	output := os.Stdout
+	if watchOutput {
+		output = os.Stderr
+	}
 	_, observedRun := data.(runner.Result)
 	if observedRun || (len(os.Args) > 1 && os.Args[1] == "run") {
 		output = os.Stderr

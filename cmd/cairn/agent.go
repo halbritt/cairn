@@ -74,6 +74,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, invalid("agent operation requires one JSON request on stdin")
 	}
 	switch operation {
+	case "event-watch":
 	case "agent-register", "agent-context", "agent-heartbeat", "agent-leave", "agent-directory", "agent-resolve", "session-inbox-claim", "session-inbox-reconcile":
 	case "worker-register", "worker-heartbeat", "worker-health", "worker-list", "pool-list", "wake-claim", "wake-attempts", "wake-change", "event-list", "event-inspect", "event-metrics", "event-publish", "event-next", "event-complete", "event-retry", "event-renew", "event-subscribe", "event-subscriptions", "publish", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats":
 	case "version", "remember", "search", "start", "pull", "pull-evidence", "run-package", "run-index", "revise", "append", "replace", "cite", "assessments", "history", "recompile":

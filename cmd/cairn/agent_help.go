@@ -30,6 +30,7 @@ JSON operations (one request on stdin):
   wake-claim, wake-change Host supervisor coordination
   worker-register, worker-heartbeat, worker-health Host slot availability
   worker-list, pool-list Inspect configured fresh-work capacity
+  event-watch  Read one bounded inbox arrival page with a resumable cursor
   revise       Replace only a note's body
   append       Add text verbatim, including your chosen paragraph separators
   replace      Replace one uniquely matching passage
@@ -55,6 +56,9 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	}
 	var detail, example string
 	switch operation {
+	case "event-watch":
+		detail = "Read inbox arrivals without claiming. Cursor binds inbox, filter, read destination and database generation; STALE_CURSOR requires an explicit rescan."
+		example = `{"cursor":"RETURNED_CURSOR","limit":50}`
 	case "session-inbox-claim":
 		detail = "Native host adapter only: claim one event at a supported turn boundary and retain exclusive session ownership beyond lease expiry. Retry the same request UUID. Use the existing base profile and explicit session."
 		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}}`
