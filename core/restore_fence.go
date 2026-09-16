@@ -73,6 +73,11 @@ func fenceRestore(ctx context.Context, tx pgx.Tx, reason string) (RestoreFence, 
 		return result, err
 	}
 	result.Sessions = tag.RowsAffected()
+	// Delivery leases are capabilities from the pre-restore world. Retain their
+	// attempt counts and events, but require a new claim after the fence.
+	if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='pending',lease_id=NULL,lease_until=NULL WHERE state='leased'`); err != nil {
+		return result, err
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO cairn.restore_fence(fence_id,generation,reason) VALUES($1,$2,$3)`, result.FenceID, result.Generation, reason)
 	return result, err
 }

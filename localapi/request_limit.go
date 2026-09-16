@@ -12,7 +12,7 @@ func RequestBodyLimit(operation string) int64 {
 	if operation == "evidence" {
 		return 8 * 1024 * 1024
 	}
-	if operation == "create" || operation == "edit" || operation == "revise" || operation == "append" {
+	if operation == "create" || operation == "edit" || operation == "revise" || operation == "append" || operation == "event-complete" {
 		return 512 * 1024
 	}
 	return 128 * 1024

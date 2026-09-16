@@ -1,4 +1,12 @@
-# Implementation status — 2026-09-13
+# Implementation status — 2026-09-15
+
+The [agent event fabric](agent-event-fabric.md) adds direct inboxes, topic fanout,
+durable subscriptions, leased polling and atomic result completion. Events are
+operational records outside memory search. The
+[verification report](verification/agent-event-fabric-2026-09-15.md) maps the
+contract to disposable database, CLI/API restart and backup/restore checks, and
+records the installation status. Delivery does not launch agents or establish
+task success. Existing implementation history below is retained.
 
 The [Hermes provider](hermes-lifecycle.md) adds explicit tools, ambient recall and
 selected capture for interactive CLI and the configured Slack gateway. Native

@@ -58,11 +58,12 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, invalid("agent requires an API operation and JSON on stdin")
 	}
 	operation := f.Arg(0)
-	commandArgs := operation == "evidence" || operation == "remember" || operation == "run" || operation == "start" || operation == "search" || operation == "pull" || operation == "pull-evidence"
+	commandArgs := isEventCommand(operation) || operation == "evidence" || operation == "remember" || operation == "run" || operation == "start" || operation == "search" || operation == "pull" || operation == "pull-evidence"
 	if !commandArgs && f.NArg() != 1 {
 		return nil, invalid("agent operation requires one JSON request on stdin")
 	}
 	switch operation {
+	case "event-list", "event-inspect", "event-metrics", "event-publish", "event-next", "event-complete", "event-retry", "event-renew", "event-subscribe", "event-subscriptions", "publish", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats":
 	case "version", "remember", "search", "start", "pull", "pull-evidence", "run-package", "run-index", "revise", "append", "replace", "cite", "assessments", "history", "recompile":
 	case "run", "run-status", "register-context", "check-evidence", "evidence-impact", "refusal", "index", "expand", "expand-evidence", "create", "edit", "delete", "compile", "get", "usage", "usage-coverage", "evidence", "spawn", "terminal", "task-state", "bind-run", "link-run-retrieval", "claim-run", "delivery", "outcome", "assess-run", "use-report", "run-report", "conflict", "conflicts", "supersede", "supersession", "preview-retract":
 	default:
@@ -73,6 +74,9 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, err
 	}
 	defer client.Close()
+	if isEventCommand(operation) {
+		return eventCommand(ctx, operation, f.Args()[1:], input, client)
+	}
 	if operation == "version" {
 		var server buildinfo.Info
 		if err := client.Call(ctx, "version", struct{}{}, &server); err != nil {

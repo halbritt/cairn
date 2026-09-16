@@ -104,6 +104,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	r = r.WithContext(ctx)
+	if serveAgentEvents(w, r, c) {
+		return
+	}
 	switch r.URL.Path {
 	case "/v1/version":
 		serveJSON(w, r, func(context.Context, struct{}) (buildinfo.Info, error) {
@@ -359,7 +362,7 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 			status = 400
 		case "NOT_FOUND":
 			status = 404
-		case "PAYLOAD_UNAVAILABLE", "FORGET_REQUIRED", "STALE_HANDLE", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "STALE_PACKAGE", "RUN_ALREADY_STARTED", "ATTEMPT_TERMINAL":
+		case "STALE_LEASE", "PAYLOAD_UNAVAILABLE", "FORGET_REQUIRED", "STALE_HANDLE", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "STALE_PACKAGE", "RUN_ALREADY_STARTED", "ATTEMPT_TERMINAL":
 			status = 409
 		case "STORE_ERROR", "REFUSAL_UNRECORDED":
 			status = 500

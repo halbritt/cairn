@@ -42,6 +42,7 @@ export CAIRN_DATABASE_URL="$CAIRN_TEST_DATABASE_URL"
 go run ./cmd/cairn migrate
 go run ./cmd/cairn create < fixtures/note.json
 go build -o "$test_root/cairn" ./cmd/cairn
+python3 scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
 python3 scripts/check_use_report.py "$test_root/cairn"
 python3 scripts/check-capture.py "$test_root/cairn" "$test_root/capture-home"
 python3 scripts/check-proposal-groups.py "$test_root/cairn" "$test_root/proposal-groups-home"

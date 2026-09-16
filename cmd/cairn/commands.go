@@ -19,6 +19,9 @@ import (
 const help = `Cairn: local memory for agents
 
 Everyday commands:
+  publish --help | inbox --help (durable agent notifications)
+  subscribe | unsubscribe | subscriptions | events | event-status | event-stats
+  ack | complete | retry | renew (leased event handling; use --help)
   agent --help | agent OPERATION --help (ordinary JSON request examples)
   version | agent [--token-file FILE] [--socket PATH] version
   opencode-install --project DIRECTORY --socket PATH --token-file FILE --repo REPO [--recent-files] [--replace]
@@ -108,6 +111,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	}
 	if args[0] == "agent" {
 		return agentRequest(ctx, args[1:], input)
+	}
+	if isEventCommand(args[0]) {
+		return eventCommand(ctx, args[0], args[1:], input, nil)
 	}
 	if args[0] == "opencode-install" {
 		executable, err := os.Executable()

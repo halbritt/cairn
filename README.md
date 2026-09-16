@@ -32,6 +32,13 @@ interface with explicit task/run scope.
 
 The [roadmap](docs/roadmap.md) tracks accepted requirements, remaining gaps and
 acceptance evidence.
+
+[Agent events](docs/agent-event-fabric.md) add durable direct inboxes and topic
+notifications over PostgreSQL. Agents publish an exact note version, poll with
+an expiring lease, and optionally save a result atomically with acknowledgment.
+`cairn inbox next --profile codex` uses the provisioned `agent/codex` inbox;
+`cairn publish --help` lists the commands. Profiles are explicit and polling does
+not launch agents. See the [implementation plan](docs/plans/agent-event-fabric.md).
 The [changelog](CHANGELOG.md) summarizes development changes and upgrade notes;
 the [implementation status](docs/implementation-status.md) records the current
 installation and complete history.

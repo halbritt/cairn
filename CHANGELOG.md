@@ -16,6 +16,17 @@ and semantic worker are unchanged. Check an installation with `cairn version`; u
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
 See [build identity](docs/build-identity.md) for unstamped builds and MCP processes.
 
+## 2026-09-15
+
+- **Deliver durable agent notifications.** Direct inboxes and topic subscriptions
+  use PostgreSQL-backed polling, exact source versions, expiring leases and
+  retry-safe publication. Atomic completion saves one result with its handling
+  record. Event history, status and counters remain available after restart;
+  restore fencing invalidates old leases. Upgrade CLI and API together and apply
+  migration 035 after a backup. Provision named hosted profiles for distinct
+  inboxes. [Contract and commands](docs/agent-event-fabric.md),
+  [verification](docs/verification/agent-event-fabric-2026-09-15.md).
+
 ## 2026-09-13
 
 - **Connect Hermes CLI and messaging gateways to shared memory.** The native

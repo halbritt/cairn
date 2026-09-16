@@ -1,5 +1,30 @@
 # Authenticated local access
 
+## Agent event operations
+
+The [event fabric](agent-event-fabric.md) uses this same token-bound API. All
+operations use POST with JSON. No request can select its publisher or inbox owner.
+
+| Endpoint under `/v1/` | Request | Result |
+|---|---|---|
+| `event-publish` | request_id, optional repo, kind, ref `{record_id,version}`, destination `{type,name}`, optional causation_id/correlation_id | Durable immutable event |
+| `event-next` | optional repo/agent/lease_seconds | `{delivery: null}` or a leased delivery |
+| `event-complete` | request_id, delivery_id, lease_id, disposition, optional code/draft | Terminal delivery with optional result reference |
+| `event-retry`, `event-renew` | delivery_id, lease_id, optional lease_seconds for renew | Updated delivery |
+| `event-subscribe` | request_id, optional repo/agent, topic, active | Subscription state |
+| `event-subscriptions` | optional repo/agent, topic as exclusive cursor, limit | subscriptions, next_topic, more |
+| `event-list` | optional repo/agent/topic, after numeric position, limit | events, next_after, more |
+| `event-inspect` | event_id, optional after delivery UUID, limit | Event and visible recipient handling reports |
+| `event-metrics` | optional repo/agent | Publication and inbox counters |
+
+The raw JSON form is `cairn agent OPERATION < request.json`; the top-level event
+commands are flag-based aliases. Subscription lists include inactive membership.
+Completed deliveries remain in event history. Status never exposes lease tokens.
+An expired or replaced lease returns HTTP 409 / `STALE_LEASE`. Completion request
+retries return the original result, with no duplicated result note.
+
+## Existing memory API
+
 JSON request text must be valid UTF-8 with paired Unicode surrogate escapes.
 Malformed text that would decode with replacement characters returns
 `INVALID_REQUEST` before the operation runs. Valid pairs, literal backslashes
