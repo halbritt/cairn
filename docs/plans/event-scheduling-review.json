@@ -1,0 +1,299 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-event-scheduling-2026-09-16",
+  "question": "How should one-shot scheduled publication atomically materialize one occurrence and retain a terminal skipped or fired record across retries and scheduler restarts?",
+  "scope": [
+    "Operator-owned durable one-shot publication",
+    "Atomic occurrence outcome, misfire and pending cancellation",
+    "Restore fencing of uncertain scheduled intent"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Accepted coordination v1 implementation/deployment goal and trusted-host correction",
+    "authorized_scope": [
+      "Implement and deploy milestone6 one-shot scheduling under existing local operator authority"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-schedule-contract",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Milestone6 requires one-shot due scheduling, stable occurrence identity and audited misfires before later deadline/cancellation work. Existing PostgreSQL, store-owned attribution, explicit trusted-host operator scope and disposable test rules apply. The one-shot contract distinguishes publication grace, pending cancellation and restore uncertainty from running-work control.",
+      "provenance": [
+        {
+          "locator": "AGENTS.md",
+          "method": "Read current source and accepted contract",
+          "observed_at": "2026-09-16T08:25:04.662129+00:00",
+          "content_sha256": "c27e830a649a2bbc1a84d97ca28cb8c9bcdf1bf11ec02705f6da9cef41a96504"
+        },
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Read current source and accepted contract",
+          "observed_at": "2026-09-16T08:25:04.662129+00:00",
+          "content_sha256": "4ae04943639e0b7eeee8a98884551bd0962adf48ade0edee151530e3a926827b"
+        },
+        {
+          "locator": "docs/event-scheduling.md",
+          "method": "Read current source and accepted contract",
+          "observed_at": "2026-09-16T08:25:04.662129+00:00",
+          "content_sha256": "a23d7b8947071f553e4194454b980fea86d80d1acc3591bae758268c26935f0d"
+        }
+      ],
+      "satisfies": [
+        "repository contract",
+        "operation and caller contract",
+        "product correctness and availability policy",
+        "caller recovery needs",
+        "accepted desired behavior and semantic authority",
+        "repository instructions from root through target path",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-schedule-atomicity",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Create allocates one occurrence UUID. Tick holds shared restore generation then collection insertion lock then due schedule rows, creates the same UUID event/fanout via the existing publication rules, and updates terminal outcome within one transaction. Pool refusals roll back their savepoint and rotate pending intent; other store failures propagate. Cancel shares the collection lock. Restore marks pending schedules skipped before later ticks can execute. Publisher remains current store channel, matched to creator.",
+      "provenance": [
+        {
+          "locator": "core/agent_schedules.go",
+          "method": "Read current source and accepted contract",
+          "observed_at": "2026-09-16T08:25:04.662129+00:00",
+          "content_sha256": "b86bef364e25ddb3d777feac2c12134e52d49cd8301c4dcdaba69cf25616b379"
+        },
+        {
+          "locator": "core/agent_events.go",
+          "method": "Read current source and accepted contract",
+          "observed_at": "2026-09-16T08:25:04.662129+00:00",
+          "content_sha256": "8996bdb2767f9cbe690c55782e9e0fc1a5b1a246291b99b9082f99224172169c"
+        },
+        {
+          "locator": "core/restore_fence.go",
+          "method": "Read current source and accepted contract",
+          "observed_at": "2026-09-16T08:25:04.662129+00:00",
+          "content_sha256": "61608f347921f06edc38807b06c1359576cd052ffd5ea264ad8934bbd336573f"
+        },
+        {
+          "locator": "core/schema/045_agent_schedules.sql",
+          "method": "Read current source and accepted contract",
+          "observed_at": "2026-09-16T08:25:04.662129+00:00",
+          "content_sha256": "523120afd5a1ab202e7fb37e911d133f328fcfbe1658408ef39736b6593f9194"
+        },
+        {
+          "locator": "cmd/cairn/agent_schedules.go",
+          "method": "Read current source and accepted contract",
+          "observed_at": "2026-09-16T08:25:04.662129+00:00",
+          "content_sha256": "fda1d75856e75649600ef6768c533e0f33dbfcb5e9d44e9ed8189d3330e830d9"
+        }
+      ],
+      "satisfies": [
+        "complete read-modify-write scope",
+        "mechanism guaranteeing atomicity at that scope",
+        "named observer and invariant",
+        "observer and indivisible invariant",
+        "side effects and idempotency",
+        "cleanup obligations",
+        "language and repository convention",
+        "current source, configuration, and relevant runtime state",
+        "data and policy ownership",
+        "existing interfaces and callers",
+        "state, invariant, and dependency ownership"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-schedule-authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner authorized implementation and deployment of the v1 plan with the offered agent, retaining trusted-host UUID association without per-session credentials. This checkpoint implements one-shot publication under existing local operator authority, while remaining v1 features retain their stated acceptance gates.",
+      "provenance": [
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Read current source and accepted contract",
+          "observed_at": "2026-09-16T08:25:04.662129+00:00",
+          "content_sha256": "4ae04943639e0b7eeee8a98884551bd0962adf48ade0edee151530e3a926827b"
+        }
+      ],
+      "satisfies": [
+        "explicit task authority",
+        "task scope and authority statement",
+        "decision owner",
+        "affected behavior and state",
+        "user instruction and authority",
+        "target repository and task scope"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-schedule-tests",
+      "evidence_class": "evidence-tests",
+      "summary": "Full make test-integration and make check passed; make test-lifecycle compared populated fired/pending/skipped/cancelled schedules through actual backup/restore. Real CLI daemon was observed ready, stopped before due and restarted after due; it emitted exactly the reserved event UUID once. Store tests cover concurrent ticks, injected terminal-update rollback, source retraction/deletion, exact retry/conflicting intent, topic subscription changes, blocked-pool rotation, cancel/fire race, explicit DST offsets and restore fencing. Final test-only change scoped the failure trigger to its occurrence and was re-run with -race.",
+      "provenance": [
+        {
+          "locator": "core/agent_schedules_test.go",
+          "method": "Read source and collected successful command exits",
+          "observed_at": "2026-09-16T08:26:56.731874+00:00",
+          "content_sha256": "356786311e02fb8cc4a538387536b81fe1e130bf440d4a56d810d25cd2792312"
+        },
+        {
+          "locator": "core/agent_schedule_review_test.go",
+          "method": "Read source and collected successful command exits",
+          "observed_at": "2026-09-16T08:26:56.732003+00:00",
+          "content_sha256": "4d38350bcb6794636dde93aae8e036927735918355773089a1c45775f79583c6"
+        },
+        {
+          "locator": "scripts/check_agent_events.py",
+          "method": "Read source and collected successful command exits",
+          "observed_at": "2026-09-16T08:26:56.732152+00:00",
+          "content_sha256": "330333d7519f01f1e601c16a8dd2152539e6785472b5074ef5439eb1db4d1a85"
+        },
+        {
+          "locator": "scripts/test-local-lifecycle.sh",
+          "method": "Read source and collected successful command exits",
+          "observed_at": "2026-09-16T08:26:56.732208+00:00",
+          "content_sha256": "247b30814e8eef6a65199af0fa50751d7b7ff986f5fd413a9743a0afad1f4ebb"
+        },
+        {
+          "locator": "/tmp/cairn-schedule-integration.log",
+          "method": "Read source and collected successful command exits",
+          "observed_at": "2026-09-16T08:26:56.732248+00:00",
+          "content_sha256": "efd16d705f9d46685fee866a2973558c0d5c01681bbf1f984004f8713c98b446"
+        },
+        {
+          "locator": "/tmp/cairn-schedule-check-final.log",
+          "method": "Read source and collected successful command exits",
+          "observed_at": "2026-09-16T08:26:56.732281+00:00",
+          "content_sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+        },
+        {
+          "locator": "/tmp/cairn-schedule-lifecycle.log",
+          "method": "Read source and collected successful command exits",
+          "observed_at": "2026-09-16T08:26:56.732317+00:00",
+          "content_sha256": "db177d5d59b985e2a0dfc4dec3dfd4f87743277d4c0743ed88f80dedfa33020d"
+        },
+        {
+          "locator": "/tmp/cairn-schedule-final-focused.log",
+          "method": "Read source and collected successful command exits",
+          "observed_at": "2026-09-16T08:26:56.732424+00:00",
+          "content_sha256": "76c7d087d41bf8cc4d205a096953127f161ae29a02c8f9f4c526bc72d0828410"
+        }
+      ],
+      "satisfies": [
+        "reversibility and verification",
+        "behavior tests",
+        "cleanup and failure tests",
+        "tests, characterization, probes, or explicit residual risk",
+        "checkpoint verification"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "occurrence-atomicity",
+      "type": "observation",
+      "text": "Concurrent ticks serialize occurrence publication and terminal state; injected terminal-update failure rolls back the event and delivery. Exact creation retries preserve the occurrence UUID.",
+      "evidence": [
+        "cairn-schedule-atomicity",
+        "cairn-schedule-tests"
+      ]
+    },
+    {
+      "id": "explicit-schedule-outcomes",
+      "type": "decision",
+      "text": "Use one-shot intent with explicit grace, retained terminal outcomes, same-operator attribution and restore fencing. Pool pressure preserves pending intent within grace; unexpected errors propagate.",
+      "owner": "repository owner via delegated implementation",
+      "authority": "Accepted coordination v1 goal",
+      "depends_on": [
+        "occurrence-atomicity"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Commit scheduled event, fanout and occurrence outcome in one PostgreSQL transaction",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-schedule-contract",
+        "cairn-schedule-atomicity",
+        "cairn-schedule-tests"
+      ]
+    },
+    {
+      "option": "Publish in one transaction then mark the schedule fired in another",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-schedule-contract",
+        "cairn-schedule-atomicity"
+      ]
+    },
+    {
+      "option": "Keep shell timers without retained occurrence identity",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-schedule-contract"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/event-scheduling.md",
+    "core/agent_schedules.go",
+    "core/agent_events.go",
+    "core/restore_fence.go",
+    "core/schema/045_agent_schedules.sql",
+    "scripts/check_agent_events.py"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Disposable full integration with race detector and static checks",
+    "Real scheduler readiness, restart and stable UUID delivery",
+    "Populated schedule backup/restore comparison and explicit restore fencing"
+  ],
+  "reopening_conditions": [
+    "Another schedule/event creator changes the lock order",
+    "Recurring calendars or hosted scheduling need a concrete caller contract",
+    "Measured queue contention exceeds bounded rotation requirements"
+  ],
+  "residual_risk": [
+    "Packet pkt-aed0617c30d93fc8; SHA256 aed0617c30d93fc879ec81f0fedd7f45046a72624d8c701fa06c2dd9ac800c47; doctrine doctrine-f6bbb5196a3f8bf9; release d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "Selected implementation-atomicity-scope and implementation-explicit-failure-policy; all material obligations satisfied for one-shot publication.",
+    "No throughput, general usefulness, external exactly-once effects, recurrence or full-v1 acceptance claim. Admission TTL, task deadlines and running cancellation remain separate work.",
+    "Restore may have lost later effects; pending occurrences are skipped for review. Same-operator local scheduling does not add credentials or impersonate hosted agents.",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: go-consumer-owned-interfaces / Go method-set and import-direction compatibility",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: go-consumer-owned-interfaces / current consumer call sets and ownership",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: go-consumer-owned-interfaces / current consumer inventory",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: go-consumer-owned-interfaces / observed substitution, volatility, or cross-boundary pressure",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: go-explicit-contextual-errors / callee contract",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: go-explicit-contextual-errors / caller recovery behavior",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: go-explicit-contextual-errors / current Go version and repository convention",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: go-interface-nil-semantics / caller nil checks and method use",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: go-interface-nil-semantics / documented absence semantics",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: go-interface-nil-semantics / dynamic type and dynamic value at the return",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: implementation-placement-by-ownership / accepted dependency direction",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: implementation-placement-by-ownership / behavior contract and ownership evidence",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: implementation-placement-by-ownership / recurring change evidence when available",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: implementation-placement-by-ownership / relevant invariants",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: implementation-repository-language-conformance / CI and build matrix",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: implementation-repository-language-conformance / adjacent code",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: implementation-repository-language-conformance / formatter and static-tool configuration",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: implementation-repository-language-conformance / repository version and dependency contract",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-evidence-before-intervention / a bounded decision question",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-evidence-before-intervention / alternatives including no change where viable",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-evidence-before-intervention / claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-evidence-before-intervention / evidence connecting the proposed action to the condition",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-local-reasoning / knowledge and navigation required by callers/maintainers",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-local-reasoning / representative change or use scenario",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-local-reasoning / representative change scenario",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-no-change-option / actual current cost/risk or absence within a stated interval",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-no-change-option / expected future change from accepted plans",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-no-change-option / intervention cost and uncertainty",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-no-change-option / latent security, safety, data, durability, and compatibility check",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-no-change-option / proc-decide-leave-code-alone",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-preserve-behavior-by-default / preservation matrix and consumers",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-preserve-behavior-by-default / proc-establish-preservation-boundaries",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-separate-semantic-structural-change / change-type classification",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-separate-semantic-structural-change / per-edit change classification",
+    "Nonmaterial to this bounded transaction/failure contract; no wider interface, performance or refactoring recommendation: universal-separate-semantic-structural-change / preservation boundary and semantic authority"
+  ]
+}

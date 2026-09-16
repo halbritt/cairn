@@ -45,8 +45,9 @@ Codex, Claude Code, Agy, OpenCode and Hermes workers for request events, with on
 lease renewal and systemd process cleanup. See the
 [event plan](docs/plans/agent-event-fabric.md), [wakeup plan](docs/plans/agent-wakeups.md),
 and [coordination v1 plan](docs/plans/agent-coordination-v1.md). Seven worker slots
-cover both Codex and both Claude accounts; live session discovery and routing by
-project/harness metadata are planned.
+cover both Codex and both Claude accounts. Live session discovery and exact
+project/harness routing are implemented; delivery uses native turn boundaries.
+[One-shot scheduling](docs/event-scheduling.md) adds durable future publication.
 The [changelog](CHANGELOG.md) summarizes development changes and upgrade notes;
 the [implementation status](docs/implementation-status.md) records the current
 installation and complete history.

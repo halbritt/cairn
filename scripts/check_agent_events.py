@@ -1,9 +1,11 @@
 """Real CLI/API restart probe, only against the integration suite's disposable DB."""
 import hashlib
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
 import secrets
+import select
 import subprocess
 import sys
 import time
@@ -273,6 +275,62 @@ def check(binary, directory):
         resumed_watch = subprocess.run(watch_args + ["--once"], env=env, capture_output=True,
                                       text=True, timeout=10, check=True)
         assert json.loads(resumed_watch.stdout)["deliveries"] == []
+        # A stopped scheduler retains intent. Restart catches up once within
+        # grace, and a second restart cannot create another event/arrival.
+        due = datetime.now(timezone.utc) + timedelta(seconds=2)
+        scheduling = dict(request_id=str(uuid.uuid4()), not_before=due.isoformat(), grace_seconds=30,
+                          publication=dict(repo=repo, kind="notice", ref=event["ref"],
+                                           destination=dict(type="agent", name="agent/carol")))
+        scheduled = operator("event-schedule", scheduling)
+        assert operator("event-schedule", scheduling) == scheduled
+        assert operator("schedule-tick", dict(repo=repo))["occurrences"] == []
+        scheduler_args = [binary, "schedule-serve", "--repo", repo]
+        scheduler = subprocess.Popen(scheduler_args, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            assert select.select([scheduler.stderr], [], [], 5)[0], "scheduler readiness timed out"
+            assert scheduler.stderr.readline().strip() == "scheduler ready"
+        finally:
+            scheduler.terminate()
+            scheduler.communicate(timeout=5)
+        assert scheduler.returncode == 0
+        time.sleep(2.1)
+        scheduler = subprocess.Popen(scheduler_args, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            end = time.monotonic() + 10
+            while time.monotonic() < end:
+                current = operator("schedule-list", dict(repo=repo, occurrence_id=scheduled["occurrence_id"]))["occurrences"][0]
+                if current["state"] == "fired":
+                    break
+                assert scheduler.poll() is None
+                time.sleep(0.05)
+            else:
+                raise AssertionError("scheduler did not fire due occurrence")
+        finally:
+            scheduler.terminate()
+            scheduler.communicate(timeout=5)
+        assert scheduler.returncode == 0
+        assert current["event_id"] == scheduled["occurrence_id"]
+        delivered = call("carol", "inbox")["delivery"]
+        assert delivered["event"]["event_id"] == scheduled["occurrence_id"]
+        assert delivered["event"]["from"].startswith("local-uid:")
+        call("carol", "ack", "--request-id", str(uuid.uuid4()), "--lease", delivered["lease_id"], delivered["delivery_id"])
+        assert operator("schedule-tick", dict(repo=repo))["occurrences"] == []
+        assert call("carol", "inbox")["delivery"] is None
+        # Keep populated pending, skipped and cancelled states for backup checks.
+        scheduling.update(request_id=str(uuid.uuid4()), not_before=(due + timedelta(hours=1)).isoformat())
+        pending = operator("event-schedule", scheduling)
+        scheduling["request_id"] = str(uuid.uuid4())
+        cancelled = operator("event-schedule", scheduling)
+        cancellation = dict(request_id=str(uuid.uuid4()), repo=repo, occurrence_id=cancelled["occurrence_id"])
+        saved = operator("schedule-cancel", cancellation)
+        assert saved["state"] == "cancelled" and operator("schedule-cancel", cancellation) == saved
+        scheduling.update(request_id=str(uuid.uuid4()), not_before=(due - timedelta(hours=1)).isoformat())
+        skipped = operator("event-schedule", scheduling)
+        missed = operator("schedule-tick", dict(repo=repo))["occurrences"]
+        assert len(missed) == 1 and missed[0]["occurrence_id"] == skipped["occurrence_id"] and missed[0]["code"] == "misfire"
+        assert operator("schedule-list", dict(repo=repo, state="pending"))["occurrences"][0]["occurrence_id"] == pending["occurrence_id"]
+        operator("schedule-cancel", dict(request_id=str(uuid.uuid4()), repo=repo, occurrence_id=scheduled["occurrence_id"]), "VERSION_CONFLICT")
+        print("Scheduling: durable one-shot restart, exact occurrence identity, misfire audit and pending cancellation passed")
         print("Inbox watch: real CLI/API restart, cursor checkpoint, resume and read-only delivery passed")
         print("Agent resolution: exact aliases, ambiguity, pinned publication, retry and stale refusal passed")
         print("Agent sessions: stable identity, shared-profile inbox separation, completion and API restart passed")

@@ -53,6 +53,7 @@ Everyday commands:
 
 JSON commands (read one request from stdin):
   coordination-review event-reissue (local operator recovery; see docs/event-recovery.md)
+  event-schedule schedule-list schedule-cancel schedule-tick schedule-serve (local operator; see docs/event-scheduling.md)
   create edit revise append replace delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
   promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal proposal-history
   supersession RECORD_UUID
@@ -153,6 +154,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return nil, err
 	}
 	defer store.Close()
+	if args[0] == "schedule-serve" {
+		return serveSchedules(ctx, store, args[1:], os.Stderr)
+	}
 	if args[0] == "run" {
 		return runTask(ctx, store, args[1:])
 	}
@@ -384,6 +388,14 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return coordinationReview(ctx, store, input)
 	case "event-reissue":
 		return invoke(ctx, input, store.ReissueEvent)
+	case "event-schedule":
+		return invoke(ctx, input, store.ScheduleEvent)
+	case "schedule-list":
+		return invoke(ctx, input, store.Schedules)
+	case "schedule-cancel":
+		return invoke(ctx, input, store.CancelSchedule)
+	case "schedule-tick":
+		return invoke(ctx, input, store.TickSchedules)
 	case "checkpoint":
 		return invoke(ctx, input, store.Checkpoint)
 	case "verify-checkpoint":

@@ -5,6 +5,11 @@ Expiring index handles does not prevent that receipt from claiming a launch.
 `fence-restore` invalidates delivery capabilities from the restored database while
 preserving receipts and their historical semantic seals.
 
+Migration 045 also fences pending [one-shot schedules](event-scheduling.md):
+they become `skipped` with code `restore_fenced`. A pending row in a backup may
+have fired after that backup. Its retained occurrence ID and publication metadata
+remain available for review; restarting the scheduler does not replay it.
+
 Use [restore sessions](restore-admission.md) for the complete implemented
 reconciliation workflow. `begin-restore` includes a fresh fence and blocks
 ordinary transactions until explicit verified resume. The standalone command

@@ -188,105 +188,128 @@ func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destin
 	return e, err
 }
 
-func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest Destination) (AgentEvent, error) {
+func (s *Store) normalizePublication(req PublishEventRequest, dest Destination) (PublishEventRequest, error) {
 	var err error
 	if err = validEventDestination(dest); err != nil {
-		return AgentEvent{}, err
+		return req, err
 	}
 	if req.Repo, err = s.eventScope(req.Repo, ""); err != nil {
-		return AgentEvent{}, err
+		return req, err
 	}
 	if !eventName.MatchString(req.Kind) || validID(req.Ref.RecordID) != nil || req.Ref.Version < 1 || req.Ref.Version > 2147483647 {
-		return AgentEvent{}, failure("INVALID_REQUEST", "valid kind and exact record version required")
+		return req, failure("INVALID_REQUEST", "valid kind and exact record version required")
 	}
 	if req.Destination.Type != "agent" && req.Destination.Type != "topic" && req.Destination.Type != "pool" {
-		return AgentEvent{}, failure("INVALID_REQUEST", "destination must be agent, topic or pool")
+		return req, failure("INVALID_REQUEST", "destination must be agent, topic or pool")
 	}
 	if strings.TrimSpace(req.Destination.Name) == "" || len(req.Destination.Name) > 256 || (req.Destination.Type == "topic" && !eventName.MatchString(req.Destination.Name)) {
-		return AgentEvent{}, failure("INVALID_REQUEST", "invalid destination name")
+		return req, failure("INVALID_REQUEST", "invalid destination name")
 	}
 	if req.Destination.Type == "pool" {
 		if req.Kind != "request" || req.Pool == nil || !eventName.MatchString(req.Destination.Name) {
-			return AgentEvent{}, failure("INVALID_REQUEST", "pool destinations require request kind and selectors")
+			return req, failure("INVALID_REQUEST", "pool destinations require request kind and selectors")
 		}
 		if err := req.Pool.validate(); err != nil {
-			return AgentEvent{}, err
+			return req, err
 		}
 	} else if req.Pool != nil {
-		return AgentEvent{}, failure("INVALID_REQUEST", "pool selectors require a pool destination")
+		return req, failure("INVALID_REQUEST", "pool selectors require a pool destination")
 	}
 	for _, id := range []string{req.CausationID, req.CorrelationID} {
 		if id != "" && validID(id) != nil {
-			return AgentEvent{}, failure("INVALID_REQUEST", "causation and correlation must be UUIDs")
+			return req, failure("INVALID_REQUEST", "causation and correlation must be UUIDs")
 		}
 	}
 	if req.Resolution != nil {
 		if err := req.Resolution.validate(); err != nil {
-			return AgentEvent{}, err
+			return req, err
 		}
 		if req.Resolution.Repo != req.Repo || req.Destination.Type != "agent" || req.Destination.Name != "agent/"+req.Resolution.AgentID {
-			return AgentEvent{}, failure("INVALID_REQUEST", "resolution must match the publication collection and recipient")
+			return req, failure("INVALID_REQUEST", "resolution must match the publication collection and recipient")
 		}
 	}
+	return req, nil
+}
+
+func (s *Store) eventSource(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination) (string, error) {
+	var sensitivity string
+	err := tx.QueryRow(ctx, `SELECT m.sensitivity FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3 AND m.lifecycle='active' AND v.payload_deleted_by IS NULL AND (m.sensitivity='shareable' OR $4) FOR SHARE OF m`, req.Ref.RecordID, req.Ref.Version, req.Repo, dest.AllowLocal).Scan(&sensitivity)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", failure("NOT_FOUND", "source version unavailable")
+	}
+	if err != nil {
+		return "", err
+	}
+	if req.Resolution != nil {
+		metadataDest := dest
+		// A shareable event must not retain a local-only presence reference.
+		if sensitivity == "shareable" {
+			metadataDest = Destination{Name: "hosted"}
+		}
+		if err := revalidateAgentResolution(ctx, tx, *req.Resolution, metadataDest); err != nil {
+			return "", err
+		}
+	}
+	if req.CausationID != "" {
+		parent, err := s.readEvent(ctx, tx, req.CausationID, dest)
+		if err != nil {
+			return "", err
+		}
+		if parent.Repo != req.Repo {
+			return "", failure("INVALID_REQUEST", "causal parent must be in the same collection")
+		}
+		var parentSensitivity string
+		if err = tx.QueryRow(ctx, `SELECT sensitivity FROM cairn.agent_event WHERE event_id=$1`, parent.EventID).Scan(&parentSensitivity); err != nil {
+			return "", err
+		}
+		if sensitivity == "shareable" && parentSensitivity == "local" {
+			return "", failure("DESTINATION_PROHIBITED", "a shareable event cannot disclose a local causal parent")
+		}
+	}
+	return sensitivity, nil
+}
+
+// publishEventTx keeps source checks, pool admission, publication and fanout in the caller transaction.
+func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string) (AgentEvent, error) {
+	if err := lock(ctx, tx, "agent-events:"+req.Repo); err != nil {
+		return AgentEvent{}, err
+	}
+	sensitivity, err := s.eventSource(ctx, tx, req, dest)
+	if err != nil {
+		return AgentEvent{}, err
+	}
+	if req.Destination.Type == "pool" {
+		if err := s.admitPool(ctx, tx, req, sensitivity); err != nil {
+			return AgentEvent{}, err
+		}
+	}
+	if id == "" {
+		id = uuid.NewString()
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12)`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool)
+	if err != nil {
+		return AgentEvent{}, err
+	}
+	if req.Destination.Type == "agent" {
+		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) VALUES($1,$2,$3)`, uuid.NewString(), id, req.Destination.Name)
+	} else if req.Destination.Type == "pool" {
+		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_pool_request(event_id) VALUES($1)`, id)
+	} else {
+		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) SELECT gen_random_uuid(),$1,consumer FROM cairn.agent_subscription WHERE repo=$2 AND topic=$3 AND active`, id, req.Repo, req.Destination.Name)
+	}
+	if err != nil {
+		return AgentEvent{}, err
+	}
+	return s.readEvent(ctx, tx, id, dest)
+}
+
+func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest Destination) (AgentEvent, error) {
+	var err error
+	if req, err = s.normalizePublication(req, dest); err != nil {
+		return AgentEvent{}, err
+	}
 	return mutate(ctx, s, "event-publish", req.RequestID, req, func(tx pgx.Tx) (AgentEvent, error) {
-		if err := lock(ctx, tx, "agent-events:"+req.Repo); err != nil {
-			return AgentEvent{}, err
-		}
-		var sensitivity string
-		err := tx.QueryRow(ctx, `SELECT m.sensitivity FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3 AND m.lifecycle='active' AND v.payload_deleted_by IS NULL AND (m.sensitivity='shareable' OR $4) FOR SHARE OF m`, req.Ref.RecordID, req.Ref.Version, req.Repo, dest.AllowLocal).Scan(&sensitivity)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return AgentEvent{}, failure("NOT_FOUND", "source version unavailable")
-		}
-		if err != nil {
-			return AgentEvent{}, err
-		}
-		if req.Resolution != nil {
-			metadataDest := dest
-			// A shareable event must not retain a local-only presence reference.
-			if sensitivity == "shareable" {
-				metadataDest = Destination{Name: "hosted"}
-			}
-			if err := revalidateAgentResolution(ctx, tx, *req.Resolution, metadataDest); err != nil {
-				return AgentEvent{}, err
-			}
-		}
-		if req.CausationID != "" {
-			parent, err := s.readEvent(ctx, tx, req.CausationID, dest)
-			if err != nil {
-				return AgentEvent{}, err
-			}
-			if parent.Repo != req.Repo {
-				return AgentEvent{}, failure("INVALID_REQUEST", "causal parent must be in the same collection")
-			}
-			var parentSensitivity string
-			if err = tx.QueryRow(ctx, `SELECT sensitivity FROM cairn.agent_event WHERE event_id=$1`, parent.EventID).Scan(&parentSensitivity); err != nil {
-				return AgentEvent{}, err
-			}
-			if sensitivity == "shareable" && parentSensitivity == "local" {
-				return AgentEvent{}, failure("DESTINATION_PROHIBITED", "a shareable event cannot disclose a local causal parent")
-			}
-		}
-		if req.Destination.Type == "pool" {
-			if err := s.admitPool(ctx, tx, req, sensitivity); err != nil {
-				return AgentEvent{}, err
-			}
-		}
-		id := uuid.NewString()
-		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12)`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool)
-		if err != nil {
-			return AgentEvent{}, err
-		}
-		if req.Destination.Type == "agent" {
-			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) VALUES($1,$2,$3)`, uuid.NewString(), id, req.Destination.Name)
-		} else if req.Destination.Type == "pool" {
-			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_pool_request(event_id) VALUES($1)`, id)
-		} else {
-			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) SELECT gen_random_uuid(),$1,consumer FROM cairn.agent_subscription WHERE repo=$2 AND topic=$3 AND active`, id, req.Repo, req.Destination.Name)
-		}
-		if err != nil {
-			return AgentEvent{}, err
-		}
-		return s.readEvent(ctx, tx, id, dest)
+		return s.publishEventTx(ctx, tx, req, dest, "")
 	}, func(tx pgx.Tx) error {
 		// Cached publication responses must not bypass a profile's current destination.
 		var visible bool

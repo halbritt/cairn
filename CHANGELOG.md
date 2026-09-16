@@ -16,6 +16,13 @@ and semantic worker are unchanged. Check an installation with `cairn version`; u
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
 See [build identity](docs/build-identity.md) for unstamped builds and MCP processes.
 
+## 2026-09-16
+
+- **Schedule one-shot publication.** Migration 045 retains due times, stable
+  occurrence IDs, misfires and cancellation of unpublished intent. Concurrent
+  scheduler ticks commit one event and its fanout together; restore fences
+  pending intent for review. See [the contract](docs/event-scheduling.md).
+
 ## 2026-09-15
 
 - **Separate launch slots from accounts.** Seven ordinal wakeup bindings cover

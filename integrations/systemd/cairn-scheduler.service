@@ -1,0 +1,18 @@
+[Unit]
+Description=Cairn one-shot event scheduler
+Requires=cairn-store.service
+After=cairn-store.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/cairn schedule-serve --repo %h/git/cairn
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target
