@@ -81,7 +81,7 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 		detail = "Host supervisor only: claim one request and establish a durable hold. The request UUID identifies the attempt. An empty result has no durable effect."
 		example = `{"request_id":"NEW_UUID"}`
 	case "wake-change":
-		detail = "Host supervisor only: start, enter, link, report or finish an attempt. finish requires host confirmation that its entire unit has stopped. Reports do not attest task success."
+		detail = "Host supervisor only: start, enter, link, session, report or finish an attempt. session links a running attempt to its native {agent_id, execution_id}; it preserves the slot delivery owner. finish requires host confirmation that its entire unit has stopped. Reports do not attest task success."
 		example = `{"request_id":"NEW_UUID","attempt_id":"ATTEMPT_UUID","operation":"finish","reason":"operator_confirmed_stopped"}`
 	case "search":
 		f, _ := newAgentSearchFlags()

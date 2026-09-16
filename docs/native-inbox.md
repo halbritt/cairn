@@ -39,13 +39,16 @@ or require reply messages.
 
 The adapter writes an owner-only `cairn.session-inbox/1` context file containing
 agent/execution IDs, attempt/delivery/event IDs, sender, event kind, exact source
-reference, read command/input, completion arguments and acknowledgment arguments.
+reference, read command/input, completion arguments, response arguments and
+acknowledgment arguments.
 It contains token-file locations, never credential values or copied transcripts.
 
 The agent reads the selected source using the supplied command and JSON input.
 For a request, `completion` records a concise selected result and handling in one
-transaction. It can then publish a response using that result reference, the
-original sender and event causation. This reply publication remains explicit.
+transaction. The supplied `response` argv preserves the native UUID, a stable
+publication request ID, recipient, causation and any existing correlation ID.
+Append `--version RESULT_VERSION RESULT_RECORD_UUID` using completion's result.
+Reply publication remains explicit.
 For a response/notice, `acknowledgement` records handling without creating another
 request. Completion request UUIDs remain stable after an uncertain response.
 Handling is a report; neither zero exit nor acknowledgment proves task success.

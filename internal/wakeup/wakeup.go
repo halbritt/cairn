@@ -406,7 +406,7 @@ END REQUEST SOURCE`, w.Delivery.Event.EventID, w.Delivery.Event.Ref.RecordID, w.
 	}
 	defer stderr.Close()
 	scope := core.Scope{Repo: c.Repo, TaskID: "wake:" + w.Delivery.Event.EventID, RunID: w.ID}
-	command := append([]string{"/usr/bin/env", "CAIRN_WAKE_CONTEXT=" + contextPath}, c.Command...)
+	command := append([]string{"/usr/bin/env", "CAIRN_WAKE_CONTEXT=" + contextPath, "CAIRN_LIFECYCLE_CHILD=1"}, c.Command...)
 	return runner.Run(ctx, linkedRunner{observer, agent, w.ID}, runner.Request{
 		Compile:     core.CompileRequest{RequestID: w.ID, Scope: scope, Query: "Cairn automated agent request", Purpose: "context", AvailableTokens: 8000},
 		Destination: core.Destination{Name: "hosted"}, Command: command, Directory: c.Directory, Carrier: "argv", Prompt: prompt, Timeout: time.Duration(c.TimeoutSeconds) * time.Second,

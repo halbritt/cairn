@@ -27,6 +27,27 @@ instructions. `CAIRN_WAKE_CONTEXT` names a mode-0600 JSON file with schema
 workspace, source, event/delivery/lease UUIDs, deadline and an exact completion
 argument array. The file contains credential paths, never credential values.
 The same array generates the human-readable completion instruction. It uses its ordinary agent profile to complete the delivery.
+Migration 040 adds the launched native conversation's association to the attempt.
+The context supplies an explicit `attempt_id`, `native_registration`, socket and
+slot token-file path. Its existing top-level `execution_id` remains the attempt
+UUID for compatibility. After a native hook runs, `session` contains the actual
+`agent_id` and native `execution_id`; `native_session_id` and `session_inbox`
+identify the continuing conversation. The hook writes these fields atomically.
+Before that hook, the context does not claim a native identity.
+The launcher sets `CAIRN_LIFECYCLE_CHILD=1` to suppress duplicate lifecycle
+memory capture; native coordination recognizes the explicit wake context and
+still registers the conversation.
+
+Native registration uses the normal account's coordination profile and binding,
+so resuming the conversation interactively retains its UUID. The slot reports
+the link through its own existing profile. No delivery is transferred and no
+new credential is issued. The link is a trusted-host report, not process
+attestation. Only a running attempt with a live lease can acquire a current,
+visible `fresh-worker` session in the same collection. One active wake owns a
+session; resume and second inbox consumption remain blocked until reconciliation.
+After confirmed cgroup termination, `finish` ends only the linked execution's
+presence. Restore retains this hold and a later old finish cannot stop a resumed
+execution. Missing native hooks leave the session link absent and observable.
 Exit zero never acknowledges work. Runner receipts record process observations;
 reported handling and result notes remain separate from task acceptance.
 
@@ -94,7 +115,7 @@ Fresh worker command shapes (model and profile choices belong to the binding):
 | Codex | `codex exec --json --ephemeral --sandbox danger-full-access -c 'approval_policy="never"' -m MODEL --` |
 | Claude Code | `claude --print --verbose --output-format stream-json --permission-mode acceptEdits --permission-prompts none --allowedTools Bash --model MODEL --` |
 | Agy | `agy --model MODEL --output-format stream-json --print-timeout 10m --dangerously-skip-permissions --print` |
-| OpenCode | `opencode run --pure --auto --format json -m PROVIDER/MODEL` |
+| OpenCode | `opencode run --auto --format json -m PROVIDER/MODEL` |
 | Hermes | `hermes --provider PROVIDER --model MODEL -z` |
 
 These unattended launch permissions apply only to the configured worker
@@ -110,10 +131,17 @@ permission denial, so explicit Cairn completion remains the handling criterion.
 
 The worker appends the prompt as one argument. The profile's destination must be
 hosted; the observation token must have the observer role in the same collection.
+Wake claim and launch transitions reject a local-destination profile because
+the current supervisor uses the hosted runner destination. Local profiles can
+still inspect and reconcile retained attempts; local-model wake execution needs
+its own explicit runner contract before it can accept local-only payloads.
 The asserted principal is checked through the authenticated API, never used as
 a caller-selected identity. One host lock covers the collection and principal.
 Each profile has its own concurrency limit; bindings that share a workspace must
 coordinate edits through their task instructions or use separate workspaces.
+OpenCode's `--pure` disables external plugins, including native coordination;
+omit it when native registration is required. The other native hooks/plugins
+also need to be installed in the selected account configuration.
 
 ```sh
 cairn wake check --config /absolute/binding.json
@@ -174,8 +202,9 @@ operations, with `--help` for examples:
   inspection, up to 100 results, with an exclusive UUID cursor. UUID order is
   pagination order, not chronological order; use `created_at` for timing.
 - `wake-change`: `{request_id, attempt_id, operation, receipt_id?, process_state?,
-  reason?}`. Operations are `start` (record launch intent), `enter` (one worker),
-  `link` (runner receipt), `report` (process label), and `finish` (host confirmed
+  reason?, session?}`. Operations are `start` (record launch intent), `enter` (one worker),
+  `link` (runner receipt), `session` (the native `{agent_id, execution_id}`),
+  `report` (process label), and `finish` (host confirmed
   unit stopped). Identical mutation retries use the same request UUID. A distinct
   `enter` request cannot launch an already-entered attempt again.
 

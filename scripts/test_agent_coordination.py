@@ -15,6 +15,23 @@ spec.loader.exec_module(coordination)
 
 
 class CoordinationNormalization(unittest.TestCase):
+    def test_malformed_wake_context_is_reported_without_traceback_or_registration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / 'config.json'
+            config.write_text(json.dumps(dict(cairn='/absent/cairn', socket='/absent/api.sock',
+                token_file='/absent/token', repo='fixture', harness='codex', binding='codex', state_dir=str(root/'state'))))
+            wake = root / 'wake.json'
+            for body in ('[]', 'null', '{', 'x' * 32769):
+                wake.write_text(body)
+                result = subprocess.run([sys.executable, str(ROOT/'integrations/lifecycle/coordination.py'),
+                    'hook', '--config', str(config)], input='{}', text=True, capture_output=True, timeout=5,
+                    env=dict(os.environ, CAIRN_WAKE_CONTEXT=str(wake), CAIRN_COORDINATION_DISABLED='0'))
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertIn('Cairn coordination:', result.stderr)
+                self.assertFalse((root/'state').exists())
+
     def test_native_ids_models_and_no_prompt_capture(self):
         with tempfile.TemporaryDirectory() as directory:
             for harness, event in (

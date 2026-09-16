@@ -6,6 +6,7 @@ calls; the database, API identities and requested result remain disposable.
 """
 import argparse
 import hashlib
+import importlib.util
 import http.server
 import json
 import os
@@ -100,6 +101,7 @@ def check(binary, root, opencode=None, hermes=None, bindings=None):
     worker.write_text('''import json,os,re,shlex,stat,subprocess,sys,time
 from pathlib import Path
 prompt=sys.argv[-1]
+assert os.environ.get('CAIRN_LIFECYCLE_CHILD')=='1', 'wake must suppress duplicate lifecycle memory capture'
 context_path=Path(os.environ["CAIRN_WAKE_CONTEXT"])
 assert stat.S_IMODE(context_path.stat().st_mode)==0o600
 wake=json.loads(context_path.read_text())
@@ -170,7 +172,8 @@ subprocess.run(wake["completion"],input="Selected fixture result",text=True,chec
         for name, native in (("opencode", opencode), ("hermes", hermes)):
             if not native:
                 continue
-            with NativeFixture(root / name, native, name) as fixture:
+            with NativeFixture(root / name, native, name, dict(cairn=binary, socket=config['socket'],
+                token_file=config['agent_token'], repo=repo, harness=name, binding=name+'-native', process_names=[])) as fixture:
                 event = publish("NATIVE-COMPLETE-FIXTURE")
                 start(fixture.command)
                 wait_for(lambda: status(event)["state"] in ("handled", "failed"), 90)
@@ -178,7 +181,12 @@ subprocess.run(wake["completion"],input="Selected fixture result",text=True,chec
                 wait_for(lambda: not active())
                 stop()
                 assert fixture.completed_tool, (name, fixture.observed)
-                report.append(name + " native tool execution and atomic result completion")
+                attempt = next(w for w in call('wake-attempts', {})['attempts'] if w['delivery']['event']['event_id'] == event['event_id'])
+                assert attempt.get('session'), (name, 'native wake session missing', root)
+                native_agent = call('agent-directory', dict(agent_id=attempt['session']['agent_id'], include_offline=True))['agents'][0]
+                assert native_agent['metadata']['harness'] == name and native_agent['stopped']
+                assert native_agent['native_session_id']
+                report.append(name + " native session association, tool execution and atomic result completion")
         for binding in bindings or []:
             name = binding["name"]
             config["timeout_seconds"] = 120
@@ -207,7 +215,7 @@ subprocess.run(wake["completion"],input="Selected fixture result",text=True,chec
 
 
 class NativeFixture:
-    def __init__(self, root, binary, kind):
+    def __init__(self, root, binary, kind, coordination):
         root.mkdir()
         self.observed = []
         self.completed_tool = False
@@ -231,7 +239,9 @@ class NativeFixture:
                 tool_calls = None
                 # Only issue the tool once; later model turns receive its result.
                 if not fixture.completed_tool and tools:
-                    messages = "\n".join(m.get("content", "") for m in request.get("messages", []) if isinstance(m.get("content"), str))
+                    messages = "\n".join(m.get('content', '') if isinstance(m.get('content'), str) else
+                        '\n'.join(p.get('text', '') for p in m.get('content', []) if isinstance(p, dict))
+                        for m in request.get('messages', []))
                     match = re.search(r"^('.* complete .*) < RESULT_FILE$", messages, re.M)
                     if match:
                         tool = "bash" if kind == "opencode" else "terminal"
@@ -279,7 +289,7 @@ class NativeFixture:
             path = root / "opencode.json"
             path.write_text(json.dumps(config))
             self.command = env + ["OPENCODE_CONFIG=" + str(path), "OPENCODE_DISABLE_AUTOUPDATE=true", "OPENCODE_DISABLE_MODELS_FETCH=true",
-                                  binary, "run", "--pure", "--format", "json", "-m", "fixture/fixture"]
+                                  binary, "run", "--format", "json", "-m", "fixture/fixture"]
         else:
             home = root / "hermes"
             home.mkdir()
@@ -287,6 +297,24 @@ class NativeFixture:
                                                             agent=dict(max_turns=5), toolsets=["terminal"])))
             self.command = env + ["HERMES_HOME=" + str(home), "OPENAI_BASE_URL=" + endpoint, "OPENAI_API_KEY=synthetic",
                                   binary, "--ignore-rules", "--provider", "custom", "--model", "fixture", "-z"]
+        spec = importlib.util.spec_from_file_location('native_wake_installer', Path(__file__).with_name('install-agent-coordination.py'))
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        settings = root / 'config/opencode' if kind == 'opencode' else home
+        installer.install(root / 'engine', settings, coordination)
+        # Isolate native accounts/provider settings, preserving only the wake
+        # context supplied after the supervisor creates its actual attempt.
+        clean_env = {}
+        argv = list(self.command[2:])
+        while argv and '=' in argv[0]:
+            key, value = argv.pop(0).split('=', 1)
+            clean_env[key] = value
+        wrapper = root / 'launch.py'
+        wrapper.write_text('import os,sys\n' + 'env=' + repr(clean_env) + '\n' +
+            "env['CAIRN_WAKE_CONTEXT']=os.environ['CAIRN_WAKE_CONTEXT']\n" +
+            "env['CAIRN_LIFECYCLE_CHILD']='1'\n" + 'argv=' + repr(argv) + " + [sys.argv[-1]]\n" +
+            'os.execve(argv[0],argv,env)\n')
+        self.command = ['/usr/bin/python3', str(wrapper)]
 
     def __enter__(self):
         return self

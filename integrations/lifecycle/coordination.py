@@ -146,7 +146,49 @@ def registration(config, observation, metadata=None):
                     harness=config["harness"], model=config.get("model", ""),
                     observed_model=observation["observed_model"], project=observation["project"],
                     workspace=observation["workspace"], state="idle" if observation["phase"] == "start" else observation["phase"],
-                    delivery_mode="existing-session"))
+                    delivery_mode="fresh-worker" if config.get('_wake') else "existing-session"))
+
+
+def wake_context(config):
+    path = os.environ.get('CAIRN_WAKE_CONTEXT')
+    if not path:
+        return None
+    with Path(path).open('rb') as file:
+        raw = file.read(32769)
+    if len(raw) > 32768:
+        raise CoordinationError('INVALID_HOST', 'wake context is oversized')
+    wake = json.loads(raw)
+    if not isinstance(wake, dict):
+        raise CoordinationError('INVALID_HOST', 'wake context must be a JSON object')
+    if wake.get('schema') != 'cairn.wake-context/1' or not wake.get('native_registration'):
+        return None  # An older supervisor does not support the association.
+    if wake['native_registration'] is not True or any(not isinstance(wake.get(key), str)
+            for key in ('attempt_id', 'collection', 'socket', 'token_file')):
+        raise CoordinationError('INVALID_HOST', 'wake association needs typed identifiers and paths')
+    uuid.UUID(wake['attempt_id'])
+    if wake['collection'] != config['repo'] or wake['socket'] != config['socket']:
+        raise CoordinationError('INVALID_HOST', 'wake context and native profile must share API and collection')
+    if not Path(wake['token_file']).is_absolute():
+        raise CoordinationError('INVALID_HOST', 'wake profile path must be absolute')
+    return dict(wake, path=path)
+
+
+def associate_wake(config, state, path, observation):
+    wake = config.get('_wake')
+    if not wake:
+        return
+    ref = session_ref(state['agent'])
+    request = state.get('wake_link')
+    if not request or request['attempt_id'] != wake['attempt_id'] or request['session'] != ref:
+        request = dict(request_id=str(uuid.uuid4()), attempt_id=wake['attempt_id'], operation='session', session=ref)
+        state['wake_link'] = request
+        write_state(path, state)
+    # The original slot owns the delivery; the native profile owns the continuing
+    # conversation. Linking these reports does not move either inbox.
+    call(dict(config, token_file=wake['token_file']), 'wake-change', request)
+    context = {k: v for k, v in wake.items() if k != 'path'}
+    context.update(session=ref, native_session_id=observation['native_id'], session_inbox=state['agent']['inbox'])
+    write_state(Path(wake['path']), context)
 
 
 def state_path(config, native):
@@ -188,7 +230,7 @@ def release_inbox(config, state, path, reason, fenced=False):
         # after an unknown attempt was found absent.
         if not (fenced and exc.code == 'NOT_FOUND'):
             raise
-    for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion'):
+    for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response'):
         state.pop(key, None)
     write_state(path, state)
     return True
@@ -241,6 +283,8 @@ def inbox_context(config, state, path, observation):
     event = delivery['event']
     if not state.get('inbox_completion'):
         state['inbox_completion'] = str(uuid.uuid4())
+    if not state.get('inbox_response'):
+        state['inbox_response'] = str(uuid.uuid4())
     common = ['--socket', config['socket'], '--token-file', config['token_file'],
               '--agent-id', attempt['session']['agent_id'], '--execution-id', attempt['session']['execution_id'],
               '--request-id', state['inbox_completion'], '--lease', delivery['lease_id']]
@@ -250,6 +294,12 @@ def inbox_context(config, state, path, observation):
         read=[config['cairn'], 'agent', '--socket', config['socket'], '--token-file', config['token_file'], 'history'],
         read_input=event['ref'], completion=[config['cairn'], 'complete', *common, '--shareable', '--stdin', delivery['delivery_id']],
         acknowledgement=[config['cairn'], 'ack', *common, delivery['delivery_id']])
+    if event['kind'] == 'request':
+        context['response'] = [config['cairn'], 'publish', '--socket', config['socket'], '--token-file', config['token_file'],
+            '--agent-id', attempt['session']['agent_id'], '--execution-id', attempt['session']['execution_id'],
+            '--request-id', state['inbox_response'], '--to', event['from'], '--kind', 'response', '--causation-id', event['event_id']]
+        if event.get('correlation_id'):
+            context['response'] += ['--correlation-id', event['correlation_id']]
     target = Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')
     write_state(target, context)
     state['delivered_since_idle'] = True
@@ -257,7 +307,8 @@ def inbox_context(config, state, path, observation):
     return (f"Cairn has a {event['kind']} from {event['from']} for this conversation. "
         f"Read the structured inbox context at {target}. Read its exact selected source with the read argv and read_input JSON. "
         "For a request, handle it and run completion with a concise selected result on stdin; "
-        "publish a response to the sender using the returned result reference and this event_id as causation. "
+        "then use the response argv with --version RESULT_VERSION RESULT_RECORD_UUID from completion's result reference. "
+        "That command preserves this conversation's UUID, sender and causation; do not substitute the shared profile name. "
         "For a response or notice, read it and run acknowledgement; do not start a request worker or recursively reply. "
         "The host renews this lease while the turn is active. Do not start a second inbox consumer. "
         "An ended turn without explicit completion is recorded as failed, not replayed automatically. "
@@ -284,14 +335,21 @@ def finish_presence(config, state, path, timeout=4, reason='process_exited'):
 
 
 def handle(config, event, event_name=None):
-    if any(os.environ.get(k) == "1" for k in ("CAIRN_COORDINATION_DISABLED", "CAIRN_LIFECYCLE_DISABLED", "CAIRN_LIFECYCLE_CHILD")) or os.environ.get("CAIRN_WAKE_CONTEXT"):
+    if os.environ.get('CAIRN_COORDINATION_DISABLED') == '1':
         return {}
     if config.get("config_home") and config["harness"] in ("codex", "claude"):
         variable = "CODEX_HOME" if config["harness"] == "codex" else "CLAUDE_CONFIG_DIR"
         active_home = Path(os.environ.get(variable, str(Path.home() / ("." + config["harness"])))).resolve()
         if active_home != Path(config["config_home"]).resolve():
             return {}  # Merged config layers can include another account's hooks.
+    wake = wake_context(config)
+    if not wake and (any(os.environ.get(k) == "1" for k in ("CAIRN_LIFECYCLE_DISABLED", "CAIRN_LIFECYCLE_CHILD")) or os.environ.get("CAIRN_WAKE_CONTEXT")):
+        return {}
+    if wake:
+        config = dict(config, _wake=wake, native_delivery=False)
     observation = normalize(config, event, event_name)
+    if wake and wake.get('native_session_id') not in (None, observation['native_id']):
+        return {}  # A child conversation must not inherit its parent's wake.
     workspace = Path(observation["workspace"])
     if any((p / name).exists() for p in [workspace, *workspace.parents]
            for name in (".cairn-no-memory", ".cairn-no-coordination")):
@@ -317,6 +375,7 @@ def handle(config, event, event_name=None):
                 if page["agents"]:
                     retained = dict(page["agents"][0]["metadata"])
                     retained.update(harness=config["harness"], model=config.get("model", ""))
+                    retained['delivery_mode'] = 'fresh-worker' if wake else 'existing-session'
                     if retained["workspace"] != observation["workspace"]:
                         retained.update(project=observation["project"], workspace=observation["workspace"])
                         retained.pop("project_aliases", None)
@@ -353,6 +412,7 @@ def handle(config, event, event_name=None):
                 write_state(path, state)
         current = state["agent"]
         metadata = dict(current["metadata"])
+        metadata['delivery_mode'] = 'fresh-worker' if wake else 'existing-session'
         if observation["workspace"] != state["workspace"]:
             metadata.update(project=observation["project"], workspace=observation["workspace"])
             metadata.pop("project_aliases", None)
@@ -365,6 +425,7 @@ def handle(config, event, event_name=None):
                 session=session_ref(current), expected_revision=current["context_revision"], metadata=metadata))
         state["workspace"] = observation["workspace"]
         write_state(path, state)
+        associate_wake(config, state, path, observation)
         inbox = inbox_context(config, state, path, observation)
         if observation["phase"] == "idle":
             if inbox:
@@ -382,6 +443,9 @@ def handle(config, event, event_name=None):
                    "harness/model/project are metadata. Ordinary memory keeps its existing profile. "
                    "Presence is maintained by the host watcher. "
                    + ("Inbox delivery uses supported turn boundaries. " if config.get('native_delivery') else "Native message delivery is not enabled. "))
+        if wake:
+            message += ("This conversation is linked to the current fresh-worker attempt. "
+                        "Complete its original slot delivery using CAIRN_WAKE_CONTEXT; do not claim a second inbox. ")
         if inbox:
             message += '\n' + inbox
         if config["harness"] == "agy":

@@ -205,7 +205,7 @@ func (s *Store) RegisterAgent(ctx context.Context, req RegisterAgentRequest, des
 			return AgentInstance{}, err
 		}
 		var held bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE repo=$1 AND consumer=$2 AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE agent_id=$3 AND finished_at IS NULL)`, req.Repo, "agent/"+existing, existing).Scan(&held); err != nil {
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE repo=$1 AND (consumer=$2 OR agent_id=$3) AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE agent_id=$3 AND finished_at IS NULL)`, req.Repo, "agent/"+existing, existing).Scan(&held); err != nil {
 			return AgentInstance{}, err
 		}
 		if held {

@@ -443,7 +443,7 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 		return out, err
 	}
 	var nativeBusy bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n JOIN cairn.agent_session a USING(agent_id) WHERE 'agent/'||a.agent_id::text=$1 AND n.finished_at IS NULL)`, s.channel.Principal).Scan(&nativeBusy); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n JOIN cairn.agent_session a USING(agent_id) WHERE 'agent/'||a.agent_id::text=$1 AND n.finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE 'agent/'||agent_id::text=$1 AND finished_at IS NULL)`, s.channel.Principal).Scan(&nativeBusy); err != nil {
 		return out, err
 	}
 	if nativeBusy {

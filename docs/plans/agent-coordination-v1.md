@@ -16,7 +16,7 @@ Deployment evidence is in [the session verification report](../verification/agen
 | 1. Session identity | Registry, same-profile UUID inboxes and execution fencing deployed in migration 037. |
 | 2. Presence/context | Native hooks and host watcher deployed for both Codex homes, both Claude homes, OpenCode, Agy and Hermes. |
 | 3. Resolve/publish | Exact selectors/aliases, ambiguity and atomic freshness checks deployed in migration 038. |
-| 4. Session/pool delivery | Native turn-boundary delivery deployed in migration 039. Pool selection and useful cross-agent trial remain pending. |
+| 4. Session/pool delivery | Native turn-boundary delivery deployed in migration 039. Actual fresh-worker conversation links implemented/tested; rollout pending. Pool selection and useful cross-agent trial remain pending. |
 | 5. Wake operations | Structured context deployed; watch and expanded recovery views pending. |
 | 6. Scheduling/cancellation | Pending. |
 | 7. Bounded coordination | Response groups and required limits pending; conditional features retain their triggers. |
