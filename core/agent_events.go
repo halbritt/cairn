@@ -23,6 +23,7 @@ type AgentEvent struct {
 	Destination   EventDestination `json:"destination"`
 	CausationID   string           `json:"causation_id,omitempty"`
 	CorrelationID string           `json:"correlation_id,omitempty"`
+	Resolution    *AgentResolution `json:"resolution,omitempty"`
 }
 type EventDestination struct {
 	Type string `json:"type"`
@@ -36,6 +37,7 @@ type PublishEventRequest struct {
 	Destination   EventDestination `json:"destination"`
 	CausationID   string           `json:"causation_id,omitempty"`
 	CorrelationID string           `json:"correlation_id,omitempty"`
+	Resolution    *AgentResolution `json:"resolution,omitempty"`
 }
 type EventQuery struct {
 	Repo  string `json:"repo,omitempty"`
@@ -161,12 +163,12 @@ func leaseSeconds(seconds int) (int, error) {
 	return seconds, nil
 }
 
-const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,'')`
+const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session`
 const eventVisible = `(e.sensitivity='shareable' OR $3) AND (e.publisher=$2 OR EXISTS(SELECT 1 FROM cairn.agent_delivery v WHERE v.event_id=e.event_id AND v.consumer=$2))`
 
 func scanEvent(row pgx.Row) (AgentEvent, error) {
 	var e AgentEvent
-	err := row.Scan(&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID)
+	err := row.Scan(&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution)
 	return e, err
 }
 func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
@@ -202,6 +204,14 @@ func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest 
 			return AgentEvent{}, failure("INVALID_REQUEST", "causation and correlation must be UUIDs")
 		}
 	}
+	if req.Resolution != nil {
+		if err := req.Resolution.validate(); err != nil {
+			return AgentEvent{}, err
+		}
+		if req.Resolution.Repo != req.Repo || req.Destination.Type != "agent" || req.Destination.Name != "agent/"+req.Resolution.AgentID {
+			return AgentEvent{}, failure("INVALID_REQUEST", "resolution must match the publication collection and recipient")
+		}
+	}
 	return mutate(ctx, s, "event-publish", req.RequestID, req, func(tx pgx.Tx) (AgentEvent, error) {
 		if err := lock(ctx, tx, "agent-events:"+req.Repo); err != nil {
 			return AgentEvent{}, err
@@ -213,6 +223,16 @@ func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest 
 		}
 		if err != nil {
 			return AgentEvent{}, err
+		}
+		if req.Resolution != nil {
+			metadataDest := dest
+			// A shareable event must not retain a local-only presence reference.
+			if sensitivity == "shareable" {
+				metadataDest = Destination{Name: "hosted"}
+			}
+			if err := revalidateAgentResolution(ctx, tx, *req.Resolution, metadataDest); err != nil {
+				return AgentEvent{}, err
+			}
 		}
 		if req.CausationID != "" {
 			parent, err := s.readEvent(ctx, tx, req.CausationID, dest)
@@ -231,7 +251,7 @@ func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest 
 			}
 		}
 		id := uuid.NewString()
-		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid)`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID)
+		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11)`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution)
 		if err != nil {
 			return AgentEvent{}, err
 		}

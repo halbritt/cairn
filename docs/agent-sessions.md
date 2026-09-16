@@ -1,7 +1,7 @@
 # Agent sessions
 
 Status: session registry and presence foundation, 2026-09-15. Native lifecycle
-adapters, existing-session delivery, recipient resolution and pool dispatch remain
+adapters, existing-session delivery and pool dispatch remain
 in the [coordination plan](plans/agent-coordination-v1.md).
 
 ## Identity on the trusted host
@@ -67,20 +67,52 @@ heartbeat process or reach a native conversation.
 Directory reads default to live sessions. `--include-offline` includes stopped,
 expired and pre-restore records. Harness/project match case-insensitively and
 exactly; model matches observed model when supplied, otherwise configured model.
-Other selectors match exactly. Paging uses `--after ORDINAL` and `--limit N`.
+Explicit `--project-alias NAME,...` values also match the project selector
+case-insensitively. Up to eight distinct aliases are allowed. Other selectors
+match exactly. Paging uses `--after ORDINAL` and `--limit N`.
 Entries label context `metadata_source: reported`. A directory result is a
-snapshot; this foundation does not promise freshness at a later publication.
+snapshot. Use a resolution for publication that requires current context.
+
+## Resolve and publish
+
+```sh
+cairn agents resolve --profile PROFILE --harness codex --project rhumb > match.json
+jq -e '.data.resolution // error("recipient is not unique and live")' match.json > selected.json
+cairn publish --profile PROFILE --request-id NEW_UUID --resolution selected.json \
+  --kind request --version SOURCE_VERSION SOURCE_UUID
+```
+
+Resolution returns `unique`, `ambiguous`, `no-match` or `stale`. Only `unique`
+includes a resolution object. Ambiguous/offline results provide up to 100 candidate
+entries, including display names, workspace and task; `more` signals truncation.
+Use paged directory reads to inspect further candidates. Offline candidates are
+diagnostic: if registration changes during the two reads, resolve again.
+No outcome launches a worker or sends a message by itself.
+
+The resolution pins a concrete UUID, execution, database generation and context
+revision. Publication locks the selected session, checks those fields and current
+presence, and creates the event/delivery in one transaction. A changed context,
+replaced execution, expiry, restore or inaccessible recipient returns
+`STALE_RESOLUTION` with no event. Resolve again for a new intended publication.
+A shareable event cannot retain a local-only session resolution.
+
+Retain the original resolution and publication request UUID when the response is
+uncertain. An exact retry returns the committed event and original recipient,
+even if that session has since changed. Never re-resolve a retry to another agent.
+`--to agent/UUID` deliberately bypasses the presence/context check for offline
+mail. Historical events retain the accepted resolution; it proves only the
+routing check, not delivery to a native conversation or successful handling.
 
 ## API and recovery
 
 The existing Unix API exposes `agent-register`, `agent-context`,
-`agent-heartbeat`, `agent-leave` and `agent-directory`. Each has JSON help under
+`agent-heartbeat`, `agent-leave`, `agent-directory` and `agent-resolve`. Each has JSON help under
 `cairn agent OPERATION --help`. Session-selected event requests use headers
 `Cairn-Agent-ID` and `Cairn-Execution-ID`; both must be nonempty canonical UUIDs.
 Session lifecycle operations use the base profile and explicit references in the
 request. Existing collection and local/hosted restrictions apply to metadata.
 
-Migration 037 adds the registry. Backups retain session identity and metadata.
+Migration 037 adds the registry; 038 retains accepted event resolutions. Backups retain session identity and metadata.
 The existing restore fence changes the database generation: restored presence
 becomes ineligible for live lookup, and old executions cannot heartbeat or act.
 Register with a new request UUID after restore. API restart alone preserves

@@ -148,7 +148,7 @@ def check(binary, directory):
         call("alice", "event-publish", raw=True, body=json.dumps(raw), expected="INVALID_REQUEST")
         registration = ["register", "--request-id", str(uuid.uuid4()), "--binding", "codex-default",
                         "--native-session", "one", "--harness", "codex", "--model", "configured-model",
-                        "--project", "rhumb", "--workspace", str(root), "--state", "busy"]
+                        "--project", "rhumb", "--project-alias", "charts", "--workspace", str(root), "--state", "busy"]
         registered = call("bob", "agents", *registration)
         assert call("bob", "agents", *registration) == registered
         second_registration = list(registration)
@@ -159,7 +159,19 @@ def check(binary, directory):
         listing = call("alice", "agents", "list", "--harness", "codex", "--project", "rhumb")
         assert len(listing["agents"]) == 2
         session = ["--agent-id", registered["agent_id"], "--execution-id", registered["execution_id"]]
-        message = publish(to=registered["inbox"])
+        ambiguous = call("alice", "agents", "resolve", "--harness", "codex", "--project", "charts")
+        assert ambiguous["state"] == "ambiguous" and len(ambiguous["candidates"]) == 2
+        call("bob", "agents", "leave", "--agent-id", second_agent["agent_id"],
+             "--execution-id", second_agent["execution_id"])
+        selected = call("alice", "agents", "resolve", "--harness", "codex", "--project", "charts")
+        assert selected["state"] == "unique" and selected["resolution"]["agent_id"] == registered["agent_id"]
+        selection_file = root / "selected.json"
+        selection_file.write_text(json.dumps(selected["resolution"]))
+        send_args = ["--request-id", str(uuid.uuid4()), "--kind", "request", "--version", "1",
+                     "--resolution", str(selection_file), note["record_id"]]
+        message = call("alice", "publish", *send_args)
+        assert message["destination"]["name"] == registered["inbox"]
+        assert message["resolution"] == selected["resolution"]
         assert call("bob", "inbox")["delivery"] is None
         stop(process)
         process = start()
@@ -175,6 +187,13 @@ def check(binary, directory):
         assert resumed["agent_id"] == registered["agent_id"]
         assert resumed["execution_id"] != registered["execution_id"]
         call("bob", "inbox", *session, expected="STALE_SESSION")
+        assert call("alice", "publish", *send_args) == message
+        send_args[1] = str(uuid.uuid4())
+        call("alice", "publish", *send_args, expected="STALE_RESOLUTION")
+        call("bob", "agents", "leave", "--agent-id", resumed["agent_id"], "--execution-id", resumed["execution_id"])
+        assert call("alice", "agents", "resolve", "--project", "rhumb")["state"] == "stale"
+        assert call("alice", "agents", "resolve", "--project", "missing")["state"] == "no-match"
+        print("Agent resolution: exact aliases, ambiguity, pinned publication, retry and stale refusal passed")
         print("Agent sessions: stable identity, shared-profile inbox separation, completion and API restart passed")
         print("Agent events: CLI direct/offline delivery, replies, fanout, retry, leases and API restart passed")
     finally:

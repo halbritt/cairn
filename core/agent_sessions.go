@@ -14,14 +14,15 @@ import (
 
 // Metadata is reported context, not authentication or evidence of capability.
 type AgentMetadata struct {
-	Harness       string `json:"harness"`
-	Model         string `json:"model,omitempty"`
-	ObservedModel string `json:"observed_model,omitempty"`
-	Project       string `json:"project"`
-	Workspace     string `json:"workspace"`
-	TaskSummary   string `json:"task_summary,omitempty"`
-	State         string `json:"state"`
-	DeliveryMode  string `json:"delivery_mode"`
+	Harness        string   `json:"harness"`
+	Model          string   `json:"model,omitempty"`
+	ObservedModel  string   `json:"observed_model,omitempty"`
+	Project        string   `json:"project"`
+	ProjectAliases []string `json:"project_aliases,omitempty"`
+	Workspace      string   `json:"workspace"`
+	TaskSummary    string   `json:"task_summary,omitempty"`
+	State          string   `json:"state"`
+	DeliveryMode   string   `json:"delivery_mode"`
 }
 
 type AgentInstance struct {
@@ -116,6 +117,18 @@ func (r AgentSessionRef) Validate() error {
 }
 
 func (m AgentMetadata) validate() error {
+	if len(m.ProjectAliases) > 8 {
+		return failure("INVALID_REQUEST", "at most eight project aliases allowed")
+	}
+	seen := map[string]bool{strings.ToLower(m.Project): true}
+	for _, alias := range m.ProjectAliases {
+		key := strings.ToLower(alias)
+		if strings.TrimSpace(alias) != alias || alias == "" || len(alias) > 256 || strings.ContainsRune(alias, 0) || seen[key] {
+			return failure("INVALID_REQUEST", "project aliases must be distinct bounded names")
+		}
+		seen[key] = true
+	}
+
 	if !eventName.MatchString(m.Harness) || strings.TrimSpace(m.Project) == "" || !filepath.IsAbs(m.Workspace) || (m.State != "idle" && m.State != "busy") || (m.DeliveryMode != "existing-session" && m.DeliveryMode != "fresh-worker") {
 		return failure("INVALID_REQUEST", "agent metadata needs harness, project, absolute workspace, idle/busy state and delivery mode")
 	}
@@ -332,7 +345,7 @@ func (s *Store) AgentDirectory(ctx context.Context, req AgentDirectoryQuery, des
 	 AND ($4 OR (NOT stopped AND expires_at>clock_timestamp() AND database_generation=$3))
 	 AND ($5='' OR agent_id=NULLIF($5,'')::uuid)
 	 AND ($6='' OR lower(metadata->>'harness')=lower($6))
-	 AND ($7='' OR lower(metadata->>'project')=lower($7))
+	 AND ($7='' OR lower(metadata->>'project')=lower($7) OR EXISTS(SELECT 1 FROM jsonb_array_elements_text(COALESCE(metadata->'project_aliases','[]'::jsonb)) alias WHERE lower(alias)=lower($7)))
 	 AND ($8='' OR COALESCE(NULLIF(metadata->>'observed_model',''),metadata->>'model')=$8)
 	 AND ($9='' OR metadata->>'workspace'=$9)
 	 AND ($10='' OR metadata->>'state'=$10)

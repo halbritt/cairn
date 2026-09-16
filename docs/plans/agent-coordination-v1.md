@@ -6,7 +6,7 @@ The existing [event fabric v1](../agent-event-fabric.md) is a messaging contract
 its title does not mean that the coordination work below is implemented.
 
 Implementation progress: [session registry contract](../agent-sessions.md) covers
-identity, presence and explicit directory reads. Native adapters, resolution,
+identity, presence, directory reads and recipient resolution. Native adapters,
 existing-session delivery and remaining operational milestones are still pending.
 Deployment evidence is recorded separately from this plan.
 
@@ -128,9 +128,9 @@ are covered. No account secrets or private workspace contents appear in listings
 
 Add structured selectors for harness, project, workspace, model and state, with
 exact matching and explicit project aliases. Task text may help present
-candidates; fuzzy similarity must not silently select a recipient. Proposed CLI:
+candidates; fuzzy similarity must not silently select a recipient. CLI:
 `cairn agents list` and `cairn agents resolve --harness codex --project rhumb`.
-These commands are planned, not installed interfaces.
+The session foundation implements these commands and publication checks.
 
 Resolve to a concrete agent UUID plus context revision and execution generation.
 Revalidate freshness and the selected context in the publication transaction.

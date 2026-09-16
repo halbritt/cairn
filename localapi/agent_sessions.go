@@ -25,6 +25,10 @@ func serveAgentSessions(w http.ResponseWriter, r *http.Request, c client) bool {
 		serveJSON(w, r, func(ctx context.Context, req core.AgentSessionRef) (core.AgentInstance, error) {
 			return c.store.LeaveAgent(ctx, req, c.destination)
 		})
+	case "/v1/agent-resolve":
+		serveJSON(w, r, func(ctx context.Context, req core.AgentDirectoryQuery) (core.ResolveAgentResult, error) {
+			return c.store.ResolveAgent(ctx, req, c.destination)
+		})
 	case "/v1/agent-directory":
 		serveJSON(w, r, func(ctx context.Context, req core.AgentDirectoryQuery) (core.AgentDirectoryPage, error) {
 			return c.store.AgentDirectory(ctx, req, c.destination)

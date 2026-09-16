@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/halbritt/cairn/core"
@@ -20,7 +21,7 @@ For session inboxes add --agent-id UUID --execution-id UUID using the same profi
 Provide a stable --request-id UUID for publish, subscribe, unsubscribe, ack and complete.
 Retry an uncertain mutation with identical arguments and the same request UUID.
 
-  publish --request-id UUID (--to PRINCIPAL | --topic TOPIC) --kind KIND --version N RECORD_UUID
+  publish --request-id UUID (--to PRINCIPAL | --topic TOPIC | --resolution FILE) --kind KIND --version N RECORD_UUID
     [--causation-id UUID] [--correlation-id UUID]
   inbox next [--agent PRINCIPAL] [--lease-seconds N]
   ack --request-id UUID --lease UUID [--disposition handled|ignored|failed] [--code CODE] DELIVERY_UUID
@@ -73,6 +74,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	agentID := f.String("agent-id", "", "registered session UUID")
 	executionID := f.String("execution-id", "", "current session execution UUID")
 	request := f.String("request-id", "", "stable retry UUID")
+	resolutionFile := f.String("resolution", "", "JSON resolution from a unique agents resolve result")
 	to := f.String("to", "", "recipient principal")
 	topic := f.String("topic", "", "topic (exclusive cursor for subscriptions)")
 	kind := f.String("kind", "", "event or result kind")
@@ -97,7 +99,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	allowed := " token-file socket profile agent-id execution-id "
 	switch command {
 	case "publish":
-		allowed += "repo request-id to topic kind version causation-id correlation-id "
+		allowed += "repo request-id to topic resolution kind version causation-id correlation-id "
 	case "inbox":
 		allowed += "repo agent lease-seconds "
 	case "ack":
@@ -169,15 +171,40 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	}
 	switch command {
 	case "publish":
-		if (*to == "") == (*topic == "") {
-			return nil, invalid("choose exactly one of --to and --topic")
+		choices := 0
+		for _, value := range []string{*to, *topic, *resolutionFile} {
+			if value != "" {
+				choices++
+			}
+		}
+		if choices != 1 {
+			return nil, invalid("choose exactly one of --to, --topic and --resolution")
+		}
+		var resolution *core.AgentResolution
+		if *resolutionFile != "" {
+			file, err := os.Open(*resolutionFile)
+			if err != nil {
+				return nil, err
+			}
+			err = decodeBounded(file, &resolution, 4096)
+			closeErr := file.Close()
+			if err != nil {
+				return nil, invalid("invalid resolution JSON: " + err.Error())
+			}
+			if closeErr != nil {
+				return nil, closeErr
+			}
+			if resolution == nil {
+				return nil, invalid("resolution must be a JSON object from a unique match")
+			}
+			*to = "agent/" + resolution.AgentID
 		}
 		dest := core.EventDestination{Type: "agent", Name: *to}
 		if *topic != "" {
 			dest = core.EventDestination{Type: "topic", Name: *topic}
 		}
 		operation = "event-publish"
-		req = core.PublishEventRequest{RequestID: *request, Repo: *repo, Kind: *kind, Ref: core.RecordVersionRef{RecordID: strings.TrimPrefix(f.Arg(0), "cairn:"), Version: *version}, Destination: dest, CausationID: *causation, CorrelationID: *correlation}
+		req = core.PublishEventRequest{RequestID: *request, Repo: *repo, Kind: *kind, Ref: core.RecordVersionRef{RecordID: strings.TrimPrefix(f.Arg(0), "cairn:"), Version: *version}, Destination: dest, CausationID: *causation, CorrelationID: *correlation, Resolution: resolution}
 	case "inbox":
 		operation = "event-next"
 		req = core.NextEventRequest{Repo: *repo, Agent: *agent, LeaseSeconds: *seconds}

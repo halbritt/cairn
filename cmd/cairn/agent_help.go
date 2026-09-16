@@ -24,7 +24,7 @@ Everyday operations:
   version      Identify the CLI and running API builds
 
 JSON operations (one request on stdin):
-  agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory
+  agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory, agent-resolve
   wake-attempts Inspect current or historical wake attempts
   wake-claim, wake-change Host supervisor coordination
   revise       Replace only a note's body
@@ -61,6 +61,9 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	case "agent-heartbeat", "agent-leave":
 		detail = "Refresh 90-second presence or mark the current execution stopped. Use the base profile; obsolete execution UUIDs are refused."
 		example = `{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}`
+	case "agent-resolve":
+		detail = "Resolve exact selectors to unique, ambiguous, no-match or stale. Only unique includes a resolution; include it in event-publish to check freshness atomically."
+		example = `{"harness":"codex","project":"rhumb"}`
 	case "agent-directory":
 		detail = "List currently live sessions using exact metadata selectors. include_offline includes expired/stopped entries; after is an exclusive ordinal cursor. Metadata is reported context."
 		example = `{"harness":"codex","project":"rhumb","limit":20}`

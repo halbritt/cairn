@@ -16,7 +16,7 @@ No additional credentials are created. UUIDs select registered sessions/inboxes.
 
   agents register --request-id UUID --binding NAME --native-session ID
     --harness NAME --project NAME --workspace /absolute/path
-    [--model MODEL] [--observed-model MODEL] [--task TEXT] [--state idle|busy]
+    [--model MODEL] [--observed-model MODEL] [--project-alias NAME,...] [--task TEXT] [--state idle|busy]
     [--delivery-mode existing-session|fresh-worker] [--repo COLLECTION]
   agents context --request-id UUID --agent-id UUID --execution-id UUID
     --expected-revision N --harness NAME --project NAME --workspace /absolute/path
@@ -26,6 +26,11 @@ No additional credentials are created. UUIDs select registered sessions/inboxes.
   agents list [--harness NAME] [--project NAME] [--model MODEL] [--workspace PATH]
     [--state idle|busy] [--delivery-mode MODE] [--agent-id UUID] [--include-offline]
     [--repo COLLECTION] [--after ORDINAL] [--limit N]
+
+  agents resolve [same selectors as list; no paging/include-offline]
+
+resolve returns unique, ambiguous, no-match or stale. Save data.resolution from
+a unique result to a JSON file for publish --resolution FILE.
 
 register with a new request ID resumes the same binding/native-session pair with
 a new execution UUID; old executions are fenced. Use heartbeat every 30 seconds.
@@ -53,6 +58,7 @@ func agentsCommand(ctx context.Context, args []string) (any, error) {
 	harness := f.String("harness", "", "harness name")
 	model := f.String("model", "", "configured model")
 	observed := f.String("observed-model", "", "model reported by the harness")
+	aliases := f.String("project-alias", "", "comma-separated exact project aliases")
 	project := f.String("project", "", "actual project name")
 	workspace := f.String("workspace", "", "actual absolute workspace")
 	task := f.String("task", "", "selected task summary")
@@ -70,15 +76,17 @@ func agentsCommand(ctx context.Context, args []string) (any, error) {
 	allowed := " profile token-file socket "
 	switch op {
 	case "register":
-		allowed += "repo request-id binding native-session harness model observed-model project workspace task state delivery-mode "
+		allowed += "repo request-id binding native-session harness model observed-model project project-alias workspace task state delivery-mode "
 	case "context":
-		allowed += "request-id agent-id execution-id expected-revision harness model observed-model project workspace task state delivery-mode "
+		allowed += "request-id agent-id execution-id expected-revision harness model observed-model project project-alias workspace task state delivery-mode "
 	case "heartbeat", "leave":
 		allowed += "agent-id execution-id "
+	case "resolve":
+		allowed += "repo agent-id harness model project workspace state delivery-mode "
 	case "list":
 		allowed += "repo agent-id harness model project workspace state delivery-mode include-offline after limit "
 	default:
-		return nil, invalid("agents requires register, context, heartbeat, leave or list")
+		return nil, invalid("agents requires register, context, heartbeat, leave, list or resolve")
 	}
 	var unsupported string
 	f.Visit(func(option *flag.Flag) {
@@ -93,6 +101,9 @@ func agentsCommand(ctx context.Context, args []string) (any, error) {
 	operation := "agent-" + op
 	ref := core.AgentSessionRef{AgentID: *agentID, ExecutionID: *executionID}
 	metadata := core.AgentMetadata{Harness: *harness, Model: *model, ObservedModel: *observed, Project: *project, Workspace: *workspace, TaskSummary: *task, State: *state, DeliveryMode: *mode}
+	if *aliases != "" {
+		metadata.ProjectAliases = strings.Split(*aliases, ",")
+	}
 	if metadata.State == "" {
 		metadata.State = "idle"
 	}
@@ -106,8 +117,10 @@ func agentsCommand(ctx context.Context, args []string) (any, error) {
 		req = core.UpdateAgentRequest{RequestID: *request, Session: ref, ExpectedRevision: *revision, Metadata: metadata}
 	case "heartbeat", "leave":
 		req = ref
-	case "list":
-		operation = "agent-directory"
+	case "list", "resolve":
+		if op == "list" {
+			operation = "agent-directory"
+		}
 		req = core.AgentDirectoryQuery{Repo: *repo, AgentID: *agentID, Harness: *harness, Model: *model, Project: *project, Workspace: *workspace, State: *state, DeliveryMode: *mode, IncludeOffline: *all, After: *after, Limit: *limit}
 	}
 	path, err := agentProfileToken(*profile, *token)
