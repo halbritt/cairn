@@ -193,6 +193,8 @@ def check(binary, directory):
         call("bob", "agents", "leave", "--agent-id", resumed["agent_id"], "--execution-id", resumed["execution_id"])
         assert call("alice", "agents", "resolve", "--project", "rhumb")["state"] == "stale"
         assert call("alice", "agents", "resolve", "--project", "missing")["state"] == "no-match"
+        from check_agent_coordination import check as check_coordination
+        check_coordination(binary, root, repo, call)
         print("Agent resolution: exact aliases, ambiguity, pinned publication, retry and stale refusal passed")
         print("Agent sessions: stable identity, shared-profile inbox separation, completion and API restart passed")
         print("Agent events: CLI direct/offline delivery, replies, fanout, retry, leases and API restart passed")

@@ -1,7 +1,6 @@
 # Agent sessions
 
-Status: session registry and presence foundation, 2026-09-15. Native lifecycle
-adapters, existing-session delivery and pool dispatch remain
+Status: session registry and native presence adapters, 2026-09-15. Existing-session delivery and pool dispatch remain
 in the [coordination plan](plans/agent-coordination-v1.md).
 
 ## Identity on the trusted host
@@ -118,7 +117,52 @@ becomes ineligible for live lookup, and old executions cannot heartbeat or act.
 Register with a new request UUID after restore. API restart alone preserves
 identity, presence expiry and inbox history.
 
+## Native presence adapters
+
+`scripts/install-agent-coordination.py` installs separate coordination hooks and
+one `cairn-presence.service` watcher. Supply an existing token file and a distinct
+`--binding` for each account home. Codex and Claude hooks also check their active
+configuration home, so merged hook layers cannot register a conversation under
+another account. Codex hook trust is recorded through its installed app-server
+API for the four exact Cairn commands. Other hooks and settings are preserved.
+
+```sh
+python3 scripts/install-agent-coordination.py \
+  --harness codex --binding codex-two --settings "$HOME/.codex-harm/hooks.json"
+```
+
+For Claude, `--settings` names its `settings.json`; for Agy, its `hooks.json`.
+For OpenCode and Hermes it names the configuration directory. Start a fresh
+native process to load installed hooks. Hermes CLI/gateway require restart.
+
+Hooks associate the real native conversation ID with a process PID, start time
+and host boot ID. The watcher heartbeats every 30 seconds while that process
+lives. A dead process is stopped; unavailable API calls allow the existing
+90-second presence to expire. Neither watcher retries nor late leave hooks can
+replace or stop a newer execution. A real hook can resume the unchanged native
+session after a database restore; the watcher cannot do that by itself.
+
+Codex/Claude use SessionStart, UserPromptSubmit, Stop and SessionEnd. Agy uses
+flat PreInvocation/Stop handlers and its `fullyIdle` observation. OpenCode uses
+request transformation and idle/delete/dispose events. Hermes uses pre/post-turn
+hooks and request middleware. Hermes gateway presence ends with each agent turn:
+the gateway PID alone does not establish an idle conversation's reachability.
+
+Context injection identifies the agent and execution using the existing profile.
+Model/workspace/state observations preserve the selected task summary and project
+aliases, except that changing workspace resets the inferred project and aliases.
+No prompt or transcript is retained by coordination. Hermes/OpenCode inject only
+into request copies. `.cairn-no-coordination`, `.cairn-no-memory` and the existing
+lifecycle disable/child controls suppress hook registration. Fresh wake workers
+with `CAIRN_WAKE_CONTEXT` retain their separate supervisor lifecycle.
+
+Presence does not yet mean automatic native message delivery. Session inbox
+commands are available; queued native turn dispatch remains a separate milestone.
+Known metadata is reported context, not proof that an agent is working correctly.
+
 Tests use disposable PostgreSQL clusters and the real Unix API/CLI. They cover
 resume, same-account separation, context revision checks, visibility, execution
-fencing, API restart and backup/restore. They do not establish native harness
-lifecycle coverage or the usefulness of live routing.
+fencing, API restart and backup/restore. Native probes exercise installed Codex,
+Claude, OpenCode and Hermes with fixture-only providers, plus an explicitly opted-in
+Agy model turn. See the [verification report](verification/agent-sessions-2026-09-15.md).
+These checks do not establish useful cross-agent task completion.

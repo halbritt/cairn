@@ -52,3 +52,31 @@ same clean revision, and the API plus all seven supervisors were active after
 restart. A read-only Codex/Rhumb resolve returned `no-match`, correctly reflecting
 that native sessions are not registered yet. Skillpack `95cc5bf` was pushed and
 all eight Cairn skill installations matched its source.
+
+## Native presence adapters
+
+The real disposable API probe now covers native process association, concurrent
+owner refusal, process death, resume/fork, selected task preservation, model
+updates and refusal to revive or stop an obsolete execution. State files exclude
+prompt/transcript content. The Python suite passes 106 tests, including account
+home filtering and preservation of unrelated hook configuration.
+
+Optional installed-runtime probes passed:
+
+- Codex first-turn hooks register its actual native thread; exact hook trust is
+  established through the app-server protocol. Provider points to loopback only.
+- Claude hooks register its supplied native conversation UUID with a loopback-only
+  provider and no enabled tools/MCP servers.
+- OpenCode and Hermes send injected identity to synthetic HTTP providers. Request
+  copies preserve retained conversation history. Hermes CLI and gateway lifecycle
+  checks distinguish live CLI presence from a completed gateway agent turn.
+- Agy PreInvocation/Stop register its actual conversation and model. One explicit
+  opt-in turn using the existing account returned the injected Cairn UUID. Agy
+  required `--new-project` to bind this test to its temporary workspace. Its
+  invocation hooks are flat handler lists, unlike its grouped tool hooks.
+
+All coordination test writes used the disposable API. Agy's provider probe uses
+its existing account and creates a native test conversation; other provider
+probes use local fixtures. No synthetic coordination messages entered production.
+Native presence deployment is recorded below when installed. These tests do not
+verify automatic native inbox delivery, pool dispatch or cross-agent task value.
