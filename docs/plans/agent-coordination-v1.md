@@ -7,13 +7,13 @@ its title does not mean that the coordination work below is implemented.
 
 Implementation progress: [session registry contract](../agent-sessions.md) covers
 identity, presence, directory reads and recipient resolution. Native adapters are
-implemented and tested; existing-session delivery and remaining operational milestones are still pending.
+deployed and tested; existing-session delivery and remaining operational milestones are still pending.
 Deployment evidence is in [the session verification report](../verification/agent-sessions-2026-09-15.md).
 
 | Milestone | Current progress |
 | --- | --- |
 | 1. Session identity | Registry, same-profile UUID inboxes and execution fencing deployed in migration 037. |
-| 2. Presence/context | Operations and directory deployed; native lifecycle adapters implemented and tested, deployment pending. |
+| 2. Presence/context | Native hooks and host watcher deployed for both Codex homes, both Claude homes, OpenCode, Agy and Hermes. |
 | 3. Resolve/publish | Exact selectors/aliases, ambiguity and atomic freshness checks deployed in migration 038. |
 | 4. Session/pool delivery | Existing slot wakeups remain; native delivery and pool selection pending. |
 | 5. Wake operations | Structured context deployed; watch and expanded recovery views pending. |

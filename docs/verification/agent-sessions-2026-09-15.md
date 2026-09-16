@@ -78,5 +78,24 @@ Optional installed-runtime probes passed:
 All coordination test writes used the disposable API. Agy's provider probe uses
 its existing account and creates a native test conversation; other provider
 probes use local fixtures. No synthetic coordination messages entered production.
-Native presence deployment is recorded below when installed. These tests do not
+Native presence deployment is recorded below. These tests do not
 verify automatic native inbox delivery, pool dispatch or cross-agent task value.
+
+Adapter commit `a2174c2` was pushed and installed for seven account bindings:
+both Codex homes, both Claude homes, OpenCode, Agy and Hermes. The shared API/CLI
+remains clean build `f8f6dba` with schema 038; this slice changes adapter scripts,
+not the store or API binary. `make check` passed. The installed watcher is active
+with zero automatic restarts. Codex confirmed all four exact Cairn hook commands
+trusted and enabled in each account home. Existing hooks/settings were retained.
+
+Hermes was idle before shutdown. It exited cleanly and restarted in the same
+Herdr pane with native session `20260908_022628_ef33f8`; Herdr reported interactive
+ready and idle. `hermes-gateway.service` restarted and is active with a new PID
+and zero automatic restarts. The directory was still empty at verification:
+registration requires a supported native lifecycle event, not process launch
+alone. Existing sessions were not fabricated or registered by inspecting history.
+
+Skillpack `97d8a25` was pushed and deployed to all existing harness locations.
+Validation and `install.sh --check` passed. Its guidance distinguishes injected
+session identity and watcher presence from manual registration and pending
+automatic inbox delivery.
