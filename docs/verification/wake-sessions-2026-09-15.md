@@ -1,6 +1,6 @@
 # Native wake-session association
 
-Status: implementation validation; production rollout pending.
+Status: implementation validated and deployed; full coordination v1 remains incomplete.
 
 Migration 040 links a wake attempt to the actual native conversation and
 execution UUID. The native profile keeps the conversation; the slot profile
@@ -76,3 +76,28 @@ now supplies an exact response argv with the conversation UUID, stable request
 ID and causation. The real API probe executes that command and verifies its
 publisher and causal event. This improves the provided command contract; it
 does not assert that every model will follow it.
+
+## Rollout
+
+Implementation `417835f` and pool-design-only follow-up `225692e` were pushed.
+The deployed binary is clean revision `225692e3b62aa35c957ffc5c26732e21670e3bcf`;
+CLI and API both reported that revision. The final integration run, static
+checks, 107 Python tests, native runtime probes and backup/restore checks passed.
+
+No active wake or native inbox attempts were present at the pre-upgrade check.
+The watcher and seven supervisors stopped before checkpoint/backup. Dump
+`cairn-20260916T055234-3841359.dump` passed SHA-256/catalog and archive checks.
+The previous binary remains at `cairn-before-wake-session`. Migration 040 was
+applied, then API restarted with its existing semantic worker arguments.
+
+The installed coordination engine matches source. OpenCode worker-05 no longer
+uses `--pure`; its existing global coordination plugin can load. All seven
+worker configs validate. API, watcher, seven workers and Hermes gateway are
+running with zero automatic restarts observed. Native plugin files are unchanged
+and invoke the new engine; Hermes did not need another restart for this update.
+Skillpack `b417450` is pushed and deployed, with all installations checked.
+
+Runtime probes used disposable stores. Production received the owner-authorized
+review request and selected result/response/disposition notice, not synthetic
+test tasks. Pool selection, binding health, watch/recovery, scheduling/cancellation
+and response groups remain required work in the active v1 goal.
