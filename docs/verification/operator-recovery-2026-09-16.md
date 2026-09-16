@@ -52,3 +52,20 @@ choice, evidence and scope. Review pages are current observations and do not hol
 a database snapshot across calls. A retained assessment is testimony, and prior
 external effects can remain uncertain. Scheduling, deadlines, cancellation and
 bounded response groups remain open in the v1 plan.
+
+## Deployment
+
+Clean release `7471688ae7b4a0aae9169b8009953a009616948e` is pushed and deployed
+through migration 044. Before upgrade there were zero unfinished wake and native
+inbox attempts. Backup `cairn-20260916T080216-95926.dump` passed catalog, checksum
+and archive checks; `cairn-before-operator-recovery` retains the previous binary.
+
+The API, presence process, seven workers and Hermes gateway were upgraded
+coherently. The clean API version responded before workers were started. All ten
+services reported active/running with zero restarts; all seven slots were online
+with available admission health. The native coordination plugin was unchanged.
+
+A production read-only `coordination-review` returned a bounded delivery page,
+three retained sessions, seven workers and no queued pool requests. The new trace
+table remained empty: deployment did not reissue production work. Shared Cairn
+skill instructions were updated with the explicit recovery contract.
