@@ -371,18 +371,22 @@ packages. `scope-authorization RECORD_UUID` inspects the latest scope decision.
 
 ## Verify changes
 
+Run validation locally; this repository does not use GitHub Actions CI.
+
 ```sh
 make test-integration
 make test-lifecycle
 make check
+python3 -B -m unittest discover -s scripts -p 'test_*.py'
+node scripts/check_opencode_recent_files.mjs
+node scripts/check_opencode_lifecycle.mjs
 ```
 
 The integration target starts its own temporary PostgreSQL cluster, gives each Go
 package a separate database, and uses Go's race detector. It stops the cluster on
 exit and removes its files after success. On failure it prints the retained
 artifact directory for diagnosis. A failed database stop also retains the directory
-and fails the command. CI runs
-packages sequentially against its shared service database. Explicit concurrent
+and fails the command. Explicit concurrent
 transaction tests remain enabled. The suite covers migration from the original schema,
 concurrent edits/retries, grant revocation races, evidence and destination gates,
 conflicts, package seals, process launch/timeout, and duplicate-launch refusal.
@@ -400,7 +404,9 @@ CAIRN_OPENCODE_BINARY=/path/to/opencode make test-integration
 
 `make test` explicitly skips DB tests unless `CAIRN_TEST_DATABASE_URL` is set.
 Only point that variable at a disposable database. Initial dependency downloads
-need an enabled Go module proxy; dependencies and CI actions are pinned.
+need an enabled Go module proxy; Go dependencies are pinned. The Python native
+Codex queue checks require `websocket-client` (`python3-websocket` on Debian).
+The OpenCode checks require Node.js 24 or newer.
 
 ## Remaining work
 

@@ -5,6 +5,8 @@ The source design is pinned under docs/sources. Follow the operator-authored
 producer-attribution correction where it supersedes earlier synthesis.
 
 - Keep PostgreSQL as the operational store; tests use disposable clusters.
+- Run validation locally. Do not add GitHub Actions workflows or depend on
+  GitHub CI; the owner chose local validation on 2026-09-16.
 - Run `make test-integration` and `make check` for store changes. `make test`
   alone skips database coverage when no test DSN is set.
 - Never use an existing production database for tests or test cleanup.
