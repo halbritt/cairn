@@ -1,0 +1,57 @@
+# Claude native channel observations — September 16
+
+These are acceptance probes of Claude Code 2.1.273 in an owned test conversation.
+The production Cairn runtime remains `6fdffe0`; this report does not establish
+deployed channel delivery or interactive cancellation.
+
+## Native transport and draft
+
+The new Go MCP bridge was built from the delegated implementation in
+`/tmp/cairn-claude-channel-build`. Only the owned idle Claude test process was
+restarted, resuming the same native conversation with the bridge configured as
+`cairn-events` and the explicit development-channel launcher flag.
+
+The native MCP handshake completed and the bridge registered the actual Claude
+parent process. A notification received a transport `written` response. Claude
+then produced the requested bounded chat reply while the pre-existing unsubmitted
+draft remained in the composer. The response and draft were observed separately
+from the transport result.
+
+## Busy messages share a prompt
+
+A first notification requested one bounded `sleep 15` tool call. After observing
+its native `PreToolUse` hook, the probe waited two seconds and sent a second
+notification requesting a chat reply. The native tool completed before the second
+notification was admitted. Claude replied to both messages and the draft remained
+unchanged.
+
+The selected hook sequence was:
+
+1. First `UserPromptSubmit`.
+2. `PreToolUse`, display output, then `PostToolUse` for the bounded command.
+3. Second `UserPromptSubmit`.
+4. Display output and one `Stop`.
+
+Both submission hooks and the Stop carried the same `prompt_id`. Thus a channel
+message can join an active prompt after a tool boundary. The identifier does not
+provide exclusive ownership of one notification or one Cairn request. A watcher
+observing idle before submission cannot rule out this race by itself.
+
+The adapter needs a consumption-time admission contract that prevents a wake from
+claiming work inside an unrelated active prompt, with explicit handling of a
+refused notification. Per-request cancellation also needs exclusive ownership
+and confirmed tool cleanup. These remain implementation and verification work.
+
+## Bridge review finding
+
+The bridge's separate live-registry check and atomic rename allow concurrent
+writers to replace each other. A review test using live owned child-process
+identities reproduced two successful writers for one parent. Atomic file
+replacement alone does not establish single-bridge ownership. The implementing
+agent received the failing test and a repair request; deployment awaits review.
+
+Selected local evidence is in `/tmp/cairn-claude-go-probe/verification.json` and
+`busy-requests.json`, with hook metadata under
+`/tmp/cairn-claude-channel-probe/hook-events.jsonl`. The registry regression uses
+`/tmp/cairn-channel-review-overlay.json`; its temporary child processes were
+cleaned up. No raw model transcript or generated binary is committed.

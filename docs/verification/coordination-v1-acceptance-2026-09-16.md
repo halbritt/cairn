@@ -109,9 +109,13 @@ An owned Claude Code 2.1.273 conversation received a local MCP channel notificat
 without terminal input and responded while its unsubmitted composer draft stayed
 unchanged. An observer recorded the same native `prompt_id` on that channel's
 `UserPromptSubmit` and `Stop` hooks; `MessageDisplay` supplied a separate `turn_id`.
-This demonstrates a candidate submission route and request-ownership key. It is
-not yet a deployed Cairn inbox exchange, a busy-queue test, or cancellation proof.
-Selected local evidence is under `/tmp/cairn-claude-channel-probe`.
+This demonstrates a candidate submission route and a native prompt identifier.
+A later busy test with the implemented Go bridge found that two notifications
+can share that identifier: the second arrived after the active tool completed
+but before the first prompt's Stop. Both messages were handled in that prompt,
+with the draft preserved. `prompt_id` alone therefore cannot establish exclusive
+request ownership. This is not yet a deployed Cairn inbox exchange or cancellation
+proof. See [the native channel observations](claude-channel-2026-09-16.md).
 
 The two owner-offered agents are implementing the Claude/Codex and Hermes/OpenCode
 adapters and their tests. Their work is pending review and deployment. Final
