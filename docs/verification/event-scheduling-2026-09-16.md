@@ -57,5 +57,24 @@ unknown; no exactly-once claim is made for external effects.
 
 ## Deployment
 
-The implementation checks above precede deployment. Installed revision and
-service verification are recorded below after rollout.
+Clean CLI/API build `215f9424188a835cdaf3c0da97115fffeb5579be` was pushed
+and deployed with migration 045, checksum
+`523120afd5a1ab202e7fb37e911d133f328fcfbe1658408ef39736b6593f9194`.
+The pre-upgrade backup `cairn-20260916T082944-182225.dump` passed catalog,
+checksum and archive-read checks. Its production data was not restored for tests.
+The previous executable is retained as `cairn-before-one-shot-scheduling`.
+
+No unfinished wake or native attempts remained before stopping services. Presence,
+seven workers and the Hermes gateway stopped before the API. After migration and
+atomic executable replacement, an actual API version response verified the clean
+revision before workers restarted. Existing semantic-worker arguments were retained.
+The new `cairn-scheduler.service` is enabled and reported readiness after a tick.
+All eleven services were active/running with zero restarts, and all seven slots
+reported online/available. Availability describes admission state, not provider
+capacity or task acceptance. The scheduler's read-only production list was empty;
+no production test schedules or requests were created.
+
+Skillpack `f26b25a` was pushed and installed. Its selected Cairn event reference
+matched across both Codex homes, both Claude homes, OpenCode, Gemini/Agy and
+Hermes. The validator reported zero failures and two pre-existing warnings.
+Full coordination v1 acceptance remains open.

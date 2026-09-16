@@ -20,7 +20,7 @@ Deployment evidence is in [the session verification report](../verification/agen
 | 3. Resolve/publish | Exact selectors/aliases, ambiguity and atomic freshness checks deployed in migration 038. |
 | 4. Session/pool delivery | Native turn-boundary delivery deployed in migration 039; actual fresh-worker conversation links deployed in migration 040. A useful review exchange completed with an explicit host wake. Pool selection, bounded admission, fairness and explicit account availability are deployed in migration 041. Migration 042 adds supported native failure ingestion; Agy coverage and the full routing acceptance trial remain pending. |
 | 5. Wake operations | Structured context and per-slot launch spacing/backoff deployed; read-only cursor watch and operator review/reissue deployed. Scheduling/cancellation and response groups remain below. |
-| 6. Scheduling/cancellation | One-shot scheduling, misfire audit and unpublished-intent cancellation implemented in migration 045; rollout evidence is tracked separately. Admission TTL, task deadlines and running cancellation remain pending. |
+| 6. Scheduling/cancellation | One-shot scheduling, misfire audit and unpublished-intent cancellation deployed in migration 045 ([evidence](../verification/event-scheduling-2026-09-16.md)). Admission TTL, task deadlines and running cancellation remain pending. |
 | 7. Bounded coordination | Response groups and required limits pending; conditional features retain their triggers. |
 
 Implemented adapters: native hooks supply conversation identity and observed
