@@ -38,7 +38,7 @@ def load_native_fixture():
     return None
 
 
-def check(binary, root, opencode=None, hermes=None, codex=None, agy=None):
+def check(binary, root, opencode=None, hermes=None, codex=None, agy=None, claude=None):
     assert os.environ.get("CAIRN_TEST_DATABASE_URL"), "CAIRN_TEST_DATABASE_URL required"
     assert os.environ["CAIRN_DATABASE_URL"] == os.environ["CAIRN_TEST_DATABASE_URL"], (
         "CAIRN_DATABASE_URL must be identical to CAIRN_TEST_DATABASE_URL"
@@ -344,6 +344,35 @@ subprocess.run(wake["completion"],input="Selected worker pool fixture result",te
                             assert any(r['main'] and r['status'] == 200 for r in fixture.requests), fixture.requests
             report.append('installed Agy rate limit suspends its slot; different errors and recovered retries preserve availability')
 
+        if claude:
+            from check_claude_provider import ClaudeProviderFixture
+            config['worker']['harness'] = 'claude'
+            config['timeout_seconds'] = 20
+            for mode in ('rate-limit', 'recovered', 'later-error'):
+                with ClaudeProviderFixture(root / ('claude-' + mode), claude, dict(
+                    cairn=binary, socket=config['socket'], token_file=config['agent_token'],
+                    repo=repo, binding='probe-worker'), mode) as fixture:
+                    event = publish('NATIVE-CLAUDE-' + mode, harness='claude')
+                    start(fixture.command)
+                    wait_for(lambda: status(event)['deliveries'] and status(event)['deliveries'][0]['state'] == 'failed', 90)
+                    wait_for(lambda: not active())
+                    stop()
+                    attempt = next(w for w in call('wake-attempts', {})['attempts'] if w['delivery']['event']['event_id'] == event['event_id'])
+                    assert attempt.get('session') and fixture.requests, ('missing native Claude provider/session', attempt)
+                    events = [json.loads(line) for line in (root / 'artifacts' / (attempt['attempt_id'] + '.stdout')).read_text().splitlines()]
+                    assert any(e.get('subtype') == 'api_retry' and e.get('error_status') == 429 for e in events), events
+                    slot = next(w for w in call('worker-list', {})['workers'] if w['consumer'] == 'pool-probe/agent')
+                    if mode == 'rate-limit':
+                        assert attempt['provider_failure'] == dict(harness='claude', source='native-event', kind='rate_limit', code='claude_rate_limit', status=429), attempt
+                        assert slot['health'] == 'unavailable', slot
+                        call('worker-health', dict(request_id=str(uuid.uuid4()), supervisor_id=slot['supervisor_id'],
+                            expected_revision=slot['revision'], health='available', reason='Explicit fixture recovery after observed Claude rate limit'))
+                    else:
+                        assert not attempt.get('provider_failure') and slot['health'] == 'available', (attempt, slot)
+                        assert (200 if mode == 'recovered' else 400) in fixture.requests, fixture.requests
+            config['timeout_seconds'] = 60
+            report.append('installed Claude retry event persists through timeout; recovery and later non-quota error preserve availability')
+
         # Exercise the stream -> local observation -> report -> durable admission
         # path with selected synthetic native envelopes, without a provider call.
         config['worker']['harness'] = 'codex'
@@ -417,5 +446,6 @@ if __name__ == "__main__":
     parser.add_argument("--hermes", help="Optional path to Hermes executable for native quota probe")
     parser.add_argument("--codex", help="Optional path to Codex executable for native subscription quota probe")
     parser.add_argument("--agy", help="Optional path to Agy executable for isolated native rate-limit probe (requires bwrap)")
+    parser.add_argument("--claude", help="Optional path to Claude executable for isolated native rate-limit probe (requires bwrap)")
     args = parser.parse_args()
-    check(args.binary, args.directory, opencode=args.opencode, hermes=args.hermes, codex=args.codex, agy=args.agy)
+    check(args.binary, args.directory, opencode=args.opencode, hermes=args.hermes, codex=args.codex, agy=args.agy, claude=args.claude)

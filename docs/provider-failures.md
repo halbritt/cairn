@@ -11,7 +11,7 @@ this adds no session credentials or local security boundary.
 | Harness | Recognized observation | Limits |
 | --- | --- | --- |
 | Codex | `exec --json` terminal `turn.failed`, with either of the two exact diagnostics below or the observed subscription-limit templates | Labelled `native-diagnostic`; other wording is unclassified. |
-| Claude Code | `system.api_retry` with `error_status:429` and `error:"rate_limit"` | Labelled `native-event`; requires a retry event. A later different retry failure, successful assistant message or successful result clears the candidate. |
+| Claude Code | `system.api_retry` with `error_status:429` and `error:"rate_limit"` | Labelled `native-event`; requires a retry event. A different retry failure or successful assistant message clears the candidate. A terminal result retains it only for `is_error:true`, `terminal_reason:"api_error"`, `api_error_status:429`. |
 | OpenCode | JSON `error` containing `APIError.data.statusCode` 429 or 402 | Labelled `native-event`; 429 means rate limit, 402 means billing. |
 | Hermes | Native `api_request_error` hook with classifier reason `rate_limit` or `billing` | Labelled `native-hook`; subsequent successful `post_api_request` or a different error clears the candidate. Unverified billing classifications are excluded. |
 | Agy | `stream-json` result with an anchored native HTTP 429 / `RESOURCE_EXHAUSTED` retry diagnostic, when the latest step is a completed error | Labelled `native-diagnostic`, kind `rate_limit`. Requires matching conversation and step history; other provider wording remains unclassified. |
@@ -37,6 +37,12 @@ Successful completion clears the candidate. `available` permits admission; it do
 certify provider capacity. Parser coverage must be revisited when native versions
 change. Claude can exit zero after an API error; process exit alone is not used
 to classify it or complete the delivery.
+
+Claude 2.1.273 can follow a 429 retry with a non-retryable HTTP 400. Its terminal
+result still says `terminal_reason: "api_error"`, but `api_error_status: 400`
+supersedes the earlier rate limit. Missing or different final status clears the
+candidate; no error-text matching fills that gap. A supervisor timeout before
+the terminal result retains the last observed retry classification.
 
 Agy 1.2.4 can return `status: ERROR` and an old 429 diagnostic after a successful
 response. The parser therefore tracks the greatest `step_index` in the initialized
@@ -101,3 +107,7 @@ The `--agy` option uses an isolated settings mount and loopback provider to chec
 rate-limit reporting, ordinary errors, a later different error and successful
 recovery with a stale final diagnostic. See [Agy verification](verification/agy-provider-failures-2026-09-16.md).
 See [verification](verification/provider-failures-2026-09-16.md).
+The `--claude` option checks the installed executable's retry event through a
+managed timeout, successful recovery and a later non-retryable HTTP 400, including
+native session association and actual slot health. See
+[Claude verification](verification/claude-provider-failures-2026-09-16.md).

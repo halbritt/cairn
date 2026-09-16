@@ -1,0 +1,384 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-claude-terminal-status-2026-09-16",
+  "question": "Should a terminal Claude API error preserve an earlier rate-limit observation when its final HTTP status differs or is missing?",
+  "scope": [
+    "Claude terminal failure supersedes earlier retry classification",
+    "Installed native loopback verification through API and supervisor"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Accepted coordination v1 implementation/deployment goal",
+    "authorized_scope": [
+      "Repair selected native failure classification while preserving independent slot health and trusted-host identity"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-claude-authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner authorized coordination v1 implementation and deployment, selected provider failure reporting with independent account health, and explicitly requires waiting until Rhumb is idle before its restart. This repair changes only Claude terminal candidate retention; no session credentials or store migration.",
+      "provenance": [
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "124f29ff38d7c10692455d2292c4c399b8986310af28391ce8c9794efe7c4d7a"
+        },
+        {
+          "locator": "docs/verification/coordination-v1-acceptance-2026-09-16.md",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "059aae377d8c88448efc8faf81cd141142e41c388b80d8ce5b377744adb97903"
+        }
+      ],
+      "satisfies": [
+        "decision owner",
+        "explicit task authority",
+        "task scope and authority statement",
+        "user instruction and authority",
+        "accepted desired behavior and semantic authority"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-claude-contract",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Selected native provider observations are fallible admission signals. Current terminal failure supersedes earlier retry classification; unknown final status must not be guessed. Slot recovery remains explicit, heartbeat never heals health, execution is not replayed. Parent read AGENTS, README, design review, plan, provider contract, source and package tests. Semantic repair scope is one field and terminal condition; other harnesses, store identity, cleanup and recovery remain unchanged. No store API/schema change; Go/Python checks and isolated native fixture cover the boundary.",
+      "provenance": [
+        {
+          "locator": "AGENTS.md",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "c27e830a649a2bbc1a84d97ca28cb8c9bcdf1bf11ec02705f6da9cef41a96504"
+        },
+        {
+          "locator": "docs/provider-failures.md",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "2656ec945e7b641283403a362775c3f2da10860ad748a56c1725b45059a2e746"
+        },
+        {
+          "locator": "Makefile",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "11a9b33c9331ef6f81cca240607e5afd421c405ea923deeb2c0b39602fc4690e"
+        },
+        {
+          "locator": "go.mod",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "ba43e503a3bb15f07b23aa9430349d379cf8a8d9ff53381e42778fb7356e0b3a"
+        },
+        {
+          "locator": "docs/design-review.md",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "49f7d3c016e0d48cb071331802601c186f234a45fd29d1d1c80935adb95e0a21"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "repository contract",
+        "callee contract",
+        "caller recovery behavior",
+        "current Go version and repository convention",
+        "caller recovery needs",
+        "cleanup obligations",
+        "language and repository convention",
+        "operation and caller contract",
+        "product correctness and availability policy",
+        "side effects and idempotency",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "repository instructions from root through target path",
+        "target repository and task scope",
+        "preservation matrix and consumers",
+        "proc-establish-preservation-boundaries",
+        "change-type classification",
+        "per-edit change classification",
+        "preservation boundary and semantic authority",
+        "CI and build matrix",
+        "formatter and static-tool configuration",
+        "repository version and dependency contract"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-claude-incident",
+      "evidence_class": "evidence-incidents",
+      "summary": "Native Claude2.1.273 against isolated loopback provider returned api_retry429 then terminal api_error_status400 without another retry. Installed Cairn1f2f388 persisted stale429 and made slot unavailable. Exact API/systemd probe assertion failed. No production provider affected. Leaving unchanged causes false suspension; text matching is unnecessary because native terminal status exists. Minimal change checks terminal status; risk is older status-less native envelopes become unclassified.",
+      "provenance": [
+        {
+          "locator": "/tmp/cairn-claude-provider-runtime.log",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "7a6188b3c86ba0b0918a64ff51cb8093a87e93d9aab95ffb0cb0fea3fc5fbafd"
+        },
+        {
+          "locator": "/tmp/cairn-claude-provider-runtime/artifacts/1b91a172-2747-4043-9ba5-602ee7289370.stdout",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "0975254051a298aa1a66e22cbef724dd2849619268f07b21088dfd62e4158fb3"
+        }
+      ],
+      "satisfies": [
+        "a bounded decision question",
+        "alternatives including no change where viable",
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "evidence connecting the proposed action to the condition",
+        "actual current cost/risk or absence within a stated interval",
+        "expected future change from accepted plans",
+        "intervention cost and uncertainty",
+        "latent security, safety, data, durability, and compatibility check",
+        "proc-decide-leave-code-alone"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-claude-source",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Claude parser now retains an existing429 candidate at a terminal result only for is_error, terminal_reason api_error, api_error_status429. The result alone cannot create a failure. Different or absent status clears. Existing retry classification and callback persistence unchanged; supervisor still waits for cgroup cleanup before finishing. New native fixture uses explicit hooks/privateCLAUDE_CONFIG_DIR, fake loopback provider, no model tools, emptyMCP and read-onlyhost. No new production concurrency, storage or publicAPI.",
+      "provenance": [
+        {
+          "locator": "internal/wakeup/provider_stream.go",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "39eb32cf71356aa6b844c7922a564d7144d7dd6cc261b48aca5817e13a6b5574"
+        },
+        {
+          "locator": "internal/wakeup/provider_observation.go",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "b658b9c732bb6abaedb0f6b52ae6c647bddfa63489f71e7d1b628b0de2efcbea"
+        },
+        {
+          "locator": "internal/wakeup/wakeup.go",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "042696dc5bcaab2087e73d21efd9f5636e48c2cb202822d4393a39b3fef0392c"
+        },
+        {
+          "locator": "scripts/check_claude_provider.py",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "a01e2a24119fa341c26360c54a083646e5b491c0ddb95816a6b53317e5da6ee4"
+        },
+        {
+          "locator": "scripts/check_worker_pools.py",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "4307e1c3b94f19495348bd9e3a07818ca56f5b5f686f05ae39cac183bb31346e"
+        }
+      ],
+      "satisfies": [
+        "current source, configuration, and relevant runtime state",
+        "adjacent code"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-claude-tests",
+      "evidence_class": "evidence-tests",
+      "summary": "Targeted regression failed for status400 and missingstatus before repair; wakeup race suite, make test(Go plus109Python tests; DBcoverage requiresDSN) and make check passed after. Existing positive terminal429 test updated to actual explicit status field. No store change. Native corrected probe is tracked separately until its process returns. Corrected full native API/systemd probe passed all three Claude cases; final fixture mount refinement also passed in runtime-3. No store migration or store implementation changed.",
+      "provenance": [
+        {
+          "locator": "/tmp/cairn-claude-provider-red.log",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "0d789614f6064bc3bfa681106582fc25236759a1a34a88fc0aaf7b909b45182f"
+        },
+        {
+          "locator": "/tmp/cairn-claude-provider-unit.log",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "0e7b7c00302f3a41daa844f0bb8c5718781afb7f8429b32562c87b1de5bb50af"
+        },
+        {
+          "locator": "/tmp/cairn-claude-provider-tests.log",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "3ffeb415e6190e79873f2d6ce98c59fb6a9c0f45f1f421e7d0f7436f35d2155e"
+        },
+        {
+          "locator": "/tmp/cairn-claude-provider-check.log",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+        },
+        {
+          "locator": "internal/wakeup/provider_stream_test.go",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "926b8ad38247717f0a463e31ba292fcd10f9cc23f3577a2ba64f0f7a1041f28b"
+        },
+        {
+          "locator": "/tmp/cairn-claude-provider-runtime-2.log",
+          "method": "Collected completed process exit zero and inspected report",
+          "observed_at": "2026-09-16T11:05:59.158537+00:00",
+          "content_sha256": "4ac157129f9f0fc05e3d5c9e3b0a285c82dd146674e4f5c7e2a019a70e942d16"
+        },
+        {
+          "locator": "/tmp/cairn-claude-provider-runtime-3.log",
+          "method": "Collected completed process exit zero and inspected report",
+          "observed_at": "2026-09-16T11:05:59.158537+00:00",
+          "content_sha256": "4ac157129f9f0fc05e3d5c9e3b0a285c82dd146674e4f5c7e2a019a70e942d16"
+        }
+      ],
+      "satisfies": [
+        "reversibility and verification",
+        "cleanup and failure tests",
+        "behavior tests",
+        "tests, characterization, probes, or explicit residual risk",
+        "checkpoint verification"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-claude-native",
+      "evidence_class": "evidence-runtime-observation",
+      "summary": "Installed Claude 2.1.273 loopback probes emitted actual retry429, recovered200 terminal success, and terminal400 after429. Separate bare probe naturally exhausted ten retries in174.9seconds, exit1, terminal api_error_status429/is_errortrue/api_error. Complete natural429 envelope is verified separately from real supervisor timeout path. Fake credentials and disposable local providers only.",
+      "provenance": [
+        {
+          "locator": "/tmp/cairn-claude-provider-runtime/artifacts/1b91a172-2747-4043-9ba5-602ee7289370.stdout",
+          "method": "Inspected source or collected probe result",
+          "observed_at": "2026-09-16T11:02:24.024172+00:00",
+          "content_sha256": "0975254051a298aa1a66e22cbef724dd2849619268f07b21088dfd62e4158fb3"
+        },
+        {
+          "locator": "/tmp/cairn-claude-terminal-probe.log",
+          "method": "Collected completed native probe and inspected result",
+          "observed_at": "2026-09-16T11:05:59.158537+00:00",
+          "content_sha256": "40eb3a3e45159d250598f28cb0b6535911170fe14753d80c6b8f07532c2113e0"
+        }
+      ],
+      "satisfies": []
+    }
+  ],
+  "assertions": [
+    {
+      "id": "reproduced",
+      "type": "observation",
+      "text": "Actual Claude429 then400 produced a stale rate-limit slot suspension before repair; regression and corrected native probe distinguish this defect.",
+      "evidence": [
+        "cairn-claude-incident",
+        "cairn-claude-tests",
+        "cairn-claude-native"
+      ]
+    },
+    {
+      "id": "repair",
+      "type": "decision",
+      "text": "Require terminal api_error_status429 to retain a previous429 candidate. Missing or different terminal status clears. Timeout retains last observed retry. No text guessing, replay or automatic health recovery.",
+      "owner": "repository owner via delegated implementation",
+      "authority": "Accepted coordination v1 goal",
+      "depends_on": [
+        "reproduced"
+      ],
+      "evidence": [
+        "cairn-claude-contract",
+        "cairn-claude-source"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Require explicit terminal429 before retaining candidate",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-claude-tests",
+        "cairn-claude-native"
+      ]
+    },
+    {
+      "option": "Preserve earlier429 for all terminal API errors",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-claude-incident"
+      ]
+    },
+    {
+      "option": "Classify free-text errors or change all harness parsers",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-claude-contract"
+      ]
+    }
+  ],
+  "source_locators": [
+    "packet:pkt-83e57de3e6d94788",
+    "sha256:83e57de3e6d947887f30d45f8e2ba84c3781bbd4775490a8babb4ccb4f08fe25",
+    "release:d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "docs/plans/agent-coordination-v1.md",
+    "docs/verification/coordination-v1-acceptance-2026-09-16.md",
+    "AGENTS.md",
+    "docs/provider-failures.md",
+    "Makefile",
+    "go.mod",
+    "docs/design-review.md",
+    "/tmp/cairn-claude-provider-runtime.log",
+    "/tmp/cairn-claude-provider-runtime/artifacts/1b91a172-2747-4043-9ba5-602ee7289370.stdout",
+    "internal/wakeup/provider_stream.go",
+    "internal/wakeup/provider_observation.go",
+    "internal/wakeup/wakeup.go",
+    "scripts/check_claude_provider.py",
+    "scripts/check_worker_pools.py",
+    "/tmp/cairn-claude-provider-red.log",
+    "/tmp/cairn-claude-provider-unit.log",
+    "/tmp/cairn-claude-provider-tests.log",
+    "/tmp/cairn-claude-provider-check.log",
+    "internal/wakeup/provider_stream_test.go",
+    "/tmp/cairn-claude-provider-runtime-2.log",
+    "/tmp/cairn-claude-provider-runtime-3.log",
+    "/tmp/cairn-claude-terminal-probe.log"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Regression fails before repair and wakeup race suite passes afterward",
+    "Installed native API/systemd cases pass on disposable PostgreSQL",
+    "make test and make check pass"
+  ],
+  "reopening_conditions": [
+    "Native Claude event schema changes",
+    "Another current terminal error can preserve a stale candidate",
+    "Any independent slot-health, cleanup or recovery regression"
+  ],
+  "residual_risk": [
+    "No claim of provider capacity or task acceptance. Older native results without final HTTP status are unclassified. Rhumb restart remains pending idle.",
+    "Nonmaterial: data-dedup-key-identity-completeness / an explicit enumeration of the record's identity dimensions matched against the key's columns: No record identity or key changes.",
+    "Nonmaterial: data-dedup-key-identity-completeness / logical-identity definition of the affected record: No record identity or key changes.",
+    "Nonmaterial: data-dedup-key-identity-completeness / the conflict-handling semantics at that key - abort update or silent drop: No record identity or key changes.",
+    "Nonmaterial: data-ingest-population-scoping / a dry-run enumeration with counts compared against expectation: No ingest or backfill.",
+    "Nonmaterial: data-ingest-population-scoping / the discovery pattern shown to match the specification's depth and class constraints: No ingest or backfill.",
+    "Nonmaterial: data-ingest-population-scoping / the input population specification: No ingest or backfill.",
+    "Nonmaterial: data-ingest-population-scoping / the specified input population stated precisely: No ingest or backfill.",
+    "Nonmaterial: go-consumer-owned-interfaces / Go method-set and import-direction compatibility: No Go interface or ownership changes.",
+    "Nonmaterial: go-consumer-owned-interfaces / current consumer call sets and ownership: No Go interface or ownership changes.",
+    "Nonmaterial: go-consumer-owned-interfaces / current consumer inventory: No Go interface or ownership changes.",
+    "Nonmaterial: go-consumer-owned-interfaces / observed substitution, volatility, or cross-boundary pressure: No Go interface or ownership changes.",
+    "Nonmaterial: go-interface-nil-semantics / caller nil checks and method use: No interface return or nil conversion changes; existing concrete pointer callback preserved.",
+    "Nonmaterial: go-interface-nil-semantics / documented absence semantics: No interface return or nil conversion changes; existing concrete pointer callback preserved.",
+    "Nonmaterial: go-interface-nil-semantics / dynamic type and dynamic value at the return: No interface return or nil conversion changes; existing concrete pointer callback preserved.",
+    "Nonmaterial: implementation-async-ui-state-design / an enumeration of lifecycle phases with a designed state for each: No user interface.",
+    "Nonmaterial: implementation-async-ui-state-design / content lifecycle phases enumerated: No user interface.",
+    "Nonmaterial: implementation-async-ui-state-design / explicit handlers where platform defaults were overridden: No user interface.",
+    "Nonmaterial: implementation-async-ui-state-design / geometry reserved independent of the async payload: No user interface.",
+    "Nonmaterial: implementation-attention-budget-presentation / a prioritization key tied to the consumer's decision: No ranked report or context-budget implementation changes.",
+    "Nonmaterial: implementation-attention-budget-presentation / proof canonical data is unchanged by presentation: No ranked report or context-budget implementation changes.",
+    "Nonmaterial: implementation-attention-budget-presentation / the bound stated and enforced: No ranked report or context-budget implementation changes.",
+    "Nonmaterial: implementation-attention-budget-presentation / the consumer and budget named: No ranked report or context-budget implementation changes.",
+    "Nonmaterial: implementation-attention-budget-presentation / the consumer and their budget named: No ranked report or context-budget implementation changes.",
+    "Nonmaterial: implementation-config-reference-validation / a load-time or gate check resolving every reference against them: No production configuration or symbolic reference changes; native fixture exercises existing installer bindings.",
+    "Nonmaterial: implementation-config-reference-validation / a named-identifier failure on mismatch: No production configuration or symbolic reference changes; native fixture exercises existing installer bindings.",
+    "Nonmaterial: implementation-config-reference-validation / the consumer's defined identifier and enum sets: No production configuration or symbolic reference changes; native fixture exercises existing installer bindings.",
+    "Nonmaterial: implementation-rank-before-truncate / the match-text composition enumerated field by field: No ranking or truncation changes.",
+    "Nonmaterial: implementation-rank-before-truncate / the scan shown to score the full bounded set before truncation: No ranking or truncation changes.",
+    "Nonmaterial: implementation-rank-before-truncate / the selection contract stated: No ranking or truncation changes.",
+    "Nonmaterial: implementation-rank-before-truncate / the selection contract stated - relevance-ordered top-N versus first-N: No ranking or truncation changes.",
+    "Nonmaterial: operations-symptom-cause-monitoring / current page inventory classified symptom-versus-cause: No paging or monitoring policy changes.",
+    "Nonmaterial: operations-symptom-cause-monitoring / golden-signal coverage with the error definition stated: No paging or monitoring policy changes.",
+    "Nonmaterial: operations-symptom-cause-monitoring / the service's user-visible failure modes: No paging or monitoring policy changes."
+  ]
+}

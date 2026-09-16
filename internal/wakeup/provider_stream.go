@@ -290,6 +290,7 @@ type claudeLine struct {
 	Type              string `json:"type"`
 	Subtype           string `json:"subtype"`
 	ErrorStatus       int    `json:"error_status"`
+	APIErrorStatus    int    `json:"api_error_status"`
 	Error             string `json:"error"`
 	IsApiErrorMessage bool   `json:"is_api_error_message"`
 	IsError           bool   `json:"is_error"`
@@ -323,8 +324,9 @@ func (s *providerStream) parseClaude(raw []byte) error {
 			return s.notify(nil)
 		}
 	case "result":
-		// Retain on terminal api_error; clear on successful result
-		if line.TerminalReason != "api_error" || !line.IsError {
+		// A non-retryable error can follow a 429 without another api_retry.
+		// Only a confirmed terminal 429 preserves the earlier candidate.
+		if line.TerminalReason != "api_error" || !line.IsError || line.APIErrorStatus != 429 {
 			return s.notify(nil)
 		}
 	}

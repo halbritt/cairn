@@ -18,6 +18,9 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-16
 
+- Claude wake workers clear an earlier rate limit when the terminal API error
+  reports another or missing HTTP status. An installed-native loopback probe
+  reproduced the stale classification and verifies slot health after recovery.
 - Agy wake workers recognize selected native rate-limit results. Step ordering
   prevents an old 429 diagnostic from suspending a recovered account; partial
   timeout results remain separate from task success. Recovery stays explicit.

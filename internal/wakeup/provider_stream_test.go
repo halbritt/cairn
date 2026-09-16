@@ -292,7 +292,7 @@ func TestClaudeStreamTerminalApiErrorAndSuccessResult(t *testing.T) {
 	s := newProviderStream("claude", record)
 	retry := `{"type":"system","subtype":"api_retry","attempt":1,"max_retries":10,"retry_delay_ms":500,"error_status":429,"error":"rate_limit"}` + "\n"
 	assistantErr := `{"type":"assistant","message":{"id":"msg_2"},"is_api_error_message":true}` + "\n"
-	terminalApiErr := `{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","result":"Rate limit reached"}` + "\n"
+	terminalApiErr := `{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","api_error_status":429,"result":"Rate limit reached"}` + "\n"
 
 	for _, line := range []string{retry, assistantErr, terminalApiErr} {
 		if _, err := s.Write([]byte(line)); err != nil {
@@ -318,6 +318,36 @@ func TestClaudeStreamTerminalApiErrorAndSuccessResult(t *testing.T) {
 	}
 	if len(observed) != 2 || observed[0] == nil || observed[1] != nil {
 		t.Fatalf("successful result should clear candidate: %+v", observed)
+	}
+}
+
+func TestClaudeTerminalErrorSupersedesEarlierRateLimit(t *testing.T) {
+	for _, terminal := range []string{
+		`{"type":"result","is_error":true,"terminal_reason":"api_error","api_error_status":400}`,
+		`{"type":"result","is_error":true,"terminal_reason":"api_error"}`,
+	} {
+		t.Run(terminal, func(t *testing.T) {
+			var observed []*core.ProviderFailure
+			s := newProviderStream("claude", func(f *core.ProviderFailure) error {
+				observed = append(observed, f)
+				return nil
+			})
+			for _, line := range []string{
+				`{"type":"system","subtype":"api_retry","error_status":429,"error":"rate_limit"}`,
+				`{"type":"assistant","error":"unknown","is_api_error_message":true}`,
+				terminal,
+			} {
+				if _, err := s.Write([]byte(line + "\n")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if len(observed) != 2 || observed[0] == nil || observed[1] != nil {
+				t.Fatalf("terminal non-429 or unknown status must clear earlier retry: %+v", observed)
+			}
+		})
 	}
 }
 
