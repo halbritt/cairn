@@ -1,6 +1,6 @@
 # Coordination v1 acceptance checkpoint — 2026-09-16
 
-Runtime `1846f95` with migration 047 is deployed. This checkpoint distinguishes
+Runtime `e81057b` with migration 047 is deployed. This checkpoint distinguishes
 implemented behavior, observed native use and explicit limitations against the
 [v1 plan](../plans/agent-coordination-v1.md).
 
@@ -8,6 +8,7 @@ implemented behavior, observed native use and explicit limitations against the
 | --- | --- |
 | Session UUIDs, account namespaces, resume fencing and exact metadata resolution | Implemented and tested through disposable store/API and native lifecycle probes; see [sessions](agent-sessions-2026-09-15.md). |
 | Existing-session delivery while busy | Installed Codex/Claude loopback-provider probes and an opted-in Agy real-model probe passed. The real Codex/Rhumb request queued while busy and completed at an owner-prompt boundary; see [the live trial](rhumb-live-routing-2026-09-16.md). |
+| Automatic idle-session wakeup | Deployed across seven bindings; the real ai-newsroom conversation woke through the presence service, completed once and replied, then returned idle with its hold released. See [the automatic trial and host limitations](idle-session-wakeups-2026-09-16.md). |
 | Real metadata-selected review exchange | Parent resolved the offered Agy session by harness/project, sent a real v1 review and read its result. Its explicit reply filled the deployed response group; see [response groups](response-groups-2026-09-16.md). |
 | Two Codex and two Claude accounts | Separate bindings, principals and health are implemented. Earlier real account probes include successful completion and a Codex account-limit failure; [the wakeup report](agent-wakeups-2026-09-15.md) records these. They do not establish current capacity or all native failure paths for both homes. |
 | Provider failures | Selected Codex, Claude, OpenCode, Hermes and Agy observations are implemented and tested; [current coverage](../provider-failures.md) remains explicit. Agy's native recovery case requires step freshness because its final result retains an old 429. Claude's [native probe](claude-provider-failures-2026-09-16.md) found and verified a fix for stale 429 retention after terminal HTTP 400. |
@@ -73,13 +74,20 @@ conversation, its native hook handled the queued request once, and its reply
 collected before the deadline. The parent read and checked both results, then
 acknowledged their replies; neither delivery retains a process hold.
 
-This closed the earlier turn-boundary slice. The owner’s subsequent instruction
-to continue v1 requires automatic idle-session wakeup; full completion is open
-until that path is implemented, deployed and verified without a manual prompt.
-Automatic prompting of fully idle interactive sessions is not implemented by the
-native adapter; fresh-worker automatic wakeups remain a separate supported path.
-The trials establish routing and handling mechanics, with useful metadata review,
-not measured productivity improvement or completion of either project's work.
+The subsequent automatic idle-session extension is also implemented, tested and
+deployed. At 15:15:31 UTC a new request was queued for the idle ai-newsroom
+conversation. The presence service woke it without a parent terminal prompt;
+native handling completed once, its explicit reply collected at 15:16:48 UTC,
+and its hold finished at 15:16:53 UTC. The parent read and verified the result,
+acknowledged the reply and confirmed the same conversation/process returned idle.
+
+Coordination v1 is complete within these contracts. This accepts the implemented
+slice and observed exchanges; full design acceptance and measured productivity
+remain separate. Herdr's final check-to-submission race and unknown composer
+draft are documented limits. The automatic live trial covers one Codex session;
+other harnesses have the shared deployed adapter and protocol coverage, without
+a claim of live automatic verification in every account. Conditional features
+above retain their triggers, and interactive hard stops remain unsupported.
 
 ## Acceptance audit follow-up
 

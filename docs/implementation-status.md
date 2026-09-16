@@ -1,6 +1,6 @@
 # Implementation status — 2026-09-16
 
-Current installed CLI/API: clean `1846f95`, migration 047. Native session identity,
+Current installed CLI/API: clean `e81057b`, migration 047. Native session identity,
 presence, exact metadata resolution, turn-boundary inbox delivery, worker pools,
 selected provider-failure handling, watch, operator recovery and one-shot
 scheduling are deployed. [Request controls](request-controls.md) now add admission
@@ -23,13 +23,16 @@ The [live Rhumb trial](verification/rhumb-live-routing-2026-09-16.md) completed
 without this rollout interrupting or restarting the busy session. Its queued
 request arrived at an owner-prompt boundary and received an explicit reply.
 The owner-selected [ai-newsroom idle trial](verification/ai-newsroom-idle-wakeup-2026-09-16.md)
-also completed after an explicit host prompt. The owner’s continuation reopens
-[v1 completion](verification/coordination-v1-acceptance-2026-09-16.md) for automatic
-idle-session wakeup.
-Fully idle interactive sessions still need a host trigger; the native adapter does
-not automatically prompt them on inbox arrival. Native interactive hard stops
-remain an explicit capability limitation, and unknown provider diagnostics stay
-unclassified. The snapshots below retain earlier implementation states.
+also completed after an explicit host prompt. A subsequent
+[automatic wakeup trial](verification/idle-session-wakeups-2026-09-16.md) completed
+in that same conversation using the deployed presence service, with one native
+claim, explicit reply and released hold. Idle wakeup is enabled for all seven
+bindings and requires a uniquely matched, unfocused idle Herdr session.
+[Coordination v1](verification/coordination-v1-acceptance-2026-09-16.md) is complete
+within its stated contracts. Native interactive hard stops remain an explicit
+capability limitation, and unknown provider diagnostics stay unclassified. Herdr
+has no atomic idle-only prompt or composer reservation; those host limitations
+remain documented. The snapshots below retain earlier implementation states.
 
 ## Historical implementation snapshots
 

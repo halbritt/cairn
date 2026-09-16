@@ -12,8 +12,10 @@ deployed and tested. Turn-boundary native inbox delivery is deployed in migratio
 041. Migration 042 adds selected native provider failure ingestion. Native Agy
 rate-limit reporting now has verified step-freshness checks; unrecognized
 diagnostics remain gaps. Scheduling, request controls and response
-groups are deployed through migration 047. The owner’s continuation requires automatic idle-session wakeup as well;
-that work reopens completion. See
+groups are deployed through migration 047. Automatic idle-session wakeup is
+deployed in runtime `e81057b` and verified in the existing ai-newsroom conversation.
+The seven milestones and this extension are complete within their stated
+contracts; conditional features retain their triggers. See
 the [current checkpoint](../verification/coordination-v1-acceptance-2026-09-16.md).
 
 | Milestone | Current progress |
@@ -21,7 +23,7 @@ the [current checkpoint](../verification/coordination-v1-acceptance-2026-09-16.m
 | 1. Session identity | Registry, same-profile UUID inboxes and execution fencing deployed in migration 037. |
 | 2. Presence/context | Native hooks and host watcher deployed for both Codex homes, both Claude homes, OpenCode, Agy and Hermes. |
 | 3. Resolve/publish | Exact selectors/aliases, ambiguity and atomic freshness checks deployed in migration 038. |
-| 4. Session/pool delivery | Native turn-boundary delivery deployed in migration 039; actual fresh-worker conversation links deployed in migration 040. A useful review exchange completed with an explicit host wake. Pool selection, bounded admission, fairness and explicit account availability are deployed in migration 041. Migration 042 adds supported native failure ingestion, with later Codex/Agy parser coverage. The live Rhumb request completed at an owner-prompt boundary with an explicit reply. |
+| 4. Session/pool delivery | Native turn-boundary delivery deployed in migration 039; actual fresh-worker conversation links deployed in migration 040. A useful review exchange completed with an explicit host wake. Pool selection, bounded admission, fairness and explicit account availability are deployed in migration 041. Migration 042 adds supported native failure ingestion, with later Codex/Agy parser coverage. The live Rhumb request completed at an owner-prompt boundary with an explicit reply. Automatic idle wakeup is deployed and verified in ai-newsroom; see [the trial](../verification/idle-session-wakeups-2026-09-16.md). |
 | 5. Wake operations | Structured context, per-slot launch spacing/backoff, read-only cursor watch and operator review/reissue deployed. |
 | 6. Scheduling/cancellation | One-shot scheduling, misfire audit and unpublished-intent cancellation deployed in migration 045 ([evidence](../verification/event-scheduling-2026-09-16.md)). Migration 046 adds admission TTL and managed fresh-worker deadlines/cancellation; active native/manual interruption remains unsupported ([evidence](../verification/request-controls-2026-09-16.md)). |
 | 7. Bounded coordination | Fixed response groups, explicit replies, deadline policies and collection limits deployed in migration 047 ([evidence](../verification/response-groups-2026-09-16.md)); conditional features retain their triggers. |
@@ -34,8 +36,10 @@ Codex and Claude homes. Hook updates preserve selected task metadata and use
 context revisions. API outages expire presence; watcher heartbeats cannot
 silently replace a newer execution. Native inbox delivery now uses supported
 lifecycle boundaries and explicit handling with no new profile credentials;
-see its [contract](../native-inbox.md). Idle processes without
-a new supported boundary do not get an out-of-band wakeup from this adapter.
+see its [contract](../native-inbox.md). The configured watcher can now wake an
+eligible idle Herdr conversation so its native hook creates that boundary.
+Focused, busy, ambiguous and unsupported targets defer; see the
+[idle-wakeup contract](idle-session-wakeups.md).
 
 ## Required user behavior
 
@@ -320,11 +324,11 @@ session; using fuzzy memory search as a directory cannot establish fresh routing
 adding a broker does not resolve identity. Retain the existing transport and add
 the smallest session directory and delivery contracts before dispatch changes.
 
-Adapter feasibility, session/profile association details, native-session resume
-behavior, live task benefit, contention baselines and multi-host fencing remain
-unverified. They are not required to record this sequence; each is a blocking
-implementation/acceptance obligation at its named milestone. Do not report
-directory routing or interactive delivery as installed until those checks pass.
+The original planning obligations for adapter feasibility, session/profile
+association and native resume behavior are addressed by the linked milestone
+reports. The live review exchanges establish routing and selected useful
+feedback. Broad productivity benefit, contention baselines and multi-host fencing
+remain unestablished; the latter two retain their conditional feature triggers.
 
 
 ### Review provenance and remaining obligations

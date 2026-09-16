@@ -3,8 +3,9 @@
 The owner's September 16 continuation requires a message to wake an existing
 idle conversation without another agent or the owner sending a terminal prompt.
 The manual ai-newsroom trial does not satisfy this requirement. This extends
-coordination v1 milestone 4; completion remains open through deployment and a
-real automatic exchange.
+coordination v1 milestone 4. Clean runtime `e81057b` is deployed and the real
+[automatic ai-newsroom exchange](../verification/idle-session-wakeups-2026-09-16.md)
+completed with an explicit reply and released native hold.
 
 ## Delivery contract
 

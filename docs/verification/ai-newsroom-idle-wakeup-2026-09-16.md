@@ -1,8 +1,10 @@
 # ai-newsroom idle host wakeup — 2026-09-16
 
 The owner selected the existing ai-newsroom Codex session for an idle wakeup
-trial. This checks delivery after an explicit Herdr host prompt. Cairn's native
-adapter does not itself send prompts to fully idle terminals on inbox arrival.
+trial. This historical trial checks delivery after an explicit Herdr host prompt.
+At that time Cairn's adapter did not prompt fully idle terminals on inbox arrival.
+The later [automatic trial](idle-session-wakeups-2026-09-16.md) verifies that
+subsequently implemented capability in the same conversation.
 
 ## Activate the same conversation
 
