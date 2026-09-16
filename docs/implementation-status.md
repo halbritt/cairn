@@ -1,6 +1,11 @@
 # Implementation status — 2026-09-16
 
-Current installed CLI/API: clean `e81057b`, migration 047. Native session identity,
+Current installed CLI/API: clean `6fdffe0`, migration 048. The explicit Codex native
+queue now binds each claim to its exact delivery and turn; worker cleanup checks
+final unit state after a stop error. The API, presence, scheduler and seven idle
+worker services were restarted after backup and migration. See the
+[binding and live verification report](verification/native-turn-binding-2026-09-16.md).
+Native session identity,
 presence, exact metadata resolution, turn-boundary inbox delivery, worker pools,
 selected provider-failure handling, watch, operator recovery and one-shot
 scheduling are deployed. [Request controls](request-controls.md) now add admission

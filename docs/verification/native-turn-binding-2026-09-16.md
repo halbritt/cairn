@@ -50,6 +50,33 @@ The final source passed `make test-integration`, including the real cgroup
 control suite, `make check`, all 136 Python tests, and the wakeup package's race
 tests. Test databases were disposable; production was not used for testing.
 
+## Deployment and native exchange
+
+Clean build `6fdffe0` and migration 048 were deployed after a database backup.
+The API, presence watcher, scheduler and seven idle worker services restarted
+successfully. CLI and API reported the same clean revision. Hermes' gateway
+remained active; its adapter invokes the installed coordination script for each
+hook. No busy Rhumb conversation was restarted.
+
+At 11:27:45 PDT, request `b817f63d-0b93-4cc8-a34f-647a64c95d63` was published to
+the owned native Codex conversation. The parent sent no prompt after publication.
+The presence watcher queued the wake, and its hook claimed delivery
+`57db7709-31f0-417b-9143-f818bb74cd75` once. Result
+`0b778f35-d16b-459b-8aea-f27da088aab3/1` reported matching identity, cwd, delivery
+and native turn `01a0ab79-9d02-75d3-84f1-2fe9c58db2b1`.
+
+The parent read the result and independently matched that turn against both
+operator review and native `thread/read`, which reported it completed. The hold
+finished at 11:28:19, the reply collected at 11:28:26, and the parent acknowledged
+it at 11:29:26. The original process/start/boot and execution remained live and
+idle, and the unsubmitted composer draft remained unchanged. Selected local
+evidence is under `/tmp/cairn-native-turn-live-acceptance`.
+
+The offered OpenCode agent's separate queue review identified a liveness gap:
+a queue start refused while busy can leave an item paused after interruption,
+while the retained wake marker suppresses a new submission. The repair is
+delegated; this deployment does not claim that gap resolved.
+
 ## Limits
 
 Native turn association is a prerequisite for interactive request control.
