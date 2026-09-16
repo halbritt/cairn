@@ -1,7 +1,8 @@
 # Live Codex/Rhumb routing — 2026-09-16
 
-Status: request published while the addressed session was busy; handling and
-reply remain pending. This is not yet a successful delivery claim.
+Status: the metadata-selected request was queued while busy, delivered at an
+owner-prompt boundary, completed by the addressed session and explicitly answered.
+The response group collected its one expected reply.
 
 ## Current session and owner constraint
 
@@ -46,19 +47,19 @@ deadline does not stop the Rhumb task or expire its inbox request.
 
 Selected local observations are in `/tmp/cairn-rhumb-live-acceptance`. No parent
 process claimed the recipient's inbox or prompted its terminal to force a turn.
-The native adapter's supported Stop boundary is responsible for delivering the
-queued request. Pending publication does not establish receipt, handling,
-response collection or acceptance.
+The actual delivery followed the owner’s “check your inbox” prompt. The parent
+did not send that prompt. This observation verifies native delivery at a new
+prompt boundary; it does not verify an autonomous Stop or idle wakeup.
 
-## Review and remaining evidence
+## Review and completed exchange
 
 The offered agent independently reviewed the plan against this changed runtime
 state. Its selected result `6298967a-b245-43a2-90b0-c96883afa1d6/1` was read and
 acknowledged. It agrees that a completed exchange with this genuine current Rhumb
 conversation can satisfy the live-target requirement; the identity rules do not
 require targeting an obsolete process. It found no other mandatory gap within
-its inspected scope. This review does not establish that the pending message was
-handled.
+its inspected scope. The runtime observations below establish handling
+separately from the review.
 
 The parent rechecked the milestone contracts, source tests and retained successful
 integration/lifecycle reports. The earlier tests cover resume identity, isolation,
@@ -70,6 +71,24 @@ Installed CLI/API still reported clean `1846f95`; all eleven services were runni
 and all seven slots were online/available at 14:19 UTC. Availability permits
 admission and does not prove provider capacity.
 
-Remaining evidence is an actual native claim and completion by this addressed
-session, followed by reading its explicit reply and checking the result against
-the request. Until then, the live trial and full v1 acceptance remain open.
+Native attempt `862bb7e7-a3b5-4de1-932c-53a5af753fbf` began at 14:25:37 UTC.
+The delivery was handled in one attempt at 14:26:32 UTC, with selected result
+`8f31556e-8c03-431a-a331-b9d092d11145/1`. The parent read that exact result.
+It reports the supplied native inbox context, successful explicit completion,
+and no duplicate consumer or ownership conflict. The agent refreshed its task
+metadata under the same agent UUID and execution. Its reported Rhumb commit
+`2b77565` was independently found in the selected worktree; this check does not
+accept the full Rhumb product task.
+
+Response `195d5172-bdb7-44a6-9310-d073641b3c57` came from the addressed UUID with
+the original causation/correlation at 14:26:46 UTC. The group closed as
+`collected`, expected 1/responded 1, before its deadline, with its payload
+available. The parent acknowledged the response after reading it. The native
+attempt finished at 14:26:51 UTC with `delivery_completed`; operator review
+showed no remaining hold and no fresh-worker attempt.
+
+The installed snapshot at 14:28:40 UTC still showed clean CLI/API `1846f95`,
+eleven running services, seven native-delivery bindings and matching installed
+adapter/skill references. This closes the real Rhumb routing exchange within
+the supported prompt-boundary contract. Fully idle wakeup is checked separately
+with the owner-selected [ai-newsroom session](ai-newsroom-idle-wakeup-2026-09-16.md).

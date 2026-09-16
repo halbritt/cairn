@@ -1,13 +1,13 @@
 # Coordination v1 acceptance checkpoint — 2026-09-16
 
 Runtime `1846f95` with migration 047 is deployed. This checkpoint distinguishes
-implemented behavior, observed native use and remaining work against the
+implemented behavior, observed native use and explicit limitations against the
 [v1 plan](../plans/agent-coordination-v1.md).
 
 | Area | Evidence and remaining work |
 | --- | --- |
 | Session UUIDs, account namespaces, resume fencing and exact metadata resolution | Implemented and tested through disposable store/API and native lifecycle probes; see [sessions](agent-sessions-2026-09-15.md). |
-| Existing-session delivery while busy | Installed Codex/Claude loopback-provider probes and an opted-in Agy real-model probe passed. The live Codex/Rhumb trial remains open. |
+| Existing-session delivery while busy | Installed Codex/Claude loopback-provider probes and an opted-in Agy real-model probe passed. The real Codex/Rhumb request queued while busy and completed at an owner-prompt boundary; see [the live trial](rhumb-live-routing-2026-09-16.md). |
 | Real metadata-selected review exchange | Parent resolved the offered Agy session by harness/project, sent a real v1 review and read its result. Its explicit reply filled the deployed response group; see [response groups](response-groups-2026-09-16.md). |
 | Two Codex and two Claude accounts | Separate bindings, principals and health are implemented. Earlier real account probes include successful completion and a Codex account-limit failure; [the wakeup report](agent-wakeups-2026-09-15.md) records these. They do not establish current capacity or all native failure paths for both homes. |
 | Provider failures | Selected Codex, Claude, OpenCode, Hermes and Agy observations are implemented and tested; [current coverage](../provider-failures.md) remains explicit. Agy's native recovery case requires step freshness because its final result retains an old 429. Claude's [native probe](claude-provider-failures-2026-09-16.md) found and verified a fix for stale 429 retention after terminal HTTP 400. |
@@ -30,18 +30,20 @@ On September 16 the owner directed us to wait until this Rhumb session is idle
 before restarting and resuming the same conversation to load the hooks. Preserve
 that boundary; an observer timeout does not establish that its work has ended.
 
-## Next work and conditional features
+## Live results and conditional features
 
-Complete the existing-session Rhumb trial after that conversation loads the
-installed hooks. Keep account
-launch success, recorded quota failures and task acceptance separate.
+Keep account launch success, recorded quota failures and task acceptance separate.
 
 Update at 14:15 UTC: a different, genuine Rhumb conversation is now running with
 the installed hooks. The process change happened outside this rollout; no restart
 was performed by this agent. Exact metadata resolution succeeded and a real
-review request was queued while that session was busy. Handling remains pending;
-see [the live trial](rhumb-live-routing-2026-09-16.md). This does not claim the old
-conversation resumed.
+review request was queued while that session was busy. It completed and
+explicitly replied by 14:26:46 UTC after the owner’s inbox prompt created a
+supported boundary. The parent read the result and acknowledged
+the reply; the native hold finished. See [the live trial](rhumb-live-routing-2026-09-16.md).
+This does not claim the old conversation resumed or that idle terminals wake
+automatically. The owner selected ai-newsroom for a separate
+[idle host-wakeup trial](ai-newsroom-idle-wakeup-2026-09-16.md).
 
 A September 16 loopback-provider probe of Agy captured an ordinary HTTP 400
 failure with exit code 1 and a terminal JSON object using `event: "result"`
@@ -60,7 +62,22 @@ Priority aging, new trust-boundary policy, recurrence, wildcard subscriptions,
 batching, a broker, cross-host leadership and general workflows retain the plan's
 explicit triggers. Their absence is not silently treated as completed work.
 Native interruption remains an explicit capability limitation, not a simulated
-cancellation by killing a shared gateway. Full v1 acceptance remains open.
+cancellation by killing a shared gateway.
+
+## Acceptance disposition
+
+The seven milestones are implemented and deployed within their stated contracts.
+The remaining live Rhumb exchange has completed. The additional owner-selected
+ai-newsroom idle trial also completed: an explicit host prompt woke the existing
+conversation, its native hook handled the queued request once, and its reply
+collected before the deadline. The parent read and checked both results, then
+acknowledged their replies; neither delivery retains a process hold.
+
+This closes implementation and rollout acceptance for the planned v1 slice.
+Automatic prompting of fully idle interactive sessions is not implemented by the
+native adapter; fresh-worker automatic wakeups remain a separate supported path.
+The trials establish routing and handling mechanics, with useful metadata review,
+not measured productivity improvement or completion of either project's work.
 
 ## Acceptance audit follow-up
 
