@@ -154,6 +154,23 @@ def heartbeat(config, state):
     return call(config, "agent-heartbeat", session_ref(state["agent"]))
 
 
+def finish_presence(config, state, path, timeout=4):
+    # Persist the logical end before contacting the API. A long-lived gateway
+    # process must not cause its finished conversation to be revived on recovery.
+    state['ending'] = True
+    write_state(path, state)
+    if not state.get('agent'):
+        state['agent'] = call(config, 'agent-register', state['registration'], timeout=timeout)
+        write_state(path, state)
+    try:
+        call(config, 'agent-leave', session_ref(state['agent']), timeout=timeout)
+    except CoordinationError as exc:
+        if exc.code not in ('STALE_SESSION', 'NOT_FOUND'):
+            raise
+    state['retired'] = True
+    write_state(path, state)
+
+
 def handle(config, event, event_name=None):
     if any(os.environ.get(k) == "1" for k in ("CAIRN_COORDINATION_DISABLED", "CAIRN_LIFECYCLE_DISABLED", "CAIRN_LIFECYCLE_CHILD")) or os.environ.get("CAIRN_WAKE_CONTEXT"):
         return {}
@@ -171,17 +188,13 @@ def handle(config, event, event_name=None):
     path = state_path(config, observation["native_id"])
     with session_lock(path):
         state = json.loads(path.read_text()) if path.exists() else {}
+        if state.get('ending') and not state.get('retired'):
+            finish_presence(config, state, path)
         if state and not same_process(process, state["process"]) and process_alive(state["process"]) and not state.get("retired"):
             raise CoordinationError("SESSION_BUSY", "this conversation is associated with another live process")
         if observation["phase"] == "leave":
-            if state.get("agent") and same_process(process, state["process"]):
-                try:
-                    call(config, "agent-leave", session_ref(state["agent"]), timeout=1.5)
-                except CoordinationError as exc:
-                    if exc.code not in ("STALE_SESSION", "NOT_FOUND"):
-                        raise
-                state["retired"] = True
-                write_state(path, state)
+            if state and same_process(process, state["process"]) and not state.get('retired'):
+                finish_presence(config, state, path, timeout=1.5)
             return {}
         if not state or state.get("retired") or not same_process(process, state["process"]):
             retained = None
@@ -255,7 +268,9 @@ def watch_once(config):
                 state = json.loads(path.read_text())
                 if state.get("retired"):
                     continue
-                if process_alive(state["process"]):
+                if state.get('ending'):
+                    finish_presence(config, state, path)
+                elif process_alive(state["process"]):
                     if not state.get("agent"):
                         state["agent"] = call(config, "agent-register", state["registration"])
                     else:
@@ -265,12 +280,7 @@ def watch_once(config):
                     # observed response it expires naturally within 90 seconds.
                     state["retired"] = True
                 else:
-                    try:
-                        call(config, "agent-leave", session_ref(state["agent"]))
-                    except CoordinationError as exc:
-                        if exc.code not in ("STALE_SESSION", "NOT_FOUND"):
-                            raise
-                    state["retired"] = True
+                    finish_presence(config, state, path)
                 write_state(path, state)
         except CoordinationError as exc:
             if exc.code == "SESSION_BUSY":

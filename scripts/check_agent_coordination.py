@@ -111,6 +111,16 @@ def check(binary, root, repo, api_call):
             assert path.stat().st_mode & 0o777 == 0o600
         hook(second, dict(event, hook_event_name="SessionEnd"))
         assert not entry(agent["agent_id"])
+        hook(second, dict(event, session_id='native-outage-end'))
+        ended = next(a for a in api_call('bob', 'agents', 'list', '--harness', 'codex')['agents'] if a['native_session_id'] == 'native-outage-end')
+        configured = config.read_text()
+        config.write_text(json.dumps(dict(json.loads(configured), socket=str(root / 'unavailable.sock'))))
+        try:
+            hook(second, dict(event, session_id='native-outage-end', hook_event_name='SessionEnd'), code=1)
+        finally:
+            config.write_text(configured)
+        watch()
+        assert second.poll() is None and not entry(ended['agent_id']), 'ending native turn was revived after API recovery'
         if os.environ.get("CAIRN_HERMES_PYTHON"):
             subprocess.run([os.environ["CAIRN_HERMES_PYTHON"], str(Path(__file__).with_name("check_hermes_coordination.py")),
                 str(root / "native-hermes"), os.environ["CAIRN_HERMES_ROOT"], str(config)], check=True, timeout=90)
