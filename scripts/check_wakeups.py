@@ -1,7 +1,8 @@
 """Exercise real API, supervisor and systemd cgroups on a disposable database.
 
-Optional native harnesses use a synthetic loopback provider and isolated homes.
-No provider credentials or live user sessions enter this probe.
+The --opencode and --hermes fixtures use a synthetic provider and isolated homes.
+Explicit --live-binding probes use the selected native account and real model
+calls; the database, API identities and requested result remain disposable.
 """
 import argparse
 import hashlib

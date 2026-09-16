@@ -3,9 +3,14 @@
 The [wakeup supervisor](agent-wakeups.md) adds fresh Codex, Claude Code, Agy, OpenCode and Hermes workers
 for request events. PostgreSQL holds each claimed delivery until its systemd unit
 has stopped; explicit result completion, process observations and task acceptance
-remain separate. All five services are installed and running from clean build
-`e4fa703`, with migration 036. See the [verification report](verification/agent-wakeups-2026-09-15.md)
-for test coverage, installation details and limits.
+remain separate. Seven ordinal worker-slot services cover both Codex and both
+Claude accounts; the former five harness-named services are disabled. The first
+Codex account (`worker-01`) hit a provider usage limit during its live check.
+The installed runtime is clean build `e4fa703`, with migration 036. See the [verification report](verification/agent-wakeups-2026-09-15.md)
+for test coverage, installation details and limits. The
+[coordination v1 plan](plans/agent-coordination-v1.md) covers live identity,
+harness/model/project metadata, session routing and all previously deferred work;
+these planned capabilities are not yet installed.
 
 The [agent event fabric](agent-event-fabric.md) adds direct inboxes, topic fanout,
 durable subscriptions, leased polling and atomic result completion. Events are

@@ -128,12 +128,15 @@ errors are returned directly; there is no pending broker-publication queue.
 ## Agent interface
 
 Named hosted profiles live in `~/.local/share/cairn/event-profiles/NAME.token`.
-Use `--profile codex` (or opencode, agy, claude, hermes) on top-level commands;
-the recipient address is `agent/codex`, etc. The profile selects an authenticated
-token, not a caller-supplied identity field. Operators can provision them with:
+Use `--profile worker-01` through `worker-07` for configured fresh-worker slots;
+the recipient address is `agent/worker-01`, etc. The legacy `codex`, `opencode`,
+`agy`, `claude` and `hermes` profiles remain available for manual inbox access.
+The profile selects an authenticated token, not a caller-supplied identity field.
+Operators can provision them with:
 
 ```sh
-python3 scripts/provision-event-profiles.py --repo "$HOME/git/cairn" codex opencode agy claude hermes
+python3 scripts/provision-event-profiles.py --repo "$HOME/git/cairn" \
+  worker-01 worker-02 worker-03 worker-04 worker-05 worker-06 worker-07
 systemctl --user restart cairn-api.service
 ```
 
@@ -173,7 +176,9 @@ durable hold on claimed deliveries; ordinary claims respect those holds and retr
 delays. Environment-based wake context, watch, priority, TTL, wildcard
 subscriptions, scheduling, response aggregation, distributed
 transactions and a NATS adapter are deferred. Polling provides the complete v1
-delivery contract without them.
+delivery contract without them. The [coordination v1 plan](plans/agent-coordination-v1.md)
+assigns these follow-ups to milestones and records the live identity, metadata
+and interactive-session routing requirements.
 
 ## Acceptance
 

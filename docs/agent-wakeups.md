@@ -1,7 +1,7 @@
 # Automated agent wakeups
 
 Status: implementation contract, 2026-09-15. The owner delegated design,
-implementation and deployment, including all five named harness bindings.
+implementation and deployment, including seven worker slots across five harnesses.
 
 ## Selected behavior
 
@@ -95,8 +95,10 @@ Fresh worker command shapes (model and profile choices belong to the binding):
 
 These unattended launch permissions apply only to the configured worker
 invocation. They do not grant new task authority or change interactive settings.
-Codex and Claude bindings explicitly select the owner's personal configuration
-homes through `/usr/bin/env`; no credentials are embedded in binding files.
+Codex and Claude bindings explicitly select each account's configuration home
+through `/usr/bin/env`; no credentials are embedded in binding files. Every slot
+sets `CAIRN_EVENT_PROFILE` to its name for agent guidance. That variable selects
+a profile; authentication still comes from the corresponding token.
 Codex's [noninteractive contract](https://learn.chatgpt.com/docs/non-interactive-mode)
 and Agy's [headless contract](https://antigravity.google/docs/cli/headless/)
 were checked against the installed CLI help. Agy may exit zero after a tool
@@ -123,6 +125,35 @@ an unfinished hold can remain; restoring service access lets startup reconcile i
 Worker stdout/stderr prefixes are retained locally, capped at 4 MiB each. Runner
 artifacts include full-stream hashes and pending outcomes where applicable.
 Neither worker logs nor source prompts are automatically captured as notes.
+
+## Installed worker slots
+
+Each slot has a distinct `agent/worker-NN` principal, event token and
+`cairn-wake-worker-NN.service`. Names are independent of account/harness choices.
+All currently launch fresh tasks from the configured Cairn workspace.
+
+| Slot | Harness | Account configuration | Model |
+| --- | --- | --- | --- |
+| `worker-01` | Codex | `~/.codex` | `gpt-6-astra` |
+| `worker-02` | Codex | `~/.codex-harm` | `gpt-6-astra` |
+| `worker-03` | Claude Code | `~/.claude` | `claude-fable-5-1[1m]` |
+| `worker-04` | Claude Code | `~/.claude-harm` | `claude-sonnet-5` |
+| `worker-05` | OpenCode | Dedicated wake configuration | `llamacpp/qwen3.8-27b` |
+| `worker-06` | Agy | Existing default profile | `gemini-3.8-flash-high` |
+| `worker-07` | Hermes | Existing default profile | `deepseek/deepseek-v4.1-flash` |
+
+The first Codex account hit its provider usage limit in the selected live check;
+its installed service cannot bypass that limit. The additional Claude account
+completed with Fable. Account availability is separate from service liveness.
+
+Legacy harness-named services are disabled. Their identities, tokens and inbox
+histories remain intact for manual handling, including pending response events.
+No existing event is redirected or relabelled.
+
+Slots do not identify live interactive sessions. Agent UUIDs, display ordinals,
+harness/model/project metadata and fresh recipient resolution are specified in
+the [coordination v1 plan](plans/agent-coordination-v1.md). That directory and
+existing-session delivery are not implemented by these binding changes.
 
 ## Coordination API
 

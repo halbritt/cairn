@@ -36,12 +36,15 @@ acceptance evidence.
 [Agent events](docs/agent-event-fabric.md) add durable direct inboxes and topic
 notifications over PostgreSQL. Agents publish an exact note version, poll with
 an expiring lease, and optionally save a result atomically with acknowledgment.
-`cairn inbox next --profile codex` uses the provisioned `agent/codex` inbox;
+`cairn inbox next --profile worker-01` uses the provisioned `agent/worker-01` inbox;
 `cairn publish --help` lists the commands. Profiles are explicit and polling does
 not launch agents. The [wakeup supervisor](docs/agent-wakeups.md) can launch fresh
 Codex, Claude Code, Agy, OpenCode and Hermes workers for request events, with one worker per inbox,
 lease renewal and systemd process cleanup. See the
-[event plan](docs/plans/agent-event-fabric.md) and [wakeup plan](docs/plans/agent-wakeups.md).
+[event plan](docs/plans/agent-event-fabric.md), [wakeup plan](docs/plans/agent-wakeups.md),
+and [coordination v1 plan](docs/plans/agent-coordination-v1.md). Seven worker slots
+cover both Codex and both Claude accounts; live session discovery and routing by
+project/harness metadata are planned.
 The [changelog](CHANGELOG.md) summarizes development changes and upgrade notes;
 the [implementation status](docs/implementation-status.md) records the current
 installation and complete history.

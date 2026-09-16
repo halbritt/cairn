@@ -38,3 +38,20 @@ No new credential provisioning or credit purchase is part of this change.
 All five bindings are installed. Claude uses `claude-sonnet-5`, the model resolved
 by the successful Sonnet probe; the original Fable credit-limit failure remains
 in the verification record. No runtime or schema change was needed.
+
+
+## Account and identity correction — 2026-09-15
+
+The owner corrected the missing second Codex and Claude accounts, then required
+fungible agent names with harness/model metadata and routing by current work.
+The initial harness-named deployments above are historical snapshots.
+
+- [x] Verify that both Codex and both Claude account homes are authenticated and distinct.
+- [x] Install seven ordinal worker-slot profiles and services with explicit profile context.
+- [x] Retire old wake services after checking active attempts and pending requests; preserve inbox histories.
+- [x] Probe the additional accounts: Claude completed; Codex returned a provider usage limit.
+- [x] Record the [coordination v1 plan](agent-coordination-v1.md), including every deferred feature.
+
+Current worker slots provide account coverage. They do not provide live session
+identity or route messages to an existing interactive conversation. Those are
+separate milestones in the coordination plan.

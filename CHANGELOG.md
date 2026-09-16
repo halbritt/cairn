@@ -18,6 +18,13 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-15
 
+- **Separate launch slots from accounts.** Seven ordinal wakeup bindings cover
+  both Codex and both Claude accounts. Each worker receives its profile name;
+  legacy inboxes retain their history. The additional Claude account passed a
+  live check; the additional Codex account reported its usage limit. Recorded
+  the [coordination v1 plan](docs/plans/agent-coordination-v1.md) for live agent
+  identity, metadata-based routing and the deferred feature inventory.
+
 - **Enable the remaining wakeup profiles.** Codex, Claude Code and Agy now use
   the same supervised fresh-worker path. Live completion checks passed against a
   disposable database. Claude's binding uses Sonnet 5 after its configured Fable

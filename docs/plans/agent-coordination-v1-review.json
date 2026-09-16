@@ -1,0 +1,124 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-agent-coordination-v1-2026-09-15",
+  "question": "How should Cairn separate account bindings, worker slots and live agent identity to route messages by current harness and project, and sequence the deferred coordination features?",
+  "scope": [
+    "coordination v1 implementation sequence",
+    "live identity and metadata routing requirements"
+  ],
+  "status": "decided",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Owner requested fungible UUID/ordinal identities, metadata-based targeting and a plan for deferred v1 work; existing design decisions were delegated.",
+    "authorized_scope": [
+      "record the design and implementation plan",
+      "correct account coverage using existing wakeup deployment procedures"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "owner-correction",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Two Codex and two Claude accounts; agent names must be fungible; resolve the Codex agent working on Rhumb using metadata; plan deferred v1 work.",
+      "provenance": [
+        {
+          "locator": "docs/plans/agent-coordination-v1.md#required-user-behavior",
+          "method": "Selected requirements from the current owner instructions"
+        }
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "existing-contract",
+      "evidence_class": "evidence-accepted-design-decisions",
+      "summary": "PostgreSQL operational state, authenticated inbox ownership, exact references, explicit completion and durable process holds remain the installed contract.",
+      "provenance": [
+        {
+          "locator": "docs/agent-event-fabric.md"
+        },
+        {
+          "locator": "docs/agent-wakeups.md"
+        }
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "requirements",
+      "type": "observation",
+      "text": "The owner requires identity independent of accounts/harnesses and targeting from current work context.",
+      "evidence": [
+        "owner-correction"
+      ]
+    },
+    {
+      "id": "preservation",
+      "type": "observation",
+      "text": "The existing messaging and wakeup contracts constrain new identity/routing behavior.",
+      "evidence": [
+        "existing-contract"
+      ]
+    },
+    {
+      "id": "plan",
+      "type": "decision",
+      "text": "Sequence authenticated instances, presence, resolution and session delivery before scheduling and broader coordination controls. Keep worker-slot coverage distinct from live-agent identity.",
+      "depends_on": [
+        "requirements",
+        "preservation"
+      ],
+      "owner": "repository owner via delegated design task",
+      "authority": "Current owner instructions"
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Live UUID identity plus fresh metadata and authenticated routing",
+      "disposition": "selected",
+      "evidence": [
+        "owner-correction",
+        "existing-contract"
+      ]
+    },
+    {
+      "option": "Harness/account names or static slots alone identify live agents",
+      "disposition": "rejected",
+      "evidence": [
+        "owner-correction"
+      ]
+    },
+    {
+      "option": "Replace PostgreSQL polling with a broker before resolving identity",
+      "disposition": "deferred",
+      "evidence": [
+        "existing-contract"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/plans/agent-coordination-v1.md",
+    "docs/agent-event-fabric.md",
+    "docs/agent-wakeups.md",
+    "core/agent_events.go",
+    "internal/wakeup/wakeup.go",
+    "localapi/server.go"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Per-milestone acceptance criteria and preservation checks in the plan",
+    "Disposable database integration/static/restore checks for store changes",
+    "Real Rhumb-targeting session trial before claiming live routing"
+  ],
+  "reopening_conditions": [
+    "Native resume/fork semantics contradict the proposed identity continuity",
+    "Supported session delivery requires a different adapter contract",
+    "Measured latency or availability requires revisiting the transport"
+  ],
+  "residual_risk": [
+    "Instance-credential issuance and adapter lifecycle contracts still require implementation and tests",
+    "Directory routing and existing-session delivery are planned, not deployed",
+    "Provider usage limits and future account failures remain independent of service liveness"
+  ]
+}

@@ -117,3 +117,56 @@ deployed to the existing eight skill locations, including Hermes. Successful
 small native completion checks establish working authenticated launch paths;
 future provider quota, authentication and task failures remain possible and
 remain visible as failed or unresolved attempts.
+
+
+## Two-account correction and ordinal worker slots
+
+The owner corrected the omission of the second Codex and Claude accounts, then
+required fungible agent identities and routing by current project/harness/model
+metadata. The five-service deployment described above is a historical snapshot.
+
+Both Codex account homes returned successful login status; their stored account
+IDs were compared locally and were distinct. Both Claude homes reported logged
+in through `claude.ai` with Max subscriptions; their account identities were
+also distinct. No identity values or credential contents were captured here.
+
+Seven new slot profiles and services, `worker-01` through `worker-07`, were
+installed using the existing provisioner and service installer. Each launcher
+sets its explicit `CAIRN_EVENT_PROFILE`. The [binding table](../agent-wakeups.md#installed-worker-slots)
+records which account home and model each slot currently uses. Authenticated
+read-only `event-metrics` calls verified all seven configured principals. All
+seven services were observed enabled, active and running; the five legacy
+harness-named services were observed disabled and inactive.
+
+Cutover checked that there were no active attempts or outstanding request
+deliveries, stopped the old supervisors, preserved the identity configuration
+in an owner-only operational backup, provisioned new distinct profile tokens,
+and restarted the API with its existing service configuration. No database
+migration, binary replacement or existing principal rename was involved. Two
+pending Claude response deliveries were retained in the old manual inbox;
+no existing event was redirected, deleted or relabelled.
+
+The two previously omitted native account paths were exercised against a fresh
+disposable PostgreSQL cluster through the actual API, supervisor and runner:
+
+- `worker-01`, using `~/.codex`, authenticated but returned the provider's account
+  usage-limit error. The delivery became `processing_failed`, with no fabricated
+  result. This slot's running service does not establish usable model capacity.
+- `worker-03`, using `~/.claude`, completed the exact selected result and linked
+  a runner receipt using its configured `claude-fable-5-1[1m]`. This account was
+  not given the other Claude account's Sonnet override. As in the prior probe,
+  unrelated hooks/MCP registration were isolated; normal production settings and
+  session persistence remain enabled in the installed binding.
+- The same probe passed request filtering, explicit completion, exit-without-ack
+  failure, supervisor SIGKILL/cgroup cleanup and API-outage recovery. Existing
+  successful tests of the other account/harness launchers remain the evidence
+  for those command paths; renaming slots was checked through configuration,
+  authenticated principals and service state, without claiming seven new live
+  model trials.
+
+The Cairn skill now explains ordinal slot names, explicit profile selection and
+legacy manual inboxes (skillpack `5e7a796`, pushed). Deployment checks passed, and all eight skill/reference
+copies matched the source. A slot is not a live interactive session identity.
+The [coordination v1 plan](../plans/agent-coordination-v1.md) specifies the UUID
+registry, freshness, metadata-based resolution and existing-session delivery,
+plus the complete deferred-feature inventory. Those capabilities remain planned.
