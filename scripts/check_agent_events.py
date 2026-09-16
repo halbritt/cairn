@@ -45,6 +45,9 @@ def check(binary, directory):
             argv = [binary, command]
             if command == "inbox":
                 argv.append("next")
+            if command == "agents":
+                argv.append(args[0])
+                args = args[1:]
             argv += connection + list(args)
         result = subprocess.run(argv, input=body, env=env, text=True,
                                 capture_output=True, timeout=15)
@@ -143,6 +146,36 @@ def check(binary, directory):
         raw = dict(request_id=str(uuid.uuid4()), kind="notice", ref=event["ref"],
                    destination=dict(type="agent", name="agent/bob"), **{"from": "agent/carol"})
         call("alice", "event-publish", raw=True, body=json.dumps(raw), expected="INVALID_REQUEST")
+        registration = ["register", "--request-id", str(uuid.uuid4()), "--binding", "codex-default",
+                        "--native-session", "one", "--harness", "codex", "--model", "configured-model",
+                        "--project", "rhumb", "--workspace", str(root), "--state", "busy"]
+        registered = call("bob", "agents", *registration)
+        assert call("bob", "agents", *registration) == registered
+        second_registration = list(registration)
+        second_registration[2] = str(uuid.uuid4())
+        second_registration[second_registration.index("--native-session") + 1] = "two"
+        second_agent = call("bob", "agents", *second_registration)
+        assert second_agent["agent_id"] != registered["agent_id"]
+        listing = call("alice", "agents", "list", "--harness", "codex", "--project", "rhumb")
+        assert len(listing["agents"]) == 2
+        session = ["--agent-id", registered["agent_id"], "--execution-id", registered["execution_id"]]
+        message = publish(to=registered["inbox"])
+        assert call("bob", "inbox")["delivery"] is None
+        stop(process)
+        process = start()
+        delivered = call("bob", "inbox", *session)["delivery"]
+        assert delivered["event"]["event_id"] == message["event_id"]
+        finished = call("bob", "complete", *session, "--request-id", str(uuid.uuid4()),
+                        "--lease", delivered["lease_id"], "--shareable", "--stdin",
+                        delivered["delivery_id"], body="Session handled selected request")
+        assert finished["state"] == "handled"
+        call("bob", "agents", "heartbeat", *session)
+        registration[2] = str(uuid.uuid4())
+        resumed = call("bob", "agents", *registration)
+        assert resumed["agent_id"] == registered["agent_id"]
+        assert resumed["execution_id"] != registered["execution_id"]
+        call("bob", "inbox", *session, expected="STALE_SESSION")
+        print("Agent sessions: stable identity, shared-profile inbox separation, completion and API restart passed")
         print("Agent events: CLI direct/offline delivery, replies, fanout, retry, leases and API restart passed")
     finally:
         if process is not None and process.poll() is None:

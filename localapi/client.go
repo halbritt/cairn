@@ -23,6 +23,15 @@ type Client struct {
 	http      *http.Client
 	transport *http.Transport
 	token     string
+	session   *core.AgentSessionRef
+}
+
+// ForAgentSession selects a registered inbox using the same profile token.
+// The returned client shares the transport, without mutating the base client.
+func (c *Client) ForAgentSession(ref core.AgentSessionRef) *Client {
+	view := *c
+	view.session = &ref
+	return &view
 }
 
 func NewClient(socket, tokenFile string) (*Client, error) {
@@ -79,6 +88,10 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
+	if c.session != nil {
+		req.Header.Set("Cairn-Agent-ID", c.session.AgentID)
+		req.Header.Set("Cairn-Execution-ID", c.session.ExecutionID)
+	}
 	result, err := c.http.Do(req)
 	if err != nil {
 		return err

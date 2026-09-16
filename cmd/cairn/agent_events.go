@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
-	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/halbritt/cairn/core"
@@ -18,6 +16,7 @@ const eventHelp = `Cairn agent events (authenticated API; no operator database a
 Common flags: --profile NAME | --token-file FILE, --socket PATH, --repo COLLECTION
 --profile selects ~/.local/share/cairn/event-profiles/NAME.token (or CAIRN_HOME).
 Inbox identity is the authenticated principal. --agent only asserts that identity.
+For session inboxes add --agent-id UUID --execution-id UUID using the same profile.
 Provide a stable --request-id UUID for publish, subscribe, unsubscribe, ack and complete.
 Retry an uncertain mutation with identical arguments and the same request UUID.
 
@@ -71,6 +70,8 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	socket := f.String("socket", "", "API socket")
 	repo := f.String("repo", "", "collection repository, defaults to profile")
 	agent := f.String("agent", "", "assert authenticated inbox owner")
+	agentID := f.String("agent-id", "", "registered session UUID")
+	executionID := f.String("execution-id", "", "current session execution UUID")
 	request := f.String("request-id", "", "stable retry UUID")
 	to := f.String("to", "", "recipient principal")
 	topic := f.String("topic", "", "topic (exclusive cursor for subscriptions)")
@@ -93,7 +94,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		}
 		return nil, invalid(err.Error())
 	}
-	allowed := " token-file socket profile "
+	allowed := " token-file socket profile agent-id execution-id "
 	switch command {
 	case "publish":
 		allowed += "repo request-id to topic kind version causation-id correlation-id "
@@ -128,16 +129,27 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		return nil, invalid("--" + unsupported + " is not supported by " + command)
 	}
 	if *profile != "" {
-		if client != nil || *token != "" || !regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`).MatchString(*profile) {
+		if client != nil {
 			return nil, invalid("--profile requires a top-level command and cannot combine with --token-file")
 		}
-		directory, err := dataDirectory()
+		var err error
+		*token, err = agentProfileToken(*profile, *token)
 		if err != nil {
 			return nil, err
 		}
-		*token = filepath.Join(directory, "event-profiles", *profile+".token")
 	}
-	if client != nil && (*token != "" || *socket != "") {
+	var sessionSelected bool
+	f.Visit(func(option *flag.Flag) {
+		if option.Name == "agent-id" || option.Name == "execution-id" {
+			sessionSelected = true
+		}
+	})
+	if sessionSelected {
+		if err := (core.AgentSessionRef{AgentID: *agentID, ExecutionID: *executionID}).Validate(); err != nil {
+			return nil, err
+		}
+	}
+	if client != nil && (*token != "" || *socket != "" || sessionSelected) {
 		return nil, invalid("agent connection flags must precede the operation")
 	}
 	var req any
@@ -220,6 +232,9 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		}
 		if *socket != "" {
 			connectionArgs = append(connectionArgs, "--socket", *socket)
+		}
+		if sessionSelected {
+			connectionArgs = append(connectionArgs, "--agent-id", *agentID, "--execution-id", *executionID)
 		}
 		// Raw operation dispatch uses the same default paths and client diagnostics.
 		encoded, err := json.Marshal(req)

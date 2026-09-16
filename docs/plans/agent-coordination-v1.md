@@ -5,6 +5,11 @@ deferred work and corrected the initial account-based interpretation of identity
 The existing [event fabric v1](../agent-event-fabric.md) is a messaging contract;
 its title does not mean that the coordination work below is implemented.
 
+Implementation progress: [session registry contract](../agent-sessions.md) covers
+identity, presence and explicit directory reads. Native adapters, resolution,
+existing-session delivery and remaining operational milestones are still pending.
+Deployment evidence is recorded separately from this plan.
+
 ## Required user behavior
 
 “Send a message to the Codex agent working on Rhumb” should find the live agent
@@ -23,14 +28,14 @@ not require a new identity scheme.
 
 | Term | Meaning and lifetime |
 | --- | --- |
-| Agent | A continuing conversation/session with a server-assigned UUID and a short, non-reused display ordinal such as `agent-42`. Its inbox follows that identity. |
+| Agent | A continuing conversation/session with a server-assigned UUID and a short display ordinal such as `agent-42`. Its inbox follows that identity. |
 | Execution | One process incarnation or wake attempt, identified by another UUID. A resumed agent can have a new execution without losing its inbox history. |
 | Worker slot | A configured place to launch fresh work, currently `worker-01` through `worker-07`. A slot is not proof that a live agent exists. |
 | Account binding | Operator-owned authentication/configuration home and launch settings. Kept outside public addressing; credentials never enter directory records. |
 | Presence | A bounded claim that an agent is currently reachable, with its execution generation, context revision and expiry. |
 | Project | The actual work project, such as Rhumb. It is separate from the shared Cairn collection named `/home/halbritt/git/cairn`. |
 
-An agent directory entry carries `agent_id`, display ordinal, authenticated owner,
+An agent directory entry carries `agent_id`, display ordinal, registered profile,
 harness, configured model, observed model when available, project ID/name,
 workspace, native session reference, concise task summary, state, delivery mode,
 execution ID, context revision, last-seen time and expiry. Account binding IDs are
@@ -38,10 +43,11 @@ operator-only. Models and capabilities reported by agents are labelled as such;
 they confer neither authentication nor permission. Unknown metadata stays unknown.
 Task descriptions contain selected context, never copied transcripts.
 
-Native session IDs are namespaced by their authenticated launcher binding.
+Native session IDs are namespaced by their launcher binding.
 Identical provider IDs from two account homes must not merge agents. A normal
 resume retains the agent UUID; a fork is a new agent. A fresh worker for unrelated
-work is also a new agent. Ordinals are display aids; UUIDs are canonical references.
+work is also a new agent. Ordinals are display aids, allocated without reuse within retained database
+history. A restore can discard later ordinals; UUIDs are canonical references.
 
 ## Current baseline and migration
 
@@ -68,25 +74,34 @@ Each milestone must ship with its contract, tests, upgrade procedure and observe
 deployment result. The sequence below gives dependencies and acceptance criteria.
 Milestones 1–4 deliver the Rhumb example; 5–7 close the operational follow-ups.
 
-### 1. Authenticated agent instances
+### 1. Session identity on the trusted host
 
 Add PostgreSQL agent-instance records with immutable UUID/ordinal, collection,
-authenticated owner, lifecycle and native-session binding. Registration is
-idempotent. The server owns identity allocation and checks registration ownership.
-Add an instance-scoped credential or equivalent server-verified delegation so
-one shared memory token does not collapse every session into the same inbox.
-Retain the existing ordinary memory profile separately.
+existing profile, lifecycle and native-session binding. Registration is
+idempotent. Cairn allocates the UUID and records the binding. Keep the current
+trusted-host boundary: no new per-session credential, provider login or claim
+that mutually hostile local agents are isolated. The owner explicitly selected
+this on 2026-09-15 after questioning the earlier authentication proposal.
 
-Before implementation, specify issuance, token storage, revocation, child scope,
-quota and restore fencing. Do not treat an `agent_id` request field or an
-environment variable as authentication. The current static 32-identity API
-configuration cannot serve as an unbounded session registry; do not solve this by
-appending credentials and restarting the API for every conversation.
+Requests use the existing local profile plus an explicit session UUID and
+execution generation. Cairn verifies the registered association and fences an
+obsolete execution before using its inbox. These are routing/consistency checks,
+not a new security boundary. A caller-supplied UUID alone is not authentication;
+the existing local profile remains the authenticated channel. Ordinary shared
+memory continues using its existing profile and collection.
+
+Do not append credentials or restart the API for every conversation. Registration,
+resume, leave and retirement are ordinary PostgreSQL operations. Restore fences
+old execution generations; explicit re-registration resumes the same session
+identity. Namespace native session IDs by launcher binding so identical IDs in
+the two account homes remain distinct.
 
 Acceptance: two concurrent sessions using the same account get different
-inboxes; retries do not duplicate registration; another owner cannot renew,
-claim or complete their work; a resumed session and a fork follow the rules
-above; existing profile deliveries and attribution remain unchanged.
+inboxes; retries do not duplicate registration; selecting one session cannot
+accidentally consume the other's deliveries; an obsolete execution cannot renew
+or complete after a resume; existing profile scope checks remain effective;
+a resumed session and a fork follow the rules above; existing profile deliveries
+and attribution remain unchanged.
 
 ### 2. Presence and context adapters
 
@@ -261,9 +276,9 @@ Alternatives: keeping harness names as identity fails the two-account and
 fungibility requirements; static ordinal slots alone cannot find an interactive
 session; using fuzzy memory search as a directory cannot establish fresh routing;
 adding a broker does not resolve identity. Retain the existing transport and add
-the smallest authenticated directory/session contracts before dispatch changes.
+the smallest session directory and delivery contracts before dispatch changes.
 
-Adapter feasibility, instance-credential issuance details, native-session resume
+Adapter feasibility, session/profile association details, native-session resume
 behavior, live task benefit, contention baselines and multi-host fencing remain
 unverified. They are not required to record this sequence; each is a blocking
 implementation/acceptance obligation at its named milestone. Do not report
@@ -292,10 +307,10 @@ implementation; each implementation milestone retains its own blocking checks.
 | Current carrying cost; later migration/reversal cost; reversal-cost estimate | Nonmaterial to planning additive slices; no measured cost reduction is claimed. Estimate actual migration effects before each rollout. |
 | Model expressed in executable behavior | Nonmaterial to a plan, material to accepting milestones 1–4. No live-directory implementation is claimed. |
 | Business differentiation/product lifespan; business-value/expert-access evidence; feedback cadence; team capacity | Nonmaterial: no separate domain framework or staffing proposal is selected. Keep the implementation in existing Cairn modules and revise the plan from owner feedback. |
-| Current cost/risk over an interval; latent security/data/compatibility check; no-change procedure | Nonmaterial to documenting the demonstrated account/routing gap; security and ownership contracts are material gates before implementing instance credentials. No general reliability improvement is claimed. |
+| Current cost/risk over an interval; latent security/data/compatibility check; no-change procedure | Nonmaterial to documenting the demonstrated account/routing gap; profile association and execution fencing are material checks before enabling session routing. No general reliability improvement is claimed. |
 | Preservation-boundary procedure | Nonmaterial to the plan's explicit preservation rules; material to implementation, which must add characterization for legacy inboxes, attribution, retries and restore fencing. |
 
 Reopen the identity design if actual native resume/fork semantics contradict the
 session rules. Reopen dispatch only if supported session delivery or measured
-availability requires a different mechanism. Stop a slice if its authentication,
+availability requires a different mechanism. Stop a slice if its session association,
 restore or process-termination contract is unresolved.

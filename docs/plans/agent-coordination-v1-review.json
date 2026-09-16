@@ -1,7 +1,7 @@
 {
   "schema_version": "decision-receipt/2",
   "receipt_id": "cairn-agent-coordination-v1-2026-09-15",
-  "question": "How should Cairn separate account bindings, worker slots and live agent identity to route messages by current harness and project, and sequence the deferred coordination features?",
+  "question": "How should Cairn associate live sessions with stable UUIDs and route by current metadata within the existing trusted-host boundary?",
   "scope": [
     "coordination v1 implementation sequence",
     "live identity and metadata routing requirements"
@@ -70,6 +70,16 @@
       ],
       "owner": "repository owner via delegated design task",
       "authority": "Current owner instructions"
+    },
+    {
+      "id": "trusted-host-correction",
+      "type": "decision",
+      "text": "Keep the existing trusted-host model. UUIDs identify sessions and inboxes; add association checks and execution fencing without separate per-session credentials or a new local security boundary.",
+      "depends_on": [
+        "requirements"
+      ],
+      "owner": "repository owner",
+      "authority": "Explicit owner correction, 2026-09-15"
     }
   ],
   "alternatives": [
@@ -117,7 +127,7 @@
     "Measured latency or availability requires revisiting the transport"
   ],
   "residual_risk": [
-    "Instance-credential issuance and adapter lifecycle contracts still require implementation and tests",
+    "Session/profile association and adapter lifecycle contracts still require implementation and tests",
     "Directory routing and existing-session delivery are planned, not deployed",
     "Provider usage limits and future account failures remain independent of service liveness"
   ]

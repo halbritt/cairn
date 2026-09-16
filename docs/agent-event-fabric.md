@@ -24,10 +24,12 @@ An acknowledgment is a report of handling, not independent evidence of success.
 The authenticated channel principal is the publisher and inbox owner. Destination
 names are exact principal strings; `--agent` is an optional assertion of the
 caller's own principal, never impersonation. Existing tokens with the same
-principal share an inbox. Distinct agents need distinct provisioned profiles.
+principal share an inbox by default. Registered [sessions](agent-sessions.md)
+select separate UUID inboxes through the same existing profile.
 Topics use 1–128 ASCII letters, digits, dots, underscores or hyphens. Principals
-use the existing channel identity contract. There is no agent discovery service:
-publishing to a not-yet-provisioned principal is valid and retains its delivery.
+use the existing channel identity contract. The session directory lists reported live context. Direct publication still
+accepts an exact principal without checking its presence; publishing to a
+not-yet-provisioned principal is valid and retains its delivery.
 
 All operations name one collection repository (defaulted from the authenticated
 profile). This is the collection identity, independent of the working directory.

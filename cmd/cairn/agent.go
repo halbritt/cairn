@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"regexp"
 
+	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
 	"github.com/halbritt/cairn/localapi"
 )
@@ -16,6 +18,8 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	f := flags("agent")
 	tokenFile := f.String("token-file", "", "owner-only API token file")
 	socket := f.String("socket", "", "Cairn Unix socket")
+	agentID := f.String("agent-id", "", "registered session UUID")
+	executionID := f.String("execution-id", "", "current session execution UUID")
 	if err := f.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return commandHelp(agentHelp), nil
@@ -34,6 +38,13 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	}
 	provided := map[string]bool{}
 	f.Visit(func(fl *flag.Flag) { provided[fl.Name] = true })
+	var session *core.AgentSessionRef
+	if provided["agent-id"] || provided["execution-id"] {
+		session = &core.AgentSessionRef{AgentID: *agentID, ExecutionID: *executionID}
+		if err := session.Validate(); err != nil {
+			return nil, err
+		}
+	}
 	socketPath := *socket
 	tokenPath := *tokenFile
 	if provided["socket"] && socketPath == "" {
@@ -63,6 +74,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, invalid("agent operation requires one JSON request on stdin")
 	}
 	switch operation {
+	case "agent-register", "agent-context", "agent-heartbeat", "agent-leave", "agent-directory":
 	case "wake-claim", "wake-attempts", "wake-change", "event-list", "event-inspect", "event-metrics", "event-publish", "event-next", "event-complete", "event-retry", "event-renew", "event-subscribe", "event-subscriptions", "publish", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats":
 	case "version", "remember", "search", "start", "pull", "pull-evidence", "run-package", "run-index", "revise", "append", "replace", "cite", "assessments", "history", "recompile":
 	case "run", "run-status", "register-context", "check-evidence", "evidence-impact", "refusal", "index", "expand", "expand-evidence", "create", "edit", "delete", "compile", "get", "usage", "usage-coverage", "evidence", "spawn", "terminal", "task-state", "bind-run", "link-run-retrieval", "claim-run", "delivery", "outcome", "assess-run", "use-report", "run-report", "conflict", "conflicts", "supersede", "supersession", "preview-retract":
@@ -74,6 +86,9 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, err
 	}
 	defer client.Close()
+	if session != nil {
+		client = client.ForAgentSession(*session)
+	}
 	if isEventCommand(operation) {
 		return eventCommand(ctx, operation, f.Args()[1:], input, client)
 	}
@@ -145,4 +160,18 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, err
 	}
 	return result, nil
+}
+
+func agentProfileToken(profile, token string) (string, error) {
+	if profile == "" {
+		return token, nil
+	}
+	if token != "" || !regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`).MatchString(profile) {
+		return "", invalid("--profile must name a provisioned profile and cannot combine with --token-file")
+	}
+	directory, err := dataDirectory()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(directory, "event-profiles", profile+".token"), nil
 }

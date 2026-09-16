@@ -24,6 +24,7 @@ type Store struct {
 	pool           *pgxpool.Pool
 	channel        Channel
 	semanticRanker SemanticRanker
+	session        *agentSessionChannel
 }
 
 // Open must be called by trusted host code. Agents must never receive the DSN
@@ -55,7 +56,11 @@ func OpenWithSemanticRanker(ctx context.Context, dsn string, channel Channel, ra
 	}
 	return s, err
 }
-func (s *Store) Close() { s.pool.Close() }
+func (s *Store) Close() {
+	if s.session == nil {
+		s.pool.Close()
+	}
+}
 
 // Migrate requires installer credentials and a dedicated experimental database.
 // Migrations and their checksums commit together; concurrent installers serialize.
@@ -128,6 +133,16 @@ func (s *Store) beginLevel(ctx context.Context, level pgx.TxIsoLevel) (pgx.Tx, e
 	if err = restoreAdmission(ctx, tx); err != nil {
 		tx.Rollback(context.Background())
 		return nil, err
+	}
+	if s.session != nil {
+		a, checkErr := currentAgentSession(ctx, tx, s.session.Ref, s.session.Profile, s.channel.Repo, false, s.session.Destination)
+		if checkErr == nil {
+			checkErr = activeAgent(a)
+		}
+		if checkErr != nil {
+			tx.Rollback(context.Background())
+			return nil, checkErr
+		}
 	}
 	return tx, nil
 }

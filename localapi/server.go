@@ -104,6 +104,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	r = r.WithContext(ctx)
+	ref := core.AgentSessionRef{AgentID: r.Header.Get("Cairn-Agent-ID"), ExecutionID: r.Header.Get("Cairn-Execution-ID")}
+	if len(r.Header.Values("Cairn-Agent-ID")) > 0 || len(r.Header.Values("Cairn-Execution-ID")) > 0 {
+		if strings.HasPrefix(r.URL.Path, "/v1/agent-") {
+			writeError(w, 400, "INVALID_REQUEST", "session directory operations use the base profile and explicit request fields")
+			return
+		}
+		store, err := c.store.ForAgentSession(ref, c.destination)
+		if err != nil {
+			writeError(w, 400, core.Code(err), err.Error())
+			return
+		}
+		c.store = store
+	}
+	if serveAgentSessions(w, r, c) {
+		return
+	}
 	if serveAgentEvents(w, r, c) {
 		return
 	}
@@ -362,7 +378,7 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 			status = 400
 		case "NOT_FOUND":
 			status = 404
-		case "STALE_LEASE", "PAYLOAD_UNAVAILABLE", "FORGET_REQUIRED", "STALE_HANDLE", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "STALE_PACKAGE", "RUN_ALREADY_STARTED", "ATTEMPT_TERMINAL":
+		case "STALE_SESSION", "AGENT_BUSY", "STALE_LEASE", "PAYLOAD_UNAVAILABLE", "FORGET_REQUIRED", "STALE_HANDLE", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "STALE_PACKAGE", "RUN_ALREADY_STARTED", "ATTEMPT_TERMINAL":
 			status = 409
 		case "STORE_ERROR", "REFUSAL_UNRECORDED":
 			status = 500

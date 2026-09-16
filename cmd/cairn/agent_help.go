@@ -24,6 +24,7 @@ Everyday operations:
   version      Identify the CLI and running API builds
 
 JSON operations (one request on stdin):
+  agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory
   wake-attempts Inspect current or historical wake attempts
   wake-claim, wake-change Host supervisor coordination
   revise       Replace only a note's body
@@ -51,6 +52,18 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	}
 	var detail, example string
 	switch operation {
+	case "agent-register":
+		detail = "Register a conversation using the existing profile. New request IDs resume the binding/native-session pair with a new execution UUID. No session credential is created."
+		example = `{"request_id":"NEW_UUID","binding":"codex-default","native_session_id":"NATIVE_THREAD","metadata":{"harness":"codex","project":"rhumb","workspace":"/work/rhumb","state":"busy","delivery_mode":"existing-session"}}`
+	case "agent-context":
+		detail = "Replace reported session context with a revision check. Heartbeats preserve this context."
+		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"},"expected_revision":1,"metadata":{"harness":"codex","project":"rhumb","workspace":"/work/rhumb","state":"idle","delivery_mode":"existing-session"}}`
+	case "agent-heartbeat", "agent-leave":
+		detail = "Refresh 90-second presence or mark the current execution stopped. Use the base profile; obsolete execution UUIDs are refused."
+		example = `{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}`
+	case "agent-directory":
+		detail = "List currently live sessions using exact metadata selectors. include_offline includes expired/stopped entries; after is an exclusive ordinal cursor. Metadata is reported context."
+		example = `{"harness":"codex","project":"rhumb","limit":20}`
 	case "wake-attempts":
 		detail = "Inspect this profile's wake attempts. active=true selects the unfinished attempt; attempt_id selects one UUID. Paging uses after and limit."
 		example = `{"active":true}`

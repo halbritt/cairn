@@ -22,7 +22,11 @@ has a fixed deadline. systemd owns the whole worker cgroup and removes surviving
 children when the unit stops. Supervisors use an exclusive host lock.
 
 The worker receives the exact event source version and explicit completion
-instructions. It uses its ordinary agent profile to complete the delivery.
+instructions. `CAIRN_WAKE_CONTEXT` names a mode-0600 JSON file with schema
+`cairn.wake-context/1`: execution/attempt UUID, binding, inbox, collection,
+workspace, source, event/delivery/lease UUIDs, deadline and an exact completion
+argument array. The file contains credential paths, never credential values.
+The same array generates the human-readable completion instruction. It uses its ordinary agent profile to complete the delivery.
 Exit zero never acknowledges work. Runner receipts record process observations;
 reported handling and result notes remain separate from task acceptance.
 
@@ -152,8 +156,9 @@ No existing event is redirected or relabelled.
 
 Slots do not identify live interactive sessions. Agent UUIDs, display ordinals,
 harness/model/project metadata and fresh recipient resolution are specified in
-the [coordination v1 plan](plans/agent-coordination-v1.md). That directory and
-existing-session delivery are not implemented by these binding changes.
+the [coordination v1 plan](plans/agent-coordination-v1.md). The [session registry foundation](agent-sessions.md) provides explicit registration
+and directory reads. These slot bindings do not register interactive conversations
+or deliver into existing sessions.
 
 ## Coordination API
 

@@ -97,9 +97,21 @@ def check(binary, root, opencode=None, hermes=None, bindings=None):
             supervisor = None
 
     worker = root / "worker.py"
-    worker.write_text('''import os,re,subprocess,sys,time
+    worker.write_text('''import json,os,re,shlex,stat,subprocess,sys,time
 from pathlib import Path
 prompt=sys.argv[-1]
+context_path=Path(os.environ["CAIRN_WAKE_CONTEXT"])
+assert stat.S_IMODE(context_path.stat().st_mode)==0o600
+wake=json.loads(context_path.read_text())
+assert wake["schema"]=="cairn.wake-context/1"
+assert wake["binding"]=="probe" and wake["inbox"]=="wake-probe/agent"
+assert wake["execution_id"]==context_path.name.removesuffix(".context.json")
+command=re.search(r"^('.* complete .*) < RESULT_FILE$",prompt,re.M).group(1)
+assert shlex.split(command)==wake["completion"]
+assert wake["delivery_id"]==wake["completion"][-1]
+assert wake["lease_id"]==wake["completion"][wake["completion"].index("--lease")+1]
+assert wake["source"]["record_id"] in prompt
+assert wake["deadline"] and wake["workspace"]==str(Path.cwd())
 if "BLOCK-WORKER" in prompt:
  child=subprocess.Popen(["/usr/bin/sleep","300"],start_new_session=True)
  Path("child.pid").write_text(str(child.pid))
@@ -107,8 +119,7 @@ if "BLOCK-WORKER" in prompt:
  time.sleep(300)
 if "EXIT-WITHOUT-ACK" in prompt:
  raise SystemExit(0)
-command=re.search(r"^('.* complete .*) < RESULT_FILE$",prompt,re.M).group(1)
-subprocess.run(command,input="Selected fixture result",text=True,shell=True,check=True)
+subprocess.run(wake["completion"],input="Selected fixture result",text=True,check=True)
 ''')
     command = ["/usr/bin/python3", str(worker)]
     try:
