@@ -23,16 +23,17 @@ import (
 )
 
 type Config struct {
-	Name           string   `json:"name"`
-	Principal      string   `json:"principal"`
-	Repo           string   `json:"repo"`
-	Socket         string   `json:"socket"`
-	AgentToken     string   `json:"agent_token"`
-	ObserverToken  string   `json:"observer_token"`
-	Directory      string   `json:"directory"`
-	Command        []string `json:"command"`
-	TimeoutSeconds int      `json:"timeout_seconds"`
-	StateDirectory string   `json:"state_directory"`
+	Worker         *core.WorkerSpec `json:"worker,omitempty"`
+	Name           string           `json:"name"`
+	Principal      string           `json:"principal"`
+	Repo           string           `json:"repo"`
+	Socket         string           `json:"socket"`
+	AgentToken     string           `json:"agent_token"`
+	ObserverToken  string           `json:"observer_token"`
+	Directory      string           `json:"directory"`
+	Command        []string         `json:"command"`
+	TimeoutSeconds int              `json:"timeout_seconds"`
+	StateDirectory string           `json:"state_directory"`
 }
 
 func ReadConfig(path string) (Config, error) {
@@ -64,6 +65,14 @@ func ReadConfig(path string) (Config, error) {
 	}
 	if info, err := os.Stat(c.Command[0]); err != nil || info.IsDir() || info.Mode()&0111 == 0 {
 		return c, errors.New("wake launcher must be executable")
+	}
+	if c.Worker != nil {
+		if c.Worker.Name != c.Name || c.Worker.Workspace != c.Directory {
+			return c, errors.New("worker name and workspace must match launcher name and directory")
+		}
+		if err := c.Worker.Validate(); err != nil {
+			return c, err
+		}
 	}
 	return c, nil
 }
@@ -202,9 +211,29 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 			return err
 		}
 	}
+	var worker core.WorkerSlot
+	if c.Worker != nil {
+		if err = client.Call(ctx, "worker-register", core.WorkerRegisterRequest{RequestID: uuid.NewString(), Repo: c.Repo, Spec: *c.Worker}, &worker); err != nil {
+			return err
+		}
+	}
+	nextHeartbeat := time.Now().Add(30 * time.Second)
+	heartbeat := func() error {
+		if c.Worker == nil || time.Now().Before(nextHeartbeat) {
+			return nil
+		}
+		if err := client.Call(ctx, "worker-heartbeat", core.WorkerHeartbeatRequest{Repo: c.Repo, SupervisorID: worker.SupervisorID}, &worker); err != nil {
+			return err
+		}
+		nextHeartbeat = time.Now().Add(30 * time.Second)
+		return nil
+	}
 	for ctx.Err() == nil {
+		if err = heartbeat(); err != nil {
+			return err
+		}
 		var claimed core.WakeResult
-		if err = client.Call(ctx, "wake-claim", core.WakeClaimRequest{RequestID: uuid.NewString(), Repo: c.Repo}, &claimed); err != nil {
+		if err = client.Call(ctx, "wake-claim", core.WakeClaimRequest{RequestID: uuid.NewString(), Repo: c.Repo, WorkerID: worker.SupervisorID}, &claimed); err != nil {
 			return err
 		}
 		if claimed.Attempt == nil {
@@ -221,6 +250,10 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 		launchErr := manager.start(ctx, executable, path, c, w.ID)
 		if launchErr == nil {
 			for ctx.Err() == nil {
+				if beatErr := heartbeat(); beatErr != nil {
+					launchErr = beatErr
+					break
+				}
 				active, checkErr := manager.active(ctx, w.ID)
 				if checkErr != nil {
 					launchErr = checkErr

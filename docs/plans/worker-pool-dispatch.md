@@ -1,7 +1,10 @@
 # Fresh-work pool dispatch
 
-Status: implementation design for coordination v1 milestone 4. No pool API or
-deployment is claimed here. Native wake-session association is a separate slice.
+Status: queue, assignment, supervisor presence and explicit availability are in
+implementation. See [the implemented contract](../worker-pools.md). Deployment
+and native runtime acceptance are not claimed by this design note. Automatic
+structured quota ingestion remains outstanding. Native wake-session association
+is a separate deployed slice.
 
 ## Queue and assignment
 

@@ -373,6 +373,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.FenceRestore)
 	case "invalidate-handles":
 		return invoke(ctx, input, store.InvalidateHandles)
+	case "worker-pool-configure":
+		return invoke(ctx, input, store.ConfigureWorkerPool)
 	case "checkpoint":
 		return invoke(ctx, input, store.Checkpoint)
 	case "verify-checkpoint":

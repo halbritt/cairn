@@ -28,6 +28,8 @@ JSON operations (one request on stdin):
   session-inbox-claim, session-inbox-reconcile Native host turn-boundary delivery
   wake-attempts Inspect current or historical wake attempts
   wake-claim, wake-change Host supervisor coordination
+  worker-register, worker-heartbeat, worker-health Host slot availability
+  worker-list, pool-list Inspect configured fresh-work capacity
   revise       Replace only a note's body
   append       Add text verbatim, including your chosen paragraph separators
   replace      Replace one uniquely matching passage
@@ -77,6 +79,18 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	case "wake-attempts":
 		detail = "Inspect this profile's wake attempts. active=true selects the unfinished attempt; attempt_id selects one UUID. Paging uses after and limit."
 		example = `{"active":true}`
+	case "worker-register":
+		detail = "Host supervisor only: register configured launcher metadata after reconciling old attempts. A new request replaces the supervisor incarnation and preserves account health."
+		example = `{"request_id":"NEW_UUID","spec":{"name":"worker-01","harness":"codex","workspace":"/workspace","pools":["coding"],"launch_spacing_seconds":3}}`
+	case "worker-heartbeat":
+		detail = "Refresh supervisor liveness for 90 seconds. Does not clear account unavailability or launch backoff."
+		example = `{"supervisor_id":"SUPERVISOR_UUID"}`
+	case "worker-health":
+		detail = "Set this slot's availability with a revision check. Recovery is explicit; retry_at is informational and never clears unavailability."
+		example = `{"request_id":"NEW_UUID","supervisor_id":"SUPERVISOR_UUID","expected_revision":1,"health":"paused","reason":"operator maintenance"}`
+	case "worker-list", "pool-list":
+		detail = "Inspect bounded configured launcher metadata or pool admission limits in this collection. Online does not establish provider capacity."
+		example = `{}`
 	case "wake-claim":
 		detail = "Host supervisor only: claim one request and establish a durable hold. The request UUID identifies the attempt. An empty result has no durable effect."
 		example = `{"request_id":"NEW_UUID"}`

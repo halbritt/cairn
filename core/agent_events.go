@@ -13,31 +13,33 @@ import (
 
 // Agent events are operational observations, not qualified memory or authority.
 type AgentEvent struct {
-	EventID       string           `json:"event_id"`
-	Position      int64            `json:"position"`
-	Repo          string           `json:"repo"`
-	From          string           `json:"from"`
-	CreatedAt     time.Time        `json:"created_at"`
-	Kind          string           `json:"kind"`
-	Ref           RecordVersionRef `json:"ref"`
-	Destination   EventDestination `json:"destination"`
-	CausationID   string           `json:"causation_id,omitempty"`
-	CorrelationID string           `json:"correlation_id,omitempty"`
-	Resolution    *AgentResolution `json:"resolution,omitempty"`
+	EventID       string            `json:"event_id"`
+	Position      int64             `json:"position"`
+	Repo          string            `json:"repo"`
+	From          string            `json:"from"`
+	CreatedAt     time.Time         `json:"created_at"`
+	Kind          string            `json:"kind"`
+	Ref           RecordVersionRef  `json:"ref"`
+	Destination   EventDestination  `json:"destination"`
+	CausationID   string            `json:"causation_id,omitempty"`
+	CorrelationID string            `json:"correlation_id,omitempty"`
+	Resolution    *AgentResolution  `json:"resolution,omitempty"`
+	Pool          *PoolRequirements `json:"pool,omitempty"`
 }
 type EventDestination struct {
 	Type string `json:"type"`
 	Name string `json:"name"`
 }
 type PublishEventRequest struct {
-	RequestID     string           `json:"request_id"`
-	Repo          string           `json:"repo,omitempty"`
-	Kind          string           `json:"kind"`
-	Ref           RecordVersionRef `json:"ref"`
-	Destination   EventDestination `json:"destination"`
-	CausationID   string           `json:"causation_id,omitempty"`
-	CorrelationID string           `json:"correlation_id,omitempty"`
-	Resolution    *AgentResolution `json:"resolution,omitempty"`
+	RequestID     string            `json:"request_id"`
+	Repo          string            `json:"repo,omitempty"`
+	Kind          string            `json:"kind"`
+	Ref           RecordVersionRef  `json:"ref"`
+	Destination   EventDestination  `json:"destination"`
+	CausationID   string            `json:"causation_id,omitempty"`
+	CorrelationID string            `json:"correlation_id,omitempty"`
+	Resolution    *AgentResolution  `json:"resolution,omitempty"`
+	Pool          *PoolRequirements `json:"pool,omitempty"`
 }
 type EventQuery struct {
 	Repo  string `json:"repo,omitempty"`
@@ -103,10 +105,11 @@ type EventStatusRequest struct {
 	Limit   int    `json:"limit,omitempty"`
 }
 type EventStatus struct {
-	Event      AgentEvent      `json:"event"`
-	Deliveries []AgentDelivery `json:"deliveries"`
-	NextAfter  string          `json:"next_after,omitempty"`
-	More       bool            `json:"more"`
+	Pool       *PoolRequestStatus `json:"pool,omitempty"`
+	Event      AgentEvent         `json:"event"`
+	Deliveries []AgentDelivery    `json:"deliveries"`
+	NextAfter  string             `json:"next_after,omitempty"`
+	More       bool               `json:"more"`
 }
 type EventStats struct {
 	Published     int64   `json:"published"`
@@ -163,12 +166,12 @@ func leaseSeconds(seconds int) (int, error) {
 	return seconds, nil
 }
 
-const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session`
+const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements`
 const eventVisible = `(e.sensitivity='shareable' OR $3) AND (e.publisher=$2 OR EXISTS(SELECT 1 FROM cairn.agent_delivery v WHERE v.event_id=e.event_id AND v.consumer=$2))`
 
 func scanEvent(row pgx.Row) (AgentEvent, error) {
 	var e AgentEvent
-	err := row.Scan(&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution)
+	err := row.Scan(&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool)
 	return e, err
 }
 func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
@@ -193,11 +196,21 @@ func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest 
 	if !eventName.MatchString(req.Kind) || validID(req.Ref.RecordID) != nil || req.Ref.Version < 1 || req.Ref.Version > 2147483647 {
 		return AgentEvent{}, failure("INVALID_REQUEST", "valid kind and exact record version required")
 	}
-	if req.Destination.Type != "agent" && req.Destination.Type != "topic" {
-		return AgentEvent{}, failure("INVALID_REQUEST", "destination must be agent or topic")
+	if req.Destination.Type != "agent" && req.Destination.Type != "topic" && req.Destination.Type != "pool" {
+		return AgentEvent{}, failure("INVALID_REQUEST", "destination must be agent, topic or pool")
 	}
 	if strings.TrimSpace(req.Destination.Name) == "" || len(req.Destination.Name) > 256 || (req.Destination.Type == "topic" && !eventName.MatchString(req.Destination.Name)) {
 		return AgentEvent{}, failure("INVALID_REQUEST", "invalid destination name")
+	}
+	if req.Destination.Type == "pool" {
+		if req.Kind != "request" || req.Pool == nil || !eventName.MatchString(req.Destination.Name) {
+			return AgentEvent{}, failure("INVALID_REQUEST", "pool destinations require request kind and selectors")
+		}
+		if err := req.Pool.validate(); err != nil {
+			return AgentEvent{}, err
+		}
+	} else if req.Pool != nil {
+		return AgentEvent{}, failure("INVALID_REQUEST", "pool selectors require a pool destination")
 	}
 	for _, id := range []string{req.CausationID, req.CorrelationID} {
 		if id != "" && validID(id) != nil {
@@ -250,13 +263,20 @@ func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest 
 				return AgentEvent{}, failure("DESTINATION_PROHIBITED", "a shareable event cannot disclose a local causal parent")
 			}
 		}
+		if req.Destination.Type == "pool" {
+			if err := s.admitPool(ctx, tx, req, sensitivity); err != nil {
+				return AgentEvent{}, err
+			}
+		}
 		id := uuid.NewString()
-		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11)`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution)
+		_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12)`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool)
 		if err != nil {
 			return AgentEvent{}, err
 		}
 		if req.Destination.Type == "agent" {
 			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) VALUES($1,$2,$3)`, uuid.NewString(), id, req.Destination.Name)
+		} else if req.Destination.Type == "pool" {
+			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_pool_request(event_id) VALUES($1)`, id)
 		} else {
 			_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) SELECT gen_random_uuid(),$1,consumer FROM cairn.agent_subscription WHERE repo=$2 AND topic=$3 AND active`, id, req.Repo, req.Destination.Name)
 		}
@@ -607,7 +627,7 @@ func (s *Store) AgentEventStatus(ctx context.Context, req EventStatusRequest, de
 	if err != nil {
 		return out, err
 	}
-	tx, err := s.begin(ctx)
+	tx, err := s.beginLevel(ctx, pgx.RepeatableRead)
 	if err != nil {
 		return out, err
 	}
@@ -615,6 +635,12 @@ func (s *Store) AgentEventStatus(ctx context.Context, req EventStatusRequest, de
 	out.Event, err = s.readEvent(ctx, tx, req.EventID, dest)
 	if err != nil {
 		return out, err
+	}
+	if out.Event.Destination.Type == "pool" {
+		out.Pool, err = readPoolStatus(ctx, tx, req.EventID)
+		if err != nil {
+			return out, err
+		}
 	}
 	rows, err := tx.Query(ctx, `SELECT `+strings.Replace(deliveryColumns, "d.result_id::text,d.result_version", "CASE WHEN rm.sensitivity='shareable' OR $6 THEN d.result_id::text END,CASE WHEN rm.sensitivity='shareable' OR $6 THEN d.result_version END", 1)+` FROM cairn.agent_delivery d LEFT JOIN cairn.memory_record rm ON rm.record_id=d.result_id WHERE event_id=$1 AND ($2 OR consumer=$3) AND ($4='' OR delivery_id>NULLIF($4,'')::uuid) ORDER BY delivery_id LIMIT $5`, req.EventID, out.Event.From == s.channel.Principal, s.channel.Principal, req.After, limit+1, dest.AllowLocal)
 	if err != nil {

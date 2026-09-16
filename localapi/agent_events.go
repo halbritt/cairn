@@ -9,6 +9,27 @@ import (
 
 func serveAgentEvents(w http.ResponseWriter, r *http.Request, c client) bool {
 	switch r.URL.Path {
+	case "/v1/worker-register":
+		serveJSON(w, r, func(ctx context.Context, req core.WorkerRegisterRequest) (core.WorkerSlot, error) {
+			return c.store.RegisterWorkerSlot(ctx, req, c.destination)
+		})
+	case "/v1/worker-heartbeat":
+		serveJSON(w, r, func(ctx context.Context, req core.WorkerHeartbeatRequest) (core.WorkerSlot, error) {
+			return c.store.HeartbeatWorker(ctx, req, c.destination)
+		})
+	case "/v1/worker-health":
+		serveJSON(w, r, func(ctx context.Context, req core.WorkerHealthRequest) (core.WorkerSlot, error) {
+			return c.store.ChangeWorkerHealth(ctx, req, c.destination)
+		})
+	case "/v1/worker-list":
+		serveJSON(w, r, func(ctx context.Context, req core.WorkerListRequest) (core.WorkerList, error) {
+			return c.store.WorkerSlots(ctx, req, c.destination)
+		})
+	case "/v1/pool-list":
+		serveJSON(w, r, func(ctx context.Context, req core.WorkerListRequest) (core.WorkerPoolList, error) {
+			return c.store.WorkerPools(ctx, req, c.destination)
+		})
+
 	case "/v1/wake-claim":
 		serveJSON(w, r, func(ctx context.Context, req core.WakeClaimRequest) (core.WakeResult, error) {
 			return c.store.ClaimWake(ctx, req, c.destination)

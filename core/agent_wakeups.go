@@ -12,6 +12,7 @@ import (
 // Wake attempts coordinate a host supervisor. Their labels are reports, not
 // execution attestation; a linked runner receipt holds process observations.
 type WakeAttempt struct {
+	WorkerID     string           `json:"worker_id,omitempty"`
 	ID           string           `json:"attempt_id"`
 	State        string           `json:"state"`
 	CreatedAt    time.Time        `json:"created_at"`
@@ -26,6 +27,7 @@ type WakeResult struct {
 	Attempt *WakeAttempt `json:"attempt"`
 }
 type WakeClaimRequest struct {
+	WorkerID  string `json:"worker_id,omitempty"`
 	RequestID string `json:"request_id"`
 	Repo      string `json:"repo,omitempty"`
 }
@@ -57,7 +59,7 @@ func (s *Store) readWake(ctx context.Context, tx pgx.Tx, id string, dest Destina
 	var w WakeAttempt
 	var delivery, lease string
 	var agentID, executionID *string
-	err := tx.QueryRow(ctx, `SELECT attempt_id::text,delivery_id::text,lease_id::text,state,created_at,finished_at,COALESCE(receipt_id::text,''),process_state,reason,agent_id::text,execution_id::text FROM cairn.agent_wake_attempt WHERE attempt_id=$1 AND consumer=$2`, id, s.channel.Principal).Scan(&w.ID, &delivery, &lease, &w.State, &w.CreatedAt, &w.FinishedAt, &w.ReceiptID, &w.ProcessState, &w.Reason, &agentID, &executionID)
+	err := tx.QueryRow(ctx, `SELECT attempt_id::text,delivery_id::text,lease_id::text,state,created_at,finished_at,COALESCE(receipt_id::text,''),process_state,reason,agent_id::text,execution_id::text,COALESCE(worker_id::text,'') FROM cairn.agent_wake_attempt WHERE attempt_id=$1 AND consumer=$2`, id, s.channel.Principal).Scan(&w.ID, &delivery, &lease, &w.State, &w.CreatedAt, &w.FinishedAt, &w.ReceiptID, &w.ProcessState, &w.Reason, &agentID, &executionID, &w.WorkerID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return w, failure("NOT_FOUND", "wake attempt not found")
 	}
@@ -80,7 +82,7 @@ func (s *Store) ClaimWake(ctx context.Context, req WakeClaimRequest, dest Destin
 	if dest.Name != "hosted" {
 		return WakeResult{}, failure("DESTINATION_PROHIBITED", "fresh wake workers currently require a hosted profile")
 	}
-	if validID(req.RequestID) != nil {
+	if validID(req.RequestID) != nil || (req.WorkerID != "" && validID(req.WorkerID) != nil) {
 		return WakeResult{}, failure("INVALID_REQUEST", "wake claim UUID required")
 	}
 	repo, err := s.eventScope(req.Repo, "")
@@ -115,6 +117,9 @@ func (s *Store) ClaimWake(ctx context.Context, req WakeClaimRequest, dest Destin
 		if err != nil {
 			return WakeResult{}, err
 		}
+		if w.WorkerID != req.WorkerID {
+			return WakeResult{}, failure("IDEMPOTENCY_CONFLICT", "wake claim supervisor differs")
+		}
 		return WakeResult{&w}, tx.Commit(ctx)
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -127,19 +132,53 @@ func (s *Store) ClaimWake(ctx context.Context, req WakeClaimRequest, dest Destin
 	if busy {
 		return WakeResult{}, nil
 	}
-	var id string
-	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND e.kind='request' AND d.available_at<=clock_timestamp() AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) AND `+wakeHold+` AND `+sessionInboxHold+` ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return WakeResult{}, nil
-	}
+	worker, err := s.claimWorker(ctx, tx, repo, req.WorkerID)
 	if err != nil {
 		return WakeResult{}, err
+	}
+	if worker != nil {
+		var ready bool
+		if err = tx.QueryRow(ctx, `SELECT $1::timestamptz<=clock_timestamp()`, worker.NextLaunchAt).Scan(&ready); err != nil {
+			return WakeResult{}, err
+		}
+		if worker.Health != "available" || !ready {
+			return WakeResult{}, nil
+		}
+	}
+	var candidate poolCandidate
+	var spec WorkerSpec
+	if worker != nil {
+		spec = worker.Spec
+		candidate, err = selectPoolCandidate(ctx, tx, *worker)
+		if err != nil {
+			return WakeResult{}, err
+		}
+	}
+	var id string
+	var position int64
+	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text,e.position FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) LEFT JOIN cairn.agent_worker_pool p ON e.destination_type='pool' AND p.repo=e.repo AND p.name=e.destination_name WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND e.kind='request' AND d.available_at<=clock_timestamp() AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) AND (e.destination_type<>'pool' OR (p.enabled AND e.destination_name=ANY($4::text[]) AND e.pool_requirements->>'workspace'=$5 AND COALESCE(e.pool_requirements->>'harness','') IN ('',$6) AND COALESCE(e.pool_requirements->>'model','') IN ('',$7) AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(COALESCE(e.pool_requirements->'capabilities','[]'::jsonb)) cap WHERE NOT(cap=ANY(COALESCE($8::text[],ARRAY[]::text[])))))) AND `+wakeHold+` AND `+sessionInboxHold+` ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal, spec.Pools, spec.Workspace, spec.Harness, spec.Model, spec.Capabilities).Scan(&id, &position)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return WakeResult{}, err
+	}
+	if candidate.id != "" && (id == "" || candidate.position < position) {
+		id, err = assignPool(ctx, tx, *worker, candidate)
+		if err != nil {
+			return WakeResult{}, err
+		}
+	}
+	if id == "" {
+		return WakeResult{}, nil
+	}
+	if worker != nil {
+		if _, err = tx.Exec(ctx, `UPDATE cairn.agent_worker_slot SET next_launch_at=clock_timestamp()+make_interval(secs=>$3) WHERE repo=$1 AND consumer=$2`, repo, s.channel.Principal, worker.Spec.LaunchSpacingSeconds); err != nil {
+			return WakeResult{}, err
+		}
 	}
 	lease := uuid.NewString()
 	if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='leased',lease_id=$2,lease_until=clock_timestamp()+interval '90 seconds',attempts=attempts+1 WHERE delivery_id=$1`, id, lease); err != nil {
 		return WakeResult{}, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_wake_attempt(attempt_id,delivery_id,repo,lease_id) VALUES($1,$2,$3,$4)`, req.RequestID, id, repo, lease); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO cairn.agent_wake_attempt(attempt_id,delivery_id,repo,lease_id,worker_id) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid)`, req.RequestID, id, repo, lease, req.WorkerID); err != nil {
 		return WakeResult{}, err
 	}
 	w, err := s.readWake(ctx, tx, req.RequestID, dest)
@@ -242,6 +281,11 @@ func (s *Store) ChangeWake(ctx context.Context, req WakeChangeRequest, dest Dest
 		if w.State == "finished" {
 			return w, failure("VERSION_CONFLICT", "wake already finished")
 		}
+		if req.Operation == "start" || req.Operation == "enter" || req.Operation == "link" || req.Operation == "session" {
+			if err := s.checkWakeWorker(ctx, tx, w); err != nil {
+				return w, err
+			}
+		}
 		switch req.Operation {
 		case "session":
 			if err := s.attachWakeSession(ctx, tx, w, *req.Session, dest); err != nil {
@@ -305,6 +349,11 @@ func (s *Store) ChangeWake(ctx context.Context, req WakeChangeRequest, dest Dest
 			}
 			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wake_attempt SET state='finished',finished_at=clock_timestamp(),reason=CASE WHEN reason='' THEN $2 ELSE reason END WHERE attempt_id=$1`, w.ID, req.Reason); err != nil {
 				return w, err
+			}
+			if w.WorkerID != "" && d.State != "handled" && d.State != "ignored" {
+				if _, err = tx.Exec(ctx, `UPDATE cairn.agent_worker_slot SET next_launch_at=greatest(next_launch_at,clock_timestamp()+interval '30 seconds') WHERE repo=$1 AND consumer=$2 AND supervisor_id=$3`, w.Delivery.Event.Repo, s.channel.Principal, w.WorkerID); err != nil {
+					return w, err
+				}
 			}
 			if w.Session != nil {
 				if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session SET stopped=true,expires_at=clock_timestamp() WHERE agent_id=$1 AND execution_id=$2`, w.Session.AgentID, w.Session.ExecutionID); err != nil {

@@ -21,7 +21,8 @@ For session inboxes add --agent-id UUID --execution-id UUID using the same profi
 Provide a stable --request-id UUID for publish, subscribe, unsubscribe, ack and complete.
 Retry an uncertain mutation with identical arguments and the same request UUID.
 
-  publish --request-id UUID (--to PRINCIPAL | --topic TOPIC | --resolution FILE) --kind KIND --version N RECORD_UUID
+  publish --request-id UUID (--to PRINCIPAL | --topic TOPIC | --resolution FILE | --pool POOL) --kind KIND --version N RECORD_UUID
+    [--workspace /PATH --capability NAME --harness NAME --model NAME] (pool selectors)
     [--causation-id UUID] [--correlation-id UUID]
   inbox next [--agent PRINCIPAL] [--lease-seconds N]
   ack --request-id UUID --lease UUID [--disposition handled|ignored|failed] [--code CODE] DELIVERY_UUID
@@ -76,6 +77,12 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	request := f.String("request-id", "", "stable retry UUID")
 	resolutionFile := f.String("resolution", "", "JSON resolution from a unique agents resolve result")
 	to := f.String("to", "", "recipient principal")
+	pool := f.String("pool", "", "configured fresh-work pool")
+	workspace := f.String("workspace", "", "exact configured pool workspace")
+	harness := f.String("harness", "", "required pool harness")
+	model := f.String("model", "", "required configured pool model")
+	var capabilities []string
+	f.Func("capability", "required pool capability; repeat", func(v string) error { capabilities = append(capabilities, v); return nil })
 	topic := f.String("topic", "", "topic (exclusive cursor for subscriptions)")
 	kind := f.String("kind", "", "event or result kind")
 	version := f.Int("version", 0, "source version")
@@ -99,7 +106,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	allowed := " token-file socket profile agent-id execution-id "
 	switch command {
 	case "publish":
-		allowed += "repo request-id to topic resolution kind version causation-id correlation-id "
+		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id "
 	case "inbox":
 		allowed += "repo agent lease-seconds "
 	case "ack":
@@ -172,13 +179,13 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	switch command {
 	case "publish":
 		choices := 0
-		for _, value := range []string{*to, *topic, *resolutionFile} {
+		for _, value := range []string{*to, *topic, *resolutionFile, *pool} {
 			if value != "" {
 				choices++
 			}
 		}
 		if choices != 1 {
-			return nil, invalid("choose exactly one of --to, --topic and --resolution")
+			return nil, invalid("choose exactly one of --to, --topic, --resolution and --pool")
 		}
 		var resolution *core.AgentResolution
 		if *resolutionFile != "" {
@@ -203,8 +210,15 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		if *topic != "" {
 			dest = core.EventDestination{Type: "topic", Name: *topic}
 		}
+		var needs *core.PoolRequirements
+		if *pool != "" {
+			dest = core.EventDestination{Type: "pool", Name: *pool}
+			needs = &core.PoolRequirements{Workspace: *workspace, Harness: *harness, Model: *model, Capabilities: capabilities}
+		} else if *workspace != "" || *harness != "" || *model != "" || len(capabilities) > 0 {
+			return nil, invalid("pool selectors require --pool")
+		}
 		operation = "event-publish"
-		req = core.PublishEventRequest{RequestID: *request, Repo: *repo, Kind: *kind, Ref: core.RecordVersionRef{RecordID: strings.TrimPrefix(f.Arg(0), "cairn:"), Version: *version}, Destination: dest, CausationID: *causation, CorrelationID: *correlation, Resolution: resolution}
+		req = core.PublishEventRequest{RequestID: *request, Repo: *repo, Kind: *kind, Ref: core.RecordVersionRef{RecordID: strings.TrimPrefix(f.Arg(0), "cairn:"), Version: *version}, Destination: dest, CausationID: *causation, CorrelationID: *correlation, Resolution: resolution, Pool: needs}
 	case "inbox":
 		operation = "event-next"
 		req = core.NextEventRequest{Repo: *repo, Agent: *agent, LeaseSeconds: *seconds}
