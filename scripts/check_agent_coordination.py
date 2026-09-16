@@ -219,6 +219,40 @@ def check(binary, root, repo, api_call):
                        text=True,capture_output=True,check=True,timeout=10)
         assert hook(queued_owner,dict(wake_event,hook_event_name='Stop'))=={}
         hook(queued_owner,dict(wake_event,hook_event_name='SessionEnd'))
+        # A natively interrupted Codex turn restores actual idle presence but
+        # must never claim or release inbox work: pending stays pending, a held
+        # delivery stays leased, and only its owning turn can finish it.
+        interrupt_owner = owner(native_queue=True)
+        interrupt_event = dict(event, session_id='native-interrupt', turn_id='interrupt-owner-turn')
+        hook(interrupt_owner, interrupt_event)
+        interrupt_agent = next(a for a in api_call('bob','agents','list')['agents'] if a['native_session_id']=='native-interrupt')
+        assert interrupt_agent['metadata']['state']=='busy'
+        interrupt_message = api_call('alice','publish','--request-id',str(uuid.uuid4()),'--to',interrupt_agent['inbox'],
+            '--kind','request','--version',str(source['version']),source['record_id'])
+        hook(interrupt_owner,dict(interrupt_event,hook_event_name='Interrupt'))
+        interrupted_entry = next(a for a in api_call('bob','agents','list')['agents'] if a['native_session_id']=='native-interrupt')
+        assert interrupted_entry['metadata']['state']=='idle', 'Interrupt did not restore idle presence'
+        pending = api_call('alice','event-status',interrupt_message['event_id'])['deliveries'][0]
+        assert pending['state']=='pending' and pending['attempts']==0, 'Interrupt claimed inbox work'
+        interrupt_path = engine.state_path(installed_config,'native-interrupt')
+        interrupt_state = json.loads(interrupt_path.read_text())
+        interrupt_marker = dict(transport='codex-queue',session=engine.session_ref(interrupt_agent),
+                                delivery_id=pending['delivery_id'])
+        interrupt_state['idle_wake'] = interrupt_marker
+        engine.write_state(interrupt_path,interrupt_state)
+        interrupt_wake = dict(interrupt_event, prompt=engine.wake_message(interrupt_marker), turn_id='interrupt-wake-turn')
+        hook(interrupt_owner,interrupt_wake)
+        interrupt_context = next(json.loads(p.read_text()) for p in (state/'inbox').glob('*.json')
+                              if json.loads(p.read_text())['event_id']==interrupt_message['event_id'])
+        assert interrupt_context['native_turn_id']=='interrupt-wake-turn'
+        hook(interrupt_owner,dict(interrupt_event,hook_event_name='Interrupt'))
+        held = api_call('alice','event-status',interrupt_message['event_id'])['deliveries'][0]
+        assert held['state']=='leased' and held['attempts']==1, 'Interrupt disturbed the held native delivery'
+        subprocess.run(interrupt_context['completion'],input='Native request completed after interruption',
+            text=True,capture_output=True,check=True,timeout=10)
+        assert hook(interrupt_owner,dict(interrupt_wake,hook_event_name='Stop'))=={}
+        hook(interrupt_owner,dict(interrupt_wake,hook_event_name='SessionEnd'))
+        print('Codex Interrupt: presence idle restored while pending stayed pending and the held delivery stayed leased')
         installed_config.pop('idle_wakeup')
         config.write_text(json.dumps(installed_config))
         crashed = owner()

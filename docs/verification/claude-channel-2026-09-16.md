@@ -124,3 +124,30 @@ one admission case; it does not stop later owner input from joining channel work
 Cancellation needs a native request boundary that remains valid through later
 input. Interrupting this shared prompt would also affect owner work. The selected
 event sequence is `inverse-verification.json` in the same local probe directory.
+
+## Integrated rejection and idle retry
+
+The current Python coordinator and Go channel bridge were exercised with the
+deployed Cairn API in a separate owned Claude conversation. A real pending
+request was prepared while idle. Before submitting its channel notification,
+the probe started an owner prompt, then submitted the delayed notification.
+This deliberately exercised the interval between checking for idle and writing
+the notification.
+
+The joined notification used the owner's prompt ID and was rejected by the
+native hook. The owner completed a bounded sleep, a second marker-writing tool,
+and its final reply. The request still had **zero claims** after that Stop, and
+the unsubmitted composer draft remained visible.
+
+One subsequent idle watcher cycle submitted the same pending delivery. Claude
+admitted it under a fresh prompt ID and explicitly completed it. Operator review
+showed **one claim, handled, native attempt finished, and no remaining hold**.
+The composer draft was still intact. Selected metadata is retained locally in
+`/tmp/cairn-claude-live/parent-race-verification.json`.
+
+A related regression now keeps channel admission in force when the configured
+bridge is temporarily unavailable: neither an ordinary owner prompt nor its
+Stop can claim work through that fallback. Forty targeted wakeup/channel tests
+passed. This trial establishes the rejection-and-retry path for the tested
+Claude account; it does not establish shared-prompt cancellation, all-account
+rollout, or deployment of these adapter changes.

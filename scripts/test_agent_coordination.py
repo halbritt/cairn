@@ -142,6 +142,15 @@ class CoordinationInstall(unittest.TestCase):
                 self.assertEqual(installed["hooks"]["SessionStart"][0], original["hooks"]["SessionStart"][0])
                 self.assertEqual(len(installed["hooks"]["SessionStart"]), 2)
                 self.assertEqual(json.loads(settings.with_name(settings.name + ".before-cairn-coordination").read_text()), original)
+                # Only Codex observes Interrupt; its natively interrupted turns
+                # are actually idle while their tools may still be running.
+                events = set(installed["hooks"])
+                if harness == "codex":
+                    self.assertIn("Interrupt", events)
+                    interrupt = installed["hooks"]["Interrupt"][0]["hooks"][0]
+                    self.assertEqual(interrupt["timeout"], 2)
+                else:
+                    self.assertNotIn("Interrupt", events)
 
 
 if __name__ == "__main__":

@@ -69,11 +69,27 @@ does not authorize another add or a terminal fallback. A checked unloaded
 conversation clears the marker because no queue submission was attempted.
 Queue acceptance is separate from native handling and explicit completion.
 
-This route requires an already-running explicit Unix listener. It does not
-migrate embedded TUI sessions or restart a busy conversation. Existing embedded
-Codex and other harnesses still use the Herdr route below. Exact native request
-cancellation remains incomplete: a turn interrupt can leave a tool process
-running, and an inbox request can still arrive at an owner-prompt boundary.
+This route requires an explicit Unix listener. It does not migrate already
+running embedded TUI sessions or restart a busy conversation; existing
+embedded sessions keep the Herdr route below until their next launch.
+The installer makes the launcher the ordinary account route: it installs a
+`codex` shim at `~/.local/bin/codex` that execs the real codex unchanged for
+every non-interactive subcommand and routes interactive launches (including
+`resume`) through `scripts/launch-codex-coordination.py`, copied beside the
+engine. That launcher starts `codex app-server --listen unix://SOCK` and runs
+the TUI as `codex --remote unix://SOCK`, a supported 0.154 combination
+validated live against a fixture provider — the TUI conversation is served by
+that app-server, visible in `thread/loaded/list` to a second client, and a
+queued wake runs in the conversation without terminal input. If PATH resolves
+`codex` elsewhere the installer says so with the exact export line instead of
+assuming activation. For such TUI processes
+the watcher keys the endpoint off `--remote unix://PATH` in the TUI's own
+argv and verifies the socket peer's user ID plus the observed TUI identity
+instead of process-for-process peer equality, because the serving process is
+the launcher's app-server child, which also dies with the session. Fresh
+`codex exec` workers are unaffected. Exact native request cancellation
+remains incomplete: a turn interrupt can leave a tool process running, and
+an inbox request can still arrive at an owner-prompt boundary.
 
 ### Herdr terminal route
 

@@ -24,6 +24,15 @@ class CoordinationError(Exception):
         self.code = code
 
 
+class NativePromptRefused(CoordinationError):
+    """A joined channel wake is rejected natively: the hook exits 2 so Claude
+    erases only the channel text while the owner prompt continues (proven on
+    Claude 2.1.273 by the owner's live rejection probe)."""
+
+    def __init__(self, message):
+        super().__init__('NATIVE_PROMPT_REFUSED', message)
+
+
 def process_reference(pid):
     raw = Path(f"/proc/{pid}/stat").read_text()
     fields = raw.rsplit(")", 1)[1].split()
@@ -111,6 +120,23 @@ def host_matches(config, state, host, environment):
             and process_alive(state['process']))
 
 
+def queue_helper():
+    """Load the queue helper with a bounded diagnostic when it is missing."""
+    try:
+        import codex_queue
+    except ImportError as exc:
+        raise CoordinationError('WAKE_UNAVAILABLE', f'codex queue helper is unavailable: {exc}') from exc
+    return codex_queue
+
+
+def drop_idle_wake(path, wake):
+    with session_lock(path):
+        state = json.loads(path.read_text())
+        if state.get('idle_wake') == wake:
+            state.pop('idle_wake')
+            write_state(path, state)
+
+
 def prepare_idle_wake(config, state, path):
     if (not config.get('idle_wakeup') or not config.get('native_delivery') or
             state.get('inbox_intent') or state.get('ending') or state.get('retired')):
@@ -124,16 +150,33 @@ def prepare_idle_wake(config, state, path):
     delivery = ready.get('delivery_id')
     if not delivery:
         return None
+    endpoint = codex_queue_endpoint(config, state['process'])
     prior = state.get('idle_wake', {})
     if prior.get('delivery_id') == delivery and prior.get('session') == session_ref(agent):
+        if (endpoint and prior.get('transport') == 'codex-queue' and prior.get('status') == 'queued' and
+                prior.get('queued_submission_id') and prior.get('endpoint') == endpoint['endpoint'] and
+                prior.get('native_id') == agent['native_session_id']):
+            return dict(wake=prior, process=state['process'])  # Retry only this retained start; never another add.
         return None  # Submitted or uncertain; only native handling permits a new nudge.
-    endpoint = codex_queue_endpoint(config, state['process'])
     if endpoint:
         state['idle_wake'] = dict(delivery_id=delivery, session=session_ref(agent),
-            transport='codex-queue', endpoint=endpoint, native_id=agent['native_session_id'],
+            transport='codex-queue', endpoint=endpoint['endpoint'], owner=endpoint['owner'],
+            native_id=agent['native_session_id'],
             status='uncertain', attempted_at=time.time())
         write_state(path, state)
         return dict(wake=state['idle_wake'], process=state['process'])
+    channel = claude_channel_endpoint(config, state['process'])
+    if channel:
+        state['idle_wake'] = dict(delivery_id=delivery, session=session_ref(agent),
+            transport='claude-channel', endpoint=channel['socket'], bridge=channel['process'],
+            parent=channel['parent'], native_id=agent['native_session_id'],
+            status='uncertain', attempted_at=time.time())
+        write_state(path, state)
+        return dict(wake=state['idle_wake'], process=state['process'])
+    if config.get('claude_channel_dir'):
+        # An explicitly configured native channel never falls back to the
+        # terminal route when its registry is stale, malformed or missing.
+        return None
     environment = herdr_environment(state['process'])
     if environment is None:
         return None
@@ -156,21 +199,78 @@ def prepare_idle_wake(config, state, path):
     return dict(environment=environment, wake=state['idle_wake'], process=state['process'])
 
 
+def process_identity(ref):
+    """Stable cross-language process identity.
+
+    The Go bridge registry emits {pid,start,boot} while this engine's
+    process_reference adds Linux state/parent fields around the same
+    identity; selection compares only the stable projection.
+    """
+    if not isinstance(ref, dict):
+        return None
+    identity = (ref.get('pid'), ref.get('start'), ref.get('boot'))
+    return identity if all(isinstance(value, (int, str)) for value in identity) else None
+
+
+def claude_channel_endpoint(config, process):
+    """Select the channel bridge registry for exactly this native process."""
+    directory = config.get('claude_channel_dir')
+    if config['harness'] != 'claude' or not directory:
+        return None
+    try:
+        record = json.loads((Path(directory) / f"{process['pid']}.json").read_text())
+    except (OSError, ValueError):
+        return None
+    if (not isinstance(record, dict) or record.get('schema') != 'cairn.claude-channel/1' or
+            process_identity(record.get('parent')) != process_identity(process) or
+            not isinstance(record.get('process'), dict)):
+        return None  # A stale or foreign registry never matches this process.
+    socket = record.get('socket')
+    if not isinstance(socket, str) or not Path(socket).is_absolute() or not process_alive(record['process']):
+        return None
+    return dict(socket=socket, process=record['process'], parent=record['parent'])
+
+
+def channel_helper():
+    """Load the channel client with a bounded diagnostic when it is missing."""
+    try:
+        import claude_channel
+    except ImportError as exc:
+        raise CoordinationError('WAKE_UNAVAILABLE', f'claude channel client is unavailable: {exc}') from exc
+    return claude_channel
+
+
 def codex_queue_endpoint(config, process):
+    """Select the native queue endpoint for exactly one Codex process.
+
+    An app-server with an explicit unix listener owns its socket (process
+    identity). An interactive TUI started with --remote unix://PATH shares
+    that app-server: its wakes use the same socket with user-level peer
+    verification, because the serving process is not the observed TUI.
+    """
     if config['harness'] != 'codex':
         return None
-    argv = Path(f"/proc/{process['pid']}/cmdline").read_bytes().decode().split('\0')
-    if 'app-server' not in argv:
+    try:
+        argv = Path(f"/proc/{process['pid']}/cmdline").read_bytes().decode().split('\0')
+    except OSError:
         return None
-    for i, argument in enumerate(argv):
-        if argument == '--listen' and i+1 < len(argv):
-            address = argv[i+1]
-        elif argument.startswith('--listen='):
-            address = argument.removeprefix('--listen=')
-        else:
-            continue
-        if address.startswith('unix://') and Path(address[7:]).is_absolute():
-            return address[7:]
+    candidates = []
+    if 'app-server' in argv and '--remote' not in argv:
+        candidates.append('process')
+    elif '--remote' in argv:
+        candidates.append('uid')
+    for owner in candidates:
+        for i, argument in enumerate(argv):
+            if argument in ('--listen', '--remote') and i+1 < len(argv):
+                address = argv[i+1]
+            elif argument.startswith('--listen='):
+                address = argument.removeprefix('--listen=')
+            elif argument.startswith('--remote='):
+                address = argument.removeprefix('--remote=')
+            else:
+                continue
+            if address.startswith('unix://') and len(address) > 7 and Path(address[7:]).is_absolute():
+                return dict(endpoint=address[7:], owner=owner)
     return None
 
 
@@ -183,6 +283,8 @@ def wake_message(wake):
             "Within the owner's existing authorization, handle the native inbox context supplied for this conversation, "
             "explicitly complete/acknowledge it, and send any requested response using that context. "
             "If no matching native context was supplied, report that and stop. "
+            "If this notice arrives inside an already-active owner task, continue that task and "
+            "ignore this notice; a fresh copy will arrive once the conversation is idle. "
             "Do not register, manually claim an inbox, or launch a replacement conversation.")
 
 
@@ -197,6 +299,77 @@ def queued_wake_binding(state, event):
     return dict(delivery_id=wake['delivery_id'], native_turn_id=turn)
 
 
+def channel_wake_binding(state, event, joined=False):
+    """Bind one channel-delivered wake to its namespaced Claude prompt ownership.
+
+    The wake message embeds this session's agent/execution/delivery UUIDs, so
+    only the exact channel rendering of this pending wake can claim it; the
+    key is Claude's stable prompt_id, never the display turn. A prompt_id the
+    session already observed cannot be claimed onto: while a prompt is active,
+    Claude injects further channel messages into that same prompt, so a wake
+    joining it never creates a fresh request boundary.
+    """
+    wake = state.get('idle_wake', {})
+    prompt = event.get('prompt')
+    prompt_id = event.get('prompt_id')
+    if (wake.get('transport') != 'claude-channel' or wake.get('session') != session_ref(state['agent']) or
+            event.get('hook_event_name') != 'UserPromptSubmit' or joined or
+            not isinstance(prompt, str) or
+            not prompt.startswith('<channel') or wake_message(wake) not in prompt or
+            not isinstance(prompt_id, str) or not prompt_id.strip() or
+            len(prompt_id.encode()) > 256 or '\0' in prompt_id):
+        return {}
+    return dict(delivery_id=wake['delivery_id'], native_turn_id='claude-channel:' + prompt_id)
+
+
+def claude_prompt_admission(state, observation, event):
+    """Record the first sighting and any joins of each native Claude prompt.
+
+    Returns 'fresh' when this event starts a previously unseen prompt,
+    'joined' when its prompt was already active — the observed native
+    behavior in BOTH directions: a channel wake joining an owner prompt, and
+    owner input joining a wake-owned prompt — and None otherwise. A joined
+    channel wake is a durable refusal: its delivery stays pending and the
+    cleared marker lets a later idle cycle retry it. A joined prompt is
+    marked shared: first sighting never implies exclusivity, so any joined
+    prompt stays outside future cancellation contracts.
+    """
+    key = observation.get('native_turn_id') or ''
+    name = observation['event']
+    if name == 'UserPromptSubmit' and key:
+        active = state.get('active_prompt')
+        if active and active.get('id') == key:
+            wake = state.get('idle_wake', {})
+            refusal = None
+            if (wake.get('transport') == 'claude-channel' and
+                    wake.get('session') == session_ref(state['agent']) and
+                    isinstance(event.get('prompt'), str) and
+                    event['prompt'].startswith('<channel') and
+                    wake_message(wake) in event['prompt']):
+                state.pop('idle_wake', None)
+                refusal = wake['delivery_id']
+            shared = dict(active, joined=True)
+            if refusal is not None:
+                shared['refused_delivery'] = refusal
+            state['active_prompt'] = shared
+            return dict(joined=True, refused_delivery=refusal)
+        state['active_prompt'] = dict(id=key)
+        return dict(joined=False, refused_delivery=None)
+    if name == 'Stop' and key:
+        active = state.get('active_prompt')
+        if active and active.get('id') == key:
+            state.pop('active_prompt', None)
+    return None
+
+
+def wake_binding(config, state, event, joined=False):
+    if config['harness'] == 'codex':
+        return queued_wake_binding(state, event)
+    if config['harness'] == 'claude':
+        return channel_wake_binding(state, event, joined)
+    return {}
+
+
 def submit_idle_wake(config, path, prepared):
     # No session lock spans terminal submission: its prompt hook needs that lock.
     wake = prepared['wake']
@@ -204,37 +377,78 @@ def submit_idle_wake(config, path, prepared):
         return
     text = wake_message(wake)
     queued_id = None
+    started = None
     if wake.get('transport') == 'codex-queue':
-        import codex_queue
         try:
-            queued_id = codex_queue.enqueue(wake['endpoint'], prepared['process'], wake['native_id'], text, wake['delivery_id'])
-        except codex_queue.QueueUnavailable:
-            with session_lock(path):
-                state = json.loads(path.read_text())
-                if state.get('idle_wake') == wake:
-                    state.pop('idle_wake')
-                    write_state(path, state)
+            queue = queue_helper()
+        except CoordinationError as exc:
+            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
+            if wake.get('queued_submission_id'):
+                return  # A retained submission exists; retry its start once the helper returns.
+            drop_idle_wake(path, wake)  # Nothing was sent; a later cycle retries cleanly.
             return
-        except codex_queue.QueueError as exc:
+        if wake.get('status') == 'queued' and wake.get('queued_submission_id'):
+            # The add already committed; only this exact pending submission's start retries.
+            try:
+                started = queue.start(wake['endpoint'], prepared['process'], wake['native_id'],
+                                      wake['queued_submission_id'], owner=wake.get('owner', 'process'))
+            except queue.QueueUnavailable as exc:
+                print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
+                return
+            if not started:
+                return  # Still queued, busy or raced; a later idle cycle retries the same start.
+        else:
+            try:
+                queued_id, started = queue.enqueue(wake['endpoint'], prepared['process'],
+                                                   wake['native_id'], text, wake['delivery_id'],
+                                                   owner=wake.get('owner', 'process'))
+            except queue.QueueUnavailable as exc:
+                # Nothing was sent; drop the marker so a later cycle can retry the add.
+                print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
+                drop_idle_wake(path, wake)
+                return
+            except queue.QueueError as exc:
+                raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
+    elif wake.get('transport') == 'claude-channel':
+        try:
+            channel = channel_helper()
+        except CoordinationError as exc:
+            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
+            drop_idle_wake(path, wake)  # Nothing was sent; a later cycle retries cleanly.
+            return
+        meta = dict(native_session_id=wake['native_id'], agent_id=wake['session']['agent_id'],
+                    execution_id=wake['session']['execution_id'], delivery_id=wake['delivery_id'])
+        try:
+            channel.write(wake['endpoint'], wake['bridge'], wake['parent'], text, meta)
+        except channel.ChannelUnavailable as exc:
+            # Proven pre-send refusal; never a terminal prompt fallback.
+            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
+            drop_idle_wake(path, wake)
+            return
+        except channel.ChannelError as exc:
+            # Transport written is not processed: retain the uncertain marker,
+            # never resend and never fall back to terminal submission.
             raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
+        started = True
     else:
         response = herdr_call(config, prepared['environment'], 'agent', 'prompt', wake['target']['pane_id'], text)
         confirmed = response.get('agent', {})
         if (response.get('type') != 'agent_prompted' or
                 any(confirmed.get(k) != wake['target'][k] for k in ('pane_id', 'terminal_id'))):
             raise CoordinationError('WAKE_UNCERTAIN', 'host did not confirm prompt submission; no automatic resend')
+        started = True
     try:
         with session_lock(path):
             state = json.loads(path.read_text())
             if state.get('idle_wake') == wake:
-                state['idle_wake']['status'] = 'submitted'
+                state['idle_wake']['status'] = 'submitted' if started else 'queued'
                 if queued_id:
                     state['idle_wake']['queued_submission_id'] = queued_id
                 write_state(path, state)
     except CoordinationError as exc:
         if exc.code != 'SESSION_BUSY':
             raise
-        # A live hook owns this file. The retained uncertain marker already
+        # A live hook owns this file. The retained marker already
         # suppresses retries, and native handling clears it when delivered.
 
 
@@ -277,9 +491,11 @@ def normalize(config, event, event_name=None):
         raise CoordinationError("INVALID_HOST", "invalid observed model")
     phases = {"SessionStart": "start", "UserPromptSubmit": "busy", "PreInvocation": "busy",
               "TurnStart": "busy", "Stop": "idle", "TurnEnd": "idle", "SessionEnd": "leave",
-              "ProviderObservation": "provider"}
+              "Interrupt": "interrupted", "ProviderObservation": "provider"}
     if name not in phases:
         raise CoordinationError("INVALID_HOST", "unsupported coordination hook event")
+    if name == "Interrupt" and harness != "codex":
+        raise CoordinationError("INVALID_HOST", "interrupt observation is a Codex-only hook")
     phase = phases[name]
     if harness == "agy" and name == "Stop" and event.get("fullyIdle") is not True:
         phase = "busy"
@@ -289,11 +505,17 @@ def normalize(config, event, event_name=None):
         if (parent / ".git").exists():
             root = parent
             break
-    turn = event.get('turn_id', '')
-    if not isinstance(turn, str) or len(turn.encode()) > 256 or '\0' in turn:
-        raise CoordinationError('INVALID_HOST', 'invalid native turn ID')
+    # Codex owns turns by its native turn ID. Claude owns a request by the
+    # stable prompt_id of its channel submission; the display turn is separate.
+    owner = ''
+    if harness in ('codex', 'claude'):
+        owner = event.get('turn_id' if harness == 'codex' else 'prompt_id', '')
+        if not isinstance(owner, str) or len(owner.encode()) > 256 or '\0' in owner or any(ord(c) < 32 for c in owner):
+            raise CoordinationError('INVALID_HOST', 'invalid native ownership key')
+        if owner:
+            owner = ('claude-channel:' + owner) if harness == 'claude' else owner
     return dict(native_id=native, workspace=workspace, project=root.name or workspace,
-                observed_model=model, phase=phase, event=name, native_turn_id=turn)
+                observed_model=model, phase=phase, event=name, native_turn_id=owner)
 
 
 def write_state(path, state):
@@ -481,8 +703,9 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     if owner_turn and owner_turn != observation.get('native_turn_id'):
         raise CoordinationError('NATIVE_TURN_MISMATCH', 'another native turn cannot take over or end this request')
     if (not state.get('inbox_intent') and config.get('idle_wakeup') and
-            codex_queue_endpoint(config, state['process']) and not wake_binding):
-        return ''  # This native queue owns admission; owner prompts do not claim work.
+            (codex_queue_endpoint(config, state['process']) or
+             (config['harness'] == 'claude' and config.get('claude_channel_dir'))) and not wake_binding):
+        return ''  # This native wake transport owns admission; other prompts do not claim work.
     if observation['event'] == 'Stop' and observation['phase'] != 'idle':
         return ''  # Agy still has active background work.
     if observation['phase'] == 'idle':
@@ -662,15 +885,31 @@ def handle(config, event, event_name=None):
             metadata.pop("project_aliases", None)
         if observation["observed_model"]:
             metadata["observed_model"] = observation["observed_model"]
-        if observation["phase"] in ("busy", "idle"):
-            metadata["state"] = observation["phase"]
+        if observation["phase"] in ("busy", "idle", "interrupted"):
+            # An interrupted Codex turn is actually idle for presence, but it
+            # proves nothing about tool cleanup or turn-end reconciliation.
+            metadata["state"] = "busy" if observation["phase"] == "busy" else "idle"
         if metadata != current["metadata"]:
             state["agent"] = call(config, "agent-context", dict(request_id=str(uuid.uuid4()),
                 session=session_ref(current), expected_revision=current["context_revision"], metadata=metadata))
         state["workspace"] = observation["workspace"]
         write_state(path, state)
         associate_wake(config, state, path, observation)
-        inbox = inbox_context(config, state, path, observation, queued_wake_binding(state, event))
+        # Interrupt only restores actual presence; it must not claim, release
+        # or reconcile inbox work, whose interrupted tools can still be running.
+        inbox = ''
+        joined = False
+        if config['harness'] == 'claude':
+            admission = claude_prompt_admission(state, observation, event) or {}
+            write_state(path, state)
+            joined = bool(admission.get('joined'))
+            if admission.get('refused_delivery'):
+                # The durable refusal is already persisted above; reject just
+                # the joined channel message natively before it reaches the
+                # model. The owner prompt and any other hook output continue.
+                raise NativePromptRefused('joined channel wake rejected; a fresh copy retries when idle')
+        if observation["phase"] != "interrupted":
+            inbox = inbox_context(config, state, path, observation, wake_binding(config, state, event, joined))
         if observation["phase"] == "idle":
             if inbox:
                 current = state['agent']
@@ -780,9 +1019,14 @@ def main():
                     if args.once:
                         break
                     stop.wait(max(1, 30 - (time.monotonic() - started)))
-    except (CoordinationError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
-        detail = str(exc) if isinstance(exc, CoordinationError) else type(exc).__name__
-        print(f"Cairn coordination: {detail}; session presence unavailable", file=sys.stderr)
+    except CoordinationError as exc:
+        if exc.code == 'NATIVE_PROMPT_REFUSED':
+            print(f"Cairn coordination: {exc}; channel text rejected, owner prompt continues", file=sys.stderr)
+            return 2  # Claude erases only the joined channel message.
+        print(f"Cairn coordination: {exc}; session presence unavailable", file=sys.stderr)
+        return 1
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+        print(f"Cairn coordination: {type(exc).__name__}; session presence unavailable", file=sys.stderr)
         return 1
     return 0
 

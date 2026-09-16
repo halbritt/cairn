@@ -39,6 +39,7 @@ def install(root, settings, config):
     engine.write_state(config_path, config)
     engine.load_config(config_path)
     shutil.copyfile(ROOT / 'integrations/lifecycle/codex_queue.py', root / 'codex_queue.py')
+    shutil.copyfile(ROOT / 'integrations/lifecycle/claude_channel.py', root / 'claude_channel.py')
     shutil.copyfile(ROOT / 'integrations/lifecycle/coordination.py', script)
     script.chmod(0o700)
     command = [sys.executable, str(script), 'hook', '--config', str(config_path)]
@@ -46,13 +47,18 @@ def install(root, settings, config):
     if harness in ('codex', 'claude'):
         data = json.loads(settings.read_text()) if settings.exists() else {}
         hooks = data.setdefault('hooks', {})
-        for event in ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd'):
+        # Codex also reports Interrupt: a natively interrupted turn is actually
+        # idle for presence, while its tools may still be running.
+        events = ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd')
+        if harness == 'codex':
+            events = ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'Interrupt')
+        for event in events:
             text = shlex.join(command)
             groups = hooks.setdefault(event, [])
             for group in groups:
                 group['hooks'] = [h for h in group['hooks'] if h.get('command') != text]
             groups[:] = [group for group in groups if group['hooks']]
-            groups.append({'hooks': [{'type': 'command', 'command': text, 'timeout': 2 if event == 'SessionEnd' else 15}]})
+            groups.append({'hooks': [{'type': 'command', 'command': text, 'timeout': 2 if event in ('SessionEnd', 'Interrupt') else 15}]})
         backup(settings)
         engine.write_state(settings, data)
     elif harness == 'agy':
@@ -129,16 +135,16 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
             response = rpc('hooks/list', dict(cwds=[cwd]))
             hooks = [h for entry in response['data'] for h in entry['hooks']
                      if h['sourcePath'] == str(settings) and h.get('command') == command]
-            if len(hooks) != 4:
-                raise RuntimeError('Codex did not load all four Cairn hook definitions')
+            if len(hooks) != 5:
+                raise RuntimeError('Codex did not load all five Cairn hook definitions')
             for hook in hooks:
                 rpc('config/value/write', dict(filePath=str(config_home / 'config.toml'),
                     keyPath='hooks.state.' + json.dumps(hook['key']) + '.trusted_hash',
                     value=hook['currentHash'], mergeStrategy='replace'))
             verified = rpc('hooks/list', dict(cwds=[cwd]))
             selected = [h for entry in verified['data'] for h in entry['hooks'] if h['key'] in {h['key'] for h in hooks}]
-            if len(selected) != 4 or any(h['trustStatus'] != 'trusted' or not h['enabled'] for h in selected):
-                raise RuntimeError('Codex did not confirm the four reviewed Cairn hooks are enabled')
+            if len(selected) != 5 or any(h['trustStatus'] != 'trusted' or not h['enabled'] for h in selected):
+                raise RuntimeError('Codex did not confirm the five reviewed Cairn hooks are enabled')
             if verify is not None:
                 verify(rpc)
         finally:
@@ -218,6 +224,95 @@ def ensure_herdr_integration(herdr, harness, settings):
                        f'repair manually with: {manual}')
 
 
+SHIM_MARKER = '# Cairn coordinated Codex launcher (managed by install-agent-coordination.py).'
+
+
+def resolve_real_codex(shim_path, codex=None):
+    """Find the native codex executable the shim must exec.
+
+    An explicit argument wins. Otherwise the PATH result is used unless it is
+    the shim entry itself: a managed shim contributes its recorded REAL, and
+    a foreign entry — including a symlink to the real installation —
+    contributes its fully resolved target. Entries compare before resolution
+    so a symlink at the shim location never masquerades as the native binary
+    and is never written through.
+    """
+    found = codex or shutil.which('codex')
+    if not found:
+        return None
+    if Path(found) != Path(shim_path):
+        return str(Path(found).resolve())
+    entry = Path(shim_path)
+    if entry.is_symlink():
+        return os.path.realpath(entry)
+    if entry.is_file():
+        for line in entry.read_text().splitlines():
+            if line.startswith('REAL='):
+                return line.split('=', 1)[1].strip('"')
+    return None
+
+
+def install_codex_shim(root, codex=None):
+    """Make the coordinated launcher the ordinary `codex` launch route.
+
+    Interactive TUI sessions (including resume) run on a per-session
+    app-server through the launcher; every non-interactive subcommand execs
+    the real codex unchanged. A foreign entry at the shim location — file or
+    symlink — is moved aside whole, so the native installation's bytes are
+    never written through, and the shim entry itself is replaced atomically.
+    """
+    shim_dir = Path.home() / '.local' / 'bin'
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    shim = shim_dir / 'codex'
+    real = resolve_real_codex(shim, codex)
+    if not real or Path(real) == shim or not Path(real).is_file():
+        raise RuntimeError('could not resolve the real codex executable for the launcher shim; '
+                           'pass an explicit path with --codex')
+    # All routing (non-interactive subcommands, explicit --remote endpoints,
+    # and interactive starts) is classified by the launcher itself, keeping
+    # the shim a trivial exec that never rewrites arguments.
+    body = '\n'.join(['#!/bin/sh', SHIM_MARKER, f'REAL="{real}"',
+                      f'LAUNCHER="{root / "launch-codex-coordination.py"}"',
+                      f'PYTHON="{sys.executable}"',
+                      'exec "$PYTHON" "$LAUNCHER" --codex "$REAL" -- "$@"', ''])
+    managed = shim.is_file() and not shim.is_symlink() and SHIM_MARKER in shim.read_text()
+    if (shim.exists() or shim.is_symlink()) and not managed:
+        # Move the foreign entry aside whole: a symlink is preserved as a
+        # symlink and its target's bytes stay untouched.
+        os.replace(shim, shim.with_name(shim.name + '.before-cairn-coordination'))
+    temp = shim_dir / ('.codex-shim-' + str(os.getpid()))
+    temp.write_text(body)
+    temp.chmod(0o700)
+    os.replace(temp, shim)
+    effective = shutil.which('codex')
+    if effective and Path(effective) == shim:
+        print(f'Installed the coordinated codex launcher as the ordinary route: {shim}.')
+    else:
+        print(f'Installed the coordinated codex launcher at {shim}, but the current PATH resolves '
+              f'codex to {effective}. Put {shim_dir} earlier in PATH (e.g. export PATH="{shim_dir}:$PATH") '
+              'so ordinary launches take the coordinated route.')
+
+
+def register_claude_channel(cairn, directory, config_home):
+    """Register the channel MCP server in the account home, honestly.
+
+    Registration does not activate anything by itself: the observed Claude
+    2.1.273 enables custom channels only through its launcher flag, so the
+    exact activation line is reported instead of being assumed.
+    """
+    path = config_home / '.claude.json'
+    data = json.loads(path.read_text()) if path.exists() else {}
+    servers = data.setdefault('mcpServers', {})
+    servers['cairn-events'] = {'command': str(cairn),
+                               'args': ['claude-channel', '--directory', str(directory)]}
+    backup(path)
+    engine.write_state(path, data)
+    print(f'Registered the cairn-events channel MCP server in {path}.')
+    print('Activation requires launching Claude with '
+          '--dangerously-load-development-channels server:cairn-events; '
+          'MCP registration alone does not enable the channel and org policy is not bypassed.')
+
+
 def install_service(root):
     service = Path.home() / '.config/systemd/user/cairn-presence.service'
     service.parent.mkdir(parents=True, exist_ok=True)
@@ -257,6 +352,8 @@ def main():
     parser.add_argument('--native-delivery', action='store_true', help='enable turn-boundary inbox handling (requires schema 039 and matching API)')
     parser.add_argument('--idle-wakeup', action='store_true', help='automatically prompt eligible idle Herdr sessions with pending inbox work; also installs Herdr\'s native integration in the selected account home through the installed herdr CLI when missing')
     parser.add_argument('--herdr', default=shutil.which('herdr'), help='Herdr executable for --idle-wakeup')
+    parser.add_argument('--claude-channel-dir', type=Path, help='owner-only directory bridging Claude channel wakes (Claude + --idle-wakeup only)')
+    parser.add_argument('--codex', help='native codex executable the launcher shim execs (default: resolved from PATH)')
     parser.add_argument('--no-service', action='store_true', help='prepare hooks without installing/restarting the watcher')
     args = parser.parse_args()
     if not args.cairn or not args.token_file.is_file():
@@ -272,6 +369,15 @@ def main():
         if args.harness == 'codex' and importlib.util.find_spec('websocket') is None:
             parser.error('Codex native queue wakeups require websocket-client in this Python environment (Ubuntu: python3-websocket)')
         config['idle_wakeup'] = str(Path(args.herdr).resolve())
+    if args.claude_channel_dir is not None:
+        if args.harness != 'claude' or not args.idle_wakeup:
+            parser.error('--claude-channel-dir requires --harness claude with --idle-wakeup')
+        directory = args.claude_channel_dir.resolve()
+        if not directory.is_absolute():
+            parser.error('--claude-channel-dir must be absolute')
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(directory, 0o700)
+        config['claude_channel_dir'] = str(directory)
     if args.harness in ('codex', 'claude'):
         config['config_home'] = str(args.settings.resolve().parent)
     if args.idle_wakeup:
@@ -279,7 +385,14 @@ def main():
         if target:
             print(f'Herdr {target} integration is current in the selected {args.harness} account home.')
     installed = install(args.root.resolve(), args.settings.resolve(), config)
+    if args.claude_channel_dir is not None:
+        register_claude_channel(Path(args.cairn).resolve(), config['claude_channel_dir'],
+                                Path(config['config_home']))
     if args.harness == 'codex':
+        launcher = args.root.resolve() / 'launch-codex-coordination.py'
+        shutil.copyfile(ROOT / 'scripts/launch-codex-coordination.py', launcher)
+        launcher.chmod(0o700)
+        install_codex_shim(args.root.resolve(), str(Path(args.codex).resolve()) if args.codex else None)
         command = shlex.join([sys.executable, str(args.root.resolve() / 'coordination.py'), 'hook', '--config', str(installed)])
         trust_codex_hooks(args.settings.resolve().parent, args.settings.resolve(), command)
     if not args.no_service:
