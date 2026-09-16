@@ -87,7 +87,8 @@ an external side effect or a later wall-clock observation.
 ## Sweep, review and recovery
 
 `cairn request-control-sweep` accepts `{"repo":"/home/halbritt/git/cairn"}`.
-One transaction processes at most 100 unassigned pool requests and 100 deliveries.
+One transaction processes at most 100 unassigned pool requests, 100 deliveries
+and 100 due [response groups](response-groups.md).
 The scheduler service runs this sweep before each scheduling tick. Claim paths
 also refuse overdue work, so a stopped scheduler does not permit late admission.
 Terminal bookkeeping can lag while the scheduler is stopped or backlogged.

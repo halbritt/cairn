@@ -330,6 +330,47 @@ def check(binary, directory):
         assert len(missed) == 1 and missed[0]["occurrence_id"] == skipped["occurrence_id"] and missed[0]["code"] == "misfire"
         assert operator("schedule-list", dict(repo=repo, state="pending"))["occurrences"][0]["occurrence_id"] == pending["occurrence_id"]
         operator("schedule-cancel", dict(request_id=str(uuid.uuid4()), repo=repo, occurrence_id=scheduled["occurrence_id"]), "VERSION_CONFLICT")
+        # A fixed topic snapshot survives membership changes and an API restart.
+        for name in ("bob", "carol"):
+            call(name,"subscribe","--request-id",str(uuid.uuid4()),"--topic","group-review")
+        group_deadline=(datetime.now(timezone.utc)+timedelta(minutes=5)).isoformat()
+        group_args=["--request-id",str(uuid.uuid4()),"--topic","group-review","--kind","request","--version","1",
+                    "--response-deadline",group_deadline,"--response-policy","all",note["record_id"]]
+        grouped=call("alice","publish",*group_args)
+        assert call("alice","publish",*group_args)==grouped
+        assert grouped["correlation_id"]==grouped["event_id"]
+        call("bob","unsubscribe","--request-id",str(uuid.uuid4()),"--topic","group-review")
+        for name in ("bob","carol"):
+            item=call(name,"inbox")["delivery"]
+            assert item["event"]["event_id"]==grouped["event_id"],item
+            result=call(name,"complete","--request-id",str(uuid.uuid4()),"--lease",item["lease_id"],"--shareable","--stdin",item["delivery_id"],body="Selected group reply")["result"]
+            if name=="bob":
+                assert call("alice","response-group",grouped["event_id"])["responded"]==0
+            reply_args=["--request-id",str(uuid.uuid4()),"--to","agent/alice","--kind","response","--version",str(result["version"]),
+                        "--causation-id",grouped["event_id"],"--correlation-id",grouped["correlation_id"],result["record_id"]]
+            sent=call(name,"publish",*reply_args)
+            assert call(name,"publish",*reply_args)==sent
+            if name=="bob":
+                stop(process)
+                process=start()
+        group=call("alice","response-group","--limit","1",grouped["event_id"])
+        assert group["state"]=="collected" and group["expected"]==group["responded"]==2
+        assert group["reported_task_outcome"]=="unknown" and group["more"]
+        assert all(m["payload_available"] for m in group["members"])
+        tail=call("alice","response-group","--after",str(group["next_after"]),"--limit","1",grouped["event_id"])
+        assert not tail["more"] and len(tail["observations"])==1
+        call("bob","response-group",grouped["event_id"],expected="NOT_FOUND")
+        assert call("alice","response-groups","--state","collected")["groups"][0]["event_id"]==grouped["event_id"]
+        # Keep open and deadline-closed groups populated for full-row restore checks.
+        group_args[group_args.index("--request-id")+1]=str(uuid.uuid4())
+        call("alice","publish",*group_args)
+        group_args[group_args.index("--request-id")+1]=str(uuid.uuid4())
+        group_args[group_args.index("--response-deadline")+1]=(datetime.now(timezone.utc)+timedelta(seconds=1)).isoformat()
+        overdue=call("alice","publish",*group_args)
+        time.sleep(1.1)
+        operator("request-control-sweep",dict(repo=repo))
+        assert call("alice","response-group",overdue["event_id"])["state"]=="incomplete"
+        print("Response groups: fixed snapshot, explicit replies, retry, API restart, owner isolation, paging and deadline audit passed")
         print("Scheduling: durable one-shot restart, exact occurrence identity, misfire audit and pending cancellation passed")
         print("Inbox watch: real CLI/API restart, cursor checkpoint, resume and read-only delivery passed")
         print("Agent resolution: exact aliases, ambiguity, pinned publication, retry and stale refusal passed")

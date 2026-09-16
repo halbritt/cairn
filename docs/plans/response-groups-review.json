@@ -1,0 +1,394 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-response-groups-2026-09-16",
+  "question": "How should a bounded response group snapshot recipients and retain explicit response outcomes without turning acknowledgments or forgotten payloads into task acceptance?",
+  "scope": [
+    "Fixed direct/topic recipient snapshots and explicit reply collection",
+    "Atomic observation, duplicate/late handling and deadline policy",
+    "Owner-only bounded reads and current payload availability"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Accepted coordination v1 implementation/deployment goal and trusted-host correction",
+    "authorized_scope": [
+      "Implement and deploy milestone 7 response groups under existing operator/profile channels"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-response-group-authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner authorized implementation and deployment of coordination v1, including response groups with recipient snapshots, correlation, deadlines, partial policy and terminal states. Preserve trusted-host UUID/session association and use the offered reviewer. Acknowledgment cannot imply task acceptance.",
+      "provenance": [
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "23437e920f699a6c532f111f0a71ad8d14da9d3c452fd22e2ec500896b799e0c"
+        }
+      ],
+      "satisfies": [
+        "explicit task authority",
+        "task scope and authority statement",
+        "decision owner",
+        "user instruction and authority",
+        "accepted desired behavior and semantic authority"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-response-group-contract",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "PostgreSQL remains operational authority, store-owned publisher and current destination rules persist, and disposable integration/check/lifecycle gates precede rollout. Response-group contract records direct/topic snapshot 1..100, explicit all/partial collection policy, no automatic retries and current payload availability separate from historical response collection.",
+      "provenance": [
+        {
+          "locator": "AGENTS.md",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "c27e830a649a2bbc1a84d97ca28cb8c9bcdf1bf11ec02705f6da9cef41a96504"
+        },
+        {
+          "locator": "docs/response-groups.md",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "baecc07a8c7997647ac385dd185fe3043169b871251908cbdb969b0ba64d10bc"
+        },
+        {
+          "locator": "Makefile",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "11a9b33c9331ef6f81cca240607e5afd421c405ea923deeb2c0b39602fc4690e"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "repository contract",
+        "target repository and task scope",
+        "repository instructions from root through target path",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "operation and caller contract",
+        "product correctness and availability policy",
+        "caller recovery needs"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-response-group-atomicity",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "publishEventTx takes shared restore generation then collection lock and commits event/fanout, group creation or response observation/member/closure together. Snapshot uses committed transaction deliveries; repeated publication request returns cached original metadata. Response group row and member updates stay under collection lock; sweep takes same lock order. Restore takes exclusive generation and closes open groups without replay. Delivery acknowledgment does not mutate group membership.",
+      "provenance": [
+        {
+          "locator": "core/agent_events.go",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "51ec799f97e07668adf1fa5b5770ff729ba888728835d4828aca5270516eed75"
+        },
+        {
+          "locator": "core/agent_response_groups.go",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "16260ff858dbfbe2c823f99f6856b2858b6074742dd3a12a1079d5f04be9797a"
+        },
+        {
+          "locator": "core/agent_request_controls.go",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "2c6699dcf5a71ac4cf435d69abf54715a16787dad6da6a2bc33b153766a4f5fd"
+        },
+        {
+          "locator": "core/restore_fence.go",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "daa14d7385fb45ac3b55c030c3e9497fbd2a8f28245abf6bdf838890b41f3268"
+        },
+        {
+          "locator": "core/schema/047_agent_response_groups.sql",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "819f07d7e8e01f64ecfdabe285d3f137320185c05b24c952346e1d259aaefb83"
+        }
+      ],
+      "satisfies": [
+        "complete read-modify-write scope",
+        "mechanism guaranteeing atomicity at that scope",
+        "named observer and invariant",
+        "observer and indivisible invariant",
+        "side effects and idempotency",
+        "data and policy ownership",
+        "existing interfaces and callers",
+        "relevant invariants",
+        "state, invariant, and dependency ownership",
+        "current source, configuration, and relevant runtime state"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-response-group-failure",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Expired, empty or oversized group creation rolls back fanout and returns explicit group code; scheduled versions are retained skipped rather than poisoning ticks. Unexpected SQL errors propagate and roll back. Invalid/mismatched ordinary response metadata is retained unmatched, duplicates do not replace first reply and late cannot reopen. Due collection closes under all/partial policy separately from request failure or process cancellation. Status rechecks response payload eligibility, copies no bodies and reports task outcome unknown. Fresh worker context supplies stable slot-owned response arguments distinct from completion.",
+      "provenance": [
+        {
+          "locator": "core/agent_response_groups.go",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "16260ff858dbfbe2c823f99f6856b2858b6074742dd3a12a1079d5f04be9797a"
+        },
+        {
+          "locator": "core/agent_schedules.go",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "fe63e74aa14ad9e25b7f0bea84cb3c187ad56af67c83cae5d538dcc49e2e045f"
+        },
+        {
+          "locator": "internal/wakeup/context.go",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "25e80c9944f06927d2fa66bea225d62c71e114b329e7034c2cdf17ab0775f6d8"
+        },
+        {
+          "locator": "internal/wakeup/wakeup.go",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "042696dc5bcaab2087e73d21efd9f5636e48c2cb202822d4393a39b3fef0392c"
+        },
+        {
+          "locator": "docs/response-groups.md",
+          "method": "Read current source and selected accepted contract",
+          "observed_at": "2026-09-16T09:33:33.537539+00:00",
+          "content_sha256": "baecc07a8c7997647ac385dd185fe3043169b871251908cbdb969b0ba64d10bc"
+        }
+      ],
+      "satisfies": [
+        "cleanup obligations",
+        "language and repository convention",
+        "callee contract",
+        "caller recovery behavior",
+        "accepted dependency direction",
+        "behavior contract and ownership evidence"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-response-group-tests",
+      "evidence_class": "evidence-tests",
+      "summary": "Successful collected exits for make test-integration, make test-lifecycle, final make check, focused parent tests and independently rerun reviewer race tests. Publication retry preserves snapshot, ack alone does not count, duplicate/distinct recipient races collect once, SQL observation failure rolls back event/fanout, deadline sweep and restore close groups. Exact source forgetting hides payload while preserving response history. Real CLI/API restart and systemd context reply probes pass. Lifecycle compares full populated group/member/observation rows after disposable backup/restore. New reviewer tests ran separately after full integration; no production data or provider acceptance claim.",
+      "provenance": [
+        {
+          "locator": "core/agent_response_groups_test.go",
+          "method": "Read selected test source and completed verification logs; collected successful exit",
+          "observed_at": "2026-09-16T09:42:05.595923+00:00",
+          "content_sha256": "eb6ab985447de1b2ced17c752b9f7af847d0f10200f16d9cde456a01b4a883de"
+        },
+        {
+          "locator": "core/agent_response_group_review_test.go",
+          "method": "Read selected test source and completed verification logs; collected successful exit",
+          "observed_at": "2026-09-16T09:42:05.596016+00:00",
+          "content_sha256": "a51b46932c511491b98aeb9591541a6f7fcdfeb4efe2f8ec5486ed5006a7bc7a"
+        },
+        {
+          "locator": "cmd/cairn/agent_response_groups_test.go",
+          "method": "Read selected test source and completed verification logs; collected successful exit",
+          "observed_at": "2026-09-16T09:42:05.596083+00:00",
+          "content_sha256": "f4c1805f6a04752cee959267290c32b3a53d2b52c5ea187f8037b6f96b9731d1"
+        },
+        {
+          "locator": "internal/wakeup/context_test.go",
+          "method": "Read selected test source and completed verification logs; collected successful exit",
+          "observed_at": "2026-09-16T09:42:05.596123+00:00",
+          "content_sha256": "723d870d65194bbe612a8da187c8a95c7c31f0fcd2f85794c779cb44c4d07fc9"
+        },
+        {
+          "locator": "scripts/check_agent_events.py",
+          "method": "Read selected test source and completed verification logs; collected successful exit",
+          "observed_at": "2026-09-16T09:42:05.596146+00:00",
+          "content_sha256": "4549e1b9289e138004321a46fb52033d38a7a509bddf2fd33c57cba890b0b754"
+        },
+        {
+          "locator": "scripts/check_wakeups.py",
+          "method": "Read selected test source and completed verification logs; collected successful exit",
+          "observed_at": "2026-09-16T09:42:05.596182+00:00",
+          "content_sha256": "3203377327862ebfc6044427c914feb26d3703fcfaaf48d1d524e9fde2240fa5"
+        },
+        {
+          "locator": "scripts/test-local-lifecycle.sh",
+          "method": "Read selected test source and completed verification logs; collected successful exit",
+          "observed_at": "2026-09-16T09:42:05.596211+00:00",
+          "content_sha256": "b650092412b9214b4b227a0b6b4344617c25d0fabae0755b4de79b5ae50b1538"
+        },
+        {
+          "locator": "/tmp/cairn-response-group-integration.log",
+          "method": "Read selected test source and completed verification logs; collected successful exit",
+          "observed_at": "2026-09-16T09:42:05.596236+00:00",
+          "content_sha256": "1a9064431b6b496f33ec49eb1003bfa7708f8bbdd025f686856c681957b10535"
+        },
+        {
+          "locator": "/tmp/cairn-response-group-lifecycle.log",
+          "method": "Read selected test source and completed verification logs; collected successful exit",
+          "observed_at": "2026-09-16T09:42:05.596258+00:00",
+          "content_sha256": "f71896a22837453f1b1a7821909767a45bcf465bf6c7824af4875cc4d28b85dc"
+        },
+        {
+          "locator": "/tmp/cairn-response-group-check-final.log",
+          "method": "Read selected test source and completed verification logs; collected successful exit",
+          "observed_at": "2026-09-16T09:42:05.596276+00:00",
+          "content_sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+        },
+        {
+          "locator": "/tmp/cairn-response-group-review-tests.log",
+          "method": "Read selected test source and completed verification logs; collected successful exit",
+          "observed_at": "2026-09-16T09:42:05.596301+00:00",
+          "content_sha256": "52a2cd16704ec5ac22d68cbe488dcbdc79652ebbe5b395def332f06113c4409a"
+        }
+      ],
+      "satisfies": [
+        "behavior tests",
+        "cleanup and failure tests",
+        "reversibility and verification",
+        "tests, characterization, probes, or explicit residual risk",
+        "checkpoint verification"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "group-atomicity",
+      "type": "observation",
+      "text": "Publication, delivery snapshot and group creation share one transaction; reply observation and member/terminal updates share the response publication transaction. Concurrent tests and SQL failure injection preserve the selected invariants.",
+      "evidence": [
+        "cairn-response-group-atomicity",
+        "cairn-response-group-tests"
+      ]
+    },
+    {
+      "id": "group-failure-policy",
+      "type": "observation",
+      "text": "Acknowledgment does not fill a member; first matching reply does. Deadline and restore close groups, late replies cannot reopen, and current forgetting or sensitivity hides unavailable payload references.",
+      "evidence": [
+        "cairn-response-group-contract",
+        "cairn-response-group-failure",
+        "cairn-response-group-tests"
+      ]
+    },
+    {
+      "id": "group-contract",
+      "type": "decision",
+      "text": "Use fixed actual delivery snapshots, explicit all/partial policies and historical collection separate from payload availability and task acceptance.",
+      "owner": "repository owner via delegated implementation",
+      "authority": "Accepted coordination v1 goal",
+      "depends_on": [
+        "group-atomicity",
+        "group-failure-policy"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Snapshot actual deliveries and collect explicit replies in existing publication transactions",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-response-group-atomicity",
+        "cairn-response-group-tests"
+      ]
+    },
+    {
+      "option": "Read current topic membership during aggregation",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-response-group-contract",
+        "cairn-response-group-tests"
+      ]
+    },
+    {
+      "option": "Treat delivery acknowledgment as a successful response",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-response-group-contract",
+        "cairn-response-group-tests"
+      ]
+    },
+    {
+      "option": "Leave response aggregation unimplemented",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-response-group-authority"
+      ]
+    }
+  ],
+  "source_locators": [
+    "packet:pkt-b770dd7732e29639",
+    "sha256:b770dd7732e29639b2fe24a1969724cc0fccf382ae804f135fd42929a0f7f2b7",
+    "release:d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "docs/plans/agent-coordination-v1.md",
+    "AGENTS.md",
+    "docs/response-groups.md",
+    "Makefile",
+    "core/agent_events.go",
+    "core/agent_response_groups.go",
+    "core/agent_request_controls.go",
+    "core/restore_fence.go",
+    "core/schema/047_agent_response_groups.sql",
+    "core/agent_schedules.go",
+    "internal/wakeup/context.go",
+    "internal/wakeup/wakeup.go",
+    "core/agent_response_groups_test.go",
+    "core/agent_response_group_review_test.go",
+    "cmd/cairn/agent_response_groups_test.go",
+    "internal/wakeup/context_test.go",
+    "scripts/check_agent_events.py",
+    "scripts/check_wakeups.py",
+    "scripts/test-local-lifecycle.sh",
+    "/tmp/cairn-response-group-integration.log",
+    "/tmp/cairn-response-group-lifecycle.log",
+    "/tmp/cairn-response-group-check-final.log",
+    "/tmp/cairn-response-group-review-tests.log"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Disposable integration and race tests, static checks",
+    "Real CLI/API restart and systemd reply-context probes",
+    "Full populated response-group rows survive backup/restore"
+  ],
+  "reopening_conditions": [
+    "A pool or dynamic-recipient workflow needs response aggregation",
+    "New publication/restore paths change transaction lock ordering",
+    "Measured collection or observation backlog exceeds the bounded operating contract"
+  ],
+  "residual_risk": [
+    "No provider-specific task acceptance, throughput or full-v1 acceptance claim.",
+    "Collection deadlines are distinct from process deadlines; failed deliveries do not count as replies.",
+    "Source inspection and tests cover selected invariants, not every possible future consumer or failure schedule.",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: go-consumer-owned-interfaces / Go method-set and import-direction compatibility",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: go-consumer-owned-interfaces / current consumer call sets and ownership",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: go-consumer-owned-interfaces / current consumer inventory",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: go-consumer-owned-interfaces / observed substitution, volatility, or cross-boundary pressure",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: go-explicit-contextual-errors / current Go version and repository convention",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: go-interface-nil-semantics / caller nil checks and method use",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: go-interface-nil-semantics / documented absence semantics",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: go-interface-nil-semantics / dynamic type and dynamic value at the return",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: implementation-placement-by-ownership / recurring change evidence when available",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: implementation-repository-language-conformance / CI and build matrix",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: implementation-repository-language-conformance / adjacent code",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: implementation-repository-language-conformance / formatter and static-tool configuration",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: implementation-repository-language-conformance / repository version and dependency contract",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-evidence-before-intervention / a bounded decision question",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-evidence-before-intervention / alternatives including no change where viable",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-evidence-before-intervention / claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-evidence-before-intervention / evidence connecting the proposed action to the condition",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-local-reasoning / knowledge and navigation required by callers/maintainers",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-local-reasoning / representative change or use scenario",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-local-reasoning / representative change scenario",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-no-change-option / actual current cost/risk or absence within a stated interval",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-no-change-option / expected future change from accepted plans",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-no-change-option / intervention cost and uncertainty",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-no-change-option / latent security, safety, data, durability, and compatibility check",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-no-change-option / proc-decide-leave-code-alone",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-preserve-behavior-by-default / preservation matrix and consumers",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-preserve-behavior-by-default / proc-establish-preservation-boundaries",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-separate-semantic-structural-change / change-type classification",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-separate-semantic-structural-change / per-edit change classification",
+    "Nonmaterial to the selected atomic collection and explicit failure contract; no broader interface, optimization, refactoring or universal preservation claim: universal-separate-semantic-structural-change / preservation boundary and semantic authority"
+  ]
+}

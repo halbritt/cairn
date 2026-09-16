@@ -177,7 +177,8 @@ existing `cairn.response/1` envelope; an empty inbox returns `delivery: null`.
 durable hold on claimed deliveries; ordinary claims respect those holds and retry
 delays. Structured wake context, [watch](inbox-watch.md),
 [one-shot scheduling](event-scheduling.md) and [request controls](request-controls.md)
-now extend that path. Response aggregation remains open; priority, wildcard
+now extend that path. [Response groups](response-groups.md) collect explicit
+replies against fixed delivery snapshots; priority, wildcard
 subscriptions and broker/distributed features retain their explicit triggers in
 the [coordination v1 plan](plans/agent-coordination-v1.md). That plan also tracks
 live identity, metadata and remaining interactive-session acceptance checks.

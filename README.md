@@ -50,6 +50,8 @@ project/harness routing are implemented; delivery uses native turn boundaries.
 [One-shot scheduling](docs/event-scheduling.md) adds durable future publication.
 [Request controls](docs/request-controls.md) add admission expiry, managed task
 deadlines and cancellation with retained process holds.
+[Response groups](docs/response-groups.md) collect explicit replies from a fixed
+recipient snapshot without treating acknowledgment as task acceptance.
 The [changelog](CHANGELOG.md) summarizes development changes and upgrade notes;
 the [implementation status](docs/implementation-status.md) records the current
 installation and complete history.

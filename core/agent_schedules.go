@@ -257,7 +257,7 @@ func (s *Store) TickSchedules(ctx context.Context, req ScheduleTickRequest) (Sch
 						return out, err
 					}
 					continue
-				case "NOT_FOUND", "DESTINATION_PROHIBITED":
+				case "NOT_FOUND", "DESTINATION_PROHIBITED", "GROUP_EXPIRED", "GROUP_EMPTY", "GROUP_LIMIT":
 					code = refusal.Code
 				default:
 					return out, e

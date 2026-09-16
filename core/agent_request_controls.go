@@ -183,8 +183,9 @@ type RequestControlSweep struct {
 	Repo string `json:"repo"`
 }
 type RequestControlSweepResult struct {
-	Deliveries   int64 `json:"deliveries"`
-	PoolRequests int64 `json:"pool_requests"`
+	ResponseGroups int64 `json:"response_groups"`
+	Deliveries     int64 `json:"deliveries"`
+	PoolRequests   int64 `json:"pool_requests"`
 }
 
 func (s *Store) requestControlScope(repo string) (string, error) {
@@ -214,6 +215,9 @@ func (s *Store) SweepRequestControls(ctx context.Context, req RequestControlSwee
 		return out, err
 	}
 	if out.Deliveries, err = expireRequestDeliveries(ctx, tx, repo, "", true); err != nil {
+		return out, err
+	}
+	if out.ResponseGroups, err = expireResponseGroups(ctx, tx, repo, ""); err != nil {
 		return out, err
 	}
 	return out, tx.Commit(ctx)

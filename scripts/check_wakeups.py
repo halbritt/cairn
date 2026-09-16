@@ -5,6 +5,7 @@ Explicit --live-binding probes use the selected native account and real model
 calls; the database, API identities and requested result remain disposable.
 """
 import argparse
+from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
 import http.server
@@ -64,13 +65,14 @@ def check(binary, root, opencode=None, hermes=None, bindings=None):
         assert p.returncode == 0, (op, p.stdout, p.stderr)
         return json.loads(p.stdout)["data"]
 
-    def publish(body, kind="request"):
+    def publish(body, kind="request", group=False):
         note = call("create", dict(request_id=str(uuid.uuid4()), draft=dict(
             kind="note", body=body, scope=dict(repo=repo, task_id="*", run_id="*"),
             claim_type="self", sensitivity="shareable")))
         return call("event-publish", dict(request_id=str(uuid.uuid4()), kind=kind,
                     ref=dict(record_id=note["record_id"], version=1),
-                    destination=dict(type="agent", name="wake-probe/agent")))
+                    destination=dict(type="agent", name="wake-probe/agent"),
+                    **(dict(response_group=dict(deadline=(datetime.now(timezone.utc)+timedelta(minutes=1)).isoformat(),partial_policy="all")) if group else {})))
 
     def status(event):
         return call("event-inspect", dict(event_id=event["event_id"]))["deliveries"][0]
@@ -121,7 +123,11 @@ if "BLOCK-WORKER" in prompt:
  time.sleep(300)
 if "EXIT-WITHOUT-ACK" in prompt:
  raise SystemExit(0)
-subprocess.run(wake["completion"],input="Selected fixture result",text=True,check=True)
+completed=subprocess.run(wake["completion"],input="Selected fixture result",text=True,capture_output=True,check=True)
+if wake.get("response_group"):
+ result=json.loads(completed.stdout)["data"]["result"]
+ response=subprocess.run(wake["response"]+["--version",str(result["version"]),result["record_id"]],text=True,capture_output=True,check=True)
+ assert json.loads(response.stdout)["data"]["correlation_id"]==wake["response"][wake["response"].index("--correlation-id")+1]
 ''')
     command = ["/usr/bin/python3", str(worker)]
     try:
@@ -135,6 +141,13 @@ subprocess.run(wake["completion"],input="Selected fixture result",text=True,chec
         done = [w for w in call("wake-attempts", {})["attempts"] if w["delivery"]["event"]["event_id"] == event["event_id"]][0]
         assert done["receipt_id"] and done["delivery"]["result"]
         report.append("request-only launch, explicit completion and runner receipt")
+        grouped = publish("COMPLETE-GROUPED-FIXTURE", group=True)
+        wait_for(lambda: call("event-group",dict(event_id=grouped["event_id"]))["state"]=="collected")
+        wait_for(lambda: not active())
+        group=call("event-group",dict(event_id=grouped["event_id"]))
+        assert group["responded"]==1 and group["members"][0]["payload_available"]
+        assert group["reported_task_outcome"]=="unknown"
+        report.append("fresh worker uses slot-owned context reply to collect a group without inferring task acceptance")
         event = publish("EXIT-WITHOUT-ACK")
         wait_for(lambda: status(event)["state"] == "failed")
         report.append("exit zero without handling is failed")

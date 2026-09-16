@@ -9,6 +9,14 @@ import (
 
 func serveAgentEvents(w http.ResponseWriter, r *http.Request, c client) bool {
 	switch r.URL.Path {
+	case "/v1/event-group":
+		serveJSON(w, r, func(ctx context.Context, req core.ResponseGroupQuery) (core.ResponseGroupStatus, error) {
+			return c.store.ResponseGroup(ctx, req, c.destination)
+		})
+	case "/v1/event-groups":
+		serveJSON(w, r, func(ctx context.Context, req core.ResponseGroupListRequest) (core.ResponseGroupPage, error) {
+			return c.store.ResponseGroups(ctx, req, c.destination)
+		})
 	case "/v1/worker-register":
 		serveJSON(w, r, func(ctx context.Context, req core.WorkerRegisterRequest) (core.WorkerSlot, error) {
 			return c.store.RegisterWorkerSlot(ctx, req, c.destination)

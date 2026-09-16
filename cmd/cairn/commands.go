@@ -23,6 +23,7 @@ Everyday commands:
   wake --help (automatic request workers)
   publish --help | inbox --help (durable agent notifications)
   watch --help (read-only inbox arrivals with a saved cursor)
+  response-group | response-groups (owned reply collections; use --help)
   subscribe | unsubscribe | subscriptions | events | event-status | event-stats
   ack | complete | retry | renew (leased event handling; use --help)
   agent --help | agent OPERATION --help (ordinary JSON request examples)

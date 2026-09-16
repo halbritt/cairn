@@ -58,7 +58,7 @@ current store-owned operator channel, which must match the schedule creator.
 | `pending` / `POOL_FULL` or `POOL_PAUSED` | Last attempt could not enter the pool; later ticks may retry within grace. |
 | `fired` | Event and deliveries or pool queue committed; `event_id` equals `occurrence_id`. |
 | `skipped` / `misfire` | Database time exceeded due time plus grace. No catch-up event. |
-| `skipped` / `NOT_FOUND` or `DESTINATION_PROHIBITED` | Current source, causal parent or destination could not be used. |
+| `skipped` / `NOT_FOUND`, `DESTINATION_PROHIBITED`, `GROUP_EXPIRED`, `GROUP_EMPTY` or `GROUP_LIMIT` | Current source, causal parent, destination or response-group snapshot could not be used. |
 | `skipped` / `restore_fenced` | Restore may have lost later execution history; review before creating new intent. |
 | `cancelled` / `operator_cancelled` | Cancellation committed before firing. |
 
@@ -95,3 +95,7 @@ guarantee for external effects or work lost from a backup.
 See [verification](verification/event-scheduling-2026-09-16.md) for tested claims
 and installed revision. Recurrence requires a separate timezone, DST and misfire
 contract before it can be enabled.
+
+Scheduled [response groups](response-groups.md) fix recipients at firing and
+retain their absolute collection deadline. A group refusal skips the occurrence
+without committing an event or deliveries.

@@ -78,8 +78,11 @@ func fenceRestore(ctx context.Context, tx pgx.Tx, reason string) (RestoreFence, 
 	if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='pending',lease_id=NULL,lease_until=NULL WHERE state='leased'`); err != nil {
 		return result, err
 	}
-	// A pending occurrence in a restored backup may have fired after that
-	// backup. Retain it for review without automatically replaying those effects.
+	// A restored backup can omit later replies or scheduled effects. Close open
+	// collections and pending occurrences for review without inventing their outcome.
+	if _, err = tx.Exec(ctx, `UPDATE cairn.agent_response_group SET state='incomplete',code='restore_fenced',closed_at=clock_timestamp() WHERE state='open'`); err != nil {
+		return result, err
+	}
 	if _, err = tx.Exec(ctx, `UPDATE cairn.agent_schedule SET state='skipped',code='restore_fenced',finished_at=clock_timestamp() WHERE state='pending'`); err != nil {
 		return result, err
 	}

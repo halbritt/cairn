@@ -26,6 +26,7 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
     [--workspace /PATH --capability NAME --harness NAME --model NAME] (pool selectors)
     [--causation-id UUID] [--correlation-id UUID]
     [--admission-expires-at RFC3339] [--task-deadline RFC3339]
+    [--response-deadline RFC3339 --response-policy all|partial]
   inbox next [--agent PRINCIPAL] [--lease-seconds N]
   ack --request-id UUID --lease UUID [--disposition handled|ignored|failed] [--code CODE] DELIVERY_UUID
   complete --request-id UUID --lease UUID --stdin [--shareable] [--kind note] DELIVERY_UUID
@@ -37,6 +38,8 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
   events [--after POSITION] [--topic TOPIC] [--limit N]
   event-status [--after-delivery UUID] [--limit N] EVENT_UUID
   event-stats
+  response-group [--after POSITION] [--limit N] EVENT_UUID
+  response-groups [--state open|collected|partial|incomplete] [--after POSITION] [--limit N]
 
 Put flags before positional arguments. Source references accept UUID or cairn:UUID.
 Read the exact source with agent history using the returned ref.record_id and ref.version.
@@ -48,7 +51,7 @@ Ignored/failed dispositions require unsupported_kind, source_unavailable or proc
 
 func isEventCommand(command string) bool {
 	switch command {
-	case "publish", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats":
+	case "publish", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "response-group", "response-groups":
 		return true
 	}
 	return false
@@ -101,6 +104,9 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	shareable := f.Bool("shareable", false, "allow hosted result reads")
 	admissionExpiresAt := f.String("admission-expires-at", "", "expiration instant for unclaimed request admission (RFC3339)")
 	taskDeadline := f.String("task-deadline", "", "execution deadline instant for running request (RFC3339)")
+	responseDeadline := f.String("response-deadline", "", "response group deadline instant (RFC3339)")
+	responsePolicy := f.String("response-policy", "", "response group partial collection policy (all|partial)")
+	state := f.String("state", "", "response group state filter (open|collected|partial|incomplete)")
 	if err := f.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return commandHelp(eventHelp), nil
@@ -110,7 +116,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	allowed := " token-file socket profile agent-id execution-id "
 	switch command {
 	case "publish":
-		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline "
+		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline response-deadline response-policy "
 	case "inbox":
 		allowed += "repo agent lease-seconds "
 	case "ack":
@@ -131,6 +137,10 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		allowed += "after-delivery limit "
 	case "event-stats":
 		allowed += "repo agent "
+	case "response-group":
+		allowed += "after limit "
+	case "response-groups":
+		allowed += "repo state after limit "
 	}
 	var unsupported string
 	f.Visit(func(option *flag.Flag) {
@@ -169,7 +179,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	operation := ""
 	expect := 0
 	switch command {
-	case "publish", "ack", "complete", "retry", "renew", "event-status":
+	case "publish", "ack", "complete", "retry", "renew", "event-status", "response-group":
 		expect = 1
 	}
 	if f.NArg() != expect {
@@ -244,8 +254,29 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 			}
 			parsedDeadline = &t
 		}
+		var parsedResponseGroup *core.ResponseGroupSpec
+		if provided["response-deadline"] || provided["response-policy"] {
+			if !provided["response-deadline"] || !provided["response-policy"] {
+				return nil, invalid("--response-deadline and --response-policy must both be provided")
+			}
+			if strings.TrimSpace(*responseDeadline) == "" {
+				return nil, invalid("--response-deadline cannot be explicitly empty")
+			}
+			t, err := parseEventTimestamp(*responseDeadline)
+			if err != nil || t.IsZero() || t.Year() < 1 || t.Year() > 9999 {
+				return nil, invalid("invalid --response-deadline: must be an RFC3339 timestamp")
+			}
+			if strings.TrimSpace(*responsePolicy) == "" {
+				return nil, invalid("--response-policy cannot be explicitly empty")
+			}
+			policy := strings.TrimSpace(*responsePolicy)
+			if policy != "all" && policy != "partial" {
+				return nil, invalid("invalid --response-policy: must be all or partial")
+			}
+			parsedResponseGroup = &core.ResponseGroupSpec{Deadline: t, PartialPolicy: policy}
+		}
 		operation = "event-publish"
-		req = core.PublishEventRequest{RequestID: *request, Repo: *repo, Kind: *kind, Ref: core.RecordVersionRef{RecordID: strings.TrimPrefix(f.Arg(0), "cairn:"), Version: *version}, Destination: dest, CausationID: *causation, CorrelationID: *correlation, Resolution: resolution, Pool: needs, AdmissionExpiresAt: parsedAdmission, TaskDeadline: parsedDeadline}
+		req = core.PublishEventRequest{RequestID: *request, Repo: *repo, Kind: *kind, Ref: core.RecordVersionRef{RecordID: strings.TrimPrefix(f.Arg(0), "cairn:"), Version: *version}, Destination: dest, CausationID: *causation, CorrelationID: *correlation, Resolution: resolution, Pool: needs, AdmissionExpiresAt: parsedAdmission, TaskDeadline: parsedDeadline, ResponseGroup: parsedResponseGroup}
 	case "inbox":
 		operation = "event-next"
 		req = core.NextEventRequest{Repo: *repo, Agent: *agent, LeaseSeconds: *seconds}
@@ -264,6 +295,22 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	case "event-status":
 		operation = "event-inspect"
 		req = core.EventStatusRequest{EventID: f.Arg(0), After: *afterDelivery, Limit: *limit}
+	case "response-group":
+		operation = "event-group"
+		eventID := strings.TrimPrefix(strings.TrimSpace(f.Arg(0)), "cairn:")
+		if eventID == "" {
+			return nil, invalid("EVENT_UUID is required")
+		}
+		req = core.ResponseGroupQuery{EventID: eventID, After: *after, Limit: *limit}
+	case "response-groups":
+		operation = "event-groups"
+		st := strings.TrimSpace(*state)
+		switch st {
+		case "", "open", "collected", "partial", "incomplete":
+		default:
+			return nil, invalid("unknown response group state; must be open, collected, partial, or incomplete")
+		}
+		req = core.ResponseGroupListRequest{Repo: *repo, State: st, After: *after, Limit: *limit}
 	case "retry", "renew":
 		operation = "event-" + command
 		req = core.EventLeaseRequest{DeliveryID: f.Arg(0), LeaseID: *lease, LeaseSeconds: *seconds}

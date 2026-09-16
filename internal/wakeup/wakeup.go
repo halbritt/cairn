@@ -468,6 +468,9 @@ Do not report completion merely in your final text; the completion command is re
 REQUEST SOURCE
 %s
 END REQUEST SOURCE`, w.Delivery.Event.EventID, w.Delivery.Event.Ref.RecordID, w.Delivery.Event.Ref.Version, base, *source.Versions[0].Body)
+	if len(wake.Response) > 0 {
+		prompt += "\nThis request belongs to a response group. After successful completion, read CAIRN_WAKE_CONTEXT.response and execute that argument array with --version RESULT_VERSION RESULT_RECORD_UUID from the completion response. Use the exact saved response request UUID for identical retries. Completion alone does not send the group's reply. The group deadline limits reply collection, not your process runtime.\n"
+	}
 	stdout, err := os.OpenFile(filepath.Join(c.StateDirectory, w.ID+".stdout"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return runner.Result{}, err

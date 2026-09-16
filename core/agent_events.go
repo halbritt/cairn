@@ -13,37 +13,39 @@ import (
 
 // Agent events are operational observations, not qualified memory or authority.
 type AgentEvent struct {
-	AdmissionExpiresAt *time.Time        `json:"admission_expires_at,omitempty"`
-	TaskDeadline       *time.Time        `json:"task_deadline,omitempty"`
-	EventID            string            `json:"event_id"`
-	Position           int64             `json:"position"`
-	Repo               string            `json:"repo"`
-	From               string            `json:"from"`
-	CreatedAt          time.Time         `json:"created_at"`
-	Kind               string            `json:"kind"`
-	Ref                RecordVersionRef  `json:"ref"`
-	Destination        EventDestination  `json:"destination"`
-	CausationID        string            `json:"causation_id,omitempty"`
-	CorrelationID      string            `json:"correlation_id,omitempty"`
-	Resolution         *AgentResolution  `json:"resolution,omitempty"`
-	Pool               *PoolRequirements `json:"pool,omitempty"`
+	ResponseGroup      *ResponseGroupSpec `json:"response_group,omitempty"`
+	AdmissionExpiresAt *time.Time         `json:"admission_expires_at,omitempty"`
+	TaskDeadline       *time.Time         `json:"task_deadline,omitempty"`
+	EventID            string             `json:"event_id"`
+	Position           int64              `json:"position"`
+	Repo               string             `json:"repo"`
+	From               string             `json:"from"`
+	CreatedAt          time.Time          `json:"created_at"`
+	Kind               string             `json:"kind"`
+	Ref                RecordVersionRef   `json:"ref"`
+	Destination        EventDestination   `json:"destination"`
+	CausationID        string             `json:"causation_id,omitempty"`
+	CorrelationID      string             `json:"correlation_id,omitempty"`
+	Resolution         *AgentResolution   `json:"resolution,omitempty"`
+	Pool               *PoolRequirements  `json:"pool,omitempty"`
 }
 type EventDestination struct {
 	Type string `json:"type"`
 	Name string `json:"name"`
 }
 type PublishEventRequest struct {
-	AdmissionExpiresAt *time.Time        `json:"admission_expires_at,omitempty"`
-	TaskDeadline       *time.Time        `json:"task_deadline,omitempty"`
-	RequestID          string            `json:"request_id"`
-	Repo               string            `json:"repo,omitempty"`
-	Kind               string            `json:"kind"`
-	Ref                RecordVersionRef  `json:"ref"`
-	Destination        EventDestination  `json:"destination"`
-	CausationID        string            `json:"causation_id,omitempty"`
-	CorrelationID      string            `json:"correlation_id,omitempty"`
-	Resolution         *AgentResolution  `json:"resolution,omitempty"`
-	Pool               *PoolRequirements `json:"pool,omitempty"`
+	ResponseGroup      *ResponseGroupSpec `json:"response_group,omitempty"`
+	AdmissionExpiresAt *time.Time         `json:"admission_expires_at,omitempty"`
+	TaskDeadline       *time.Time         `json:"task_deadline,omitempty"`
+	RequestID          string             `json:"request_id"`
+	Repo               string             `json:"repo,omitempty"`
+	Kind               string             `json:"kind"`
+	Ref                RecordVersionRef   `json:"ref"`
+	Destination        EventDestination   `json:"destination"`
+	CausationID        string             `json:"causation_id,omitempty"`
+	CorrelationID      string             `json:"correlation_id,omitempty"`
+	Resolution         *AgentResolution   `json:"resolution,omitempty"`
+	Pool               *PoolRequirements  `json:"pool,omitempty"`
 }
 type EventQuery struct {
 	Repo  string `json:"repo,omitempty"`
@@ -171,7 +173,7 @@ func leaseSeconds(seconds int) (int, error) {
 	return seconds, nil
 }
 
-const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline`
+const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline,(SELECT jsonb_build_object('deadline',g.deadline,'partial_policy',g.partial_policy) FROM cairn.agent_response_group g WHERE g.event_id=e.event_id)`
 const eventVisible = `(e.sensitivity='shareable' OR $3) AND (e.publisher=$2 OR EXISTS(SELECT 1 FROM cairn.agent_delivery v WHERE v.event_id=e.event_id AND v.consumer=$2))`
 
 func scanEvent(row pgx.Row) (AgentEvent, error) {
@@ -180,7 +182,7 @@ func scanEvent(row pgx.Row) (AgentEvent, error) {
 	return e, err
 }
 func eventScanFields(e *AgentEvent) []any {
-	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline}
+	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline, &e.ResponseGroup}
 }
 func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
 	e, err := scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.event_id=$1 AND `+eventVisible, id, s.channel.Principal, dest.AllowLocal))
@@ -194,6 +196,11 @@ func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destin
 }
 
 func (s *Store) normalizePublication(req PublishEventRequest, dest Destination) (PublishEventRequest, error) {
+	if req.ResponseGroup != nil {
+		if err := req.ResponseGroup.validate(req); err != nil {
+			return req, err
+		}
+	}
 	var err error
 	for _, stamp := range []*time.Time{req.AdmissionExpiresAt, req.TaskDeadline} {
 		if stamp != nil && (req.Kind != "request" || stamp.IsZero() || stamp.Year() < 1 || stamp.Year() > 9999) {
@@ -290,6 +297,9 @@ func (s *Store) eventSource(ctx context.Context, tx pgx.Tx, req PublishEventRequ
 
 // publishEventTx keeps source checks, pool admission, publication and fanout in the caller transaction.
 func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination, id string) (AgentEvent, error) {
+	if _, err := retrievalGeneration(ctx, tx); err != nil {
+		return AgentEvent{}, err
+	}
 	if err := lock(ctx, tx, "agent-events:"+req.Repo); err != nil {
 		return AgentEvent{}, err
 	}
@@ -305,6 +315,9 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 	if id == "" {
 		id = uuid.NewString()
 	}
+	if req.ResponseGroup != nil && req.CorrelationID == "" {
+		req.CorrelationID = id
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,admission_expires_at,task_deadline) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12,$13,$14)`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool, req.AdmissionExpiresAt, req.TaskDeadline)
 	if err != nil {
 		return AgentEvent{}, err
@@ -319,7 +332,16 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 	if err != nil {
 		return AgentEvent{}, err
 	}
-	return s.readEvent(ctx, tx, id, dest)
+	if req.ResponseGroup != nil {
+		if err = createResponseGroup(ctx, tx, id, *req.ResponseGroup); err != nil {
+			return AgentEvent{}, err
+		}
+	}
+	event, err := s.readEvent(ctx, tx, id, dest)
+	if err != nil {
+		return event, err
+	}
+	return event, observeGroupResponse(ctx, tx, event)
 }
 
 func (s *Store) PublishEvent(ctx context.Context, req PublishEventRequest, dest Destination) (AgentEvent, error) {

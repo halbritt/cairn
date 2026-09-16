@@ -18,6 +18,11 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-16
 
+- **Collect explicit replies.** Migration 047 adds response groups with fixed
+  recipients, correlation, deadlines and all/partial policies. Duplicate, late
+  and unmatched replies remain observable; current result availability stays
+  separate from historical collection state. See [the contract](docs/response-groups.md).
+
 - **Control request lifetime.** Migration 046 adds admission expiry, managed task
   deadlines and operator cancellation. Completion and cancellation have one
   durable winner; process holds remain until the supervisor confirms termination.
