@@ -1,15 +1,18 @@
 # Implementation status — 2026-09-16
 
-Current installed CLI/API: clean `26c60ce`, migration 046. Native session identity,
+Current installed CLI/API: clean `a15cbee`, migration 047. Native session identity,
 presence, exact metadata resolution, turn-boundary inbox delivery, worker pools,
 selected provider-failure handling, watch, operator recovery and one-shot
 scheduling are deployed. [Request controls](request-controls.md) now add admission
 expiry, managed task deadlines and cancellation while retaining process holds.
 See [the request-control report](verification/request-controls-2026-09-16.md).
+[Response groups](response-groups.md) now collect explicit replies against a
+fixed recipient snapshot with deadlines, partial policy and current payload
+availability. See [verification](verification/response-groups-2026-09-16.md).
 The API, scheduler, presence, seven workers and Hermes gateway were verified
 running after rollout.
 
-Native interactive hard stops, response groups and the remaining live routing
+Native interactive hard stops and the remaining live routing
 and provider-coverage checks in the [v1 plan](plans/agent-coordination-v1.md)
 remain open. The snapshots below retain earlier implementation states.
 

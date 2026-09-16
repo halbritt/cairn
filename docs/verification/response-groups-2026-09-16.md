@@ -58,7 +58,28 @@ throughput targets or full v1 acceptance. Pools lack a publication-time recipien
 snapshot and reject response groups. A collection deadline does not stop work;
 managed task deadlines use the separate request-control contract.
 
-At verification time the installed runtime remains migration 046. Deployment
-must retain existing profile scope, inspect unfinished holds, back up the store,
-stop consumers and API, migrate, then verify the clean installed revision before
-restarting consumers and the Hermes gateway.
+## Installed result
+
+Clean CLI/API build `a15cbeeb7fe97116b801efeb92408250ee12a56f` is installed.
+Migration 047 has SHA-256
+`819f07d7e8e01f64ecfdabe285d3f137320185c05b24c952346e1d259aaefb83`.
+Before rollout both unfinished wake and native hold counts were zero. The backup
+`cairn-20260916T094346-496855.dump` passed catalog checksum and archive-read
+verification. Consumers stopped before the API; all main PIDs were zero before
+migration and atomic binary replacement. The API reported the expected clean
+revision before consumers restarted. Existing semantic-worker arguments remain.
+
+At 09:44 UTC all eleven services were active/running with zero restarts: API,
+presence, scheduler, seven workers and `hermes-gateway.service`. All seven slots
+were online and available for admission; this does not measure provider capacity.
+The installed owned-group read succeeded with an empty initial result.
+
+Skillpack `5419b4902df81c09f4add7141c0239056554b16f` was committed, pushed and
+installed. The event guide's SHA-256
+`683d2c89bdd3f7e82146aef97a6914a2659752de62e2ac02633ba26d9c93aff0`
+matches both Codex and both Claude homes, OpenCode, both Agy locations and Hermes.
+The installer passed validation for 49 skills with two existing warnings.
+
+A real remaining-v1 review was then resolved from `harness=agy, project=cairn`
+to the offered existing agent and published with a response group. Its eventual
+handling and review findings are separate from the deployment checks above.

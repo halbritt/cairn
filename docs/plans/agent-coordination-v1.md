@@ -255,6 +255,12 @@ Acceptance: no priority starvation, bounded backlog behavior, forbidden routing
 creates no deliveries, and aggregation handles duplicate, failed, late and
 forgotten responses without claiming task success from acknowledgment alone.
 
+Implementation checkpoint 2026-09-16: migration 047 deploys fixed direct/topic
+response groups with explicit all/partial policy, bounded reads and retained
+reply observations. See [verification](../verification/response-groups-2026-09-16.md).
+Priority and new trust-boundary policy retain their stated triggers. This
+checkpoint does not establish the remaining native/provider v1 acceptance checks.
+
 ## Disposition of previously deferred features
 
 | Feature | Placement or explicit trigger |
