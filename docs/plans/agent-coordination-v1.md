@@ -14,8 +14,10 @@ rate-limit reporting now has verified step-freshness checks; unrecognized
 diagnostics remain gaps. Scheduling, request controls and response
 groups are deployed through migration 047. Automatic idle-session wakeup is
 deployed in runtime `e81057b` and verified in the existing ai-newsroom conversation.
-The seven milestones and this extension are complete within their stated
-contracts; conditional features retain their triggers. See
+Overall completion remains open: live coverage across the integrations/accounts,
+host submission and draft handling, and interactive cancellation still need
+work. The owner rejected the premature completion claim. Separately conditional
+features retain their triggers. See
 the [current checkpoint](../verification/coordination-v1-acceptance-2026-09-16.md).
 
 | Milestone | Current progress |

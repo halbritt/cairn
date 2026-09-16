@@ -81,13 +81,23 @@ native handling completed once, its explicit reply collected at 15:16:48 UTC,
 and its hold finished at 15:16:53 UTC. The parent read and verified the result,
 acknowledged the reply and confirmed the same conversation/process returned idle.
 
-Coordination v1 is complete within these contracts. This accepts the implemented
-slice and observed exchanges; full design acceptance and measured productivity
-remain separate. Herdr's final check-to-submission race and unknown composer
-draft are documented limits. The automatic live trial covers one Codex session;
-other harnesses have the shared deployed adapter and protocol coverage, without
-a claim of live automatic verification in every account. Conditional features
-above retain their triggers, and interactive hard stops remain unsupported.
+Coordination v1 remains incomplete. The owner rejected the earlier completion
+claim on September 16 because these follow-ups remain unresolved:
+
+- Live automatic-wakeup verification across both Codex and both Claude accounts,
+  Agy, OpenCode and Hermes. The successful automatic trial covers one Codex
+  conversation; installed shared code and protocol fixtures do not establish
+  live success in every integration.
+- Herdr's final check-to-submission race and preservation of existing composer
+  drafts. Documenting these host limitations does not resolve them.
+- Per-request cancellation of active interactive work, which currently returns
+  `UNSUPPORTED_CONTROL`.
+
+The implementation, deployment and observed exchanges above remain valid
+checkpoints. They do not close the overall goal. These gaps must be resolved or
+explicitly deferred by the owner before completion; calling them follow-ups is
+not a scope decision. The separately conditional features retain their recorded
+triggers. Measured productivity remains a separate evaluation question.
 
 ## Acceptance audit follow-up
 

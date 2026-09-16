@@ -28,11 +28,13 @@ also completed after an explicit host prompt. A subsequent
 in that same conversation using the deployed presence service, with one native
 claim, explicit reply and released hold. Idle wakeup is enabled for all seven
 bindings and requires a uniquely matched, unfocused idle Herdr session.
-[Coordination v1](verification/coordination-v1-acceptance-2026-09-16.md) is complete
-within its stated contracts. Native interactive hard stops remain an explicit
-capability limitation, and unknown provider diagnostics stay unclassified. Herdr
-has no atomic idle-only prompt or composer reservation; those host limitations
-remain documented. The snapshots below retain earlier implementation states.
+[Coordination v1](verification/coordination-v1-acceptance-2026-09-16.md) remains
+incomplete. Remaining work includes live automatic-wakeup verification across
+the other integrations/accounts, resolving the host submission race and draft
+preservation, and per-request cancellation of active interactive work. The owner
+rejected treating these follow-ups as compatible with a completion claim.
+Unknown provider diagnostics stay unclassified. The snapshots below retain
+earlier implementation states.
 
 ## Historical implementation snapshots
 
