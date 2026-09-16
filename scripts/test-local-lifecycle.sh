@@ -107,7 +107,7 @@ backup="$(bash scripts/local-store.sh backup)"
 "$pg_bin/pg_restore" -h "$CAIRN_HOME/socket" --no-owner --no-privileges -d cairn_restore "$backup"
 "$pg_bin/psql" -h "$CAIRN_HOME/socket" -d cairn_restore -Atqc "$event_snapshot_sql" > "$test_root/events-restored.json"
 cmp "$test_root/events-before.json" "$test_root/events-restored.json"
-printf '%s\n' 'Agent sessions, events, deliveries, subscriptions and history survive real backup/restore'
+printf '%s\n' 'Agent sessions, worker pools, slots, assignments, events, deliveries and subscriptions survive real backup/restore'
 CAIRN_DATABASE_URL="host=$CAIRN_HOME/socket dbname=cairn_restore sslmode=disable" bin/cairn replay "$receipt" >"$test_root/replayed.json"
 python3 - "$test_root" <<'PY'
 import json, pathlib, sys

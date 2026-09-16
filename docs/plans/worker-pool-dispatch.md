@@ -1,10 +1,10 @@
 # Fresh-work pool dispatch
 
-Status: queue, assignment, supervisor presence and explicit availability are in
-implementation. See [the implemented contract](../worker-pools.md). Deployment
-and native runtime acceptance are not claimed by this design note. Automatic
-structured quota ingestion remains outstanding. Native wake-session association
-is a separate deployed slice.
+Status: queue, assignment, supervisor presence and explicit availability are
+deployed in migration 041. See [the contract](../worker-pools.md) and
+[verification](../verification/worker-pools-2026-09-15.md). Automatic structured
+quota ingestion remains outstanding. Native wake-session association is a
+separate deployed slice.
 
 ## Queue and assignment
 
