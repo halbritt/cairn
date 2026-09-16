@@ -52,6 +52,7 @@ Everyday commands:
   list [--limit N] [--offset N] REPO | get UUID | use-report [--record UUID] [--limit N] [--offset N] REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact [--offset N] UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
+  coordination-review event-reissue (local operator recovery; see docs/event-recovery.md)
   create edit revise append replace delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
   promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal proposal-history
   supersession RECORD_UUID
@@ -379,6 +380,10 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.InvalidateHandles)
 	case "worker-pool-configure":
 		return invoke(ctx, input, store.ConfigureWorkerPool)
+	case "coordination-review":
+		return coordinationReview(ctx, store, input)
+	case "event-reissue":
+		return invoke(ctx, input, store.ReissueEvent)
 	case "checkpoint":
 		return invoke(ctx, input, store.Checkpoint)
 	case "verify-checkpoint":

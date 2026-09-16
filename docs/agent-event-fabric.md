@@ -203,3 +203,8 @@ real agent work. No automatic task launch or usefulness claim follows from tests
 Use [`cairn watch`](inbox-watch.md) for read-only, resumable inbox arrivals.
 Its delivery cursor includes late pool assignments; publication history positions
 from `events --after` are not inbox arrival cursors.
+
+## Review failed work
+
+The local [operator recovery view](event-recovery.md) exposes retained attempts,
+reported task assessments and traceable new requests after explicit reissue.

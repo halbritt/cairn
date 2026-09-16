@@ -139,6 +139,31 @@ def check(binary, directory):
         call("carol", "ack", "--request-id", str(uuid.uuid4()), "--lease", d["lease_id"],
              "--disposition", "failed", "--code", "processing_failed", d["delivery_id"])
         assert call("carol", "event-stats")["redeliveries"] == 2
+        # Local operator recovery uses the real store channel, preserves failed
+        # history, and creates a fresh request for only the failed recipient.
+        def operator(command, request, expected="OK"):
+            result = subprocess.run([binary, command], input=json.dumps(request), env=env,
+                                    text=True, capture_output=True, timeout=15)
+            envelope = json.loads(result.stdout)
+            assert envelope["status"] == expected, envelope
+            assert (result.returncode == 0) == (expected == "OK"), envelope
+            return envelope.get("data")
+        review = operator("coordination-review", dict(repo=repo, state="failed"))
+        failed = next(row for row in review["deliveries"]["deliveries"] if row["delivery_id"] == d["delivery_id"])
+        assert failed["execution"] == "may_have_executed" and failed["reported_task_outcome"] == "unknown"
+        request = dict(request_id=str(uuid.uuid4()), repo=repo, delivery_id=d["delivery_id"],
+                       reason="Review fixture prior effects before an explicit new request", accept_uncertain_effects=False)
+        operator("event-reissue", request, expected="INVALID_REQUEST")
+        request.update(request_id=str(uuid.uuid4()), accept_uncertain_effects=True)
+        fresh = operator("event-reissue", request)
+        assert operator("event-reissue", request) == fresh
+        assert fresh["causation_id"] == d["event"]["event_id"] and fresh["from"].startswith("local-uid:")
+        assert fresh["destination"] == dict(type="agent", name="agent/carol")
+        retained = operator("coordination-review", dict(repo=repo, delivery_id=d["delivery_id"]))["deliveries"]["deliveries"][0]
+        assert retained["state"] == "failed" and retained["reissued_as"]["event_id"] == fresh["event_id"]
+        successor = call("carol", "inbox")["delivery"]
+        assert successor["event"]["event_id"] == fresh["event_id"] and successor["attempts"] == 1
+        call("carol", "ack", "--request-id", str(uuid.uuid4()), "--lease", successor["lease_id"], successor["delivery_id"])
         first = call("bob", "events", "--limit", "1")
         assert first["more"] and first["events"][0]["event_id"] == event["event_id"]
         later = call("bob", "events", "--after", str(first["next_after"]), "--limit", "100")
@@ -252,6 +277,7 @@ def check(binary, directory):
         print("Agent resolution: exact aliases, ambiguity, pinned publication, retry and stale refusal passed")
         print("Agent sessions: stable identity, shared-profile inbox separation, completion and API restart passed")
         print("Agent events: CLI direct/offline delivery, replies, fanout, retry, leases and API restart passed")
+        print("Operator recovery: explicit reissue, retained failure, new attribution, no topic refanout and exact retry passed")
     finally:
         if process is not None and process.poll() is None:
             stop(process)

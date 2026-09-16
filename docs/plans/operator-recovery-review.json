@@ -1,0 +1,306 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-operator-recovery-2026-09-16",
+  "question": "How should an operator inspect uncertain execution and explicitly create one traceable successor request without replaying active work or rewriting prior attribution?",
+  "scope": [
+    "Read-only local operator coordination review",
+    "Atomic single-successor failed-request reissue"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Accepted v1 implementation/deployment goal and trusted-host correction",
+    "authorized_scope": [
+      "Implement and deploy milestone5 operator recovery using existing local authority"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-recovery-contract",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Milestone5 requires retained failure review, uncertain-effect warning and a traceable new request. Existing pending/held history must survive. PostgreSQL remains operational store and only disposable DBs may be tested. Operator review keeps reported task acceptance separate from execution/handling.",
+      "provenance": [
+        {
+          "locator": "AGENTS.md",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "c27e830a649a2bbc1a84d97ca28cb8c9bcdf1bf11ec02705f6da9cef41a96504"
+        },
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "21d38165b7cab89128d576aba273990d557362eeb56b0651defd4271ea9bcc1f"
+        },
+        {
+          "locator": "docs/event-recovery.md",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "c316029462ed1db77a6a87782756f990b66237196b67b7949c833884f7307481"
+        }
+      ],
+      "satisfies": [
+        "repository contract",
+        "operation and caller contract",
+        "relevant invariants",
+        "accepted desired behavior and semantic authority",
+        "repository instructions from root through target path",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-recovery-atomicity",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Reissue mutation holds the collection insertion lock and original delivery row, checks failed request/source/privacy/unfinished holds, then inserts new publication, delivery or pool queue and single-successor trace in one transaction. Store channel supplies new operator attribution; original event remains unchanged. Exact request retries use existing mutate cache. Read-only review exposes selected metadata and explicit assessment detail without claiming.",
+      "provenance": [
+        {
+          "locator": "core/agent_event_reissue.go",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "cd1fc0fc20b85d265fcf979931936dfd5a11d8c572034dca3e30992772a7b831"
+        },
+        {
+          "locator": "core/schema/044_agent_event_reissue.sql",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "127f01a16a13d9f7f07cd8f8daa1ca256db42591a5ec7ed691669e29e27a172c"
+        },
+        {
+          "locator": "core/agent_event_review.go",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "1f9afe87695e014e4c3ae278a96e407844af5685e701cb2f4e82de9616036cd4"
+        },
+        {
+          "locator": "core/agent_wakeups.go",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "9c197824ddfd5d23108a9cdc8cbc982c31fb1afac623fb98816b83edf2037c48"
+        },
+        {
+          "locator": "cmd/cairn/agent_event_review.go",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "8bed98f8238d66e7678b7bb08a921702636f3822d75bdc1afdae9aebcc0181df"
+        }
+      ],
+      "satisfies": [
+        "complete read-modify-write scope",
+        "mechanism guaranteeing atomicity at that scope",
+        "named observer and invariant",
+        "observer and indivisible invariant",
+        "data and policy ownership",
+        "behavior contract and ownership evidence",
+        "existing interfaces and callers",
+        "current source, configuration, and relevant runtime state",
+        "state, invariant, and dependency ownership"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-recovery-tests",
+      "evidence_class": "evidence-tests",
+      "summary": "Disposable full integration/check and populated backup/restore lifecycle passed. Focused final tests cover queued pool successor visibility; real final operator CLI probe covers explicit acknowledgment, preserved failure, new attribution, no topic refanout and exact retry. Store regressions also cover source-version pinning after edit, racing operators, active holds, rollback and causal privacy. Review tests separate execution, handling and corrected explicit assessment.",
+      "provenance": [
+        {
+          "locator": "core/agent_event_reissue_test.go",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "a4e1dd5c751898147631f0a93e1e1f58c7aa3a381d22d4690e8dac6fbc78a61c"
+        },
+        {
+          "locator": "core/agent_event_reissue_policy_test.go",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "41eb0f86e942cd2db49abe57e45c54b67fe4782d69ea7b3df23e12274799746e"
+        },
+        {
+          "locator": "core/agent_event_review_test.go",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "8ec3b78781e9c82ff67ef8e60e93e6a7e88c3616df4cfbb0199752732b1817a2"
+        },
+        {
+          "locator": "/tmp/cairn-recovery-integration.log",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "dd6de3f29db1198ac77b6ed7b6508b3d5f04797bfb528cd9897cd78f1914b98e"
+        },
+        {
+          "locator": "/tmp/cairn-recovery-focused.log",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "8e6f829b70123c67517e3925e8a7e32f5cc41f52a4beed368663a40a919c3888"
+        },
+        {
+          "locator": "/tmp/cairn-recovery-check-final.log",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+        },
+        {
+          "locator": "/tmp/cairn-recovery-lifecycle.log",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "6c546692e3118161d7ee5822747ebb73f3e3e57f0a140021a0d4185cfcba791e"
+        },
+        {
+          "locator": "/tmp/cairn-recovery-runtime-final.log",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "944577b87d237eea270ee83bfcb0f80c0c4ddabcf44f3245d756f6dd5a106f78"
+        }
+      ],
+      "satisfies": [
+        "reversibility and verification",
+        "behavior tests",
+        "concurrency and failure scenarios",
+        "explicit invariant scenarios",
+        "tests, characterization, probes, or explicit residual risk",
+        "checkpoint verification"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-recovery-authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner authorized coordination v1 implementation/deployment and use of offered reviewer while preserving trusted-host UUID association. This bounded milestone5 step adds local operator recovery using the existing OS-user channel. It does not expand hosted-agent authority or automatically replay uncertain effects.",
+      "provenance": [
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Read selected source and verified command output",
+          "observed_at": "2026-09-16T07:59:05.667537+00:00",
+          "content_sha256": "21d38165b7cab89128d576aba273990d557362eeb56b0651defd4271ea9bcc1f"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "decision owner",
+        "explicit task authority",
+        "task scope and authority statement",
+        "user instruction and authority",
+        "target repository and task scope"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "successor-atomicity",
+      "type": "observation",
+      "text": "Reissue validates the locked failed delivery and source/holds, then creates one successor and its trace in one transaction. Injected failure rolls back both; racing operators produce one successor.",
+      "evidence": [
+        "cairn-recovery-atomicity",
+        "cairn-recovery-tests"
+      ]
+    },
+    {
+      "id": "explicit-recovery",
+      "type": "decision",
+      "text": "Require an explicit uncertain-effects acknowledgment, preserve the failed request and original attribution, and distinguish reported task assessment from handling/execution.",
+      "owner": "repository owner via delegated implementation",
+      "authority": "Accepted coordination v1 implementation goal",
+      "depends_on": [
+        "successor-atomicity"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "New request and trace under existing operator authority",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-recovery-contract",
+        "cairn-recovery-atomicity",
+        "cairn-recovery-tests"
+      ]
+    },
+    {
+      "option": "Reset the failed delivery or automatically retry uncertain work",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-recovery-contract"
+      ]
+    },
+    {
+      "option": "Create another delivery under the old event",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-recovery-contract"
+      ]
+    },
+    {
+      "option": "Keep failure inspection and manual publication separate only",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-recovery-authority"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/event-recovery.md",
+    "core/agent_event_reissue.go",
+    "core/agent_event_review.go",
+    "core/schema/044_agent_event_reissue.sql",
+    "scripts/check_agent_events.py"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Disposable integration and static checks",
+    "Final focused queue/reissue/review tests and real operator CLI probe",
+    "Backup/restore compares populated reissue traces"
+  ],
+  "reopening_conditions": [
+    "A new attempt creator bypasses delivery locking",
+    "Acceptance semantics change or need independent attestation",
+    "Evidence of review-query or collection-lock contention"
+  ],
+  "residual_risk": [
+    "Packet pkt-b15e24ac005b6b21; SHA256 b15e24ac005b6b21d197aace3504a46d95b0c6e6954f4b706f26356e986b368e; doctrine doctrine-f6bbb5196a3f8bf9; release d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "Selected concept implementation-atomicity-scope; its material obligations are satisfied for this bounded mutation.",
+    "Operator review sections are current observations; reissue revalidates independently. Latest assessment is retained testimony, not independent task acceptance.",
+    "One successor per failed delivery prevents duplicate operator retries. A successor that later fails can itself be reviewed and reissued. Prior external effects remain possible.",
+    "Queued requests have no delivery yet and are exposed in a separate bounded page. No performance, usefulness or full-v1 acceptance claim.",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-aggregate-invariant-boundary / atomic versus eventual consistency decision",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-aggregate-invariant-boundary / commands and mutation authority",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-aggregate-invariant-boundary / expert-validated invariants",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-aggregate-invariant-boundary / measured load when performance drives a split",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-language-model-loop / authoritative examples",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-language-model-loop / authoritative expert examples",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-language-model-loop / feedback from implementation and usage",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-language-model-loop / model expressed in executable behavior",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-language-model-loop / terms whose meanings affect decisions",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-modeling-investment-gate / business differentiation and product lifespan",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-modeling-investment-gate / business-value and expert-access evidence",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-modeling-investment-gate / expert access and feedback cadence",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-modeling-investment-gate / recurring ambiguity, contradiction, or rule defect",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: domain-modeling-investment-gate / team capacity to sustain the model",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: go-consumer-owned-interfaces / Go method-set and import-direction compatibility",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: go-consumer-owned-interfaces / current consumer call sets and ownership",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: go-consumer-owned-interfaces / current consumer inventory",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: go-consumer-owned-interfaces / observed substitution, volatility, or cross-boundary pressure",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: implementation-repository-language-conformance / CI and build matrix",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: implementation-repository-language-conformance / adjacent code",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: implementation-repository-language-conformance / formatter and static-tool configuration",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: implementation-repository-language-conformance / repository version and dependency contract",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-evidence-before-intervention / a bounded decision question",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-evidence-before-intervention / alternatives including no change where viable",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-evidence-before-intervention / claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-evidence-before-intervention / evidence connecting the proposed action to the condition",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-local-reasoning / knowledge and navigation required by callers/maintainers",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-local-reasoning / representative change or use scenario",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-local-reasoning / representative change scenario",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-no-change-option / actual current cost/risk or absence within a stated interval",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-no-change-option / expected future change from accepted plans",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-no-change-option / intervention cost and uncertainty",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-no-change-option / latent security, safety, data, durability, and compatibility check",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-no-change-option / proc-decide-leave-code-alone",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-preserve-behavior-by-default / preservation matrix and consumers",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-preserve-behavior-by-default / proc-establish-preservation-boundaries",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-separate-semantic-structural-change / change-type classification",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-separate-semantic-structural-change / per-edit change classification",
+    "Nonmaterial to the selected transaction-atomicity claim; no wider modeling, refactoring, interface or performance recommendation: universal-separate-semantic-structural-change / preservation boundary and semantic authority"
+  ]
+}

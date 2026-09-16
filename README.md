@@ -37,7 +37,9 @@ acceptance evidence.
 notifications over PostgreSQL. Agents publish an exact note version, poll with
 an expiring lease, and optionally save a result atomically with acknowledgment.
 `cairn inbox next --profile worker-01` uses the provisioned `agent/worker-01` inbox;
-`cairn publish --help` lists the commands. Profiles are explicit and polling does
+`cairn publish --help` lists the commands. [Inbox watch](docs/inbox-watch.md) observes arrivals without claiming.
+The local [operator recovery view](docs/event-recovery.md) inspects holds, failures
+and explicit task assessments, and can reissue reviewed failed requests. Profiles are explicit and polling does
 not launch agents. The [wakeup supervisor](docs/agent-wakeups.md) can launch fresh
 Codex, Claude Code, Agy, OpenCode and Hermes workers for request events, with one worker per inbox,
 lease renewal and systemd process cleanup. See the

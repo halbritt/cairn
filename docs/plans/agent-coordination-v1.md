@@ -19,7 +19,7 @@ Deployment evidence is in [the session verification report](../verification/agen
 | 2. Presence/context | Native hooks and host watcher deployed for both Codex homes, both Claude homes, OpenCode, Agy and Hermes. |
 | 3. Resolve/publish | Exact selectors/aliases, ambiguity and atomic freshness checks deployed in migration 038. |
 | 4. Session/pool delivery | Native turn-boundary delivery deployed in migration 039; actual fresh-worker conversation links deployed in migration 040. A useful review exchange completed with an explicit host wake. Pool selection, bounded admission, fairness and explicit account availability are deployed in migration 041. Migration 042 adds supported native failure ingestion; Agy coverage and the full routing acceptance trial remain pending. |
-| 5. Wake operations | Structured context and per-slot launch spacing/backoff deployed; read-only cursor watch deployed; expanded recovery views pending. |
+| 5. Wake operations | Structured context and per-slot launch spacing/backoff deployed; read-only cursor watch deployed; operator review/reissue verified, rollout pending. |
 | 6. Scheduling/cancellation | Pending. |
 | 7. Bounded coordination | Response groups and required limits pending; conditional features retain their triggers. |
 

@@ -370,7 +370,9 @@ func (s *Store) ChangeWake(ctx context.Context, req WakeChangeRequest, dest Dest
 					return w, err
 				}
 			}
-			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wake_attempt SET state='finished',finished_at=clock_timestamp(),reason=CASE WHEN reason='' THEN $2 ELSE reason END WHERE attempt_id=$1`, w.ID, req.Reason); err != nil {
+			// Preserve the prelaunch fact before replacing the state with finished.
+			// Older finished attempts without this report remain execution-uncertain.
+			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wake_attempt SET process_state=CASE WHEN state='prepared' AND process_state='' THEN 'prelaunch_failed' ELSE process_state END,state='finished',finished_at=clock_timestamp(),reason=CASE WHEN reason='' THEN $2 ELSE reason END WHERE attempt_id=$1`, w.ID, req.Reason); err != nil {
 				return w, err
 			}
 			if w.WorkerID != "" && d.State != "handled" && d.State != "ignored" {
