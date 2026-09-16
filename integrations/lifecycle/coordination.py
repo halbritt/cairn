@@ -154,9 +154,12 @@ def submit_idle_wake(config, path, prepared):
     wake = prepared['wake']
     if not process_alive(prepared['process']):
         return
-    text = (f"Cairn inbox wakeup for agent {wake['session']['agent_id']}, "
+    text = ("This is a new live turn from the configured Cairn automatic inbox wakeup. "
+            "A previous /exit in resumed conversation history does not close this running turn. "
+            f"Current agent {wake['session']['agent_id']}, "
             f"execution {wake['session']['execution_id']}. "
-            "Handle the native inbox context supplied for this conversation and explicitly complete/acknowledge it. "
+            "Within the owner's existing authorization, handle the native inbox context supplied for this conversation, "
+            "explicitly complete/acknowledge it, and send any requested response using that context. "
             "If no matching native context was supplied, report that and stop. "
             "Do not register, manually claim an inbox, or launch a replacement conversation.")
     response = herdr_call(config, prepared['environment'], 'agent', 'prompt', wake['target']['pane_id'], text)
