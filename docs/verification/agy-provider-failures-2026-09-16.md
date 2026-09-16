@@ -64,3 +64,25 @@ does not apply after initialization, where mismatched conversation IDs are
 ignored. These review claims were checked against source rather than accepted
 as findings. The native fixture was verified using a disposable directory under
 `/tmp`; its writable mount is limited to that location and its isolated settings.
+
+## Deployment
+
+Clean CLI/API `1f2f388f8d79441161fca25214f59e5ea0e5faf5` is installed with
+unchanged migration 047. Before rollout both unfinished wake and native-attempt
+counts were zero. Backup `cairn-20260916T104146-696421.dump` passed catalog digest
+and archive-read checks; production data was not restored for tests. Consumers
+stopped before the API, all main PIDs reached zero, and the expected clean API
+revision was verified before restarting consumers and Hermes gateway.
+
+Agy's print timeout is now `9m30s` within its 600-second supervisor timeout.
+At 10:43 UTC all eleven services were active/running with zero restarts; all
+seven slots were online/available. Availability permits admission and does not
+certify remaining provider capacity. Existing semantic-worker arguments remain.
+
+Skillpack `b21848e` was pushed and installed. Its Cairn event-reference SHA-256
+`a07f2c4e455f82dfe95595ae3c91f1f50e9e8a41f5bbac6be3c5de23240d9464`
+matches both Codex homes, both Claude homes, OpenCode, both Agy skill locations
+and Hermes. Validation reported 49 skills, zero failures and two existing
+warnings. Selected installation evidence is
+`/tmp/cairn-agy-provider-install-verification.json`. Rhumb's busy Codex process
+was left untouched as the owner requested; its live routing trial remains open.

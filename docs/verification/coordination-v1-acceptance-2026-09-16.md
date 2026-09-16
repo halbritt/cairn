@@ -1,6 +1,6 @@
 # Coordination v1 acceptance checkpoint — 2026-09-16
 
-Runtime `7b1f21e` with migration 047 is deployed. This checkpoint distinguishes
+Runtime `1f2f388` with migration 047 is deployed. This checkpoint distinguishes
 implemented behavior, observed native use and remaining work against the
 [v1 plan](../plans/agent-coordination-v1.md).
 

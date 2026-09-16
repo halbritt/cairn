@@ -1,6 +1,6 @@
 # Implementation status — 2026-09-16
 
-Current installed CLI/API: clean `7b1f21e`, migration 047. Native session identity,
+Current installed CLI/API: clean `1f2f388`, migration 047. Native session identity,
 presence, exact metadata resolution, turn-boundary inbox delivery, worker pools,
 selected provider-failure handling, watch, operator recovery and one-shot
 scheduling are deployed. [Request controls](request-controls.md) now add admission
@@ -12,12 +12,15 @@ availability. See [verification](verification/response-groups-2026-09-16.md).
 Codex subscription-limit diagnostics now suspend their owning worker slot;
 [native verification](verification/codex-subscription-limits-2026-09-16.md)
 covers the installed CLI's Plus/Pro variants against a local provider.
+Agy now reports selected native rate limits with a latest-step check that rejects
+stale errors after recovery; see [native verification](verification/agy-provider-failures-2026-09-16.md).
 The API, scheduler, presence, seven workers and Hermes gateway were verified
 running after rollout.
 
-Native interactive hard stops and the remaining live routing
-and provider-coverage checks in the [v1 plan](plans/agent-coordination-v1.md)
-remain open. The snapshots below retain earlier implementation states.
+The live Rhumb routing trial in the [v1 plan](plans/agent-coordination-v1.md)
+remains open; its restart must wait until idle. Native interactive hard stops
+remain an explicit capability limitation, and unknown provider diagnostics stay
+unclassified. The snapshots below retain earlier implementation states.
 
 ## Historical implementation snapshots
 
