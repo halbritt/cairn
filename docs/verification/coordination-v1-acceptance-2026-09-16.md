@@ -36,6 +36,13 @@ Complete the existing-session Rhumb trial after that conversation loads the
 installed hooks. Keep account
 launch success, recorded quota failures and task acceptance separate.
 
+Update at 14:15 UTC: a different, genuine Rhumb conversation is now running with
+the installed hooks. The process change happened outside this rollout; no restart
+was performed by this agent. Exact metadata resolution succeeded and a real
+review request was queued while that session was busy. Handling remains pending;
+see [the live trial](rhumb-live-routing-2026-09-16.md). This does not claim the old
+conversation resumed.
+
 A September 16 loopback-provider probe of Agy captured an ordinary HTTP 400
 failure with exit code 1 and a terminal JSON object using `event: "result"`
 and `result.status: "ERROR"`. This contradicts the reviewer's inferred
