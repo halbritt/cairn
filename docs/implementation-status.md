@@ -1,9 +1,9 @@
 # Implementation status — 2026-09-15
 
-The [wakeup supervisor](agent-wakeups.md) adds fresh OpenCode and Hermes workers
+The [wakeup supervisor](agent-wakeups.md) adds fresh Codex, Claude Code, Agy, OpenCode and Hermes workers
 for request events. PostgreSQL holds each claimed delivery until its systemd unit
 has stopped; explicit result completion, process observations and task acceptance
-remain separate. Both services are installed and running from clean build
+remain separate. All five services are installed and running from clean build
 `e4fa703`, with migration 036. See the [verification report](verification/agent-wakeups-2026-09-15.md)
 for test coverage, installation details and limits.
 

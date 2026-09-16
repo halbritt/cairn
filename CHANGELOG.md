@@ -18,6 +18,11 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-15
 
+- **Enable the remaining wakeup profiles.** Codex, Claude Code and Agy now use
+  the same supervised fresh-worker path. Live completion checks passed against a
+  disposable database. Claude's binding uses Sonnet 5 after its configured Fable
+  model returned exhausted credits. Existing interactive settings are preserved.
+
 - **Wake fresh agents for durable requests.** Owner-configured OpenCode and Hermes
   bindings poll their inboxes and launch systemd-managed workers. Durable attempts
   hold deliveries across lease expiry, link runner receipts, and reconcile stopped

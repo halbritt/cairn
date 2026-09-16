@@ -28,7 +28,7 @@ def wait_for(check, seconds=30):
     raise AssertionError("wakeup condition timed out")
 
 
-def check(binary, root, opencode=None, hermes=None):
+def check(binary, root, opencode=None, hermes=None, bindings=None):
     assert os.environ.get("CAIRN_TEST_DATABASE_URL")
     assert os.environ["CAIRN_DATABASE_URL"] == os.environ["CAIRN_TEST_DATABASE_URL"]
     root.mkdir(mode=0o700)
@@ -167,6 +167,22 @@ subprocess.run(command,input="Selected fixture result",text=True,shell=True,chec
                 stop()
                 assert fixture.completed_tool, (name, fixture.observed)
                 report.append(name + " native tool execution and atomic result completion")
+        for binding in bindings or []:
+            name = binding["name"]
+            config["timeout_seconds"] = 120
+            event = publish("Deployment verification only. Execute the supplied Cairn completion command "
+                            "with selected result text 'Native " + name + " wakeup verified'. "
+                            "Do not inspect other projects, change workspace files, send messages, "
+                            "or use other memory profiles. This is a disposable test database.")
+            start(binding["command"])
+            wait_for(lambda: status(event)["state"] in ("handled", "failed"), 150)
+            assert status(event)["state"] == "handled", (name, status(event), str(root))
+            wait_for(lambda: not active())
+            stop()
+            done = [w for w in call("wake-attempts", {})["attempts"]
+                    if w["delivery"]["event"]["event_id"] == event["event_id"]][0]
+            assert done["receipt_id"] and done["delivery"]["result"]
+            report.append(name + " live native completion against disposable database")
         print(json.dumps(dict(checks=report), indent=2))
     finally:
         if supervisor:
@@ -275,5 +291,8 @@ if __name__ == "__main__":
     parser.add_argument("directory", type=Path)
     parser.add_argument("--opencode")
     parser.add_argument("--hermes")
+    parser.add_argument("--live-binding", type=Path, action="append", default=[],
+                        help="Explicit opt-in: use an authenticated native launcher from a binding JSON; may incur model usage")
     args = parser.parse_args()
-    check(args.binary, args.directory, args.opencode, args.hermes)
+    check(args.binary, args.directory, args.opencode, args.hermes,
+          [json.loads(path.read_text()) for path in args.live_binding])

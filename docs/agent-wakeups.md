@@ -1,7 +1,7 @@
 # Automated agent wakeups
 
 Status: implementation contract, 2026-09-15. The owner delegated design,
-implementation and deployment, including OpenCode and Hermes bindings.
+implementation and deployment, including all five named harness bindings.
 
 ## Selected behavior
 
@@ -54,7 +54,7 @@ must operate within the owner's authorized task scope.
 
 PostgreSQL remains the operational store. No broker, session injection, cron
 scheduler, cross-host leadership, or exactly-once external effects is included.
-The first bindings launch fresh OpenCode and Hermes workers; model/provider
+The bindings launch fresh Codex, Claude Code, Agy, OpenCode and Hermes workers; model/provider
 settings are fixed by each installed binding. Selected result text can be shared;
 raw worker output remains local and is not committed or captured as memory.
 
@@ -83,7 +83,25 @@ Create an owner-written JSON file using absolute paths:
 }
 ```
 
-For Hermes, the command ends in `hermes --provider PROVIDER --model MODEL -z`.
+Fresh worker command shapes (model and profile choices belong to the binding):
+
+| Harness | Noninteractive entry point |
+| --- | --- |
+| Codex | `codex exec --json --ephemeral --sandbox danger-full-access -c 'approval_policy="never"' -m MODEL --` |
+| Claude Code | `claude --print --verbose --output-format stream-json --permission-mode acceptEdits --permission-prompts none --allowedTools Bash --model MODEL --` |
+| Agy | `agy --model MODEL --output-format stream-json --print-timeout 10m --dangerously-skip-permissions --print` |
+| OpenCode | `opencode run --pure --auto --format json -m PROVIDER/MODEL` |
+| Hermes | `hermes --provider PROVIDER --model MODEL -z` |
+
+These unattended launch permissions apply only to the configured worker
+invocation. They do not grant new task authority or change interactive settings.
+Codex and Claude bindings explicitly select the owner's personal configuration
+homes through `/usr/bin/env`; no credentials are embedded in binding files.
+Codex's [noninteractive contract](https://learn.chatgpt.com/docs/non-interactive-mode)
+and Agy's [headless contract](https://antigravity.google/docs/cli/headless/)
+were checked against the installed CLI help. Agy may exit zero after a tool
+permission denial, so explicit Cairn completion remains the handling criterion.
+
 The worker appends the prompt as one argument. The profile's destination must be
 hosted; the observation token must have the observer role in the same collection.
 The asserted principal is checked through the authenticated API, never used as

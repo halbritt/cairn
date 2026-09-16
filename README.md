@@ -39,7 +39,7 @@ an expiring lease, and optionally save a result atomically with acknowledgment.
 `cairn inbox next --profile codex` uses the provisioned `agent/codex` inbox;
 `cairn publish --help` lists the commands. Profiles are explicit and polling does
 not launch agents. The [wakeup supervisor](docs/agent-wakeups.md) can launch fresh
-OpenCode and Hermes workers for request events, with one worker per inbox,
+Codex, Claude Code, Agy, OpenCode and Hermes workers for request events, with one worker per inbox,
 lease renewal and systemd process cleanup. See the
 [event plan](docs/plans/agent-event-fabric.md) and [wakeup plan](docs/plans/agent-wakeups.md).
 The [changelog](CHANGELOG.md) summarizes development changes and upgrade notes;

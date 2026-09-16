@@ -73,3 +73,47 @@ Herdr pane with its original session ID; Herdr reported it interactive and idle.
 The Cairn skill was first updated and deployed before implementation (skillpack
 `8d24765`), then extended with wakeup guidance and Hermes copying (`a4033bd`,
 whitespace follow-up `5bf5676`). All eight deployed skill/reference copies match.
+
+
+## Codex, Claude and Agy follow-up
+
+After the owner asked about the remaining profiles, their installed
+noninteractive interfaces were checked and exercised through the same API,
+runner and systemd supervisor against a newly created disposable PostgreSQL
+cluster. This follow-up explicitly used existing native account authentication
+and real model calls; it was not another synthetic-provider fixture.
+
+| Added service | Installed model | Native result |
+| --- | --- | --- |
+| `cairn-wake-codex.service` | `gpt-6-astra` | Explicit atomic completion with a runner receipt |
+| `cairn-wake-claude.service` | `claude-sonnet-5` | Explicit atomic completion with a runner receipt |
+| `cairn-wake-agy.service` | `gemini-3.8-flash-high` | Explicit atomic completion with a runner receipt |
+
+All three services were enabled and observed active/running with zero restarts.
+The existing OpenCode and Hermes services remain enabled. The installed Cairn
+binary and schema are unchanged: this extension uses owner-configured launchers.
+
+Claude's first probe used the configured `claude-fable-5-1[1m]` and returned an
+out-of-usage-credits error. The successful follow-up selected `sonnet`, which the
+native initialization identified as `claude-sonnet-5`; the installed binding pins
+that resolved model. No credits were purchased and no account credentials were
+provisioned or replaced. Interactive model settings remain unchanged.
+The successful Claude probe disabled unrelated settings/hooks and MCP servers
+while retaining account authentication; the installed binding preserves the
+normal configuration and session persistence for the existing lifecycle hooks.
+That distinction is not evidence of live hook conformance in a wakeup worker.
+
+`scripts/check_wakeups.py --live-binding /absolute/binding.json` now supports
+explicit, repeatable live launcher validation. It requires the disposable-test
+DSN and uses its own API identities, sources and result records. Each live probe
+requests only a selected verification result; broader task quality is unmeasured.
+The same run also checks request filtering, exit-without-acknowledgment,
+supervisor SIGKILL cleanup and API-outage recovery. All 101 Python tests passed
+again after the probe extension. No store or runner changes required repeating
+the earlier schema, Go race or restore campaign.
+
+The Cairn skill's automatic-worker section now names all five harnesses and is
+deployed to the existing eight skill locations, including Hermes. Successful
+small native completion checks establish working authenticated launch paths;
+future provider quota, authentication and task failures remain possible and
+remain visible as failed or unresolved attempts.
