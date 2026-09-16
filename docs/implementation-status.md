@@ -1,6 +1,6 @@
 # Implementation status — 2026-09-16
 
-Current installed CLI/API: clean `a15cbee`, migration 047. Native session identity,
+Current installed CLI/API: clean `7b1f21e`, migration 047. Native session identity,
 presence, exact metadata resolution, turn-boundary inbox delivery, worker pools,
 selected provider-failure handling, watch, operator recovery and one-shot
 scheduling are deployed. [Request controls](request-controls.md) now add admission
@@ -9,6 +9,9 @@ See [the request-control report](verification/request-controls-2026-09-16.md).
 [Response groups](response-groups.md) now collect explicit replies against a
 fixed recipient snapshot with deadlines, partial policy and current payload
 availability. See [verification](verification/response-groups-2026-09-16.md).
+Codex subscription-limit diagnostics now suspend their owning worker slot;
+[native verification](verification/codex-subscription-limits-2026-09-16.md)
+covers the installed CLI's Plus/Pro variants against a local provider.
 The API, scheduler, presence, seven workers and Hermes gateway were verified
 running after rollout.
 

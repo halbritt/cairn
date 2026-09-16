@@ -60,8 +60,10 @@ unfinished, and the restore regression proves cleanup preserves the retained
 incarnation. Hermes callbacks already require a registered nonempty owner
 session and clear only that session's candidate.
 
-Codex has two supported exact diagnostic strings. Other subscription-limit
-wording remains unclassified. Agy automatic quota detection remains unverified.
+At this checkpoint Codex had two supported exact diagnostic strings. The later
+[subscription-limit extension](codex-subscription-limits-2026-09-16.md) adds
+observed plan-specific templates and native Plus/Pro loopback verification.
+Agy automatic quota detection remains unverified.
 No failure observation proves final task acceptance. Broader wake operations,
 scheduling, cancellation and response groups remain in the v1 plan.
 

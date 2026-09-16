@@ -50,3 +50,22 @@ explicit failure policy from validated Pincite packet `pkt-879f059a56816fdd`,
 SHA-256 `879f059a56816fddf653dfedd481a7a95cb2442e80fa6188a326ae9912903d10`.
 Material obligations are satisfied; broader nonmaterial obligations and
 reopening conditions remain recorded there.
+
+## Installed result
+
+Clean CLI/API build `7b1f21e23b62fe2a0162da9985d973d84a903938` is installed.
+The parser-only upgrade retains migration 047 and its checksum. Before restart,
+unfinished wake and native attempts were both zero. Backup
+`cairn-20260916T100700-585391.dump` passed its catalog checksum and archive-read
+check. Consumers and API stopped, the binary was replaced atomically, and the
+API reported the expected clean revision before consumers restarted.
+
+At 10:11 UTC the API, presence, scheduler, seven workers and Hermes gateway were
+active/running with zero restarts. Seven slots were online and available for
+admission; provider capacity was not measured. Existing semantic-worker settings
+remain. The prior binary is retained as `cairn-before-codex-limits`.
+
+Skillpack `0ee69746a8d5c6c0cf26abb4e9b10677ea997a0a` was pushed and installed.
+The event reference SHA-256
+`e15bc798a8056c73af2e83ae6163099f699b989092eb92ff39ccb2cd800bf7a5`
+matches all eight existing harness locations, including Hermes.
