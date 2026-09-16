@@ -1,6 +1,8 @@
 # Coordination v1 acceptance checkpoint — 2026-09-16
 
-Runtime `e81057b` with migration 047 is deployed. This checkpoint distinguishes
+Runtime `6fdffe0` with migration 048 is deployed; see the
+[native turn binding verification](native-turn-binding-2026-09-16.md).
+This checkpoint distinguishes
 implemented behavior, observed native use and explicit limitations against the
 [v1 plan](../plans/agent-coordination-v1.md).
 
@@ -10,7 +12,7 @@ implemented behavior, observed native use and explicit limitations against the
 | Existing-session delivery while busy | Installed Codex/Claude loopback-provider probes and an opted-in Agy real-model probe passed. The real Codex/Rhumb request queued while busy and completed at an owner-prompt boundary; see [the live trial](rhumb-live-routing-2026-09-16.md). |
 | Automatic idle-session wakeup | Deployed across seven bindings; the real ai-newsroom conversation woke through the presence service, completed once and replied, then returned idle with its hold released. See [the automatic trial and host limitations](idle-session-wakeups-2026-09-16.md). |
 | Real metadata-selected review exchange | Parent resolved the offered Agy session by harness/project, sent a real v1 review and read its result. Its explicit reply filled the deployed response group; see [response groups](response-groups-2026-09-16.md). |
-| Two Codex and two Claude accounts | Separate bindings, principals and health are implemented. Earlier real account probes include successful completion and a Codex account-limit failure; [the wakeup report](agent-wakeups-2026-09-15.md) records these. They do not establish current capacity or all native failure paths for both homes. |
+| Two Codex and two Claude accounts | Separate bindings, principals and health are implemented. The later [automatic account trials](native-wakeup-accounts-2026-09-16.md) passed across all seven bindings, including both homes for each harness. These selected exchanges do not establish future capacity or all failure paths. |
 | Provider failures | Selected Codex, Claude, OpenCode, Hermes and Agy observations are implemented and tested; [current coverage](../provider-failures.md) remains explicit. Agy's native recovery case requires step freshness because its final result retains an old 429. Claude's [native probe](claude-provider-failures-2026-09-16.md) found and verified a fix for stale 429 retention after terminal HTTP 400. |
 | Fresh pools, watch and recovery | Deployed with bounded queues, retained process holds and independent task-assessment semantics. See [pools](worker-pools-2026-09-15.md), [watch](../inbox-watch.md) and [recovery](../event-recovery.md). |
 | Scheduling, admission expiry, task deadlines and cancellation | Deployed and tested on disposable databases and real cgroups. Active native/manual interruption returns `UNSUPPORTED_CONTROL` until the host has a per-request stop contract; see [controls](request-controls-2026-09-16.md). |
@@ -100,6 +102,28 @@ checkpoints. They do not close the overall goal. These gaps must be resolved or
 explicitly deferred by the owner before completion; calling them follow-ups is
 not a scope decision. The separately conditional features retain their recorded
 triggers. Measured productivity remains a separate evaluation question.
+
+### Native transport work in progress
+
+An owned Claude Code 2.1.273 conversation received a local MCP channel notification
+without terminal input and responded while its unsubmitted composer draft stayed
+unchanged. An observer recorded the same native `prompt_id` on that channel's
+`UserPromptSubmit` and `Stop` hooks; `MessageDisplay` supplied a separate `turn_id`.
+This demonstrates a candidate submission route and request-ownership key. It is
+not yet a deployed Cairn inbox exchange, a busy-queue test, or cancellation proof.
+Selected local evidence is under `/tmp/cairn-claude-channel-probe`.
+
+The two owner-offered agents are implementing the Claude/Codex and Hermes/OpenCode
+adapters and their tests. Their work is pending review and deployment. Final
+acceptance still requires the following evidence:
+
+| Requirement | Evidence needed to close it |
+| --- | --- |
+| Preserve drafts and busy work on each installed harness/account | Real native submission with a pre-existing unsubmitted draft; queued work follows the current turn; the same conversation handles the intended delivery once. |
+| Bind a queued wake to its intended conversation and delivery | Stale or changed-session input cannot claim another delivery; retries cannot duplicate an uncertain native submission. |
+| Cancel one active interactive request | Completion is fenced; only the owning native request is stopped; its tools are confirmed stopped before its hold is released. A later owner turn remains unaffected. |
+| Recover after host or adapter failure | Retained ownership reconciles uncertain submission and tool cleanup without replay or releasing an unconfirmed hold. |
+| Deploy the verified adapters | Installed versions and required native startup configuration match the reviewed code; busy Rhumb remains uninterrupted. |
 
 ## Acceptance audit follow-up
 

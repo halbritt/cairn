@@ -14,9 +14,11 @@ rate-limit reporting now has verified step-freshness checks; unrecognized
 diagnostics remain gaps. Scheduling, request controls and response
 groups are deployed through migration 047. Automatic idle-session wakeup is
 deployed in runtime `e81057b` and verified in the existing ai-newsroom conversation.
-Overall completion remains open: live coverage across the integrations/accounts,
-host submission and draft handling, and interactive cancellation still need
-work. The owner rejected the premature completion claim. Separately conditional
+Basic automatic-wakeup trials now pass across both Codex and both Claude accounts,
+Agy, OpenCode and Hermes. Runtime `6fdffe0` adds migration 048 and exact native
+delivery/turn binding; see [the deployed verification](../verification/native-turn-binding-2026-09-16.md).
+Overall completion remains open: host submission and draft handling, and
+interactive cancellation still need work. The owner rejected the premature completion claim. Separately conditional
 features retain their triggers. See
 the [current checkpoint](../verification/coordination-v1-acceptance-2026-09-16.md).
 
