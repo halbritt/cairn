@@ -1,6 +1,6 @@
 # Coordination v1 acceptance checkpoint — 2026-09-16
 
-Runtime `1f2f388` with migration 047 is deployed. This checkpoint distinguishes
+Runtime `1846f95` with migration 047 is deployed. This checkpoint distinguishes
 implemented behavior, observed native use and remaining work against the
 [v1 plan](../plans/agent-coordination-v1.md).
 
@@ -10,7 +10,7 @@ implemented behavior, observed native use and remaining work against the
 | Existing-session delivery while busy | Installed Codex/Claude loopback-provider probes and an opted-in Agy real-model probe passed. The live Codex/Rhumb trial remains open. |
 | Real metadata-selected review exchange | Parent resolved the offered Agy session by harness/project, sent a real v1 review and read its result. Its explicit reply filled the deployed response group; see [response groups](response-groups-2026-09-16.md). |
 | Two Codex and two Claude accounts | Separate bindings, principals and health are implemented. Earlier real account probes include successful completion and a Codex account-limit failure; [the wakeup report](agent-wakeups-2026-09-15.md) records these. They do not establish current capacity or all native failure paths for both homes. |
-| Provider failures | Selected Codex, Claude, OpenCode, Hermes and Agy observations are implemented and tested; [current coverage](../provider-failures.md) remains explicit. Agy's native recovery case requires step freshness because its final result retains an old 429. |
+| Provider failures | Selected Codex, Claude, OpenCode, Hermes and Agy observations are implemented and tested; [current coverage](../provider-failures.md) remains explicit. Agy's native recovery case requires step freshness because its final result retains an old 429. Claude's [native probe](claude-provider-failures-2026-09-16.md) found and verified a fix for stale 429 retention after terminal HTTP 400. |
 | Fresh pools, watch and recovery | Deployed with bounded queues, retained process holds and independent task-assessment semantics. See [pools](worker-pools-2026-09-15.md), [watch](../inbox-watch.md) and [recovery](../event-recovery.md). |
 | Scheduling, admission expiry, task deadlines and cancellation | Deployed and tested on disposable databases and real cgroups. Active native/manual interruption returns `UNSUPPORTED_CONTROL` until the host has a per-request stop contract; see [controls](request-controls-2026-09-16.md). |
 | Response groups | Fixed recipients, explicit replies, deadline policy, duplicate/late handling, payload availability and restore fencing deployed and verified. |
@@ -54,3 +54,15 @@ batching, a broker, cross-host leadership and general workflows retain the plan'
 explicit triggers. Their absence is not silently treated as completed work.
 Native interruption remains an explicit capability limitation, not a simulated
 cancellation by killing a shared gateway. Full v1 acceptance remains open.
+
+## Acceptance audit follow-up
+
+The September 16 audit compared the original v0 spec, accepted v1 contract and
+milestone tests/reports. PostgreSQL polling is an explicit accepted replacement
+for the original broker proposal. No additional mandatory gap was identified
+within that review beyond the live Rhumb trial. The offered agent independently
+reviewed the same scope; selected result
+`658ef19f-f6c1-4968-96a5-d166fc322e82/1` was read and acknowledged.
+Its identified Claude native-verification gap led to the reproduced and repaired
+terminal-status defect. This review does not convert passing tests into full
+design acceptance. At 11:04 UTC Rhumb still reported working and remained untouched.

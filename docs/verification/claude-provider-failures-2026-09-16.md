@@ -67,3 +67,19 @@ account. The live Rhumb session still awaits idle before its authorized restart.
 
 The [decision receipt](../plans/claude-provider-failures-review.json) records
 the bounded repair, verified evidence, alternatives and remaining limitations.
+
+## Deployment
+
+Clean CLI/API build `1846f95` was installed and verified at 11:07:51 UTC.
+Migration 047 and its digest were unchanged. API, presence, scheduler, all seven
+worker services and the Hermes gateway were running with zero restart counters.
+All seven slots were online and available for admission; this is not a provider
+capacity measurement. Semantic-worker arguments and Agy's `9m30s` print timeout
+were preserved. Selected verification:
+`/tmp/cairn-claude-provider-install-verification.json`.
+
+Before replacement, the backup catalog checksum and archive inventory were
+verified, and no unfinished wake/native holds were present. Backup:
+`~/.local/share/cairn/backups/cairn-20260916T110418-785935.dump`.
+Consumers and API were stopped and their zero process IDs checked before atomic
+binary replacement. The Rhumb process was not restarted.
