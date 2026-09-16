@@ -41,3 +41,35 @@ unconfirmed cleanup retains the hold. A database moved to another host cannot
 verify the old host's processes. Stop old supervisors and workers before restore
 or host migration. An operator can decide whether a new request is appropriate
 after uncertain execution; the system does not make that decision automatically.
+
+## Installed state
+
+Implementation `e4fa7039916ba90d18a238c9fd702d193e797f4d` is installed as both
+CLI and API, with clean matching build identities and identical binary SHA-256
+`9c14f01797cd7330efa197e02d61dcb7240d0ec3f1f97ea24f3ae7d85699dafd`.
+Migration 036 was applied after backup
+`cairn-20260916T011406-2937817.dump` in the existing Cairn backup directory.
+The API's semantic-worker command and settings were preserved. A connection
+probe immediately after systemd restart raced socket readiness; the subsequent
+authenticated version check succeeded with matching clean build identities.
+
+Both `cairn-wake-opencode.service` and `cairn-wake-hermes.service` are enabled,
+active and running with zero automatic restarts at verification. Their binding
+files live in `~/.local/share/cairn/wake/`. Each uses the provisioned `agent/NAME`
+profile, the shared collection, a ten-minute deadline and the existing hosted
+observer profile for runner observations. Their inboxes were empty at deployment;
+no live external-provider work request was manufactured as a smoke test.
+
+OpenCode uses the installed native binary and a dedicated runtime override for
+`llamacpp/qwen3.8-27b`, matching the model ID returned by the local endpoint.
+The interactive OpenCode configuration still names qwen3.6 and was not edited.
+Hermes uses its existing OpenRouter model, `deepseek/deepseek-v4.1-flash`, in
+one-shot mode. These live model bindings were configured, not evaluated for
+successful real-task execution by the synthetic-provider tests.
+
+The existing Hermes terminal was stopped cleanly and restarted in the same
+Herdr pane with its original session ID; Herdr reported it interactive and idle.
+`hermes-gateway.service` was restarted and is active/running with a new process.
+The Cairn skill was first updated and deployed before implementation (skillpack
+`8d24765`), then extended with wakeup guidance and Hermes copying (`a4033bd`,
+whitespace follow-up `5bf5676`). All eight deployed skill/reference copies match.
