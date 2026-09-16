@@ -81,5 +81,15 @@ matches both Codex and both Claude homes, OpenCode, both Agy locations and Herme
 The installer passed validation for 49 skills with two existing warnings.
 
 A real remaining-v1 review was then resolved from `harness=agy, project=cairn`
-to the offered existing agent and published with a response group. Its eventual
-handling and review findings are separate from the deployment checks above.
+to the offered existing agent and published with a response group. The agent
+handled it and published an explicit reply with matching causation/correlation.
+At 09:49 UTC the group reported `collected`, one expected and one responded,
+with an available exact result reference. Parent read the result and
+acknowledged the response. No fresh worker consumed the session's request.
+
+This was a useful review exchange, not a synthetic provider response. Its main
+findings were the remaining Agy failure-observation gap and missing live Rhumb
+routing evidence. Parent corrected its claim that account evidence was solely
+synthetic: [earlier live account checks](agent-wakeups-2026-09-15.md) already
+record real provider outcomes. The exchange establishes this selected
+metadata-resolution-to-result path; it does not complete all v1 native trials.
