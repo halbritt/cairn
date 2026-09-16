@@ -25,6 +25,7 @@ Everyday operations:
 
 JSON operations (one request on stdin):
   agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory, agent-resolve
+  session-inbox-claim, session-inbox-reconcile Native host turn-boundary delivery
   wake-attempts Inspect current or historical wake attempts
   wake-claim, wake-change Host supervisor coordination
   revise       Replace only a note's body
@@ -52,6 +53,12 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	}
 	var detail, example string
 	switch operation {
+	case "session-inbox-claim":
+		detail = "Native host adapter only: claim one event at a supported turn boundary and retain exclusive session ownership beyond lease expiry. Retry the same request UUID. Use the existing base profile and explicit session."
+		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}}`
+	case "session-inbox-reconcile":
+		detail = "Native host adapter only: release its attempt after delivery_completed, process_exited or turn_ended. An unfinished delivery becomes failed after an observed process/turn end; uncertain work is never replayed automatically. An obsolete execution may close only its own attempt."
+		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"},"attempt_id":"ATTEMPT_UUID","reason":"process_exited"}`
 	case "agent-register":
 		detail = "Register a conversation using the existing profile. New request IDs resume the binding/native-session pair with a new execution UUID. No session credential is created."
 		example = `{"request_id":"NEW_UUID","binding":"codex-default","native_session_id":"NATIVE_THREAD","metadata":{"harness":"codex","project":"rhumb","workspace":"/work/rhumb","state":"busy","delivery_mode":"existing-session"}}`

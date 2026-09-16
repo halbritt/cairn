@@ -5,11 +5,13 @@ import json
 import os
 from pathlib import Path
 import subprocess
-import sys
 import threading
+import uuid
+
+from check_native_inbox import inbox_tool_step, chat_stream
 
 
-def check(binary, root, config):
+def check(binary, root, config, api_call):
     spec = importlib.util.spec_from_file_location('opencode_coordination_installer', Path(__file__).with_name('install-agent-coordination.py'))
     installer = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(installer)
@@ -24,6 +26,7 @@ def check(binary, root, config):
         path.mkdir(mode=0o700)
         env[key] = str(path)
     requests, failures = [], []
+    active_event = None
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -42,11 +45,18 @@ def check(binary, root, config):
             # OpenCode also makes auxiliary title/summary requests without tools.
             if request.get('tools') and 'Cairn session agent-' not in json.dumps(request['messages']):
                 failures.append('main request lacks native session identity')
-            chunks = [dict(id='probe', object='chat.completion.chunk', created=0, model='probe',
-                choices=[dict(index=0, delta=dict(role='assistant', content='COORDINATION_OK'), finish_reason=None)]),
-                dict(id='probe', object='chat.completion.chunk', created=0, model='probe',
-                choices=[dict(index=0, delta={}, finish_reason='stop')])]
-            body = (''.join('data: ' + json.dumps(c) + '\n\n' for c in chunks) + 'data: [DONE]\n\n').encode()
+            try:
+                delta, finish = dict(role='assistant', content='COORDINATION_OK'), 'stop'
+                if active_event and request.get('tools'):
+                    path = next(p for p in (root / 'engine/state/opencode-native/inbox').glob('*.json')
+                                if json.loads(p.read_text())['event_id'] == active_event['event_id'])
+                    assert str(path) in json.dumps(request['messages'])
+                    delta, finish = inbox_tool_step(request, json.loads(path.read_text()), 'Native OpenCode selected request', 'bash')
+                body = chat_stream(delta, finish)
+            except (AssertionError, ValueError, KeyError, StopIteration) as exc:
+                failures.append(repr(exc))
+                self.send_error(500)
+                return
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
             self.send_header('Content-Length', str(len(body)))
@@ -58,7 +68,7 @@ def check(binary, root, config):
     settings = root / 'opencode.json'
     settings.write_text(json.dumps(dict(model='fixture/probe', provider={'fixture': dict(npm='@ai-sdk/openai-compatible',
         options=dict(baseURL=f'http://127.0.0.1:{server.server_port}/v1', apiKey='fixture-only'),
-        models={'probe': dict(name='Probe')})}, permission={'*': 'deny'})))
+        models={'probe': dict(name='Probe')})}, permission={'*': 'deny', 'bash': 'allow'})))
     env.update(OPENCODE_CONFIG=str(settings), OPENCODE_DISABLE_AUTOUPDATE='true', OPENCODE_DISABLE_MODELS_FETCH='true',
                OPENCODE_DISABLE_DEFAULT_PLUGINS='true', CAIRN_DATABASE_URL='host=/absent-native-coordination-db dbname=denied')
     thread.start()
@@ -74,7 +84,19 @@ def check(binary, root, config):
         entry = next(a for a in entries if a['metadata']['workspace'] == str(work))
         assert entry['native_session_id'].startswith('ses_') and not entry['online']
         assert entry['metadata']['observed_model'] == 'fixture/probe'
-        print('Installed OpenCode native conversation identity reaches provider and ends presence after exit')
+        selected = api_call('alice', 'create', raw=True, body=json.dumps(dict(request_id=str(uuid.uuid4()), draft=dict(
+            kind='note', body='Native OpenCode selected request', sensitivity='shareable', claim_type='self',
+            scope=dict(repo=config['repo'], task_id='*', run_id='*')))))
+        active_event = api_call('alice', 'publish', '--request-id', str(uuid.uuid4()), '--to', entry['inbox'],
+            '--kind', 'request', '--version', '1', selected['record_id'])
+        resumed = subprocess.run([binary, 'run', '--session', entry['native_session_id'], '--format', 'json', '--model',
+            'fixture/probe', 'Handle the queued Cairn inbox request.'], cwd=work, env=env, capture_output=True, text=True, timeout=90)
+        (root / 'resumed.stdout.jsonl').write_text(resumed.stdout)
+        (root / 'resumed.stderr.log').write_text(resumed.stderr)
+        assert resumed.returncode == 0 and not failures, (resumed.returncode, failures)
+        installer.engine.watch_once(installer.engine.load_config(installed))
+        assert api_call('alice', 'event-status', active_event['event_id'])['deliveries'][0]['state'] == 'handled'
+        print('Installed OpenCode resumes its UUID inbox, reads selected source and completes through native Bash')
     finally:
         server.shutdown()
         server.server_close()

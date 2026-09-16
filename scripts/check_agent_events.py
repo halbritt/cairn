@@ -173,14 +173,21 @@ def check(binary, directory):
         assert message["destination"]["name"] == registered["inbox"]
         assert message["resolution"] == selected["resolution"]
         assert call("bob", "inbox")["delivery"] is None
+        native_claim = dict(request_id=str(uuid.uuid4()), session={k: registered[k] for k in ('agent_id', 'execution_id')})
+        native_attempt = call('bob', 'session-inbox-claim', raw=True, body=json.dumps(native_claim))['attempt']
         stop(process)
         process = start()
-        delivered = call("bob", "inbox", *session)["delivery"]
+        recovered_attempt = call('bob', 'session-inbox-claim', raw=True, body=json.dumps(native_claim))['attempt']
+        assert recovered_attempt == native_attempt, 'API restart changed native delivery ownership'
+        assert call('bob', 'inbox', *session)['delivery'] is None
+        delivered = recovered_attempt['delivery']
         assert delivered["event"]["event_id"] == message["event_id"]
         finished = call("bob", "complete", *session, "--request-id", str(uuid.uuid4()),
                         "--lease", delivered["lease_id"], "--shareable", "--stdin",
                         delivered["delivery_id"], body="Session handled selected request")
         assert finished["state"] == "handled"
+        call('bob', 'session-inbox-reconcile', raw=True, body=json.dumps(dict(request_id=str(uuid.uuid4()),
+            session=native_claim['session'], attempt_id=native_attempt['attempt_id'], reason='delivery_completed')))
         call("bob", "agents", "heartbeat", *session)
         registration[2] = str(uuid.uuid4())
         resumed = call("bob", "agents", *registration)

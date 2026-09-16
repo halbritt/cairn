@@ -205,11 +205,11 @@ func (s *Store) RegisterAgent(ctx context.Context, req RegisterAgentRequest, des
 			return AgentInstance{}, err
 		}
 		var held bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE repo=$1 AND consumer=$2 AND finished_at IS NULL)`, req.Repo, "agent/"+existing).Scan(&held); err != nil {
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE repo=$1 AND consumer=$2 AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE agent_id=$3 AND finished_at IS NULL)`, req.Repo, "agent/"+existing, existing).Scan(&held); err != nil {
 			return AgentInstance{}, err
 		}
 		if held {
-			return AgentInstance{}, failure("AGENT_BUSY", "stop and reconcile the active wake attempt before resuming this agent")
+			return AgentInstance{}, failure("AGENT_BUSY", "reconcile the active delivery attempt before resuming this agent")
 		}
 		return scanAgentSession(tx.QueryRow(ctx, `UPDATE cairn.agent_session SET execution_id=$2,database_generation=$3,metadata=$4,visibility=$5,context_revision=context_revision+1,last_seen=clock_timestamp(),expires_at=clock_timestamp()+interval '90 seconds',stopped=false WHERE agent_id=$1 RETURNING `+agentSessionColumns, existing, uuid.NewString(), generation, req.Metadata, dest.Name))
 	}, guard)

@@ -9,6 +9,14 @@ import (
 
 func serveAgentSessions(w http.ResponseWriter, r *http.Request, c client) bool {
 	switch r.URL.Path {
+	case "/v1/session-inbox-claim":
+		serveJSON(w, r, func(ctx context.Context, req core.SessionInboxClaim) (core.SessionInboxResult, error) {
+			return c.store.ClaimSessionInbox(ctx, req, c.destination)
+		})
+	case "/v1/session-inbox-reconcile":
+		serveJSON(w, r, func(ctx context.Context, req core.SessionInboxReconcile) (core.SessionInboxAttempt, error) {
+			return c.store.ReconcileSessionInbox(ctx, req, c.destination)
+		})
 	case "/v1/agent-register":
 		serveJSON(w, r, func(ctx context.Context, req core.RegisterAgentRequest) (core.AgentInstance, error) {
 			return c.store.RegisterAgent(ctx, req, c.destination)

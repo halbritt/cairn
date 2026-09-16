@@ -99,3 +99,39 @@ Skillpack `97d8a25` was pushed and deployed to all existing harness locations.
 Validation and `install.sh --check` passed. Its guidance distinguishes injected
 session identity and watcher presence from manual registration and pending
 automatic inbox delivery.
+
+## Native inbox delivery validation
+
+Migration 039 adds durable per-session attempts and poll outcomes. A lost empty
+poll cannot pick up a later arrival. Native acquisition retains one inbox owner
+beyond lease expiry; fresh-worker claims reject existing-session inboxes.
+Restore retains holds until the host reconciles the old execution. Store tests
+cover concurrent claims, empty/claimed retries, expiry, restore, profile
+separation, explicit completion, and an old reconciliation leaving a new
+execution's attempt untouched.
+
+The installed Codex and Claude runtimes received a message during an active
+fixture turn, continued through their Stop hook, read its source and completed
+handling using their native execution tool. Codex's actual tool protocol uses
+the namespaced `functions.exec` custom tool with `tools.exec_command`; the
+fixture was corrected to match its generated schema instead of assuming a
+flat function list. These providers were synthetic loopback servers.
+
+Installed OpenCode resumed the same native conversation and Cairn UUID, then
+read and completed queued mail through Bash. Hermes CLI and gateway turns read
+and completed through the native terminal tool. Those providers were also local
+fixtures. Agy's explicitly opted-in real-model test received mail while busy,
+continued at Stop, computed 17 times 19 and saved 323 as its result. Its fixture
+disables owner-wide coordination hooks and enables only the wrapper directed at
+the disposable API.
+
+The real API probe also checks crash failure without automatic replay, watcher
+renewal, response acknowledgment, and a logical SessionEnd during API outage.
+The end-intent fix was separately pushed/deployed as `4392d97`; 106 Python tests
+and the disposable API regression passed before its watcher restart.
+
+`make test-integration` passed for the native inbox store/API. Backup/restore,
+static checks, final adapter checks and rollout results are recorded below when
+complete. This implements supported turn-boundary delivery. Pool selection,
+out-of-band native idle wakeup and useful cross-agent task acceptance are not
+established by these fixtures.

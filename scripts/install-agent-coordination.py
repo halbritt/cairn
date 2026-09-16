@@ -185,6 +185,7 @@ def main():
     parser.add_argument('--token-file', type=Path, default=home / '.local/share/cairn/hosted-agent.token')
     parser.add_argument('--repo', default=str(home / 'git/cairn'))
     parser.add_argument('--model', default='')
+    parser.add_argument('--native-delivery', action='store_true', help='enable turn-boundary inbox handling (requires schema 039 and matching API)')
     parser.add_argument('--no-service', action='store_true', help='prepare hooks without installing/restarting the watcher')
     args = parser.parse_args()
     if not args.cairn or not args.token_file.is_file():
@@ -193,7 +194,7 @@ def main():
         parser.error('binding must be a bounded name without path components')
     config = dict(cairn=str(Path(args.cairn).resolve()), socket=str(args.socket.resolve()), token_file=str(args.token_file.resolve()),
                   repo=args.repo, harness=args.harness, binding=args.binding, model=args.model,
-                  process_names=[args.harness])
+                  process_names=[args.harness], native_delivery=args.native_delivery)
     if args.harness in ('codex', 'claude'):
         config['config_home'] = str(args.settings.resolve().parent)
     installed = install(args.root.resolve(), args.settings.resolve(), config)

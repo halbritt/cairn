@@ -86,6 +86,13 @@ func (s *Store) ClaimWake(ctx context.Context, req WakeClaimRequest, dest Destin
 	if _, err = retrievalGeneration(ctx, tx); err != nil {
 		return WakeResult{}, err
 	}
+	var native bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_session WHERE 'agent/'||agent_id::text=$1 AND metadata->>'delivery_mode'='existing-session')`, s.channel.Principal).Scan(&native); err != nil {
+		return WakeResult{}, err
+	}
+	if native {
+		return WakeResult{}, failure("INVALID_REQUEST", "existing sessions cannot be consumed by fresh wake workers")
+	}
 	if err = lock(ctx, tx, "wake:"+repo+":"+s.channel.Principal); err != nil {
 		return WakeResult{}, err
 	}
@@ -112,7 +119,7 @@ func (s *Store) ClaimWake(ctx context.Context, req WakeClaimRequest, dest Destin
 		return WakeResult{}, nil
 	}
 	var id string
-	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND e.kind='request' AND d.available_at<=clock_timestamp() AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) AND `+wakeHold+` ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
+	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND e.kind='request' AND d.available_at<=clock_timestamp() AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) AND `+wakeHold+` AND `+sessionInboxHold+` ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return WakeResult{}, nil
 	}

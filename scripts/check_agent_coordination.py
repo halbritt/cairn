@@ -31,7 +31,7 @@ def check(binary, root, repo, api_call):
     state = root / "native-state"
     config.write_text(json.dumps(dict(cairn=str(Path(binary).resolve()), socket=str(root / "api.sock"),
         token_file=str(root / "bob.token"), repo=repo, harness="codex", binding="codex-probe",
-        model="configured", process_names=["python3"], state_dir=str(state))))
+        model="configured", process_names=["python3"], state_dir=str(state), native_delivery=True)))
     config.chmod(0o600)
     processes = []
 
@@ -121,13 +121,79 @@ def check(binary, root, repo, api_call):
             config.write_text(configured)
         watch()
         assert second.poll() is None and not entry(ended['agent_id']), 'ending native turn was revived after API recovery'
+        hook(second, dict(event, session_id='native-delivery'))
+        recipient = next(a for a in api_call('bob', 'agents', 'list', '--harness', 'codex')['agents'] if a['native_session_id'] == 'native-delivery')
+        source = api_call('alice', 'create', raw=True, body=json.dumps(dict(request_id=str(uuid.uuid4()), draft=dict(
+            kind='note', body='Selected native inbox request', sensitivity='shareable', claim_type='self',
+            scope=dict(repo=repo, task_id='*', run_id='*')))))
+        message = api_call('alice', 'publish', '--request-id', str(uuid.uuid4()), '--to', recipient['inbox'],
+            '--kind', 'request', '--version', str(source['version']), source['record_id'])
+        boundary = hook(second, dict(event, session_id='native-delivery', hook_event_name='Stop'))
+        assert boundary.get('decision') == 'block', 'busy native session did not receive its queued request at Stop'
+        contexts = list((state / 'inbox').glob('*.json'))
+        context = next(json.loads(p.read_text()) for p in contexts if json.loads(p.read_text())['event_id'] == message['event_id'])
+        assert context['agent_id'] == recipient['agent_id'] and context['schema'] == 'cairn.session-inbox/1'
+        assert context['source'] == message['ref']
+        assert all(p.stat().st_mode & 0o777 == 0o600 for p in contexts)
+        completed = subprocess.run(context['completion'], input='Selected native handling result', text=True,
+            capture_output=True, check=True, timeout=10)
+        assert json.loads(completed.stdout)['data']['state'] == 'handled'
+        assert hook(second, dict(event, session_id='native-delivery', hook_event_name='Stop')) == {}
+        assert api_call('alice', 'event-status', message['event_id'])['deliveries'][0]['state'] == 'handled'
+        hook(second, dict(event, session_id='native-delivery', hook_event_name='SessionEnd'))
+        crashed = owner()
+        hook(crashed, dict(event, session_id='native-crashed-delivery'))
+        crash_agent = next(a for a in api_call('bob', 'agents', 'list', '--harness', 'codex')['agents'] if a['native_session_id'] == 'native-crashed-delivery')
+        uncertain = api_call('alice', 'publish', '--request-id', str(uuid.uuid4()), '--to', crash_agent['inbox'],
+            '--kind', 'request', '--version', str(source['version']), source['record_id'])
+        injected = hook(crashed, dict(event, session_id='native-crashed-delivery'))
+        assert 'structured inbox context' in injected['hookSpecificOutput']['additionalContext']
+        watch()  # Renews both presence and the delivery while its owner lives.
+        assert api_call('alice', 'event-status', uncertain['event_id'])['deliveries'][0]['state'] == 'leased'
+        crashed.terminate()
+        crashed.communicate(timeout=5)
+        watch()
+        assert api_call('alice', 'event-status', uncertain['event_id'])['deliveries'][0]['state'] == 'failed'
+        resumed_context = hook(second, dict(event, session_id='native-crashed-delivery'))
+        assert 'structured inbox context' not in resumed_context['hookSpecificOutput']['additionalContext'], 'uncertain native work replayed on resume'
+        current_crash_agent = entry(crash_agent['agent_id'])[0]
+        assert current_crash_agent['execution_id'] != crash_agent['execution_id']
+        notice = api_call('alice', 'publish', '--request-id', str(uuid.uuid4()), '--to', crash_agent['inbox'],
+            '--kind', 'response', '--version', str(source['version']), source['record_id'])
+        hook(second, dict(event, session_id='native-crashed-delivery'))
+        response_context = next(json.loads(p.read_text()) for p in (state / 'inbox').glob('*.json') if json.loads(p.read_text())['event_id'] == notice['event_id'])
+        acknowledged = subprocess.run(response_context['acknowledgement'], capture_output=True, text=True, check=True, timeout=10)
+        assert json.loads(acknowledged.stdout)['data']['state'] == 'handled'
+        assert hook(second, dict(event, session_id='native-crashed-delivery', hook_event_name='Stop')) == {}
+        hook(second, dict(event, session_id='native-restore-uncertain'))
+        restoring = next(a for a in api_call('bob', 'agents', 'list', '--harness', 'codex')['agents'] if a['native_session_id'] == 'native-restore-uncertain')
+        restore_event = api_call('alice', 'publish', '--request-id', str(uuid.uuid4()), '--to', restoring['inbox'],
+            '--kind', 'request', '--version', str(source['version']), source['record_id'])
+        hook(second, dict(event, session_id='native-restore-uncertain'))
+        restore_state = next(p for p in state.glob('*.json') if json.loads(p.read_text()).get('registration', {}).get('native_session_id') == 'native-restore-uncertain')
+        uncertain_state = json.loads(restore_state.read_text())
+        # Crash point: the database committed the claim, but only its original
+        # intent survived locally. A restore then fences the execution.
+        for key in ('inbox_attempt', 'inbox_completion', 'delivered_since_idle'):
+            uncertain_state.pop(key, None)
+        restore_state.write_text(json.dumps(uncertain_state))
+        subprocess.run([binary, 'fence-restore'], input=json.dumps(dict(request_id=str(uuid.uuid4()),
+            reason='Fence disposable native inbox recovery fixture')), capture_output=True, text=True, check=True, timeout=10)
+        assert hook(second, dict(event, session_id='native-restore-uncertain', hook_event_name='Stop')) == {}
+        restored = entry(restoring['agent_id'])[0]
+        assert restored['execution_id'] != restoring['execution_id']
+        assert api_call('alice', 'event-status', restore_event['event_id'])['deliveries'][0]['state'] == 'failed'
+        hook(second, dict(event, session_id='native-restore-uncertain', hook_event_name='SessionEnd'))
         if os.environ.get("CAIRN_HERMES_PYTHON"):
             subprocess.run([os.environ["CAIRN_HERMES_PYTHON"], str(Path(__file__).with_name("check_hermes_coordination.py")),
                 str(root / "native-hermes"), os.environ["CAIRN_HERMES_ROOT"], str(config)], check=True, timeout=90)
         if os.environ.get("CAIRN_OPENCODE_BINARY"):
             from check_opencode_coordination import check as check_opencode
-            check_opencode(os.environ['CAIRN_OPENCODE_BINARY'], root / 'native-opencode', json.loads(config.read_text()))
+            check_opencode(os.environ['CAIRN_OPENCODE_BINARY'], root / 'native-opencode', json.loads(config.read_text()), api_call)
         if os.environ.get('CAIRN_AGY_BINARY'):
+            from check_agy_inbox import check as check_agy_inbox
+            check_agy_inbox(os.environ['CAIRN_AGY_BINARY'], os.environ['CAIRN_AGY_NATIVE_MODEL'],
+                           root / 'agy-native-inbox', json.loads(config.read_text()), api_call)
             # Explicit opt-in: Agy has no configured local fixture provider, so
             # this bounded smoke test uses its existing account and one model turn.
             installer_spec = importlib.util.spec_from_file_location('agy_coordination_installer', Path(__file__).with_name('install-agent-coordination.py'))
@@ -138,8 +204,15 @@ def check(binary, root, repo, api_call):
             subprocess.run(['git', 'init', '--quiet', str(work)], check=True, timeout=5)
             native_config = dict(json.loads(config.read_text()), harness='agy', binding='agy-native', process_names=['agy'])
             installed = installer.install(root / 'native-agy-engine', work / '.agents/hooks.json', native_config)
+            agy_settings = work / '.agents/hooks.json'
+            agy_hooks = json.loads(agy_settings.read_text())
+            for handlers in agy_hooks['cairn-coordination'].values():
+                for handler in handlers:
+                    handler['command'] = '/usr/bin/env CAIRN_COORDINATION_DISABLED=0 ' + handler['command']
+            agy_settings.write_text(json.dumps(agy_hooks))
             model = os.environ['CAIRN_AGY_NATIVE_MODEL']
             env = dict(os.environ)
+            env['CAIRN_COORDINATION_DISABLED'] = '1'
             for key in ('CAIRN_LIFECYCLE_DISABLED', 'CAIRN_LIFECYCLE_CHILD', 'CAIRN_WAKE_CONTEXT'):
                 env.pop(key, None)
             result = subprocess.run([os.environ['CAIRN_AGY_BINARY'], '--new-project', '--model', model,
@@ -158,6 +231,8 @@ def check(binary, root, repo, api_call):
             assert not entry(native['agent_id']), 'Exited Agy remained live'
             print('Installed Agy PreInvocation/Stop supplied native identity/model and ended presence after exit')
         if os.environ.get("CAIRN_CLAUDE_BINARY"):
+            from check_claude_inbox import check as check_claude_inbox
+            check_claude_inbox(os.environ['CAIRN_CLAUDE_BINARY'], root / 'claude-native-inbox', json.loads(config.read_text()), api_call)
             installer_spec = importlib.util.spec_from_file_location("claude_coordination_installer", Path(__file__).with_name("install-agent-coordination.py"))
             installer = importlib.util.module_from_spec(installer_spec)
             installer_spec.loader.exec_module(installer)
@@ -207,6 +282,8 @@ def check(binary, root, repo, api_call):
             records = [a for a in records if a['native_session_id'] == 'ses_coordination']
             assert len(records) == 1 and records[0]["stopped"] and records[0]["metadata"]["observed_model"] == "fixture/probe"
         if os.environ.get("CAIRN_CODEX_BINARY"):
+            from check_codex_inbox import check as check_codex_inbox
+            check_codex_inbox(os.environ['CAIRN_CODEX_BINARY'], root / 'codex-native-inbox', json.loads(config.read_text()), api_call)
             installer_spec = importlib.util.spec_from_file_location("coordination_installer", Path(__file__).with_name("install-agent-coordination.py"))
             installer = importlib.util.module_from_spec(installer_spec)
             installer_spec.loader.exec_module(installer)

@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -119,9 +120,12 @@ def session_lock(path):
         yield
 
 
-def call(config, operation, request, timeout=4):
+def call(config, operation, request, timeout=4, session=None):
     command = [config["cairn"], "agent", "--socket", config["socket"],
-               "--token-file", config["token_file"], operation]
+               "--token-file", config["token_file"]]
+    if session:
+        command += ['--agent-id', session['agent_id'], '--execution-id', session['execution_id']]
+    command.append(operation)
     result = subprocess.run(command, input=json.dumps(request), capture_output=True, text=True, timeout=timeout)
     try:
         response = json.loads(result.stdout)
@@ -154,10 +158,117 @@ def heartbeat(config, state):
     return call(config, "agent-heartbeat", session_ref(state["agent"]))
 
 
-def finish_presence(config, state, path, timeout=4):
+def recover_inbox(config, state, path):
+    if state.get('inbox_intent') and not state.get('inbox_attempt'):
+        result = call(config, 'session-inbox-claim', state['inbox_intent'])
+        if result['attempt']:
+            state['inbox_attempt'] = result['attempt']
+        else:
+            state.pop('inbox_intent')
+        write_state(path, state)
+
+
+def release_inbox(config, state, path, reason, fenced=False):
+    if not fenced:
+        recover_inbox(config, state, path)
+    intent = state.get('inbox_intent')
+    if not intent:
+        return True
+    request = dict(session=intent['session'], attempt_id=intent['request_id'], reason=reason)
+    saved = state.get('inbox_close', {})
+    if any(saved.get(k) != v for k, v in request.items()):
+        state['inbox_close'] = dict(request_id=str(uuid.uuid4()), **request)
+        write_state(path, state)
+    try:
+        call(config, 'session-inbox-reconcile', state['inbox_close'])
+    except CoordinationError as exc:
+        if exc.code == 'DELIVERY_ACTIVE' and reason == 'delivery_completed':
+            return False
+        # Leaving or a restore fence prevents a delayed claim from committing
+        # after an unknown attempt was found absent.
+        if not (fenced and exc.code == 'NOT_FOUND'):
+            raise
+    for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion'):
+        state.pop(key, None)
+    write_state(path, state)
+    return True
+
+
+def watch_inbox(config, state, path):
+    if not state.get('inbox_intent') or release_inbox(config, state, path, 'delivery_completed'):
+        return
+    attempt = state['inbox_attempt']
+    delivery = attempt['delivery']
+    attempt['delivery'] = call(config, 'event-renew', dict(delivery_id=delivery['delivery_id'],
+        lease_id=delivery['lease_id'], lease_seconds=90), session=attempt['session'])
+    write_state(path, state)
+
+
+def inbox_context(config, state, path, observation):
+    if not config.get('native_delivery'):
+        return ''
+    if observation['event'] == 'Stop' and observation['phase'] != 'idle':
+        return ''  # Agy still has active background work.
+    if observation['phase'] == 'idle':
+        if state.get('delivered_since_idle') or state.get('inbox_intent'):
+            release_inbox(config, state, path, 'turn_ended')
+            state['delivered_since_idle'] = False
+            write_state(path, state)
+            return ''
+        if config['harness'] not in ('codex', 'claude', 'agy'):
+            return ''  # These adapters next deliver at their pre-turn boundary.
+    recover_inbox(config, state, path)
+    if not state.get('inbox_attempt'):
+        if state.get('delivered_since_idle'):
+            return ''
+        state['inbox_intent'] = dict(request_id=str(uuid.uuid4()), session=session_ref(state['agent']))
+        write_state(path, state)
+        recover_inbox(config, state, path)
+    attempt = state.get('inbox_attempt')
+    if not attempt:
+        return ''
+    if attempt.get('finished_at'):
+        release_inbox(config, state, path, 'delivery_completed')
+        return ''
+    # Reconcile a completed message before reinjecting context at another model
+    # call in the same turn. Do not claim a second message until the next turn.
+    if release_inbox(config, state, path, 'delivery_completed'):
+        return ''
+    delivery = attempt['delivery']
+    delivery = call(config, 'event-renew', dict(delivery_id=delivery['delivery_id'],
+        lease_id=delivery['lease_id'], lease_seconds=90), session=attempt['session'])
+    attempt['delivery'] = delivery
+    event = delivery['event']
+    if not state.get('inbox_completion'):
+        state['inbox_completion'] = str(uuid.uuid4())
+    common = ['--socket', config['socket'], '--token-file', config['token_file'],
+              '--agent-id', attempt['session']['agent_id'], '--execution-id', attempt['session']['execution_id'],
+              '--request-id', state['inbox_completion'], '--lease', delivery['lease_id']]
+    context = dict(schema='cairn.session-inbox/1', **attempt['session'], attempt_id=attempt['attempt_id'],
+        event_id=event['event_id'], kind=event['kind'], sender=event['from'], source=event['ref'],
+        delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'],
+        read=[config['cairn'], 'agent', '--socket', config['socket'], '--token-file', config['token_file'], 'history'],
+        read_input=event['ref'], completion=[config['cairn'], 'complete', *common, '--shareable', '--stdin', delivery['delivery_id']],
+        acknowledgement=[config['cairn'], 'ack', *common, delivery['delivery_id']])
+    target = Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')
+    write_state(target, context)
+    state['delivered_since_idle'] = True
+    write_state(path, state)
+    return (f"Cairn has a {event['kind']} from {event['from']} for this conversation. "
+        f"Read the structured inbox context at {target}. Read its exact selected source with the read argv and read_input JSON. "
+        "For a request, handle it and run completion with a concise selected result on stdin; "
+        "publish a response to the sender using the returned result reference and this event_id as causation. "
+        "For a response or notice, read it and run acknowledgement; do not start a request worker or recursively reply. "
+        "The host renews this lease while the turn is active. Do not start a second inbox consumer. "
+        "An ended turn without explicit completion is recorded as failed, not replayed automatically. "
+        f"Completion command: {shlex.join(context['completion'])}")
+
+
+def finish_presence(config, state, path, timeout=4, reason='process_exited'):
     # Persist the logical end before contacting the API. A long-lived gateway
     # process must not cause its finished conversation to be revived on recovery.
     state['ending'] = True
+    state.setdefault('ending_reason', reason)
     write_state(path, state)
     if not state.get('agent'):
         state['agent'] = call(config, 'agent-register', state['registration'], timeout=timeout)
@@ -167,6 +278,7 @@ def finish_presence(config, state, path, timeout=4):
     except CoordinationError as exc:
         if exc.code not in ('STALE_SESSION', 'NOT_FOUND'):
             raise
+    release_inbox(config, state, path, state['ending_reason'], fenced=True)
     state['retired'] = True
     write_state(path, state)
 
@@ -190,11 +302,13 @@ def handle(config, event, event_name=None):
         state = json.loads(path.read_text()) if path.exists() else {}
         if state.get('ending') and not state.get('retired'):
             finish_presence(config, state, path)
+        if state and not same_process(process, state['process']) and not process_alive(state['process']) and not state.get('retired'):
+            finish_presence(config, state, path)
         if state and not same_process(process, state["process"]) and process_alive(state["process"]) and not state.get("retired"):
             raise CoordinationError("SESSION_BUSY", "this conversation is associated with another live process")
         if observation["phase"] == "leave":
             if state and same_process(process, state["process"]) and not state.get('retired'):
-                finish_presence(config, state, path, timeout=1.5)
+                finish_presence(config, state, path, timeout=1.5, reason='turn_ended')
             return {}
         if not state or state.get("retired") or not same_process(process, state["process"]):
             retained = None
@@ -228,6 +342,10 @@ def handle(config, event, event_name=None):
                 # real hook may resume it; a watcher never replaces executions.
                 if current is None or current["execution_id"] != state["agent"]["execution_id"] or current["stopped"]:
                     raise
+                if state.get('inbox_intent'):
+                    if observation['phase'] != 'idle':
+                        raise
+                    release_inbox(config, state, path, 'turn_ended', fenced=True)
                 state["registration"] = registration(config, observation, current["metadata"])
                 state.pop("agent")
                 write_state(path, state)
@@ -247,7 +365,14 @@ def handle(config, event, event_name=None):
                 session=session_ref(current), expected_revision=current["context_revision"], metadata=metadata))
         state["workspace"] = observation["workspace"]
         write_state(path, state)
+        inbox = inbox_context(config, state, path, observation)
         if observation["phase"] == "idle":
+            if inbox:
+                current = state['agent']
+                state['agent'] = call(config, 'agent-context', dict(request_id=str(uuid.uuid4()), session=session_ref(current),
+                    expected_revision=current['context_revision'], metadata=dict(current['metadata'], state='busy')))
+                write_state(path, state)
+                return dict(decision='continue' if config['harness'] == 'agy' else 'block', reason=inbox)
             return {}
         agent = state["agent"]
         message = (f"Cairn session {agent['display_name']} has inbox {agent['inbox']}. "
@@ -255,7 +380,10 @@ def handle(config, event, event_name=None):
                    f"with the existing profile token at {config['token_file']} for session inbox work. "
                    "Use cairn agents context to maintain a concise selected task description; "
                    "harness/model/project are metadata. Ordinary memory keeps its existing profile. "
-                   "Presence is maintained by the host watcher. Native message delivery is not installed yet.")
+                   "Presence is maintained by the host watcher. "
+                   + ("Inbox delivery uses supported turn boundaries. " if config.get('native_delivery') else "Native message delivery is not enabled. "))
+        if inbox:
+            message += '\n' + inbox
         if config["harness"] == "agy":
             return {"injectSteps": [{"ephemeralMessage": message}]}
         return {"hookSpecificOutput": {"hookEventName": observation["event"], "additionalContext": message}}
@@ -275,6 +403,7 @@ def watch_once(config):
                         state["agent"] = call(config, "agent-register", state["registration"])
                     else:
                         state["agent"] = heartbeat(config, state)
+                        watch_inbox(config, state, path)
                 elif not state.get("agent"):
                     # An uncertain registration may have committed; without an
                     # observed response it expires naturally within 90 seconds.

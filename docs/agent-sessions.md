@@ -1,6 +1,6 @@
 # Agent sessions
 
-Status: session registry and native presence adapters, 2026-09-15. Existing-session delivery and pool dispatch remain
+Status: session registry, native presence and turn-boundary inbox adapters, 2026-09-15. Pool dispatch and remaining operations stay
 in the [coordination plan](plans/agent-coordination-v1.md).
 
 ## Identity on the trusted host
@@ -156,8 +156,9 @@ into request copies. `.cairn-no-coordination`, `.cairn-no-memory` and the existi
 lifecycle disable/child controls suppress hook registration. Fresh wake workers
 with `CAIRN_WAKE_CONTEXT` retain their separate supervisor lifecycle.
 
-Presence does not yet mean automatic native message delivery. Session inbox
-commands are available; queued native turn dispatch remains a separate milestone.
+Presence does not imply immediate idle-process wakeup. Opt-in
+[native inbox delivery](native-inbox.md) consumes queued events at supported
+turn boundaries with a durable ownership hold and explicit completion.
 Known metadata is reported context, not proof that an agent is working correctly.
 
 Tests use disposable PostgreSQL clusters and the real Unix API/CLI. They cover
