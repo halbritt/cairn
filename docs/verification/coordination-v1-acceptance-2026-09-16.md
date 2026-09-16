@@ -82,13 +82,13 @@ and its hold finished at 15:16:53 UTC. The parent read and verified the result,
 acknowledged the reply and confirmed the same conversation/process returned idle.
 
 Coordination v1 remains incomplete. The owner rejected the earlier completion
-claim on September 16 because these follow-ups remain unresolved:
+claim on September 16 because required follow-ups remained. Their current state:
 
 - Live automatic-wakeup verification across both Codex and both Claude accounts,
   Agy, OpenCode and Hermes. The later [account trials](native-wakeup-accounts-2026-09-16.md)
-  cover Codex-two, a fresh Claude-two conversation, Agy, OpenCode and Hermes.
-  The first Codex and Claude accounts remain quota-limited; resumed Claude-two
-  refusals remain recorded failures.
+  now cover all seven accounts: Codex-one used its Reserve fallback and Claude-one
+  resumed after its limit reset. This basic coverage is complete; resumed
+  Claude-two refusals remain recorded failures.
 - Herdr's final check-to-submission race and preservation of existing composer
   drafts. The explicit Codex Unix-listener route now uses a native queue;
   embedded Codex and other harnesses retain the unresolved terminal limitation.

@@ -14,7 +14,7 @@ import uuid
 
 OWNER = r'''
 import json, subprocess, sys
-script, config = sys.argv[1:]
+script, config = sys.argv[1:3]
 for line in sys.stdin:
     result = subprocess.run([sys.executable, script, 'hook', '--config', config],
         input=line, text=True, capture_output=True, timeout=15)
@@ -35,8 +35,9 @@ def check(binary, root, repo, api_call):
     config.chmod(0o600)
     processes = []
 
-    def owner(env=None):
-        p = subprocess.Popen([sys.executable, "-u", "-c", OWNER, str(script), str(config)],
+    def owner(env=None, native_queue=False):
+        args = ['app-server', '--listen', 'unix://'+str(root/'native.sock')] if native_queue else []
+        p = subprocess.Popen([sys.executable, "-u", "-c", OWNER, str(script), str(config), *args],
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
         processes.append(p)
         return p
@@ -187,6 +188,37 @@ def check(binary, root, repo, api_call):
         assert idle_status['state']=='handled' and idle_status['attempts']==1
         print('Idle wakeup: read-only readiness, automatic host prompt, restart suppression and one native completion passed')
         hook(second,dict(idle_native,hook_event_name='SessionEnd'))
+        # Native queued wakes bind the exact delivery and native turn. An owner
+        # prompt must not steal its pending work; a different Stop cannot end it.
+        queued_owner = owner(native_queue=True)
+        queued_event = dict(event, session_id='native-queue-owner', turn_id='owner-turn')
+        hook(queued_owner, queued_event)
+        queued_agent = next(a for a in api_call('bob','agents','list')['agents'] if a['native_session_id']=='native-queue-owner')
+        queued_message = api_call('alice','publish','--request-id',str(uuid.uuid4()),'--to',queued_agent['inbox'],
+            '--kind','request','--version',str(source['version']),source['record_id'])
+        assert 'structured inbox context' not in hook(queued_owner, queued_event)['hookSpecificOutput']['additionalContext']
+        queued_delivery = api_call('alice','event-status',queued_message['event_id'])['deliveries'][0]
+        assert queued_delivery['state']=='pending' and queued_delivery['attempts']==0
+        spec = importlib.util.spec_from_file_location('native_binding_engine',script)
+        engine = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(engine)
+        queued_path = engine.state_path(installed_config,queued_event['session_id'])
+        queued_state = json.loads(queued_path.read_text())
+        marker = dict(transport='codex-queue',session=engine.session_ref(queued_agent),delivery_id=queued_delivery['delivery_id'])
+        queued_state['idle_wake'] = marker
+        engine.write_state(queued_path,queued_state)
+        wake_event = dict(queued_event, prompt=engine.wake_message(marker), turn_id='queue-turn')
+        hook(queued_owner,wake_event)
+        queued_context = next(json.loads(p.read_text()) for p in (state/'inbox').glob('*.json')
+                              if json.loads(p.read_text())['event_id']==queued_message['event_id'])
+        assert queued_context['native_turn_id']=='queue-turn'
+        wrong_stop = hook(queued_owner,dict(queued_event,hook_event_name='Stop'),code=1)
+        assert 'NATIVE_TURN_MISMATCH' in wrong_stop['stderr']
+        assert api_call('alice','event-status',queued_message['event_id'])['deliveries'][0]['state']=='leased'
+        subprocess.run(queued_context['completion'],input='Native request bound to its exact queued turn',
+                       text=True,capture_output=True,check=True,timeout=10)
+        assert hook(queued_owner,dict(wake_event,hook_event_name='Stop'))=={}
+        hook(queued_owner,dict(wake_event,hook_event_name='SessionEnd'))
         installed_config.pop('idle_wakeup')
         config.write_text(json.dumps(installed_config))
         crashed = owner()

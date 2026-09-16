@@ -8,6 +8,65 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestNativeWakeClaimBindsDeliveryAndTurnAcrossReadinessRace(t *testing.T) {
+	ctx := context.Background()
+	sender, receiver, source, dest := eventFixture(t)
+	a, err := receiver.RegisterAgent(ctx, RegisterAgentRequest{RequestID: uuid.NewString(), Binding: "native-queue", NativeSessionID: "native-queue", Metadata: AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
+	var deliveries []string
+	for range 2 {
+		event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		status, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: event.EventID}, dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		deliveries = append(deliveries, status.Deliveries[0].DeliveryID)
+	}
+	ready, err := receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || ready.DeliveryID != deliveries[0] {
+		t.Fatalf("readiness: %+v %v", ready, err)
+	}
+	// The queued wake arrives after its hinted delivery becomes unavailable.
+	if _, err = receiver.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET available_at=clock_timestamp()+interval '1 hour' WHERE delivery_id=$1`, deliveries[0]); err != nil {
+		t.Fatal(err)
+	}
+	claim := SessionInboxClaim{RequestID: uuid.NewString(), Session: ref, DeliveryID: deliveries[0], NativeTurnID: "native-turn-one"}
+	empty, err := receiver.ClaimSessionInbox(ctx, claim, dest)
+	if err != nil || empty.Attempt != nil {
+		t.Fatalf("old wake claimed unrelated work: %+v %v", empty, err)
+	}
+	changed := claim
+	changed.DeliveryID = deliveries[1]
+	_, err = receiver.ClaimSessionInbox(ctx, changed, dest)
+	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
+	changed = claim
+	changed.NativeTurnID = "native-turn-two"
+	_, err = receiver.ClaimSessionInbox(ctx, changed, dest)
+	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
+	empty, err = receiver.ClaimSessionInbox(ctx, claim, dest)
+	if err != nil || empty.Attempt != nil {
+		t.Fatalf("lost empty reply changed ownership: %+v %v", empty, err)
+	}
+	claim.RequestID, claim.DeliveryID, claim.NativeTurnID = uuid.NewString(), deliveries[1], "native-turn-two"
+	got, err := receiver.ClaimSessionInbox(ctx, claim, dest)
+	if err != nil || got.Attempt == nil || got.Attempt.NativeTurnID != claim.NativeTurnID || got.Attempt.Delivery.DeliveryID != deliveries[1] {
+		t.Fatalf("bound claim: %+v %v", got, err)
+	}
+	again, err := receiver.ClaimSessionInbox(ctx, claim, dest)
+	if err != nil || again.Attempt == nil || again.Attempt.NativeTurnID != claim.NativeTurnID || again.Attempt.ID != got.Attempt.ID {
+		t.Fatalf("bound retry: %+v %v", again, err)
+	}
+	claim.RequestID, claim.DeliveryID = uuid.NewString(), ""
+	_, err = receiver.ClaimSessionInbox(ctx, claim, dest)
+	requireCode(t, err, "INVALID_REQUEST")
+}
+
 func TestSessionInboxReadinessDoesNotClaimAndRespectsOwners(t *testing.T) {
 	ctx := context.Background()
 	sender, receiver, source, dest := eventFixture(t)

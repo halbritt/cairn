@@ -103,6 +103,21 @@ class IdleWakeup(unittest.TestCase):
         self.assertIn('agent-one',self.prompts()[0][-1])
         self.assertEqual(json.loads(self.path.read_text())['idle_wake']['status'],'submitted')
 
+    def test_native_turn_binding_requires_the_exact_queued_wake(self):
+        wake = dict(transport='codex-queue', delivery_id='delivery-one',
+                    session=coordination.session_ref(self.agent))
+        state = dict(agent=self.agent, idle_wake=wake)
+        event = dict(hook_event_name='UserPromptSubmit', turn_id='native-turn-one',
+                     prompt=coordination.wake_message(wake))
+        expected = dict(delivery_id='delivery-one', native_turn_id='native-turn-one')
+        self.assertEqual(coordination.queued_wake_binding(state, event), expected)
+        for changed in (dict(event, prompt='owner work'), dict(event, prompt='owner draft '+event['prompt']),
+                        dict(event, prompt=coordination.wake_message(dict(wake, delivery_id='different-delivery'))),
+                        dict(event, turn_id=''), dict(event, hook_event_name='Stop')):
+            self.assertEqual(coordination.queued_wake_binding(state, changed), {})
+        state['agent'] = dict(self.agent, execution_id='replacement')
+        self.assertEqual(coordination.queued_wake_binding(state, event), {})
+
     def test_native_codex_queue_preserves_the_terminal_input_path(self):
         self.stop_native()
         endpoint = self.root/'native.sock'

@@ -29,9 +29,10 @@ in that same conversation using the deployed presence service, with one native
 claim, explicit reply and released hold. Idle wakeup is enabled for all seven
 bindings and requires a uniquely matched, unfocused idle Herdr session.
 [Coordination v1](verification/coordination-v1-acceptance-2026-09-16.md) remains
-incomplete. Remaining work includes live automatic-wakeup verification across
-the other integrations/accounts, resolving the host submission race and draft
-preservation, and per-request cancellation of active interactive work. The owner
+incomplete. [Basic automatic wakeup exchanges](verification/native-wakeup-accounts-2026-09-16.md)
+now passed across both Codex and both Claude accounts, Agy, OpenCode and Hermes.
+Remaining work includes resolving host submission races and draft preservation
+across native routes, and per-request cancellation of active interactive work. The owner
 rejected treating these follow-ups as compatible with a completion claim.
 Unknown provider diagnostics stay unclassified. The snapshots below retain
 earlier implementation states.

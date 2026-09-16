@@ -102,7 +102,8 @@ time.sleep(300)
     def start():
         nonlocal supervisor
         supervisor = subprocess.Popen([binary, 'wake', 'serve', '--config', str(config_path)],
-                                      stdout=subprocess.DEVNULL, stderr=(root / 'supervisor.log').open('a'))
+                                      stdout=(root / 'supervisor-result.log').open('a'),
+                                      stderr=(root / 'supervisor.log').open('a'))
 
     def launched(event):
         marker = root / (event['event_id'] + '.started')
@@ -112,7 +113,12 @@ time.sleep(300)
         return selected, attempt
 
     def stopped(event, selected, attempt, code):
-        wait_for(lambda: not active(), 20)
+        def finished():
+            if supervisor.poll() is not None:
+                raise AssertionError(f'supervisor exited {supervisor.returncode}: '
+                                     +(root/'supervisor-result.log').read_text())
+            return not active()
+        wait_for(finished, 20)
         assert not child_running(selected['child']), 'hold released while detached child is executing'
         assert unit_empty('cairn-wake-attempt-' + attempt['attempt_id'] + '.service')
         delivery = status(event)['deliveries'][0]

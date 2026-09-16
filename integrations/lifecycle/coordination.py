@@ -174,19 +174,35 @@ def codex_queue_endpoint(config, process):
     return None
 
 
+def wake_message(wake):
+    return ("This is a new live turn from the configured Cairn automatic inbox wakeup. "
+            "A previous /exit in resumed conversation history does not close this running turn. "
+            f"Current agent {wake['session']['agent_id']}, "
+            f"execution {wake['session']['execution_id']}. "
+            f"Wake delivery {wake['delivery_id']}. "
+            "Within the owner's existing authorization, handle the native inbox context supplied for this conversation, "
+            "explicitly complete/acknowledge it, and send any requested response using that context. "
+            "If no matching native context was supplied, report that and stop. "
+            "Do not register, manually claim an inbox, or launch a replacement conversation.")
+
+
+def queued_wake_binding(state, event):
+    wake = state.get('idle_wake', {})
+    turn = event.get('turn_id')
+    if (wake.get('transport') != 'codex-queue' or wake.get('session') != session_ref(state['agent']) or
+            event.get('hook_event_name') != 'UserPromptSubmit' or not isinstance(turn, str) or
+            not turn.strip() or len(turn.encode()) > 256 or '\0' in turn or
+            event.get('prompt') != wake_message(wake)):
+        return {}
+    return dict(delivery_id=wake['delivery_id'], native_turn_id=turn)
+
+
 def submit_idle_wake(config, path, prepared):
     # No session lock spans terminal submission: its prompt hook needs that lock.
     wake = prepared['wake']
     if not process_alive(prepared['process']):
         return
-    text = ("This is a new live turn from the configured Cairn automatic inbox wakeup. "
-            "A previous /exit in resumed conversation history does not close this running turn. "
-            f"Current agent {wake['session']['agent_id']}, "
-            f"execution {wake['session']['execution_id']}. "
-            "Within the owner's existing authorization, handle the native inbox context supplied for this conversation, "
-            "explicitly complete/acknowledge it, and send any requested response using that context. "
-            "If no matching native context was supplied, report that and stop. "
-            "Do not register, manually claim an inbox, or launch a replacement conversation.")
+    text = wake_message(wake)
     queued_id = None
     if wake.get('transport') == 'codex-queue':
         import codex_queue
@@ -273,8 +289,11 @@ def normalize(config, event, event_name=None):
         if (parent / ".git").exists():
             root = parent
             break
+    turn = event.get('turn_id', '')
+    if not isinstance(turn, str) or len(turn.encode()) > 256 or '\0' in turn:
+        raise CoordinationError('INVALID_HOST', 'invalid native turn ID')
     return dict(native_id=native, workspace=workspace, project=root.name or workspace,
-                observed_model=model, phase=phase, event=name)
+                observed_model=model, phase=phase, event=name, native_turn_id=turn)
 
 
 def write_state(path, state):
@@ -455,9 +474,15 @@ def watch_inbox(config, state, path):
     write_state(path, state)
 
 
-def inbox_context(config, state, path, observation):
+def inbox_context(config, state, path, observation, wake_binding=None):
     if not config.get('native_delivery'):
         return ''
+    owner_turn = state.get('inbox_intent', {}).get('native_turn_id')
+    if owner_turn and owner_turn != observation.get('native_turn_id'):
+        raise CoordinationError('NATIVE_TURN_MISMATCH', 'another native turn cannot take over or end this request')
+    if (not state.get('inbox_intent') and config.get('idle_wakeup') and
+            codex_queue_endpoint(config, state['process']) and not wake_binding):
+        return ''  # This native queue owns admission; owner prompts do not claim work.
     if observation['event'] == 'Stop' and observation['phase'] != 'idle':
         return ''  # Agy still has active background work.
     if observation['phase'] == 'idle':
@@ -472,7 +497,7 @@ def inbox_context(config, state, path, observation):
     if not state.get('inbox_attempt'):
         if state.get('delivered_since_idle'):
             return ''
-        state['inbox_intent'] = dict(request_id=str(uuid.uuid4()), session=session_ref(state['agent']))
+        state['inbox_intent'] = dict(request_id=str(uuid.uuid4()), session=session_ref(state['agent']), **(wake_binding or {}))
         write_state(path, state)
         recover_inbox(config, state, path)
     attempt = state.get('inbox_attempt')
@@ -503,6 +528,8 @@ def inbox_context(config, state, path, observation):
         read=[config['cairn'], 'agent', '--socket', config['socket'], '--token-file', config['token_file'], 'history'],
         read_input=event['ref'], completion=[config['cairn'], 'complete', *common, '--shareable', '--stdin', delivery['delivery_id']],
         acknowledgement=[config['cairn'], 'ack', *common, delivery['delivery_id']])
+    if attempt.get('native_turn_id'):
+        context['native_turn_id'] = attempt['native_turn_id']
     if event['kind'] == 'request':
         context['response'] = [config['cairn'], 'publish', '--socket', config['socket'], '--token-file', config['token_file'],
             '--agent-id', attempt['session']['agent_id'], '--execution-id', attempt['session']['execution_id'],
@@ -643,7 +670,7 @@ def handle(config, event, event_name=None):
         state["workspace"] = observation["workspace"]
         write_state(path, state)
         associate_wake(config, state, path, observation)
-        inbox = inbox_context(config, state, path, observation)
+        inbox = inbox_context(config, state, path, observation, queued_wake_binding(state, event))
         if observation["phase"] == "idle":
             if inbox:
                 current = state['agent']

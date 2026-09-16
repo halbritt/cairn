@@ -84,6 +84,11 @@ A result committed before a deadline remains handled; remaining processes must
 still stop. A completion decision checks time under the delivery lock, not at
 an external side effect or a later wall-clock observation.
 
+A deadline-expired unit can disappear between the supervisor's status check and
+its stop command. Even when that command fails, the supervisor checks the final
+unit and cgroup state before deciding whether cleanup finished. A still-running
+unit or an unreadable final state retains the hold.
+
 ## Sweep, review and recovery
 
 `cairn request-control-sweep` accepts `{"repo":"/home/halbritt/git/cairn"}`.

@@ -131,19 +131,22 @@ func (m UnitManager) stop(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	var stopErr error
 	if active {
 		stop, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
 		if err = exec.CommandContext(stop, "systemctl", "--user", "stop", unitName(id)).Run(); err != nil {
-			return fmt.Errorf("stop worker unit: %w", err)
+			stopErr = fmt.Errorf("stop worker unit: %w", err)
 		}
 	}
+	// A deadline can stop and collect the unit after the initial observation.
+	// Confirm cleanup even when systemctl stop reports that it is no longer loaded.
 	active, err = m.active(ctx, id)
 	if err != nil {
-		return err
+		return errors.Join(stopErr, err)
 	}
 	if active {
-		return errors.New("worker unit still active")
+		return errors.Join(stopErr, errors.New("worker unit still active"))
 	}
 	return nil
 }

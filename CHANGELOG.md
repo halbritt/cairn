@@ -18,6 +18,18 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-16
 
+- Native Codex queue claims now bind an exact delivery and native turn with
+  migration 048. Owner prompts cannot acquire that queue's work, and changed
+  readiness cannot redirect a delayed wake to another request. Interactive
+  cancellation remains unimplemented.
+- Wake cleanup rechecks the final unit state when systemd's stop command fails,
+  covering units collected after their deadline. Unconfirmed cleanup retains
+  the hold.
+- Basic automatic wakeup exchanges passed across both Codex and both Claude
+  accounts, Agy, OpenCode and Hermes. [The account report](docs/verification/native-wakeup-accounts-2026-09-16.md)
+  retains earlier failures and separates this coverage from remaining draft
+  preservation and interactive cancellation work.
+
 - Claude wake workers clear an earlier rate limit when the terminal API error
   reports another or missing HTTP status. An installed-native loopback probe
   reproduced the stale classification and verifies slot health after recovery.

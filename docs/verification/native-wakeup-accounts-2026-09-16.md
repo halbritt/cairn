@@ -16,10 +16,12 @@ reply. Native holds finished with `delivery_completed`.
 | Target | Request event | Observed result |
 | --- | --- | --- |
 | Codex-two, existing ai-newsroom | `129faeac-923f-45da-ad24-84031c9cebfe` | Earlier automatic exchange passed; same conversation/process returned idle. |
+| Codex-one, owned conversation using Reserve fallback | `773a2afa-9911-43ac-9bae-527856f41d20` | One handling attempt; reply collected 11:11:18; hold finished 11:11:19. Result `f37329ee-4e93-4098-b6e5-6de61f2009ad/1` matched identity, cwd and HEAD `780fc30`. Parent read/acknowledged 11:17 and checked the same native PID/conversation returned done. |
 | Agy, owner-offered agent | `80b2ee8f-1be8-451f-8ba7-37148039e210` | One handling attempt; reply collected 09:56:45. Result `57b2f74b-ffae-4d76-9d25-3a0a55d98191/1`. |
 | Hermes, owned test conversation | `d00721ec-b9ed-4597-8299-db5e9982fe1e` | One handling attempt; reply collected 09:57:57. Result `cfae0f39-7e76-4145-97c2-7907610a1b93/1`. |
 | OpenCode, owned local-model conversation | `62872997-b675-4000-b488-3731ea13c9ab` | One handling attempt; reply collected 10:11:55. Result `72cff8f4-1c96-4e6c-a6e0-e7e053157af5/1`; same native PID/execution checked after handling. |
 | Claude-two, fresh owned Fable 5.1 conversation | `0be15e44-7ab6-4950-b483-f83d02621b67` | One handling attempt; reply collected 10:46:33; hold finished 10:46:34. Result `2b31456f-9aa1-48a5-928e-c737b2c44486/1` matched the supplied identity and repository HEAD. Parent read/acknowledged 10:47:05 and checked the same native conversation returned done. |
+| Claude-one, owned Fable 5.1 conversation | `03e1e8c0-4ae1-47c6-a94b-340829f128eb` | One handling attempt; reply collected 11:18:17; hold finished 11:18:19. Result `ffb7d4ed-6d45-4be9-85fa-90d2ad572794/1` matched identity, cwd and HEAD `780fc30`. Parent read/acknowledged 11:18:56 and checked the same native PID/conversation returned done. |
 
 Hermes' initial PID was recorded, but was not independently rechecked at the
 final observation. Its same-conversation result and native hold are verified;
@@ -28,7 +30,7 @@ integration installed, then the owned idle conversation resumed before the
 request was published. The installer now checks the selected account's Herdr
 integration rather than assuming that another account's installation covers it.
 
-## Failed and pending account trials
+## Earlier failures and capacity delays
 
 The resumed Claude-two conversation refused ordinary profile-based source reads
 or completion despite the owner's authorization. Requests
@@ -43,10 +45,13 @@ The fresh Claude-two baseline loaded the coordination guidance from startup and
 received explicit initial authorization for later bounded inbox checks. Its
 success does not repair or explain away the resumed-conversation failures.
 
-Claude-one reported a usage limit with automatic continuation scheduled for
-11:10. Codex-one reported a usage limit and offered usage credits. At the 10:43
-observation neither had completed its test setup, and no inbox request had been
-published to either. No credits were purchased. Their live trials remain open.
+Claude-one resumed automatically after its usage limit reset and finished setup
+at 11:11. Codex-one's credits UI did not establish that all capacity was blocked:
+the installed client had selected its Reserve fallback. After setup was actually
+submitted, it returned ready and handled its later inbox request. No credits were
+purchased. Both basic live trials now passed, completing the seven-account
+coverage above. This does not establish draft preservation or interactive
+request cancellation across those accounts.
 
 ## Native Codex queue and control investigation
 
@@ -87,6 +92,13 @@ command item/process; interrupt followed by termination of that bound background
 terminal stopped the owned probe. This is experimental evidence for a stop
 adapter, not implemented Cairn cancellation. Request-exclusive turn mapping,
 tool cleanup, crash recovery and the other harnesses remain required work.
+
+A further owned probe confirmed that `thread/items/list` still lacked the active
+command immediately after interruption while the background terminal remained
+alive. Historical item listing alone cannot recover all live tool ownership.
+The installed native hook schema supplies `turn_id` on prompt, Stop and Interrupt
+events. Migration 048 and the matching adapter add exact delivery/turn claim
+binding as a prerequisite for request control; cancellation remains unsupported.
 
 Selected local artifacts are under `/tmp/cairn-*-automatic-acceptance`,
 `/tmp/cairn-claude-two-fresh-acceptance`, `/tmp/cairn-codex-native-control`, and

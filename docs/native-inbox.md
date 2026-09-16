@@ -33,6 +33,17 @@ the TUI draft. Other sessions retain the Herdr terminal route. The native hook s
 the claim. Sessions without this enabled host capability wait for another
 boundary. Native delivery never starts a fresh worker to consume a conversation's inbox.
 
+Migration 048 adds an optional exact delivery and native turn pair to native
+claims. The explicit Codex Unix-listener route uses it: only the matching queued
+wake prompt can acquire the indicated delivery. An ordinary owner prompt does
+not consume pending inbox work on that route. If readiness changed before the
+wake runs, the claim stays empty instead of acquiring another delivery. Retrying
+that poll cannot change its delivery or turn, including after an API restart.
+Another turn cannot receive or finish the retained context. The context and
+operator review expose the selected `native_turn_id`; raw prompts are not stored.
+Other native routes retain their existing boundary behavior. A recorded turn ID
+does not yet provide interactive cancellation or prove that its tools have stopped.
+
 One unfinished native attempt owns the session inbox. A normal inbox consumer
 cannot claim another item while that hold exists. Fresh-worker claims reject
 existing-session inboxes. Native acquisition also waits for a live manual lease

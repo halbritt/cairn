@@ -201,7 +201,10 @@ def check(binary, directory):
         assert message["resolution"] == selected["resolution"]
         assert call("bob", "inbox")["delivery"] is None
         native_claim = dict(request_id=str(uuid.uuid4()), session={k: registered[k] for k in ('agent_id', 'execution_id')})
+        delivery = call('alice', 'event-status', message['event_id'])['deliveries'][0]
+        native_claim.update(delivery_id=delivery['delivery_id'], native_turn_id='native-turn-fixture')
         native_attempt = call('bob', 'session-inbox-claim', raw=True, body=json.dumps(native_claim))['attempt']
+        assert native_attempt['native_turn_id'] == native_claim['native_turn_id']
         stop(process)
         process = start()
         recovered_attempt = call('bob', 'session-inbox-claim', raw=True, body=json.dumps(native_claim))['attempt']
