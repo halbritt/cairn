@@ -107,3 +107,20 @@ The isolated bridge binary had SHA-256
 `5826e9e6792ac146cd7d35c1f19fb65320879eab88e0af090609cb36212ea8f0`;
 this was a native protocol probe, not a rollout of the current registry repair.
 The earlier owned conversation and its draft were untouched.
+
+## Owner input can join a channel-started prompt
+
+The inverse ordering was also observed in the isolated session. After explicit
+owner authorization for a bounded channel test, a fresh channel prompt started a
+`sleep 20` tool call. An ordinary owner prompt was submitted while that tool was
+running. Its `UserPromptSubmit` used the same prompt ID as the channel's earlier
+submission. The channel's remaining tool call and the separate owner tool call
+both completed, followed by their replies and one Stop. A new unsubmitted draft
+remained intact.
+
+Consequently, first-sighting ownership of a channel prompt cannot establish
+permanent request exclusivity. Rejecting a channel that joins owner work solves
+one admission case; it does not stop later owner input from joining channel work.
+Cancellation needs a native request boundary that remains valid through later
+input. Interrupting this shared prompt would also affect owner work. The selected
+event sequence is `inverse-verification.json` in the same local probe directory.
