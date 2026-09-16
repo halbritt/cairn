@@ -18,6 +18,11 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-16
 
+- **Control request lifetime.** Migration 046 adds admission expiry, managed task
+  deadlines and operator cancellation. Completion and cancellation have one
+  durable winner; process holds remain until the supervisor confirms termination.
+  Interactive/native hard stops remain unsupported. See [the contract](docs/request-controls.md).
+
 - **Schedule one-shot publication.** Migration 045 retains due times, stable
   occurrence IDs, misfires and cancellation of unpublished intent. Concurrent
   scheduler ticks commit one event and its fanout together; restore fences

@@ -175,12 +175,12 @@ existing `cairn.response/1` envelope; an empty inbox returns `delivery: null`.
 
 [Automated wakeups](agent-wakeups.md) are a separate host-side layer with a
 durable hold on claimed deliveries; ordinary claims respect those holds and retry
-delays. Environment-based wake context, watch, priority, TTL, wildcard
-subscriptions, scheduling, response aggregation, distributed
-transactions and a NATS adapter are deferred. Polling provides the complete v1
-delivery contract without them. The [coordination v1 plan](plans/agent-coordination-v1.md)
-assigns these follow-ups to milestones and records the live identity, metadata
-and interactive-session routing requirements.
+delays. Structured wake context, [watch](inbox-watch.md),
+[one-shot scheduling](event-scheduling.md) and [request controls](request-controls.md)
+now extend that path. Response aggregation remains open; priority, wildcard
+subscriptions and broker/distributed features retain their explicit triggers in
+the [coordination v1 plan](plans/agent-coordination-v1.md). That plan also tracks
+live identity, metadata and remaining interactive-session acceptance checks.
 
 ## Acceptance
 

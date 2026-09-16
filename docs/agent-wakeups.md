@@ -218,3 +218,10 @@ Migration 036 adds wake attempts and delayed delivery availability. Existing
 manual claims now honor wake holds and retry delays. Stopping the supervisors
 leaves ordinary inbox commands available; do not run an older executable that
 ignores wake holds while workers or unfinished attempts exist.
+
+## Request lifetime controls
+
+[Admission expiry, task deadlines and cancellation](request-controls.md) use the
+existing supervisor and process holds. A failed/cancelled delivery can remain
+held while its unit stops. Do not interpret terminal delivery state as proof of
+process termination. Native interactive inboxes do not share this stop contract.

@@ -21,6 +21,14 @@ func serveSchedules(ctx context.Context, store *core.Store, args []string, log i
 	ready := false
 	for ctx.Err() == nil {
 		tickCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		_, err := store.SweepRequestControls(tickCtx, core.RequestControlSweep{Repo: *repo})
+		if err != nil {
+			cancel()
+			if ctx.Err() != nil {
+				return nil, nil
+			}
+			return nil, err
+		}
 		result, err := store.TickSchedules(tickCtx, core.ScheduleTickRequest{Repo: *repo, Limit: 100})
 		cancel()
 		if err != nil {

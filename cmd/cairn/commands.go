@@ -52,6 +52,7 @@ Everyday commands:
   list [--limit N] [--offset N] REPO | get UUID | use-report [--record UUID] [--limit N] [--offset N] REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact [--offset N] UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
 
 JSON commands (read one request from stdin):
+  work-cancel request-control-sweep (local operator; see docs/request-controls.md)
   coordination-review event-reissue (local operator recovery; see docs/event-recovery.md)
   event-schedule schedule-list schedule-cancel schedule-tick schedule-serve (local operator; see docs/event-scheduling.md)
   create edit revise append replace delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
@@ -388,6 +389,10 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return coordinationReview(ctx, store, input)
 	case "event-reissue":
 		return invoke(ctx, input, store.ReissueEvent)
+	case "work-cancel":
+		return invoke(ctx, input, store.CancelWork)
+	case "request-control-sweep":
+		return invoke(ctx, input, store.SweepRequestControls)
 	case "event-schedule":
 		return invoke(ctx, input, store.ScheduleEvent)
 	case "schedule-list":

@@ -12,6 +12,8 @@ import (
 func coordinationReview(ctx context.Context, store *core.Store, input io.Reader) (any, error) {
 	var req struct {
 		core.EventReviewRequest
+		ClosedAfter int64 `json:"closed_after,omitempty"`
+		ClosedLimit int   `json:"closed_limit,omitempty"`
 		QueuedAfter int64 `json:"queued_after,omitempty"`
 		QueuedLimit int   `json:"queued_limit,omitempty"`
 		AgentsAfter int64 `json:"agents_after,omitempty"`
@@ -28,6 +30,10 @@ func coordinationReview(ctx context.Context, store *core.Store, input io.Reader)
 	if err != nil {
 		return nil, err
 	}
+	closed, err := store.ReviewClosedPoolRequests(ctx, req.Repo, req.ClosedAfter, req.ClosedLimit)
+	if err != nil {
+		return nil, err
+	}
 	dest := core.Destination{Name: "local", AllowLocal: true}
 	sessions, err := store.AgentDirectory(ctx, core.AgentDirectoryQuery{Repo: req.Repo, IncludeOffline: true, After: req.AgentsAfter, Limit: req.AgentsLimit}, dest)
 	if err != nil {
@@ -38,9 +44,10 @@ func coordinationReview(ctx context.Context, store *core.Store, input io.Reader)
 		return nil, err
 	}
 	return struct {
-		QueuedRequests core.EventPage          `json:"queued_requests"`
-		Deliveries     core.EventReviewPage    `json:"deliveries"`
-		Sessions       core.AgentDirectoryPage `json:"sessions"`
-		Workers        []core.WorkerSlot       `json:"workers"`
-	}{queued, deliveries, sessions, workers.Workers}, nil
+		ClosedPoolRequests core.ClosedPoolPage     `json:"closed_pool_requests"`
+		QueuedRequests     core.EventPage          `json:"queued_requests"`
+		Deliveries         core.EventReviewPage    `json:"deliveries"`
+		Sessions           core.AgentDirectoryPage `json:"sessions"`
+		Workers            []core.WorkerSlot       `json:"workers"`
+	}{closed, queued, deliveries, sessions, workers.Workers}, nil
 }

@@ -71,12 +71,14 @@ Cancellation and firing share the collection lock and have one durable winner.
 Cancelling an already terminal occurrence returns `VERSION_CONFLICT`. Cancellation
 here applies only to unpublished intent; it does not stop an already-fired task.
 Grace limits late publication, not later worker admission or running time.
-Admission TTL, task deadlines and running-work cancellation remain separate work.
+See [request controls](request-controls.md) for admission expiry, task deadlines
+and cancellation after publication.
 
 ## Service and restore
 
 `cairn schedule-serve --repo COLLECTION` ticks up to 100 due occurrences once per
-second, with a 20-second transaction-call budget. The service reports readiness
+second, with a 20-second call budget shared with the preceding bounded
+[request-control sweep](request-controls.md). The service reports readiness
 after its first successful tick and logs occurrence UUID/state/code only.
 The [user unit](../integrations/systemd/cairn-scheduler.service) uses the owner's
 canonical shared collection and requires the existing local store service.

@@ -154,6 +154,9 @@ func (s *Store) ClaimWake(ctx context.Context, req WakeClaimRequest, dest Destin
 			return WakeResult{}, nil
 		}
 	}
+	if _, err = expireRequestDeliveries(ctx, tx, repo, s.channel.Principal, dest.AllowLocal); err != nil {
+		return WakeResult{}, err
+	}
 	var candidate poolCandidate
 	var spec WorkerSpec
 	if worker != nil {
@@ -165,7 +168,7 @@ func (s *Store) ClaimWake(ctx context.Context, req WakeClaimRequest, dest Destin
 	}
 	var id string
 	var position int64
-	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text,e.position FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) LEFT JOIN cairn.agent_worker_pool p ON e.destination_type='pool' AND p.repo=e.repo AND p.name=e.destination_name WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND e.kind='request' AND d.available_at<=clock_timestamp() AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) AND (e.destination_type<>'pool' OR (p.enabled AND e.destination_name=ANY($4::text[]) AND e.pool_requirements->>'workspace'=$5 AND COALESCE(e.pool_requirements->>'harness','') IN ('',$6) AND COALESCE(e.pool_requirements->>'model','') IN ('',$7) AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(COALESCE(e.pool_requirements->'capabilities','[]'::jsonb)) cap WHERE NOT(cap=ANY(COALESCE($8::text[],ARRAY[]::text[])))))) AND `+wakeHold+` AND `+sessionInboxHold+` ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal, spec.Pools, spec.Workspace, spec.Harness, spec.Model, spec.Capabilities).Scan(&id, &position)
+	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text,e.position FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) LEFT JOIN cairn.agent_worker_pool p ON e.destination_type='pool' AND p.repo=e.repo AND p.name=e.destination_name WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND e.kind='request' AND `+requestAdmissionOpen+` AND d.available_at<=clock_timestamp() AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) AND (e.destination_type<>'pool' OR (p.enabled AND e.destination_name=ANY($4::text[]) AND e.pool_requirements->>'workspace'=$5 AND COALESCE(e.pool_requirements->>'harness','') IN ('',$6) AND COALESCE(e.pool_requirements->>'model','') IN ('',$7) AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(COALESCE(e.pool_requirements->'capabilities','[]'::jsonb)) cap WHERE NOT(cap=ANY(COALESCE($8::text[],ARRAY[]::text[])))))) AND `+wakeHold+` AND `+sessionInboxHold+` ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal, spec.Pools, spec.Workspace, spec.Harness, spec.Model, spec.Capabilities).Scan(&id, &position)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return WakeResult{}, err
 	}
@@ -176,7 +179,7 @@ func (s *Store) ClaimWake(ctx context.Context, req WakeClaimRequest, dest Destin
 		}
 	}
 	if id == "" {
-		return WakeResult{}, nil
+		return WakeResult{}, tx.Commit(ctx)
 	}
 	if worker != nil {
 		if _, err = tx.Exec(ctx, `UPDATE cairn.agent_worker_slot SET next_launch_at=clock_timestamp()+make_interval(secs=>$3) WHERE repo=$1 AND consumer=$2`, repo, s.channel.Principal, worker.Spec.LaunchSpacingSeconds); err != nil {
@@ -298,6 +301,15 @@ func (s *Store) ChangeWake(ctx context.Context, req WakeChangeRequest, dest Dest
 		if w.State == "finished" {
 			return w, failure("VERSION_CONFLICT", "wake already finished")
 		}
+		if req.Operation == "start" || req.Operation == "enter" {
+			stop, _, err := applyWakeControl(ctx, tx, w)
+			if err != nil {
+				return w, err
+			}
+			if stop != "" {
+				return s.readWake(ctx, tx, w.ID, dest)
+			}
+		}
 		if req.Operation == "start" || req.Operation == "enter" || req.Operation == "link" || req.Operation == "session" {
 			if err := s.checkWakeWorker(ctx, tx, w); err != nil {
 				return w, err
@@ -346,6 +358,9 @@ func (s *Store) ChangeWake(ctx context.Context, req WakeChangeRequest, dest Dest
 				return w, err
 			}
 		case "finish":
+			if _, _, err = applyWakeControl(ctx, tx, w); err != nil {
+				return w, err
+			}
 			if err = s.recordWakeProviderFailure(ctx, tx, w, req.ProviderFailure); err != nil {
 				return w, err
 			}
@@ -375,7 +390,7 @@ func (s *Store) ChangeWake(ctx context.Context, req WakeChangeRequest, dest Dest
 			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wake_attempt SET process_state=CASE WHEN state='prepared' AND process_state='' THEN 'prelaunch_failed' ELSE process_state END,state='finished',finished_at=clock_timestamp(),reason=CASE WHEN reason='' THEN $2 ELSE reason END WHERE attempt_id=$1`, w.ID, req.Reason); err != nil {
 				return w, err
 			}
-			if w.WorkerID != "" && d.State != "handled" && d.State != "ignored" {
+			if w.WorkerID != "" && d.State != "handled" && d.State != "ignored" && d.Control == nil {
 				if _, err = tx.Exec(ctx, `UPDATE cairn.agent_worker_slot SET next_launch_at=greatest(next_launch_at,clock_timestamp()+interval '30 seconds') WHERE repo=$1 AND consumer=$2 AND supervisor_id=$3`, w.Delivery.Event.Repo, s.channel.Principal, w.WorkerID); err != nil {
 					return w, err
 				}

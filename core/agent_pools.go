@@ -67,10 +67,11 @@ type WorkerSlot struct {
 	Online             bool       `json:"online"`
 }
 type PoolRequestStatus struct {
-	State      string     `json:"state"`
-	DeliveryID string     `json:"delivery_id,omitempty"`
-	Consumer   string     `json:"consumer,omitempty"`
-	AssignedAt *time.Time `json:"assigned_at,omitempty"`
+	Control    *WorkControl `json:"control,omitempty"`
+	State      string       `json:"state"`
+	DeliveryID string       `json:"delivery_id,omitempty"`
+	Consumer   string       `json:"consumer,omitempty"`
+	AssignedAt *time.Time   `json:"assigned_at,omitempty"`
 }
 
 func validPoolNames(names []string) bool {
@@ -233,7 +234,7 @@ func (s *Store) admitPool(ctx context.Context, tx pgx.Tx, req PublishEventReques
 		return failure("POOL_PAUSED", "pool admission paused")
 	}
 	var total, own int
-	err = tx.QueryRow(ctx, `SELECT count(*),count(*) FILTER(WHERE e.publisher=$3) FROM cairn.agent_pool_request q JOIN cairn.agent_event e USING(event_id) LEFT JOIN cairn.agent_delivery d USING(delivery_id) WHERE e.repo=$1 AND e.destination_name=$2 AND (q.delivery_id IS NULL OR d.state IN ('pending','leased'))`, req.Repo, req.Destination.Name, s.channel.Principal).Scan(&total, &own)
+	err = tx.QueryRow(ctx, `SELECT count(*),count(*) FILTER(WHERE e.publisher=$3) FROM cairn.agent_pool_request q JOIN cairn.agent_event e USING(event_id) LEFT JOIN cairn.agent_delivery d USING(delivery_id) WHERE e.repo=$1 AND e.destination_name=$2 AND q.closed_at IS NULL AND (q.delivery_id IS NULL OR d.state IN ('pending','leased'))`, req.Repo, req.Destination.Name, s.channel.Principal).Scan(&total, &own)
 	if err != nil {
 		return err
 	}
@@ -268,7 +269,7 @@ func selectPoolCandidate(ctx context.Context, tx pgx.Tx, w WorkerSlot) (poolCand
 		}
 	}
 	var c poolCandidate
-	err := tx.QueryRow(ctx, `SELECT e.event_id::text,e.destination_name,e.publisher,e.position FROM cairn.agent_pool_request q JOIN cairn.agent_event e USING(event_id) JOIN cairn.agent_pool_publisher_service f ON f.repo=e.repo AND f.pool=e.destination_name AND f.publisher=e.publisher WHERE q.delivery_id IS NULL AND e.repo=$1 AND e.destination_name=ANY($2::text[]) AND e.pool_requirements->>'workspace'=$3 AND COALESCE(e.pool_requirements->>'harness','') IN ('',$4) AND COALESCE(e.pool_requirements->>'model','') IN ('',$5) AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(COALESCE(e.pool_requirements->'capabilities','[]'::jsonb)) cap WHERE NOT (cap=ANY(COALESCE($6::text[],ARRAY[]::text[])))) ORDER BY f.last_dispatch,e.position LIMIT 1 FOR UPDATE OF q`, w.Repo, enabled, w.Spec.Workspace, w.Spec.Harness, w.Spec.Model, w.Spec.Capabilities).Scan(&c.id, &c.pool, &c.publisher, &c.position)
+	err := tx.QueryRow(ctx, `SELECT e.event_id::text,e.destination_name,e.publisher,e.position FROM cairn.agent_pool_request q JOIN cairn.agent_event e USING(event_id) JOIN cairn.agent_pool_publisher_service f ON f.repo=e.repo AND f.pool=e.destination_name AND f.publisher=e.publisher WHERE q.delivery_id IS NULL AND q.closed_at IS NULL AND `+requestAdmissionOpen+` AND e.repo=$1 AND e.destination_name=ANY($2::text[]) AND e.pool_requirements->>'workspace'=$3 AND COALESCE(e.pool_requirements->>'harness','') IN ('',$4) AND COALESCE(e.pool_requirements->>'model','') IN ('',$5) AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(COALESCE(e.pool_requirements->'capabilities','[]'::jsonb)) cap WHERE NOT (cap=ANY(COALESCE($6::text[],ARRAY[]::text[])))) ORDER BY f.last_dispatch,e.position LIMIT 1 FOR UPDATE OF q`, w.Repo, enabled, w.Spec.Workspace, w.Spec.Harness, w.Spec.Model, w.Spec.Capabilities).Scan(&c.id, &c.pool, &c.publisher, &c.position)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c, nil
 	}
@@ -287,7 +288,7 @@ func assignPool(ctx context.Context, tx pgx.Tx, w WorkerSlot, c poolCandidate) (
 }
 func readPoolStatus(ctx context.Context, tx pgx.Tx, id string) (*PoolRequestStatus, error) {
 	var p PoolRequestStatus
-	err := tx.QueryRow(ctx, `SELECT CASE WHEN q.delivery_id IS NULL THEN 'queued' ELSE 'assigned' END,COALESCE(q.delivery_id::text,''),COALESCE(d.consumer,''),q.assigned_at FROM cairn.agent_pool_request q LEFT JOIN cairn.agent_delivery d USING(delivery_id) WHERE q.event_id=$1`, id).Scan(&p.State, &p.DeliveryID, &p.Consumer, &p.AssignedAt)
+	err := tx.QueryRow(ctx, `SELECT CASE WHEN q.closed_at IS NOT NULL THEN 'failed' WHEN q.delivery_id IS NULL THEN 'queued' ELSE 'assigned' END,COALESCE(q.delivery_id::text,''),COALESCE(d.consumer,''),q.assigned_at,CASE WHEN q.closed_at IS NULL THEN NULL ELSE jsonb_build_object('at',q.closed_at,'by',q.closed_by,'code',q.closed_code) END FROM cairn.agent_pool_request q LEFT JOIN cairn.agent_delivery d USING(delivery_id) WHERE q.event_id=$1`, id).Scan(&p.State, &p.DeliveryID, &p.Consumer, &p.AssignedAt, &p.Control)
 	return &p, err
 }
 

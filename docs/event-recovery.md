@@ -90,3 +90,12 @@ a fresh eligible slot to claim it. The old resolution snapshot is not reused.
 trace and operator reason. No automatic replay follows a failure or an account
 recovery. `cairn retry --lease ...` remains the separate operation for releasing a
 currently owned lease; it is not failed-request reissue.
+
+## Controlled requests
+
+[Request controls](request-controls.md) add expiry and cancellation decisions to
+local delivery review, plus a separate `closed_pool_requests` page for requests
+closed before assignment. Its `closed_after` and `closed_limit` are independent
+of delivery and pending-pool cursors. Reissue does not carry old admission or
+task deadline times into the successor. A failed delivery with an unfinished
+wake/native hold remains ineligible for reissue.

@@ -46,6 +46,7 @@ python3 scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
 if [[ -n "${XDG_RUNTIME_DIR:-}" ]] && systemctl --user show-environment >/dev/null 2>&1; then
     python3 scripts/check_wakeups.py "$test_root/cairn" "$test_root/wake-home"
     python3 scripts/check_worker_pools.py "$test_root/cairn" "$test_root/pool-home"
+    python3 scripts/check_request_controls.py "$test_root/cairn" "$test_root/control-home"
 else
     echo 'Wakeup process probe requires a systemd user manager; store wake tests still ran.' >&2
 fi

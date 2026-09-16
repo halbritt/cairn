@@ -13,33 +13,37 @@ import (
 
 // Agent events are operational observations, not qualified memory or authority.
 type AgentEvent struct {
-	EventID       string            `json:"event_id"`
-	Position      int64             `json:"position"`
-	Repo          string            `json:"repo"`
-	From          string            `json:"from"`
-	CreatedAt     time.Time         `json:"created_at"`
-	Kind          string            `json:"kind"`
-	Ref           RecordVersionRef  `json:"ref"`
-	Destination   EventDestination  `json:"destination"`
-	CausationID   string            `json:"causation_id,omitempty"`
-	CorrelationID string            `json:"correlation_id,omitempty"`
-	Resolution    *AgentResolution  `json:"resolution,omitempty"`
-	Pool          *PoolRequirements `json:"pool,omitempty"`
+	AdmissionExpiresAt *time.Time        `json:"admission_expires_at,omitempty"`
+	TaskDeadline       *time.Time        `json:"task_deadline,omitempty"`
+	EventID            string            `json:"event_id"`
+	Position           int64             `json:"position"`
+	Repo               string            `json:"repo"`
+	From               string            `json:"from"`
+	CreatedAt          time.Time         `json:"created_at"`
+	Kind               string            `json:"kind"`
+	Ref                RecordVersionRef  `json:"ref"`
+	Destination        EventDestination  `json:"destination"`
+	CausationID        string            `json:"causation_id,omitempty"`
+	CorrelationID      string            `json:"correlation_id,omitempty"`
+	Resolution         *AgentResolution  `json:"resolution,omitempty"`
+	Pool               *PoolRequirements `json:"pool,omitempty"`
 }
 type EventDestination struct {
 	Type string `json:"type"`
 	Name string `json:"name"`
 }
 type PublishEventRequest struct {
-	RequestID     string            `json:"request_id"`
-	Repo          string            `json:"repo,omitempty"`
-	Kind          string            `json:"kind"`
-	Ref           RecordVersionRef  `json:"ref"`
-	Destination   EventDestination  `json:"destination"`
-	CausationID   string            `json:"causation_id,omitempty"`
-	CorrelationID string            `json:"correlation_id,omitempty"`
-	Resolution    *AgentResolution  `json:"resolution,omitempty"`
-	Pool          *PoolRequirements `json:"pool,omitempty"`
+	AdmissionExpiresAt *time.Time        `json:"admission_expires_at,omitempty"`
+	TaskDeadline       *time.Time        `json:"task_deadline,omitempty"`
+	RequestID          string            `json:"request_id"`
+	Repo               string            `json:"repo,omitempty"`
+	Kind               string            `json:"kind"`
+	Ref                RecordVersionRef  `json:"ref"`
+	Destination        EventDestination  `json:"destination"`
+	CausationID        string            `json:"causation_id,omitempty"`
+	CorrelationID      string            `json:"correlation_id,omitempty"`
+	Resolution         *AgentResolution  `json:"resolution,omitempty"`
+	Pool               *PoolRequirements `json:"pool,omitempty"`
 }
 type EventQuery struct {
 	Repo  string `json:"repo,omitempty"`
@@ -72,6 +76,7 @@ type NextEventRequest struct {
 	LeaseSeconds int    `json:"lease_seconds,omitempty"`
 }
 type AgentDelivery struct {
+	Control     *WorkControl      `json:"control,omitempty"`
 	DeliveryID  string            `json:"delivery_id"`
 	Consumer    string            `json:"consumer"`
 	State       string            `json:"state"`
@@ -166,7 +171,7 @@ func leaseSeconds(seconds int) (int, error) {
 	return seconds, nil
 }
 
-const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements`
+const eventColumns = `e.event_id::text,e.position,e.repo,e.publisher,e.created_at,e.kind,e.record_id::text,e.version,e.destination_type,e.destination_name,COALESCE(e.causation_id::text,''),COALESCE(e.correlation_id::text,''),e.resolved_session,e.pool_requirements,e.admission_expires_at,e.task_deadline`
 const eventVisible = `(e.sensitivity='shareable' OR $3) AND (e.publisher=$2 OR EXISTS(SELECT 1 FROM cairn.agent_delivery v WHERE v.event_id=e.event_id AND v.consumer=$2))`
 
 func scanEvent(row pgx.Row) (AgentEvent, error) {
@@ -175,7 +180,7 @@ func scanEvent(row pgx.Row) (AgentEvent, error) {
 	return e, err
 }
 func eventScanFields(e *AgentEvent) []any {
-	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool}
+	return []any{&e.EventID, &e.Position, &e.Repo, &e.From, &e.CreatedAt, &e.Kind, &e.Ref.RecordID, &e.Ref.Version, &e.Destination.Type, &e.Destination.Name, &e.CausationID, &e.CorrelationID, &e.Resolution, &e.Pool, &e.AdmissionExpiresAt, &e.TaskDeadline}
 }
 func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destination) (AgentEvent, error) {
 	e, err := scanEvent(tx.QueryRow(ctx, `SELECT `+eventColumns+` FROM cairn.agent_event e WHERE e.event_id=$1 AND `+eventVisible, id, s.channel.Principal, dest.AllowLocal))
@@ -190,6 +195,11 @@ func (s *Store) readEvent(ctx context.Context, tx pgx.Tx, id string, dest Destin
 
 func (s *Store) normalizePublication(req PublishEventRequest, dest Destination) (PublishEventRequest, error) {
 	var err error
+	for _, stamp := range []*time.Time{req.AdmissionExpiresAt, req.TaskDeadline} {
+		if stamp != nil && (req.Kind != "request" || stamp.IsZero() || stamp.Year() < 1 || stamp.Year() > 9999) {
+			return req, failure("INVALID_REQUEST", "request timing requires request kind and valid absolute timestamps")
+		}
+	}
 	if err = validEventDestination(dest); err != nil {
 		return req, err
 	}
@@ -232,6 +242,15 @@ func (s *Store) normalizePublication(req PublishEventRequest, dest Destination) 
 }
 
 func (s *Store) eventSource(ctx context.Context, tx pgx.Tx, req PublishEventRequest, dest Destination) (string, error) {
+	if req.TaskDeadline != nil && req.Destination.Type != "pool" {
+		var managed bool
+		if err := tx.QueryRow(ctx, `SELECT $3='agent' AND EXISTS(SELECT 1 FROM cairn.agent_worker_slot WHERE repo=$1 AND consumer=$2)`, req.Repo, req.Destination.Name, req.Destination.Type).Scan(&managed); err != nil {
+			return "", err
+		}
+		if !managed {
+			return "", failure("UNSUPPORTED_CONTROL", "task deadlines require a configured fresh-worker slot or pool")
+		}
+	}
 	var sensitivity string
 	err := tx.QueryRow(ctx, `SELECT m.sensitivity FROM cairn.memory_record m JOIN cairn.record_version v ON v.record_id=m.record_id WHERE m.record_id=$1 AND v.version=$2 AND v.repo=$3 AND m.lifecycle='active' AND v.payload_deleted_by IS NULL AND (m.sensitivity='shareable' OR $4) FOR SHARE OF m`, req.Ref.RecordID, req.Ref.Version, req.Repo, dest.AllowLocal).Scan(&sensitivity)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -286,7 +305,7 @@ func (s *Store) publishEventTx(ctx context.Context, tx pgx.Tx, req PublishEventR
 	if id == "" {
 		id = uuid.NewString()
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12)`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool)
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.agent_event(event_id,repo,kind,record_id,version,sensitivity,destination_type,destination_name,causation_id,correlation_id,resolved_session,pool_requirements,admission_expires_at,task_deadline) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,NULLIF($10,'')::uuid,$11,$12,$13,$14)`, id, req.Repo, req.Kind, req.Ref.RecordID, req.Ref.Version, sensitivity, req.Destination.Type, req.Destination.Name, req.CausationID, req.CorrelationID, req.Resolution, req.Pool, req.AdmissionExpiresAt, req.TaskDeadline)
 	if err != nil {
 		return AgentEvent{}, err
 	}
@@ -439,13 +458,14 @@ func (s *Store) Events(ctx context.Context, req EventQuery, dest Destination) (E
 	return out, rows.Err()
 }
 
-const deliveryColumns = `d.delivery_id::text,d.consumer,d.state,COALESCE(d.lease_id::text,''),d.lease_until,d.attempts,d.completed_at,d.code,d.result_id::text,d.result_version`
+const deliveryControl = `CASE WHEN d.control_at IS NULL THEN NULL ELSE jsonb_build_object('at',d.control_at,'by',d.control_by,'code',d.code) END`
+const deliveryColumns = `d.delivery_id::text,d.consumer,d.state,COALESCE(d.lease_id::text,''),d.lease_until,d.attempts,d.completed_at,d.code,d.result_id::text,d.result_version,` + deliveryControl
 
 func scanDelivery(row pgx.Row) (AgentDelivery, error) {
 	var d AgentDelivery
 	var id *string
 	var version *int
-	err := row.Scan(&d.DeliveryID, &d.Consumer, &d.State, &d.LeaseID, &d.LeaseUntil, &d.Attempts, &d.CompletedAt, &d.Code, &id, &version)
+	err := row.Scan(&d.DeliveryID, &d.Consumer, &d.State, &d.LeaseID, &d.LeaseUntil, &d.Attempts, &d.CompletedAt, &d.Code, &id, &version, &d.Control)
 	if id != nil && version != nil {
 		d.Result = &RecordVersionRef{RecordID: *id, Version: *version}
 	}
@@ -488,17 +508,20 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 	if _, err = retrievalGeneration(ctx, tx); err != nil {
 		return out, err
 	}
+	if _, err = expireRequestDeliveries(ctx, tx, repo, s.channel.Principal, dest.AllowLocal); err != nil {
+		return out, err
+	}
 	var nativeBusy bool
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n JOIN cairn.agent_session a USING(agent_id) WHERE 'agent/'||a.agent_id::text=$1 AND n.finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE 'agent/'||agent_id::text=$1 AND finished_at IS NULL)`, s.channel.Principal).Scan(&nativeBusy); err != nil {
 		return out, err
 	}
 	if nativeBusy {
-		return out, nil
+		return out, tx.Commit(ctx)
 	}
 	var id string
-	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND `+wakeHold+` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
+	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND `+requestAdmissionOpen+` AND `+wakeHold+` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position FOR UPDATE OF d SKIP LOCKED LIMIT 1`, repo, s.channel.Principal, dest.AllowLocal).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return out, nil
+		return out, tx.Commit(ctx)
 	}
 	if err != nil {
 		return out, err
@@ -516,15 +539,18 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 }
 
 func checkEventLease(ctx context.Context, tx pgx.Tx, d AgentDelivery, lease string) error {
-	var live bool
+	var live, withinDeadline bool
 	if d.State != "leased" || d.LeaseID != lease {
 		return failure("STALE_LEASE", "delivery is not owned by this lease")
 	}
-	if err := tx.QueryRow(ctx, `SELECT lease_until>clock_timestamp() FROM cairn.agent_delivery WHERE delivery_id=$1`, d.DeliveryID).Scan(&live); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT d.lease_until>clock_timestamp(),e.task_deadline IS NULL OR e.task_deadline>clock_timestamp() FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE d.delivery_id=$1`, d.DeliveryID).Scan(&live, &withinDeadline); err != nil {
 		return err
 	}
 	if !live {
 		return failure("STALE_LEASE", "delivery lease expired")
+	}
+	if !withinDeadline {
+		return failure("DEADLINE_EXCEEDED", "request task deadline reached; its host must stop and reconcile the hold")
 	}
 	return nil
 }

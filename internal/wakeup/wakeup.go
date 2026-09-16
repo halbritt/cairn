@@ -147,10 +147,14 @@ func (m UnitManager) stop(ctx context.Context, id string) error {
 	}
 	return nil
 }
-func (UnitManager) start(ctx context.Context, executable, config string, c Config, id string) error {
+func (UnitManager) start(ctx context.Context, executable, config string, c Config, id string, deadline *time.Time) error {
 	start, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	args := []string{"--user", "--quiet", "--collect", "--unit=" + unitName(id), "--property=Type=exec", "--property=KillMode=control-group", "--property=TimeoutStopSec=5s", "--property=RuntimeMaxSec=" + fmt.Sprint(c.TimeoutSeconds+45), "--property=UMask=0077", executable, "wake", "worker", "--config", config, "--attempt", id}
+	runtime := time.Duration(c.TimeoutSeconds+45) * time.Second
+	if deadline != nil {
+		runtime = min(runtime, max(time.Millisecond, time.Until(*deadline)))
+	}
+	args := []string{"--user", "--quiet", "--collect", "--unit=" + unitName(id), "--property=Type=exec", "--property=KillMode=control-group", "--property=TimeoutStopSec=5s", "--property=RuntimeMaxSec=" + fmt.Sprintf("%.3fs", runtime.Seconds()), "--property=UMask=0077", executable, "wake", "worker", "--config", config, "--attempt", id}
 	if err := exec.CommandContext(start, "systemd-run", args...).Run(); err != nil {
 		return fmt.Errorf("start worker unit (outcome may be unknown): %w", err)
 	}
@@ -244,12 +248,31 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 		}
 		w := claimed.Attempt
 		fmt.Fprintf(log, "wake claimed profile=%s attempt=%s delivery=%s\n", c.Name, w.ID, w.Delivery.DeliveryID)
-		if _, err = change(ctx, client, w.ID, "start", "", ""); err != nil {
+		started, err := change(ctx, client, w.ID, "start", "", "")
+		if err != nil {
 			return err
 		}
-		launchErr := manager.start(ctx, executable, path, c, w.ID)
-		if launchErr == nil {
+		var launchErr error
+		controlReason := ""
+		if started.Delivery.Control != nil {
+			controlReason = started.Delivery.Control.Code
+		} else {
+			launchErr = manager.start(ctx, executable, path, c, w.ID, started.Delivery.Event.TaskDeadline)
+		}
+		if launchErr == nil && controlReason == "" {
 			for ctx.Err() == nil {
+				controlCtx, cancelControl := context.WithTimeout(ctx, 5*time.Second)
+				var control core.WakeControlResult
+				controlErr := client.Call(controlCtx, "wake-control", core.WakeControlRequest{AttemptID: w.ID}, &control)
+				cancelControl()
+				if controlErr != nil {
+					launchErr = controlErr
+					break
+				}
+				if control.StopReason != "" {
+					controlReason = control.StopReason
+					break
+				}
 				if beatErr := heartbeat(); beatErr != nil {
 					launchErr = beatErr
 					break
@@ -275,6 +298,9 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 			return errors.Join(launchErr, stopErr)
 		}
 		reason := "worker_stopped"
+		if controlReason != "" {
+			reason = controlReason
+		}
 		if launchErr != nil {
 			reason = "launch_or_inspection_uncertain"
 		}
@@ -344,7 +370,21 @@ func Worker(ctx context.Context, path, id string) error {
 	if err != nil {
 		return err
 	}
-	runCtx, cancel := context.WithTimeout(ctx, time.Duration(c.TimeoutSeconds)*time.Second)
+	if w.State != "running" || w.Delivery.Control != nil {
+		return nil
+	}
+	var control core.WakeControlResult
+	if err = agent.Call(ctx, "wake-control", core.WakeControlRequest{AttemptID: id}, &control); err != nil {
+		return err
+	}
+	if control.StopReason != "" {
+		return nil
+	}
+	runtime := time.Duration(c.TimeoutSeconds) * time.Second
+	if deadline := w.Delivery.Event.TaskDeadline; deadline != nil {
+		runtime = min(runtime, deadline.Sub(control.ServerTime))
+	}
+	runCtx, cancel := context.WithTimeout(ctx, runtime)
 	defer cancel()
 	heartbeatDone := make(chan error, 1)
 	go func() {

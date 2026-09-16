@@ -38,6 +38,7 @@ type ReviewReissue struct {
 }
 
 type ReviewDelivery struct {
+	Control      *WorkControl      `json:"control,omitempty"`
 	ReissuedAs   *ReviewReissue    `json:"reissued_as,omitempty"`
 	ReissuedFrom *ReviewReissue    `json:"reissued_from,omitempty"`
 	Position     int64             `json:"position"`
@@ -99,7 +100,8 @@ func (s *Store) ReviewEvents(ctx context.Context, req EventReviewRequest) (Event
   AND NOT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id AND w.state<>'prepared' AND w.process_state<>'prelaunch_failed')
   AND NOT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id)
  ) THEN 'never_launched' ELSE 'may_have_executed' END,
- w.detail,n.detail,a.detail,reissued.detail,origin.detail
+ w.detail,n.detail,a.detail,reissued.detail,origin.detail,
+ CASE WHEN d.control_at IS NULL THEN NULL ELSE jsonb_build_object('at',d.control_at,'by',d.control_by,'code',d.code,'reason',d.control_reason) END
  FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
  CROSS JOIN LATERAL (SELECT NOT (`+wakeHold+`) OR NOT (`+sessionInboxHold+`) AS held) flags
  LEFT JOIN LATERAL (SELECT w.receipt_id,jsonb_build_object('attempt_id',w.attempt_id,'state',w.state,'created_at',w.created_at,'finished_at',w.finished_at,'receipt_id',COALESCE(w.receipt_id::text,''),'process_state',w.process_state,'reason',w.reason,'provider_failure',w.provider_failure,'session',CASE WHEN w.agent_id IS NOT NULL THEN jsonb_build_object('agent_id',w.agent_id,'execution_id',w.execution_id) END) AS detail FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id ORDER BY w.created_at DESC,w.attempt_id DESC LIMIT 1) w ON true
@@ -123,7 +125,7 @@ func (s *Store) ReviewEvents(ctx context.Context, req EventReviewRequest) (Event
 		var resultVersion *int
 		fields := []any{&d.Position, &d.DeliveryID, &d.Consumer, &d.State, &d.Attempts, &d.AvailableAt, &d.CompletedAt, &d.Code, &resultID, &resultVersion}
 		fields = append(fields, eventScanFields(&d.Event)...)
-		fields = append(fields, &d.Held, &d.Execution, &d.LatestWake, &d.LatestNative, &d.Assessment, &d.ReissuedAs, &d.ReissuedFrom)
+		fields = append(fields, &d.Held, &d.Execution, &d.LatestWake, &d.LatestNative, &d.Assessment, &d.ReissuedAs, &d.ReissuedFrom, &d.Control)
 		if err = rows.Scan(fields...); err != nil {
 			return out, err
 		}
@@ -142,7 +144,32 @@ func (s *Store) ReviewEvents(ctx context.Context, req EventReviewRequest) (Event
 
 // ReviewQueuedEvents covers accepted pool work that has no delivery yet.
 func (s *Store) ReviewQueuedEvents(ctx context.Context, repo string, after int64, pageLimit int) (EventPage, error) {
-	out := EventPage{Events: []AgentEvent{}}
+	page, err := s.reviewUnassignedPool(ctx, repo, after, pageLimit, false)
+	out := EventPage{Events: []AgentEvent{}, More: page.More, NextAfter: page.NextAfter}
+	for _, event := range page.Events {
+		out.Events = append(out.Events, event.AgentEvent)
+	}
+	return out, err
+}
+
+type ClosedPoolEvent struct {
+	AgentEvent
+	Control *WorkControl `json:"control,omitempty"`
+}
+type ClosedPoolPage struct {
+	Events    []ClosedPoolEvent `json:"events"`
+	More      bool              `json:"more"`
+	NextAfter int64             `json:"next_after,omitempty"`
+}
+
+// ReviewClosedPoolRequests retains operator visibility when work expired or was
+// cancelled before assignment and therefore never acquired a delivery.
+func (s *Store) ReviewClosedPoolRequests(ctx context.Context, repo string, after int64, pageLimit int) (ClosedPoolPage, error) {
+	return s.reviewUnassignedPool(ctx, repo, after, pageLimit, true)
+}
+
+func (s *Store) reviewUnassignedPool(ctx context.Context, repo string, after int64, pageLimit int, closed bool) (ClosedPoolPage, error) {
+	out := ClosedPoolPage{Events: []ClosedPoolEvent{}}
 	if !s.channel.Operator || s.channel.Repo != "" {
 		return out, failure("AUTHORITY_DENIED", "queued request review requires an unscoped operator channel")
 	}
@@ -163,7 +190,7 @@ func (s *Store) ReviewQueuedEvents(ctx context.Context, repo string, after int64
 		return out, err
 	}
 	defer tx.Rollback(context.Background())
-	rows, err := tx.Query(ctx, `SELECT `+eventColumns+` FROM cairn.agent_pool_request q JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND q.delivery_id IS NULL AND e.position>$2 ORDER BY e.position LIMIT $3`, repo, after, limit+1)
+	rows, err := tx.Query(ctx, `SELECT `+eventColumns+`,CASE WHEN q.closed_at IS NULL THEN NULL ELSE jsonb_build_object('at',q.closed_at,'by',q.closed_by,'code',q.closed_code,'reason',q.closed_reason) END FROM cairn.agent_pool_request q JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND q.delivery_id IS NULL AND (q.closed_at IS NOT NULL)=$4 AND e.position>$2 ORDER BY e.position LIMIT $3`, repo, after, limit+1, closed)
 	if err != nil {
 		return out, err
 	}
@@ -173,8 +200,8 @@ func (s *Store) ReviewQueuedEvents(ctx context.Context, repo string, after int64
 			out.More = true
 			break
 		}
-		e, err := scanEvent(rows)
-		if err != nil {
+		var e ClosedPoolEvent
+		if err := rows.Scan(append(eventScanFields(&e.AgentEvent), &e.Control)...); err != nil {
 			return out, err
 		}
 		out.Events = append(out.Events, e)

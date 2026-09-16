@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/localapi"
@@ -24,6 +25,7 @@ Retry an uncertain mutation with identical arguments and the same request UUID.
   publish --request-id UUID (--to PRINCIPAL | --topic TOPIC | --resolution FILE | --pool POOL) --kind KIND --version N RECORD_UUID
     [--workspace /PATH --capability NAME --harness NAME --model NAME] (pool selectors)
     [--causation-id UUID] [--correlation-id UUID]
+    [--admission-expires-at RFC3339] [--task-deadline RFC3339]
   inbox next [--agent PRINCIPAL] [--lease-seconds N]
   ack --request-id UUID --lease UUID [--disposition handled|ignored|failed] [--code CODE] DELIVERY_UUID
   complete --request-id UUID --lease UUID --stdin [--shareable] [--kind note] DELIVERY_UUID
@@ -97,6 +99,8 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	limit := f.Int("limit", 0, "maximum page size")
 	stdin := f.Bool("stdin", false, "read selected result from stdin")
 	shareable := f.Bool("shareable", false, "allow hosted result reads")
+	admissionExpiresAt := f.String("admission-expires-at", "", "expiration instant for unclaimed request admission (RFC3339)")
+	taskDeadline := f.String("task-deadline", "", "execution deadline instant for running request (RFC3339)")
 	if err := f.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return commandHelp(eventHelp), nil
@@ -106,7 +110,7 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 	allowed := " token-file socket profile agent-id execution-id "
 	switch command {
 	case "publish":
-		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id "
+		allowed += "repo request-id to topic resolution pool workspace capability harness model kind version causation-id correlation-id admission-expires-at task-deadline "
 	case "inbox":
 		allowed += "repo agent lease-seconds "
 	case "ack":
@@ -217,8 +221,31 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		} else if *workspace != "" || *harness != "" || *model != "" || len(capabilities) > 0 {
 			return nil, invalid("pool selectors require --pool")
 		}
+		provided := map[string]bool{}
+		f.Visit(func(value *flag.Flag) { provided[value.Name] = true })
+		var parsedAdmission, parsedDeadline *time.Time
+		if provided["admission-expires-at"] {
+			if strings.TrimSpace(*admissionExpiresAt) == "" {
+				return nil, invalid("--admission-expires-at cannot be explicitly empty")
+			}
+			t, err := parseEventTimestamp(*admissionExpiresAt)
+			if err != nil {
+				return nil, invalid("invalid --admission-expires-at: must be an RFC3339 timestamp")
+			}
+			parsedAdmission = &t
+		}
+		if provided["task-deadline"] {
+			if strings.TrimSpace(*taskDeadline) == "" {
+				return nil, invalid("--task-deadline cannot be explicitly empty")
+			}
+			t, err := parseEventTimestamp(*taskDeadline)
+			if err != nil {
+				return nil, invalid("invalid --task-deadline: must be an RFC3339 timestamp")
+			}
+			parsedDeadline = &t
+		}
 		operation = "event-publish"
-		req = core.PublishEventRequest{RequestID: *request, Repo: *repo, Kind: *kind, Ref: core.RecordVersionRef{RecordID: strings.TrimPrefix(f.Arg(0), "cairn:"), Version: *version}, Destination: dest, CausationID: *causation, CorrelationID: *correlation, Resolution: resolution, Pool: needs}
+		req = core.PublishEventRequest{RequestID: *request, Repo: *repo, Kind: *kind, Ref: core.RecordVersionRef{RecordID: strings.TrimPrefix(f.Arg(0), "cairn:"), Version: *version}, Destination: dest, CausationID: *causation, CorrelationID: *correlation, Resolution: resolution, Pool: needs, AdmissionExpiresAt: parsedAdmission, TaskDeadline: parsedDeadline}
 	case "inbox":
 		operation = "event-next"
 		req = core.NextEventRequest{Repo: *repo, Agent: *agent, LeaseSeconds: *seconds}
@@ -289,4 +316,8 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 		return nil, err
 	}
 	return result, nil
+}
+
+func parseEventTimestamp(value string) (time.Time, error) {
+	return time.Parse(time.RFC3339Nano, value)
 }

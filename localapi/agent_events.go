@@ -38,6 +38,10 @@ func serveAgentEvents(w http.ResponseWriter, r *http.Request, c client) bool {
 		serveJSON(w, r, func(ctx context.Context, req core.WakeQuery) (core.WakePage, error) {
 			return c.store.WakeAttempts(ctx, req, c.destination)
 		})
+	case "/v1/wake-control":
+		serveJSON(w, r, func(ctx context.Context, req core.WakeControlRequest) (core.WakeControlResult, error) {
+			return c.store.WakeControl(ctx, req, c.destination)
+		})
 	case "/v1/wake-change":
 		serveJSON(w, r, func(ctx context.Context, req core.WakeChangeRequest) (core.WakeAttempt, error) {
 			return c.store.ChangeWake(ctx, req, c.destination)

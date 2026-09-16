@@ -1,0 +1,378 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-request-controls-2026-09-16",
+  "question": "How should request expiry and cancellation fence completion while retaining supervisor holds until process termination is confirmed?",
+  "scope": [
+    "Admission expiry and managed task deadlines",
+    "Atomic cancellation/completion decision with retained process holds",
+    "Bounded sweep and operator audit of unassigned closed pool work"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Accepted coordination v1 implementation/deployment goal and trusted-host correction",
+    "authorized_scope": [
+      "Implement and deploy milestone 6 request controls under existing operator/profile channels"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-controls-authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner authorized coordination v1 implementation/deployment, Hermes/gateway restarts and use of offered reviewer. Trusted-host UUID association remains; no new per-session credentials. Milestone 6 specifies admission expiry, stopping deadline/cancellation with held process cleanup.",
+      "provenance": [
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "7d1db3c2c040a4963dfd88fcab669d6240da2942ceff893f60f4a35de0405a7f"
+        }
+      ],
+      "satisfies": [
+        "decision owner",
+        "explicit task authority",
+        "task scope and authority statement",
+        "user instruction and authority",
+        "accepted desired behavior and semantic authority"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-controls-contract",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "PostgreSQL owns request decisions; disposable integration/static/lifecycle checks are required. Preserve store attribution and existing profile channel; interactive hard stops refused pending a per-request host contract. No external effect rollback or full-v1 acceptance promise.",
+      "provenance": [
+        {
+          "locator": "AGENTS.md",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "c27e830a649a2bbc1a84d97ca28cb8c9bcdf1bf11ec02705f6da9cef41a96504"
+        },
+        {
+          "locator": "docs/request-controls.md",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "51ab1580e630cb4f09f953f5656349d615a9a0c9c138ae5fec7ae4b2eb970806"
+        },
+        {
+          "locator": "Makefile",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "11a9b33c9331ef6f81cca240607e5afd421c405ea923deeb2c0b39602fc4690e"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "repository contract",
+        "target repository and task scope",
+        "repository instructions from root through target path",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-controls-atomicity",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Cancel and pool assignment take generation then collection lock; delivery cancellation and completion serialize on delivery row. Winning stop invalidates lease atomically but never finishes wake. Pool close retains audit without delivery and is excluded from assignment/counts. Sweeps are bounded and leave holds intact. Review has separate closed-pool cursor and local reason; public status omits reason.",
+      "provenance": [
+        {
+          "locator": "core/agent_request_controls.go",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "f0347def70e773829d8520a008041a103811b11c29fc7b3f2e3bfb5d6f4c4fed"
+        },
+        {
+          "locator": "core/agent_events.go",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "2bfd9f6b496a322f5b652c8d443553eea35135c15aebdac6ef00bba880b3c36d"
+        },
+        {
+          "locator": "core/agent_wakeups.go",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "8f80b70acfca9d758908b20c6bb13905646de9a14c2b0e6616d86d317dd4a248"
+        },
+        {
+          "locator": "core/agent_pools.go",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "186710558ce31b7c5beeebd84a2068bd3e45fae959c294482871253eb578d209"
+        },
+        {
+          "locator": "core/agent_event_review.go",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "3f55d37a0380ddf4e0ccfb758e30fd51223be878e9ff2a4a1f5b26af13aa4887"
+        },
+        {
+          "locator": "core/schema/046_agent_request_controls.sql",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "6f509667293b27c99d0e16110833f0bc0deb276b961232888c89497124792d67"
+        }
+      ],
+      "satisfies": [
+        "complete read-modify-write scope",
+        "mechanism guaranteeing atomicity at that scope",
+        "named observer and invariant",
+        "observer and indivisible invariant",
+        "actual state transitions and ordering",
+        "behavior and state model",
+        "reader-relevant invariants",
+        "data and policy ownership",
+        "existing interfaces and callers",
+        "relevant invariants",
+        "state, invariant, and dependency ownership",
+        "current source, configuration, and relevant runtime state"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-controls-lifecycle",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Supervisor owns transient unit, polls controlled stop, and uses independent 30-second cleanup context to stop and confirm empty group before finish. Every added timeout cancel is called: 15-second start defer, 5-second poll each call, worker runtime defer plus explicit cancel before heartbeat join. Worker owns renewal goroutine and receives its completion before report; report has separate bounded context so cancellation does not prevent reporting. Unit RuntimeMaxSec retains deadline after supervisor death; stop has five-second grace. API errors take cleanup path. Native/manual active work refuses cancellation because no isolated unit exists.",
+      "provenance": [
+        {
+          "locator": "internal/wakeup/wakeup.go",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "037d4cc1b727e6f11f3eb984a7f2f4e8022800434897634a613a4f74fe53e359"
+        },
+        {
+          "locator": "internal/wakeup/context.go",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "63cd842bbaa7539814c34014ffac9393d35c7432edb183dbe22d95d28c3598b4"
+        },
+        {
+          "locator": "core/agent_request_controls.go",
+          "method": "Read current source or selected owner instructions; inspected named behavior",
+          "observed_at": "2026-09-16T09:04:56.059699+00:00",
+          "content_sha256": "f0347def70e773829d8520a008041a103811b11c29fc7b3f2e3bfb5d6f4c4fed"
+        }
+      ],
+      "satisfies": [
+        "all derived cancel functions are called",
+        "caller and callee lifecycle map",
+        "context origin and propagation path",
+        "deadline and cancellation ownership",
+        "cancellation and error paths",
+        "creation-to-completion control flow",
+        "lifecycle and ownership inventory",
+        "owner and transfer",
+        "explicit lifecycle and failure policy",
+        "ownership and lifecycle map"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-controls-tests",
+      "evidence_class": "evidence-tests",
+      "summary": "Collected successful exits for final make test-integration, make check, make test-lifecycle and focused -race tests. Disposable Go tests cover completion/cancellation and assignment/cancellation with simultaneous barriers, admission before/after enter, refusal of native/manual active stops, deadline fencing, privacy, closed-pool audit and retry. Actual systemd probe checks detached children stop before hold release, admission expiry survival, deadline after supervisor SIGKILL and restart reconciliation. Lifecycle compares complete populated event, delivery and pool rows through real backup/restore. No production test data or provider acceptance claim.",
+      "provenance": [
+        {
+          "locator": "core/agent_request_controls_test.go",
+          "method": "Read source and logs; collected successful command exit",
+          "observed_at": "2026-09-16T09:07:39.983838+00:00",
+          "content_sha256": "471186385edf10110fbd789aa8ea314b06478a9a715d4ada5b098d8a12196f1b"
+        },
+        {
+          "locator": "core/agent_request_control_review_test.go",
+          "method": "Read source and logs; collected successful command exit",
+          "observed_at": "2026-09-16T09:07:39.983838+00:00",
+          "content_sha256": "44a51e27b14ef916f02035e76862b03b12b0a3361be5ec404547c0770dc7b397"
+        },
+        {
+          "locator": "cmd/cairn/agent_request_controls_test.go",
+          "method": "Read source and logs; collected successful command exit",
+          "observed_at": "2026-09-16T09:07:39.983838+00:00",
+          "content_sha256": "945cc0ce85312a225412d9d658e2dde7859dfe8de106e28a695f3db1d18dd7ca"
+        },
+        {
+          "locator": "scripts/check_request_controls.py",
+          "method": "Read source and logs; collected successful command exit",
+          "observed_at": "2026-09-16T09:07:39.983838+00:00",
+          "content_sha256": "eca9694888f159f0f67a9933ef4af68f0441db5d43e4e1c5e0716055e37f61f3"
+        },
+        {
+          "locator": "scripts/test-local-lifecycle.sh",
+          "method": "Read source and logs; collected successful command exit",
+          "observed_at": "2026-09-16T09:07:39.983838+00:00",
+          "content_sha256": "72755f6cae243e8cac11d4088c8129a369ece8891e7b17856d6fdb8085bd251a"
+        },
+        {
+          "locator": "/tmp/cairn-controls-integration-final.log",
+          "method": "Read source and logs; collected successful command exit",
+          "observed_at": "2026-09-16T09:07:39.983838+00:00",
+          "content_sha256": "724c06e4e339448be3f9307fba70e509d39ad033e35a6a14b5b8c78d21194692"
+        },
+        {
+          "locator": "/tmp/cairn-controls-check-final.log",
+          "method": "Read source and logs; collected successful command exit",
+          "observed_at": "2026-09-16T09:07:39.983838+00:00",
+          "content_sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+        },
+        {
+          "locator": "/tmp/cairn-controls-lifecycle.log",
+          "method": "Read source and logs; collected successful command exit",
+          "observed_at": "2026-09-16T09:07:39.983838+00:00",
+          "content_sha256": "dccdca3446c4d7464000abb1b7627d0f82745f6eb065467d7a59c0b06643e376"
+        },
+        {
+          "locator": "/tmp/cairn-controls-final-focused.log",
+          "method": "Read source and logs; collected successful command exit",
+          "observed_at": "2026-09-16T09:07:39.983838+00:00",
+          "content_sha256": "2ebf0add8c46840172790d3a5184515e7e9df392de9c632c8152b91f94b13f3e"
+        }
+      ],
+      "satisfies": [
+        "leak race and shutdown tests",
+        "cancellation, shutdown, and cleanup tests",
+        "tests for branches and termination",
+        "behavior tests",
+        "reversibility and verification",
+        "tests, characterization, probes, or explicit residual risk",
+        "checkpoint verification"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "control-atomicity",
+      "type": "observation",
+      "text": "Concurrent cancellation/completion and pool assignment/cancellation tests produce one durable target/outcome; stop decisions invalidate completion while retaining wake holds until finish.",
+      "evidence": [
+        "cairn-controls-atomicity",
+        "cairn-controls-tests"
+      ]
+    },
+    {
+      "id": "process-ownership",
+      "type": "observation",
+      "text": "Disposable systemd tests confirm detached children stop before hold release and task deadlines stop children even after supervisor death. The restarted supervisor reconciles the retained hold.",
+      "evidence": [
+        "cairn-controls-lifecycle",
+        "cairn-controls-tests"
+      ]
+    },
+    {
+      "id": "control-contract",
+      "type": "decision",
+      "text": "Keep PostgreSQL stop decisions separate from confirmed cgroup cleanup. Refuse active native/manual cancellation and unsupported deadline destinations until a per-request host contract exists.",
+      "owner": "repository owner via delegated implementation",
+      "authority": "Accepted coordination v1 goal",
+      "depends_on": [
+        "control-atomicity",
+        "process-ownership"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Record stop under delivery lock, then supervisor confirms group emptiness before finishing hold",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-controls-contract",
+        "cairn-controls-atomicity",
+        "cairn-controls-lifecycle",
+        "cairn-controls-tests"
+      ]
+    },
+    {
+      "option": "Release delivery hold immediately when cancellation is requested",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-controls-contract",
+        "cairn-controls-tests"
+      ]
+    },
+    {
+      "option": "Kill an interactive CLI or shared gateway as a substitute for per-request native cancellation",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-controls-contract",
+        "cairn-controls-lifecycle"
+      ]
+    },
+    {
+      "option": "Leave request lifetime unbounded beyond the existing worker timeout",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-controls-authority"
+      ]
+    }
+  ],
+  "source_locators": [
+    "packet:pkt-e217731eb10aad03",
+    "sha256:e217731eb10aad032591d549a77e9baf5fc7709a3558b9fd4091fc017a912137",
+    "release:d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "docs/plans/agent-coordination-v1.md",
+    "AGENTS.md",
+    "docs/request-controls.md",
+    "Makefile",
+    "core/agent_request_controls.go",
+    "core/agent_events.go",
+    "core/agent_wakeups.go",
+    "core/agent_pools.go",
+    "core/agent_event_review.go",
+    "core/schema/046_agent_request_controls.sql",
+    "internal/wakeup/wakeup.go",
+    "internal/wakeup/context.go",
+    "core/agent_request_controls_test.go",
+    "core/agent_request_control_review_test.go",
+    "cmd/cairn/agent_request_controls_test.go",
+    "scripts/check_request_controls.py",
+    "scripts/test-local-lifecycle.sh",
+    "/tmp/cairn-controls-integration-final.log",
+    "/tmp/cairn-controls-check-final.log",
+    "/tmp/cairn-controls-lifecycle.log",
+    "/tmp/cairn-controls-final-focused.log"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Full disposable integration with race detector and static checks",
+    "Actual cgroup stop and supervisor death/restart probes",
+    "Populated request-control fields survive backup/restore"
+  ],
+  "reopening_conditions": [
+    "A native host gains isolated per-request interruption and completion observation",
+    "New claim paths or delivery writers alter collection/delivery lock ordering",
+    "Measured control-poll or sweep load exceeds selected operating limits"
+  ],
+  "residual_risk": [
+    "Shutdown includes polling, host scheduling and five-second systemd stop grace; no real-time deadline guarantee.",
+    "No native/manual running hard stop, external effects rollback, provider-specific task acceptance, throughput or full-v1 acceptance claim.",
+    "Source inspection and tests establish the selected bounded contract; they do not prove all failure schedules or arbitrary future consumers.",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: go-consumer-owned-interfaces / Go method-set and import-direction compatibility",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: go-consumer-owned-interfaces / current consumer call sets and ownership",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: go-consumer-owned-interfaces / current consumer inventory",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: go-consumer-owned-interfaces / observed substitution, volatility, or cross-boundary pressure",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: implementation-obvious-control-flow / repository idioms",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: implementation-repository-language-conformance / CI and build matrix",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: implementation-repository-language-conformance / adjacent code",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: implementation-repository-language-conformance / formatter and static-tool configuration",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: implementation-repository-language-conformance / repository version and dependency contract",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: performance-resource-lifecycle / capacity/backpressure and error propagation",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: performance-resource-lifecycle / retention and contention measurement where reused",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-evidence-before-intervention / a bounded decision question",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-evidence-before-intervention / alternatives including no change where viable",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-evidence-before-intervention / claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-evidence-before-intervention / evidence connecting the proposed action to the condition",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-local-reasoning / knowledge and navigation required by callers/maintainers",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-local-reasoning / representative change or use scenario",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-local-reasoning / representative change scenario",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-no-change-option / actual current cost/risk or absence within a stated interval",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-no-change-option / expected future change from accepted plans",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-no-change-option / intervention cost and uncertainty",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-no-change-option / latent security, safety, data, durability, and compatibility check",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-no-change-option / proc-decide-leave-code-alone",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-preserve-behavior-by-default / preservation matrix and consumers",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-preserve-behavior-by-default / proc-establish-preservation-boundaries",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-separate-semantic-structural-change / change-type classification",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-separate-semantic-structural-change / per-edit change classification",
+    "Nonmaterial to the selected transaction/context/process-stop contract; no broader interface, optimization, refactoring or universal preservation claim: universal-separate-semantic-structural-change / preservation boundary and semantic authority"
+  ]
+}

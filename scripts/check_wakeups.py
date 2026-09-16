@@ -167,7 +167,7 @@ subprocess.run(wake["completion"],input="Selected fixture result",text=True,chec
         wait_for(lambda: (root / "api.sock").exists())
         start(command)
         wait_for(lambda: status(event)["state"] == "failed")
-        report.append("API outage cancels worker on renewal failure; restart reconciles hold")
+        report.append("API outage cancels worker on control/renewal failure; restart reconciles hold")
         stop()
         for name, native in (("opencode", opencode), ("hermes", hermes)):
             if not native:
