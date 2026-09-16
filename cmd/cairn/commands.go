@@ -33,6 +33,7 @@ Everyday commands:
   codex-config --socket PATH --token-file FILE --repo REPO (--codex-thread | --task TASK --run RUN) [--required]
   claude-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--tokens N]
   mcp --socket PATH --token-file FILE --repo REPO (--task TASK --run RUN | --codex-thread) [--tokens N]
+  claude-channel --directory ABS_PRIVATE_DIR (local MCP stdio channel bridge for one Claude process)
   agent [--token-file FILE] [--socket PATH] OPERATION < request.json
   agent [--token-file FILE] [--socket PATH] evidence --file PATH --source LABEL [--repo REPO] [--shareable] [--request-id UUID]
   capture-evidence --file PATH --source LABEL [--repo REPO] [--shareable] [--request-id UUID]

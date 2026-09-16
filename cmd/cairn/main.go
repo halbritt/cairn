@@ -55,6 +55,17 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "claude-channel" {
+		err := serveClaudeChannel(ctx, os.Args[2:])
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cairn claude-channel: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	data, err := run(ctx, os.Args[1:], os.Stdin)
 	if text, ok := data.(commandHelp); ok && err == nil {
 		if _, err := fmt.Fprint(os.Stdout, text); err != nil {

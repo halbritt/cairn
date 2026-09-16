@@ -56,8 +56,17 @@ and confirmed tool cleanup. These remain implementation and verification work.
 The bridge's separate live-registry check and atomic rename allow concurrent
 writers to replace each other. A review test using live owned child-process
 identities reproduced two successful writers for one parent. Atomic file
-replacement alone does not establish single-bridge ownership. The implementing
-agent received the failing test and a repair request; deployment awaits review.
+replacement alone does not establish single-bridge ownership. An initial repair
+used a temporary lock file whose age was treated as evidence of abandonment. A
+second regression showed that this displaced a still-active publisher.
+
+Publication now uses a per-parent OS file lock and atomic create-if-absent link.
+The lock inode remains in place; the kernel releases ownership when its descriptor
+closes or the process exits. Tests cover simultaneous publishers, an aged lock
+with a live owner, and acquisition after terminating an owned child process.
+The Go package passes its race-enabled tests, the CLI tests and `make check`.
+This fixes registry publication; the adapter admission and cancellation work
+above still prevents deployment of the complete feature.
 
 Selected local evidence is in `/tmp/cairn-claude-go-probe/verification.json` and
 `busy-requests.json`, with hook metadata under
