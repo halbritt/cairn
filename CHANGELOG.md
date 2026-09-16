@@ -18,6 +18,10 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-16
 
+- Codex wake workers recognize the installed CLI's subscription-limit diagnostics
+  and suspend the owning slot. Displayed reset times remain informational;
+  recovery stays explicit. Native loopback probes cover Plus/Pro variants.
+
 - **Collect explicit replies.** Migration 047 adds response groups with fixed
   recipients, correlation, deadlines and all/partial policies. Duplicate, late
   and unmatched replies remain observable; current result availability stays

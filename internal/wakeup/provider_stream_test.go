@@ -1,12 +1,61 @@
 package wakeup
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/halbritt/cairn/core"
 )
+
+func TestCodexSubscriptionLimitAndRecovery(t *testing.T) {
+	// Captured from the installed executable against a loopback provider returning
+	// usage_limit_reached. Plan and reset-time variants change the native wording.
+	messages := []string{
+		"You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Dec 31st, 2029 4:00 PM.",
+		"You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.",
+		"You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Dec 31st, 2029 4:00 PM.",
+		"You've hit your usage limit. To get more access now, send a request to your admin or try again at Dec 31st, 2029 4:00 PM.",
+		"You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at Dec 31st, 2029 4:00 PM.",
+	}
+	for _, message := range messages {
+		t.Run(message, func(t *testing.T) {
+			var observed []*core.ProviderFailure
+			s := newProviderStream("codex", func(f *core.ProviderFailure) error {
+				observed = append(observed, f)
+				return nil
+			})
+			write := func(value any) {
+				t.Helper()
+				data, err := json.Marshal(value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = s.Write(append(data, '\n')); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write(map[string]any{"type": "error", "message": message})
+			write(map[string]any{"type": "item.completed", "item": map[string]string{"type": "command_execution", "aggregated_output": message}})
+			if len(observed) != 0 {
+				t.Fatal("intermediate or tool text classified as quota")
+			}
+			write(map[string]any{"type": "turn.failed", "error": map[string]string{"message": message}})
+			if len(observed) != 1 || observed[0] == nil || observed[0].Harness != "codex" || observed[0].Source != "native-diagnostic" || observed[0].Code != "codex_usage_limit_reached" || observed[0].Kind != "quota" || observed[0].RetryAt != nil {
+				t.Fatalf("subscription quota not retained without guessing a reset instant: %+v", observed)
+			}
+			write(map[string]string{"type": "turn.completed"})
+			if len(observed) != 2 || observed[1] != nil {
+				t.Fatal("successful retry did not clear candidate")
+			}
+			write(map[string]any{"type": "turn.failed", "error": map[string]string{"message": "You've hit your usage limit. An unrecognized diagnostic."}})
+			if len(observed) != 2 {
+				t.Fatal("unrecognized wording classified")
+			}
+		})
+	}
+}
 
 func TestCodexStreamExactDiagnostics(t *testing.T) {
 	var observed []*core.ProviderFailure

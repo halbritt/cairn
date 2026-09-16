@@ -10,7 +10,7 @@ this adds no session credentials or local security boundary.
 
 | Harness | Recognized observation | Limits |
 | --- | --- | --- |
-| Codex | `exec --json` terminal `turn.failed`, with either of the two exact diagnostics below | Labelled `native-diagnostic`; other wording is unclassified. |
+| Codex | `exec --json` terminal `turn.failed`, with either of the two exact diagnostics below or the observed subscription-limit templates | Labelled `native-diagnostic`; other wording is unclassified. |
 | Claude Code | `system.api_retry` with `error_status:429` and `error:"rate_limit"` | Labelled `native-event`; requires a retry event. A later different retry failure, successful assistant message or successful result clears the candidate. |
 | OpenCode | JSON `error` containing `APIError.data.statusCode` 429 or 402 | Labelled `native-event`; 429 means rate limit, 402 means billing. |
 | Hermes | Native `api_request_error` hook with classifier reason `rate_limit` or `billing` | Labelled `native-hook`; subsequent successful `post_api_request` or a different error clears the candidate. Unverified billing classifications are excluded. |
@@ -25,8 +25,15 @@ exceeded retry limit, last status: 429 Too Many Requests
 
 These are harness observations, not proof of the provider's remaining capacity.
 Unknown diagnostics, authentication failures, server overload and tool errors
-remain ordinary process outcomes. Codex subscription-limit wording outside the
-two exact strings is not classified. `available` permits admission; it does not
+remain ordinary process outcomes. Codex 0.154.0 subscription-limit templates
+start with `You've hit your usage limit.` and give one of four observed next
+steps: upgrade to Pro and purchase credits, purchase credits, contact the team
+admin, or upgrade to Plus. The parser requires the full known next-step wording
+followed by `try again later.` or a bounded displayed `try again at ...` time.
+It retains `codex_usage_limit_reached` with kind `quota`; the human-formatted
+reset time is not converted into `retry_at` because it omits an unambiguous
+timezone. Intermediate `error` events and tool/model text do not classify.
+Successful completion clears the candidate. `available` permits admission; it does not
 certify provider capacity. Parser coverage must be revisited when native versions
 change. Claude can exit zero after an API error; process exit alone is not used
 to classify it or complete the delivery.
@@ -71,4 +78,7 @@ Parser tests cover tool-output isolation, retry recovery, later server errors,
 chunk boundaries, oversized lines and persistence failures. The pool runtime
 probe exercises the real API/systemd path and retained quota rows through
 backup/restore. Its `--hermes` option uses the installed native binary and a local
-HTTP 429 provider. See [verification](verification/provider-failures-2026-09-16.md).
+HTTP 429 provider. Its `--codex` option uses isolated Codex homes and a loopback
+`usage_limit_reached` provider for Plus/Pro variants, including native session
+association and slot suspension. No real account is charged or exhausted.
+See [verification](verification/provider-failures-2026-09-16.md).

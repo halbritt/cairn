@@ -1,0 +1,328 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-codex-subscription-limits-2026-09-16",
+  "question": "Which native terminal provider errors may suspend a worker account without treating tool text or recovered retries as quota failures?",
+  "scope": [
+    "Recognize observed Codex subscription-limit terminal diagnostics",
+    "Verify native error to durable slot suspension under existing failure policy"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Accepted coordination v1 implementation/deployment goal",
+    "authorized_scope": [
+      "Close provider failure coverage using observed installed-native interfaces"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-provider-coverage-authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner authorized implementation and deployment of coordination v1 under existing trusted host. Milestone4 requires independent account failure reporting; existing native Codex account limit was documented but not classified. Scope is parser and verification; no credentials, schema changes or provider purchase.",
+      "provenance": [
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:01:45.862233+00:00",
+          "content_sha256": "387dbc35d9de554886f1bc9ada863b7fac9c47ae8b99efb8f2c490a884ab9406"
+        },
+        {
+          "locator": "docs/verification/agent-wakeups-2026-09-15.md",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:01:45.862233+00:00",
+          "content_sha256": "e258715274121e3cdc3fdff248f7075cbe799b0a01bad3cc0b4b4b275f6df2b1"
+        }
+      ],
+      "satisfies": [
+        "explicit task authority",
+        "decision owner",
+        "task scope and authority statement",
+        "user instruction and authority",
+        "accepted desired behavior and semantic authority"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-provider-coverage-contract",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Existing worker quota observations suspend only the owning slot, retain holds and require explicit recovery. Unknown errors stay ordinary process failures. No raw diagnostic or human display-time inference enters provider metadata. Disposable runtime probes and bounded native tests verify the extension.",
+      "provenance": [
+        {
+          "locator": "AGENTS.md",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:01:45.862233+00:00",
+          "content_sha256": "c27e830a649a2bbc1a84d97ca28cb8c9bcdf1bf11ec02705f6da9cef41a96504"
+        },
+        {
+          "locator": "docs/provider-failures.md",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:01:45.862233+00:00",
+          "content_sha256": "6a93124781d0fb54a7ea6ebe4afce50fe7457ae674263e69a38f34e04196816f"
+        },
+        {
+          "locator": "core/agent_wake_failure.go",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:01:45.862233+00:00",
+          "content_sha256": "03108266a76334265594df5703aaef8a14a83fc10224a4cc33826c6980ebc714"
+        },
+        {
+          "locator": "go.mod",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:01:45.862233+00:00",
+          "content_sha256": "ba43e503a3bb15f07b23aa9430349d379cf8a8d9ff53381e42778fb7356e0b3a"
+        },
+        {
+          "locator": "Makefile",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:01:45.862233+00:00",
+          "content_sha256": "11a9b33c9331ef6f81cca240607e5afd421c405ea923deeb2c0b39602fc4690e"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "repository contract",
+        "target repository and task scope",
+        "repository instructions from root through target path",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "caller recovery needs",
+        "operation and caller contract",
+        "product correctness and availability policy",
+        "language and repository convention"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-provider-coverage-source",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Codex terminal turn.failed reaches known native-diagnostic classifier; four observed plan templates accept later or bounded displayed reset text. Intermediate/tool events do not classify, success or other terminal failure clears candidates. Existing callback writes selected observation atomically before report; persistence errors propagate. No exported API or schema change; supervisor cleanup and transactional account suspension remain existing owners.",
+      "provenance": [
+        {
+          "locator": "internal/wakeup/provider_stream.go",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:02:27.145120+00:00",
+          "content_sha256": "730fae0281cbf2d36f02d5dd8ced9917a872620319b34667d946994eaee15245"
+        },
+        {
+          "locator": "internal/wakeup/provider_observation.go",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:02:27.145120+00:00",
+          "content_sha256": "b658b9c732bb6abaedb0f6b52ae6c647bddfa63489f71e7d1b628b0de2efcbea"
+        },
+        {
+          "locator": "internal/wakeup/wakeup.go",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:02:27.145120+00:00",
+          "content_sha256": "042696dc5bcaab2087e73d21efd9f5636e48c2cb202822d4393a39b3fef0392c"
+        }
+      ],
+      "satisfies": [
+        "cleanup obligations",
+        "side effects and idempotency",
+        "current source, configuration, and relevant runtime state",
+        "callee contract",
+        "caller recovery behavior",
+        "current Go version and repository convention"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-provider-coverage-tests",
+      "evidence_class": "evidence-tests",
+      "summary": "Installed Codex0.154.0 loopback429 probes emitted subscription-limit diagnostics for Plus/Pro/team/free and missing reset time; workspace-member unknown type fell back to existing exact429. New regression failed before parser change, then wakeup -race passed. Final real API/systemd pool probe used distinct Plus/Pro fixtures and verified native session association, retained quota and slot suspension plus explicit recovery and restart. make test passed Go and109Python tests; make check passed. Initial runtime wait30s raced retained30s admission backoff; corrected bounded90s wait includes admission+execution and finalrun passed.",
+      "provenance": [
+        {
+          "locator": "internal/wakeup/provider_stream_test.go",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:02:27.145120+00:00",
+          "content_sha256": "07aca4ac7683cc7ec317f9c070419a3340d2cc076cb231abd4296fc7f71f3bda"
+        },
+        {
+          "locator": "scripts/check_codex_provider.py",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:02:27.145120+00:00",
+          "content_sha256": "f84769f93cd91762820cb123505721fd0ee5f900d732067b0ff2d6d33774d862"
+        },
+        {
+          "locator": "scripts/check_worker_pools.py",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:02:27.145120+00:00",
+          "content_sha256": "cc3fb4e804ad061c70bf9c257f0b48f793458f68a727dba56b72400fa14f79fe"
+        },
+        {
+          "locator": "/tmp/cairn-codex-limit-cases.log",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:02:27.145120+00:00",
+          "content_sha256": "a1ca5da7c1c98835777d561084d220e362dcc9d55a43823017eb606866dea7c4"
+        },
+        {
+          "locator": "/tmp/cairn-codex-limit-red.log",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:02:27.145120+00:00",
+          "content_sha256": "4732ea3a2ea0339c66b78668398f505b382d308ec0f3a7964fdaeb2e9ce4471b"
+        },
+        {
+          "locator": "/tmp/cairn-codex-limit-green.log",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:02:27.145120+00:00",
+          "content_sha256": "63ac689725c2ccc03ba68e6eaaf550f36ecf4dd1d7070084d7d7e294bd2407d2"
+        },
+        {
+          "locator": "/tmp/cairn-codex-quota-runtime-final.log",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:02:27.145120+00:00",
+          "content_sha256": "55a469b71d1010b5ce0f3f12fddbb46b00f29cba5e1e1dead3c37eeda57aa8a1"
+        },
+        {
+          "locator": "/tmp/cairn-provider-coverage-tests.log",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:02:27.145120+00:00",
+          "content_sha256": "5b2a30db9d9e6242dc4262333085873986583b169056e43ff128a90e13f6278a"
+        },
+        {
+          "locator": "/tmp/cairn-provider-coverage-check-final.log",
+          "method": "Inspected current source or collected successful probe/test result",
+          "observed_at": "2026-09-16T10:02:27.145120+00:00",
+          "content_sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+        }
+      ],
+      "satisfies": [
+        "reversibility and verification",
+        "behavior tests",
+        "cleanup and failure tests",
+        "tests, characterization, probes, or explicit residual risk",
+        "checkpoint verification"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "native-diagnostics",
+      "type": "observation",
+      "text": "Installed Codex0.154.0 emits plan-specific subscription-limit templates from loopback usage_limit_reached responses. Native Plus/Pro runs suspend their owning slot through the real supervisor and API.",
+      "evidence": [
+        "cairn-provider-coverage-tests"
+      ]
+    },
+    {
+      "id": "selected-policy",
+      "type": "decision",
+      "text": "Classify known terminal templates as quota while preserving unknown failures, explicit recovery and cleanup. Do not derive retry instants from localized display text.",
+      "owner": "repository owner via delegated implementation",
+      "authority": "Accepted coordination v1 goal",
+      "depends_on": [
+        "native-diagnostics"
+      ],
+      "evidence": [
+        "cairn-provider-coverage-contract",
+        "cairn-provider-coverage-source"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Recognize observed terminal templates in the existing bounded stream parser",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-provider-coverage-tests",
+        "cairn-provider-coverage-source"
+      ]
+    },
+    {
+      "option": "Leave subscription-limit failures unclassified",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-provider-coverage-authority",
+        "cairn-provider-coverage-tests"
+      ]
+    },
+    {
+      "option": "Match arbitrary stderr or tool text for quota keywords",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-provider-coverage-contract",
+        "cairn-provider-coverage-tests"
+      ]
+    }
+  ],
+  "source_locators": [
+    "packet:pkt-879f059a56816fdd",
+    "sha256:879f059a56816fddf653dfedd481a7a95cb2442e80fa6188a326ae9912903d10",
+    "release:d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "docs/plans/agent-coordination-v1.md",
+    "docs/verification/agent-wakeups-2026-09-15.md",
+    "AGENTS.md",
+    "docs/provider-failures.md",
+    "core/agent_wake_failure.go",
+    "go.mod",
+    "Makefile",
+    "internal/wakeup/provider_stream.go",
+    "internal/wakeup/provider_observation.go",
+    "internal/wakeup/wakeup.go",
+    "internal/wakeup/provider_stream_test.go",
+    "scripts/check_codex_provider.py",
+    "scripts/check_worker_pools.py",
+    "/tmp/cairn-codex-limit-cases.log",
+    "/tmp/cairn-codex-limit-red.log",
+    "/tmp/cairn-codex-limit-green.log",
+    "/tmp/cairn-codex-quota-runtime-final.log",
+    "/tmp/cairn-provider-coverage-tests.log",
+    "/tmp/cairn-provider-coverage-check-final.log"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Regression fails before change and package race tests pass after",
+    "Installed Codex loopback Plus/Pro fixtures retain session association, failure and slot suspension",
+    "Full unit suite and static checks pass"
+  ],
+  "reopening_conditions": [
+    "Native diagnostic templates or event envelopes change",
+    "A verified Agy quota discriminator becomes available"
+  ],
+  "residual_risk": [
+    "Known diagnostic templates are a bounded native observation, not universal future wording coverage.",
+    "No current provider capacity, real account exhaustion or full-v1 acceptance claim.",
+    "No new store/schema contract; earlier database and restore tests remain evidence for unchanged durable failure storage.",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: go-consumer-owned-interfaces / Go method-set and import-direction compatibility",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: go-consumer-owned-interfaces / current consumer call sets and ownership",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: go-consumer-owned-interfaces / current consumer inventory",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: go-consumer-owned-interfaces / observed substitution, volatility, or cross-boundary pressure",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: go-interface-nil-semantics / caller nil checks and method use",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: go-interface-nil-semantics / documented absence semantics",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: go-interface-nil-semantics / dynamic type and dynamic value at the return",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: implementation-placement-by-ownership / accepted dependency direction",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: implementation-placement-by-ownership / behavior contract and ownership evidence",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: implementation-placement-by-ownership / data and policy ownership",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: implementation-placement-by-ownership / existing interfaces and callers",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: implementation-placement-by-ownership / recurring change evidence when available",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: implementation-placement-by-ownership / relevant invariants",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: implementation-repository-language-conformance / CI and build matrix",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: implementation-repository-language-conformance / adjacent code",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: implementation-repository-language-conformance / formatter and static-tool configuration",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: implementation-repository-language-conformance / repository version and dependency contract",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-evidence-before-intervention / a bounded decision question",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-evidence-before-intervention / alternatives including no change where viable",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-evidence-before-intervention / claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-evidence-before-intervention / evidence connecting the proposed action to the condition",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-information-hiding / actual caller needs",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-information-hiding / caller needs and decision owner",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-information-hiding / decision owner and volatility",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-information-hiding / leaked knowledge or coordinated change",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-information-hiding / material cost/failure semantics callers require",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-local-reasoning / knowledge and navigation required by callers/maintainers",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-local-reasoning / representative change or use scenario",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-local-reasoning / representative change scenario",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-local-reasoning / state, invariant, and dependency ownership",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-no-change-option / actual current cost/risk or absence within a stated interval",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-no-change-option / expected future change from accepted plans",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-no-change-option / intervention cost and uncertainty",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-no-change-option / latent security, safety, data, durability, and compatibility check",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-no-change-option / proc-decide-leave-code-alone",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-preserve-behavior-by-default / preservation matrix and consumers",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-preserve-behavior-by-default / proc-establish-preservation-boundaries",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-separate-semantic-structural-change / change-type classification",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-separate-semantic-structural-change / per-edit change classification",
+    "Nonmaterial to the bounded observed-error classification change; no new interface, refactoring, optimization or universal preservation claim: universal-separate-semantic-structural-change / preservation boundary and semantic authority"
+  ]
+}

@@ -38,7 +38,7 @@ def load_native_fixture():
     return None
 
 
-def check(binary, root, opencode=None, hermes=None):
+def check(binary, root, opencode=None, hermes=None, codex=None):
     assert os.environ.get("CAIRN_TEST_DATABASE_URL"), "CAIRN_TEST_DATABASE_URL required"
     assert os.environ["CAIRN_DATABASE_URL"] == os.environ["CAIRN_TEST_DATABASE_URL"], (
         "CAIRN_DATABASE_URL must be identical to CAIRN_TEST_DATABASE_URL"
@@ -295,6 +295,29 @@ subprocess.run(wake["completion"],input="Selected worker pool fixture result",te
         else:
             report.append("native harness gap: --opencode was not provided; probe executed with generic worker fixture")
 
+        if codex:
+            from check_codex_provider import CodexQuotaFixture
+            config['worker']['harness'] = 'codex'
+            for plan in ('plus', 'pro'):
+                with CodexQuotaFixture(root / ('codex-quota-' + plan), codex, dict(
+                    cairn=binary, socket=config['socket'], token_file=config['agent_token'],
+                    repo=repo, binding='probe-worker'), plan=plan) as fixture:
+                    native_quota = publish('NATIVE-CODEX-QUOTA-' + plan, harness='codex')
+                    start(fixture.command)
+                    wait_for(lambda: status(native_quota)['deliveries'] and status(native_quota)['deliveries'][0]['state'] == 'failed', 90)
+                    wait_for(lambda: not active())
+                    stop()
+                    attempt = next(w for w in call('wake-attempts', {})['attempts'] if w['delivery']['event']['event_id'] == native_quota['event_id'])
+                    assert fixture.requests, 'Codex did not reach loopback provider'
+                    assert attempt.get('session'), ('Codex native session missing', attempt)
+                    assert attempt['provider_failure']['code'] == 'codex_usage_limit_reached', attempt
+                    assert attempt['provider_failure']['source'] == 'native-diagnostic', attempt
+                    slot = next(w for w in call('worker-list', {})['workers'] if w['consumer'] == 'pool-probe/agent')
+                    assert slot['health'] == 'unavailable', slot
+                    call('worker-health', dict(request_id=str(uuid.uuid4()), supervisor_id=slot['supervisor_id'],
+                        expected_revision=slot['revision'], health='available', reason='Explicit fixture recovery after verified Codex subscription limit'))
+            report.append('installed Codex Plus/Pro subscription-limit events retain native session and suspend the owning slot')
+
         # Exercise the stream -> local observation -> report -> durable admission
         # path with selected synthetic native envelopes, without a provider call.
         config['worker']['harness'] = 'codex'
@@ -302,7 +325,9 @@ subprocess.run(wake["completion"],input="Selected worker pool fixture result",te
         failed_worker.write_text('import json\nprint(json.dumps({"type":"turn.failed","error":{"message":"Quota exceeded. Check your plan and billing details."}}),flush=True)\n')
         quota_event = publish('QUOTA-FAILURE-FIXTURE',harness='codex')
         start(['/usr/bin/python3',str(failed_worker)])
-        wait_for(lambda: status(quota_event)['deliveries'] and status(quota_event)['deliveries'][0]['state']=='failed')
+        # A preceding native failure retains the slot's 30-second launch backoff
+        # even after explicit health recovery; include admission and execution.
+        wait_for(lambda: status(quota_event)['deliveries'] and status(quota_event)['deliveries'][0]['state']=='failed', 90)
         wait_for(lambda:not active())
         quota_attempt = next(w for w in call('wake-attempts',{})['attempts'] if w['delivery']['event']['event_id']==quota_event['event_id'])
         assert quota_attempt['provider_failure']['kind']=='quota',quota_attempt
@@ -364,5 +389,6 @@ if __name__ == "__main__":
     parser.add_argument("directory", type=Path, help="Directory for probe execution and state")
     parser.add_argument("--opencode", help="Optional path to opencode executable")
     parser.add_argument("--hermes", help="Optional path to Hermes executable for native quota probe")
+    parser.add_argument("--codex", help="Optional path to Codex executable for native subscription quota probe")
     args = parser.parse_args()
-    check(args.binary, args.directory, opencode=args.opencode, hermes=args.hermes)
+    check(args.binary, args.directory, opencode=args.opencode, hermes=args.hermes, codex=args.codex)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/halbritt/cairn/core"
 )
@@ -176,7 +177,7 @@ func (s *providerStream) parseCodex(raw []byte) error {
 		return nil
 	}
 
-	// Classify ONLY terminal turn.failed exact known diagnostic strings.
+	// Classify only terminal turn.failed with observed native diagnostics.
 	if line.Type != "turn.failed" || line.Error == nil {
 		if line.Type == "turn.completed" && s.current != nil {
 			return s.notify(nil)
@@ -201,8 +202,30 @@ func (s *providerStream) parseCodex(raw []byte) error {
 			Status:  429,
 		})
 	default:
+		if codexSubscriptionLimit(line.Error.Message) {
+			return s.notify(&core.ProviderFailure{
+				Harness: "codex", Source: "native-diagnostic", Kind: "quota", Code: "codex_usage_limit_reached",
+			})
+		}
 		return s.notify(nil)
 	}
+}
+
+// These plan-specific templates were observed from the installed Codex binary
+// receiving usage_limit_reached. Its localized display time is deliberately not
+// converted into retry_at; a human-formatted date lacks an unambiguous timezone.
+func codexSubscriptionLimit(message string) bool {
+	for _, prefix := range []string{
+		"You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again ",
+		"You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again ",
+		"You've hit your usage limit. To get more access now, send a request to your admin or try again ",
+		"You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again ",
+	} {
+		if suffix, ok := strings.CutPrefix(message, prefix); ok {
+			return suffix == "later." || (strings.HasPrefix(suffix, "at ") && len(suffix) > len("at .") && len(suffix) < 128 && strings.HasSuffix(suffix, ".") && !strings.ContainsAny(suffix, "\r\n"))
+		}
+	}
+	return false
 }
 
 type claudeLine struct {
