@@ -12,16 +12,18 @@ import (
 // Wake attempts coordinate a host supervisor. Their labels are reports, not
 // execution attestation; a linked runner receipt holds process observations.
 type WakeAttempt struct {
-	WorkerID     string           `json:"worker_id,omitempty"`
-	ID           string           `json:"attempt_id"`
-	State        string           `json:"state"`
-	CreatedAt    time.Time        `json:"created_at"`
-	FinishedAt   *time.Time       `json:"finished_at,omitempty"`
-	ReceiptID    string           `json:"receipt_id,omitempty"`
-	ProcessState string           `json:"process_state,omitempty"`
-	Reason       string           `json:"reason,omitempty"`
-	Session      *AgentSessionRef `json:"session,omitempty"`
-	Delivery     AgentDelivery    `json:"delivery"`
+	ProviderFailure   *ProviderFailure `json:"provider_failure,omitempty"`
+	ProviderFailureAt *time.Time       `json:"provider_failure_at,omitempty"`
+	WorkerID          string           `json:"worker_id,omitempty"`
+	ID                string           `json:"attempt_id"`
+	State             string           `json:"state"`
+	CreatedAt         time.Time        `json:"created_at"`
+	FinishedAt        *time.Time       `json:"finished_at,omitempty"`
+	ReceiptID         string           `json:"receipt_id,omitempty"`
+	ProcessState      string           `json:"process_state,omitempty"`
+	Reason            string           `json:"reason,omitempty"`
+	Session           *AgentSessionRef `json:"session,omitempty"`
+	Delivery          AgentDelivery    `json:"delivery"`
 }
 type WakeResult struct {
 	Attempt *WakeAttempt `json:"attempt"`
@@ -44,13 +46,14 @@ type WakePage struct {
 	NextAfter string        `json:"next_after,omitempty"`
 }
 type WakeChangeRequest struct {
-	RequestID    string           `json:"request_id"`
-	AttemptID    string           `json:"attempt_id"`
-	Operation    string           `json:"operation"`
-	ReceiptID    string           `json:"receipt_id,omitempty"`
-	ProcessState string           `json:"process_state,omitempty"`
-	Reason       string           `json:"reason,omitempty"`
-	Session      *AgentSessionRef `json:"session,omitempty"`
+	ProviderFailure *ProviderFailure `json:"provider_failure,omitempty"`
+	RequestID       string           `json:"request_id"`
+	AttemptID       string           `json:"attempt_id"`
+	Operation       string           `json:"operation"`
+	ReceiptID       string           `json:"receipt_id,omitempty"`
+	ProcessState    string           `json:"process_state,omitempty"`
+	Reason          string           `json:"reason,omitempty"`
+	Session         *AgentSessionRef `json:"session,omitempty"`
 }
 
 const wakeHold = `NOT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id AND w.finished_at IS NULL)`
@@ -59,7 +62,7 @@ func (s *Store) readWake(ctx context.Context, tx pgx.Tx, id string, dest Destina
 	var w WakeAttempt
 	var delivery, lease string
 	var agentID, executionID *string
-	err := tx.QueryRow(ctx, `SELECT attempt_id::text,delivery_id::text,lease_id::text,state,created_at,finished_at,COALESCE(receipt_id::text,''),process_state,reason,agent_id::text,execution_id::text,COALESCE(worker_id::text,'') FROM cairn.agent_wake_attempt WHERE attempt_id=$1 AND consumer=$2`, id, s.channel.Principal).Scan(&w.ID, &delivery, &lease, &w.State, &w.CreatedAt, &w.FinishedAt, &w.ReceiptID, &w.ProcessState, &w.Reason, &agentID, &executionID, &w.WorkerID)
+	err := tx.QueryRow(ctx, `SELECT attempt_id::text,delivery_id::text,lease_id::text,state,created_at,finished_at,COALESCE(receipt_id::text,''),process_state,reason,agent_id::text,execution_id::text,COALESCE(worker_id::text,''),provider_failure,provider_failure_at FROM cairn.agent_wake_attempt WHERE attempt_id=$1 AND consumer=$2`, id, s.channel.Principal).Scan(&w.ID, &delivery, &lease, &w.State, &w.CreatedAt, &w.FinishedAt, &w.ReceiptID, &w.ProcessState, &w.Reason, &agentID, &executionID, &w.WorkerID, &w.ProviderFailure, &w.ProviderFailureAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return w, failure("NOT_FOUND", "wake attempt not found")
 	}
@@ -267,6 +270,14 @@ func (s *Store) ChangeWake(ctx context.Context, req WakeChangeRequest, dest Dest
 	} else if req.Session != nil {
 		return WakeAttempt{}, failure("INVALID_REQUEST", "session is only valid for the session operation")
 	}
+	if req.ProviderFailure != nil {
+		if (req.Operation != "report" && req.Operation != "finish") || req.ProcessState == "prelaunch_failed" {
+			return WakeAttempt{}, failure("INVALID_REQUEST", "provider failure belongs only to an executed worker report or confirmed finish")
+		}
+		if err := req.ProviderFailure.Validate(); err != nil {
+			return WakeAttempt{}, err
+		}
+	}
 	if len(req.Reason) > 128 || (req.Reason != "" && !eventName.MatchString(req.Reason)) {
 		return WakeAttempt{}, failure("INVALID_REQUEST", "bounded wake reason code required")
 	}
@@ -322,10 +333,16 @@ func (s *Store) ChangeWake(ctx context.Context, req WakeChangeRequest, dest Dest
 			if w.State != "running" || w.ProcessState != "" {
 				return w, failure("VERSION_CONFLICT", "wake report already recorded or worker not running")
 			}
+			if err = s.recordWakeProviderFailure(ctx, tx, w, req.ProviderFailure); err != nil {
+				return w, err
+			}
 			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_wake_attempt SET process_state=$2,reason=$3 WHERE attempt_id=$1`, w.ID, req.ProcessState, req.Reason); err != nil {
 				return w, err
 			}
 		case "finish":
+			if err = s.recordWakeProviderFailure(ctx, tx, w, req.ProviderFailure); err != nil {
+				return w, err
+			}
 			// This reports host-side confirmation that the entire unit has stopped.
 			// Lease validity is deliberately not required for crash reconciliation.
 			d, err := s.ownedDelivery(ctx, tx, w.Delivery.DeliveryID, dest)

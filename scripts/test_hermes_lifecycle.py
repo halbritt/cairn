@@ -146,8 +146,11 @@ class HermesBoundaryTests(unittest.TestCase):
         self.assertLess(time.monotonic()-started,3)
         self.assertTrue(pidfile.exists())
         status = Path('/proc') / pidfile.read_text() / 'stat'
-        if status.exists():
-            self.assertEqual(status.read_text().split()[2], 'Z', 'selector child is still running')
+        try:
+            state = status.read_text().split()[2]
+        except FileNotFoundError:
+            return  # The killed child has already been reaped.
+        self.assertEqual(state, 'Z', 'selector child is still running')
 
     def test_profile_guard_prevents_same_session_label_crossing_homes(self):
         self.provider.context='private profile context'

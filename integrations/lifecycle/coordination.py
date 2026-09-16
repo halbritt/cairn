@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import shlex
@@ -77,7 +78,8 @@ def normalize(config, event, event_name=None):
     if not isinstance(model, str) or len(model) > 256:
         raise CoordinationError("INVALID_HOST", "invalid observed model")
     phases = {"SessionStart": "start", "UserPromptSubmit": "busy", "PreInvocation": "busy",
-              "TurnStart": "busy", "Stop": "idle", "TurnEnd": "idle", "SessionEnd": "leave"}
+              "TurnStart": "busy", "Stop": "idle", "TurnEnd": "idle", "SessionEnd": "leave",
+              "ProviderObservation": "provider"}
     if name not in phases:
         raise CoordinationError("INVALID_HOST", "unsupported coordination hook event")
     phase = phases[name]
@@ -189,6 +191,31 @@ def associate_wake(config, state, path, observation):
     context = {k: v for k, v in wake.items() if k != 'path'}
     context.update(session=ref, native_session_id=observation['native_id'], session_inbox=state['agent']['inbox'])
     write_state(Path(wake['path']), context)
+
+
+def observe_provider(config, wake, event):
+    if not wake or not wake.get('provider_observation_file'):
+        return  # Interactive sessions and older supervisors have no worker health.
+    target = Path(wake['provider_observation_file'])
+    expected = Path(wake['path']).parent / (wake['attempt_id'] + '.provider.json')
+    if target != expected or wake.get('provider_harness') != config['harness']:
+        raise CoordinationError('INVALID_HOST', 'provider observation differs from wake binding')
+    failure = event.get('provider_failure')
+    if failure is not None:
+        if (not isinstance(failure, dict) or set(failure) != {'harness', 'source', 'kind', 'code', 'status'} or
+                failure['harness'] != config['harness'] or failure['source'] != 'native-hook' or
+                failure['kind'] not in ('quota', 'rate_limit', 'billing') or
+                not isinstance(failure['code'], str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', failure['code']) or
+                type(failure['status']) is not int or failure['status'] != 0 and not 100 <= failure['status'] <= 599):
+            raise CoordinationError('INVALID_HOST', 'invalid selected provider failure')
+    write_state(target, dict(schema='cairn.provider-observation/1', attempt_id=wake['attempt_id'],
+                            harness=config['harness'], failure=failure))
+    # Retain the directory entry as well as the atomic file contents.
+    fd = os.open(str(target.parent), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def state_path(config, native):
@@ -355,6 +382,9 @@ def handle(config, event, event_name=None):
            for name in (".cairn-no-memory", ".cairn-no-coordination")):
         return {}
     process = owner_process(config, event)
+    if observation['phase'] == 'provider':
+        observe_provider(config, wake, event)
+        return {}
     path = state_path(config, observation["native_id"])
     with session_lock(path):
         state = json.loads(path.read_text()) if path.exists() else {}

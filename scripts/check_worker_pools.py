@@ -38,7 +38,7 @@ def load_native_fixture():
     return None
 
 
-def check(binary, root, opencode=None):
+def check(binary, root, opencode=None, hermes=None):
     assert os.environ.get("CAIRN_TEST_DATABASE_URL"), "CAIRN_TEST_DATABASE_URL required"
     assert os.environ["CAIRN_DATABASE_URL"] == os.environ["CAIRN_TEST_DATABASE_URL"], (
         "CAIRN_DATABASE_URL must be identical to CAIRN_TEST_DATABASE_URL"
@@ -295,6 +295,58 @@ subprocess.run(wake["completion"],input="Selected worker pool fixture result",te
         else:
             report.append("native harness gap: --opencode was not provided; probe executed with generic worker fixture")
 
+        # Exercise the stream -> local observation -> report -> durable admission
+        # path with selected synthetic native envelopes, without a provider call.
+        config['worker']['harness'] = 'codex'
+        failed_worker = root/'quota.py'
+        failed_worker.write_text('import json\nprint(json.dumps({"type":"turn.failed","error":{"message":"Quota exceeded. Check your plan and billing details."}}),flush=True)\n')
+        quota_event = publish('QUOTA-FAILURE-FIXTURE',harness='codex')
+        start(['/usr/bin/python3',str(failed_worker)])
+        wait_for(lambda: status(quota_event)['deliveries'] and status(quota_event)['deliveries'][0]['state']=='failed')
+        wait_for(lambda:not active())
+        quota_attempt = next(w for w in call('wake-attempts',{})['attempts'] if w['delivery']['event']['event_id']==quota_event['event_id'])
+        assert quota_attempt['provider_failure']['kind']=='quota',quota_attempt
+        assert quota_attempt['provider_failure']['source']=='native-diagnostic',quota_attempt
+        assert quota_attempt['provider_failure_at']
+        slot = next(w for w in call('worker-list',{})['workers'] if w['consumer']=='pool-probe/agent')
+        assert slot['health']=='unavailable',slot
+        stop()
+        start(command)
+        wait_for(lambda:next(w for w in call('worker-list',{})['workers'] if w['consumer']=='pool-probe/agent')['supervisor_id']!=slot['supervisor_id'])
+        slot = next(w for w in call('worker-list',{})['workers'] if w['consumer']=='pool-probe/agent')
+        assert slot['health']=='unavailable',slot
+        blocked = publish('QUOTA-BLOCKED-FIXTURE',harness='codex')
+        time.sleep(3)
+        assert status(blocked)['pool']['state']=='queued'
+        assert not active()
+        stop()
+        report.append('synthetic Codex terminal quota suspends only its slot, persists after restart and prevents subsequent admission')
+
+        if hermes:
+            call('worker-health',dict(request_id=str(uuid.uuid4()),supervisor_id=slot['supervisor_id'],
+                expected_revision=slot['revision'],health='available',reason='Explicit fixture recovery for independent Hermes probe'))
+            config['worker']['harness']='hermes'
+            native_fixture_cls=load_native_fixture()
+            assert native_fixture_cls is not None
+            with native_fixture_cls(root/'hermes-quota',hermes,'hermes',dict(cairn=binary,
+                socket=config['socket'],token_file=config['agent_token'],repo=repo,harness='hermes',
+                binding='probe-worker',process_names=[]),failure_status=429) as fixture:
+                native_quota=publish('NATIVE-HERMES-QUOTA-FIXTURE',harness='hermes')
+                start(fixture.command)
+                wait_for(lambda:status(native_quota)['deliveries'] and status(native_quota)['deliveries'][0]['state']=='failed',120)
+                wait_for(lambda:not active())
+                stop()
+                attempt=next(w for w in call('wake-attempts',{})['attempts'] if w['delivery']['event']['event_id']==native_quota['event_id'])
+                assert fixture.observed, 'Hermes did not reach loopback provider'
+                assert attempt.get('session'), ('Hermes native session missing',attempt)
+                assert attempt['provider_failure']['harness']=='hermes',attempt
+                assert attempt['provider_failure']['source']=='native-hook',attempt
+                assert attempt['provider_failure']['status']==429,attempt
+                slot=next(w for w in call('worker-list',{})['workers'] if w['consumer']=='pool-probe/agent')
+                assert slot['health']=='unavailable',slot
+                assert status(blocked)['pool']['state']=='queued'
+                report.append('installed Hermes native API-error hook retains loopback 429 and suspends its binding')
+
         print(json.dumps(dict(checks=report), indent=2))
     finally:
         if supervisor:
@@ -311,5 +363,6 @@ if __name__ == "__main__":
     parser.add_argument("binary", help="Path to cairn executable")
     parser.add_argument("directory", type=Path, help="Directory for probe execution and state")
     parser.add_argument("--opencode", help="Optional path to opencode executable")
+    parser.add_argument("--hermes", help="Optional path to Hermes executable for native quota probe")
     args = parser.parse_args()
-    check(args.binary, args.directory, opencode=args.opencode)
+    check(args.binary, args.directory, opencode=args.opencode, hermes=args.hermes)

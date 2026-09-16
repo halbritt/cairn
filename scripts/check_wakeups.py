@@ -215,7 +215,7 @@ subprocess.run(wake["completion"],input="Selected fixture result",text=True,chec
 
 
 class NativeFixture:
-    def __init__(self, root, binary, kind, coordination):
+    def __init__(self, root, binary, kind, coordination, failure_status=None):
         root.mkdir()
         self.observed = []
         self.completed_tool = False
@@ -235,6 +235,15 @@ class NativeFixture:
                 request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 tools = [t["function"]["name"] for t in request.get("tools", [])]
                 fixture.observed.append(dict(path=self.path, tools=tools, stream=request.get("stream")))
+                if failure_status is not None:
+                    body = json.dumps(dict(error=dict(type='rate_limit_error',code='rate_limit_exceeded',message='Synthetic rate limit'))).encode()
+                    self.send_response(failure_status)
+                    self.send_header('Content-Type','application/json')
+                    self.send_header('Content-Length',str(len(body)))
+                    self.send_header('Retry-After','0')
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 content = "Fixture finished."
                 tool_calls = None
                 # Only issue the tool once; later model turns receive its result.

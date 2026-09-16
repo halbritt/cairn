@@ -207,7 +207,7 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 		if err = manager.stop(ctx, w.ID); err != nil {
 			return err
 		}
-		if _, err = change(ctx, client, w.ID, "finish", "", "supervisor_restarted"); err != nil {
+		if _, err = changeWithProviderObservation(ctx, client, c, w.ID, "finish", "", "supervisor_restarted"); err != nil {
 			return err
 		}
 	}
@@ -281,7 +281,7 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 		if ctx.Err() != nil {
 			reason = "supervisor_stopped"
 		}
-		finished, finishErr := change(cleanup, client, w.ID, "finish", "", reason)
+		finished, finishErr := changeWithProviderObservation(cleanup, client, c, w.ID, "finish", "", reason)
 		cancel()
 		if finishErr != nil {
 			return errors.Join(launchErr, finishErr)
@@ -380,7 +380,7 @@ func Worker(ctx context.Context, path, id string) error {
 	}
 	finish, done := context.WithTimeout(context.Background(), 10*time.Second)
 	defer done()
-	_, reportErr := change(finish, agent, id, "report", state, reason)
+	_, reportErr := changeWithProviderObservation(finish, agent, c, id, "report", state, reason)
 	return errors.Join(workErr, heartbeatErr, reportErr)
 }
 
@@ -440,11 +440,19 @@ END REQUEST SOURCE`, w.Delivery.Event.EventID, w.Delivery.Event.Ref.RecordID, w.
 	defer stderr.Close()
 	scope := core.Scope{Repo: c.Repo, TaskID: "wake:" + w.Delivery.Event.EventID, RunID: w.ID}
 	command := append([]string{"/usr/bin/env", "CAIRN_WAKE_CONTEXT=" + contextPath, "CAIRN_LIFECYCLE_CHILD=1"}, c.Command...)
-	return runner.Run(ctx, linkedRunner{observer, agent, w.ID}, runner.Request{
+	harness := ""
+	if c.Worker != nil {
+		harness = c.Worker.Harness
+	}
+	provider := newProviderStream(harness, func(failure *core.ProviderFailure) error {
+		return writeProviderObservation(c, w.ID, failure)
+	})
+	result, runErr := runner.Run(ctx, linkedRunner{observer, agent, w.ID}, runner.Request{
 		Compile:     core.CompileRequest{RequestID: w.ID, Scope: scope, Query: "Cairn automated agent request", Purpose: "context", AvailableTokens: 8000},
 		Destination: core.Destination{Name: "hosted"}, Command: command, Directory: c.Directory, Carrier: "argv", Prompt: prompt, Timeout: time.Duration(c.TimeoutSeconds) * time.Second,
 		BindingID: c.Name + "/wake-v1", TaskClass: "agent-request", CapabilityID: "fresh-worker", ArtifactDirectory: c.StateDirectory,
-	}, &boundedLog{file: stdout, remaining: 4 * 1024 * 1024}, &boundedLog{file: stderr, remaining: 4 * 1024 * 1024})
+	}, io.MultiWriter(provider, &boundedLog{file: stdout, remaining: 4 * 1024 * 1024}), &boundedLog{file: stderr, remaining: 4 * 1024 * 1024})
+	return result, errors.Join(runErr, provider.Close())
 }
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 

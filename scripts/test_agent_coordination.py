@@ -15,6 +15,39 @@ spec.loader.exec_module(coordination)
 
 
 class CoordinationNormalization(unittest.TestCase):
+    def test_provider_observation_survives_api_outage_without_registering(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            attempt = 'a424caa4-1a11-4c59-b8db-d05d926fc4aa'
+            path = root / (attempt + '.context.json')
+            target = root / (attempt + '.provider.json')
+            config = dict(cairn='/absent/cairn', socket='/absent/api.sock', token_file='/absent/token',
+                repo='fixture', harness='hermes', binding='hermes', state_dir=str(root/'state'))
+            wake = dict(schema='cairn.wake-context/1', native_registration=True, attempt_id=attempt,
+                collection='fixture', socket=config['socket'], token_file=config['token_file'],
+                native_session_id='native-one', provider_harness='hermes', provider_observation_file=str(target))
+            path.write_text(json.dumps(wake))
+            config_path = root/'config.json'
+            config_path.write_text(json.dumps(config))
+            failure = dict(harness='hermes', source='native-hook', kind='rate_limit', code='rate_limit', status=429)
+            def invoke(native, value):
+                return subprocess.run([sys.executable, str(ROOT/'integrations/lifecycle/coordination.py'),
+                    'hook', '--config', str(config_path)], input=json.dumps(dict(session_id=native,
+                    cwd=directory, host_pid=os.getpid(), hook_event_name='ProviderObservation',
+                    provider_failure=value)), env=dict(os.environ, CAIRN_WAKE_CONTEXT=str(path),
+                    CAIRN_COORDINATION_DISABLED='0'), text=True, capture_output=True, timeout=5)
+            result = invoke('native-one',failure)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(json.loads(target.read_text())['failure'],failure)
+            self.assertEqual(target.stat().st_mode & 0o777,0o600)
+            self.assertFalse((root/'state').exists())
+            result = invoke('child-session',None)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(json.loads(target.read_text())['failure'],failure)
+            result = invoke('native-one',None)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertIsNone(json.loads(target.read_text())['failure'])
+
     def test_malformed_wake_context_is_reported_without_traceback_or_registration(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

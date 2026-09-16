@@ -85,9 +85,10 @@ revision, `health:"available"`, a selected reason and no retry time.
 An unfinished or failed worker imposes a minimum 30-second delay on subsequent
 launches from that binding. Existing bounded never-started retries also keep
 their delivery delay and maximum attempt count. Health changes and their reasons
-are retained by the ordinary mutation ledger. Generic process failures are not
-classified as quota failures from stderr keywords. Automatic ingestion of
-structured provider quota observations remains a separate implementation step.
+are retained by the ordinary mutation ledger. Migration 042 adds selected native
+provider observations; see [provider failures](provider-failures.md) for the
+supported envelopes and gaps. Generic process failures and tool output do not
+change account health.
 
 ## Failure boundaries
 

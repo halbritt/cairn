@@ -1,0 +1,273 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "cairn-provider-failure-2026-09-16",
+  "question": "How should observed native provider quota failures atomically suspend the owning worker binding without confusing generic model output with provider errors or blocking restore cleanup?",
+  "scope": [
+    "Atomic failure retention and owning-slot suspension",
+    "Selected native provider observation and confirmed cleanup"
+  ],
+  "status": "verified",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Accepted coordination v1 goal, deployment authorization and trusted-host correction",
+    "authorized_scope": [
+      "Implement and deploy account failure observation within the accepted v1 plan"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-quota-contract",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Accepted v1 plan requires independent account quota health, durable holds and no uncertain replay. Existing recovery contract keeps availability distinct from presence and requires revision-checked explicit recovery.",
+      "provenance": [
+        {
+          "locator": "docs/plans/agent-coordination-v1.md",
+          "method": "Read current source or selected test output",
+          "observed_at": "2026-09-16T06:59:03.441469+00:00",
+          "content_sha256": "d48e92f8cb5ff7948545c9716f96c19cd605a625dd3aa6e9a13805b31aa306d6"
+        },
+        {
+          "locator": "docs/worker-pools.md",
+          "method": "Read current source or selected test output",
+          "observed_at": "2026-09-16T06:59:03.441469+00:00",
+          "content_sha256": "f5d05cfd1df4e5499e103d27593af866edebc798a94625e8e8659589579848ef"
+        },
+        {
+          "locator": "docs/agent-wakeups.md",
+          "method": "Read current source or selected test output",
+          "observed_at": "2026-09-16T06:59:03.441469+00:00",
+          "content_sha256": "8ae307572a23eb09809dea96e7d2e031a939e9e846e983ae52814a5a5f279ea3"
+        }
+      ],
+      "satisfies": [
+        "repository contract",
+        "operation and caller contract",
+        "product correctness and availability policy",
+        "caller recovery needs",
+        "cleanup obligations",
+        "side effects and idempotency"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-quota-atomicity",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "ChangeWake mutation owns failure report and locked owning-slot health update in one transaction. Exact mutation retries return cached results; identical finish cannot repeat health update. Finish remains valid for retained attempts after restore. Supervisor persists selected local observation before API report, replays it after stopping the unit, and surfaces read/write failures.",
+      "provenance": [
+        {
+          "locator": "core/agent_wake_failure.go",
+          "method": "Read current source or selected test output",
+          "observed_at": "2026-09-16T06:59:03.441469+00:00",
+          "content_sha256": "03108266a76334265594df5703aaef8a14a83fc10224a4cc33826c6980ebc714"
+        },
+        {
+          "locator": "core/agent_wakeups.go",
+          "method": "Read current source or selected test output",
+          "observed_at": "2026-09-16T06:59:03.441469+00:00",
+          "content_sha256": "ca5f7f7ca794bbd0f76df20a08feceae4037e8e7e80e8a959f92ccbd2ff91ab8"
+        },
+        {
+          "locator": "internal/wakeup/provider_observation.go",
+          "method": "Read current source or selected test output",
+          "observed_at": "2026-09-16T06:59:03.441469+00:00",
+          "content_sha256": "b658b9c732bb6abaedb0f6b52ae6c647bddfa63489f71e7d1b628b0de2efcbea"
+        },
+        {
+          "locator": "internal/wakeup/wakeup.go",
+          "method": "Read current source or selected test output",
+          "observed_at": "2026-09-16T06:59:03.441469+00:00",
+          "content_sha256": "c5eac7ba15d3086965c02526fc862f03d3ee95b148be4c7a00d12980fa85f2e8"
+        },
+        {
+          "locator": "go.mod",
+          "method": "Read Go 1.25 repository version and existing errors.Join transaction conventions",
+          "content_sha256": "ba43e503a3bb15f07b23aa9430349d379cf8a8d9ff53381e42778fb7356e0b3a"
+        }
+      ],
+      "satisfies": [
+        "complete read-modify-write scope",
+        "mechanism guaranteeing atomicity at that scope",
+        "named observer and invariant",
+        "observer and indivisible invariant",
+        "callee contract",
+        "caller recovery behavior",
+        "operation contract",
+        "language and repository convention",
+        "current Go version and repository convention"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-quota-runtime",
+      "evidence_class": "evidence-tests",
+      "summary": "Disposable real API/systemd probe passed synthetic Codex quota suspension and restart retention; installed Hermes loopback429 invoked native hook and persisted failure/health. Python109 tests and go vet/gofmt passed. Store regression tests observed independent slots, rollback, exact retries, explicit recovery and restore cleanup. No claim about Agy or every provider diagnostic.",
+      "provenance": [
+        {
+          "locator": "core/agent_wake_failure_test.go",
+          "method": "Read current source or selected test output",
+          "observed_at": "2026-09-16T06:59:03.441469+00:00",
+          "content_sha256": "bdd78df9cac5c465fce17464b6db293bf1df19309cfe7ea430efbba3f9a9d237"
+        },
+        {
+          "locator": "/tmp/cairn-provider-runtime-01.log",
+          "method": "Read current source or selected test output",
+          "observed_at": "2026-09-16T06:59:03.441469+00:00",
+          "content_sha256": "a576ec975a56edd5ac43e0b2ad1162ee416891ec063d25e2592d41616ef1564c"
+        },
+        {
+          "locator": "/tmp/cairn-provider-python2.log",
+          "method": "Read current source or selected test output",
+          "observed_at": "2026-09-16T06:59:03.441469+00:00",
+          "content_sha256": "faa08cb160fa553dccf3fd8135468c4d6dfbba90b6f39b32c5a756efb65b90a4"
+        },
+        {
+          "locator": "/tmp/cairn-provider-check.log",
+          "method": "Read current source or selected test output",
+          "observed_at": "2026-09-16T06:59:03.441469+00:00",
+          "content_sha256": "c125b482e3e8a7c1fb3d4b9438dc0136a208cc6930fad3d8775a40fd8c8c3029"
+        }
+      ],
+      "satisfies": [
+        "cleanup and failure tests",
+        "behavior tests",
+        "reversibility and verification"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "cairn-quota-authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner requested deployment and implementation of coordination v1, retained trusted-host model, separate Codex/Claude accounts, Hermes deployment/restart, and continued use of the supplied reviewer. This bounded step implements account failure observation; full-v1 acceptance remains open.",
+      "provenance": [
+        {
+          "locator": "docs/plans/agent-coordination-v1.md#4-deliver-to-the-addressed-session-or-to-a-fresh-work-pool",
+          "method": "Compare saved accepted plan with current owner authorization and active goal"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "decision owner",
+        "explicit task authority",
+        "task scope and authority statement",
+        "user instruction and authority",
+        "target repository and task scope"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "atomic-health",
+      "type": "observation",
+      "text": "One ChangeWake transaction records the selected failure and updates only its owning slot. Injected write failure rolls both back.",
+      "evidence": [
+        "cairn-quota-atomicity",
+        "cairn-quota-runtime"
+      ]
+    },
+    {
+      "id": "recovery-policy",
+      "type": "decision",
+      "text": "Persist selected observations locally before reporting. Preserve explicit recovery and permit retained-attempt cleanup after restore. Classify only supported native envelopes; expose unsupported cases.",
+      "depends_on": [
+        "atomic-health"
+      ],
+      "owner": "repository owner via delegated implementation",
+      "authority": "Accepted coordination v1 implementation goal"
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Persist selected observation and update owning health with the wake report",
+      "disposition": "selected",
+      "evidence": [
+        "cairn-quota-contract",
+        "cairn-quota-atomicity",
+        "cairn-quota-runtime"
+      ]
+    },
+    {
+      "option": "Infer account failure from generic stderr or tool text",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-quota-contract"
+      ]
+    },
+    {
+      "option": "Retain manual health changes only",
+      "disposition": "rejected",
+      "evidence": [
+        "cairn-quota-authority"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/provider-failures.md",
+    "core/agent_wake_failure.go",
+    "core/agent_wakeups.go",
+    "internal/wakeup/provider_observation.go",
+    "core/agent_wake_failure_test.go"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Disposable PostgreSQL integration and static checks",
+    "Real supervisor/installed Hermes loopback failure",
+    "Backup/restore retains populated provider fields"
+  ],
+  "reopening_conditions": [
+    "Native error envelopes change",
+    "A supported envelope falsely suspends an account",
+    "Agy supplies a verified observation surface"
+  ],
+  "residual_risk": [
+    "Packet pkt-3f6094b8a32ddae6; SHA256 3f6094b8a32ddae66852db7c45e8472e5002fd4a727f3afcfc16483248b138de; doctrine doctrine-f6bbb5196a3f8bf9; release d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+    "Selected concepts: implementation-atomicity-scope and implementation-explicit-failure-policy; material obligations satisfied for this bounded decision.",
+    "Agy and unrecognized provider wording remain unclassified. This is not full v1 acceptance or measured provider capacity.",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: go-consumer-owned-interfaces / Go method-set and import-direction compatibility",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: go-consumer-owned-interfaces / current consumer call sets and ownership",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: go-consumer-owned-interfaces / current consumer inventory",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: go-consumer-owned-interfaces / observed substitution, volatility, or cross-boundary pressure",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: implementation-error-surface-reduction / aggregation and observability design",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: implementation-error-surface-reduction / caller decisions that depend on the failure",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: implementation-error-surface-reduction / containment guarantee",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: implementation-error-surface-reduction / natural total semantics",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: implementation-normal-result-or-exception / cleanup behavior",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: implementation-normal-result-or-exception / frequency and caller handling",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: implementation-normal-result-or-exception / language mechanism semantics",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: implementation-normal-result-or-exception / repository convention",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: implementation-repository-language-conformance / CI and build matrix",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: implementation-repository-language-conformance / adjacent code",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: implementation-repository-language-conformance / formatter and static-tool configuration",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: implementation-repository-language-conformance / repository version and dependency contract",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: refactoring-change-type-classification / accepted contracts",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: refactoring-change-type-classification / current behavior",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: refactoring-change-type-classification / proposed semantic delta",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: refactoring-change-type-classification / request and acceptance criteria",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: refactoring-change-type-classification / request and authority inventory",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-evidence-before-intervention / a bounded decision question",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-evidence-before-intervention / alternatives including no change where viable",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-evidence-before-intervention / claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-evidence-before-intervention / evidence connecting the proposed action to the condition",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-local-reasoning / knowledge and navigation required by callers/maintainers",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-local-reasoning / representative change or use scenario",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-local-reasoning / representative change scenario",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-local-reasoning / state, invariant, and dependency ownership",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-no-change-option / actual current cost/risk or absence within a stated interval",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-no-change-option / expected future change from accepted plans",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-no-change-option / intervention cost and uncertainty",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-no-change-option / latent security, safety, data, durability, and compatibility check",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-no-change-option / proc-decide-leave-code-alone",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-preserve-behavior-by-default / accepted desired behavior and semantic authority",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-preserve-behavior-by-default / preservation matrix and consumers",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-preserve-behavior-by-default / proc-establish-preservation-boundaries",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-preserve-behavior-by-default / tests, characterization, probes, or explicit residual risk",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-repository-contract-precedence / accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-repository-contract-precedence / current source, configuration, and relevant runtime state",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-repository-contract-precedence / repository instructions from root through target path",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-separate-semantic-structural-change / change-type classification",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-separate-semantic-structural-change / checkpoint verification",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-separate-semantic-structural-change / per-edit change classification",
+    "Nonmaterial to the selected atomicity/failure-policy claim; no broader redesign, performance or refactoring claim: universal-separate-semantic-structural-change / preservation boundary and semantic authority"
+  ]
+}
