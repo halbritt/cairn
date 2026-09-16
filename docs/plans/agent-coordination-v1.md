@@ -230,6 +230,13 @@ Acceptance: simultaneous schedulers, restart after an uncertain commit, missed
 ticks, clock/timezone transitions, expiry while pending, cancellation during
 launch and cancellation/completion races all run on disposable databases.
 
+Implementation checkpoint 2026-09-16: migrations 045–046 ship one-shot
+publication, admission expiry, managed deadlines and cancellation with retained
+holds. See [scheduling](../verification/event-scheduling-2026-09-16.md) and
+[request-control verification](../verification/request-controls-2026-09-16.md).
+Running native/manual interruption remains unavailable until a per-request host
+stop contract exists. These checkpoints do not establish full v1 acceptance.
+
 ### 7. Policy, fairness and bounded coordination
 
 Add configured publish/subscribe/instance-registration policy before supporting

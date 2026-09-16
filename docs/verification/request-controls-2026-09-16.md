@@ -71,4 +71,29 @@ obligations are classified in the receipt; they do not support broader claims.
 
 ## Deployment
 
-Deployment verification will be recorded after the final checks and clean build.
+Clean CLI/API `26c60ce09d15b7b61dfeecd82d11d505f2a3dec7` was pushed and
+installed with migration 046, SHA-256
+`6f509667293b27c99d0e16110833f0bc0deb276b961232888c89497124792d67`.
+Pre-upgrade backup `cairn-20260916T090942-364063.dump` passed catalog, digest
+and archive-read verification; its production data was not restored for tests.
+The previous binary is retained as `cairn-before-request-controls`.
+
+There were zero unfinished wake/native attempts before stopping the scheduler,
+presence, seven workers and Hermes gateway, then the API. After migration and
+atomic binary replacement, the API reported the expected clean revision before
+consumers restarted. Existing semantic-worker arguments were retained. All eleven
+services were active/running with zero restarts; all seven slots reported
+online/available. That is admission state, not evidence of provider capacity.
+The installed operator command returned the new closed-pool section. No
+production test requests or schedules were created.
+
+Skillpack `ce1bbdeb796e06a4fc7cebffdea1e61415f0b83b` was pushed and installed.
+The Cairn event-reference SHA-256 was
+`612a8cc11f86c9ac386b9853b201421874b43b8e58a5a9845dda9b52770de364`
+across both Codex homes, both Claude homes, OpenCode, Gemini/Agy and Hermes.
+Validation reported 49 skills, zero failures and two pre-existing warnings.
+Selected installation evidence is `/tmp/cairn-controls-install-verification.json`.
+
+The final independent read-only review reported no concrete blocking finding.
+That review does not certify zero leaks or all possible process interleavings;
+the tested claims above define this result. Full coordination v1 remains open.

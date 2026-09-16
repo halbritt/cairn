@@ -1,15 +1,16 @@
 # Implementation status — 2026-09-16
 
-Current installed CLI/API: clean `215f942`, migration 045. Native session identity,
+Current installed CLI/API: clean `26c60ce`, migration 046. Native session identity,
 presence, exact metadata resolution, turn-boundary inbox delivery, worker pools,
-selected provider-failure handling, watch and operator recovery are deployed.
-[One-shot scheduling](event-scheduling.md) now retains due times, occurrence IDs,
-misfires and cancellation before publication. The scheduler, API, presence, seven
-workers and Hermes gateway were verified running after rollout. See
-[the scheduling report](verification/event-scheduling-2026-09-16.md).
+selected provider-failure handling, watch, operator recovery and one-shot
+scheduling are deployed. [Request controls](request-controls.md) now add admission
+expiry, managed task deadlines and cancellation while retaining process holds.
+See [the request-control report](verification/request-controls-2026-09-16.md).
+The API, scheduler, presence, seven workers and Hermes gateway were verified
+running after rollout.
 
-Admission TTL, task deadlines, running cancellation, response groups and the
-remaining native routing/coverage checks in the [v1 plan](plans/agent-coordination-v1.md)
+Native interactive hard stops, response groups and the remaining live routing
+and provider-coverage checks in the [v1 plan](plans/agent-coordination-v1.md)
 remain open. The snapshots below retain earlier implementation states.
 
 ## Historical implementation snapshots
