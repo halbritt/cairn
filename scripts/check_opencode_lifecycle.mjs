@@ -76,5 +76,20 @@ try {
   assert.equal(count(await (async () => { const output = { messages: [owner()] }; await disabled["experimental.chat.messages.transform"]({}, output); return output })()), 0)
   assert.equal((await readFile(log, "utf8")).trim().split("\n").length, before)
   await disabled.dispose()
-  console.log("OpenCode lifecycle retains request context, isolates child/compaction traffic, filters capture, flushes idle work and honors opt-out")
+  await rm(join(root, ".cairn-no-memory"))
+  const warnings = []
+  const origWarn = console.warn
+  console.warn = msg => warnings.push(msg)
+  try {
+    await writeFile(join(root, "engine-err.mjs"), 'console.error("Cairn lifecycle: specific error diagnostic; use native tools or an explicit handoff."); process.exit(1);')
+    await writeFile(join(root, "cairn-lifecycle.json"), JSON.stringify({ python: process.execPath, script: join(root, "engine-err.mjs"), engine_config: "unused" }))
+    const errPlugin = (await import(pathToFileURL(join(root, "plugins/lifecycle.ts")) + "?v=err")).default
+    const errHooks = await errPlugin({ client, directory: root, worktree: root })
+    await errHooks["experimental.chat.messages.transform"]({}, { messages: [owner("err", "ses_err")] })
+    await errHooks.dispose()
+    assert(warnings.some(w => w.includes("specific error diagnostic")), "warn must preserve stderr diagnostics")
+  } finally {
+    console.warn = origWarn
+  }
+  console.log("OpenCode lifecycle retains request context, isolates child/compaction traffic, filters capture, flushes idle work, reports diagnostics and honors opt-out")
 } finally { await rm(root, { recursive: true, force: true }) }

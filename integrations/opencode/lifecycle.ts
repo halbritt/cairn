@@ -23,13 +23,19 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
     }
     return false
   }
-  function warn() { console.warn("Cairn lifecycle: operation failed; use native memory tools or an explicit handoff.") }
+  function warn(error?: any) {
+    if (error?.message && error.message.startsWith("Cairn lifecycle: ")) {
+      console.warn(error.message)
+    } else {
+      console.warn("Cairn lifecycle: operation failed" + (error?.message ? ": " + error.message : "") + "; use native memory tools or an explicit handoff.")
+    }
+  }
   async function invoke(id: string, event: object): Promise<any> {
     if (await disabled()) return {}
     return new Promise((resolve, reject) => {
       const child = execFile(config.python, [config.script, "--config", config.engine_config],
-        { encoding: "utf8", timeout: 150000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
-          if (error) return reject(new Error("Cairn lifecycle command failed"))
+        { encoding: "utf8", timeout: 150000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+          if (error) return reject(new Error(stderr?.trim() || error.message || "Cairn lifecycle command failed"))
           try { resolve(JSON.parse(stdout)) } catch { reject(new Error("Invalid lifecycle response")) }
         })
       child.stdin?.on("error", reject)

@@ -520,6 +520,8 @@ class CheckpointCurrentnessTests(unittest.TestCase):
             self.assertEqual(call.call_args.kwargs['payload']['expected_version'], 7)
             with self.assertRaises(hook.HookError):
                 hook.selected_writes(memory, event, selection, None, [])
+            expanded = hook.selected_writes(memory, event, dict(selection, checkpoint='x'*3500), old, [])
+            self.assertEqual(len(expanded), 1)
             with self.assertRaises(hook.HookError):
                 hook.selected_writes(memory, event, dict(selection, checkpoint='x'*(hook.CHECKPOINT_BYTES+1)), old, [])
 

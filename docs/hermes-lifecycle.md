@@ -164,7 +164,7 @@ do not inject an unverified optional candidate. Required context from both
 searches and any delivered body share the same 12000-byte ceiling. Other
 harnesses retain lexical defaults unless configured with `semantic_fallback`.
 
-Current checkpoint replacements are limited to 3000 UTF-8 bytes. The selector
+Current checkpoint replacements are limited to 4500 UTF-8 bytes. The selector
 removes completed next steps and keeps open work and relevant constraints. An
 explicit report that the entire supplied workstream is finished updates the
 same record with `Status: complete` and a short result. An exit or courtesy
