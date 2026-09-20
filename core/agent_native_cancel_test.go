@@ -210,8 +210,10 @@ func TestNativeCancelAfterCompletionRefusedAndRecoverableAfterRestart(t *testing
 	_, err = op.CancelWork(ctx, CancelWorkRequest{RequestID: uuid.NewString(), Repo: attemptRepo(t, receiver, ref, attemptID, dest), DeliveryID: delivery, Reason: "Late operator decision after completion"})
 	requireCode(t, err, "VERSION_CONFLICT")
 
-	// Restart recovery: a fresh watcher incarnation observes the pending
-	// cancellation through the control read and finishes the durable cleanup.
+	// Same-execution recovery after an adapter crash: the durable rows keep
+	// the pending cancellation observable through the control read, and the
+	// same execution finishes cleanup. Replacement-execution reconciliation
+	// is a separate contract this does not claim.
 	op2, receiver2, _, ref2, attempt2, _ := nativeCancelFixture(t)
 	delivery2 := attemptDelivery(t, receiver2, ref2, attempt2, dest)
 	if _, err = op2.CancelWork(ctx, CancelWorkRequest{RequestID: uuid.NewString(), Repo: attemptRepo(t, receiver2, ref2, attempt2, dest), DeliveryID: delivery2, Reason: "Cancel before a simulated adapter restart"}); err != nil {

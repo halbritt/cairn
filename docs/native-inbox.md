@@ -42,11 +42,11 @@ that poll cannot change its delivery or turn, including after an API restart.
 Another turn cannot receive or finish the retained context. The context and
 operator review expose the selected `native_turn_id`; raw prompts are not stored.
 Other native routes retain their existing boundary behavior. A recorded turn
-ID pins delivery identity, and migration 049 adds the core cancellation
-contract: only attempts that attest exclusive single-request turn ownership
-can be cancelled, with completion fenced through the attempt and the hold
-released solely on confirmed cleanup evidence. No installed adapter attests
-exclusivity yet. See [request controls](request-controls.md).
+ID pins delivery identity only; it does NOT establish exclusive request
+ownership, and interactive cancellation remains operationally unsupported.
+The dormant migration 049 contract allows cancellation solely for attempts
+that attest exclusive single-request turn ownership, which no installed
+adapter demonstrates. See [request controls](request-controls.md).
 
 One unfinished native attempt owns the session inbox. A normal inbox consumer
 cannot claim another item while that hold exists. Fresh-worker claims reject

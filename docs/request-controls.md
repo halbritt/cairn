@@ -89,31 +89,31 @@ its stop command. Even when that command fails, the supervisor checks the final
 unit and cgroup state before deciding whether cleanup finished. A still-running
 unit or an unreadable final state retains the hold.
 
-## Native interactive cancellation (core contract)
+## Native interactive cancellation (core contract, pending)
 
-`work-cancel` on a delivery held by a native session attempt refuses with
-`UNSUPPORTED_CONTROL` unless that attempt explicitly attested exclusive
-single-request ownership of one pinned native turn (`turn_exclusive` with a
-`native_turn_id`, migration 049). No installed adapter attests exclusivity
-today: a joined Claude channel prompt shares the owner prompt id, and owner
-input can join an admitted Codex queue turn. Pinned-but-unproven 048-era
-bindings keep their delivery semantics and stay non-cancellable.
+Interactive native cancellation REMAINS UNSUPPORTED operationally. The core
+contract added by migration 049 is dormant: `work-cancel` on a native session
+attempt still refuses with `UNSUPPORTED_CONTROL` unless that attempt
+explicitly attested exclusive single-request ownership of one pinned native
+turn, and no installed adapter attests that today (a joined Claude channel
+prompt shares the owner prompt id; owner input can join an admitted Codex
+queue turn; no exclusive admission or host-observed revocation lifecycle has
+been demonstrated). All evidence for this contract is synthetic or
+core-level: disposable-database unit regressions and a real-API component
+check with fabricated native identities. No watcher integration exists.
 
-For an attested attempt, `work-cancel` records a durable pending cancellation
-and returns `native.state="cancel_pending"` with the exact agent, execution,
-attempt and pinned turn. The fence applies immediately: `complete`,
-`event-renew` and `event-retry` fail with `REQUEST_CANCELLED` until
-reconciliation. While pending, only `cancel_confirmed` reconciliation can
-release the hold, and only after a host reported a positive turn stop
-(`interrupted`/`ended`; `ambiguous` holds), every durably captured tool
-process terminal (`unavailable` means verified absent by a terminal scan),
-and a final schema-valid terminal scan observed the thread clear. A latched
-`capture_gap` records lost capture coverage for review and can never be
-erased by a later complete report. Host operations: `session-inbox-control`,
-`session-tool-capture`, `session-tool-stop`. Tool ownership is durable
-because historical item reads omit running tools; the adapter-side capture
-listener and native stop executor are a separate integration concern and are
-not part of this core change. Killing a shared gateway or interactive
+For a future attested attempt the contract is: `work-cancel` records an
+idempotent pending cancellation fencing complete/renew/retry with
+`REQUEST_CANCELLED`; only `cancel_confirmed` reconciliation releases the
+hold, after a positive turn stop (`interrupted`/`ended`; `ambiguous` holds),
+terminal captured tools and a final clear terminal scan. A clear scan is
+invalidated by the cancellation decision, every later capture, a real
+capture-loss transition and any host-observed owner join (which also revokes
+the exclusivity attestation one-way; a revoked attempt closes only via
+`exclusivity_revoked`). A latched `capture_gap` preserves lost coverage.
+Host operations: `session-inbox-control`, `session-tool-capture`,
+`session-tool-stop`. The adapter-side capture listener and native stop
+executor are separate future work. Killing a shared gateway or interactive
 process is never part of this contract.
 
 ## Sweep, review and recovery
