@@ -31,6 +31,14 @@ def wait_for(check, seconds=30):
     raise AssertionError("wakeup condition timed out")
 
 
+def process_exited_or_zombie(pid):
+    stat = Path(f"/proc/{pid}/stat")
+    try:
+        return ") Z " in stat.read_text()
+    except (FileNotFoundError, ProcessLookupError):
+        return True
+
+
 def check(binary, root, opencode=None, hermes=None, bindings=None):
     assert os.environ.get("CAIRN_TEST_DATABASE_URL")
     assert os.environ["CAIRN_DATABASE_URL"] == os.environ["CAIRN_TEST_DATABASE_URL"]
@@ -159,7 +167,7 @@ if wake.get("response_group"):
         assert Path(f"/proc/{child}").exists(), "fixture child did not survive supervisor crash"
         start(command)
         wait_for(lambda: status(event)["state"] == "failed")
-        wait_for(lambda: not Path(f"/proc/{child}").exists() or ") Z " in Path(f"/proc/{child}/stat").read_text())
+        wait_for(lambda: process_exited_or_zombie(child))
         assert len([w for w in call("wake-attempts", {})["attempts"] if w["delivery"]["event"]["event_id"] == event["event_id"]]) == 1
         report.append("supervisor SIGKILL, restarted cgroup cleanup, no uncertain replay")
         (root / "started").unlink()
@@ -171,7 +179,7 @@ if wake.get("response_group"):
         # while durable reconciliation waits for the API to return.
         api.terminate()
         api.wait(timeout=15)
-        wait_for(lambda: not Path(f"/proc/{child}").exists() or ") Z " in Path(f"/proc/{child}/stat").read_text(), 40)
+        wait_for(lambda: process_exited_or_zombie(child), 40)
         supervisor.wait(timeout=20)
         assert supervisor.returncode != 0
         supervisor = None

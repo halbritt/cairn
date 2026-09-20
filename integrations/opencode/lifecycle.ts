@@ -97,7 +97,10 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           if (context) {
             const start = context.indexOf('{"selected":')
             const view = JSON.parse(context.slice(start))
-            const ids = (view.index ?? []).map((e: any) => e.record_id)
+            const ids = [...new Set<string>([
+              ...(view.index ?? []).map((e: any) => e.record_id),
+              ...(view.selected ?? []).map((e: any) => e.record.record_id),
+            ])]
             // Replace old versions, and keep one combined request budget.
             for (const [key, block] of state.blocks) if (block.ids.some(i => ids.includes(i))) state.blocks.delete(key)
             while (state.blocks.size && Buffer.byteLength(context) + [...state.blocks.values()].reduce((n, b) => n + Buffer.byteLength(b.text), 0) > budget)

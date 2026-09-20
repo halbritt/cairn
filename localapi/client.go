@@ -72,6 +72,9 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 	if operation == "" || strings.Trim(operation, "abcdefghijklmnopqrstuvwxyz-") != "" {
 		return &core.Error{Code: "INVALID_REQUEST", Message: "invalid API operation"}
 	}
+	if err := jsontext.CheckValue(request); err != nil {
+		return &core.Error{Code: "INVALID_REQUEST", Message: err.Error()}
+	}
 	body, err := json.Marshal(request)
 	if err != nil {
 		return err

@@ -3150,8 +3150,10 @@ is preserved.
 
 Source following `a9a4b1c` changes both semantic worker transports from a twenty-
 second deadline to a shared twenty-five-second budget. OpenCode remains at thirty
-seconds and the API client/server at thirty-five. Earlier cancellation, busy
-fallback, output bounds, group cleanup and thirty-second idle release remain.
+seconds, the API server request deadline at thirty seconds and the API client
+at thirty-five. These API values were already present at `a9a4b1c` and `9b888e1`.
+Earlier cancellation, busy fallback, output bounds, group cleanup and
+thirty-second idle release remain.
 The installed build is still `9b888e1` at this pre-deployment checkpoint.
 
 The current twenty-note corpus was retained through ordinary hosted retrieval:

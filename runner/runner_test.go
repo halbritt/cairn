@@ -94,6 +94,149 @@ func TestOutcomeSurvivesStoreFailure(t *testing.T) {
 		t.Fatalf("recovery report %+v %v", report, err)
 	}
 }
+func TestPendingWriteFailureStillAttemptsOutcome(t *testing.T) {
+	for _, failOutcome := range []bool{false, true} {
+		name := "committed"
+		if failOutcome {
+			name = "uncommitted"
+		}
+		t.Run(name, func(t *testing.T) {
+			s := runStore(t)
+			unavailable := errors.New("outcome store unavailable")
+			store := &pendingWriteStore{Store: s}
+			if failOutcome {
+				store.failure = unavailable
+			}
+			req := Request{Compile: core.CompileRequest{RequestID: uuid.NewString(), Scope: core.Scope{Repo: uuid.NewString(), TaskID: "task", RunID: "run"}, Purpose: "context", AvailableTokens: 32000}, Destination: core.Destination{Name: "local", AllowLocal: true}, Command: []string{"/bin/true"}, Carrier: "stdin", Timeout: time.Second, ArtifactDirectory: t.TempDir()}
+			store.root = req.ArtifactDirectory
+			var output bytes.Buffer
+			result, err := Run(context.Background(), store, req, &output, &output)
+			var pathErr *os.PathError
+			if !errors.As(err, &pathErr) || store.calls != 1 || result.ProcessState != "exited" {
+				t.Fatalf("lost write failure or skipped outcome: result=%+v calls=%d err=%v", result, store.calls, err)
+			}
+			if failOutcome {
+				if !errors.Is(err, unavailable) || result.OutcomeID != "" || !strings.Contains(err.Error(), "retry request unavailable") || strings.Contains(err.Error(), "retry request retained") {
+					t.Fatalf("false recovery availability: %+v %v", result, err)
+				}
+			} else if result.OutcomeID == "" {
+				t.Fatalf("reachable outcome not committed: %+v %v", result, err)
+			}
+			report, reportErr := s.Report(context.Background(), req.Compile.Scope.Repo)
+			want := 1
+			if failOutcome {
+				want = 0
+			}
+			if reportErr != nil || report.Outcomes != want {
+				t.Fatalf("durable outcome count: %+v %v", report, reportErr)
+			}
+		})
+	}
+}
+
+type pendingWriteStore struct {
+	Store
+	root    string
+	failure error
+	calls   int
+}
+
+func (s *pendingWriteStore) RecordDelivery(ctx context.Context, req core.DeliveryRequest) (core.Observation, error) {
+	observation, err := s.Store.RecordDelivery(ctx, req)
+	if err == nil && req.Assurance == "available" {
+		err = os.Mkdir(filepath.Join(s.root, req.ReceiptID, "outcome.pending.json"), 0700)
+	}
+	return observation, err
+}
+
+func (s *pendingWriteStore) RecordOutcome(ctx context.Context, req core.OutcomeRequest) (core.Observation, error) {
+	s.calls++
+	if s.failure != nil {
+		return core.Observation{}, s.failure
+	}
+	return s.Store.RecordOutcome(ctx, req)
+}
+
+func TestPrelaunchRefusalAndClaimUncertainty(t *testing.T) {
+	for _, scenario := range []string{"budget", "bind-invalid", "bind-started", "bind-transport", "claim-transport", "claim-committed", "claim-started"} {
+		t.Run(scenario, func(t *testing.T) {
+			s := runStore(t)
+			marker := filepath.Join(t.TempDir(), "started")
+			req := Request{Compile: core.CompileRequest{RequestID: uuid.NewString(), Scope: core.Scope{Repo: uuid.NewString(), TaskID: "task", RunID: "run"}, Purpose: "context", AvailableTokens: 32000}, Destination: core.Destination{Name: "local", AllowLocal: true}, Command: []string{"/bin/sh", "-c", `: > "$1"`, "fixture", marker}, Carrier: "stdin", Timeout: time.Second, ArtifactDirectory: t.TempDir()}
+			store := &launchBoundaryStore{Store: s, scenario: scenario}
+			want := "unknown"
+			if scenario == "budget" {
+				req.Carrier = "argv"
+				req.Prompt = strings.Repeat("x", MaxArgumentBytes)
+				want = "launch_failed"
+			} else if scenario == "bind-invalid" {
+				want = "launch_failed"
+			}
+			var output bytes.Buffer
+			result, err := Run(context.Background(), store, req, &output, &output)
+			if err == nil || result.ProcessState != want || result.ReceiptID == "" || result.OutcomeID != "" || store.outcomes != 0 {
+				t.Fatalf("incorrect boundary classification: %+v %v outcomes=%d", result, err, store.outcomes)
+			}
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("refused invocation launched: %v", err)
+			}
+			wantClaims := 0
+			if strings.HasPrefix(scenario, "claim-") {
+				wantClaims = 1
+			}
+			if store.claims != wantClaims {
+				t.Fatalf("unexpected claim calls: %d", store.claims)
+			}
+			if scenario == "claim-committed" {
+				result, err = Run(context.Background(), s, req, &output, &output)
+				if core.Code(err) != "RUN_ALREADY_STARTED" || result.ProcessState != "unknown" {
+					t.Fatalf("ambiguous claim reopened: %+v %v", result, err)
+				}
+				if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("retry launched: %v", err)
+				}
+			}
+		})
+	}
+}
+
+type launchBoundaryStore struct {
+	Store
+	scenario string
+	claims   int
+	outcomes int
+}
+
+func (s *launchBoundaryStore) BindRun(ctx context.Context, req core.RunBindingRequest) (core.Observation, error) {
+	switch s.scenario {
+	case "bind-invalid":
+		return core.Observation{}, &core.Error{Code: "INVALID_REQUEST", Message: "invalid binding"}
+	case "bind-started":
+		return core.Observation{}, &core.Error{Code: "RUN_ALREADY_STARTED", Message: "already claimed"}
+	case "bind-transport":
+		return core.Observation{}, errors.New("binding response lost")
+	}
+	return s.Store.BindRun(ctx, req)
+}
+
+func (s *launchBoundaryStore) ClaimRun(ctx context.Context, id string) error {
+	s.claims++
+	if s.scenario == "claim-committed" {
+		if err := s.Store.ClaimRun(ctx, id); err != nil {
+			return err
+		}
+	}
+	if s.scenario == "claim-started" {
+		return &core.Error{Code: "RUN_ALREADY_STARTED", Message: "already claimed"}
+	}
+	return errors.New("claim response lost")
+}
+
+func (s *launchBoundaryStore) RecordOutcome(ctx context.Context, req core.OutcomeRequest) (core.Observation, error) {
+	s.outcomes++
+	return s.Store.RecordOutcome(ctx, req)
+}
+
 func TestBootstrapBeforeLaunchAndObservedOutcome(t *testing.T) {
 	s := runStore(t)
 	repo := uuid.NewString()

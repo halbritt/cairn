@@ -70,6 +70,7 @@ class CairnProvider(MemoryProvider):
         self.compaction_attempted = False
         self.warning_callback = None
         self.last_dialogue = []
+        self.pending_dialogue = None
         self.capture_pending = False
         self.binding = None
         self.turn_capture = False
@@ -117,11 +118,18 @@ class CairnProvider(MemoryProvider):
         except (OSError, ValueError):
             logger.warning('Cairn status could not be stored; memory outcome is unavailable in /cairn status')
 
-    def capture_result(self, result):
+    def capture_result(self, result, dialogue=None):
+        attempted = self.last_dialogue if dialogue is None else dialogue
         self.capture_pending = result is None
+        self.pending_dialogue = list(attempted) if result is None else None
+        digest_source = self.pending_dialogue if self.pending_dialogue is not None else self.last_dialogue
         self.update_control(pending=self.capture_pending, session_id=self.session_id,
                             cwd=self.cwd(), platform=self.platform,
-                            pending_digest=dialogue_digest(self.last_dialogue))
+                            pending_digest=dialogue_digest(digest_source))
+
+    def control_digest(self):
+        record = read_control(self.home, self.control_key)
+        return record.get('pending_digest')
 
     def cwd(self):
         # The gateway uses per-task environment overrides; never another chat's cwd.
@@ -138,6 +146,7 @@ class CairnProvider(MemoryProvider):
     def discard_dialogue(self, disabled=True):
         self.context = ''
         self.last_dialogue = []
+        self.pending_dialogue = None
         self.capture_pending = False
         if disabled:
             self.update_control(pending=False, last_capture=dict(outcome='disabled', at=time.time()))
@@ -244,7 +253,9 @@ class CairnProvider(MemoryProvider):
                     self.discard_dialogue()
                     return {'cairn_retry': 'attempted'}
                 if self.capture_pending and self.last_dialogue:
-                    self.capture_result(self.invoke('SessionEnd', messages=self.last_dialogue))
+                    if dialogue_digest(self.pending_dialogue or self.last_dialogue) != self.control_digest():
+                        return
+                    self.capture_result(self.invoke('SessionEnd', messages=self.pending_dialogue or self.last_dialogue))
                     return {'cairn_retry': 'attempted'}
                 return
             if not self.active():

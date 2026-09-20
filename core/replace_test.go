@@ -174,6 +174,37 @@ func TestReplaceRacingFullEditKeepsOneWholeWinner(t *testing.T) {
 	}
 }
 
+func TestHostedReplaceRefusesLocalReplayAndForgottenNote(t *testing.T) {
+	ctx := context.Background()
+	op, root := testOperator(t)
+	draft := projectNote(uuid.NewString())
+	draft.Sensitivity, draft.Body = "local", "private passage"
+	note, err := op.Create(ctx, CreateRequest{uuid.NewString(), draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := "corrected"
+	req := ReplaceRequest{uuid.NewString(), note.RecordID, 1, draft.Scope.Repo, "private", &text}
+	if _, err := op.Replace(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	_, err = op.ReplaceForDestination(ctx, req, Destination{"hosted", false})
+	requireCode(t, err, "NOT_FOUND")
+	preview, err := op.PreviewDeletion(ctx, note.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = op.Forget(ctx, ForgetRequest{RequestID: uuid.NewString(), RecordID: note.RecordID, ExpectedVersion: 2, GrantID: root.ID, PreviewID: preview.PreviewID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{req.RequestID, uuid.NewString()} {
+		req.RequestID = id
+		_, err = op.ReplaceForDestination(ctx, req, Destination{"hosted", false})
+		requireCode(t, err, "NOT_FOUND")
+	}
+}
+
 func TestReplaceRefusesOtherRepositoriesAndPrivilegedRecords(t *testing.T) {
 	ctx := context.Background()
 	op, root := testOperator(t)

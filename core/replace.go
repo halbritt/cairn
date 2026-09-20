@@ -20,6 +20,17 @@ type ReplaceRequest struct {
 }
 
 func (s *Store) Replace(ctx context.Context, req ReplaceRequest) (Revision, error) {
+	return s.replace(ctx, req, Destination{Name: "local", AllowLocal: true})
+}
+
+func (s *Store) ReplaceForDestination(ctx context.Context, req ReplaceRequest, dest Destination) (Revision, error) {
+	if err := validEventDestination(dest); err != nil {
+		return Revision{}, err
+	}
+	return s.replace(ctx, req, dest)
+}
+
+func (s *Store) replace(ctx context.Context, req ReplaceRequest, dest Destination) (Revision, error) {
 	if err := validID(req.RecordID); err != nil {
 		return Revision{}, err
 	}
@@ -61,5 +72,15 @@ func (s *Store) Replace(ctx context.Context, req ReplaceRequest) (Revision, erro
 			return Revision{}, err
 		}
 		return Revision{record.RecordID, record.Version}, nil
+	}, func(tx pgx.Tx) error {
+		if dest.AllowLocal {
+			return nil
+		}
+		var sensitivity string
+		err := tx.QueryRow(ctx, `SELECT sensitivity FROM cairn.memory_record WHERE record_id=$1 FOR SHARE`, req.RecordID).Scan(&sensitivity)
+		if err == pgx.ErrNoRows || err == nil && sensitivity == "local" {
+			return failure("NOT_FOUND", "record not found")
+		}
+		return err
 	})
 }

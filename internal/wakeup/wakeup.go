@@ -2,6 +2,7 @@
 package wakeup
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -43,7 +44,14 @@ func ReadConfig(path string) (Config, error) {
 		return c, err
 	}
 	defer f.Close()
-	dec := json.NewDecoder(io.LimitReader(f, 32769))
+	data, err := io.ReadAll(io.LimitReader(f, 32769))
+	if err != nil {
+		return c, err
+	}
+	if len(data) > 32768 {
+		return c, errors.New("wake configuration exceeds maximum size of 32KB")
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err = dec.Decode(&c); err != nil {
 		return c, err
@@ -96,8 +104,8 @@ func (UnitManager) active(ctx context.Context, id string) (bool, error) {
 	check, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	output, err := exec.CommandContext(check, "systemctl", "--user", "show", unitName(id), "--property=LoadState", "--property=ActiveState", "--property=ControlGroup").Output()
-	if err != nil {
-		return false, fmt.Errorf("inspect worker unit: %w", err)
+	if check.Err() != nil {
+		return false, fmt.Errorf("inspect worker unit: %w", check.Err())
 	}
 	fields := map[string]string{}
 	for _, line := range strings.Split(string(output), "\n") {
@@ -106,8 +114,14 @@ func (UnitManager) active(ctx context.Context, id string) (bool, error) {
 			fields[key] = value
 		}
 	}
-	if fields["LoadState"] == "not-found" {
-		return false, nil
+	var exitErr *exec.ExitError
+	if err == nil || errors.As(err, &exitErr) {
+		if fields["LoadState"] == "not-found" {
+			return false, nil
+		}
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect worker unit: %w", err)
 	}
 	if group := fields["ControlGroup"]; group != "" {
 		events, readErr := os.ReadFile(filepath.Join("/sys/fs/cgroup", strings.TrimPrefix(group, "/"), "cgroup.events"))
@@ -391,18 +405,14 @@ func Worker(ctx context.Context, path, id string) error {
 	defer cancel()
 	heartbeatDone := make(chan error, 1)
 	go func() {
-		for pause(runCtx, 20*time.Second) {
-			renewal, finish := context.WithTimeout(runCtx, 10*time.Second)
+		err := renewLease(runCtx, 20*time.Second, func(renewal context.Context) error {
 			var d core.AgentDelivery
-			err := agent.Call(renewal, "event-renew", core.EventLeaseRequest{DeliveryID: w.Delivery.DeliveryID, LeaseID: w.Delivery.LeaseID, LeaseSeconds: 90}, &d)
-			finish()
-			if err != nil {
-				cancel()
-				heartbeatDone <- err
-				return
-			}
+			return agent.Call(renewal, "event-renew", core.EventLeaseRequest{DeliveryID: w.Delivery.DeliveryID, LeaseID: w.Delivery.LeaseID, LeaseSeconds: 90}, &d)
+		})
+		if err != nil {
+			cancel()
 		}
-		heartbeatDone <- nil
+		heartbeatDone <- err
 	}()
 	result, workErr := execute(runCtx, c, agent, observer, w)
 	cancel()
@@ -425,6 +435,21 @@ func Worker(ctx context.Context, path, id string) error {
 	defer done()
 	_, reportErr := changeWithProviderObservation(finish, agent, c, id, "report", state, reason)
 	return errors.Join(workErr, heartbeatErr, reportErr)
+}
+
+func renewLease(ctx context.Context, interval time.Duration, renew func(context.Context) error) error {
+	for pause(ctx, interval) {
+		renewal, finish := context.WithTimeout(ctx, 10*time.Second)
+		err := renew(renewal)
+		finish()
+		if errors.Is(err, context.Canceled) && errors.Is(ctx.Err(), context.Canceled) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func execute(ctx context.Context, c Config, agent, observer *localapi.Client, w core.WakeAttempt) (runner.Result, error) {

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -60,13 +61,31 @@ func Command(path string) (core.SemanticRanker, error) {
 		// Worker diagnostics may include note/query content. They are not API
 		// responses or persistent logs; the receipt retains fallback disposition.
 		command.Stderr = io.Discard
-		if err = command.Run(); err != nil {
-			return core.SemanticRankResult{}, fmt.Errorf("semantic worker failed: %w", err)
+		runErr := command.Run()
+		var cleanup error
+		if command.Process != nil {
+			cleanup = reapGroup(command.Process.Pid)
+		}
+		if runErr != nil {
+			return core.SemanticRankResult{}, errors.Join(fmt.Errorf("semantic worker failed: %w", runErr), cleanup)
+		}
+		if cleanup != nil {
+			return core.SemanticRankResult{}, cleanup
 		}
 		var result core.SemanticRankResult
 		err = decodeOne(&output.buffer, &result)
 		return result, err
 	}, nil
+}
+
+// groupKill is the process-signal boundary, injectable for tests.
+var groupKill = syscall.Kill
+
+func reapGroup(pid int) error {
+	if err := groupKill(-pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return fmt.Errorf("semantic worker group cleanup failed: %w", err)
+	}
+	return nil
 }
 
 func validateCommand(path string) error {

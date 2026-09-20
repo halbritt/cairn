@@ -204,7 +204,7 @@
       "schema_version": "evidence-record/1",
       "id": "hermes-deployment-budget-repair",
       "evidence_class": "evidence-tests",
-      "summary": "Live configured-model CLI and captured GatewayRunner searches/pulls succeeded but automatic selection aborted when a second optional candidate exceeded receipt bytes. The repair preserves already-read optional candidates on explicit BUDGET_REFUSED only; transport errors and unsupplied matching-topic revision still fail. Three added boundary tests pass; all 90 Python tests, make check, native Hermes and complete disposable integration including native Claude/OpenCode pass again. A chosen live-collection lookup completed real selection in 3.489 seconds with no writes. This follow-up preserves the existing receipt budget rather than refreshing it or blindly overwriting omitted notes.",
+      "summary": "Live configured-model CLI and captured GatewayRunner searches/pulls succeeded but automatic selection aborted when a second optional candidate exceeded receipt bytes. The repair preserves already-read optional candidates on explicit BUDGET_REFUSED only; transport errors and unsupplied matching-topic revision still fail. Three added boundary tests bring the Python total from 87 to 90; all 90 pass. The repeated make check, native Hermes and complete disposable integration including native Claude/OpenCode checks also pass. A chosen live-collection lookup completed real selection in 3.489 seconds with no writes. This follow-up preserves the existing receipt budget rather than refreshing it or blindly overwriting omitted notes.",
       "provenance": [
         {
           "locator": "integrations/lifecycle/memory.py",

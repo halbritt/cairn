@@ -4,8 +4,11 @@ Cairn now permits twenty-five seconds for either semantic worker transport,
 up from twenty. The current corpus repeatedly took 21–24 seconds to score;
 the earlier budget discarded that work and returned lexical fallback. This is
 an availability tradeoff, not faster inference: it permits up to five seconds
-more work and waiting. Native OpenCode still has a thirty-second outer timeout,
-and the API client and server retain thirty-five seconds.
+more work and waiting. Native OpenCode still has a thirty-second outer timeout;
+the API server retains a thirty-second request deadline, and the API client
+retains a thirty-five-second timeout. These API values were already present at
+both `a9a4b1c` and `9b888e1`; the server leaves five seconds of headroom over the
+new worker budget.
 
 ## Investigation and rejected optimization
 

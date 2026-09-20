@@ -319,7 +319,7 @@ func (s *Store) purgeDatabaseEffect(ctx context.Context, id string, effect Delet
 	case "db_retrieval_package":
 		_, err = tx.Exec(ctx, `UPDATE cairn.retrieval_receipt SET semantic_body=NULL WHERE receipt_id=$1 AND payload_deleted_by IS NOT NULL`, effect.TargetID)
 	case "db_mutation_responses":
-		_, err = tx.Exec(ctx, `UPDATE cairn.mutation_request SET response=NULL WHERE payload_deleted_by=$1`, id)
+		_, err = tx.Exec(ctx, `UPDATE cairn.mutation_request SET response=NULL WHERE payload_deleted_by IS NOT NULL AND operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence') AND jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$1::text))`, effect.TargetID)
 	default:
 		return failure("INVALID_REQUEST", "no database purge handler for effect type")
 	}

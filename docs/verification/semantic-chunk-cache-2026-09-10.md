@@ -49,9 +49,11 @@ complete response equality, warm scoring below 0.25 seconds and RSS below 300 Mi
 | Third append | 4.152 s | 0.265 s |
 
 Removal, reintroduction and duplicate-note requests also preserved complete
-responses. Both workers remained below 218 MiB sampled RSS. A separate synchronous
-profile of the first append counted ten model inputs before and two after, with
-embedding wall time falling from 4.073 to 0.220 seconds and identical output hashes.
+responses. Maximum sampled RSS was 218.64 MiB for the baseline and 218.74 MiB
+for the candidate (223,892 and 223,992 KiB), both below the 300 MiB target.
+A separate synchronous profile of the first append counted ten model inputs
+before and two after, with embedding wall time falling from 4.073 to 0.220 seconds
+and identical output hashes.
 This supports avoiding repeated inference as the mechanism.
 
 The three append pairs are dependent changes to a selected development document,

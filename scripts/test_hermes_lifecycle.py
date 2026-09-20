@@ -219,7 +219,62 @@ class HermesBoundaryTests(unittest.TestCase):
         self.assertFalse(hook.relevant(dict(summary='Unrelated weather facts'),intent))
 
 
-class ConversationContextTests(unittest.TestCase):
+    def test_failed_capture_is_not_silently_superseded_by_next_turn(self):
+        first = [dict(role='user', content='PRIVATE selected first turn')]
+        second = [dict(role='user', content='PRIVATE selected second turn')]
+        with patch.object(plugin, 'run_engine', return_value=types.SimpleNamespace(returncode=1, stdout='')):
+            with self.assertLogs(plugin.logger, level='WARNING'):
+                self.provider.post_turn(session_id=self.provider.session_id, conversation_history=first)
+        record = plugin.read_control(self.home, self.provider.control_key)
+        self.assertTrue(record['pending'])
+        self.assertEqual(record['pending_digest'], plugin.dialogue_digest(plugin.dialogue(first)))
+        with patch.object(self.provider, 'invoke', return_value={}) as invoke:
+            self.provider.pre_turn(session_id=self.provider.session_id, turn_id='next', user_message='next question',
+                                   conversation_history=second)
+            self.assertEqual(invoke.call_count, 1)
+            self.provider.post_turn(session_id=self.provider.session_id, conversation_history=second)
+        record = plugin.read_control(self.home, self.provider.control_key)
+        self.assertEqual(record['pending_digest'], plugin.dialogue_digest(plugin.dialogue(second)))
+        self.assertFalse(record['pending'])
+
+    def test_live_retry_attempts_the_pinned_failed_snapshot(self):
+        first = plugin.dialogue([dict(role='user', content='PRIVATE selected first turn')])
+        second = plugin.dialogue([dict(role='user', content='PRIVATE selected second turn')])
+        with patch.object(plugin, 'run_engine', return_value=types.SimpleNamespace(returncode=1, stdout='')):
+            with self.assertLogs(plugin.logger, level='WARNING'):
+                self.provider.post_turn(session_id=self.provider.session_id,
+                                        conversation_history=[dict(role='user', content='PRIVATE selected first turn')])
+        record = plugin.read_control(self.home, self.provider.control_key)
+        self.assertTrue(record['pending'])
+        self.assertEqual(record['pending_digest'], plugin.dialogue_digest(first))
+        self.provider.pre_turn(session_id=self.provider.session_id, turn_id='next', user_message='next question',
+                               conversation_history=[dict(role='user', content='PRIVATE selected second turn')])
+        self.assertEqual(plugin.dialogue_digest(self.provider.last_dialogue), plugin.dialogue_digest(second))
+        with patch.object(self.provider, 'invoke', return_value={}) as invoke:
+            self.provider.pre_command(command='cairn', cairn_retry=True, surface='cli',
+                                      session_key=self.provider.session_id)
+            self.assertEqual(invoke.call_args.kwargs['messages'], first)
+        record = plugin.read_control(self.home, self.provider.control_key)
+        self.assertFalse(record['pending'])
+
+    def test_cli_process_identity_does_not_reuse_pid_controls(self):
+        controls = module('hermes_controls_identity_test', ROOT/'integrations/hermes/controls.py')
+        boot = '11111111-1111-1111-1111-111111111111'
+        def identity(start, boot_id=boot):
+            status = '42 (worker with ) name) ' + ' '.join(['S'] + ['0'] * 18 + [str(start)])
+            with patch.object(controls.os, 'getpid', return_value=42), patch.object(
+                    controls.Path, 'read_text', side_effect=[status, boot_id]):
+                return controls.conversation_key('cli')
+        first = identity(100)
+        self.assertEqual(first, identity(100))
+        self.assertNotEqual(first, identity(101))
+        self.assertNotEqual(first, identity(100, '22222222-2222-2222-2222-222222222222'))
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            controls.set_context(home, first, [tmp, 'Old process'])
+            self.assertEqual(controls.read_control(home, identity(101)), {})
+            self.assertEqual(controls.read_control(home, 'cli/42'), {})
+
     def test_binding_survives_reload_isolates_threads_and_refuses_pending_change(self):
         controls = module('hermes_controls_test',ROOT/'integrations/hermes/controls.py')
         with tempfile.TemporaryDirectory() as tmp:

@@ -95,6 +95,6 @@ destination and forgetting restrictions. Retraction does not erase already
 delivered context or remove content from a running agent's session.
 
 Ordinary hosted profiles cannot inspect the protected impact preview or invoke
-`retract`; the native six-tool interface has no retirement operation. Use the
+`retract`; the native tool interface has no retirement operation. Use the
 operator workflow when an already-used note needs retirement. Editing its body
 to say “obsolete” changes the text but leaves the record active in retrieval.

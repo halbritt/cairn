@@ -58,6 +58,15 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-15
 
+- **Register continuing agent sessions.** Store-assigned UUIDs and `agent-N`
+  display names identify conversations with scoped inboxes; harness, model,
+  project and selected task remain reported metadata. `cairn agents` adds
+  `register`, `context`, `list`, `heartbeat` and `leave`, backed by the
+  `agent-register`, `agent-context`, `agent-directory`, `agent-heartbeat` and
+  `agent-leave` API operations. Apply migration 037 and update CLI/API together.
+  Registration alone does not install presence or native delivery adapters.
+  [Identity, commands and recovery](docs/agent-sessions.md).
+
 - **Separate launch slots from accounts.** Seven ordinal wakeup bindings cover
   both Codex and both Claude accounts. Each worker receives its profile name;
   legacy inboxes retain their history. The additional Claude account passed a

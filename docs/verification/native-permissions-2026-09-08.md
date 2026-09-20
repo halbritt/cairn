@@ -36,9 +36,11 @@ backend was changed.
 
 ## Transport and usage limits
 
-Zero relay rejections does not mean every provider response completed. The
-control had two `TimeoutError` responses and one `BrokenPipeError`; direct
-context had two `TimeoutError` responses; native context had two `TimeoutError`
+The relay recorded three rejections for direct context and zero for no memory
+and native context. Zero rejections in those two arms does not mean every
+provider response completed. The control had two `TimeoutError` responses and
+one `BrokenPipeError`; direct context had two `TimeoutError` responses;
+native context had two `TimeoutError`
 responses and one `ConnectionResetError`. Five response timeouts lasted about
 90 seconds and one lasted about 45 seconds. The final broken/reset connections
 in control/native occurred near invocation termination. These observations do

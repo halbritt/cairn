@@ -10,7 +10,13 @@ import tempfile
 
 def conversation_key(platform, gateway_key=''):
     if platform == 'cli':
-        return 'cli/' + str(os.getpid())
+        pid = os.getpid()
+        fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+        start = fields[19]
+        boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+        if not start.isdecimal() or not boot:
+            raise ValueError('Cairn process identity is unavailable')
+        return f'cli/{boot}/{pid}/{start}'
     if not gateway_key:
         raise ValueError('Cairn conversation identity is unavailable')
     return 'gateway/' + gateway_key

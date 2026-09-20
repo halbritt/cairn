@@ -56,9 +56,9 @@ pending dialogue before memory is enabled again. Service unavailability leaves
 the main task usable. Extraction excludes tool results, reasoning, summaries,
 native memory and recalled sidecars. Original dialogue is bounded to 24,000 bytes.
 
-Final checks passed:
+Pre-repair checks passed:
 
-- All 90 Python tests, including 13 Hermes and 29 shared lifecycle tests.
+- All 87 Python tests, including 13 Hermes and 29 shared lifecycle tests.
 - `make check`.
 - `make test-integration` with disposable PostgreSQL/race, CLI/API/MCP, native
   Claude and native OpenCode lifecycle checks enabled.

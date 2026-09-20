@@ -140,7 +140,7 @@ func run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	if err != nil {
 		return Result{}, err
 	}
-	result := Result{AttemptID: req.AttemptID, ReceiptID: pkg.ReceiptID, Seal: pkg.Seal, ProcessState: "unknown", Artifacts: filepath.Join(req.ArtifactDirectory, pkg.ReceiptID)}
+	result := Result{AttemptID: req.AttemptID, ReceiptID: pkg.ReceiptID, Seal: pkg.Seal, ProcessState: "launch_failed", Artifacts: filepath.Join(req.ArtifactDirectory, pkg.ReceiptID)}
 	if req.Retained != nil {
 		query := req.Compile.Query
 		if pkg.Semantic.Schema != "cairn.semantic/1" {
@@ -178,8 +178,14 @@ func run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 	commandDigest := sha256.Sum256(encodedCommand)
 	_, err = store.BindRun(ctx, core.RunBindingRequest{AttemptID: req.AttemptID, RequestID: req.Compile.RequestID, ReceiptID: pkg.ReceiptID, TaskClass: taskClass, BindingID: bindingID, CapabilityID: capabilityID, CommandSHA256: hex.EncodeToString(commandDigest[:]), Revision: req.Revision, WorkspaceSHA256: req.WorkspaceSHA256})
 	if err != nil {
+		switch core.Code(err) {
+		case "INVALID_REQUEST", "AUTHORITY_DENIED", "STALE_PACKAGE", "STALE_HANDLE", "PAYLOAD_UNAVAILABLE", "NOT_FOUND":
+		default:
+			result.ProcessState = "unknown"
+		}
 		return result, err
 	}
+	result.ProcessState = "unknown"
 	if err = store.ClaimRun(ctx, pkg.ReceiptID); err != nil {
 		return result, err
 	}
@@ -259,21 +265,27 @@ func run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 		return result, errors.Join(processErr, err)
 	}
 	pending := filepath.Join(result.Artifacts, "outcome.pending.json")
-	if err = os.WriteFile(pending, encoded, 0600); err != nil {
-		return result, errors.Join(processErr, err)
+	pendingErr := os.WriteFile(pending, encoded, 0600)
+	if pendingErr != nil {
+		processErr = errors.Join(processErr, fmt.Errorf("outcome retry request unavailable at %s: %w", pending, pendingErr))
 	}
 	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer finishCancel()
 	observation, err := store.RecordOutcome(finishCtx, outcome)
 	if err != nil {
+		if pendingErr != nil {
+			return result, errors.Join(processErr, fmt.Errorf("outcome not committed: %w", err))
+		}
 		return result, errors.Join(processErr, fmt.Errorf("outcome not committed; retry request retained at %s: %w", pending, err))
 	}
 	result.OutcomeID = observation.ID
-	if err = os.Rename(pending, filepath.Join(result.Artifacts, "outcome.json")); err != nil {
-		return result, errors.Join(processErr, err)
+	if pendingErr == nil {
+		if err = os.Rename(pending, filepath.Join(result.Artifacts, "outcome.json")); err != nil {
+			return result, errors.Join(processErr, err)
+		}
 	}
 	if startErr != nil {
-		return result, startErr
+		return result, processErr
 	}
 	if len(outputs) > 0 {
 		evidence, err := captureOutputArtifacts(store, result, req.Compile.Scope.Repo, outputs, req.ShareArtifactEvidence)

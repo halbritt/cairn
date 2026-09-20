@@ -6,6 +6,41 @@ import (
 	"unicode/utf8"
 )
 
+func TestValueUnicodeBeforeEncoding(t *testing.T) {
+	type label string
+	type request struct {
+		Text    string `json:"text"`
+		Hidden  string `json:"-"`
+		private string
+	}
+	bad := "label-\xff"
+	for name, value := range map[string]any{
+		"string":       bad,
+		"named-string": label(bad),
+		"pointer":      &bad,
+		"struct":       &request{Text: bad},
+		"map-key":      map[string]string{bad: "valid"},
+		"nested-value": map[string]any{"items": []any{[1]string{bad}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := CheckValue(value); err == nil {
+				t.Fatal("invalid UTF-8 accepted before encoding")
+			}
+		})
+	}
+	cycle := map[string]any{}
+	cycle["self"] = cycle
+	for _, value := range []any{nil, (*string)(nil), []byte{0xff}, request{Text: "日本語 � \\ud800", Hidden: bad, private: bad}, cycle} {
+		if err := CheckValue(value); err != nil {
+			t.Fatalf("non-lossy value refused: %T %v", value, err)
+		}
+	}
+	cycle["text"] = bad
+	if err := CheckValue(cycle); err == nil {
+		t.Fatal("cycle hid invalid text")
+	}
+}
+
 func TestUnicodeEscapesAndLiteralBackslashes(t *testing.T) {
 	for _, input := range []string{`{"text":"\ud83d\ude00"}`, `{"\ud83d\ude00":"x"}`, `{"text":"\\ud800"}`, `{"text":"\"\\ud800"}`, `{"text":"\u0000\u00e9\ufffd"}`, `{"text":"é 😀 �"}`} {
 		if !json.Valid([]byte(input)) {

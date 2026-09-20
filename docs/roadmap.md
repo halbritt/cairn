@@ -425,10 +425,11 @@ ordinary Codex/OpenCode tasks while native adoption is pending.
 Depends on capture repair and protected receipt boundaries. This is the first
 accepted usefulness milestone, before historical evaluation and generated demand.
 
-Within this section, prioritize U1–U5's useful task outcomes in the existing Codex
-and OpenCode interfaces. U7/U8 are lower-priority breadth work, not prerequisites
-for proving transfer or reducing recurring task failures. Adapter count is not
-an acceptance measure for task value.
+U1–U5 track useful task outcomes; Codex and OpenCode remain sufficient to
+demonstrate cross-harness benefit. The 2026-09-11 owner direction supersedes the
+earlier lower-priority ordering of U7/U8: ordinary Agy and Claude Code access is
+part of the near-term goal, not gated on more Codex/OpenCode task-value work.
+Adapter count is not an acceptance measure for task value.
 
 | ID | Status | Work and acceptance evidence |
 | --- | --- | --- |
@@ -446,14 +447,16 @@ repository/task/run arguments. Agy 1.2.0 registration, argument preservation and
 configuration updates pass in an isolated home. Its observed settings are
 user-wide; no automatic conversation scope or native tool execution is established.
 [Verification](verification/agy-configuration-2026-09-09.md) records the remaining
-U7 requirements. Further Agy work stays below task value in existing harnesses.
+U7 requirements at that checkpoint. Its earlier lower priority was superseded
+by the 2026-09-11 ordinary-access goal above.
 
-The [Claude configuration generator](claude-code.md) launches the current six-tool
+The [Claude configuration generator](claude-code.md) launches the current
 MCP server with explicit task/run scope. Claude Code 2.1.265 accepted its output
 and connected in an isolated native check; an independent MCP client retrieved
 exact revised content through that generated launch. Native model-selected use,
 reliable native session scope and a useful Claude task remain open under U8.
-This is the requested lower-priority setup work, not a new task-value result.
+This setup followed the superseded lower-priority ordering and does not by
+itself add a task-value result.
 A [native execution check](verification/claude-native-tools-2026-09-09.md) now
 verifies the original five tools and correction/reuse across two scripted Claude
 sessions, including destination and permission/refusal behavior. It retains a corrected
@@ -1020,8 +1023,8 @@ restore outside that procedure and complete reconstruction remain open.
 
 | ID | Status | Entry condition and work |
 | --- | --- | --- |
-| X1 — advanced H1 integration | open | After useful ordinary ingress: richer query/expansion/candidate tools, expiring handles and driver conformance profiles. Ordinary Agy integration is tracked separately under lower-priority U7; it does not require this extension. |
-| X2 — native interlocks | partial | [Claude lifecycle hooks](claude-lifecycle.md) and [OpenCode lifecycle memory](opencode-lifecycle.md) now provide bounded task/resume retrieval, separate durable notes, named handoffs and unchanged-capture suppression. Codex/Agy hook routes are [assessed](lifecycle-hook-assessment.md). Remaining: Codex lifecycle integration, per-run attestation and privilege forfeiture on failed refresh. Require adapter-specific evidence. Ordinary Claude Code access is tracked separately under lower-priority U8. |
+| X1 — advanced H1 integration | open | After useful ordinary ingress: richer query/expansion/candidate tools, expiring handles and driver conformance profiles. Ordinary Agy integration is tracked separately under U7 and does not require this extension. |
+| X2 — native interlocks | partial | [Claude lifecycle hooks](claude-lifecycle.md) and [OpenCode lifecycle memory](opencode-lifecycle.md) now provide bounded task/resume retrieval, separate durable notes, named handoffs and unchanged-capture suppression. Codex/Agy hook routes are [assessed](lifecycle-hook-assessment.md). Remaining: Codex lifecycle integration, per-run attestation and privilege forfeiture on failed refresh. Require adapter-specific evidence. Ordinary Claude Code access is tracked separately under U8. |
 | X3 — groomer | open | Only after join → replay → demand docket: bounded offline proposals from instrumented session-close/idle extraction and nightly consolidation, with review and no automatic authority gain. |
 | X4 — ranking experiments | optional | Learned ranking/decay only after measurable outcomes and explicit policy. Counterfactual experiments opt-in and never during incidents. Deterministic lexical ranking is the baseline. |
 | X5 — selective H3 and sharing | open | Runtime mediation for selected high-stakes paths, then broader sharing with enforced destinations. Hermes interactive CLI/gateway memory is available; consequential runtime mediation remains open. |

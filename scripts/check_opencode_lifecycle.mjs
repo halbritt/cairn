@@ -16,6 +16,11 @@ try {
     const event = JSON.parse(input);
     appendFileSync(${JSON.stringify(log)}, JSON.stringify(event) + "\\n");
     const recall = ["SessionStart", "UserPromptSubmit"].includes(event.hook_event_name);
+    if (event.session_id === "ses_mandatory" && recall) {
+      const view = event.prompt === "optional" ? {selected:[], index:[{record_id:"optional", version:1}], expanded:{selection:{record:{body:"Retained optional lesson"}}}} : {selected:[{record:{record_id:"required", version:1, body:"Required instruction " + "x".repeat(3000)}, mandatory:true}], index:[]};
+      console.log(JSON.stringify({hookSpecificOutput:{additionalContext:'Cairn lifecycle memory:\\n' + JSON.stringify(view)}}));
+      process.exit(0);
+    }
     const text = 'Cairn lifecycle memory:\\n' + JSON.stringify({selected:[], index:[{record_id:"note", version:1}], expanded:{selection:{record:{body:"Useful PostgreSQL lesson"}}}});
     console.log(JSON.stringify(recall && !event.retained_record_ids.includes("note") ? {hookSpecificOutput:{additionalContext:text}} : {}));
   `)
@@ -51,6 +56,20 @@ try {
   assert(!JSON.stringify(captures).includes("PRIVATE"))
   assert(captures.every(e => e.messages.some(m => m.text === "Checks pass; deploy next.")))
   assert(events.some(e => e.tool_input?.file_path === join(root, "store.go")))
+  const mandatoryHooks = await plugin({ client, directory: root, worktree: root })
+  const mandatoryTransform = async (messages) => { const output = { messages: structuredClone(messages) }; await mandatoryHooks["experimental.chat.messages.transform"]({}, output); return output }
+  const repeated = [owner("optional", "ses_mandatory")]
+  repeated[0].parts[0].text = "optional"
+  await mandatoryTransform(repeated)
+  for (let i = 0; i < 8; i++) {
+    repeated.push(owner("required-" + i, "ses_mandatory"))
+    const rendered = JSON.stringify(await mandatoryTransform(repeated))
+    assert.equal(rendered.split("Required instruction").length - 1, 1, "Mandatory-only recall must replace its prior version")
+    assert.equal(rendered.split("Retained optional lesson").length - 1, 1, "Repeated mandatory context must not evict unrelated memory")
+  }
+  events = (await readFile(log, "utf8")).trim().split("\n").map(JSON.parse)
+  assert(events.at(-1).retained_record_ids.includes("required"))
+  await mandatoryHooks.dispose()
   const before = events.length
   await writeFile(join(root, ".cairn-no-memory"), "")
   const disabled = await plugin({ client, directory: root, worktree: root })

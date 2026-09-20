@@ -13,6 +13,32 @@ import (
 	"github.com/halbritt/cairn/localapi"
 )
 
+func TestClientRejectsLossyValuesBeforeConnection(t *testing.T) {
+	home := t.TempDir()
+	token := filepath.Join(home, "token")
+	if err := os.WriteFile(token, []byte("synthetic-unicode-token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	client, err := localapi.NewClient(filepath.Join(home, "absent.sock"), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	for _, request := range []any{
+		core.CreateRequest{Draft: core.Draft{Body: "valid", Scope: core.Scope{Repo: "repo-\xff"}}},
+		core.EvidenceRequest{Source: "label-\xff"},
+		map[string]any{"nested": []string{"text-\xff"}},
+		map[string]string{"key-\xff": "valid"},
+	} {
+		if err := client.Call(context.Background(), "create", request, &struct{}{}); core.Code(err) != "INVALID_REQUEST" {
+			t.Fatalf("lossy request attempted connection: %T %v", request, err)
+		}
+	}
+	if err := client.Call(context.Background(), "create", core.CreateRequest{Draft: core.Draft{Body: "日本語 � \\ud800"}}, &struct{}{}); core.Code(err) != "API_CONNECTION_FAILED" {
+		t.Fatalf("valid Unicode refused before connection: %v", err)
+	}
+}
+
 func TestClientIdentifiesUnavailableAPIWithoutDisclosingPath(t *testing.T) {
 	home := t.TempDir()
 	token := filepath.Join(home, "token")

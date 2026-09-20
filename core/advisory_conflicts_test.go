@@ -604,6 +604,88 @@ func TestAdvisoryConflictPullBudgetAndCompanionDeletion(t *testing.T) {
 	requireCode(t, err, "PAYLOAD_UNAVAILABLE")
 }
 
+func TestAdvisoryConflictSharedResponsePurgeOrder(t *testing.T) {
+	for _, laterFirst := range []bool{true, false} {
+		name := "earlier-first"
+		if laterFirst {
+			name = "later-first"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			s, root := testOperator(t)
+			repo := uuid.NewString()
+			d := projectNote(repo)
+			d.Sensitivity = "shareable"
+			records := []Record{}
+			requests := []string{}
+			for i := 0; i < 2; i++ {
+				request := uuid.NewString()
+				r, err := s.Create(ctx, CreateRequest{request, d})
+				if err != nil {
+					t.Fatal(err)
+				}
+				records = append(records, r)
+				requests = append(requests, request)
+			}
+			group, err := s.Dispute(ctx, DisputeRequest{uuid.NewString(), []string{records[0].RecordID, records[1].RecordID}, "Synthetic shared response"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			idx, err := s.Index(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "fixture_error", Purpose: "context", AvailableTokens: 64000, AdvisoryConflicts: true}, Destination{"hosted", false})
+			if err != nil || len(idx.Handles) != 2 {
+				t.Fatalf("conflict index: %+v %v", idx, err)
+			}
+			pull := ExpandRequest{RequestID: uuid.NewString(), ReceiptID: idx.Package.ReceiptID, Handle: idx.Handles[0].Handle}
+			expanded, err := s.Expand(ctx, pull, Destination{"hosted", false})
+			if err != nil || len(expanded.Competing) != 1 {
+				t.Fatalf("shared expansion: %+v %v", expanded, err)
+			}
+			if _, err = s.Resolve(ctx, ResolveRequest{uuid.NewString(), group.ID, group.Version, root.ID, "Resolve before deletion"}); err != nil {
+				t.Fatal(err)
+			}
+			deletions := []Deletion{}
+			for _, r := range records {
+				preview, err := s.PreviewDeletion(ctx, r.RecordID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				deleted, err := s.Forget(ctx, ForgetRequest{uuid.NewString(), r.RecordID, r.Version, root.ID, preview.PreviewID})
+				if err != nil {
+					t.Fatal(err)
+				}
+				deletions = append(deletions, deleted)
+			}
+			checkResponse := func(operation, request string, wantPurged bool, wantTag string) {
+				t.Helper()
+				var purged bool
+				var tag string
+				err := s.pool.QueryRow(ctx, `SELECT response IS NULL,payload_deleted_by::text FROM cairn.mutation_request WHERE operation=$1 AND request_id=$2`, operation, request).Scan(&purged, &tag)
+				if err != nil || purged != wantPurged || tag != wantTag {
+					t.Fatalf("%s response purged=%v tag=%s, want %v %s: %v", operation, purged, tag, wantPurged, wantTag, err)
+				}
+			}
+			checkResponse("expand", pull.RequestID, false, deletions[0].DeletionID)
+			order := []int{0, 1}
+			if laterFirst {
+				order = []int{1, 0}
+			}
+			for step, index := range order {
+				for retry := 0; retry < 2; retry++ {
+					status, err := s.PurgeDeletion(ctx, deletions[index].DeletionID)
+					if err != nil || status.State != "limited" {
+						t.Fatalf("purge status: %+v %v", status, err)
+					}
+					checkResponse("expand", pull.RequestID, true, deletions[0].DeletionID)
+					checkResponse("create", requests[index], true, deletions[index].DeletionID)
+					checkResponse("create", requests[1-index], step == 1, deletions[1-index].DeletionID)
+				}
+			}
+			_, err = s.Expand(ctx, pull, Destination{"hosted", false})
+			requireCode(t, err, "PAYLOAD_UNAVAILABLE")
+		})
+	}
+}
+
 func TestAdvisoryConflictSignatureCompanionAndOmittedReplay(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t, Channel{Principal: "operator:advisory-signature", Operator: true, Instrumented: true})

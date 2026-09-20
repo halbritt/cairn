@@ -14,8 +14,10 @@ from pathlib import Path
 import secrets
 import signal
 import shutil
+import stat
 import subprocess
 import tarfile
+import tempfile
 import time
 import uuid
 
@@ -37,7 +39,8 @@ def event(name, **data):
 
 
 def git(source, *args):
-    return subprocess.check_output(['git', '-C', str(source), *args])
+    return subprocess.check_output(['git', '-C', str(source), *args], env=GIT_NEUTRAL_ENV,
+                                   timeout=30)
 
 
 def archive(source, revision, work):
@@ -46,19 +49,53 @@ def archive(source, revision, work):
         stream.extractall(work, filter='data')
 
 
-def gate(work, root):
-    (work / GATE_PATH).write_bytes(GATE.read_bytes())
-    environment = dict(os.environ, GOCACHE=str(root / 'go-cache'), STRIATUM_REQUIRE_CGROUP='1')
-    result = subprocess.run(['systemd-run', '--user', '--scope', '--quiet', '-p', 'Delegate=yes',
-                             'go', 'test', '-json', '-count=1', '-timeout=90s', './internal/backend/llm',
-                             '-run', '^TestCairnRecurrenceRuntimeCacheLifetime$'],
-                            cwd=work, env=environment, capture_output=True, timeout=120)
+def gate(work, root, patch=None, *, trusted):
+    evaluation = Path(tempfile.mkdtemp(prefix='gate-evaluation-', dir=root))
+    safe_git(trusted, evaluation, 'read-tree', 'HEAD')
+    safe_git(trusted, evaluation, 'checkout-index', '--all', '--force')
+    if patch:
+        safe_git(trusted, evaluation, 'apply', '--binary', '--whitespace=nowarn', '-', data=patch)
+    _, _, outside = candidate_diff(evaluation, trusted)
+    if outside:
+        raise ValueError('gate candidate violates write scope')
+    with (evaluation / GATE_PATH).open('xb') as stream:
+        stream.write(GATE.read_bytes())
+    argv = gate_command(evaluation, root)
+    result = subprocess.run(argv, capture_output=True, timeout=150)
     events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith(b'{')]
     actions = [e['Action'] for e in events if e.get('Test') == 'TestCairnRecurrenceRuntimeCacheLifetime'
                and e['Action'] in ('pass', 'fail', 'skip')]
     return dict(exit_code=result.returncode, actions=actions,
                 passed=result.returncode == 0 and actions == ['pass'],
                 stdout_sha256=sha(result.stdout), stderr_sha256=sha(result.stderr))
+
+
+def gate_command(evaluation, root, tail=None):
+    goroot = subprocess.check_output(['go', 'env', 'GOROOT'], text=True).strip()
+    gomod = subprocess.check_output(['go', 'env', 'GOMODCACHE'], text=True).strip()
+    environment = dict(PATH='/opt/go/bin:/usr/bin:/bin', HOME='/tmp/gate-home', TMPDIR='/tmp',
+                       GOCACHE='/gate-cache', GOROOT='/opt/go', GOMODCACHE='/opt/gomod',
+                       GOTOOLCHAIN='local', GOPROXY='off', STRIATUM_REQUIRE_CGROUP='1')
+    launcher = ('IFS=: read -r hierarchy controllers relative < /proc/self/cgroup; '
+                'test "$hierarchy" = 0; test -z "$controllers"; '
+                'case "$relative" in /*) ;; *) exit 1 ;; esac; '
+                'scope="/sys/fs/cgroup$relative"; '
+                'exec bwrap --tmpfs / --ro-bind /sys /sys --bind "$scope" "$scope" "$@"')
+    argv = ['systemd-run', '--user', '--scope', '--quiet', '-p', 'Delegate=yes',
+            '/bin/sh', '-eu', '-c', launcher, 'cairn-gate',
+            '--ro-bind', '/usr', '/usr', '--ro-bind', '/bin', '/bin',
+            '--ro-bind', '/lib', '/lib', '--ro-bind', '/lib64', '/lib64', '--dir', '/etc',
+            '--dir', '/tmp', '--tmpfs', '/gate-cache', '--unshare-net', '--unshare-ipc', '--new-session',
+            '--unshare-pid', '--proc', '/proc', '--dev', '/dev', '--die-with-parent',
+            '--bind', str(evaluation), '/work',
+            '--ro-bind', goroot, '/opt/go', '--ro-bind', gomod, '/opt/gomod',
+            '--chdir', '/work', '--clearenv']
+    for name, value in environment.items():
+        argv += ['--setenv', name, value]
+    if tail is None:
+        tail = ['--', 'go', 'test', '-json', '-count=1', '-timeout=90s', './internal/backend/llm',
+                '-run', '^TestCairnRecurrenceRuntimeCacheLifetime$']
+    return argv + tail
 
 
 def prepare(source, root):
@@ -71,7 +108,8 @@ def prepare(source, root):
     for label, revision in [('broken', base), ('reference', fix)]:
         work = root / label
         archive(source, revision, work)
-        results[label] = gate(work, root)
+        trusted = establish_trusted(work, root, label)
+        results[label] = gate(work, root, trusted=trusted)
         event('preflight', arm=label, **results[label])
     if results['broken']['passed'] or results['broken']['actions'] != ['fail'] or not results['reference']['passed']:
         raise RuntimeError('historical gate did not distinguish the broken and repaired implementations')
@@ -117,21 +155,108 @@ def sandbox(opencode, work, home, cache, config, goroot, gomod, route):
             'run', '--pure', '--format', 'json', '-m', route['provider'] + '/' + route['model']]
 
 
-def candidate_diff(work):
-    names = set(git(work, 'diff', '--name-only').decode().splitlines())
-    names.update(git(work, 'ls-files', '--others', '--exclude-standard').decode().splitlines())
-    allowed = {'internal/backend/llm/supervisor.go', 'internal/backend/supervise/supervise.go',
-               'internal/backend/supervise/init.go'}
-    outside = []
-    for name in sorted(names):
-        new_test = name.endswith('_test.go') and str(Path(name).parent) in ('internal/backend/llm', 'internal/backend/supervise')
-        tracked = subprocess.run(['git', '-C', str(work), 'ls-files', '--error-unmatch', name], capture_output=True).returncode == 0
-        if name not in allowed and not (new_test and not tracked):
-            outside.append(name)
-    # Include new tests in the explicit candidate patch, without committing it.
-    for name in sorted(names):
-        subprocess.run(['git', '-C', str(work), 'add', '-N', '--', name], check=True, stdout=subprocess.DEVNULL)
-    patch = git(work, 'diff', '--binary')
+GIT_NEUTRAL_ENV = dict(PATH='/usr/bin:/bin', HOME='/nonexistent', LC_ALL='C',
+                       GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_NOSYSTEM='1',
+                       GIT_ATTR_NOSYSTEM='1', GIT_TERMINAL_PROMPT='0', GIT_LITERAL_PATHSPECS='1')
+
+
+def copy_regular_tree(work, target, baseline_links=None):
+    remaining = 256 * 1024 * 1024
+    count = 0
+
+    def copy(directory, destination, depth):
+        nonlocal remaining, count
+        if depth > 64:
+            raise ValueError('candidate directory depth exceeds limit')
+        for name in os.listdir(directory):
+            if depth == 0 and name == '.git':
+                continue
+            count += 1
+            if count > 20000:
+                raise ValueError('candidate file count exceeds limit')
+            path = destination / name
+            if stat.S_ISLNK(os.stat(name, dir_fd=directory, follow_symlinks=False).st_mode):
+                link = os.readlink(name, dir_fd=directory)
+                relative = str(path.relative_to(target))
+                if baseline_links is not None and baseline_links.get(relative) != link:
+                    raise ValueError('candidate changes a symlink')
+                path.symlink_to(link)
+                continue
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            try:
+                metadata = os.fstat(fd)
+                if stat.S_ISDIR(metadata.st_mode):
+                    path.mkdir()
+                    copy(fd, path, depth + 1)
+                elif stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1:
+                    with os.fdopen(os.dup(fd), 'rb') as source, path.open('xb') as output:
+                        while chunk := source.read(min(remaining + 1, 1024 * 1024)):
+                            remaining -= len(chunk)
+                            if remaining < 0:
+                                raise ValueError('candidate bytes exceed limit')
+                            output.write(chunk)
+                    path.chmod(0o755 if metadata.st_mode & 0o111 else 0o644)
+                else:
+                    raise ValueError('candidate contains a special file or hardlink')
+            finally:
+                os.close(fd)
+
+    fd = os.open(work, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        copy(fd, target, 0)
+    finally:
+        os.close(fd)
+
+
+def establish_trusted(work, root, arm):
+    meta = root / (arm + '-trusted-meta')
+    meta.mkdir(mode=0o700)
+    subprocess.run(['git', 'init', '--bare', '--template=', '-q', str(meta)],
+                   env=GIT_NEUTRAL_ENV, check=True, capture_output=True)
+    (meta / 'config').write_text('[core]\n\tbare = false\n\tfilemode = true\n\thooksPath = /dev/null\n')
+    (meta / 'info').mkdir()
+    (meta / 'info/attributes').write_text('* -filter -text -ident -working-tree-encoding !diff !export-ignore !export-subst\n')
+    with tempfile.TemporaryDirectory(prefix='baseline-', dir=root) as temporary:
+        snapshot = Path(temporary)
+        copy_regular_tree(work, snapshot)
+        safe_git(meta, snapshot, 'add', '-f', '--all', '--', '.')
+        safe_git(meta, snapshot, '-c', 'user.name=Cairn trial', '-c', 'user.email=trial@localhost',
+                 'commit', '--allow-empty', '-qm', 'Historical trial input snapshot')
+    return meta
+
+
+def safe_git(meta, work, *args, data=None):
+    return subprocess.run(['git', '--git-dir', str(meta), '--work-tree', str(work), *args],
+                          env=GIT_NEUTRAL_ENV, input=data, capture_output=True,
+                          check=True, cwd=work, timeout=30).stdout
+
+
+def candidate_diff(work, trusted):
+    with tempfile.TemporaryDirectory(prefix='candidate-', dir=trusted.parent) as temporary:
+        snapshot = Path(temporary)
+        links = {}
+        for entry in safe_git(trusted, snapshot, 'ls-tree', '-rz', 'HEAD').split(b'\0')[:-1]:
+            metadata, name = entry.split(b'\t', 1)
+            mode, _, object_id = metadata.split()
+            if mode == b'120000':
+                links[name.decode()] = safe_git(trusted, snapshot, 'cat-file', 'blob', object_id.decode()).decode()
+        copy_regular_tree(work, snapshot, links)
+        safe_git(trusted, snapshot, 'read-tree', 'HEAD')
+        tracked = set(safe_git(trusted, snapshot, 'ls-files', '-z').decode().split('\0')[:-1])
+        safe_git(trusted, snapshot, 'add', '-f', '--all', '--', '.')
+        names = set(safe_git(trusted, snapshot, 'diff', '--cached', '--no-renames', '--name-only', '-z',
+                             'HEAD', '--').decode().split('\0')[:-1])
+        allowed = {'internal/backend/llm/supervisor.go', 'internal/backend/supervise/supervise.go',
+                   'internal/backend/supervise/init.go'}
+        outside = []
+        for name in sorted(names):
+            if (snapshot / name).is_symlink():
+                raise ValueError('candidate changes a symlink')
+            new_test = name.endswith('_test.go') and str(Path(name).parent) in ('internal/backend/llm', 'internal/backend/supervise')
+            if name == GATE_PATH or (name not in allowed and not (new_test and name not in tracked)):
+                outside.append(name)
+        patch = safe_git(trusted, snapshot, 'diff', '--cached', '--binary', '--no-ext-diff',
+                         '--no-textconv', '--no-renames', 'HEAD', '--')
     return patch, sorted(names), outside
 
 
@@ -314,9 +439,8 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
         for arm in scenario['arms']:
             work = root / arm
             archive(source, state['base'], work)
-            subprocess.run(['git', 'init', '-q', str(work)], check=True)
-            subprocess.run(['git', '-C', str(work), 'add', '-f', '.'], check=True)
-            subprocess.run(['git', '-C', str(work), '-c', 'user.name=Cairn trial', '-c', 'user.email=trial@localhost', 'commit', '-qm', 'Historical trial input snapshot'], check=True)
+            trusted = establish_trusted(work, root, arm)
+            shutil.copytree(trusted, work / '.git')
             home = root / (arm + '-home'); home.mkdir(mode=0o700)
             cache = root / (arm + '-cache'); cache.mkdir(mode=0o700)
             config = root / (arm + '-opencode.json')
@@ -363,7 +487,7 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
                     trace.append(json.loads(line))
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     pass
-            patch, paths, outside = candidate_diff(work)
+            patch, paths, outside = candidate_diff(work, trusted)
             private_file(root / (arm + '.patch'), patch.decode())
             # Correspondence is to the returned candidate, not its correctness.
             # A zero exit with no candidate remains no_result.
@@ -372,7 +496,7 @@ def run_trial(root, binary, opencode, arm=None, disable_thinking=False, context_
             if status is not None and (receipt.get('attempt_id') != host.attempt_id or
                                        (status.get('outcome') or {}).get('observation_id') != receipt.get('outcome_id')):
                 raise RuntimeError('host receipt/outcome correspondence mismatch')
-            scored = gate(work, root) if not outside else dict(passed=False, reason='write_scope_violation')
+            scored = gate(work, root, patch, trusted=trusted) if not outside else dict(passed=False, reason='write_scope_violation')
             if receipt.get('receipt_id') and (receipt['receipt_id'] != selected['receipt_id'] or receipt['seal'] != selected['seal']):
                 raise RuntimeError('wrapped execution did not use its checked host package')
             arm_result = dict(arm=arm, process_exit=result.returncode, duration_seconds=round(elapsed,3), receipt=receipt,

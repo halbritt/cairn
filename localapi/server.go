@@ -137,7 +137,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/v1/append":
 		serveJSON(w, r, c.store.Append)
 	case "/v1/replace":
-		serveJSON(w, r, c.store.Replace)
+		serveJSON(w, r, func(ctx context.Context, req core.ReplaceRequest) (core.Revision, error) {
+			return c.store.ReplaceForDestination(ctx, req, c.destination)
+		})
 	case "/v1/cite":
 		serveJSON(w, r, c.store.Cite)
 	case "/v1/delete":

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/jsontext"
 	"github.com/halbritt/cairn/localapi"
 )
 
@@ -339,6 +340,9 @@ func eventCommand(ctx context.Context, command string, args []string, input io.R
 			complete.Draft = &core.Draft{Body: string(body), Kind: resultKind, ClaimType: "self", Sensitivity: sensitivity, Scope: core.Scope{Repo: *repo, TaskID: "*", RunID: "*"}}
 		}
 		req = complete
+	}
+	if err := jsontext.CheckValue(req); err != nil {
+		return nil, invalid(err.Error())
 	}
 	if client == nil {
 		connectionArgs := []string{}
