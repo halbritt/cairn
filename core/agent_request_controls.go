@@ -92,10 +92,20 @@ type CancelWorkRequest struct {
 	Reason      string `json:"reason"`
 }
 type WorkCancellation struct {
-	EventID    string       `json:"event_id"`
-	DeliveryID string       `json:"delivery_id,omitempty"`
-	Held       bool         `json:"held"`
-	Control    *WorkControl `json:"control"`
+	EventID    string             `json:"event_id"`
+	DeliveryID string             `json:"delivery_id,omitempty"`
+	Held       bool               `json:"held"`
+	Control    *WorkControl       `json:"control"`
+	Native     *NativeCancelState `json:"native,omitempty"`
+}
+
+type NativeCancelState struct {
+	AttemptID    string    `json:"attempt_id"`
+	AgentID      string    `json:"agent_id"`
+	ExecutionID  string    `json:"execution_id"`
+	NativeTurnID string    `json:"native_turn_id,omitempty"`
+	State        string    `json:"state"`
+	RequestedAt  time.Time `json:"requested_at"`
 }
 
 // CancelWork records the winner against completion. A wake's hold is independent
@@ -162,8 +172,36 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE delivery_id=$1 AND finished_at IS NULL),EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE delivery_id=$1 AND finished_at IS NULL)`, delivery).Scan(&wake, &native); err != nil {
 			return zero, err
 		}
-		if native || (leased && !wake) {
-			return zero, failure("UNSUPPORTED_CONTROL", "running native/manual work lacks a supervisor stop contract; reconcile its actual turn/process end")
+		if native {
+			// Native work carries a per-request stop contract only when the
+			// attempt proved exclusive ownership of one native request turn
+			// (for example a queue-started Codex turn). A shared or ambient
+			// prompt - such as a Claude channel wake joining an active owner
+			// prompt - has no single-request identity; cancelling through it
+			// could stop unrelated work and stays unsupported.
+			var attemptID, agentID, executionID, nativeTurn, cancelBy, cancelReason string
+			var turnExclusive bool
+			var requestedAt *time.Time
+			err := tx.QueryRow(ctx, `SELECT attempt_id::text,agent_id::text,execution_id::text,native_turn_id,turn_exclusive,COALESCE(cancel_by,''),COALESCE(cancel_reason,''),cancel_requested_at FROM cairn.agent_session_attempt WHERE delivery_id=$1 AND finished_at IS NULL FOR UPDATE`, delivery).Scan(&attemptID, &agentID, &executionID, &nativeTurn, &turnExclusive, &cancelBy, &cancelReason, &requestedAt)
+			if err != nil {
+				return zero, err
+			}
+			if !turnExclusive || nativeTurn == "" {
+				return zero, failure("UNSUPPORTED_CONTROL", "this native attempt did not prove exclusive single-request turn ownership; reconcile its actual turn/process end")
+			}
+			if requestedAt == nil {
+				requestedAt = &time.Time{}
+				if err = tx.QueryRow(ctx, `UPDATE cairn.agent_session_attempt SET cancel_requested_at=clock_timestamp(),cancel_by=current_setting('cairn.caller'),cancel_reason=$2 WHERE attempt_id=$1 RETURNING cancel_requested_at,cancel_by,cancel_reason`, attemptID, req.Reason).Scan(requestedAt, &cancelBy, &cancelReason); err != nil {
+					return zero, err
+				}
+			}
+			return WorkCancellation{EventID: eventID, DeliveryID: delivery, Held: true, Native: &NativeCancelState{
+				AttemptID: attemptID, AgentID: agentID, ExecutionID: executionID, NativeTurnID: nativeTurn,
+				State: "cancel_pending", RequestedAt: *requestedAt,
+			}}, nil
+		}
+		if leased && !wake {
+			return zero, failure("UNSUPPORTED_CONTROL", "running manual work lacks a supervisor stop contract; reconcile its actual turn/process end")
 		}
 		if err = stopRequestDelivery(ctx, tx, delivery, "operator_cancelled", req.Reason); err != nil {
 			return zero, err

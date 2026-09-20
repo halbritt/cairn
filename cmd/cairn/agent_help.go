@@ -26,6 +26,7 @@ Everyday operations:
 JSON operations (one request on stdin):
   agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory, agent-resolve
   session-inbox-ready, session-inbox-claim, session-inbox-reconcile Native host delivery
+  session-inbox-control, session-tool-capture, session-tool-stop Native request cancellation
   wake-attempts Inspect current or historical wake attempts
   wake-claim, wake-change Host supervisor coordination
   worker-register, worker-heartbeat, worker-health Host slot availability
@@ -66,8 +67,17 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 		detail = "Native host adapter only: claim one event at a supported turn boundary and retain exclusive session ownership beyond lease expiry. Retry the same request UUID. Use the existing base profile and explicit session."
 		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}}`
 	case "session-inbox-reconcile":
-		detail = "Native host adapter only: release its attempt after delivery_completed, process_exited or turn_ended. An unfinished delivery becomes failed after an observed process/turn end; uncertain work is never replayed automatically. An obsolete execution may close only its own attempt."
+		detail = "Native host adapter only: release its attempt after delivery_completed, process_exited, turn_ended or a confirmed cancel_confirmed cleanup. An unfinished delivery becomes failed after an observed process/turn end; uncertain work is never replayed automatically. An obsolete execution may close only its own attempt."
 		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"},"attempt_id":"ATTEMPT_UUID","reason":"process_exited"}`
+	case "session-inbox-control":
+		detail = "Native host adapter only: read the unfinished attempt owning this inbox, including any pending operator cancellation, pinned native turn, stop state and captured tool processes. Uses the session's current execution; the response echoes an earlier execution's own attempt for recovery."
+		example = `{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}`
+	case "session-tool-capture":
+		detail = "Native host adapter only: durably record tool processes observed for the attempt's exact pinned native turn. Items from any other turn are refused. Retain one stable request UUID per capture batch."
+		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"},"attempt_id":"ATTEMPT_UUID","items":[{"item_id":"exec-ID","process_id":"PID","command":"/bin/sleep 30","native_turn_id":"TURN_ID"}]}`
+	case "session-tool-stop":
+		detail = "Native host adapter only: report bounded stop progress for the cancelled attempt's turn (interrupted, ended, unavailable) and captured tools (stop_issued, terminated, unavailable). The hold releases only through session-inbox-reconcile with reason cancel_confirmed."
+		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"},"attempt_id":"ATTEMPT_UUID","turn_stop":"interrupted","tools":[{"item_id":"exec-ID","stop_state":"terminated"}]}`
 	case "agent-register":
 		detail = "Register a conversation using the existing profile. New request IDs resume the binding/native-session pair with a new execution UUID. No session credential is created."
 		example = `{"request_id":"NEW_UUID","binding":"codex-default","native_session_id":"NATIVE_THREAD","metadata":{"harness":"codex","project":"rhumb","workspace":"/work/rhumb","state":"busy","delivery_mode":"existing-session"}}`
