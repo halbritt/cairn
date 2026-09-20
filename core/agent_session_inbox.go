@@ -252,7 +252,7 @@ func (s *Store) ReconcileSessionInbox(ctx context.Context, req SessionInboxRecon
 	if validID(req.AttemptID) != nil {
 		return SessionInboxAttempt{}, failure("INVALID_REQUEST", "native inbox attempt UUID required")
 	}
-	if req.Reason != "delivery_completed" && req.Reason != "process_exited" && req.Reason != "turn_ended" && req.Reason != "cancel_confirmed" {
+	if req.Reason != "delivery_completed" && req.Reason != "process_exited" && req.Reason != "turn_ended" && req.Reason != "cancel_confirmed" && req.Reason != "exclusivity_revoked" {
 		return SessionInboxAttempt{}, failure("INVALID_REQUEST", "native reconciliation requires completion, an observed process/turn end, or a confirmed cancellation cleanup")
 	}
 	guard := func(tx pgx.Tx) error {
@@ -276,6 +276,20 @@ func (s *Store) ReconcileSessionInbox(ctx context.Context, req SessionInboxRecon
 			return attempt, err
 		}
 		if attempt.Cancel != nil && attempt.Cancel.ConfirmedAt == nil {
+			if !attempt.TurnExclusive {
+				// The exclusivity attestation was revoked after the operator
+				// intent: per-request stop authority no longer exists.
+				if req.Reason == "exclusivity_revoked" {
+					if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code='operator_cancelled',control_at=clock_timestamp(),control_by=$2,control_reason=$3 WHERE delivery_id=$1 AND state IN ('pending','leased')`, attempt.Delivery.DeliveryID, attempt.Cancel.By, attempt.Cancel.Reason); err != nil {
+						return attempt, err
+					}
+					if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET finished_at=clock_timestamp(),reason='exclusivity_revoked' WHERE attempt_id=$1`, req.AttemptID); err != nil {
+						return attempt, err
+					}
+					return s.readSessionInboxAttempt(ctx, tx, req.AttemptID, req.Session, dest)
+				}
+				return attempt, failure("CLEANUP_UNCONFIRMED", "exclusive turn ownership was revoked; per-request cleanup cannot be confirmed")
+			}
 			// An operator cancellation keeps its hold until the binding host
 			// confirms the exact turn stopped and owned tools are terminal.
 			if req.Reason != "cancel_confirmed" {

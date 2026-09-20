@@ -163,6 +163,11 @@ func (s *Store) CaptureSessionTools(ctx context.Context, req SessionToolCapture,
 		if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET capture_state='attached' WHERE attempt_id=$1 AND capture_state IN ('','lost')`, req.AttemptID); err != nil {
 			return attempt, err
 		}
+		// Every new captured tool invalidates a prior clear scan regardless
+		// of capture state: evidence must postdate the newest observation.
+		if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET terminal_scan='' WHERE attempt_id=$1 AND terminal_scan='clear'`, req.AttemptID); err != nil {
+			return attempt, err
+		}
 		return s.readSessionInboxAttempt(ctx, tx, req.AttemptID, req.Session, dest)
 	})
 }
@@ -178,6 +183,7 @@ type SessionToolStopReport struct {
 	TurnStop     string            `json:"turn_stop,omitempty"`
 	CaptureState string            `json:"capture_state,omitempty"`
 	TerminalScan string            `json:"terminal_scan,omitempty"`
+	OwnerJoin    bool              `json:"owner_join,omitempty"`
 	Tools        []SessionToolStop `json:"tools"`
 }
 
@@ -241,7 +247,7 @@ func (s *Store) ReportSessionToolStop(ctx context.Context, req SessionToolStopRe
 				return attempt, err
 			}
 		case "lost":
-			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET capture_state='lost',capture_gap=true WHERE attempt_id=$1 AND capture_state='attached'`, req.AttemptID); err != nil {
+			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET capture_state='lost',capture_gap=true,terminal_scan='' WHERE attempt_id=$1 AND capture_state='attached'`, req.AttemptID); err != nil {
 				return attempt, err
 			}
 		case "complete":
@@ -251,6 +257,14 @@ func (s *Store) ReportSessionToolStop(ctx context.Context, req SessionToolStopRe
 		}
 		if req.TerminalScan != "" {
 			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET terminal_scan=$2 WHERE attempt_id=$1`, req.AttemptID, req.TerminalScan); err != nil {
+				return attempt, err
+			}
+		}
+		if req.OwnerJoin {
+			// A host-observed owner input joining the admitted turn revokes
+			// the exclusivity attestation one-way and invalidates any scan
+			// evidence: per-request stop authority no longer holds.
+			if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET turn_exclusive=false,terminal_scan='' WHERE attempt_id=$1 AND turn_exclusive`, req.AttemptID); err != nil {
 				return attempt, err
 			}
 		}

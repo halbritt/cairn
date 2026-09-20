@@ -499,3 +499,98 @@ func (s *Store) readSessionInboxAttemptForTest(ctx context.Context, ref AgentSes
 func errContains(err error, needle string) bool {
 	return err != nil && strings.Contains(err.Error(), needle)
 }
+
+// Older clear-scan evidence must never satisfy final cleanup after new tool
+// capture, capture loss, or the cancellation decision itself.
+func TestStaleClearScanCannotReleaseHold(t *testing.T) {
+	ctx := context.Background()
+	_, receiver, _, ref, attemptID, dest := nativeCancelFixture(t)
+	delivery := attemptDelivery(t, receiver, ref, attemptID, dest)
+	op := testStore(t, Channel{Principal: "cancel-operator-stale-" + ref.AgentID, Operator: true})
+	if _, err := receiver.CaptureSessionTools(ctx, SessionToolCapture{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, Items: []SessionToolItem{{ItemID: "exec-stale", ProcessID: "606", NativeTurnID: "turn-one"}}}, dest); err != nil {
+		t.Fatal(err)
+	}
+	// A clear scan recorded BEFORE the operator decision.
+	if _, err := receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, TerminalScan: "clear"}, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := op.CancelWork(ctx, CancelWorkRequest{RequestID: uuid.NewString(), Repo: attemptRepo(t, receiver, ref, attemptID, dest), DeliveryID: delivery, Reason: "Stale evidence probe"}); err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, TurnStop: "interrupted", Tools: []SessionToolStop{{ItemID: "exec-stale", StopState: "terminated"}}}, dest)
+	if err != nil || stopped.TerminalScan != "" {
+		t.Fatalf("pre-cancel clear scan survived the operator decision: %+v %v", stopped, err)
+	}
+	if _, err = receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, Reason: "cancel_confirmed"}, dest); err == nil || Code(err) != "CLEANUP_UNCONFIRMED" {
+		t.Fatalf("stale scan released the hold: %v", err)
+	}
+	// A fresh clear scan, then a NEW captured tool invalidates it again.
+	if _, err = receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, TerminalScan: "clear"}, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = receiver.CaptureSessionTools(ctx, SessionToolCapture{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, Items: []SessionToolItem{{ItemID: "exec-late", ProcessID: "707", NativeTurnID: "turn-one"}}}, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, Tools: []SessionToolStop{{ItemID: "exec-late", StopState: "terminated"}}}, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, Reason: "cancel_confirmed"}, dest); err == nil || Code(err) != "CLEANUP_UNCONFIRMED" {
+		t.Fatalf("scan older than a new capture released the hold: %v", err)
+	}
+	// A real attached capture-loss transition invalidates a clear scan:
+	// while detached, unseen tools may have started.
+	if _, err = receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, CaptureState: "attached"}, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, TerminalScan: "clear"}, dest); err != nil {
+		t.Fatal(err)
+	}
+	rescanned, err := receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, CaptureState: "lost"}, dest)
+	if err != nil || rescanned.TerminalScan != "" {
+		t.Fatalf("clear scan survived capture loss: %+v %v", rescanned, err)
+	}
+	if _, err = receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, Reason: "cancel_confirmed"}, dest); err == nil || Code(err) != "CLEANUP_UNCONFIRMED" {
+		t.Fatalf("scan older than capture loss released the hold: %v", err)
+	}
+	// Only a scan that postdates everything releases.
+	if _, err = receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, TerminalScan: "clear"}, dest); err != nil {
+		t.Fatal(err)
+	}
+	confirmed, err := receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, Reason: "cancel_confirmed"}, dest)
+	if err != nil || confirmed.FinishedAt == nil {
+		t.Fatalf("fresh evidence must confirm: %+v %v", confirmed, err)
+	}
+}
+
+// A host-observed owner join revokes exclusivity: confirmation is refused and
+// the honest terminal path records the revocation instead of a cleanup claim.
+func TestOwnerJoinRevokesExclusivity(t *testing.T) {
+	ctx := context.Background()
+	_, receiver, _, ref, attemptID, dest := nativeCancelFixture(t)
+	delivery := attemptDelivery(t, receiver, ref, attemptID, dest)
+	op := testStore(t, Channel{Principal: "cancel-operator-join-" + ref.AgentID, Operator: true})
+	if _, err := op.CancelWork(ctx, CancelWorkRequest{RequestID: uuid.NewString(), Repo: attemptRepo(t, receiver, ref, attemptID, dest), DeliveryID: delivery, Reason: "Owner-join probe"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, TerminalScan: "clear", TurnStop: "interrupted"}, dest); err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, OwnerJoin: true}, dest)
+	if err != nil || revoked.TurnExclusive {
+		t.Fatalf("owner join did not revoke exclusivity: %+v %v", revoked, err)
+	}
+	if _, err = receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, Reason: "cancel_confirmed"}, dest); err == nil || Code(err) != "CLEANUP_UNCONFIRMED" {
+		t.Fatalf("revoked exclusivity confirmed cleanup: %v", err)
+	}
+	closed, err := receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, Reason: "exclusivity_revoked"}, dest)
+	if err != nil || closed.FinishedAt == nil || closed.Reason != "exclusivity_revoked" {
+		t.Fatalf("revocation terminal path: %+v %v", closed, err)
+	}
+	if closed.Delivery.Code != "operator_cancelled" || closed.Delivery.Control == nil {
+		t.Fatalf("revoked delivery outcome: %+v", closed.Delivery)
+	}
+	// A later work-cancel on the revoked attempt refuses again.
+	if _, err = op.CancelWork(ctx, CancelWorkRequest{RequestID: uuid.NewString(), Repo: attemptRepo(t, receiver, ref, attemptID, dest), DeliveryID: delivery, Reason: "post-revocation refusal"}); err == nil || Code(err) != "VERSION_CONFLICT" {
+		t.Fatalf("terminal delivery accepted another cancel: %v", err)
+	}
+}
