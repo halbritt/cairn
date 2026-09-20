@@ -1,6 +1,24 @@
-# Implementation status — 2026-09-16
+# Implementation status — 2026-09-20
 
-Current installed CLI/API: clean `6fdffe0`, migration 048. The explicit Codex native
+On 2026-09-20, `cairn version` and authenticated `cairn agent ... version`
+reported clean revision `a037f42cefa740a6278b999852ef6dd6575b1c85` for both the
+installed CLI and running API. The reviewed source checkout was `93d08d6`;
+`048_native_turn_binding.sql` remains its latest committed migration. These
+version observations identify the deployed builds, not acceptance of pending
+changes.
+
+The [independent coordination review](verification/coordination-review-2026-09-20.md)
+records passing baseline integration checks alongside defects in the uncommitted
+OpenCode/Hermes bridges. Those bridges and the separate schema 049 cancellation
+candidate remain unaccepted. Native cancellation still requires verified request
+ownership through admission and revocation, with truthful process-stop outcomes.
+Coordination v1 completion remains open. The accounts below retain their original
+verification dates and installation identities.
+
+## Historical snapshot — 2026-09-16
+
+The installed CLI/API recorded on 2026-09-16 was clean `6fdffe0`, migration 048.
+The explicit Codex native
 queue now binds each claim to its exact delivery and turn; worker cleanup checks
 final unit state after a stop error. The API, presence, scheduler and seven idle
 worker services were restarted after backup and migration. See the

@@ -20,7 +20,17 @@ delivery/turn binding; see [the deployed verification](../verification/native-tu
 Overall completion remains open: host submission and draft handling, and
 interactive cancellation still need work. The owner rejected the premature completion claim. Separately conditional
 features retain their triggers. See
-the [current checkpoint](../verification/coordination-v1-acceptance-2026-09-16.md).
+the [September 16 acceptance checkpoint](../verification/coordination-v1-acceptance-2026-09-16.md).
+
+The [2026-09-20 independent review](../verification/coordination-review-2026-09-20.md)
+holds integration of the uncommitted OpenCode/Hermes bridges and the separate
+schema 049 cancellation candidate. Baseline checks pass, but the review found
+lost wakes, cancellation races and incomplete test isolation. Native cancellation
+still needs verified request-to-delivery-to-turn ownership through admission
+and revocation, and explicit failure or uncertainty when tool termination cannot
+be established. No bridge repair acceptance or full coordination completion is
+claimed by that review; [implementation status](../implementation-status.md)
+records the current installed build separately from the September 16 rollout.
 
 | Milestone | Current progress |
 | --- | --- |

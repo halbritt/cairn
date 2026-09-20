@@ -1,0 +1,112 @@
+# Native coordination review, 2026-09-20
+
+Integration of the reviewed OpenCode/Hermes bridge changes is held pending repair
+and independent verification. Three P1 defects affect delivery, cancellation or
+test isolation. Passing fixture tests do not establish native host acceptance.
+
+The reviewed main checkout was `93d08d63961e348e00afeb60f89130830b0e0332`
+(`93d08d6`), with uncommitted bridge changes. The hashes below identify the
+reviewed bytes; the commit alone does not identify this candidate. Findings and
+line numbers describe that snapshot. Repairs made concurrently require fresh
+checks against their own hashes.
+
+## Findings and required repairs
+
+| ID | Severity | Observed behavior | Repair and verification required |
+| --- | --- | --- | --- |
+| B1 | P1 | `integrations/lifecycle/opencode_queue.py:95` converts a BUSY refusal into `(client_id, False)`. `integrations/opencode/coordination.ts:223` refuses without queueing. The coordinator records `queued` and suppresses another attempt for that delivery (`integrations/lifecycle/coordination.py:154,533`). | Treat BUSY as a definite refusal, clear the attempt and permit a later idle retry. Verify that an idle-to-busy race cannot lose the wake. Existing busy tests assert the incorrect queued result. |
+| B2 | P1 | Native Hermes `cli.py:17475` removes pending input before acquiring the admission lock. Cancellation between removal and admission sees an empty queue and idle state; `integrations/hermes/coordination.py:311` reports `already_ended`. The same request can then be admitted. | Make queue removal and admission atomic with cancellation, or retain cancellation state across the handoff. Exercise cancellation in that exact interval and verify the request cannot subsequently execute. |
+| B3 | P1 | `scripts/test_hermes_cancellation_e2e.py:49` imports the native process registry before setting temporary `HERMES_HOME` at line 78. Native `tools/process_registry.py:59` binds `CHECKPOINT_PATH` at import; `spawn_local` writes that path at line 1201. Ordinary test invocation can overwrite the production `processes.json`. | Establish isolation before any Hermes imports and assert every persistence path belongs to the temporary home. All review executions set the environment before starting Python. |
+| B4 | P2 | `integrations/hermes/coordination.py:434` catches tool inventory or termination failures and still returns `aborted:true`, `turn_stop:"interrupted"`, `tools:[]`. An injected inventory failure reproduced this response. | Return explicit tool-stop failure or uncertainty. Verify that an unavailable inventory cannot be reported as successful cancellation with no affected tools. |
+| B5 | P2 | `integrations/lifecycle/coordination.py:185` creates the Hermes wake without `request_id`; submission passes `wake.get('request_id')` at line 500. Tests that manually supply request identity do not exercise the normal lifecycle path. | Preserve the request-to-delivery-to-native-turn binding through actual admission, or keep request-bound cancellation unavailable for these wakes. Verify the production path rather than only manually tagged fixtures. |
+
+The installed Hermes APIs match the bridge's method signatures, including
+`queue_message(content=..., request_id=..., delivery_id=..., turn_id=...)`,
+`interrupt(hard_cancel=True)` and the inspected process-registry fields.
+OpenCode refuses abort because the native operation lacks atomic turn fencing.
+Its separate status check and `promptAsync` call also do not establish atomic
+idle admission. A successful asynchronous HTTP acknowledgment does not by itself
+prove that generation started, completed or remained separate from owner work.
+
+## Reproductions and fixture limits
+
+The bridge reviewer reproduced B2 by queueing a tagged wake, removing it from the
+native input queue, cancelling before admission, and then invoking the native
+admission helper. The response was `aborted:false, turn_stop:"already_ended"`;
+the helper subsequently admitted that request. For B4, making native tool
+inventory raise an error produced `aborted:true, turn_stop:"interrupted",
+tools:[]`. The coordinator independently reran both isolated reproductions and
+confirmed the defects.
+
+The host-local reproduction scripts are retained temporarily under
+`/tmp/cairn-agent88-review/`. These commands are specific to this review host:
+
+```sh
+python3 -B /tmp/cairn-agent88-review/reproduce_handoff.py
+python3 -B /tmp/cairn-agent88-review/reproduce_inventory.py
+sha256sum -c /tmp/cairn-agent88-review/reviewed-source.sha256
+```
+
+Both reproductions exited 1, meaning the defect was reproduced. Exit 0 means the
+exact defect was not reproduced; it is not full repair acceptance. The handoff
+probe exits 77 if queue acquisition moves under the admission lock or its old
+seam disappears, requiring a new test synchronized with the real processing
+loop. Each script launches a fresh process with temporary `HERMES_HOME` before
+imports, checks checkpoint isolation and prints the source hashes it exercises.
+The shared helper is `hermes_probe.py` in the same temporary directory. These
+scratch artifacts may expire; their selected observations are recorded here.
+
+The reviewer ran 28 OpenCode/Hermes queue tests and 11 Hermes cancellation
+fixture tests successfully. The Hermes fixture constructs `HermesCLI` through
+`__new__`, substitutes chat behavior and mocks agent interruption. It exercises
+the native queue helper, socket bridge and bounded tool processes, but does not
+establish cancellation of a real interactive model generation. The OpenCode
+bridge fixture supplies mock SDK responses. These passing tests miss B2 and B4;
+the BUSY tests encode B1's incorrect expectation.
+
+## Cancellation contract and broader validation
+
+A separate pending cancellation candidate is in the host-local worktree
+`/tmp/opencode/cairn-agent24-reconcile`, based on `245a397`. Its changes are not
+part of reviewed main `93d08d6`. The independent cancellation reviewer confirmed
+the stale-clear scan finding using disposable PostgreSQL. No native admission/revocation lifecycle
+was observed for that candidate. Its integration remains held; the scan result
+does not establish exclusive request ownership or verified process termination.
+
+At this report's checkpoint, the coordinator reported:
+
+| Check | Result | Scope or limit |
+| --- | --- | --- |
+| Main `make check` | Passed | Static checks; does not replace database coverage. |
+| Baseline `make test-integration` at `93d08d6` | Passed, exit 0 | Disposable PostgreSQL run from an isolated checkout; does not validate the uncommitted bridge or pending native migration. |
+| Codex queue tests | 14 passed | Queue test coverage only. |
+| Claude channel tests | 10 passed | Emitted `ResourceWarning`; warning is retained as a verification limit. |
+| Independent safe Hermes reproductions | Both defects confirmed | Same faulty handoff and hidden inventory failure as the reviewer observed. |
+
+The full integration pass used `/home/halbritt/git/cairn-agent88-baseline` at
+`93d08d6`; its host-local log is `/tmp/cairn-agent88-integration.log`. An earlier
+attempt from a worktree under `/tmp` failed before tests because of an unrelated
+`/tmp/.git`. Moving the worktree resolved that setup failure; VCS stamping was
+not disabled. The coordinator also confirmed the `make check` log recorded
+exit 0.
+
+No bridge repairs or native migration acceptance have been verified at this
+checkpoint. Their integration remains held. The coordinator will append repair
+evidence after independent checks. This review establishes specific defects and
+exercised behavior, not full design acceptance or measured usefulness.
+
+## Reviewed source hashes
+
+All values are SHA-256. Repository paths are relative to the Cairn checkout;
+native Hermes paths are relative to the inspected host installation's
+`~/.hermes/hermes-agent/` directory.
+
+| Source | SHA-256 |
+| --- | --- |
+| `integrations/opencode/coordination.ts` | `cb4ca83874a79b715ae16143ca20f41ba821eba70a2e3e886345875015d7bc2b` |
+| `integrations/hermes/coordination.py` | `cd6bad751399e229578bd4702d409d698c9939100a0e6085c8ebc983557ae82c` |
+| `integrations/lifecycle/opencode_queue.py` | `9f05565e54f4de92fe87d90b7b10b3fa79b8e670a1f4762ddfd7ddbfcaf5cb6d` |
+| `integrations/lifecycle/hermes_queue.py` | `608de154035cb856ebec00d1682c382dca2f78f4fbca7ec930012d92ce06c281` |
+| `scripts/test_hermes_cancellation_e2e.py` | `ec47587553afc9bc2885cb485ff038911a620ed43a17008190a3a1136a67d38a` |
+| Native `cli.py` | `6f376cb143fdf5d3363af11f04712e2c6f6db21b310fa3d0510f4dc4962a56f4` |
+| Native `tools/process_registry.py` | `db2ec6851de0a09d742aea00128eeedb1f8114abbf125218993cce08654c1ed1` |
