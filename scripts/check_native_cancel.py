@@ -111,7 +111,7 @@ def check(binary, root):
         assert envelope['status'] == 'REQUEST_CANCELLED', envelope
 
         def report(body):
-            return agent('session-tool-stop', dict(session=session,
+            return agent('session-tool-stop', dict(request_id=str(uuid.uuid4()), session=session,
                                                    attempt_id=attempt['attempt_id'], **body))
 
         def reconcile(reason):
