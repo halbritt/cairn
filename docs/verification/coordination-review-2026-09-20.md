@@ -97,6 +97,27 @@ exercised behavior, not full design acceptance or measured usefulness.
 
 ## Reviewed source hashes
 
+### B1 repair check later on September 20
+
+The revised OpenCode adapter treats BUSY as `QueueUnavailable`. A frozen copy
+passed all 15 OpenCode queue/bridge fixture tests. Two additional composition
+tests exercised actual coordinator state files, locks, Unix sockets and peer
+identity checks: BUSY cleared the retained wake and permitted the same delivery
+to retry; dropped connections, malformed JSON and a wrong response ID preserved
+uncertainty and suppressed replay. Only readiness and endpoint discovery were
+substituted. The coordinator independently reran those two tests successfully.
+
+The temporary test is
+`/tmp/cairn-agent88-opencode-review/scripts/test_opencode_recovery_composition.py`.
+It tested `coordination.py` SHA-256
+`43c2309f1b81fa5c1f5751331c23114caa2be4b909ddd0c70d2a44cd5fd8afc3`
+and `opencode_queue.py` SHA-256
+`440257ae667233610d381ec7e5e3563512495b210437d2f58da45cc17c053080`.
+This verifies the B1 recovery behavior in that candidate. It does not establish
+atomic native admission or acceptance of the remaining bridge changes.
+
+### Original defect snapshot
+
 All values are SHA-256. Repository paths are relative to the Cairn checkout;
 native Hermes paths are relative to the inspected host installation's
 `~/.hermes/hermes-agent/` directory.
