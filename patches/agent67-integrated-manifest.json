@@ -5,7 +5,15 @@
     "commit": "4c83bc91c864ab4285d02962a17a82b6d3056691",
     "source": "agent2 repair branch (/home/halbritt/git/cairn-agent2-repair), commit state only; that working tree's uncommitted files were not used",
     "ancestry": "93d08d6 and e0959f4 are ancestors, so main's lifecycle checkpoint expansion (93d08d6) is included",
-    "agent2_scope": "B2-B5 repair follow-up: hermes coordination repairs (71cf2c25...), strengthened test_hermes_queue.py (eea2bad1...), e2e test isolation honoring HERMES_ROOT (b3001f66...); fixture (52c80275...) and opencode files identical to the frozen snapshot"
+    "agent2_scope": "B2-B5 repair follow-up: hermes coordination repairs (71cf2c25...), strengthened test_hermes_queue.py (eea2bad1...), e2e test isolation honoring HERMES_ROOT (b3001f66...); fixture (52c80275...) and opencode files identical to the frozen snapshot",
+    "main_merge": {
+      "commit": "3b2a1cd (pinned by coordinator task 62e5d2bf v1)",
+      "merge_commit": "23b12b6 on branch agent67-integrated-package",
+      "content": "independently verified dormant cancellation core, schema 049, native request-control checks and scripts/check_native_cancel.py; uninstalled, dormant",
+      "conflicts": "none; both lineages touched three shared docs files and git auto-merged them (bridge sections from agent2, cancellation/verification sections from main)",
+      "main_tip_note": "main has since advanced to 2ae4d50, a docs-only commit on top of 3b2a1cd (coordination-review record); intentionally not included because the task pinned 3b2a1cd"
+    },
+    "b3_followup": "f938a0d cherry-picked as 8647b84 (present since candidate v3); coordinator note beafe8c5 v1 authorized and independently verified it"
   },
   "changes_vs_agent2_commit": [
     {
@@ -49,11 +57,13 @@
       "scripts/test_opencode_queue.py": "15 tests OK",
       "scripts/test_hermes_queue.py": "16 tests OK",
       "opencode BUSY composition (agent88 review harness against this tree's files)": "2 tests OK; exercised integrations/lifecycle/coordination.py dcdd43d1... and opencode_queue.py 440257ae...",
-      "scripts/test_hermes_cancellation_e2e.py": "16 tests OK in a fresh subprocess with HERMES_ROOT/HOME/HERMES_HOME set before any imports, against an isolated copy of b8ae93b (13 tests before the B3 follow-up; the follow-up adds the real-registry refusal probes)",
+      "scripts/test_hermes_cancellation_e2e.py": "16 tests OK in a fresh subprocess with HERMES_ROOT/HOME/HERMES_HOME set before any imports, against a fresh isolated copy of pinned b8ae93b",
       "native tests/hermes_cli/test_cli_queue_message.py": "16 tests OK in the same isolated copy",
-      "make_check": "passed with ordinary VCS stamping",
-      "make_test_integration": "passed (exit 0) in the integrated tree on disposable PostgreSQL; scripts/check-local-api.py runs the updated coordination checker inside that validation, and its 'Idle wakeup: refused native terminal fallback...' assertion line appears in the run log",
-      "installer_tempdest": "--harness opencode and --harness hermes install cleanly into temporary destinations with --no-service; roots contain coordination.py, codex_queue.py, claude_channel.py, opencode_queue.py, hermes_queue.py and no agy_queue.py; both installed coordination.py copies load and read their binding configs"
+      "make_check": "passed with ordinary VCS stamping at the merged tree (23b12b6)",
+      "make_test_integration": "passed (exit 0) on disposable PostgreSQL at the merged tree; the updated idle-wakeup checker no-fallback assertion runs inside check-local-api validation (also true of candidate v2 d7dd0a5, which already carried the checker update and a full integration run)",
+      "installer_tempdest": "--harness opencode and --harness hermes install cleanly into temporary destinations with --no-service; roots contain coordination.py, codex_queue.py, claude_channel.py, opencode_queue.py, hermes_queue.py and no agy_queue.py; both installed coordination.py copies load and read their binding configs",
+      "opencode_busy_composition": "2 tests OK against this tree's coordination.py and opencode_queue.py",
+      "native_pin": "native source pinned at b8ae93b (clean, verified by hash); no native source edits; excluded Agy working-tree changes in main remain excluded from the package"
     },
     "clean_checkout": "see deliverables validation-summary; final patch re-applied to a fresh 4c83bc91 worktree with suites re-run and zero repo debris"
   },
