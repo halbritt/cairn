@@ -119,6 +119,36 @@ behavior with no installed adapter asserting exclusivity. That correction and
 the passing original regression do not resolve the three reproduced defects or
 the outstanding native admission evidence. Integration remains held.
 
+### Cancellation repair review at `8d30af4`
+
+The next isolated candidate is
+`8d30af43ab596688f49f072b2401ca6ba9712a35`. Independent disposable-PostgreSQL
+race tests pass the C1 scan-ordering and C3 invalid-revocation probes, as well
+as the narrow C2 case with a still-captured tool. C2 remains open: the new
+revocation branch checks captured tool states but bypasses the positive
+turn-stop and final-scan requirements in `cancelCleanupReady`.
+
+Three additional probes reproduce premature hold release: a running turn with
+no captured tools; a running turn with an unavailable tool, lost capture and
+an `unknown_remaining` scan; and an ended turn with no final scan. A positive
+case with an ended turn, terminal tools and a fresh clear scan succeeds.
+The probes and log are in
+`/tmp/cairn-cancel-review-8d30af4.55lN6d72/core/agent_cancel_revocation_cleanup_review_test.go`
+and `/tmp/cairn-cancel-review-8d30af4.55lN6d72/independent-review.log`.
+Fresh database reads in `revocation-persistence.log` in that directory confirm
+the active hold disappeared and the attempt finished in all three failing cases.
+The coordinator inspected the source, probes and results; the independent
+reviewer executed the database checks. No candidate source was changed.
+
+The existing `TestOwnerJoinRevokesExclusivity` expects release after owner
+join invalidates the scan, so that test currently preserves the defective
+behavior. The submitted real-API script exercises cancellation, ambiguity
+and scan ordering, but contains no revocation scenario despite the author's
+broader validation claim. Integration remains held until revocation preserves
+the same cleanup evidence requirements without treating lost interruption
+permission as proof that work stopped. Native ownership enablement remains
+a separate outstanding contract.
+
 ## Bridge repair follow-up
 
 The later repair report claimed all five findings were closed. Independent
