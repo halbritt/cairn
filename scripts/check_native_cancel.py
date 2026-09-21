@@ -175,7 +175,7 @@ def check(binary, root):
         assert closed['status'] == 'OK', closed
         attempt_closed = closed["data"]
         assert attempt_closed['reason'] == 'exclusivity_revoked', attempt_closed
-        assert attempt_closed['cancel']['confirmed_at'] is None, attempt_closed
+        assert attempt_closed['cancel'].get('confirmed_at') is None, attempt_closed
         revoked_delivery = agent('event-inspect', dict(event_id=event2['event_id']))['deliveries'][0]
         assert revoked_delivery['code'] == 'operator_cancelled', revoked_delivery
         print('Real-API native cancellation: capture, fence, ambiguity hold, confirmed cleanup and revocation passed')
