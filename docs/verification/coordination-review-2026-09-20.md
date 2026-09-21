@@ -255,13 +255,47 @@ enablement remain held pending the applicable independent checks.
 The revised B2 standing regression now fails when the outer admission lock is
 removed, independently verifying that it detects the original race. All 13
 Hermes fixture tests passed on the frozen candidate; their passing result did
-not cover the three defects above. The subsequent `f938a0d` fixture ownership
-repair is undergoing a separate independent check.
+not cover the three defects above. Independent review of the subsequent
+`f938a0d` fixture ownership repair confirms that rejected setup preserves a
+real isolated foreign registry's process, checkpoint bytes and modification
+time, and restores the environment. Valid cleanup removes the fixture's own
+process, socket and temporary home. All 16 fixture tests pass. The probes are
+in `/tmp/cairn-agent88-b3-review/`.
 
 The installed Hermes checkout was observed clean at
 `13f4cfebfafbce8ac9d1bf29f66731858ed638b5` after the author reported restoring
 it. That restoration was another installed-source mutation outside the
 isolated-only assignment. Further repairs are restricted to isolated copies.
+
+### Bridge identity review at `4991f15` / `2c61219`
+
+The next candidate preserves a single identity through the real native
+admission, `run_conversation` wrapper, `build_turn_context` and pre-hook on
+the normal path. Provider generation, Relay observability and the external
+API subprocess boundary were substituted in this probe; it does not establish
+model end-to-end acceptance. Four defects still block integration:
+
+1. `coordination.call` fabricates `{"attempt": null}` when API configuration
+   is missing. This turns invalid test configuration into apparent successful
+   reconciliation. Production must retain failure semantics; tests must make
+   their substituted boundaries explicit.
+2. The Hermes pre-hook can overwrite the admitted CLI identity with a foreign
+   turn. The post-hook ignores the incoming identity and labels a foreign
+   completion with the saved active turn. Independent probes reproduce both
+   loss of the original abort target and a false end notification.
+3. The native patch removes `_current_task_id` assignment, breaking existing
+   task setup and parent task identity used by delegation.
+4. Its ambient approval-context fallback reuses an old turn identity at the
+   builder boundary, including a compression-child case.
+
+The complete existing upstream `tests/agent/test_turn_context.py` passes
+19 tests at native baseline `b8ae93b` and fails two of those tests at
+`2c61219`. Logs are `/tmp/hermes-turn-review.9qwwOr1a/baseline-run.log` and
+`candidate-run.log`. All 50 new bridge/queue fixtures pass despite these
+defects; they do not establish the claimed coverage. The native-path probe
+is `/tmp/cairn-agent88-b5-review/review_native_path.py`. Both source snapshots
+remain isolated. Agent 2 has a bounded corrective assignment covering the
+API failure behavior, hook ownership and upstream regressions.
 
 ## Reviewed source hashes
 
