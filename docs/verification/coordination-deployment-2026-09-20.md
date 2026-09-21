@@ -47,7 +47,7 @@ An independent reviewer verified eight core checks with no failures:
 
 The coordinator also exercised an ordinary hosted search and pulled the current
 owner-correction note through the deployed API. A separate post-deployment
-read-only verification request to existing agent24 is queued as event
+read-only verification request to existing agent24 was queued as event
 `1d862786-dcbe-4910-b345-444064e4272e`; publication alone is not successful delivery.
 
 The separate post-deployment Agy adapter audit completed in the existing agent2
@@ -107,7 +107,7 @@ both Claude homes, but configuration alone did not establish automatic delivery:
 | Codex one | New launcher and trusted hooks installed; inspected existing sessions had no native queue endpoint. | Same-session normal restart through the installed launcher. |
 | Codex two | An existing native queue endpoint was discoverable. | Its process predates the native binary update; current-version acceptance remains unverified. |
 | Claude one and two | Hooks installed; channel registration and activation configuration staged as described below. | Explicit channel-enabled native launch and live account-specific acceptance. |
-| OpenCode | Plugin installed; agents24/67 retain old loaded modules. | Fresh processes resuming the same conversation IDs. |
+| OpenCode | Agents24/67 restarted with owner approval on September 21; same conversation IDs and fresh bridge sockets verified. | Post-restart delivery checks are recorded below. |
 | Hermes | Companion and plugin installed; fresh-process checks pass. | Older production processes still need normal restart. |
 | Agy | Existing native audit request completed once after rollout. | Client-only queue prototype remains unsupported. |
 
@@ -133,8 +133,9 @@ lack a busy/admission guard; plain module imports can also reuse cached plugin
 code. Those operations are not a proven safe activation path. The coordinator
 requested approval specifically to close and resume agents24/67 in their existing
 conversations because unsent drafts or newly started work could be lost. No such
-restart has been performed. The exact same-session resume plan is retained with
-private release artifacts; it does not create replacement conversations.
+restart was performed before approval. The owner approved both restarts on
+September 21; the completed restart procedure is recorded below. The exact
+same-session resume plan is retained with private release artifacts.
 
 ## Exclusions and remaining acceptance
 
@@ -151,3 +152,46 @@ cleanup, and broader live draft/submission-race acceptance remain open. Dormant
 core controls and source fixture success do not enable these capabilities.
 The delivery goal remains active while native activation and the queued live
 verification are unresolved; the rollout is not a new full-v1 completion claim.
+
+## Approved OpenCode restart — September 21
+
+The owner explicitly approved closing and resuming agents24 and67 in their
+existing conversations. The coordinator used each native command palette's
+**Exit the app**, confirmed the old process exited and the original shell was
+foreground, then resumed the existing session ID in the same pane and directory.
+No fork, replacement conversation, model override or new pane was used. Both
+restored their existing displayed model/variant and conversation history.
+
+| Agent | Same native session | Old PID | New PID | Pane |
+| --- | --- | --- | --- | --- |
+| 24 | `ses_f546e39d9ffeTh4GDFEBiYTsgE` | 2080071 | 2625514 | `w18:p1` |
+| 67 | `ses_f432e5d4dffeHoMMdmoIO3P53E` | 2644831 | 2626479 | `w0:p1` |
+
+Both new processes created owner-only `/tmp/cairn-opencode-PID.sock` listeners.
+Herdr's `pane run` requires the native command as one shell-quoted argument:
+passing `--session` as a separate Herdr argument incorrectly selects a Herdr
+server. The initial mistaken invocation failed before launching anything; the
+coordinator corrected it and confirmed exactly one new process per target.
+
+The plugin registers restored conversations on their first native turn. The
+coordinator submitted one ordinary post-restart verification turn to each
+existing conversation; native hooks handled registration and inbox admission.
+No registration or inbox claim was run manually. Agent24's existing verification
+delivery was handled at 09:28:33 PDT after exactly one claim; result
+`95ebc727-415c-40b9-8ce9-b1aca0476879/1` independently confirms deployed CLI/API
+`b5aab96` and healthy services. This admission occurred on the first ordinary
+post-restart turn, so it is not proof of automatic idle queue submission. Agent67 received
+a durable deployment-correction notice, event
+`2a62e36e-52cb-4f00-8750-2c184dc3467f`, for explicit acknowledgement after its
+activation check. Its automatic queue submission was refused by native OpenCode:
+the adapter sent a delivery UUID as `messageID`, while native validation requires
+a string beginning with `msg`. The native schema rejected it before prompt
+execution. The retained uncertainty marker has not been cleared or replayed;
+a corrective bridge patch is under review. Restart and socket presence alone did
+not establish a functioning automatic submission path.
+
+Independent verification confirmed socket peer PID/UID and mode 0600 for both
+processes, preserved Cairn agent UUIDs, and new execution IDs:
+agent24 `77afb2af-a30e-4ff6-bdc0-74bc891bb640`, agent67
+`0d77c315-246c-4614-b556-6469b0aa397d`. Private evidence is
+`independent-opencode-resume-verification.json` in the release directory.
