@@ -9,12 +9,19 @@ regressions and full local integration checks. That migration has not been
 installed on the owner's database.
 
 The [independent coordination review](verification/coordination-review-2026-09-20.md)
-records passing baseline and cancellation-core integration checks alongside
-defects in the uncommitted OpenCode/Hermes bridges. The dormant cancellation
-core is integrated; those bridges remain unaccepted. Native cancellation still requires verified request
-ownership through admission and revocation, with truthful process-stop outcomes.
-Coordination v1 completion remains open. The accounts below retain their original
-verification dates and installation identities.
+records the verified dormant cancellation core and OpenCode/Hermes bridge
+repairs. The bridge checks cover BUSY retry, atomic Hermes queue admission,
+fixture isolation, tool-stop uncertainty, and delivery/turn identity through
+native hooks. The combined source passed `make test-integration` and `make check`;
+52 bridge/queue fixtures and 35 native Hermes tests passed separately.
+
+These source checks do not enable native interactive cancellation. Exclusive
+request ownership through admission and revocation, real-model interruption,
+and host-observed cleanup still need operational acceptance. OpenCode abort
+remains refused without atomic native turn fencing. The companion Hermes patch
+is pinned to its upstream base; it has not been installed. Coordination v1
+completion remains open. The accounts below retain their original verification
+dates and installation identities.
 
 ## Historical snapshot — 2026-09-16
 

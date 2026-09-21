@@ -1,8 +1,13 @@
 # Native coordination review, 2026-09-20
 
-Integration of the reviewed OpenCode/Hermes bridge changes is held pending repair
-and independent verification. Three P1 defects affect delivery, cancellation or
-test isolation. Passing fixture tests do not establish native host acceptance.
+Current disposition: the dormant cancellation core and bounded OpenCode/Hermes
+bridge repairs pass independent review and local integration checks. Final
+package assembly is pending. Native cancellation enablement and deployment
+remain held; passing fixture tests do not establish native host acceptance.
+
+The findings below retain their original snapshots and rejected candidates.
+The latest [corrective bridge review](#corrective-bridge-review-at-69f6a95--131e95b)
+records the repaired behavior and the limits of its evidence.
 
 The reviewed main checkout was `93d08d63961e348e00afeb60f89130830b0e0332`
 (`93d08d6`), with uncommitted bridge changes. The hashes below identify the

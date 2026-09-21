@@ -1,6 +1,22 @@
 # Cairn roadmap
 
-Updated 2026-09-11. Baseline: `e3b47c7` (local memory and task delivery loop).
+Updated 2026-09-20. Original baseline: `e3b47c7` (local memory and task delivery loop).
+
+## Current coordination work
+
+The September 20 [coordination review](verification/coordination-review-2026-09-20.md)
+records the agent inventory, delegated ownership, independently reproduced
+failures and verified repairs. The current source includes dormant cancellation
+cleanup/revocation controls and reviewed OpenCode/Hermes queue bridges. Local
+integration checks passed; the [implementation status](implementation-status.md)
+separates that source from the installed build.
+
+Next acceptance work remains explicit in the
+[coordination v1 plan](plans/agent-coordination-v1.md): native exclusive admission
+and revocation, real-model interruption with confirmed cleanup, and live draft
+preservation/submission-race checks. Native cancellation enablement and deployment
+remain held. Source-level fixture success does not satisfy these operational
+milestones or establish general memory usefulness.
 
 ## Single-user operating assumptions
 

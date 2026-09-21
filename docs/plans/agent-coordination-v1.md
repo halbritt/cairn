@@ -23,15 +23,20 @@ features retain their triggers. See
 the [September 16 acceptance checkpoint](../verification/coordination-v1-acceptance-2026-09-16.md).
 
 The [2026-09-20 independent review](../verification/coordination-review-2026-09-20.md)
-holds integration of the uncommitted OpenCode/Hermes bridges. The dormant
-schema 049 cancellation core is integrated after independent cleanup regressions
-and full local integration checks; it is not deployed. The review found
-lost wakes, cancellation races and incomplete test isolation. Native cancellation
-still needs verified request-to-delivery-to-turn ownership through admission
-and revocation, and explicit failure or uncertainty when tool termination cannot
-be established. No bridge repair acceptance or full coordination completion is
-claimed by that review; [implementation status](../implementation-status.md)
-records the current installed build separately from the September 16 rollout.
+verifies the dormant schema 049 cancellation core and bounded OpenCode/Hermes
+bridge repairs. Disposable database checks cover cleanup order, revocation and
+persisted holds. Native fixtures cover queue handoff, hook identity, isolated
+tool processes and explicit failure handling; provider/model boundaries remain
+substituted. Source integration is separate from deployment: neither schema 049
+nor the companion Hermes patch is installed by this work.
+
+Remaining acceptance work is to establish exclusive request ownership through
+native admission and revocation, then exercise real-model interruption and
+host-observed cleanup, including failed termination. OpenCode cancellation stays
+unavailable until atomic native turn fencing exists. Broader draft preservation
+and host submission races still require the live trials specified below.
+[Implementation status](../implementation-status.md) records the installed build
+separately. These repairs do not complete coordination v1.
 
 | Milestone | Current progress |
 | --- | --- |
