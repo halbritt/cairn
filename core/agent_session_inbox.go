@@ -288,10 +288,20 @@ func (s *Store) ReconcileSessionInbox(ctx context.Context, req SessionInboxRecon
 				// records lost stop permission, never turn/tool cleanup, so
 				// captured tools must already be terminal to close here.
 				if req.Reason == "exclusivity_revoked" {
+					// Permission revocation alone establishes nothing about
+					// the running work: release requires the same positive
+					// evidence family as cleanup confirmation, recorded as a
+					// separate outcome with the cancellation unconfirmed.
+					if attempt.TurnStopState != "interrupted" && attempt.TurnStopState != "ended" {
+						return attempt, failure("CLEANUP_UNCONFIRMED", "revocation cannot close without a positive turn stop")
+					}
 					for _, tool := range attempt.Tools {
 						if tool.StopState != "terminated" && tool.StopState != "unavailable" {
 							return attempt, failure("CLEANUP_UNCONFIRMED", "revocation cannot close while captured tools are still running")
 						}
+					}
+					if attempt.TerminalScan != "clear" {
+						return attempt, failure("CLEANUP_UNCONFIRMED", "revocation cannot close without a fresh clear terminal scan")
 					}
 					if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code='operator_cancelled',control_at=clock_timestamp(),control_by=$2,control_reason=$3 WHERE delivery_id=$1 AND state IN ('pending','leased')`, attempt.Delivery.DeliveryID, attempt.Cancel.By, attempt.Cancel.Reason); err != nil {
 						return attempt, err

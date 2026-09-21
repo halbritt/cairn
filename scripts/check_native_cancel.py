@@ -142,7 +142,43 @@ def check(binary, root):
         assert final is None, 'hold released'
         failed = agent('event-inspect', dict(event_id=event['event_id']))['deliveries'][0]
         assert failed['state'] == 'failed' and failed['code'] == 'operator_cancelled', failed
-        print('Real-API native cancellation: capture, fence, ambiguity hold and confirmed cleanup passed')
+
+        # Real-API revocation exercise: a second exclusive attempt whose
+        # owner-join revocation must NOT release the hold without the full
+        # evidence family, then releases with a separate outcome label.
+        event2 = agent('event-publish', dict(request_id=str(uuid.uuid4()), kind='request',
+            ref=dict(record_id=note['record_id'], version=1),
+            destination=dict(type='agent', name=registered['inbox'])))
+        delivery2 = agent('event-inspect', dict(event_id=event2['event_id']))['deliveries'][0]['delivery_id']
+        claim2 = agent('session-inbox-claim', dict(request_id=str(uuid.uuid4()), session=session,
+            delivery_id=delivery2, native_turn_id='turn-revoke', turn_exclusive=True))['attempt']
+        agent('session-tool-capture', dict(request_id=str(uuid.uuid4()), session=session,
+            attempt_id=claim2['attempt_id'],
+            items=[dict(item_id='exec-revoke', process_id='4243', command='/bin/sleep 30',
+                        native_turn_id='turn-revoke')]))
+        agent('session-tool-stop', dict(request_id=str(uuid.uuid4()), session=session,
+            attempt_id=claim2['attempt_id'], tools=[dict(item_id='exec-revoke', stop_state='unavailable')]))
+        cancelled2 = operator('work-cancel', dict(request_id=str(uuid.uuid4()), repo=repo,
+            delivery_id=delivery2, reason='Real-API revocation probe'))
+        assert cancelled2['native']['state'] == 'cancel_pending', cancelled2
+        agent('session-tool-stop', dict(request_id=str(uuid.uuid4()), session=session,
+            attempt_id=claim2['attempt_id'], owner_join=True))
+        revoked = raw('session-inbox-reconcile', dict(request_id=str(uuid.uuid4()), session=session,
+            attempt_id=claim2['attempt_id'], reason='exclusivity_revoked'))
+        assert revoked['status'] == 'CLEANUP_UNCONFIRMED', revoked
+        agent('session-tool-stop', dict(request_id=str(uuid.uuid4()), session=session,
+            attempt_id=claim2['attempt_id'], turn_stop='ended'))
+        agent('session-tool-stop', dict(request_id=str(uuid.uuid4()), session=session,
+            attempt_id=claim2['attempt_id'], terminal_scan='clear'))
+        closed = raw('session-inbox-reconcile', dict(request_id=str(uuid.uuid4()), session=session,
+            attempt_id=claim2['attempt_id'], reason='exclusivity_revoked'))
+        assert closed['status'] == 'OK', closed
+        attempt_closed = closed['data']['attempt']
+        assert attempt_closed['reason'] == 'exclusivity_revoked', attempt_closed
+        assert attempt_closed['cancel']['confirmed_at'] is None, attempt_closed
+        revoked_delivery = agent('event-inspect', dict(event_id=event2['event_id']))['deliveries'][0]
+        assert revoked_delivery['code'] == 'operator_cancelled', revoked_delivery
+        print('Real-API native cancellation: capture, fence, ambiguity hold, confirmed cleanup and revocation passed')
     finally:
         api.terminate()
         try:

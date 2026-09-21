@@ -584,12 +584,27 @@ func TestOwnerJoinRevokesExclusivity(t *testing.T) {
 	if _, err = receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, Reason: "cancel_confirmed"}, dest); err == nil || Code(err) != "CLEANUP_UNCONFIRMED" {
 		t.Fatalf("revoked exclusivity confirmed cleanup: %v", err)
 	}
+	// Revocation release needs the full evidence family: positive turn stop,
+	// terminal tools and a fresh clear scan, with the cancellation itself
+	// never confirmed.
+	if _, err = receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, Reason: "exclusivity_revoked"}, dest); err == nil || Code(err) != "CLEANUP_UNCONFIRMED" {
+		t.Fatalf("revocation closed without turn-stop evidence: %v", err)
+	}
+	if _, err = receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, TurnStop: "interrupted"}, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, TerminalScan: "clear"}, dest); err != nil {
+		t.Fatal(err)
+	}
 	closed, err := receiver.ReconcileSessionInbox(ctx, SessionInboxReconcile{RequestID: uuid.NewString(), Session: ref, AttemptID: attemptID, Reason: "exclusivity_revoked"}, dest)
 	if err != nil || closed.FinishedAt == nil || closed.Reason != "exclusivity_revoked" {
 		t.Fatalf("revocation terminal path: %+v %v", closed, err)
 	}
 	if closed.Delivery.Code != "operator_cancelled" || closed.Delivery.Control == nil {
 		t.Fatalf("revoked delivery outcome: %+v", closed.Delivery)
+	}
+	if closed.Cancel.ConfirmedAt != nil {
+		t.Fatal("revocation manufactured a cancellation confirmation")
 	}
 	// A later work-cancel on the revoked attempt refuses again.
 	if _, err = op.CancelWork(ctx, CancelWorkRequest{RequestID: uuid.NewString(), Repo: attemptRepo(t, receiver, ref, attemptID, dest), DeliveryID: delivery, Reason: "post-revocation refusal"}); err == nil || Code(err) != "VERSION_CONFLICT" {
