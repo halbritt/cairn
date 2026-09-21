@@ -23,6 +23,12 @@
       "file": "integrations/lifecycle/coordination.py",
       "sha256": "dcdd43d1f958f2aec639723ee36e91cfc6c0f832feb5f77d84e0542bb3087968",
       "detail": "Removed only the unrelated Agy queue feature: the agy_queue_endpoint() readiness helper, its agy-queue idle-wake construction block, and the transport=='agy-queue' wake branch with its lazy agy_queue import. Also removed 'agy' from the new no-terminal-fallback harness tuple so Agy keeps its pre-existing terminal-route wake path. Preserved: agent2's ('codex','claude','hermes','agy') tuple in the fullyIdle/background-work gate, validate_config harness list, and all other pre-existing supported Agy hooks."
+    },
+    {
+      "file": "scripts/test_hermes_cancellation_e2e.py",
+      "sha256": "0b666e0ef1fa8ecf3fa91b74d280d8a2f8cdc37bb61541dd7ef82f891313efa2",
+      "detail": "Cherry-picked agent2's independently verified B3 safety follow-up f938a0d54b8562476e51b6b124266c467da8dedc as commit 8647b84: tearDownClass claims process-registry resources only after isolation validation succeeded, removes only its own bridge socket/home, and restores HERMES_HOME via a fallback read; adds the frozen real-registry refusal probe tests (suite grows 13 to 16).",
+      "reason": "Coordinator note (event 86f0582d, source beafe8c5 v1) authorized incorporating this exact verified follow-up; it closes the new P1 kill_all-on-foreign-registry blocker."
     }
   ],
   "scope_decision": {
@@ -43,7 +49,7 @@
       "scripts/test_opencode_queue.py": "15 tests OK",
       "scripts/test_hermes_queue.py": "16 tests OK",
       "opencode BUSY composition (agent88 review harness against this tree's files)": "2 tests OK; exercised integrations/lifecycle/coordination.py dcdd43d1... and opencode_queue.py 440257ae...",
-      "scripts/test_hermes_cancellation_e2e.py": "13 tests OK in a fresh subprocess with HERMES_ROOT/HOME/HERMES_HOME set before any imports, against an isolated copy of b8ae93b",
+      "scripts/test_hermes_cancellation_e2e.py": "16 tests OK in a fresh subprocess with HERMES_ROOT/HOME/HERMES_HOME set before any imports, against an isolated copy of b8ae93b (13 tests before the B3 follow-up; the follow-up adds the real-registry refusal probes)",
       "native tests/hermes_cli/test_cli_queue_message.py": "16 tests OK in the same isolated copy",
       "make_check": "passed with ordinary VCS stamping",
       "make_test_integration": "passed (exit 0) in the integrated tree on disposable PostgreSQL; scripts/check-local-api.py runs the updated coordination checker inside that validation, and its 'Idle wakeup: refused native terminal fallback...' assertion line appears in the run log",
@@ -52,7 +58,7 @@
     "clean_checkout": "see deliverables validation-summary; final patch re-applied to a fresh 4c83bc91 worktree with suites re-run and zero repo debris"
   },
   "blockers": [
-    "P1 (new, NOT repaired here - agent2 owns behavior fixes): scripts/test_hermes_cancellation_e2e.py setUpClass isolation failure path still calls tearDownClass, which invokes process_registry.kill_all() on the rejected foreign registry. All executions in this candidate used fresh isolated subprocesses with HERMES_HOME/HERMES_ROOT/HOME set before any imports and no production Hermes state; do not run this suite against a real preloaded Hermes home until agent2 repairs the fixture.",
+    "P1 (resolved in this candidate by cherry-picked f938a0d / commit 8647b84, verified per coordinator note beafe8c5 v1 and by the 16-test isolated run here): the e2e fixture no longer claims process-registry resources unless isolation validation succeeded. Earlier caution stands for any tree without this fix: do not run the suite against a real preloaded Hermes home.",
     "Agent2 follow-up task 408f26ac (coordinator note e3500942, source e5980302 v1) is separately repairing missing end-hook turn IDs and divergent CLI versus agent-hook turn identities; retain those as known integration blockers until that isolated follow-up lands.",
     "B5 remains open at the bridge level per the standing review: readiness supplies only a delivery ID and wake_binding has no Hermes branch; delivery-to-native-turn binding is not established by this packaging work.",
     "Native enabled/exclusive admission remains unaccepted; fixture tests use mock/native-seam behavior and do not establish real-host admission or cancellation acceptance.",
