@@ -395,11 +395,19 @@ def claude_prompt_admission(state, observation, event):
 def hermes_wake_binding(state, event):
     wake = state.get('idle_wake', {})
     turn = event.get('turn_id')
+    session_id = event.get('session_id')
     if (wake.get('transport') != 'hermes-queue' or wake.get('session') != session_ref(state['agent']) or
             event.get('hook_event_name') != 'TurnStart' or not isinstance(turn, str) or
             not turn.strip() or len(turn.encode()) > 256 or '\0' in turn or
             event.get('prompt') != wake_message(wake)):
         return {}
+    if session_id is not None:
+        if not isinstance(session_id, str) or not session_id.strip():
+            return {}
+        if wake.get('native_id') and session_id != wake['native_id']:
+            return {}
+        if ':' in turn and not turn.startswith(session_id + ':'):
+            return {}
     return dict(delivery_id=wake['delivery_id'], native_turn_id=turn)
 
 
@@ -619,6 +627,9 @@ def session_lock(path):
 
 
 def call(config, operation, request, timeout=4, session=None):
+    for key in ("cairn", "socket", "token_file"):
+        if not config.get(key):
+            raise CoordinationError("INVALID_CONFIG", f"missing {key} in config")
     command = [config["cairn"], "agent", "--socket", config["socket"],
                "--token-file", config["token_file"]]
     if session:
