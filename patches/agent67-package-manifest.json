@@ -1,0 +1,63 @@
+{
+  "candidate": "agent67-bridge-package",
+  "date": "2026-09-20",
+  "base": {
+    "repo": "cairn",
+    "commit": "93d08d63961e348e00afeb60f89130830b0e0332",
+    "branch": "agent67-package-repair",
+    "note": "Clean base commit; all bridge content arrives from the frozen reviewed distribution patch plus the two scoped additions below."
+  },
+  "frozen_inputs": {
+    "distribution_patch": {
+      "path": "patches/coordination-opencode-hermes-queue.patch",
+      "sha256": "693d76be4d0eb655b80f20260c05361a78c30ec75dd3311d8570595a6ab96276",
+      "applied_to": "93d08d63961e348e00afeb60f89130830b0e0332"
+    },
+    "hashes_matched_reviewed_manifest": [
+      "integrations/hermes/coordination.py cdfcfc32f3fac7ea851fcba6b22acd9b5da8e27854f89dd3f5bddbfdae971ba5",
+      "integrations/hermes/queue.py 24cd8e5b5a1409626eb5f07e7fd9dc1dd4a930c9aa63c26d96b762ea848c153d",
+      "integrations/lifecycle/coordination.py 43c2309f1b81fa5c1f5751331c23114caa2be4b909ddd0c70d2a44cd5fd8afc3",
+      "integrations/lifecycle/hermes_queue.py 608de154035cb856ebec00d1682c382dca2f78f4fbca7ec930012d92ce06c281",
+      "integrations/lifecycle/opencode_queue.py 440257ae667233610d381ec7e5e3563512495b210437d2f58da45cc17c053080",
+      "integrations/opencode/coordination.ts cb4ca83874a79b715ae16143ca20f41ba821eba70a2e3e886345875015d7bc2b",
+      "scripts/test_hermes_cancellation_e2e.py 01dce71ffafe2d56215097290238176ad9ffd803d4f6b2ebef77056411f6396e",
+      "scripts/test_hermes_queue.py 51bd41cc475ddcc06ef2d06e5223a24cf88a93e1914a0e32dfef3f7792f4eab3",
+      "scripts/test_opencode_queue.py ff65965e5b7348aa201f9e515cdd7acea6da2f34c88852739df9245a555372a7"
+    ],
+    "reference": "/tmp/cairn-agent88-repair-review/review-manifest.json pinned the same bytes; the frozen patch is byte-identical to the tested working tree for all nine files."
+  },
+  "changes_vs_frozen_snapshot": [
+    {
+      "file": "scripts/run_opencode_bridge_fixture.mjs",
+      "action": "add",
+      "sha256": "52c80275727025fea3f2352b1b4c588641453015202520498ec22540b07f7310",
+      "reason": "Required by scripts/test_opencode_queue.py fixture; its omission caused 8 of 15 OpenCode suite errors in the frozen package."
+    },
+    {
+      "file": "scripts/install-agent-coordination.py",
+      "action": "modify",
+      "detail": "Copy integrations/lifecycle/opencode_queue.py and hermes_queue.py into the host root alongside codex_queue.py and claude_channel.py.",
+      "reason": "The frozen patch omitted installer changes for the new queue helpers. The pinned reviewed installer (50d37cdb27044bc5e5b4a02b87ee13952ff95bc8f4438b5c8d6bfcc5862b0fd9) additionally copies agy_queue.py; that copy is deliberately omitted because agy_queue.py is not part of this package and a clean install would fail on the missing file."
+    }
+  ],
+  "scope_decisions": [
+    "OpenCode/Hermes bridge scope. integrations/lifecycle/coordination.py stays byte-identical to the reviewed snapshot (43c2309f...) including its dormant Agy routing; without agy_queue.py an Agy wake fails closed with WAKE_UNAVAILABLE, so no packaged harness reaches Agy behavior.",
+    "Excluded as unrelated scope: integrations/lifecycle/agy_queue.py, scripts/test_agy_queue.py, scripts/experiment_agy_idle_wake.py, the working-tree drift of scripts/check_agent_coordination.py (2c5b069913909505f5552cd3859c4793e5fa67bfd7cbc66b806094bcef81a2c3, idle-wakeup watcher behavior), and patches/coordination-native-queues.patch (7c9853c023a041a1cf5236475f9bf88412861659756add4dcf4037137801c8be, combined variant)."
+  ],
+  "native_companion": {
+    "patch": "patches/hermes-agent-native-queue.patch",
+    "sha256": "41a45a5ed450efc1ef29a12fc66a474117790dfc952d205829a3b886f2244d53",
+    "base": "13f4cfebfafbce8ac9d1bf29f66731858ed638b5",
+    "base_identity": "HEAD of the installed ~/.hermes/hermes-agent repository, clean status; verified by isolated copy + git apply --check/apply.",
+    "apply_result": "Clean apply with four whitespace warnings; post-image hashes match the reviewed inspected files: cli.py 166595f88c380c5fa572ee0ca642c1c8891a6ce06fbbde5e6f068510a93fa786, hermes_cli/plugins.py fe4da63e81a0451a36ae61a6f34d71a69ace13ffb13749cd461d6e28ad478a3c, tools/approval.py 7ced14f45fa89657017075c63592e2befcb24bf82e3373743c23462475999408, tools/process_registry.py db2ec6851de0a09d742aea00128eeedb1f8114abbf125218993cce08654c1ed1.",
+    "boundary": "Verified in an isolated copy only; the installed Hermes tree was not modified and no service was restarted."
+  },
+  "known_holds": [
+    "B5 open: readiness supplies only a delivery ID; Hermes turn IDs are discarded by coordinator normalization and wake_binding has no Hermes branch, so delivery-to-native-turn binding is not established.",
+    "The submitted B2 regression (test_claim12) also passes the faulty unlocked native variant; a synchronized socket/loop regression is still required.",
+    "B3 residual fixture defect: global HERMES_HOME stays changed if setUpClass fails before cleanup runs.",
+    "No native admission/revocation lifecycle was observed end to end; fixture tests use mock SDK/Hermes behavior and do not establish real-host acceptance.",
+    "scripts/test_hermes_cancellation_e2e.py silently skips (HAS_HERMES_DEPS) unless the native companion patch is applied to the Hermes tree it finds under HOME; validation used an isolated patched copy."
+  ],
+  "agent2_integration": "Apply agent2's forthcoming isolated repair patch on top of this candidate commit (it will likely touch the same integrations files), then re-run the three suites plus the OpenCode BUSY composition tests and refresh the hashes in a v2 manifest. Do not rebase the frozen distribution patch itself; this candidate already contains it."
+}
