@@ -52,6 +52,20 @@
     "apply_result": "Clean apply with four whitespace warnings; post-image hashes match the reviewed inspected files: cli.py 166595f88c380c5fa572ee0ca642c1c8891a6ce06fbbde5e6f068510a93fa786, hermes_cli/plugins.py fe4da63e81a0451a36ae61a6f34d71a69ace13ffb13749cd461d6e28ad478a3c, tools/approval.py 7ced14f45fa89657017075c63592e2befcb24bf82e3373743c23462475999408, tools/process_registry.py db2ec6851de0a09d742aea00128eeedb1f8114abbf125218993cce08654c1ed1.",
     "boundary": "Verified in an isolated copy only; the installed Hermes tree was not modified and no service was restarted."
   },
+  "test_results": {
+    "clean_base_plus_candidate_patch": {
+      "tree": "fresh worktree at 93d08d6 with only agent67-bridge-package.patch applied and committed",
+      "scripts/test_opencode_queue.py": "15 tests OK (the frozen package failed 8 of 15 on the missing fixture)",
+      "scripts/test_hermes_queue.py": "14 tests OK",
+      "scripts/test_hermes_cancellation_e2e.py": "13 tests OK, run against an isolated native copy (13f4cfeb + hermes-agent-native-queue.patch) exposed through a temporary HOME; the installed Hermes tree was untouched",
+      "repo_debris_after_suites": "none; git status clean after suites",
+      "make_check": "passed"
+    },
+    "installer_validation": {
+      "destinations": "temporary roots for --harness opencode and --harness hermes with --no-service",
+      "result": "both install cleanly; each root contains coordination.py, codex_queue.py, claude_channel.py, opencode_queue.py, hermes_queue.py and no agy_queue.py; OpenCode settings receive plugins/cairn-coordination.ts plus cairn-coordination.json; Hermes settings receive plugins/cairn-coordination/__init__.py, plugin.yaml and an enabled cairn-coordination entry; both installed coordination.py copies load and read their binding configs"
+    }
+  },
   "known_holds": [
     "B5 open: readiness supplies only a delivery ID; Hermes turn IDs are discarded by coordinator normalization and wake_binding has no Hermes branch, so delivery-to-native-turn binding is not established.",
     "The submitted B2 regression (test_claim12) also passes the faulty unlocked native variant; a synchronized socket/loop regression is still required.",
