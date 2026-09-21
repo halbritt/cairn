@@ -60,7 +60,39 @@ func TestReviewRevocationRequiresFullCleanup(t *testing.T) {
 			if readErr != nil {
 				t.Fatal(readErr)
 			}
-			t.Logf("fresh persisted read: hold_present=%v finished=%v delivery=%s reason=%s turn=%q scan=%q gap=%v", control.Attempt != nil, persisted.FinishedAt, persisted.Delivery.State, persisted.Reason, persisted.TurnStopState, persisted.TerminalScan, persisted.CaptureGap)
+			// Persisted-state invariants, asserted rather than logged: a
+			// refused release leaves the hold active, the attempt unfinished,
+			// the delivery leased and the cancellation unconfirmed; a valid
+			// release durably removes the hold, finishes with the separate
+			// revocation outcome, fails the delivery operator_cancelled and
+			// still leaves the cancellation itself unconfirmed.
+			if !tc.ready {
+				if control.Attempt == nil {
+					t.Fatal("refused cleanup released the persisted hold")
+				}
+				if persisted.FinishedAt != nil {
+					t.Fatal("refused cleanup finished the attempt")
+				}
+				if persisted.Delivery.State != "leased" {
+					t.Fatalf("refused cleanup changed the delivery: %s", persisted.Delivery.State)
+				}
+				if persisted.Cancel == nil || persisted.Cancel.ConfirmedAt != nil {
+					t.Fatalf("cancellation not pending after refusal: %+v", persisted.Cancel)
+				}
+			} else {
+				if control.Attempt != nil {
+					t.Fatal("valid release retained the persisted hold")
+				}
+				if persisted.FinishedAt == nil || persisted.Reason != "exclusivity_revoked" {
+					t.Fatalf("attempt outcome not persisted: %+v", persisted)
+				}
+				if persisted.Delivery.State != "failed" || persisted.Delivery.Code != "operator_cancelled" {
+					t.Fatalf("delivery outcome not persisted: %+v", persisted.Delivery)
+				}
+				if persisted.Cancel == nil || persisted.Cancel.ConfirmedAt != nil {
+					t.Fatalf("valid release manufactured a confirmation: %+v", persisted.Cancel)
+				}
+			}
 			if !tc.ready && Code(e) != "CLEANUP_UNCONFIRMED" {
 				t.Fatalf("incomplete cleanup released revocation: err=%v finished=%v turn=%q scan=%q capture=%q gap=%v tools=%+v", e, got.FinishedAt, got.TurnStopState, got.TerminalScan, got.CaptureState, got.CaptureGap, got.Tools)
 			}
