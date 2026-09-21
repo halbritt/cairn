@@ -11,7 +11,9 @@
       "merge_commit": "23b12b6 on branch agent67-integrated-package",
       "content": "independently verified dormant cancellation core, schema 049, native request-control checks and scripts/check_native_cancel.py; uninstalled, dormant",
       "conflicts": "none; both lineages touched three shared docs files and git auto-merged them (bridge sections from agent2, cancellation/verification sections from main)",
-      "main_tip_note": "main has since advanced to 2ae4d50, a docs-only commit on top of 3b2a1cd (coordination-review record); intentionally not included because the task pinned 3b2a1cd"
+      "main_tip_note": "main has since advanced to 2ae4d50, a docs-only commit on top of 3b2a1cd (coordination-review record); intentionally not included because the task pinned 3b2a1cd",
+      "update": "second merge 1365ee9 incorporates main d760f85 (agent24's persisted-state revocation probe assertions and the current review docs preserved, per coordinator notice 30d076b8/source d1e761f5 v1)",
+      "branch_tip": "see deliverables SHA256SUMS and validation summary for the current tip"
     },
     "b3_followup": "f938a0d cherry-picked as 8647b84 (present since candidate v3); coordinator note beafe8c5 v1 authorized and independently verified it"
   },
@@ -49,7 +51,11 @@
     "repo": "/home/halbritt/git/cairn-agent2-isolated-hermes",
     "base": "13f4cfebfafbce8ac9d1bf29f66731858ed638b5",
     "content_equivalence": "Post-image hashes of cli.py (166595f8...), hermes_cli/plugins.py (fe4da63e...), tools/approval.py (7ced14f4...) and tools/process_registry.py (db2ec685...) are byte-identical to the reviewed manifest and to the frozen patches/hermes-agent-native-queue.patch (41a45a5e...) applied to 13f4cfeb; b8ae93b additionally carries its own tests/hermes_cli/test_cli_queue_message.py (16 tests)",
-    "boundary": "Used only via isolated copies for validation; neither agent2's repo nor the installed ~/.hermes/hermes-agent was modified; no service restarted"
+    "boundary": "Used only via isolated copies for validation; neither agent2's repo nor the installed ~/.hermes/hermes-agent was modified; no service restarted",
+    "pin_status": "remains pinned at b8ae93b until explicit verified acceptance",
+    "b5_status": "B5 candidate 4991/native 2c was rejected (fake API success, foreign hook ownership, upstream regressions); agent2 submitted correction 69f6a95/native 131e95b, under independent root review; not included in this candidate",
+    "manifest_correction": "earlier wording said the Hermes wake_binding branch is absent; corrected: the wake_binding branch exists, but full delivery-to-native-turn lifecycle identity remained blocked pending agent2's B5 work",
+    "distributable_patch": "deliverables include hermes-native-pinned-13f4cfe-to-b8ae93b.patch (sha256 4102193e4f89b1b2e5bf13edbf4aaec31963b563d6d5003ff69cb5d8df761d91), generated from commits 13f4cfe..b8ae93b; verified to apply cleanly to a fresh copy of the installed base 13f4cfeb (installed HEAD); post-image hashes re-confirmed: cli.py 166595f8..., hermes_cli/plugins.py fe4da63e..., tools/approval.py 7ced14f4..., tools/process_registry.py db2ec685..."
   },
   "recoverability": "The original packaging candidate remains intact: branch agent67-package-repair (867506f + 73af441 on 93d08d6) and /home/halbritt/git/cairn-agent67-package-deliverables (patch e5975175...). This integrated candidate is a separate branch and does not modify them.",
   "validation": {
@@ -59,19 +65,18 @@
       "opencode BUSY composition (agent88 review harness against this tree's files)": "2 tests OK; exercised integrations/lifecycle/coordination.py dcdd43d1... and opencode_queue.py 440257ae...",
       "scripts/test_hermes_cancellation_e2e.py": "16 tests OK in a fresh subprocess with HERMES_ROOT/HOME/HERMES_HOME set before any imports, against a fresh isolated copy of pinned b8ae93b",
       "native tests/hermes_cli/test_cli_queue_message.py": "16 tests OK in the same isolated copy",
-      "make_check": "passed with ordinary VCS stamping at the merged tree (23b12b6)",
-      "make_test_integration": "passed (exit 0) on disposable PostgreSQL at the merged tree; the updated idle-wakeup checker no-fallback assertion runs inside check-local-api validation (also true of candidate v2 d7dd0a5, which already carried the checker update and a full integration run)",
+      "make_check": "passed with ordinary VCS stamping at the d760f85-merged tree (1365ee9)",
+      "make_test_integration": "passed (exit 0) on disposable PostgreSQL at the d760f85-merged tree; the idle-wakeup no-fallback checker assertion runs inside check-local-api validation",
       "installer_tempdest": "--harness opencode and --harness hermes install cleanly into temporary destinations with --no-service; roots contain coordination.py, codex_queue.py, claude_channel.py, opencode_queue.py, hermes_queue.py and no agy_queue.py; both installed coordination.py copies load and read their binding configs",
       "opencode_busy_composition": "2 tests OK against this tree's coordination.py and opencode_queue.py",
-      "native_pin": "native source pinned at b8ae93b (clean, verified by hash); no native source edits; excluded Agy working-tree changes in main remain excluded from the package"
+      "native_pin": "native source pinned at b8ae93b (clean, verified by hash); no native source edits; excluded Agy working-tree changes in main remain excluded from the package",
+      "suites_at_v5": "opencode 15 OK, hermes 16 OK, e2e 16 OK, BUSY composition 2 OK on a fresh isolated pinned-b8ae93b copy with HERMES_ROOT/HOME/HERMES_HOME set before imports"
     },
     "clean_checkout": "see deliverables validation-summary; final patch re-applied to a fresh 4c83bc91 worktree with suites re-run and zero repo debris"
   },
   "blockers": [
-    "P1 (resolved in this candidate by cherry-picked f938a0d / commit 8647b84, verified per coordinator note beafe8c5 v1 and by the 16-test isolated run here): the e2e fixture no longer claims process-registry resources unless isolation validation succeeded. Earlier caution stands for any tree without this fix: do not run the suite against a real preloaded Hermes home.",
-    "Agent2 follow-up task 408f26ac (coordinator note e3500942, source e5980302 v1) is separately repairing missing end-hook turn IDs and divergent CLI versus agent-hook turn identities; retain those as known integration blockers until that isolated follow-up lands.",
-    "B5 remains open at the bridge level per the standing review: readiness supplies only a delivery ID and wake_binding has no Hermes branch; delivery-to-native-turn binding is not established by this packaging work.",
+    "B5 remains open: agent2 task 408f26ac follow-up; candidate 4991/native 2c was rejected (fake API success, foreign hook ownership, upstream regressions); correction 69f6a95/native 131e95b is under independent root review and is NOT included here; native companion stays pinned at b8ae93b until explicit verified acceptance.",
     "Native enabled/exclusive admission remains unaccepted; fixture tests use mock/native-seam behavior and do not establish real-host admission or cancellation acceptance.",
-    "The bridge suites pass only with the native companion present for the e2e suite (HERMES_ROOT must point at a b8ae93b-equivalent tree); without it that suite silently skips."
+    "The e2e suite requires the pinned-base native companion (HERMES_ROOT at a b8ae93b-equivalent tree); without it that suite silently skips. The deliverable now ships the actual pinned-base native patch so no external path is required."
   ]
 }
