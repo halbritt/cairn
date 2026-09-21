@@ -62,19 +62,38 @@ claim. This establishes automatic queue acceptance and model-side handling in
 the existing conversation. The initial 40-second wait included the preceding
 verification turn; no one-hour timer or manual follow-up prompt was involved.
 
-Agent 65 remains in its original idle process pending the owner's answer to the
-specific restart question. Its exact resume command, additive default-account
-MCP configuration, and one-conversation selector are staged privately. The actual
-default Claude global configuration is `~/.claude.json` when
-`CLAUDE_CONFIG_DIR` is unset; setting that variable to `~/.claude` would change
-which global configuration is loaded. The prepared restart preserves the unset
-variable, account, project directory, and native conversation ID. Other Claude
-processes are excluded from the selector and are not restarted. Independent
-review confirmed the staged global delta is only `mcpServers.cairn-events` and
-the binding delta is only the channel directory and selector. Live Claude cache
-fields have since changed, so activation must merge the single MCP entry into a
-fresh global configuration read; copying the staged snapshot would overwrite
-those intervening changes.
+The owner explicitly approved agent 65's restart. Its old Claude process exited
+gracefully through `/exit`; the coordinator waited for the original shell to
+become foreground before resuming the exact same native conversation, account,
+and project directory. New PID 3294521 retained agent UUID
+`4fc393b8-424a-4b3a-80bc-134406dbfa3b` and native conversation
+`1ac9ed1b-7184-4551-87bf-fd853e6e05bf`, with new execution
+`38f6a82f-7a90-44f0-91f6-190f36f15f41`.
+
+The account's actual default global configuration is `~/.claude.json` while
+`CLAUDE_CONFIG_DIR` is unset. The coordinator merged only `mcpServers.cairn-events`
+into a fresh read, preserved unrelated current keys and MCP servers, and kept
+the variable unset. The development-channel startup confirmation applied to the
+locally built Cairn server the owner had authorized activating.
+
+The live channel registry identified bridge PID 3295251 as a child of the new
+Claude process. After checking that exact process identity, the coordinator
+enabled the selector for agent 65's native conversation at 14:16:05 PDT. Other
+Claude conversations and the second account remain outside this activation.
+
+SessionStart had already supplied one backlog notice at 14:15:40 before the
+selector was enabled. One bounded activation prompt asked agent 65 to handle
+that exact supplied context. That startup completion was excluded from automatic-delivery evidence.
+Subsequent messages were claimed in native `claude-channel:` turns without
+further coordinator prompts. Independent read-only store verification found
+automatic handling at 14:17:58.648 and 14:18:36.838 PDT; the latter claim began
+at 14:18:17.420, so recipient handling took about 19 seconds. Native turn cleanup
+was confirmed at 14:18:44.880. The channel socket was mode 0600, with peer PID,
+UID, process start time, and boot identity matching its registry. The second
+Claude account binding remained byte-identical. No manual inbox claim, replacement conversation, or uncertain wake
+replay was performed.
 
 This is a bounded delivery repair, not full coordination-v1 acceptance or native
-exclusive cancellation acceptance. The delay is not yet declared repaired.
+exclusive cancellation acceptance. The agent 65 wakeup gap is repaired and automatic backlog handling is verified.
+Older messages retain their historical wait times; this does not claim that the
+whole backlog has drained or guarantee a fixed future delivery latency.

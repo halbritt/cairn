@@ -12,11 +12,12 @@
   "validation": {
     "opencode": "20 tests pass; installed OpenCode 1.18.31 real HTTP validator accepts omitted optional messageID and rejects delivery UUID; live model handling pending; real automatic native prompt at14:03:41.550PDT and exactlyone explicit acknowledgment at14:04:57.843PDT",
     "claude": "9 configuration tests and34idle tests pass;18 malformed-directory regression cases failed beforefix and pass after; independent frozen-revision probe confirms default/selected/unselected behavior and immutable shared config",
-    "idle": "34 tests pass after correcting 5 obsolete terminal fallback expectations; supported Agy terminal behavior preserved"
+    "idle": "34 tests pass after correcting 5 obsolete terminal fallback expectations; supported Agy terminal behavior preserved",
+    "claude_live": "Owner-approved sameconversation restart; nativePID3294521/channel3295251 identities independently verified; selector65only/secondaccountunchanged; automatic channel-owned messages acknowledged14:17:58.648 and14:18:36.838PDT, startupboundary excluded"
   },
   "acceptance": {
     "live_opencode_automatic_delivery": true,
-    "live_claude65_automatic_delivery": false,
+    "live_claude65_automatic_delivery": true,
     "coordination_v1_complete": false
   },
   "source_revisions": {

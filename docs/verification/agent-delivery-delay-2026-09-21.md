@@ -59,3 +59,14 @@ The prepared configuration and activation limits are recorded in the
 The owner's restart approval covered OpenCode agents24 and67. This diagnosis did
 not restart agent65 or alter its inbox. Fixing this route and observing successful
 queued delivery remain necessary; the delay has not been declared repaired.
+
+## Repair verified at 14:18 PDT
+
+After the owner explicitly approved restarting agent 65, the coordinator resumed
+the same conversation and account, enabled its process-bound native channel,
+and selected only that conversation for channel admission. Independent checks
+confirmed subsequent backlog messages were claimed in `claude-channel:` turns
+and explicitly acknowledged at 14:17:58 and 14:18:36, without additional manual
+prompts. Other Claude sessions were unchanged. The wakeup gap is repaired; the
+backlog is draining, and its historical wait times are not erased. See the
+[repair and live verification report](native-delivery-repair-2026-09-21.md).
