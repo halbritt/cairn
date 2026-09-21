@@ -134,6 +134,7 @@ def check(binary, root):
         refused = reconcile('cancel_confirmed')
         assert refused['status'] == 'CLEANUP_UNCONFIRMED', 'latched ambiguity must hold despite complete capture'
         report(dict(turn_stop='interrupted'))
+        report(dict(terminal_scan='clear'))
         confirmed = reconcile('cancel_confirmed')
         assert confirmed['status'] == 'OK', confirmed
         final = agent('session-inbox-control', dict(agent_id=session['agent_id'],
