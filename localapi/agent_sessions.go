@@ -21,6 +21,18 @@ func serveAgentSessions(w http.ResponseWriter, r *http.Request, c client) bool {
 		serveJSON(w, r, func(ctx context.Context, req core.SessionInboxReconcile) (core.SessionInboxAttempt, error) {
 			return c.store.ReconcileSessionInbox(ctx, req, c.destination)
 		})
+	case "/v1/session-inbox-control":
+		serveJSON(w, r, func(ctx context.Context, req core.AgentSessionRef) (core.SessionInboxControlStatus, error) {
+			return c.store.SessionInboxControl(ctx, req, c.destination)
+		})
+	case "/v1/session-tool-capture":
+		serveJSON(w, r, func(ctx context.Context, req core.SessionToolCapture) (core.SessionInboxAttempt, error) {
+			return c.store.CaptureSessionTools(ctx, req, c.destination)
+		})
+	case "/v1/session-tool-stop":
+		serveJSON(w, r, func(ctx context.Context, req core.SessionToolStopReport) (core.SessionInboxAttempt, error) {
+			return c.store.ReportSessionToolStop(ctx, req, c.destination)
+		})
 	case "/v1/agent-register":
 		serveJSON(w, r, func(ctx context.Context, req core.RegisterAgentRequest) (core.AgentInstance, error) {
 			return c.store.RegisterAgent(ctx, req, c.destination)

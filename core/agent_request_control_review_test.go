@@ -364,48 +364,51 @@ func TestNativeAndManualCancellationRefusalAndDeadlineValidation(t *testing.T) {
 	t.Run("NativeHeldCancellationRefusalRetainsWorkAndHold", func(t *testing.T) {
 		a, b, source, dest := eventFixture(t)
 		op, _ := testOperator(t)
-		event, err := a.PublishEvent(ctx, PublishEventRequest{
-			RequestID:   uuid.NewString(),
-			Kind:        "request",
-			Ref:         RecordVersionRef{RecordID: source.RecordID, Version: 1},
-			Destination: EventDestination{Type: "agent", Name: b.channel.Principal},
+		agent, err := b.RegisterAgent(ctx, RegisterAgentRequest{
+			RequestID:       uuid.NewString(),
+			Binding:         "cancel-review",
+			NativeSessionID: "cancel-review",
+			Metadata:        AgentMetadata{Harness: "codex", Project: "test", Workspace: "/work/test", State: "idle", DeliveryMode: "existing-session"},
 		}, dest)
 		if err != nil {
 			t.Fatal(err)
 		}
-
-		next, err := b.NextEvent(ctx, NextEventRequest{}, dest)
-		if err != nil || next.Delivery == nil {
-			t.Fatalf("next event: %+v %v", next, err)
-		}
-
-		// Simulate active native session attempt holding this delivery.
-		agentID := uuid.NewString()
-		_, err = b.pool.Exec(ctx, `INSERT INTO cairn.agent_session(agent_id,repo,owner,binding,native_session_id,visibility,execution_id,database_generation,metadata) VALUES($1,$2,$3,'test-binding',$4,'hosted',$5,1,'{}'::jsonb)`,
-			agentID, source.Scope.Repo, b.channel.Principal, uuid.NewString(), uuid.NewString())
+		ref := AgentSessionRef{AgentID: agent.AgentID, ExecutionID: agent.ExecutionID}
+		_, err = a.PublishEvent(ctx, PublishEventRequest{
+			RequestID:   uuid.NewString(),
+			Kind:        "request",
+			Ref:         RecordVersionRef{RecordID: source.RecordID, Version: 1},
+			Destination: EventDestination{Type: "agent", Name: agent.Inbox},
+		}, dest)
 		if err != nil {
 			t.Fatal(err)
 		}
-		sessionAttemptID := uuid.NewString()
-		_, err = b.pool.Exec(ctx, `INSERT INTO cairn.agent_session_attempt(attempt_id,agent_id,execution_id,owner,delivery_id,lease_id) VALUES($1,$2,$3,$4,$5,$6)`,
-			sessionAttemptID, agentID, uuid.NewString(), b.channel.Principal, next.Delivery.DeliveryID, next.Delivery.LeaseID)
-		if err != nil {
-			t.Fatal(err)
+		claim, err := b.ClaimSessionInbox(ctx, SessionInboxClaim{
+			RequestID: uuid.NewString(),
+			Session:   ref,
+		}, dest)
+		if err != nil || claim.Attempt == nil {
+			t.Fatalf("native claim: %+v %v", claim, err)
 		}
+		delivery := claim.Attempt.Delivery.DeliveryID
+		lease := claim.Attempt.Delivery.LeaseID
+		sessionAttemptID := claim.Attempt.ID
+		sessionExecution := ref.ExecutionID
 
-		// Operator cancel on native held work must be refused.
+		// A turn-less native claim attests no exclusivity: cancellation stays
+		// unsupported, exactly as before per-request control existed.
 		_, err = op.CancelWork(ctx, CancelWorkRequest{
 			RequestID:  uuid.NewString(),
 			Repo:       source.Scope.Repo,
-			DeliveryID: next.Delivery.DeliveryID,
+			DeliveryID: delivery,
 			Reason:     "Operator cancel native",
 		})
 		requireCode(t, err, "UNSUPPORTED_CONTROL")
 
 		// Delivery remains leased.
-		status, err := a.AgentEventStatus(ctx, EventStatusRequest{EventID: event.EventID}, dest)
-		if err != nil || len(status.Deliveries) != 1 || status.Deliveries[0].State != "leased" {
-			t.Fatalf("delivery state changed: %+v %v", status, err)
+		var state string
+		if err = b.pool.QueryRow(ctx, `SELECT state FROM cairn.agent_delivery WHERE delivery_id=$1`, delivery).Scan(&state); err != nil || state != "leased" {
+			t.Fatalf("delivery state changed: %s %v", state, err)
 		}
 
 		// Native session attempt hold remains active.
@@ -415,15 +418,24 @@ func TestNativeAndManualCancellationRefusalAndDeadlineValidation(t *testing.T) {
 			t.Fatalf("native hold lost: %v", err)
 		}
 
-		// Cleanup: finish session attempt and complete event.
-		if _, err = b.pool.Exec(ctx, `UPDATE cairn.agent_session_attempt SET finished_at=clock_timestamp() WHERE attempt_id=$1`, sessionAttemptID); err != nil {
+		// Cleanup: complete through the session view, then close the attempt.
+		view, err := b.ForAgentSession(ref, dest)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err = b.CompleteEvent(ctx, CompleteEventRequest{
+		if _, err = view.CompleteEvent(ctx, CompleteEventRequest{
 			RequestID:   uuid.NewString(),
-			DeliveryID:  next.Delivery.DeliveryID,
-			LeaseID:     next.Delivery.LeaseID,
+			DeliveryID:  delivery,
+			LeaseID:     lease,
 			Disposition: "handled",
+		}, dest); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = b.ReconcileSessionInbox(ctx, SessionInboxReconcile{
+			RequestID: uuid.NewString(),
+			Session:   AgentSessionRef{AgentID: agent.AgentID, ExecutionID: sessionExecution},
+			AttemptID: sessionAttemptID,
+			Reason:    "turn_ended",
 		}, dest); err != nil {
 			t.Fatal(err)
 		}

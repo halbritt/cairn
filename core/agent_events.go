@@ -574,6 +574,13 @@ func checkEventLease(ctx context.Context, tx pgx.Tx, d AgentDelivery, lease stri
 	if !withinDeadline {
 		return failure("DEADLINE_EXCEEDED", "request task deadline reached; its host must stop and reconcile the hold")
 	}
+	var cancelled bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE delivery_id=$1 AND finished_at IS NULL AND cancel_requested_at IS NOT NULL)`, d.DeliveryID).Scan(&cancelled); err != nil {
+		return err
+	}
+	if cancelled {
+		return failure("REQUEST_CANCELLED", "operator cancellation is pending; stop the native turn and confirm owned tool cleanup")
+	}
 	return nil
 }
 
