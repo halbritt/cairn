@@ -95,6 +95,30 @@ checkpoint. Their integration remains held. The coordinator will append repair
 evidence after independent checks. This review establishes specific defects and
 exercised behavior, not full design acceptance or measured usefulness.
 
+## Cancellation candidate follow-up
+
+The isolated candidate advanced to
+`d6d666a7b7b7e05c7a410314669ad1e82686b318`, including the original reviewer
+regression, scan invalidation and an owner-join revocation path. An independent
+review froze that commit and tested it against disposable PostgreSQL with the
+race detector. The original stale-scan regression now passes. Three new probes
+still fail:
+
+| ID | Severity | Reproduced behavior | Required correction |
+| --- | --- | --- | --- |
+| C1 | P1 | Cancel, record a clear scan while the turn is running, then report turn end. `cancel_confirmed` releases the hold without a post-stop scan. | Order final scan evidence after turn stop and other invalidating observations; invalidating only pre-cancellation scans is insufficient. See `core/agent_session_control.go:258`. |
+| C2 | P1 | Capture a tool, cancel, report owner join, then reconcile with `exclusivity_revoked`. The hold releases with no turn-stop observation and the tool still in `captured` state. | Revoking permission to interrupt must not establish cleanup. Preserve the hold until the existing native work and owned tools are positively reconciled. See `core/agent_session_inbox.go:282`. |
+| C3 | P2 | `exclusivity_revoked` also closes an exclusive attempt that was never cancelled or revoked, through ordinary reconciliation. | Validate the reason's state preconditions before the ordinary finish path. See `core/agent_session_inbox.go:255`. |
+
+The temporary probes are in
+`/tmp/cairn-cancel-review-d6d666a.Kve99Z5u/core/agent_cancel_followup_review_test.go`.
+The coordinator inspected those probes and the corresponding candidate branches;
+the independent reviewer executed the database checks. The candidate worktree
+was unchanged by review. Its documentation now correctly describes dormant core
+behavior with no installed adapter asserting exclusivity. That correction and
+the passing original regression do not resolve the three reproduced defects or
+the outstanding native admission evidence. Integration remains held.
+
 ## Reviewed source hashes
 
 ### B1 repair check later on September 20
