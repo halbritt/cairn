@@ -148,8 +148,6 @@ def check(binary, root, repo, api_call):
         assert hook(second, dict(event, session_id='native-delivery', hook_event_name='Stop')) == {}
         assert api_call('alice', 'event-status', message['event_id'])['deliveries'][0]['state'] == 'handled'
         hook(second, dict(event, session_id='native-delivery', hook_event_name='SessionEnd'))
-        # Read-only readiness drives one host nudge. The watcher must not claim
-        # work; the following real hook still owns the PostgreSQL delivery.
         from test_idle_wakeup import HOST
         idle_root = root/'idle-host'
         idle_root.mkdir()
@@ -169,24 +167,34 @@ def check(binary, root, repo, api_call):
             process_info=dict(foreground_processes=[dict(pid=second.pid)],foreground_process_group_id=os.getpgid(second.pid)))))
         idle_event = api_call('alice','publish','--request-id',str(uuid.uuid4()),'--to',idle_agent['inbox'],
             '--kind','request','--version',str(source['version']),source['record_id'])
-        watch()
-        watch()
-        prompts = (idle_root/'prompts.jsonl').read_text().splitlines()
-        assert len(prompts)==1, 'watcher restart duplicated the idle nudge'
-        idle_status = api_call('alice','event-status',idle_event['event_id'])['deliveries'][0]
-        assert idle_status['state']=='pending' and idle_status['attempts']==0, 'watcher claimed native work'
+        assert idle_agent['metadata']['state']=='idle'
+        for _ in range(2):
+            watch()
+            assert not (idle_root/'prompts.jsonl').exists(), 'native Codex without a queue fell back to a terminal prompt'
+            idle_status = api_call('alice','event-status',idle_event['event_id'])['deliveries'][0]
+            assert idle_status['state']=='pending' and idle_status['attempts']==0, 'watcher claimed native work'
+            idle_state = next(json.loads(p.read_text()) for p in state.glob('*.json')
+                              if json.loads(p.read_text()).get('agent',{}).get('agent_id')==idle_agent['agent_id'])
+            assert not idle_state.get('idle_wake'), 'refused fallback retained a wake marker'
+            assert not idle_state.get('inbox_intent'), 'watcher created an inbox claim intent'
+            assert not any(json.loads(p.read_text())['event_id']==idle_event['event_id']
+                           for p in (state/'inbox').glob('*.json')), 'watcher delivered native context'
         injected = hook(second, idle_native)
         assert 'structured inbox context' in injected['hookSpecificOutput']['additionalContext']
         idle_context = next(json.loads(p.read_text()) for p in (state/'inbox').glob('*.json')
                             if json.loads(p.read_text())['event_id']==idle_event['event_id'])
-        subprocess.run(idle_context['completion'], input='Selected automatic idle wake result',
+        assert idle_context['agent_id']==idle_agent['agent_id'] and idle_context['execution_id']==idle_agent['execution_id']
+        assert idle_context['delivery_id']==idle_status['delivery_id'] and idle_context['source']==idle_event['ref']
+        idle_status = api_call('alice','event-status',idle_event['event_id'])['deliveries'][0]
+        assert idle_status['state']=='leased' and idle_status['attempts']==1
+        subprocess.run(idle_context['completion'], input='Selected ordinary boundary delivery result',
                        text=True,capture_output=True,check=True,timeout=10)
-        hook(second, dict(idle_native,hook_event_name='Stop'))
+        assert hook(second, dict(idle_native,hook_event_name='Stop'))=={}
         watch()
-        assert len((idle_root/'prompts.jsonl').read_text().splitlines())==1, 'handled work prompted again'
+        assert not (idle_root/'prompts.jsonl').exists(), 'handled work prompted through the terminal'
         idle_status = api_call('alice','event-status',idle_event['event_id'])['deliveries'][0]
         assert idle_status['state']=='handled' and idle_status['attempts']==1
-        print('Idle wakeup: read-only readiness, automatic host prompt, restart suppression and one native completion passed')
+        print('Idle wakeup: refused native terminal fallback across watcher restarts, zero automatic claims and one ordinary boundary completion passed')
         hook(second,dict(idle_native,hook_event_name='SessionEnd'))
         # Native queued wakes bind the exact delivery and native turn. An owner
         # prompt must not steal its pending work; a different Stop cannot end it.

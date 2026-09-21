@@ -158,8 +158,9 @@ def prepare_idle_wake(config, state, path):
                 prior.get('native_id') == agent['native_session_id']):
             return dict(wake=prior, process=state['process'])  # Retry only this retained start; never another add.
         return None  # Submitted or uncertain; only native handling permits a new nudge.
+    request_id = ready.get('request_id') or str(uuid.uuid4())
     if endpoint:
-        state['idle_wake'] = dict(delivery_id=delivery, session=session_ref(agent),
+        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
             transport='codex-queue', endpoint=endpoint['endpoint'], owner=endpoint['owner'],
             native_id=agent['native_session_id'],
             status='uncertain', attempted_at=time.time())
@@ -167,15 +168,30 @@ def prepare_idle_wake(config, state, path):
         return dict(wake=state['idle_wake'], process=state['process'])
     channel = claude_channel_endpoint(config, state['process'])
     if channel:
-        state['idle_wake'] = dict(delivery_id=delivery, session=session_ref(agent),
+        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
             transport='claude-channel', endpoint=channel['socket'], bridge=channel['process'],
             parent=channel['parent'], native_id=agent['native_session_id'],
             status='uncertain', attempted_at=time.time())
         write_state(path, state)
         return dict(wake=state['idle_wake'], process=state['process'])
-    if config.get('claude_channel_dir'):
-        # An explicitly configured native channel never falls back to the
-        # terminal route when its registry is stale, malformed or missing.
+    opencode = opencode_queue_endpoint(config, state['process'])
+    if opencode:
+        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
+            transport='opencode-queue', endpoint=opencode, native_id=agent['native_session_id'],
+            status='uncertain', attempted_at=time.time())
+        write_state(path, state)
+        return dict(wake=state['idle_wake'], process=state['process'])
+    hermes = hermes_queue_endpoint(config, state['process'])
+    if hermes:
+        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
+            transport='hermes-queue', endpoint=hermes, native_id=agent['native_session_id'],
+            status='uncertain', attempted_at=time.time())
+        write_state(path, state)
+        return dict(wake=state['idle_wake'], process=state['process'])
+    if config.get('claude_channel_dir') or config.get('harness') in ('codex', 'claude', 'opencode', 'hermes'):
+        # An explicitly configured native channel or known native harness
+        # never falls back to the terminal route when its registry/socket is
+        # stale, malformed or missing.
         return None
     environment = herdr_environment(state['process'])
     if environment is None:
@@ -193,7 +209,7 @@ def prepare_idle_wake(config, state, path):
     # remains a hint, not a lease; the prompt contains no source/work payload.
     if call(config, 'session-inbox-ready', session_ref(agent)).get('delivery_id') != delivery:
         return None
-    state['idle_wake'] = dict(delivery_id=delivery, session=session_ref(agent),
+    state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
         target={k: current[k] for k in keys}, status='uncertain', attempted_at=time.time())
     write_state(path, state)
     return dict(environment=environment, wake=state['idle_wake'], process=state['process'])
@@ -238,6 +254,20 @@ def channel_helper():
     except ImportError as exc:
         raise CoordinationError('WAKE_UNAVAILABLE', f'claude channel client is unavailable: {exc}') from exc
     return claude_channel
+
+
+def opencode_queue_endpoint(config, process):
+    if config.get('harness') != 'opencode':
+        return None
+    path = Path(f"/tmp/cairn-opencode-{process['pid']}.sock")
+    return str(path) if path.is_socket() else None
+
+
+def hermes_queue_endpoint(config, process):
+    if config.get('harness') != 'hermes':
+        return None
+    path = Path(f"/tmp/cairn-hermes-{process['pid']}.sock")
+    return str(path) if path.is_socket() else None
 
 
 def codex_queue_endpoint(config, process):
@@ -362,11 +392,24 @@ def claude_prompt_admission(state, observation, event):
     return None
 
 
+def hermes_wake_binding(state, event):
+    wake = state.get('idle_wake', {})
+    turn = event.get('turn_id')
+    if (wake.get('transport') != 'hermes-queue' or wake.get('session') != session_ref(state['agent']) or
+            event.get('hook_event_name') != 'TurnStart' or not isinstance(turn, str) or
+            not turn.strip() or len(turn.encode()) > 256 or '\0' in turn or
+            event.get('prompt') != wake_message(wake)):
+        return {}
+    return dict(delivery_id=wake['delivery_id'], native_turn_id=turn)
+
+
 def wake_binding(config, state, event, joined=False):
     if config['harness'] == 'codex':
         return queued_wake_binding(state, event)
     if config['harness'] == 'claude':
         return channel_wake_binding(state, event, joined)
+    if config['harness'] == 'hermes':
+        return hermes_wake_binding(state, event)
     return {}
 
 
@@ -430,6 +473,36 @@ def submit_idle_wake(config, path, prepared):
             # never resend and never fall back to terminal submission.
             raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
         started = True
+    elif wake.get('transport') == 'opencode-queue':
+        try:
+            import opencode_queue
+        except ImportError as exc:
+            raise CoordinationError('WAKE_UNAVAILABLE', f'opencode queue client is unavailable: {exc}') from exc
+        try:
+            queued_id, started = opencode_queue.enqueue(wake['endpoint'], prepared['process'],
+                                                        wake['native_id'], text, wake['delivery_id'])
+        except opencode_queue.QueueUnavailable as exc:
+            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
+            drop_idle_wake(path, wake)
+            return
+        except opencode_queue.QueueError as exc:
+            raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
+    elif wake.get('transport') == 'hermes-queue':
+        try:
+            import hermes_queue
+        except ImportError as exc:
+            raise CoordinationError('WAKE_UNAVAILABLE', f'hermes queue client is unavailable: {exc}') from exc
+        try:
+            queued_id, started = hermes_queue.enqueue(wake['endpoint'], prepared['process'],
+                                                      wake['native_id'], text, wake['delivery_id'],
+                                                      request_id=wake.get('request_id'),
+                                                      delivery_id=wake['delivery_id'])
+        except hermes_queue.QueueUnavailable as exc:
+            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
+            drop_idle_wake(path, wake)
+            return
+        except hermes_queue.QueueError as exc:
+            raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
     else:
         response = herdr_call(config, prepared['environment'], 'agent', 'prompt', wake['target']['pane_id'], text)
         confirmed = response.get('agent', {})
@@ -505,11 +578,11 @@ def normalize(config, event, event_name=None):
         if (parent / ".git").exists():
             root = parent
             break
-    # Codex owns turns by its native turn ID. Claude owns a request by the
+    # Codex and Hermes own turns by native turn ID. Claude owns a request by the
     # stable prompt_id of its channel submission; the display turn is separate.
     owner = ''
-    if harness in ('codex', 'claude'):
-        owner = event.get('turn_id' if harness == 'codex' else 'prompt_id', '')
+    if harness in ('codex', 'claude', 'hermes'):
+        owner = event.get('prompt_id' if harness == 'claude' else 'turn_id', '')
         if not isinstance(owner, str) or len(owner.encode()) > 256 or '\0' in owner or any(ord(c) < 32 for c in owner):
             raise CoordinationError('INVALID_HOST', 'invalid native ownership key')
         if owner:
@@ -704,6 +777,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         raise CoordinationError('NATIVE_TURN_MISMATCH', 'another native turn cannot take over or end this request')
     if (not state.get('inbox_intent') and config.get('idle_wakeup') and
             (codex_queue_endpoint(config, state['process']) or
+             hermes_queue_endpoint(config, state['process']) or
              (config['harness'] == 'claude' and config.get('claude_channel_dir'))) and not wake_binding):
         return ''  # This native wake transport owns admission; other prompts do not claim work.
     if observation['event'] == 'Stop' and observation['phase'] != 'idle':
@@ -714,7 +788,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
             state['delivered_since_idle'] = False
             write_state(path, state)
             return ''
-        if config['harness'] not in ('codex', 'claude', 'agy'):
+        if config['harness'] not in ('codex', 'claude', 'hermes', 'agy'):
             return ''  # These adapters next deliver at their pre-turn boundary.
     recover_inbox(config, state, path)
     if not state.get('inbox_attempt'):
