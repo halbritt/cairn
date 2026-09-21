@@ -119,6 +119,73 @@ behavior with no installed adapter asserting exclusivity. That correction and
 the passing original regression do not resolve the three reproduced defects or
 the outstanding native admission evidence. Integration remains held.
 
+### Cancellation repair review at `8d30af4`
+
+The next isolated candidate is
+`8d30af43ab596688f49f072b2401ca6ba9712a35`. Independent disposable-PostgreSQL
+race tests pass the C1 scan-ordering and C3 invalid-revocation probes, as well
+as the narrow C2 case with a still-captured tool. C2 remains open: the new
+revocation branch checks captured tool states but bypasses the positive
+turn-stop and final-scan requirements in `cancelCleanupReady`.
+
+Three additional probes reproduce premature hold release: a running turn with
+no captured tools; a running turn with an unavailable tool, lost capture and
+an `unknown_remaining` scan; and an ended turn with no final scan. A positive
+case with an ended turn, terminal tools and a fresh clear scan succeeds.
+The probes and log are in
+`/tmp/cairn-cancel-review-8d30af4.55lN6d72/core/agent_cancel_revocation_cleanup_review_test.go`
+and `/tmp/cairn-cancel-review-8d30af4.55lN6d72/independent-review.log`.
+Fresh database reads in `revocation-persistence.log` in that directory confirm
+the active hold disappeared and the attempt finished in all three failing cases.
+The coordinator inspected the source, probes and results; the independent
+reviewer executed the database checks. No candidate source was changed.
+
+The existing `TestOwnerJoinRevokesExclusivity` expects release after owner
+join invalidates the scan, so that test currently preserves the defective
+behavior. The submitted real-API script exercises cancellation, ambiguity
+and scan ordering, but contains no revocation scenario despite the author's
+broader validation claim. Integration remains held until revocation preserves
+the same cleanup evidence requirements without treating lost interruption
+permission as proof that work stopped. Native ownership enablement remains
+a separate outstanding contract.
+
+### Cancellation core checks at `2127828`
+
+Independent review of frozen
+`21278280f962d098907a3ac9ae75e2634ed07434` passes 23 selected top-level tests
+and seven subcases against disposable PostgreSQL with the race detector.
+The C1-C3 reproductions now pass. Strengthened fresh-read assertions confirm
+that incomplete cleanup preserves the unfinished attempt and leased delivery;
+complete revoked cleanup releases the hold while leaving cancellation
+confirmation unset. The log is
+`/tmp/cairn-cancel-review-2127828.inByIiss/independent-review.log`.
+
+This supports the dormant core behavior under review, but the candidate's
+API test remains broken: `2127828` indexes an extra `attempt` envelope;
+`d666c16` fixes that access but then indexes the omitted nil `confirmed_at`
+field. Exact reproductions are retained as `api-review.log` and
+`api-d666c16-review.log` in the same directory. Required full integration
+checks must pass after the test correction before integration. These store
+tests do not establish native admission or interrupt safety.
+
+### Dormant cancellation core integration
+
+The API oracle corrections in `58d70d6` were combined with current main in
+isolated coordinator checkout commit `0c34bbf4e0f7a364e7f415288d3461ac86dda5e5`.
+Both `make test-integration` and `make check` passed there, without disabling
+VCS stamping. The full integration run used a disposable PostgreSQL cluster
+and included the real-API cancellation and revocation probe, package race
+tests, migrations, worker cleanup and API recovery checks. Logs are
+`/tmp/cairn-agent88-core-assembled-integration.log` and
+`/tmp/cairn-agent88-core-assembled-check.log`.
+
+This closes the C1-C3 and API-test holds for dormant core source integration.
+It does not establish exclusive native admission, real-model interruption or
+host-observed revocation. No adapter enables exclusive native cancellation;
+deployment remains held. The installed CLI and API still reported clean
+`a037f42` during this check. OpenCode/Hermes bridge integration remains
+separate and held on the remaining binding defects.
+
 ## Bridge repair follow-up
 
 The later repair report claimed all five findings were closed. Independent
@@ -155,6 +222,46 @@ below to `166595f88c380c5fa572ee0ca642c1c8891a6ce06fbbde5e6f068510a93fa786`.
 The author reported no service restarts; that is distinct from leaving installed
 source unchanged. Review made no further installed-source changes. Overall
 bridge integration remains held pending binding, packaging and test repairs.
+
+### Isolated bridge candidate `4c83bc9`
+
+The next candidate uses Cairn `4c83bc91c864ab4285d02962a17a82b6d3056691`
+and isolated Hermes `b8ae93b`. Review found two remaining binding defects and
+a fixture cleanup regression:
+
+- Hermes `before` forwards the hook turn ID, but `after` and `close` omit it.
+  A composition probe through the real plugin hook dispatcher reproduces
+  `NATIVE_TURN_MISMATCH` at turn end, preventing reconciliation.
+- CLI admission generates `_active_turn_id` separately from the turn ID
+  generated by `AIAgent.run_conversation` and consumed by `build_turn_context`.
+  The coordinator binds the hook ID, but targeted abort checks the CLI ID.
+  The probe supplies a distinct hook ID and reproduces `TURN_MISMATCH` through
+  the abort socket; source inspection establishes the separate generators.
+  This probe does not run a model conversation or demonstrate live admission.
+- If fixture setup rejects a preloaded registry outside its temporary home,
+  its exception cleanup calls `tearDownClass`, which calls that foreign
+  registry's `kill_all`. The independent reviewer reproduced termination of
+  an owned temporary process in such a registry. Isolation refusal must not
+  operate on resources the fixture does not own.
+
+The frozen composition probe is
+`/tmp/cairn-agent88-final-review/review_b5.py`; the coordinator independently
+reran it and inspected the corresponding native source. Agent 2 owns the
+fixture and lifecycle repairs in isolated checkouts. Agent 67 owns package
+assembly and installer validation; agent 24 owns the remaining C2 repair.
+The owner's persistent coordination goal is active. Integration and native
+enablement remain held pending the applicable independent checks.
+
+The revised B2 standing regression now fails when the outer admission lock is
+removed, independently verifying that it detects the original race. All 13
+Hermes fixture tests passed on the frozen candidate; their passing result did
+not cover the three defects above. The subsequent `f938a0d` fixture ownership
+repair is undergoing a separate independent check.
+
+The installed Hermes checkout was observed clean at
+`13f4cfebfafbce8ac9d1bf29f66731858ed638b5` after the author reported restoring
+it. That restoration was another installed-source mutation outside the
+isolated-only assignment. Further repairs are restricted to isolated copies.
 
 ## Reviewed source hashes
 

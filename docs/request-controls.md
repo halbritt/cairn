@@ -89,6 +89,35 @@ its stop command. Even when that command fails, the supervisor checks the final
 unit and cgroup state before deciding whether cleanup finished. A still-running
 unit or an unreadable final state retains the hold.
 
+## Native interactive cancellation (core contract, pending)
+
+Interactive native cancellation REMAINS UNSUPPORTED operationally. The core
+contract added by migration 049 is dormant: `work-cancel` on a native session
+attempt still refuses with `UNSUPPORTED_CONTROL` unless that attempt
+explicitly attested exclusive single-request ownership of one pinned native
+turn, and no installed adapter attests that today (a joined Claude channel
+prompt shares the owner prompt id; owner input can join an admitted Codex
+queue turn; no exclusive admission or host-observed revocation lifecycle has
+been demonstrated). All evidence for this contract is synthetic or
+core-level: disposable-database unit regressions and a real-API component
+check with fabricated native identities. No watcher integration exists.
+
+For a future attested attempt the contract is: `work-cancel` records an
+idempotent pending cancellation fencing complete/renew/retry with
+`REQUEST_CANCELLED`. Reconciliation releases the hold only after a positive
+turn stop (`interrupted`/`ended`; `ambiguous` holds), terminal captured tools
+and a final clear terminal scan. Exclusive attempts use `cancel_confirmed`.
+Revoked attempts require the same cleanup evidence and use
+`exclusivity_revoked`, leaving cancellation confirmation unset. A clear scan is
+invalidated by the cancellation decision, every later capture, a new turn-stop
+observation, a real capture-loss transition and any host-observed owner join
+(which also revokes the exclusivity attestation one-way). A latched
+`capture_gap` preserves lost coverage.
+Host operations: `session-inbox-control`, `session-tool-capture`,
+`session-tool-stop`. The adapter-side capture listener and native stop
+executor are separate future work. Killing a shared gateway or interactive
+process is never part of this contract.
+
 ## Sweep, review and recovery
 
 `cairn request-control-sweep` accepts `{"repo":"/home/halbritt/git/cairn"}`.

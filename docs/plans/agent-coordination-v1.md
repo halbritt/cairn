@@ -23,8 +23,9 @@ features retain their triggers. See
 the [September 16 acceptance checkpoint](../verification/coordination-v1-acceptance-2026-09-16.md).
 
 The [2026-09-20 independent review](../verification/coordination-review-2026-09-20.md)
-holds integration of the uncommitted OpenCode/Hermes bridges and the separate
-schema 049 cancellation candidate. Baseline checks pass, but the review found
+holds integration of the uncommitted OpenCode/Hermes bridges. The dormant
+schema 049 cancellation core is integrated after independent cleanup regressions
+and full local integration checks; it is not deployed. The review found
 lost wakes, cancellation races and incomplete test isolation. Native cancellation
 still needs verified request-to-delivery-to-turn ownership through admission
 and revocation, and explicit failure or uncertainty when tool termination cannot
