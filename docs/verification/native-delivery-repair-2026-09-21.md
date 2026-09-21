@@ -24,6 +24,8 @@ The helper copies effective configuration rather than changing the shared bindin
 Independent review caught missing-directory configuration allowing ordinary
 claims; the follow-up rejects missing, empty, non-string, and relative channel directories.
 The regression failed in all 18 malformed cases before the fix and passes after it.
+An independent review of the final frozen revision cleared the blocker and
+confirmed all 43 configuration/idle tests pass.
 
 The initial 38 OpenCode/configuration/Claude channel tests passed; the final
 configuration and idle suites pass all 43 tests including the added regression. The idle-wakeup
@@ -55,8 +57,10 @@ state clearing, or uncertain wake replay was used.
 A new deployment-correction notice was published at 14:03:01 PDT for automatic
 queue verification. The native store records a new OpenCode-allocated user message at 14:03:41.550
 containing that delivery UUID, distinct from the earlier manual verification
-prompt. This confirms actual native queue acceptance; explicit handling remains
-required before claiming the complete live route fixed.
+prompt. The notice was explicitly acknowledged at 14:04:57.843 PDT after exactly one
+claim. This establishes automatic queue acceptance and model-side handling in
+the existing conversation. The initial 40-second wait included the preceding
+verification turn; no one-hour timer or manual follow-up prompt was involved.
 
 Agent 65 remains in its original idle process pending the owner's answer to the
 specific restart question. Its exact resume command, additive default-account
@@ -65,7 +69,12 @@ default Claude global configuration is `~/.claude.json` when
 `CLAUDE_CONFIG_DIR` is unset; setting that variable to `~/.claude` would change
 which global configuration is loaded. The prepared restart preserves the unset
 variable, account, project directory, and native conversation ID. Other Claude
-processes are excluded from the selector and are not restarted.
+processes are excluded from the selector and are not restarted. Independent
+review confirmed the staged global delta is only `mcpServers.cairn-events` and
+the binding delta is only the channel directory and selector. Live Claude cache
+fields have since changed, so activation must merge the single MCP entry into a
+fresh global configuration read; copying the staged snapshot would overwrite
+those intervening changes.
 
 This is a bounded delivery repair, not full coordination-v1 acceptance or native
 exclusive cancellation acceptance. The delay is not yet declared repaired.

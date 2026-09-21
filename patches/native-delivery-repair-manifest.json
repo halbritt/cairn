@@ -10,12 +10,12 @@
     "scripts/test_opencode_queue.py": "04c5ddbbf073bd830c0c1b83b0392979562bb9a7f4b638be571c364895ef671b"
   },
   "validation": {
-    "opencode": "20 tests pass; installed OpenCode 1.18.31 real HTTP validator accepts omitted optional messageID and rejects delivery UUID; live model handling pending",
-    "claude": "9 configuration tests and 34 idle tests pass; selected malformed-directory regression red before fix across18subcases; independent final probe pending",
+    "opencode": "20 tests pass; installed OpenCode 1.18.31 real HTTP validator accepts omitted optional messageID and rejects delivery UUID; live model handling pending; real automatic native prompt at14:03:41.550PDT and exactlyone explicit acknowledgment at14:04:57.843PDT",
+    "claude": "9 configuration tests and34idle tests pass;18 malformed-directory regression cases failed beforefix and pass after; independent frozen-revision probe confirms default/selected/unselected behavior and immutable shared config",
     "idle": "34 tests pass after correcting 5 obsolete terminal fallback expectations; supported Agy terminal behavior preserved"
   },
   "acceptance": {
-    "live_opencode_automatic_delivery": false,
+    "live_opencode_automatic_delivery": true,
     "live_claude65_automatic_delivery": false,
     "coordination_v1_complete": false
   },
