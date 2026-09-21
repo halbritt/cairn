@@ -20,7 +20,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Ensure repo root and hermes-agent are on sys.path
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -754,6 +754,169 @@ class HermesCancellationE2ETests(unittest.TestCase):
             self.cli._admission_state = "idle"
             self.cli._active_request_id = None
             self.cli._active_turn_id = None
+
+    def test_claim14_native_turn_binding_end_to_end_and_reconciliation(self):
+        """Claim 14: End-to-end native turn identity spans admission, hooks, claim, TurnEnd reconciliation, and abort."""
+        from integrations.lifecycle import coordination
+        config = dict(harness='hermes', native_delivery=True, idle_wakeup='/unused')
+        state = dict(agent=dict(agent_id='test-agent', execution_id='test-exec'), process=self.process)
+        state['idle_wake'] = dict(
+            transport='hermes-queue',
+            session=coordination.session_ref(state['agent']),
+            delivery_id='delivery-claim14',
+            request_id='wake-request-claim14',
+            native_id=self.cli.session_id,
+        )
+        text = coordination.wake_message(state['idle_wake'])
+        qm = QueuedMessage(
+            text=text,
+            expected_session_id=self.cli.session_id,
+            request_id='wake-request-claim14',
+            delivery_id='delivery-claim14',
+        )
+        self.cli._dequeue_pending_input(qm)
+        cli_turn = self.cli._active_turn_id
+        self.assertTrue(cli_turn.startswith(f"{self.cli.session_id}:{self.cli.session_id}:"))
+
+        calls = []
+        def capture_run(*args, **kwargs):
+            calls.append(json.loads(kwargs['input']))
+            return SimpleNamespace(returncode=0, stdout=json.dumps({'hookSpecificOutput': {'additionalContext': ''}}))
+
+        pm = get_plugin_manager()
+        hook_turn = f"{self.cli.session_id}:task-c14:turn-c14"
+        with patch('subprocess.run', side_effect=capture_run):
+            pm.invoke_hook('pre_llm_call', session_id=self.cli.session_id, task_id='task-c14',
+                           turn_id=hook_turn, user_message=text, model='test-model', platform='cli')
+            pm.invoke_hook('post_llm_call', session_id=self.cli.session_id, task_id='task-c14',
+                           turn_id=hook_turn, user_message=text, platform='cli')
+
+        self.assertEqual(len(calls), 2)
+        start, end = calls
+        self.assertEqual(start.get('turn_id'), hook_turn)
+        self.assertEqual(end.get('turn_id'), hook_turn)
+
+        binding = coordination.wake_binding(config, state, start)
+        self.assertEqual(binding.get('native_turn_id'), hook_turn)
+        self.assertEqual(binding.get('delivery_id'), 'delivery-claim14')
+
+        state['inbox_intent'] = dict(request_id='store-poll-c14', **binding)
+        observed = coordination.normalize(config, end)
+        self.assertEqual(observed.get('native_turn_id'), hook_turn)
+
+        # Reconciliation at TurnEnd succeeds without NATIVE_TURN_MISMATCH
+        with tempfile.TemporaryDirectory() as td:
+            state_p = Path(td) / 'session.json'
+            ctx_ret = coordination.inbox_context(config, state, state_p, observed)
+            self.assertEqual(ctx_ret, '')
+
+        # Abort using the bound hook turn is accepted
+        self.cli._agent_running = True
+        self.cli._admission_state = 'running'
+        try:
+            abort_res = hermes_queue.abort(
+                self.sock_path,
+                self.process,
+                self.cli.session_id,
+                expected_request_id='wake-request-claim14',
+                expected_turn_id=binding['native_turn_id'],
+            )
+            self.assertTrue(abort_res.get('aborted'))
+            self.assertEqual(abort_res.get('turn_stop'), 'interrupted')
+        finally:
+            self.cli._agent_running = False
+            self.cli._admission_state = 'idle'
+            self.cli._active_request_id = None
+            self.cli._active_turn_id = None
+
+    def test_claim15_adverse_turn_binding_rejection(self):
+        """Claim 15: Adverse turn bindings (wrong prompt, missing turn_id, foreign session) are strictly rejected."""
+        from integrations.lifecycle import coordination
+        config = dict(harness='hermes', native_delivery=True, idle_wakeup='/unused')
+        state = dict(agent=dict(agent_id='test-agent', execution_id='test-exec'), process=self.process)
+        state['idle_wake'] = dict(
+            transport='hermes-queue',
+            session=coordination.session_ref(state['agent']),
+            delivery_id='delivery-claim15',
+            request_id='wake-request-claim15',
+            native_id=self.cli.session_id,
+        )
+        valid_turn = f"{self.cli.session_id}:task-1:turn-1"
+        valid_start = {
+            'session_id': self.cli.session_id,
+            'hook_event_name': 'TurnStart',
+            'turn_id': valid_turn,
+            'prompt': coordination.wake_message(state['idle_wake']),
+        }
+        # 1. Valid binding produces expected dict
+        self.assertEqual(
+            coordination.wake_binding(config, state, valid_start),
+            {'delivery_id': 'delivery-claim15', 'native_turn_id': valid_turn},
+        )
+        # 2. Wrong prompt returns empty dict
+        self.assertEqual(
+            coordination.wake_binding(config, state, dict(valid_start, prompt='owner input text')),
+            {},
+        )
+        # 3. Missing or empty turn_id returns empty dict
+        self.assertEqual(
+            coordination.wake_binding(config, state, dict(valid_start, turn_id='')),
+            {},
+        )
+        # 4. Foreign session returns empty dict
+        self.assertEqual(
+            coordination.wake_binding(config, state, dict(valid_start, session_id='ses_foreign_other')),
+            {},
+        )
+        # 5. Mismatched session prefix in turn_id returns empty dict
+        self.assertEqual(
+            coordination.wake_binding(config, state, dict(valid_start, turn_id='ses_other:task-1:turn-1')),
+            {},
+        )
+
+    def test_claim16_session_end_turn_reconciliation_payload(self):
+        """Claim 16: SessionEnd lifecycle hook carries saved turn_id and reconciles without NATIVE_TURN_MISMATCH."""
+        from integrations.lifecycle import coordination
+        config = dict(harness='hermes', native_delivery=True, idle_wakeup='/unused')
+        state = dict(agent=dict(agent_id='test-agent', execution_id='test-exec'), process=self.process)
+        state['idle_wake'] = dict(
+            transport='hermes-queue',
+            session=coordination.session_ref(state['agent']),
+            delivery_id='delivery-claim16',
+            request_id='wake-request-claim16',
+            native_id=self.cli.session_id,
+        )
+        calls = []
+        def capture_run(*args, **kwargs):
+            calls.append(json.loads(kwargs['input']))
+            return SimpleNamespace(returncode=0, stdout=json.dumps({'hookSpecificOutput': {'additionalContext': ''}}))
+
+        pm = get_plugin_manager()
+        hook_turn = f"{self.cli.session_id}:task-c16:turn-c16"
+        text = coordination.wake_message(state['idle_wake'])
+        with patch('subprocess.run', side_effect=capture_run):
+            pm.invoke_hook('pre_llm_call', session_id=self.cli.session_id, task_id='task-c16',
+                           turn_id=hook_turn, user_message=text, model='test-model', platform='daemon')
+            pm.invoke_hook('post_llm_call', session_id=self.cli.session_id, task_id='task-c16',
+                           turn_id=hook_turn, user_message=text, platform='daemon')
+
+        self.assertEqual(len(calls), 2)
+        start, end = calls
+        self.assertEqual(start.get('hook_event_name'), 'TurnStart')
+        self.assertEqual(start.get('turn_id'), hook_turn)
+        self.assertEqual(end.get('hook_event_name'), 'SessionEnd')
+        self.assertEqual(end.get('turn_id'), hook_turn)
+
+        binding = coordination.wake_binding(config, state, start)
+        state['inbox_intent'] = dict(request_id='store-poll-c16', **binding)
+        observed = coordination.normalize(config, end)
+        self.assertEqual(observed.get('native_turn_id'), hook_turn)
+
+        # Successful SessionEnd reconciliation payload releases inbox without error
+        with tempfile.TemporaryDirectory() as td:
+            state_p = Path(td) / 'session.json'
+            ctx_ret = coordination.inbox_context(config, state, state_p, observed)
+            self.assertEqual(ctx_ret, '')
 
 
 class HermesFixtureIsolationFailureTests(unittest.TestCase):

@@ -53,6 +53,15 @@ def register(ctx):
             return
         with lock:
             sessions[session_id] = dict(context='', task=task_id, model=model, busy=True, turn_id=turn_id)
+            cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
+            if cli is not None and getattr(cli, 'session_id', None) == session_id:
+                if turn_id:
+                    cli._active_turn_id = turn_id
+                    try:
+                        from tools.approval import _approval_turn_id
+                        _approval_turn_id.set(turn_id)
+                    except Exception:
+                        pass
             try:
                 context = invoke(session_id, 'TurnStart', task_id, model, turn_id=turn_id, prompt=user_message)
                 sessions[session_id]['context'] = context
@@ -72,8 +81,10 @@ def register(ctx):
                 return
             state['busy'] = False
             try:
-                invoke(session_id, 'TurnEnd' if platform == 'cli' else 'SessionEnd', state['task'], state['model'])
+                turn_id = state.get('turn_id', '')
+                invoke(session_id, 'TurnEnd' if platform == 'cli' else 'SessionEnd', state['task'], state['model'], turn_id=turn_id)
                 state['context'] = ''
+                state['turn_id'] = ''
                 if platform != 'cli':
                     sessions.pop(session_id, None)
             except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
@@ -86,7 +97,8 @@ def register(ctx):
         with lock:
             for ident, state in list(sessions.items()):
                 try:
-                    invoke(ident, 'SessionEnd', state['task'], state['model'])
+                    turn_id = state.get('turn_id', '')
+                    invoke(ident, 'SessionEnd', state['task'], state['model'], turn_id=turn_id)
                 except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
                     logger.warning('Cairn native session leave unavailable; presence will expire')
             sessions.clear()
@@ -536,7 +548,7 @@ def register(ctx):
             while bridge_running:
                 try:
                     conn, _ = bridge_server.accept()
-                    if not client_semaphore.acquire(blocking=False):
+                    if not client_semaphore.acquire(timeout=2.0):
                         conn.sendall(json.dumps({'id': None, 'error': {'code': -32000, 'message': 'SERVER_BUSY: max concurrent connections reached'}}).encode('utf-8') + b'\n')
                         conn.close()
                         continue
