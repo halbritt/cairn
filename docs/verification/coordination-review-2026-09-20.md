@@ -149,6 +149,25 @@ the same cleanup evidence requirements without treating lost interruption
 permission as proof that work stopped. Native ownership enablement remains
 a separate outstanding contract.
 
+### Cancellation core checks at `2127828`
+
+Independent review of frozen
+`21278280f962d098907a3ac9ae75e2634ed07434` passes 23 selected top-level tests
+and seven subcases against disposable PostgreSQL with the race detector.
+The C1-C3 reproductions now pass. Strengthened fresh-read assertions confirm
+that incomplete cleanup preserves the unfinished attempt and leased delivery;
+complete revoked cleanup releases the hold while leaving cancellation
+confirmation unset. The log is
+`/tmp/cairn-cancel-review-2127828.inByIiss/independent-review.log`.
+
+This supports the dormant core behavior under review, but the candidate's
+API test remains broken: `2127828` indexes an extra `attempt` envelope;
+`d666c16` fixes that access but then indexes the omitted nil `confirmed_at`
+field. Exact reproductions are retained as `api-review.log` and
+`api-d666c16-review.log` in the same directory. Required full integration
+checks must pass after the test correction before integration. These store
+tests do not establish native admission or interrupt safety.
+
 ## Bridge repair follow-up
 
 The later repair report claimed all five findings were closed. Independent
@@ -214,6 +233,12 @@ fixture and lifecycle repairs in isolated checkouts. Agent 67 owns package
 assembly and installer validation; agent 24 owns the remaining C2 repair.
 The owner's persistent coordination goal is active. Integration and native
 enablement remain held pending the applicable independent checks.
+
+The revised B2 standing regression now fails when the outer admission lock is
+removed, independently verifying that it detects the original race. All 13
+Hermes fixture tests passed on the frozen candidate; their passing result did
+not cover the three defects above. The subsequent `f938a0d` fixture ownership
+repair is undergoing a separate independent check.
 
 The installed Hermes checkout was observed clean at
 `13f4cfebfafbce8ac9d1bf29f66731858ed638b5` after the author reported restoring
