@@ -173,7 +173,7 @@ def check(binary, root):
         closed = raw('session-inbox-reconcile', dict(request_id=str(uuid.uuid4()), session=session,
             attempt_id=claim2['attempt_id'], reason='exclusivity_revoked'))
         assert closed['status'] == 'OK', closed
-        attempt_closed = closed['data']['attempt']
+        attempt_closed = closed["data"]
         assert attempt_closed['reason'] == 'exclusivity_revoked', attempt_closed
         assert attempt_closed['cancel']['confirmed_at'] is None, attempt_closed
         revoked_delivery = agent('event-inspect', dict(event_id=event2['event_id']))['deliveries'][0]
