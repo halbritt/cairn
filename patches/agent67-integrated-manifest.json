@@ -19,7 +19,9 @@
     "verified_b5_merge": {
       "commit": "27d1994 (coordinator/verified-integration-20260920: d760f85 + 23b12b6 + Cairn 69f6a9508984d65aeb773bca245476bae803cf34)",
       "merge_commit": "b27908b on branch agent67-integrated-package",
-      "implementation": "untouched by this candidate; merge was conflict-free; the in-tree e2e fixture remains the 69f6a95 version with the known claim14/claim16 failures; root's test-only correction (fccd00c7560798c30f0c3e4b252e0e4884e29a0ce600a99d39c7fe21c3ed6bd4) will be committed separately by root and was not duplicated"
+      "implementation": "untouched by this candidate; merge was conflict-free; the in-tree e2e fixture remains the 69f6a95 version with the known claim14/claim16 failures; root's test-only correction (fccd00c7560798c30f0c3e4b252e0e4884e29a0ce600a99d39c7fe21c3ed6bd4) will be committed separately by root and was not duplicated",
+      "fixture_correction_merge": "def905f merged as 0e65d90 per coordinator notice (event 8d30d334, source 331798ee v1): brings root's claim14/claim16 test-only corrections and review evidence, and removes the AST-identical duplicate HermesFixtureIsolationFailureTests class that the B3 merge had introduced; the temporary fixture file was not copied",
+      "branch_tip": "0e65d90"
     }
   },
   "changes_vs_agent2_commit": [
@@ -76,7 +78,9 @@
       "opencode_busy_composition": "2 tests OK against this tree's coordination.py and opencode_queue.py",
       "native_pin": "native source pinned at b8ae93b (clean, verified by hash); no native source edits; excluded Agy working-tree changes in main remain excluded from the package",
       "suites_at_v5": "opencode 15 OK, hermes 16 OK, e2e 16 OK, BUSY composition 2 OK on a fresh isolated pinned-b8ae93b copy with HERMES_ROOT/HOME/HERMES_HOME set before imports",
-      "suites_at_v6": "opencode queue 15 OK; hermes queue 16 OK; hermes cancellation e2e 21 tests: 19 OK with exactly the two known fixture defects root reported (claim14 invents a different turn ID; claim16 omits intent.session) - root owns the test-only correction; BUSY composition and installer helper verification re-run: both harnesses install into temporary destinations with --no-service, roots contain coordination.py + codex/claude/opencode/hermes helpers and no agy_queue.py, both installed coordination.py copies load and read their binding configs"
+      "suites_at_v6": "opencode queue 15 OK; hermes queue 16 OK; hermes cancellation e2e 21 tests: 19 OK with exactly the two known fixture defects root reported (claim14 invents a different turn ID; claim16 omits intent.session) - root owns the test-only correction; BUSY composition and installer helper verification re-run: both harnesses install into temporary destinations with --no-service, roots contain coordination.py + codex/claude/opencode/hermes helpers and no agy_queue.py, both installed coordination.py copies load and read their binding configs",
+      "suites_at_final": "opencode queue 15 OK; hermes queue 16 OK; hermes cancellation e2e 21 tests ALL PASSING (root's claim14/claim16 corrections landed via def905f); make check passed; no repository debris",
+      "integration_note": "root ran full make test-integration and make check at 27d1994 (both exit 0); def905f touches only the e2e fixture and review docs, so no Go/packaging surface changed here; root owns the final assembled-fixture run and blanket acceptance remains withheld"
     },
     "clean_checkout": "see deliverables validation-summary; final patch re-applied to a fresh 4c83bc91 worktree with suites re-run and zero repo debris"
   },
@@ -85,5 +89,5 @@
     "Native enabled/exclusive admission remains unaccepted; fixture tests use mock/native-seam behavior and do not establish real-host admission or cancellation acceptance.",
     "The e2e suite requires the pinned-base native companion (HERMES_ROOT at a b8ae93b-equivalent tree); without it that suite silently skips. The deliverable now ships the actual pinned-base native patch so no external path is required."
   ],
-  "bounded_acceptance": "Behavior-level B5 acceptance: yes for 69f6a95 + 131e95b per independent review. Remaining UNACCEPTED and explicitly distinguished: deployment to the real host, exclusive native admission, and real model interruption; overall integration acceptance is conditional on root's full disposable-PG validation of the assembled branch. The earlier stale 'Hermes wake_binding is absent' statement was removed in v5 and remains absent."
+  "bounded_acceptance": "Behavior-level B5 acceptance: yes for 69f6a95 + 131e95b; native runtime patch 131e95b bounded behavior accepted. Deployment, exclusive native admission and real model interruption remain UNACCEPTED; report test results specifically, not blanket production acceptance."
 }
