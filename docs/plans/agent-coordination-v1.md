@@ -27,8 +27,9 @@ verifies the dormant schema 049 cancellation core and bounded OpenCode/Hermes
 bridge repairs. Disposable database checks cover cleanup order, revocation and
 persisted holds. Native fixtures cover queue handoff, hook identity, isolated
 tool processes and explicit failure handling; provider/model boundaries remain
-substituted. Source integration is separate from deployment: neither schema 049
-nor the companion Hermes patch is installed by this work.
+substituted. The September 20 [deployment](../verification/coordination-deployment-2026-09-20.md)
+installed clean `b5aab96`, schema 049, all seven bindings and native Hermes
+`131e95b`. Existing native clients must reload to use newly installed plugins.
 
 Remaining acceptance work is to establish exclusive request ownership through
 native admission and revocation, then exercise real-model interruption and

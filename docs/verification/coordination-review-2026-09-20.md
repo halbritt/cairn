@@ -333,8 +333,9 @@ and `/tmp/cairn-agent88-bridge-check.log`. The combined source preserves the
 newer persisted-state assertions. The corrected fixtures also remove an
 AST-identical duplicate isolation-test class introduced by merging the B3
 cherry-pick; the final 52-test run passed in the integration checkout.
-The installed Hermes source remains clean at `13f4cfeb`; no deployment or
-exclusive native cancellation has been enabled.
+At this source-review checkpoint, installed Hermes remained clean at
+`13f4cfeb`. The later [deployment](coordination-deployment-2026-09-20.md)
+installed `131e95b`; exclusive native cancellation remains unavailable.
 
 ### Final package verification
 

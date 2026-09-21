@@ -1,12 +1,17 @@
 # Implementation status — 2026-09-20
 
-On 2026-09-20, `cairn version` and authenticated `cairn agent ... version`
-reported clean revision `a037f42cefa740a6278b999852ef6dd6575b1c85` for both the
-installed CLI and running API; this was rechecked during integration review.
-The deployed build includes migration 048. Source now includes the dormant
-`049_native_request_control.sql` contract following independent cleanup
-regressions and full local integration checks. That migration has not been
-installed on the owner's database.
+At 21:15 PDT on 2026-09-20, the installed CLI and running API were upgraded to
+clean revision `b5aab96b7dca46fa73db52e400548c058a5d226c`, with migration 049.
+All seven coordination bindings were reinstalled and the presence watcher
+restarted. Installed Hermes was fast-forwarded from `13f4cfeb` to the reviewed
+`131e95b312d6aa82511b7db922ff497a6eed19c1` companion revision.
+See the [deployment verification](verification/coordination-deployment-2026-09-20.md).
+
+The release is pushed. Existing long-running native clients retain their loaded
+plugins until a normal restart; installation does not prove those processes
+have adopted the new queue routes. The coordinator is preserving active
+conversations rather than forcing a restart. Native cancellation remains
+unavailable, and full coordination-v1 acceptance remains open.
 
 The [independent coordination review](verification/coordination-review-2026-09-20.md)
 records the verified dormant cancellation core and OpenCode/Hermes bridge
@@ -20,9 +25,8 @@ and a separate 16-test queue run.
 These source checks do not enable native interactive cancellation. Exclusive
 request ownership through admission and revocation, real-model interruption,
 and host-observed cleanup still need operational acceptance. OpenCode abort
-remains refused without atomic native turn fencing. The companion Hermes patch
-is pinned to its upstream base; it has not been installed. Coordination v1
-completion remains open. The accounts below retain their original verification
+remains refused without atomic native turn fencing. The installed companion Hermes patch
+is pinned to its upstream base. Coordination v1 completion remains open. The accounts below retain their original verification
 dates and installation identities.
 
 ## Historical snapshot — 2026-09-16

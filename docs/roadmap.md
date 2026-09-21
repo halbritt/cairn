@@ -8,14 +8,16 @@ The September 20 [coordination review](verification/coordination-review-2026-09-
 records delegated ownership, independently reproduced failures and verified
 repairs. The current source includes dormant cancellation
 cleanup/revocation controls and reviewed OpenCode/Hermes queue bridges. Local
-integration checks passed; the [implementation status](implementation-status.md)
-separates that source from the installed build.
+integration checks passed, and the verified release was pushed and deployed
+with schema 049 on September 20. The [implementation status](implementation-status.md)
+records installed identities and the remaining native-process reload boundary.
 
 Next acceptance work remains explicit in the
 [coordination v1 plan](plans/agent-coordination-v1.md): native exclusive admission
 and revocation, real-model interruption with confirmed cleanup, and live draft
-preservation/submission-race checks. Native cancellation enablement and deployment
-remain held. Source-level fixture success does not satisfy these operational
+preservation/submission-race checks. Native cancellation enablement remains held. The
+[release deployment](verification/coordination-deployment-2026-09-20.md) does not
+close the remaining operational acceptance work. Source-level fixture success does not satisfy these operational
 milestones or establish general memory usefulness.
 
 ## Single-user operating assumptions
