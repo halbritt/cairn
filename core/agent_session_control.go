@@ -234,9 +234,10 @@ func (s *Store) ReportSessionToolStop(ctx context.Context, req SessionToolStopRe
 		}
 		if req.TurnStop != "" && attempt.TurnStopState != req.TurnStop {
 			// A positive observation supersedes ambiguity; a positive stop
-			// never drifts to a different positive or ambiguous value.
+			// never drifts to a different positive or ambiguous value. The
+			// stop is new evidence: any earlier clear scan predates it.
 			if attempt.TurnStopState == "" || attempt.TurnStopState == "ambiguous" {
-				if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET turn_stop_state=$2 WHERE attempt_id=$1`, req.AttemptID, req.TurnStop); err != nil {
+				if _, err = tx.Exec(ctx, `UPDATE cairn.agent_session_attempt SET turn_stop_state=$2,terminal_scan='' WHERE attempt_id=$1`, req.AttemptID, req.TurnStop); err != nil {
 					return attempt, err
 				}
 			}

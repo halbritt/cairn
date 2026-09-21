@@ -275,11 +275,24 @@ func (s *Store) ReconcileSessionInbox(ctx context.Context, req SessionInboxRecon
 		if err != nil || attempt.FinishedAt != nil {
 			return attempt, err
 		}
+		if req.Reason == "exclusivity_revoked" && !(attempt.Cancel != nil && attempt.Cancel.ConfirmedAt == nil && !attempt.TurnExclusive) {
+			// Revocation reconciliation is valid only for a pending
+			// cancellation whose exclusivity attestation was actually
+			// revoked; it never applies to ordinary attempts.
+			return attempt, failure("INVALID_REQUEST", "exclusivity revocation requires a pending cancellation on an attestation that was revoked")
+		}
 		if attempt.Cancel != nil && attempt.Cancel.ConfirmedAt == nil {
 			if !attempt.TurnExclusive {
 				// The exclusivity attestation was revoked after the operator
-				// intent: per-request stop authority no longer exists.
+				// intent: per-request stop authority no longer exists. This
+				// records lost stop permission, never turn/tool cleanup, so
+				// captured tools must already be terminal to close here.
 				if req.Reason == "exclusivity_revoked" {
+					for _, tool := range attempt.Tools {
+						if tool.StopState != "terminated" && tool.StopState != "unavailable" {
+							return attempt, failure("CLEANUP_UNCONFIRMED", "revocation cannot close while captured tools are still running")
+						}
+					}
 					if _, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='failed',lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code='operator_cancelled',control_at=clock_timestamp(),control_by=$2,control_reason=$3 WHERE delivery_id=$1 AND state IN ('pending','leased')`, attempt.Delivery.DeliveryID, attempt.Cancel.By, attempt.Cancel.Reason); err != nil {
 						return attempt, err
 					}

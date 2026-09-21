@@ -76,7 +76,7 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 		detail = "Native host adapter only: durably record tool processes observed for the attempt's exact pinned native turn. Items from any other turn are refused. Retain one stable request UUID per capture batch."
 		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"},"attempt_id":"ATTEMPT_UUID","items":[{"item_id":"exec-ID","process_id":"PID","command":"/bin/sleep 30","native_turn_id":"TURN_ID"}]}`
 	case "session-tool-stop":
-		detail = "Native host adapter only: report bounded stop progress for the cancelled attempt's turn (interrupted, ended, unavailable) and captured tools (stop_issued, terminated, unavailable). The hold releases only through session-inbox-reconcile with reason cancel_confirmed."
+		detail = "Native host adapter only: report bounded stop progress for the cancelled attempt's turn (interrupted, ended, ambiguous) and captured tools (stop_issued, terminated, unavailable). The hold releases only through session-inbox-reconcile with reason cancel_confirmed."
 		example = `{"request_id":"NEW_UUID","session":{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"},"attempt_id":"ATTEMPT_UUID","turn_stop":"interrupted","tools":[{"item_id":"exec-ID","stop_state":"terminated"}]}`
 	case "agent-register":
 		detail = "Register a conversation using the existing profile. New request IDs resume the binding/native-session pair with a new execution UUID. No session credential is created."
