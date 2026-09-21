@@ -60,7 +60,36 @@ func TestReviewRevocationRequiresFullCleanup(t *testing.T) {
 			if readErr != nil {
 				t.Fatal(readErr)
 			}
-			t.Logf("fresh persisted read: hold_present=%v finished=%v delivery=%s reason=%s turn=%q scan=%q gap=%v", control.Attempt != nil, persisted.FinishedAt, persisted.Delivery.State, persisted.Reason, persisted.TurnStopState, persisted.TerminalScan, persisted.CaptureGap)
+			// Persisted-state invariants, not just logs: a refused release must
+			// leave the hold active, the attempt unfinished, the delivery fenced
+			// and the cancellation unconfirmed.
+			if !tc.ready {
+				if control.Attempt == nil {
+					t.Fatal("hold released on refused revocation")
+				}
+				if persisted.FinishedAt != nil {
+					t.Fatal("attempt finished on refused revocation")
+				}
+				if persisted.Delivery.State != "leased" {
+					t.Fatalf("delivery state changed: %s", persisted.Delivery.State)
+				}
+				if persisted.Cancel == nil || persisted.Cancel.ConfirmedAt != nil {
+					t.Fatalf("cancellation not pending: %+v", persisted.Cancel)
+				}
+			} else {
+				if control.Attempt != nil {
+					t.Fatal("hold retained after valid revocation release")
+				}
+				if persisted.FinishedAt == nil || persisted.Reason != "exclusivity_revoked" {
+					t.Fatalf("attempt outcome wrong: %+v", persisted)
+				}
+				if persisted.Delivery.State != "failed" || persisted.Delivery.Code != "operator_cancelled" {
+					t.Fatalf("delivery outcome wrong: %+v", persisted.Delivery)
+				}
+				if persisted.Cancel == nil || persisted.Cancel.ConfirmedAt != nil {
+					t.Fatalf("revocation manufactured confirmation: %+v", persisted.Cancel)
+				}
+			}
 			if !tc.ready && Code(e) != "CLEANUP_UNCONFIRMED" {
 				t.Fatalf("incomplete cleanup released revocation: err=%v finished=%v turn=%q scan=%q capture=%q gap=%v tools=%+v", e, got.FinishedAt, got.TurnStopState, got.TerminalScan, got.CaptureState, got.CaptureGap, got.Tools)
 			}
