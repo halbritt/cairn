@@ -188,14 +188,7 @@ def prepare_idle_wake(config, state, path):
             status='uncertain', attempted_at=time.time())
         write_state(path, state)
         return dict(wake=state['idle_wake'], process=state['process'])
-    agy = agy_queue_endpoint(config, state['process'])
-    if agy:
-        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
-            transport='agy-queue', endpoint=agy, native_id=agent['native_session_id'],
-            status='uncertain', attempted_at=time.time())
-        write_state(path, state)
-        return dict(wake=state['idle_wake'], process=state['process'])
-    if config.get('claude_channel_dir') or config.get('harness') in ('codex', 'claude', 'opencode', 'hermes', 'agy'):
+    if config.get('claude_channel_dir') or config.get('harness') in ('codex', 'claude', 'opencode', 'hermes'):
         # An explicitly configured native channel or known native harness
         # never falls back to the terminal route when its registry/socket is
         # stale, malformed or missing.
@@ -275,15 +268,6 @@ def hermes_queue_endpoint(config, process):
         return None
     path = Path(f"/tmp/cairn-hermes-{process['pid']}.sock")
     return str(path) if path.is_socket() else None
-
-
-def agy_queue_endpoint(config, process):
-    if config.get('harness') != 'agy':
-        return None
-    path = Path(f"/tmp/cairn-agy-{process['pid']}.sock")
-    if path.is_socket():
-        return str(path)
-    return None
 
 
 def codex_queue_endpoint(config, process):
@@ -518,20 +502,6 @@ def submit_idle_wake(config, path, prepared):
             drop_idle_wake(path, wake)
             return
         except hermes_queue.QueueError as exc:
-            raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
-    elif wake.get('transport') == 'agy-queue':
-        try:
-            import agy_queue
-        except ImportError as exc:
-            raise CoordinationError('WAKE_UNAVAILABLE', f'agy queue client is unavailable: {exc}') from exc
-        try:
-            queued_id, started = agy_queue.enqueue(wake['endpoint'], prepared['process'],
-                                                   wake['native_id'], text, wake['delivery_id'])
-        except agy_queue.QueueUnavailable as exc:
-            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
-            drop_idle_wake(path, wake)
-            return
-        except agy_queue.QueueError as exc:
             raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
     else:
         response = herdr_call(config, prepared['environment'], 'agent', 'prompt', wake['target']['pane_id'], text)
