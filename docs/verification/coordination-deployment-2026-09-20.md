@@ -50,6 +50,17 @@ owner-correction note through the deployed API. A separate post-deployment
 read-only verification request to existing agent24 is queued as event
 `1d862786-dcbe-4910-b345-444064e4272e`; publication alone is not successful delivery.
 
+The separate post-deployment Agy adapter audit completed in the existing agent2
+conversation at 21:23 PDT: event `41689dca-7bce-4c59-b1e9-80723550f06c`, delivery
+`139e7fd8-a208-4ced-9e05-afccb6a40eb2`, exactly one claim, explicit completion,
+and native attempt `644ba8d9-7759-40ea-ac72-22319f2b41a6` finished. The selected
+result `fca41321-e94a-452f-9306-4c5ac3b59479/1` confirms the supported Agy hooks,
+installed helper hashes and absence of the unsupported Agy queue prototype.
+The coordinator compared those hashes against its independent installed manifest.
+This establishes live existing-session handling after rollout on Agy, not
+OpenCode queue activation or native exclusive cancellation.
+
+
 Migration 049 is additive, but constraints/index creation can scan rows. Do not
 call it necessarily instant or catalog-only. Reinstalling the old binary alone
 is not a supported rollback after migration commits: its migration check rejects
@@ -85,6 +96,45 @@ The coordinator did not signal or replace active conversations. Gateway reload
 can eventually interrupt work after its bounded drain and does not confer the
 interactive CLI's queue capability. Thus installed artifacts and fresh-process
 checks do not establish activation in every existing native conversation.
+
+## Account activation follow-up
+
+The post-rollout account audit found correct installed hooks in both Codex and
+both Claude homes, but configuration alone did not establish automatic delivery:
+
+| Account | Verified state | Remaining activation |
+| --- | --- | --- |
+| Codex one | New launcher and trusted hooks installed; inspected existing sessions had no native queue endpoint. | Same-session normal restart through the installed launcher. |
+| Codex two | An existing native queue endpoint was discoverable. | Its process predates the native binary update; current-version acceptance remains unverified. |
+| Claude one and two | Hooks installed; channel registration and activation configuration staged as described below. | Explicit channel-enabled native launch and live account-specific acceptance. |
+| OpenCode | Plugin installed; agents24/67 retain old loaded modules. | Fresh processes resuming the same conversation IDs. |
+| Hermes | Companion and plugin installed; fresh-process checks pass. | Older production processes still need normal restart. |
+| Agy | Existing native audit request completed once after rollout. | Client-only queue prototype remains unsupported. |
+
+The coordinator registered `cairn-events` with the deployed binary in each
+selected Claude account home's `.claude.json` and prepared matching channel-ready
+bindings in private release artifacts. The directories are account-specific under
+`~/.local/share/cairn/coordination/channels/`, mode 0700. Registration contents
+match the intended command. The coordinator removed the newly added
+`claude_channel_dir` from live bindings after verifying that enabling it before
+a native channel exists would suppress ordinary turn-boundary delivery. Apply
+the staged field only with native activation, then verify the channel.
+
+Activation requires the explicit selected `CLAUDE_CONFIG_DIR` and
+`--dangerously-load-development-channels server:cairn-events`. This matters
+especially for account one: its current production processes have no explicit
+config directory and use `~/.claude.json`; staged registration is under the
+selected `~/.claude` home. Account two already selects `~/.claude-harm`.
+No existing process was restarted and organization policy is not bypassed.
+Older isolated Claude probe channels are not production deployment evidence.
+
+Read-only OpenCode source review found that SIGUSR2 reload and instance disposal
+lack a busy/admission guard; plain module imports can also reuse cached plugin
+code. Those operations are not a proven safe activation path. The coordinator
+requested approval specifically to close and resume agents24/67 in their existing
+conversations because unsent drafts or newly started work could be lost. No such
+restart has been performed. The exact same-session resume plan is retained with
+private release artifacts; it does not create replacement conversations.
 
 ## Exclusions and remaining acceptance
 
