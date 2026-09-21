@@ -137,7 +137,17 @@ def drop_idle_wake(path, wake):
             write_state(path, state)
 
 
+def claude_session_config(config, native_id):
+    """Select channel rollout without changing the session's routing identity."""
+    if (config.get('harness') == 'claude' and 'claude_channel_sessions' in config and
+            native_id not in config['claude_channel_sessions']):
+        config = dict(config)
+        config.pop('claude_channel_dir', None)
+    return config
+
+
 def prepare_idle_wake(config, state, path):
+    config = claude_session_config(config, state.get('agent', {}).get('native_session_id'))
     if (not config.get('idle_wakeup') or not config.get('native_delivery') or
             state.get('inbox_intent') or state.get('ending') or state.get('retired')):
         return None
@@ -781,6 +791,7 @@ def watch_inbox(config, state, path):
 
 
 def inbox_context(config, state, path, observation, wake_binding=None):
+    config = claude_session_config(config, state.get('agent', {}).get('native_session_id'))
     if not config.get('native_delivery'):
         return ''
     owner_turn = state.get('inbox_intent', {}).get('native_turn_id')
@@ -1065,6 +1076,14 @@ def validate_config(config):
     if config.get('idle_wakeup') is not None:
         if not isinstance(config['idle_wakeup'], str) or not Path(config['idle_wakeup']).is_absolute() or not config.get('native_delivery'):
             raise CoordinationError('INVALID_CONFIG', 'idle_wakeup requires an absolute Herdr executable and native_delivery')
+    if 'claude_channel_sessions' in config:
+        sessions = config['claude_channel_sessions']
+        if (config['harness'] != 'claude' or not isinstance(sessions, list) or
+                any(not isinstance(native, str) or not native.strip() or len(native) > 256 or
+                    any(ord(c) < 32 for c in native) for native in sessions)):
+            raise CoordinationError('INVALID_CONFIG', 'claude_channel_sessions requires a Claude list of bounded native session IDs')
+        if len(sessions) != len(set(sessions)):
+            raise CoordinationError('INVALID_CONFIG', 'claude_channel_sessions must not contain duplicate native session IDs')
     if not isinstance(binding, str) or len(binding) > 128 or binding in ('.', '..') or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-' for c in binding):
         raise CoordinationError("INVALID_CONFIG", "invalid binding name")
     return config

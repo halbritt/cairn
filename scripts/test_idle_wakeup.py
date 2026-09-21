@@ -373,6 +373,59 @@ time.sleep(30)
         self.assertEqual(lines[0]['meta']['agent_id'], 'agent-one')
         self.assertIn('automatic inbox wakeup', lines[0]['content'])
 
+    def test_claude_selected_session_wakes_after_native_process_replacement(self):
+        _, socket_path = self.spawn_channel_bridge('written')
+        self.config['claude_channel_sessions'] = ['native-one']
+        original = json.loads(json.dumps(self.config))
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertEqual(len(self.channel_lines(socket_path)), 1)
+        registry = json.loads((Path(self.config['claude_channel_dir']) / f'{self.native.pid}.json').read_text())
+        self.stop_native()
+        self.native = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        replacement = coordination.process_reference(self.native.pid)
+        coordination.write_state(self.path, dict(process=replacement, agent=self.agent, workspace=str(self.root)))
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertNotIn('idle_wake', json.loads(self.path.read_text()), 'old process registry was reused')
+        registry['parent'] = replacement
+        (Path(self.config['claude_channel_dir']) / f'{self.native.pid}.json').write_text(json.dumps(registry))
+        self.assertEqual(self.watch().returncode, 0)
+        lines = self.channel_lines(socket_path)
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(lines[-1]['parent'], replacement)
+        self.assertEqual(lines[-1]['meta']['agent_id'], self.agent['agent_id'])
+        self.assertEqual(self.config, original)
+        self.assertEqual(self.prompts(), [])
+
+    def test_claude_unselected_session_keeps_boundary_claims_without_channel_wake(self):
+        _, socket_path = self.spawn_channel_bridge('written')
+        self.config['claude_channel_sessions'] = ['another-session']
+        original = json.loads(json.dumps(self.config))
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertNotIn('idle_wake', json.loads(self.path.read_text()))
+        self.assertEqual(self.channel_lines(socket_path), [])
+        self.assertEqual(self.prompts(), [])
+        for event, phase in [('UserPromptSubmit', 'busy'), ('Stop', 'idle')]:
+            state = json.loads(self.path.read_text())
+            with mock.patch.object(coordination, 'call', return_value={'attempt': None}) as api:
+                coordination.inbox_context(self.config, state, self.path,
+                    dict(event=event, phase=phase, native_turn_id='owner-prompt'))
+                self.assertEqual(api.call_count, 1)
+                self.assertEqual(api.call_args.args[1], 'session-inbox-claim')
+                self.assertEqual(api.call_args.args[2]['session'], coordination.session_ref(self.agent))
+        self.assertEqual(self.config, original)
+
+    def test_claude_selected_session_missing_channel_remains_closed(self):
+        self.config.update(claude_channel_dir=str(self.root/'absent'), claude_channel_sessions=['native-one'])
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertNotIn('idle_wake', json.loads(self.path.read_text()))
+        self.assertEqual(self.prompts(), [])
+        with mock.patch.object(coordination, 'call', side_effect=AssertionError('unexpected inbox claim')) as api:
+            for event, phase in [('UserPromptSubmit', 'busy'), ('Stop', 'idle')]:
+                state = json.loads(self.path.read_text())
+                self.assertEqual(coordination.inbox_context(self.config, state, self.path,
+                    dict(event=event, phase=phase, native_turn_id='owner-prompt')), '')
+            api.assert_not_called()
+
     def test_claude_channel_uncertain_is_retained_without_fallback(self):
         control, socket_path = self.spawn_channel_bridge('uncertain')
         result = self.watch()

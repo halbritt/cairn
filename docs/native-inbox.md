@@ -29,9 +29,32 @@ installs it through the installed `herdr` CLI when needed; see
 [the idle wakeup contract](plans/idle-session-wakeups.md) for process/session
 checks, focused-pane deferral and host limitations. Codex processes with an
 explicit native Unix listener use the native queue described there, preserving
-the TUI draft. Other sessions retain the Herdr terminal route. The native hook still owns
-the claim. Sessions without this enabled host capability wait for another
+the TUI draft. Claude uses its configured native channel; OpenCode and Hermes
+use their native queue endpoints. These harnesses never fall back to terminal
+input when a native endpoint is missing. The native hook still owns the claim.
+Sessions without an enabled host capability wait for another
 boundary. Native delivery never starts a fresh worker to consume a conversation's inbox.
+
+### Selective Claude channel rollout
+
+A Claude binding can set `claude_channel_dir` and an optional
+`claude_channel_sessions` list of native conversation IDs. With no list, every
+conversation in that binding retains the configured channel admission rules.
+An empty list selects none. Listed conversations use the channel and refuse
+ordinary owner-prompt/Stop inbox claims even while its bridge is unavailable.
+Unlisted conversations retain ordinary turn-boundary delivery and receive no
+automatic channel wake. The selector changes host routing configuration, not
+authorization, the binding name, Cairn agent UUID or inbox consumer.
+
+For a staged rollout, register `cairn-events` in the account's actual global MCP
+configuration, enable the channel on the selected conversation's native resume,
+and list its existing native session ID in the binding. Preserve its original
+account environment: default Claude uses `~/.claude.json`; an explicit
+`CLAUDE_CONFIG_DIR` uses that directory's `.claude.json`. Do not substitute an
+account configuration merely to activate the channel. Selection survives PID
+replacement because it uses the native conversation ID; the bridge registry
+still independently checks the current process identity. Do not remove a
+selection to bypass an unavailable bridge or an uncertain in-flight wake.
 
 Migration 048 adds an optional exact delivery and native turn pair to native
 claims. The explicit Codex Unix-listener route uses it: only the matching queued

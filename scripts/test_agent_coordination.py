@@ -15,6 +15,24 @@ spec.loader.exec_module(coordination)
 
 
 class CoordinationNormalization(unittest.TestCase):
+    def test_claude_channel_session_selector_validation_and_defaults(self):
+        config = dict(harness='claude', binding='account-one', repo='fixture',
+                      cairn='/fixture/cairn', socket='/fixture/api.sock', token_file='/fixture/token',
+                      state_dir='/fixture/state', claude_channel_dir='/fixture/channels')
+        self.assertIs(coordination.claude_session_config(config, 'native-one'), config)
+        for sessions in ([], ['native-one']):
+            selected = dict(config, claude_channel_sessions=sessions)
+            self.assertEqual(coordination.validate_config(selected), selected)
+            effective = coordination.claude_session_config(selected, 'native-one')
+            self.assertEqual('claude_channel_dir' in effective, bool(sessions))
+            self.assertIn('claude_channel_dir', selected)
+        for sessions in (None, True, 'native-one', {}, [None], [1], [''], ['  '],
+                         ['bad\nname'], ['x' * 257], ['native-one', 'native-one']):
+            with self.subTest(sessions=sessions), self.assertRaisesRegex(coordination.CoordinationError, 'INVALID_CONFIG'):
+                coordination.validate_config(dict(config, claude_channel_sessions=sessions))
+        with self.assertRaisesRegex(coordination.CoordinationError, 'INVALID_CONFIG'):
+            coordination.validate_config(dict(config, harness='codex', claude_channel_sessions=[]))
+
     def test_provider_observation_survives_api_outage_without_registering(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
