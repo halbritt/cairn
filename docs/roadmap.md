@@ -5,8 +5,8 @@ Updated 2026-09-20. Original baseline: `e3b47c7` (local memory and task delivery
 ## Current coordination work
 
 The September 20 [coordination review](verification/coordination-review-2026-09-20.md)
-records the agent inventory, delegated ownership, independently reproduced
-failures and verified repairs. The current source includes dormant cancellation
+records delegated ownership, independently reproduced failures and verified
+repairs. The current source includes dormant cancellation
 cleanup/revocation controls and reviewed OpenCode/Hermes queue bridges. Local
 integration checks passed; the [implementation status](implementation-status.md)
 separates that source from the installed build.

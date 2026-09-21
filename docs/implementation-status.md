@@ -12,8 +12,10 @@ The [independent coordination review](verification/coordination-review-2026-09-2
 records the verified dormant cancellation core and OpenCode/Hermes bridge
 repairs. The bridge checks cover BUSY retry, atomic Hermes queue admission,
 fixture isolation, tool-stop uncertainty, and delivery/turn identity through
-native hooks. The combined source passed `make test-integration` and `make check`;
-52 bridge/queue fixtures and 35 native Hermes tests passed separately.
+native hooks. Combined revision `27d1994` passed `make test-integration` and
+`make check`; the subsequent fixture correction at `def905f` passed 52
+bridge/queue tests. Native Hermes revision `131e95b` passed 19 turn-context tests
+and a separate 16-test queue run.
 
 These source checks do not enable native interactive cancellation. Exclusive
 request ownership through admission and revocation, real-model interruption,
