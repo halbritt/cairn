@@ -1,9 +1,9 @@
 # Native coordination review, 2026-09-20
 
 Current disposition: the dormant cancellation core and bounded OpenCode/Hermes
-bridge repairs pass independent review and local integration checks. Final
-package assembly is pending. Native cancellation enablement and deployment
-remain held; passing fixture tests do not establish native host acceptance.
+bridge repairs and companion package pass independent review and local
+integration checks. Native cancellation enablement and deployment remain held;
+passing fixture tests do not establish native host acceptance.
 
 The findings below retain their original snapshots and rejected candidates.
 The latest [corrective bridge review](#corrective-bridge-review-at-69f6a95--131e95b)
@@ -329,11 +329,39 @@ The isolated integration `27d1994` combines main `d760f85`, packaging `23b12b6`
 and corrective bridge `69f6a95`. Both `make test-integration` (disposable
 PostgreSQL, including native cancellation and no-terminal-fallback API checks)
 and `make check` passed. Logs are `/tmp/cairn-agent88-bridge-integration.log`
-and `/tmp/cairn-agent88-bridge-check.log`. Main retains its verified dormant core
-while final package assembly and bridge integration remain pending. Agent 67 is
-bundling the exact native companion patch and updating stale manifest claims.
+and `/tmp/cairn-agent88-bridge-check.log`. The combined source preserves the
+newer persisted-state assertions. The corrected fixtures also remove an
+AST-identical duplicate isolation-test class introduced by merging the B3
+cherry-pick; the final 52-test run passed in the integration checkout.
 The installed Hermes source remains clean at `13f4cfeb`; no deployment or
 exclusive native cancellation has been enabled.
+
+### Final package verification
+
+The [package manifest](../../patches/agent67-integrated-manifest.json) records
+current source hashes and acceptance limits. The tracked
+[Hermes companion patch](../../patches/hermes-agent-native-queue.patch) applies
+to `13f4cfebfafbce8ac9d1bf29f66731858ed638b5` and reproduces all seven changed
+files at `131e95b312d6aa82511b7db922ff497a6eed19c1`, including native queue
+tests. The coordinator applied the patch independently and compared every
+post-image byte. SHA-256:
+`dbdb77900f4ad773559a64ddee5af240c209a5fc954bc1a0fce41cf6417d4e55`.
+Four added whitespace warnings are retained so the patch matches the reviewed
+native source exactly. Application evidence is in
+`/tmp/cairn-agent88-package-apply-f4scvk1u/`.
+
+The coordinator reran both installers into fresh temporary destinations with
+`--no-service`, a nonfunctional fixture profile and an absent API socket.
+OpenCode and Hermes installations contain byte-identical coordinator and
+Codex/Claude/OpenCode/Hermes helpers, load their binding configurations, and
+have no Agy queue dependency. Neither check contacts the installed API.
+Artifacts are in `/tmp/cairn-agent88-final-installer-enpmuggs/`.
+
+These checks close the reviewed bridge/package defects B1–B5 and cancellation
+core defects C1–C3 within their stated scopes. They do not complete coordination
+v1: native exclusive admission/revocation, real-model interruption and
+host-observed cleanup still require operational acceptance. Unrelated Agy
+experiments remain outside the accepted package.
 
 ## Reviewed source hashes
 
