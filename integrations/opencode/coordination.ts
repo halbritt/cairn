@@ -176,8 +176,8 @@ const plugin: Plugin = async ({ directory, client }) => {
           try {
             if (method === "session/prompt_async") {
               const { session_id, text, client_id, expected_session_id } = params
-              if (!session_id || !text) {
-                socket.write(JSON.stringify({ id, error: { code: -32602, message: "session_id and text required" } }) + "\n")
+              if ([session_id, text, client_id].some(value => typeof value !== "string" || !value.trim())) {
+                socket.write(JSON.stringify({ id, error: { code: -32602, message: "session_id, text, and client_id must be nonempty strings" } }) + "\n")
                 continue
               }
               if (!expected_session_id || typeof expected_session_id !== "string" || !expected_session_id.trim()) {
@@ -234,10 +234,11 @@ const plugin: Plugin = async ({ directory, client }) => {
               }
 
               // Deliver via native promptAsync - leaves composer buffer untouched
+              // Let OpenCode generate its chronological message ID. client_id
+              // remains the Cairn correlation in the acknowledgment, not a native ID.
               const promptRes = await instClient.session.promptAsync({
                 path: { id: session_id },
                 body: {
-                  messageID: client_id,
                   parts: [{ type: "text", text }]
                 }
               })

@@ -37,6 +37,19 @@ if (mode !== "missing_api") {
         return { data: { "ses_test": { type: "idle" } } };
       },
       promptAsync: async ({ path: { id }, body }) => {
+        if (process.env.OPENCODE_FIXTURE_CAPTURE) {
+          fs.appendFileSync(process.env.OPENCODE_FIXTURE_CAPTURE, JSON.stringify({ session_id: id, body }) + "\n");
+        }
+        if (mode === "native_schema") {
+          // The isolated native server has no sessions. A valid payload reaches
+          // its session lookup (404); a bad native message ID fails schema (400).
+          const response = await fetch(`${process.env.OPENCODE_FIXTURE_URL}/session/${id}/prompt_async`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          return { error: { message: `HTTP ${response.status}: ${await response.text()}` } };
+        }
         if (mode === "sdk_error") return { error: { message: "HTTP 500 Internal Server Error" } };
         return { data: { id: "msg_123" } };
       },

@@ -55,6 +55,8 @@ def enqueue(endpoint, process, native_id, text, client_id, expected_session_id=N
     """
     if not native_id or not isinstance(native_id, str) or not native_id.strip():
         raise QueueUnavailable('native_id must be a nonempty string')
+    if not isinstance(client_id, str) or not client_id.strip():
+        raise QueueUnavailable('client_id must be a nonempty string')
     exp_id = expected_session_id or native_id
     if not exp_id or not isinstance(exp_id, str) or not exp_id.strip():
         raise QueueUnavailable('expected_session_id must be a nonempty string')

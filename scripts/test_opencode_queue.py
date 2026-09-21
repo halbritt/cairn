@@ -2,14 +2,19 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import struct
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
+from unittest.mock import patch
+import urllib.error
+import urllib.request
 
-from integrations.lifecycle import opencode_queue
+from integrations.lifecycle import coordination, opencode_queue
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -108,6 +113,13 @@ class OpenCodeQueueTests(unittest.TestCase):
         self.assertEqual(req['params']['text'], 'cairn wakeup text')
         # Composer is untouched because promptAsync goes directly to backend session API
 
+    def test_invalid_correlation_rejected_without_opening_socket(self):
+        for client in (None, '', '  ', 12, [], {}):
+            with self.subTest(client=client), patch.object(opencode_queue, '_open') as connect:
+                with self.assertRaises(opencode_queue.QueueUnavailable):
+                    opencode_queue.enqueue(self.path, self.process, 'ses_test', 'wake', client)
+                connect.assert_not_called()
+
     def test_busy_ordering_without_preemption(self):
         """2. Busy session refuses submission (-32600 BUSY) as QueueUnavailable without preemption."""
         self.serve(behavior='busy', busy=True)
@@ -148,6 +160,52 @@ class OpenCodeQueueTests(unittest.TestCase):
         self.join_workers()
         self.assertNotIsInstance(ctx.exception, opencode_queue.QueueUnavailable)
         self.assertIn('uncertain', str(ctx.exception))
+
+    def test_coordinator_retains_single_submission_after_success_or_uncertainty(self):
+        state_path = Path(self.temp.name) / 'session.json'
+        config = dict(harness='opencode', binding='fixture', native_delivery=True, idle_wakeup=True)
+        ready = dict(delivery_id='00000000-0000-4000-8000-000000000001', request_id='fixture-request')
+        initial = dict(workspace=self.temp.name, process=self.process, agent=dict(
+            agent_id='fixture-agent', execution_id='fixture-execution', native_session_id='ses_native123',
+            metadata=dict(workspace=self.temp.name, state='idle', delivery_mode='existing-session')))
+
+        def prepare():
+            with coordination.session_lock(state_path):
+                return coordination.prepare_idle_wake(config, json.loads(state_path.read_text()), state_path)
+
+        def ready_call(_config, operation, request):
+            self.assertEqual(operation, 'session-inbox-ready')
+            self.assertEqual(request, dict(agent_id='fixture-agent', execution_id='fixture-execution'))
+            return ready
+
+        with patch.object(coordination, 'call', side_effect=ready_call), \
+                patch.object(coordination, 'opencode_queue_endpoint', return_value=self.path), \
+                patch.dict('sys.modules', {'opencode_queue': opencode_queue}):
+            for outcome in ('confirm', 'drop', {'id': 99, 'result': {}},
+                            {'id': 1, 'error': {'code': -32000, 'message': 'PROMPT_REFUSED: SDK failed'}}):
+                with self.subTest(outcome=outcome):
+                    coordination.write_state(state_path, initial)
+                    prepared = prepare()
+                    prior = len(self.requests)
+                    self.serve(behavior=outcome)
+                    if outcome == 'confirm':
+                        coordination.submit_idle_wake(config, state_path, prepared)
+                    else:
+                        with self.assertRaises(coordination.CoordinationError) as failure:
+                            coordination.submit_idle_wake(config, state_path, prepared)
+                        self.assertEqual(failure.exception.code, 'WAKE_UNCERTAIN')
+                    self.join_workers()
+                    retained = state_path.read_bytes()
+                    wake = json.loads(retained)['idle_wake']
+                    self.assertEqual(wake['delivery_id'], ready['delivery_id'])
+                    self.assertEqual(wake['status'], 'submitted' if outcome == 'confirm' else 'uncertain')
+                    if outcome == 'confirm':
+                        self.assertEqual(wake['queued_submission_id'], ready['delivery_id'])
+                    for _ in range(3):
+                        self.assertIsNone(prepare(), 'retained submission must not be replayed')
+                    self.assertEqual(state_path.read_bytes(), retained)
+                    self.assertEqual(len(self.requests), prior + 1)
+                    self.assertEqual(self.requests[-1]['params']['client_id'], ready['delivery_id'])
 
     def test_invalid_acknowledgment_is_uncertain(self):
         valid = {
@@ -197,11 +255,12 @@ class OpenCodeQueueTests(unittest.TestCase):
 class OpenCodeBridgeFixtureTests(unittest.TestCase):
     """Integration tests running the actual coordination.ts plugin via Node bridge fixture."""
 
-    def start_fixture(self, mode='normal'):
+    def start_fixture(self, mode='normal', extra_env=None):
         import signal
         import subprocess
         env = os.environ.copy()
         env['OPENCODE_FIXTURE_MODE'] = mode
+        env.update(extra_env or {})
         proc = subprocess.Popen(
             ['node', str(Path(__file__).parent / 'run_opencode_bridge_fixture.mjs')],
             env=env,
@@ -247,6 +306,36 @@ class OpenCodeBridgeFixtureTests(unittest.TestCase):
         )
         self.assertEqual(queued_id, 'req_normal')
         self.assertTrue(started)
+
+    def test_fixture_correlation_preserved_with_native_owned_message_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            capture = Path(tmp) / 'requests.jsonl'
+            _, endpoint, process = self.start_fixture(extra_env={'OPENCODE_FIXTURE_CAPTURE': str(capture)})
+            first = '00000000-0000-4000-8000-000000000001'
+            second = '00000000-0000-4000-8000-000000000002'
+            for session, client in [('ses_test', first), ('ses_test', second), ('ses_other', first)]:
+                queued_id, started = opencode_queue.enqueue(endpoint, process, session, 'wake text', client)
+                self.assertEqual(queued_id, client)
+                self.assertTrue(started)
+            requests = [json.loads(line) for line in capture.read_text().splitlines()]
+            self.assertEqual(len(requests), 3, 'one SDK submission per queue request')
+            self.assertTrue(all('messageID' not in request['body'] for request in requests))
+            self.assertEqual([r['session_id'] for r in requests], ['ses_test', 'ses_test', 'ses_other'])
+
+    def test_fixture_invalid_correlation_rejected_before_sdk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            capture = Path(tmp) / 'requests.jsonl'
+            _, endpoint, _ = self.start_fixture(extra_env={'OPENCODE_FIXTURE_CAPTURE': str(capture)})
+            for client in (None, '', '  ', 12, [], {}):
+                with self.subTest(client=client), socket.socket(socket.AF_UNIX) as conn:
+                    conn.settimeout(2)
+                    conn.connect(endpoint)
+                    conn.sendall((json.dumps(dict(id=1, method='session/prompt_async', params=dict(
+                        session_id='ses_test', expected_session_id='ses_test', text='wake', client_id=client))) + '\n').encode())
+                    with conn.makefile('r') as response:
+                        reply = json.loads(response.readline())
+                    self.assertEqual(reply.get('error', {}).get('code'), -32602)
+            self.assertFalse(capture.exists(), 'invalid IDs must not reach promptAsync')
 
     def test_fixture_busy_refusal_without_preemption(self):
         """Fixture: Busy session refuses submission (-32600 BUSY) as QueueUnavailable without merging into active generation."""
@@ -399,6 +488,76 @@ process.stdout.write(JSON.stringify({
         self.assertFalse(data['afterBDispose'])
 
 
+class OpenCodeNativeSchemaTests(unittest.TestCase):
+    """Check actual installed server validation, without a session or provider turn."""
+
+    start_fixture = OpenCodeBridgeFixtureTests.start_fixture
+
+    def test_native_validator_accepts_payload_without_message_id(self):
+        binary = os.environ.get('OPENCODE_TEST_BINARY') or shutil.which('opencode')
+        if not binary:
+            self.skipTest('installed OpenCode required for native request schema validation')
+        temp = tempfile.TemporaryDirectory(prefix='cairn-opencode-native-schema-')
+        self.addCleanup(temp.cleanup)
+        home = Path(temp.name)
+        models = home / 'models.json'
+        models.write_text('{}')
+        # No operational configuration, credentials, plugins, database or provider.
+        env = dict(HOME=str(home), PATH=os.environ.get('PATH', ''),
+                   XDG_CONFIG_HOME=str(home / 'config'), XDG_DATA_HOME=str(home / 'data'),
+                   XDG_STATE_HOME=str(home / 'state'), XDG_CACHE_HOME=str(home / 'cache'),
+                   OPENCODE_DISABLE_AUTOUPDATE='true', OPENCODE_DISABLE_DEFAULT_PLUGINS='true',
+                   OPENCODE_DISABLE_MODELS_FETCH='true', OPENCODE_MODELS_PATH=str(models))
+        with socket.socket() as reserve:
+            reserve.bind(('127.0.0.1', 0))
+            port = reserve.getsockname()[1]
+        server = subprocess.Popen([binary, 'serve', '--hostname', '127.0.0.1', '--port', str(port)],
+                                  cwd=home, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        def stop_server():
+            server.terminate()
+            try:
+                server.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait(timeout=5)
+        self.addCleanup(stop_server)
+        url = f'http://127.0.0.1:{port}'
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                with urllib.request.urlopen(url + '/global/health', timeout=.5) as response:
+                    self.assertTrue(json.load(response)['healthy'])
+                break
+            except (urllib.error.URLError, TimeoutError):
+                if server.poll() is not None or time.monotonic() >= deadline:
+                    self.fail('isolated native OpenCode server did not become ready')
+                time.sleep(.05)
+
+        delivery_id = '00000000-0000-4000-8000-000000000001'
+        body = dict(messageID=delivery_id, parts=[dict(type='text', text='schema fixture')])
+        req = urllib.request.Request(url + '/session/ses_fixture_missing/prompt_async',
+                                     data=json.dumps(body).encode(), headers={'Content-Type': 'application/json'})
+        with self.assertRaises(urllib.error.HTTPError) as invalid:
+            urllib.request.urlopen(req, timeout=3)
+        self.assertEqual(invalid.exception.code, 400)
+        with invalid.exception as response:
+            self.assertIn('messageID', response.read().decode())
+
+        capture = home / 'requests.jsonl'
+        _, endpoint, process = self.start_fixture('native_schema', {
+            'OPENCODE_FIXTURE_URL': url, 'OPENCODE_FIXTURE_CAPTURE': str(capture),
+        })
+        with self.assertRaises(opencode_queue.QueueError) as outcome:
+            opencode_queue.enqueue(endpoint, process, 'ses_fixture_missing', 'schema fixture', delivery_id)
+        # No session exists: native lookup rejects only AFTER request validation.
+        self.assertNotIsInstance(outcome.exception, opencode_queue.QueueUnavailable)
+        self.assertIn('HTTP 404', str(outcome.exception))
+        submitted = [json.loads(line) for line in capture.read_text().splitlines()]
+        self.assertEqual(len(submitted), 1)
+        self.assertNotIn('messageID', submitted[0]['body'])
+        self.assertEqual(submitted[0]['body']['parts'], body['parts'])
+
+
 if __name__ == '__main__':
     unittest.main()
-
