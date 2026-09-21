@@ -2,15 +2,16 @@
 
 On 2026-09-20, `cairn version` and authenticated `cairn agent ... version`
 reported clean revision `a037f42cefa740a6278b999852ef6dd6575b1c85` for both the
-installed CLI and running API. The reviewed source checkout was `93d08d6`;
-`048_native_turn_binding.sql` remains its latest committed migration. These
-version observations identify the deployed builds, not acceptance of pending
-changes.
+installed CLI and running API; this was rechecked during integration review.
+The deployed build includes migration 048. Source now includes the dormant
+`049_native_request_control.sql` contract following independent cleanup
+regressions and full local integration checks. That migration has not been
+installed on the owner's database.
 
 The [independent coordination review](verification/coordination-review-2026-09-20.md)
-records passing baseline integration checks alongside defects in the uncommitted
-OpenCode/Hermes bridges. Those bridges and the separate schema 049 cancellation
-candidate remain unaccepted. Native cancellation still requires verified request
+records passing baseline and cancellation-core integration checks alongside
+defects in the uncommitted OpenCode/Hermes bridges. The dormant cancellation
+core is integrated; those bridges remain unaccepted. Native cancellation still requires verified request
 ownership through admission and revocation, with truthful process-stop outcomes.
 Coordination v1 completion remains open. The accounts below retain their original
 verification dates and installation identities.

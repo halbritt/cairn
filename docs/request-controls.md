@@ -104,13 +104,15 @@ check with fabricated native identities. No watcher integration exists.
 
 For a future attested attempt the contract is: `work-cancel` records an
 idempotent pending cancellation fencing complete/renew/retry with
-`REQUEST_CANCELLED`; only `cancel_confirmed` reconciliation releases the
-hold, after a positive turn stop (`interrupted`/`ended`; `ambiguous` holds),
-terminal captured tools and a final clear terminal scan. A clear scan is
-invalidated by the cancellation decision, every later capture, a real
-capture-loss transition and any host-observed owner join (which also revokes
-the exclusivity attestation one-way; a revoked attempt closes only via
-`exclusivity_revoked`). A latched `capture_gap` preserves lost coverage.
+`REQUEST_CANCELLED`. Reconciliation releases the hold only after a positive
+turn stop (`interrupted`/`ended`; `ambiguous` holds), terminal captured tools
+and a final clear terminal scan. Exclusive attempts use `cancel_confirmed`.
+Revoked attempts require the same cleanup evidence and use
+`exclusivity_revoked`, leaving cancellation confirmation unset. A clear scan is
+invalidated by the cancellation decision, every later capture, a new turn-stop
+observation, a real capture-loss transition and any host-observed owner join
+(which also revokes the exclusivity attestation one-way). A latched
+`capture_gap` preserves lost coverage.
 Host operations: `session-inbox-control`, `session-tool-capture`,
 `session-tool-stop`. The adapter-side capture listener and native stop
 executor are separate future work. Killing a shared gateway or interactive

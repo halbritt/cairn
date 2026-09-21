@@ -168,6 +168,24 @@ field. Exact reproductions are retained as `api-review.log` and
 checks must pass after the test correction before integration. These store
 tests do not establish native admission or interrupt safety.
 
+### Dormant cancellation core integration
+
+The API oracle corrections in `58d70d6` were combined with current main in
+isolated coordinator checkout commit `0c34bbf4e0f7a364e7f415288d3461ac86dda5e5`.
+Both `make test-integration` and `make check` passed there, without disabling
+VCS stamping. The full integration run used a disposable PostgreSQL cluster
+and included the real-API cancellation and revocation probe, package race
+tests, migrations, worker cleanup and API recovery checks. Logs are
+`/tmp/cairn-agent88-core-assembled-integration.log` and
+`/tmp/cairn-agent88-core-assembled-check.log`.
+
+This closes the C1-C3 and API-test holds for dormant core source integration.
+It does not establish exclusive native admission, real-model interruption or
+host-observed revocation. No adapter enables exclusive native cancellation;
+deployment remains held. The installed CLI and API still reported clean
+`a037f42` during this check. OpenCode/Hermes bridge integration remains
+separate and held on the remaining binding defects.
+
 ## Bridge repair follow-up
 
 The later repair report claimed all five findings were closed. Independent
