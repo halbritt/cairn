@@ -14,7 +14,7 @@ from unittest.mock import patch
 import urllib.error
 import urllib.request
 
-from integrations.lifecycle import opencode_queue
+from integrations.lifecycle import coordination, opencode_queue
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -161,6 +161,52 @@ class OpenCodeQueueTests(unittest.TestCase):
         self.assertNotIsInstance(ctx.exception, opencode_queue.QueueUnavailable)
         self.assertIn('uncertain', str(ctx.exception))
 
+    def test_coordinator_retains_single_submission_after_success_or_uncertainty(self):
+        state_path = Path(self.temp.name) / 'session.json'
+        config = dict(harness='opencode', binding='fixture', native_delivery=True, idle_wakeup=True)
+        ready = dict(delivery_id='00000000-0000-4000-8000-000000000001', request_id='fixture-request')
+        initial = dict(workspace=self.temp.name, process=self.process, agent=dict(
+            agent_id='fixture-agent', execution_id='fixture-execution', native_session_id='ses_native123',
+            metadata=dict(workspace=self.temp.name, state='idle', delivery_mode='existing-session')))
+
+        def prepare():
+            with coordination.session_lock(state_path):
+                return coordination.prepare_idle_wake(config, json.loads(state_path.read_text()), state_path)
+
+        def ready_call(_config, operation, request):
+            self.assertEqual(operation, 'session-inbox-ready')
+            self.assertEqual(request, dict(agent_id='fixture-agent', execution_id='fixture-execution'))
+            return ready
+
+        with patch.object(coordination, 'call', side_effect=ready_call), \
+                patch.object(coordination, 'opencode_queue_endpoint', return_value=self.path), \
+                patch.dict('sys.modules', {'opencode_queue': opencode_queue}):
+            for outcome in ('confirm', 'drop', {'id': 99, 'result': {}},
+                            {'id': 1, 'error': {'code': -32000, 'message': 'PROMPT_REFUSED: SDK failed'}}):
+                with self.subTest(outcome=outcome):
+                    coordination.write_state(state_path, initial)
+                    prepared = prepare()
+                    prior = len(self.requests)
+                    self.serve(behavior=outcome)
+                    if outcome == 'confirm':
+                        coordination.submit_idle_wake(config, state_path, prepared)
+                    else:
+                        with self.assertRaises(coordination.CoordinationError) as failure:
+                            coordination.submit_idle_wake(config, state_path, prepared)
+                        self.assertEqual(failure.exception.code, 'WAKE_UNCERTAIN')
+                    self.join_workers()
+                    retained = state_path.read_bytes()
+                    wake = json.loads(retained)['idle_wake']
+                    self.assertEqual(wake['delivery_id'], ready['delivery_id'])
+                    self.assertEqual(wake['status'], 'submitted' if outcome == 'confirm' else 'uncertain')
+                    if outcome == 'confirm':
+                        self.assertEqual(wake['queued_submission_id'], ready['delivery_id'])
+                    for _ in range(3):
+                        self.assertIsNone(prepare(), 'retained submission must not be replayed')
+                    self.assertEqual(state_path.read_bytes(), retained)
+                    self.assertEqual(len(self.requests), prior + 1)
+                    self.assertEqual(self.requests[-1]['params']['client_id'], ready['delivery_id'])
+
     def test_invalid_acknowledgment_is_uncertain(self):
         valid = {
             'queued': True,
@@ -261,22 +307,20 @@ class OpenCodeBridgeFixtureTests(unittest.TestCase):
         self.assertEqual(queued_id, 'req_normal')
         self.assertTrue(started)
 
-    def test_fixture_correlation_and_native_message_identity(self):
+    def test_fixture_correlation_preserved_with_native_owned_message_id(self):
         with tempfile.TemporaryDirectory() as tmp:
             capture = Path(tmp) / 'requests.jsonl'
             _, endpoint, process = self.start_fixture(extra_env={'OPENCODE_FIXTURE_CAPTURE': str(capture)})
             first = '00000000-0000-4000-8000-000000000001'
             second = '00000000-0000-4000-8000-000000000002'
-            for session, client in [('ses_test', first), ('ses_test', first), ('ses_test', second), ('ses_other', first)]:
+            for session, client in [('ses_test', first), ('ses_test', second), ('ses_other', first)]:
                 queued_id, started = opencode_queue.enqueue(endpoint, process, session, 'wake text', client)
                 self.assertEqual(queued_id, client)
                 self.assertTrue(started)
             requests = [json.loads(line) for line in capture.read_text().splitlines()]
-            ids = [request['body']['messageID'] for request in requests]
-            self.assertEqual(ids[0], ids[1])
-            self.assertEqual(len(set(ids)), 3)
-            self.assertNotIn(first, ids)
-            self.assertEqual([r['session_id'] for r in requests], ['ses_test', 'ses_test', 'ses_test', 'ses_other'])
+            self.assertEqual(len(requests), 3, 'one SDK submission per queue request')
+            self.assertTrue(all('messageID' not in request['body'] for request in requests))
+            self.assertEqual([r['session_id'] for r in requests], ['ses_test', 'ses_test', 'ses_other'])
 
     def test_fixture_invalid_correlation_rejected_before_sdk(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -449,7 +493,7 @@ class OpenCodeNativeSchemaTests(unittest.TestCase):
 
     start_fixture = OpenCodeBridgeFixtureTests.start_fixture
 
-    def test_delivery_uuid_maps_to_valid_native_message_id(self):
+    def test_native_validator_accepts_payload_without_message_id(self):
         binary = os.environ.get('OPENCODE_TEST_BINARY') or shutil.which('opencode')
         if not binary:
             self.skipTest('installed OpenCode required for native request schema validation')
@@ -504,16 +548,14 @@ class OpenCodeNativeSchemaTests(unittest.TestCase):
         _, endpoint, process = self.start_fixture('native_schema', {
             'OPENCODE_FIXTURE_URL': url, 'OPENCODE_FIXTURE_CAPTURE': str(capture),
         })
-        for _ in range(2):
-            with self.assertRaises(opencode_queue.QueueError) as outcome:
-                opencode_queue.enqueue(endpoint, process, 'ses_fixture_missing', 'schema fixture', delivery_id)
-            # No session exists: native lookup rejects only AFTER request validation.
-            self.assertNotIsInstance(outcome.exception, opencode_queue.QueueUnavailable)
-            self.assertIn('HTTP 404', str(outcome.exception))
+        with self.assertRaises(opencode_queue.QueueError) as outcome:
+            opencode_queue.enqueue(endpoint, process, 'ses_fixture_missing', 'schema fixture', delivery_id)
+        # No session exists: native lookup rejects only AFTER request validation.
+        self.assertNotIsInstance(outcome.exception, opencode_queue.QueueUnavailable)
+        self.assertIn('HTTP 404', str(outcome.exception))
         submitted = [json.loads(line) for line in capture.read_text().splitlines()]
-        self.assertEqual(len(submitted), 2)
-        self.assertEqual(submitted[0]['body']['messageID'], submitted[1]['body']['messageID'])
-        self.assertNotEqual(submitted[0]['body']['messageID'], delivery_id)
+        self.assertEqual(len(submitted), 1)
+        self.assertNotIn('messageID', submitted[0]['body'])
         self.assertEqual(submitted[0]['body']['parts'], body['parts'])
 
 

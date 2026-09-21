@@ -4,7 +4,7 @@ import type { Part } from "@opencode-ai/sdk"
 import { execFile } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import { existsSync, unlinkSync, chmodSync } from "node:fs"
-import { createHash, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import net from "node:net"
 
 const MAX_PAYLOAD_BYTES = 65536
@@ -234,13 +234,11 @@ const plugin: Plugin = async ({ directory, client }) => {
               }
 
               // Deliver via native promptAsync - leaves composer buffer untouched
-              // Native message IDs have a global key and a msg prefix. Keep the
-              // Cairn delivery correlation unchanged; namespace its mapping by session.
-              const messageID = "msg_" + createHash("sha256").update(JSON.stringify([session_id, client_id])).digest("hex")
+              // Let OpenCode generate its chronological message ID. client_id
+              // remains the Cairn correlation in the acknowledgment, not a native ID.
               const promptRes = await instClient.session.promptAsync({
                 path: { id: session_id },
                 body: {
-                  messageID,
                   parts: [{ type: "text", text }]
                 }
               })
