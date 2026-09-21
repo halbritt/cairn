@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+from contextlib import nullcontext
 from pathlib import Path
 import socket
 import subprocess
@@ -51,22 +52,37 @@ def register(ctx):
     def before(session_id='', turn_id='', task_id='', model='', parent_session_id='', platform='', user_message='', **_):
         if not session_id or parent_session_id or platform in ('cron', 'subagent', 'flush', 'auxiliary'):
             return
-        with lock:
-            sessions[session_id] = dict(context='', task=task_id, model=model, busy=True, turn_id=turn_id)
-            cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
-            if cli is not None and getattr(cli, 'session_id', None) == session_id:
-                if turn_id:
-                    cli._active_turn_id = turn_id
-                    try:
-                        from tools.approval import _approval_turn_id
-                        _approval_turn_id.set(turn_id)
-                    except Exception:
-                        pass
-            try:
-                context = invoke(session_id, 'TurnStart', task_id, model, turn_id=turn_id, prompt=user_message)
-                sessions[session_id]['context'] = context
-            except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
-                logger.warning('Cairn native session registration/context unavailable')
+        cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
+        adm_lock = getattr(cli, '_admission_lock', None)
+        adm_ctx = adm_lock if adm_lock is not None else nullcontext()
+        with adm_ctx:
+            with lock:
+                state = sessions.get(session_id)
+                cli_active_turn = getattr(cli, '_active_turn_id', None) if (cli is not None and getattr(cli, 'session_id', None) == session_id) else None
+                sess_turn = state.get('turn_id') if state else None
+                sess_busy = state.get('busy') if state else False
+                bound_turn = cli_active_turn or (sess_turn if sess_busy else None)
+
+                # If an active bound turn exists, incoming hook MUST match it
+                if bound_turn:
+                    if not turn_id or turn_id != bound_turn:
+                        return
+
+                effective_turn = turn_id or bound_turn or ''
+                sessions[session_id] = dict(context='', task=task_id, model=model, busy=True, turn_id=effective_turn)
+                if cli is not None and getattr(cli, 'session_id', None) == session_id:
+                    if effective_turn:
+                        cli._active_turn_id = effective_turn
+                        try:
+                            from tools.approval import _approval_turn_id
+                            _approval_turn_id.set(effective_turn)
+                        except Exception:
+                            pass
+                try:
+                    context = invoke(session_id, 'TurnStart', task_id, model, turn_id=effective_turn, prompt=user_message)
+                    sessions[session_id]['context'] = context
+                except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
+                    logger.warning('Cairn native session registration/context unavailable')
 
     def request(request, session_id='', **_):
         with lock:
@@ -74,34 +90,54 @@ def register(ctx):
             if context and isinstance(request.get('messages'), list):
                 return {'request': dict(request, messages=[*request['messages'], {'role': 'user', 'content': context}])}
 
-    def after(session_id='', platform='', **_):
-        with lock:
-            state = sessions.get(session_id)
-            if state is None:
-                return
-            state['busy'] = False
-            try:
-                turn_id = state.get('turn_id', '')
-                invoke(session_id, 'TurnEnd' if platform == 'cli' else 'SessionEnd', state['task'], state['model'], turn_id=turn_id)
-                state['context'] = ''
-                state['turn_id'] = ''
-                if platform != 'cli':
-                    sessions.pop(session_id, None)
-            except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
-                logger.warning('Cairn native session stop unavailable; presence will expire')
+    def after(session_id='', turn_id='', task_id='', model='', platform='', **_):
+        if not session_id or platform in ('cron', 'subagent', 'flush', 'auxiliary'):
+            return
+        cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
+        adm_lock = getattr(cli, '_admission_lock', None)
+        adm_ctx = adm_lock if adm_lock is not None else nullcontext()
+        with adm_ctx:
+            with lock:
+                state = sessions.get(session_id)
+                if state is None:
+                    return
+                active_turn = state.get('turn_id', '')
+                cli_active_turn = getattr(cli, '_active_turn_id', None) if (cli is not None and getattr(cli, 'session_id', None) == session_id) else None
+                bound_turn = active_turn or cli_active_turn
+
+                # Validate incoming turn against active bound turn
+                if bound_turn:
+                    if not turn_id or turn_id != bound_turn:
+                        return
+
+                effective_turn = turn_id or bound_turn or ''
+                state['busy'] = False
+                try:
+                    invoke(session_id, 'TurnEnd' if platform == 'cli' else 'SessionEnd', state['task'], state['model'], turn_id=effective_turn)
+                except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
+                    logger.warning('Cairn native session stop unavailable; presence will expire')
+                finally:
+                    state['context'] = ''
+                    state['turn_id'] = ''
+                    if platform != 'cli':
+                        sessions.pop(session_id, None)
 
     def close():
         nonlocal bridge_running
         bridge_running = False
         cleanup_bridge()
-        with lock:
-            for ident, state in list(sessions.items()):
-                try:
-                    turn_id = state.get('turn_id', '')
-                    invoke(ident, 'SessionEnd', state['task'], state['model'], turn_id=turn_id)
-                except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
-                    logger.warning('Cairn native session leave unavailable; presence will expire')
-            sessions.clear()
+        cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
+        adm_lock = getattr(cli, '_admission_lock', None)
+        adm_ctx = adm_lock if adm_lock is not None else nullcontext()
+        with adm_ctx:
+            with lock:
+                for ident, state in list(sessions.items()):
+                    try:
+                        turn_id = state.get('turn_id', '')
+                        invoke(ident, 'SessionEnd', state['task'], state['model'], turn_id=turn_id)
+                    except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
+                        logger.warning('Cairn native session leave unavailable; presence will expire')
+                sessions.clear()
 
     # Private local bridge for native queueing into Hermes
     bridge_path = f"/tmp/cairn-hermes-{os.getpid()}.sock"
@@ -548,7 +584,7 @@ def register(ctx):
             while bridge_running:
                 try:
                     conn, _ = bridge_server.accept()
-                    if not client_semaphore.acquire(timeout=2.0):
+                    if not client_semaphore.acquire(timeout=0.1):
                         conn.sendall(json.dumps({'id': None, 'error': {'code': -32000, 'message': 'SERVER_BUSY: max concurrent connections reached'}}).encode('utf-8') + b'\n')
                         conn.close()
                         continue

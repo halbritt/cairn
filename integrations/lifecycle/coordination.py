@@ -657,8 +657,9 @@ def session_lock(path):
 
 
 def call(config, operation, request, timeout=4, session=None):
-    if not config.get("cairn") or not config.get("socket") or not config.get("token_file"):
-        return {"attempt": None}
+    for key in ("cairn", "socket", "token_file"):
+        if not config.get(key):
+            raise CoordinationError("INVALID_CONFIG", f"missing {key} in config")
     command = [config["cairn"], "agent", "--socket", config["socket"],
                "--token-file", config["token_file"]]
     if session:

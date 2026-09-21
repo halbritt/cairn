@@ -804,11 +804,23 @@ class HermesCancellationE2ETests(unittest.TestCase):
         observed = coordination.normalize(config, end)
         self.assertEqual(observed.get('native_turn_id'), hook_turn)
 
-        # Reconciliation at TurnEnd succeeds without NATIVE_TURN_MISMATCH
-        with tempfile.TemporaryDirectory() as td:
-            state_p = Path(td) / 'session.json'
-            ctx_ret = coordination.inbox_context(config, state, state_p, observed)
-            self.assertEqual(ctx_ret, '')
+        # Reconciliation at TurnEnd succeeds without NATIVE_TURN_MISMATCH via explicit test double
+        fake_api_calls = []
+        def fake_call(cfg, op, req, *args, **kwargs):
+            fake_api_calls.append((op, req))
+            if op == 'session-inbox-claim':
+                return {'attempt': {'delivery': {'delivery_id': req.get('delivery_id', 'delivery-claim14'), 'lease_id': 'lease-1'}, 'session': req.get('session')}}
+            if op == 'session-inbox-reconcile':
+                return {'reconciled': True}
+            return {}
+
+        with patch.object(coordination, 'call', side_effect=fake_call):
+            with tempfile.TemporaryDirectory() as td:
+                state_p = Path(td) / 'session.json'
+                ctx_ret = coordination.inbox_context(config, state, state_p, observed)
+                self.assertEqual(ctx_ret, '')
+        reconcile_ops = [op for op, req in fake_api_calls if op == 'session-inbox-reconcile']
+        self.assertTrue(len(reconcile_ops) > 0)
 
         # Abort using the bound hook turn is accepted
         self.cli._agent_running = True
@@ -912,11 +924,97 @@ class HermesCancellationE2ETests(unittest.TestCase):
         observed = coordination.normalize(config, end)
         self.assertEqual(observed.get('native_turn_id'), hook_turn)
 
-        # Successful SessionEnd reconciliation payload releases inbox without error
+        # Successful SessionEnd reconciliation payload releases inbox without error via explicit test double
+        fake_api_calls = []
+        def fake_call(cfg, op, req, *args, **kwargs):
+            fake_api_calls.append((op, req))
+            if op == 'session-inbox-claim':
+                return {'attempt': {'delivery': {'delivery_id': req.get('delivery_id', 'delivery-claim16'), 'lease_id': 'lease-1'}, 'session': req.get('session')}}
+            if op == 'session-inbox-reconcile':
+                return {'reconciled': True}
+            return {}
+
+        with patch.object(coordination, 'call', side_effect=fake_call):
+            with tempfile.TemporaryDirectory() as td:
+                state_p = Path(td) / 'session.json'
+                ctx_ret = coordination.inbox_context(config, state, state_p, observed)
+                self.assertEqual(ctx_ret, '')
+        reconcile_ops = [op for op, req in fake_api_calls if op == 'session-inbox-reconcile']
+        self.assertTrue(len(reconcile_ops) > 0)
+
+    def test_claim17_missing_config_refusal_preserves_retained_state(self):
+        """Claim 17: Missing config/API failure in call() raises CoordinationError and NEVER clears retained state."""
+        from integrations.lifecycle import coordination
+        config_missing = dict(harness='hermes', native_delivery=True, idle_wakeup='/unused')
+        state = dict(agent=dict(agent_id='test-agent', execution_id='test-exec'), process=self.process)
+        state['inbox_intent'] = dict(
+            request_id='intent-17',
+            delivery_id='del-17',
+            native_turn_id=f"{self.cli.session_id}:task-17:turn-17",
+            session=coordination.session_ref(state['agent']),
+        )
+        # 1. call() directly refuses missing config with INVALID_CONFIG
+        with self.assertRaises(coordination.CoordinationError) as cm:
+            coordination.call(config_missing, 'session-inbox-claim', state['inbox_intent'])
+        self.assertEqual(cm.exception.code, 'INVALID_CONFIG')
+
+        # 2. inbox_context with missing config raises CoordinationError and does NOT clear inbox_intent
+        observed = dict(
+            event='TurnEnd',
+            phase='idle',
+            native_turn_id=state['inbox_intent']['native_turn_id'],
+        )
         with tempfile.TemporaryDirectory() as td:
             state_p = Path(td) / 'session.json'
-            ctx_ret = coordination.inbox_context(config, state, state_p, observed)
-            self.assertEqual(ctx_ret, '')
+            with self.assertRaises(coordination.CoordinationError) as cm:
+                coordination.inbox_context(config_missing, state, state_p, observed)
+            self.assertEqual(cm.exception.code, 'INVALID_CONFIG')
+            # Retained state is strictly preserved
+            self.assertIn('inbox_intent', state)
+            self.assertEqual(state['inbox_intent']['delivery_id'], 'del-17')
+
+    def test_claim18_adverse_hooks_leave_active_turn_identity_and_hold_unchanged(self):
+        """Claim 18: Foreign or mismatched pre/post hooks leave active identity/context/hold unchanged."""
+        # Set up an admitted turn
+        self.cli._admission_state = 'running'
+        self.cli._agent_running = True
+        admitted_turn = f"{self.cli.session_id}:{self.cli.session_id}:adm18"
+        self.cli._active_turn_id = admitted_turn
+        self.cli._active_request_id = 'req-18'
+
+        pm = get_plugin_manager()
+        # 1. Valid pre hook binds turn
+        pm.invoke_hook('pre_llm_call', session_id=self.cli.session_id, task_id='task-18',
+                       turn_id=admitted_turn, user_message='wake text', model='m', platform='cli')
+        self.assertEqual(self.cli._active_turn_id, admitted_turn)
+
+        # 2. Foreign post hook does not end turn or change active ID
+        pm.invoke_hook('post_llm_call', session_id=self.cli.session_id,
+                       turn_id='foreign-session:task:turn', platform='cli')
+        self.assertEqual(self.cli._active_turn_id, admitted_turn)
+
+        # 3. Foreign pre hook does not overwrite CLI turn or session state
+        pm.invoke_hook('pre_llm_call', session_id=self.cli.session_id, task_id='foreign-task',
+                       turn_id='foreign-session:task:turn2', user_message='foreign text', platform='cli')
+        self.assertEqual(self.cli._active_turn_id, admitted_turn)
+
+        # 4. Original turn targeted abort succeeds
+        abort_res = hermes_queue.abort(
+            self.sock_path,
+            self.process,
+            self.cli.session_id,
+            expected_request_id='req-18',
+            expected_turn_id=admitted_turn,
+        )
+        self.assertTrue(abort_res.get('aborted'))
+
+        # 5. Matching post hook cleans up
+        pm.invoke_hook('post_llm_call', session_id=self.cli.session_id,
+                       turn_id=admitted_turn, platform='cli')
+        self.cli._agent_running = False
+        self.cli._admission_state = 'idle'
+        self.cli._active_turn_id = None
+        self.cli._active_request_id = None
 
 
 class HermesFixtureIsolationFailureTests(unittest.TestCase):
