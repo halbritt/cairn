@@ -40,7 +40,9 @@ boundary. Native delivery never starts a fresh worker to consume a conversation'
 A Claude binding can set `claude_channel_dir` and an optional
 `claude_channel_sessions` list of native conversation IDs. With no list, every
 conversation in that binding retains the configured channel admission rules.
-An empty list selects none. Listed conversations use the channel and refuse
+The selector requires an absolute, nonempty `claude_channel_dir`, including
+when the list is empty. An empty list selects none. Listed conversations use
+the channel and refuse
 ordinary owner-prompt/Stop inbox claims even while its bridge is unavailable.
 Unlisted conversations retain ordinary turn-boundary delivery and receive no
 automatic channel wake. The selector changes host routing configuration, not

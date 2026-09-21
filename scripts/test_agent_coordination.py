@@ -33,6 +33,29 @@ class CoordinationNormalization(unittest.TestCase):
         with self.assertRaisesRegex(coordination.CoordinationError, 'INVALID_CONFIG'):
             coordination.validate_config(dict(config, harness='codex', claude_channel_sessions=[]))
 
+    def test_claude_selector_missing_or_invalid_directory_refuses_hook_before_admission(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = dict(harness='claude', binding='account-one', repo='fixture',
+                          cairn='/absent/cairn', socket='/absent/api.sock', token_file='/absent/token',
+                          state_dir=str(root/'state'), native_delivery=True, idle_wakeup='/absent/herdr')
+            path = root/'config.json'
+            for sessions in ([], ['native-one']):
+                for channel in ('missing', None, '', False, True, 12, [], {}, 'relative/channel'):
+                    with self.subTest(sessions=sessions, directory=channel):
+                        invalid = dict(config, claude_channel_sessions=sessions)
+                        if channel != 'missing':
+                            invalid['claude_channel_dir'] = channel
+                        path.write_text(json.dumps(invalid))
+                        result = subprocess.run([sys.executable, str(ROOT/'integrations/lifecycle/coordination.py'),
+                            'hook', '--config', str(path)], input=json.dumps(dict(session_id='native-one',
+                            cwd=str(root), hook_event_name='UserPromptSubmit', prompt_id='owner-prompt')),
+                            text=True, capture_output=True, timeout=5)
+                        self.assertEqual(result.returncode, 1, result.stderr)
+                        self.assertIn('INVALID_CONFIG', result.stderr)
+                        self.assertIn('absolute claude_channel_dir', result.stderr)
+                        self.assertFalse((root/'state').exists(), 'invalid configuration reached native admission')
+
     def test_provider_observation_survives_api_outage_without_registering(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

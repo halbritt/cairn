@@ -1078,6 +1078,9 @@ def validate_config(config):
             raise CoordinationError('INVALID_CONFIG', 'idle_wakeup requires an absolute Herdr executable and native_delivery')
     if 'claude_channel_sessions' in config:
         sessions = config['claude_channel_sessions']
+        directory = config.get('claude_channel_dir')
+        if not isinstance(directory, str) or not Path(directory).is_absolute():
+            raise CoordinationError('INVALID_CONFIG', 'claude_channel_sessions requires an absolute claude_channel_dir')
         if (config['harness'] != 'claude' or not isinstance(sessions, list) or
                 any(not isinstance(native, str) or not native.strip() or len(native) > 256 or
                     any(ord(c) < 32 for c in native) for native in sessions)):
