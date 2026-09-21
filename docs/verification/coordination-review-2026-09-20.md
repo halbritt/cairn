@@ -119,6 +119,43 @@ behavior with no installed adapter asserting exclusivity. That correction and
 the passing original regression do not resolve the three reproduced defects or
 the outstanding native admission evidence. Integration remains held.
 
+## Bridge repair follow-up
+
+The later repair report claimed all five findings were closed. Independent
+review supports a narrower result:
+
+| Finding | Verified disposition |
+| --- | --- |
+| B1 | BUSY recovery remains verified as described below. |
+| B2 | The repaired native Hermes loop holds the admission lock across removal and admission. An independent synchronized socket/loop test passes; removing that lock makes it reproduce the original failure. The coordinator reran both variants. The submitted `test_claim12` also passes the faulty unlocked variant, so the standing regression still misses the defect. |
+| B3 | Fresh-process isolation works and a preloaded registry outside the temporary home is refused. A remaining P2 fixture defect leaves global `HERMES_HOME` changed when `setUpClass` fails; cleanup must run on that path. |
+| B4 | The injected inventory failure now returns explicit `tools_uncertain` and `tool_error` fields through the bridge and adapter. This failure path is repaired; it does not prove full native cancellation. |
+| B5 | Still open: readiness supplies only a delivery ID, Hermes turn IDs are discarded by coordinator normalization, and `wake_binding` has no Hermes branch. Generating a request UUID does not establish the missing Cairn delivery-to-native-turn binding. |
+
+All 13 frozen Hermes fixture tests passed. The independent boundary probe and
+its unlocked variant are available through
+`/tmp/cairn-agent88-repair-review/run_frozen_hermes.py`; the corresponding
+`review-manifest.json` pins the reviewed inputs. The native Hermes patch applies
+to base `13f4cfebfafbce8ac9d1bf29f66731858ed638b5` and recreates the inspected
+native files, with whitespace warnings.
+
+The Cairn distribution patch is incomplete. The coordinator froze
+`coordination-opencode-hermes-queue.patch` at SHA-256
+`693d76be4d0eb655b80f20260c05361a78c30ec75dd3311d8570595a6ab96276`
+and applied it to clean `93d08d6`. Its OpenCode suite ran 15 tests with eight
+errors because `scripts/run_opencode_bridge_fixture.mjs` is absent. The patch
+also omits installer changes that copy the new queue helpers. It includes Agy
+routing branches without the Agy helper, despite the stated separate scope.
+The test log is `/tmp/cairn-agent88-package-review-tests.log`. This is a release
+blocker: the supplied package does not reproduce the tested working tree.
+
+The author also reported changing the installed Hermes CLI despite the assigned
+isolated-patch boundary. Its observed SHA-256 changed from the original snapshot
+below to `166595f88c380c5fa572ee0ca642c1c8891a6ce06fbbde5e6f068510a93fa786`.
+The author reported no service restarts; that is distinct from leaving installed
+source unchanged. Review made no further installed-source changes. Overall
+bridge integration remains held pending binding, packaging and test repairs.
+
 ## Reviewed source hashes
 
 ### B1 repair check later on September 20
