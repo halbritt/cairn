@@ -123,14 +123,14 @@ class IdleWakeup(unittest.TestCase):
             path.write_text(body)
             path.chmod(0o700)
         self.agent=dict(agent_id='agent-one', execution_id='execution-one', native_session_id='native-one',
-                        database_generation=0, metadata=dict(harness='claude',state='idle',workspace=str(self.root),delivery_mode='existing-session'))
-        self.fixture=dict(agent=self.agent,delivery='delivery-one',host=dict(agent='claude',agent_status='idle',
+                        database_generation=0, metadata=dict(harness='agy',state='idle',workspace=str(self.root),delivery_mode='existing-session'))
+        self.fixture=dict(agent=self.agent,delivery='delivery-one',host=dict(agent='agy',agent_status='idle',
             pane_id='fixture:p1',terminal_id='terminal-one',revision=1,state_change_seq=1,focused=False,
-            agent_session=dict(kind='id',value='native-one',agent='claude')),
+            agent_session=dict(kind='id',value='native-one',agent='agy')),
             process_info=dict(foreground_processes=[dict(pid=self.native.pid)],foreground_process_group_id=os.getpgid(self.native.pid)))
         self.save_fixture()
         self.config=dict(cairn=str(self.root/'cairn'), socket=str(self.root/'api.sock'),token_file=str(self.root/'token'),
-            state_dir=str(self.root/'state'),binding='fixture',repo='fixture',harness='claude',
+            state_dir=str(self.root/'state'),binding='fixture',repo='fixture',harness='agy',
             native_delivery=True,idle_wakeup=str(self.root/'herdr'))
         self.path=self.root/'state'/'session.json'
         coordination.write_state(self.path,dict(process=coordination.process_reference(self.native.pid),agent=self.agent,workspace=str(self.root)))
@@ -184,7 +184,7 @@ class IdleWakeup(unittest.TestCase):
             time.sleep(0.05)
         self.fail('native fixture never wrote its request log')
 
-    def test_idle_arrival_prompts_once_across_watcher_restarts(self):
+    def test_agy_idle_arrival_prompts_once_across_watcher_restarts(self):
         for _ in range(2):
             result=self.watch()
             self.assertEqual(result.returncode,0,result.stderr)
@@ -331,6 +331,11 @@ time.sleep(30)
             self.assertNotIn('idle_wake',json.loads((state_dir/'session.json').read_text()))
 
     def spawn_channel_bridge(self, status='written'):
+        self.config['harness'] = 'claude'
+        self.agent['metadata']['harness'] = 'claude'
+        self.fixture['host']['agent'] = 'claude'
+        self.fixture['host']['agent_session']['agent'] = 'claude'
+        self.save_fixture()
         channel_dir = self.root/'channels'
         channel_dir.mkdir(exist_ok=True)
         control = channel_dir/'control.json'
@@ -415,7 +420,7 @@ time.sleep(30)
         self.assertEqual(self.config, original)
 
     def test_claude_selected_session_missing_channel_remains_closed(self):
-        self.config.update(claude_channel_dir=str(self.root/'absent'), claude_channel_sessions=['native-one'])
+        self.config.update(harness='claude', claude_channel_dir=str(self.root/'absent'), claude_channel_sessions=['native-one'])
         self.assertEqual(self.watch().returncode, 0)
         self.assertNotIn('idle_wake', json.loads(self.path.read_text()))
         self.assertEqual(self.prompts(), [])
@@ -779,7 +784,7 @@ time.sleep(30)
         self.assertEqual(methods.count('thread/queue/add'),1)
         self.assertEqual(self.prompts(),[],'remote TUI wake must not use terminal submission')
 
-    def test_uncertain_submission_is_not_repeated(self):
+    def test_agy_uncertain_submission_is_not_repeated(self):
         self.fixture['lost_reply']=True
         self.save_fixture()
         result=self.watch()
@@ -823,14 +828,14 @@ time.sleep(30)
         self.watch()
         self.assertEqual(self.prompts(),[])
 
-    def test_following_delivery_gets_a_new_wakeup(self):
+    def test_agy_following_delivery_gets_a_new_wakeup(self):
         self.watch()
         self.fixture['delivery']='delivery-two'
         self.save_fixture()
         self.watch()
         self.assertEqual(len(self.prompts()),2)
 
-    def test_unrelated_candidate_closing_does_not_hide_the_live_target(self):
+    def test_agy_unrelated_candidate_closing_does_not_hide_the_live_target(self):
         self.fixture['extra_hosts']=[dict(self.fixture['host'],pane_id='closed:p1')]
         self.fixture['closed_pane']='closed:p1'
         self.save_fixture()
@@ -875,7 +880,7 @@ time.sleep(30)
         self.watch()
         self.assertEqual(self.prompts(),[])
 
-    def test_codex_requires_one_matching_open_conversation(self):
+    def test_codex_without_native_queue_never_falls_back_even_with_matching_rollout(self):
         self.stop_native()
         native_id='243ce2f7-70bb-412b-b5ec-32584426a4bf'
         rollout=self.root/('rollout-2026-09-16T08-00-00-'+native_id+'.jsonl')
@@ -897,7 +902,22 @@ time.sleep(30)
         self.agent['native_session_id']=native_id
         self.save_fixture()
         self.watch()
-        self.assertEqual(len(self.prompts()),1)
+        self.assertEqual(self.prompts(), [])
+        self.assertNotIn('idle_wake', json.loads(self.path.read_text()))
+
+    def test_claude_without_channel_never_falls_back_to_terminal(self):
+        self.config['harness'] = 'claude'
+        self.agent['metadata']['harness'] = 'claude'
+        self.fixture['host']['agent'] = 'claude'
+        self.fixture['host']['agent_session']['agent'] = 'claude'
+        self.save_fixture()
+        coordination.write_state(self.path, dict(process=coordination.process_reference(self.native.pid),
+            agent=self.agent, workspace=str(self.root)))
+        for _ in range(2):
+            result = self.watch()
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.prompts(), [])
+        self.assertNotIn('idle_wake', json.loads(self.path.read_text()))
 
 
 if __name__=='__main__':
