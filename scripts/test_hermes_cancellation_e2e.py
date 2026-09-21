@@ -1,12 +1,8 @@
-"""End-to-end acceptance tests demonstrating native Hermes request cancellation and queue invariants.
+"""Hermes queue and cancellation fixtures at native CLI and plugin boundaries.
 
-Proves the 6 required claims on an owned Hermes interactive process:
-  1. Queued wake preserves typed composer draft.
-  2. Busy owner work finishes before wake.
-  3. Exact Cairn request / native binding.
-  4. Actual bounded long-running tool stops on request cancel.
-  5. Later owner work unaffected (owner turns protected from stale/racing cancels).
-  6. Retained uncertainty / recovery (no fake success, honest failure reporting).
+Uses actual admission helpers, bridge sockets and owned tool subprocesses.
+Provider generation and Cairn API calls are substituted where indicated; these
+fixtures do not establish real-model cancellation or exclusive host admission.
 """
 import json
 import os
@@ -756,7 +752,7 @@ class HermesCancellationE2ETests(unittest.TestCase):
             self.cli._active_turn_id = None
 
     def test_claim14_native_turn_binding_end_to_end_and_reconciliation(self):
-        """Claim 14: End-to-end native turn identity spans admission, hooks, claim, TurnEnd reconciliation, and abort."""
+        """Claim 14: Admission identity reaches hooks, a substituted store boundary, and abort."""
         from integrations.lifecycle import coordination
         config = dict(harness='hermes', native_delivery=True, idle_wakeup='/unused')
         state = dict(agent=dict(agent_id='test-agent', execution_id='test-exec'), process=self.process)
@@ -784,7 +780,7 @@ class HermesCancellationE2ETests(unittest.TestCase):
             return SimpleNamespace(returncode=0, stdout=json.dumps({'hookSpecificOutput': {'additionalContext': ''}}))
 
         pm = get_plugin_manager()
-        hook_turn = f"{self.cli.session_id}:task-c14:turn-c14"
+        hook_turn = cli_turn
         with patch('subprocess.run', side_effect=capture_run):
             pm.invoke_hook('pre_llm_call', session_id=self.cli.session_id, task_id='task-c14',
                            turn_id=hook_turn, user_message=text, model='test-model', platform='cli')
@@ -800,7 +796,7 @@ class HermesCancellationE2ETests(unittest.TestCase):
         self.assertEqual(binding.get('native_turn_id'), hook_turn)
         self.assertEqual(binding.get('delivery_id'), 'delivery-claim14')
 
-        state['inbox_intent'] = dict(request_id='store-poll-c14', **binding)
+        state['inbox_intent'] = dict(request_id='store-poll-c14', session=coordination.session_ref(state['agent']), **binding)
         observed = coordination.normalize(config, end)
         self.assertEqual(observed.get('native_turn_id'), hook_turn)
 
@@ -812,15 +808,23 @@ class HermesCancellationE2ETests(unittest.TestCase):
                 return {'attempt': {'delivery': {'delivery_id': req.get('delivery_id', 'delivery-claim14'), 'lease_id': 'lease-1'}, 'session': req.get('session')}}
             if op == 'session-inbox-reconcile':
                 return {'reconciled': True}
-            return {}
+            raise AssertionError(f'unexpected API operation: {op}')
 
         with patch.object(coordination, 'call', side_effect=fake_call):
             with tempfile.TemporaryDirectory() as td:
                 state_p = Path(td) / 'session.json'
                 ctx_ret = coordination.inbox_context(config, state, state_p, observed)
                 self.assertEqual(ctx_ret, '')
-        reconcile_ops = [op for op, req in fake_api_calls if op == 'session-inbox-reconcile']
-        self.assertTrue(len(reconcile_ops) > 0)
+        self.assertEqual([op for op, _ in fake_api_calls],
+                         ['session-inbox-claim', 'session-inbox-reconcile'])
+        claim, reconcile = (req for _, req in fake_api_calls)
+        self.assertEqual(claim['native_turn_id'], hook_turn)
+        self.assertEqual(claim['delivery_id'], 'delivery-claim14')
+        self.assertEqual(reconcile['attempt_id'], 'store-poll-c14')
+        self.assertEqual(reconcile['session'], coordination.session_ref(state['agent']))
+        self.assertEqual(reconcile['reason'], 'turn_ended')
+        self.assertNotIn('inbox_intent', state)
+        self.assertNotIn('inbox_attempt', state)
 
         # Abort using the bound hook turn is accepted
         self.cli._agent_running = True
@@ -887,7 +891,7 @@ class HermesCancellationE2ETests(unittest.TestCase):
         )
 
     def test_claim16_session_end_turn_reconciliation_payload(self):
-        """Claim 16: SessionEnd lifecycle hook carries saved turn_id and reconciles without NATIVE_TURN_MISMATCH."""
+        """Claim 16: SessionEnd carries the saved turn ID to a substituted store boundary."""
         from integrations.lifecycle import coordination
         config = dict(harness='hermes', native_delivery=True, idle_wakeup='/unused')
         state = dict(agent=dict(agent_id='test-agent', execution_id='test-exec'), process=self.process)
@@ -920,7 +924,7 @@ class HermesCancellationE2ETests(unittest.TestCase):
         self.assertEqual(end.get('turn_id'), hook_turn)
 
         binding = coordination.wake_binding(config, state, start)
-        state['inbox_intent'] = dict(request_id='store-poll-c16', **binding)
+        state['inbox_intent'] = dict(request_id='store-poll-c16', session=coordination.session_ref(state['agent']), **binding)
         observed = coordination.normalize(config, end)
         self.assertEqual(observed.get('native_turn_id'), hook_turn)
 
@@ -932,15 +936,23 @@ class HermesCancellationE2ETests(unittest.TestCase):
                 return {'attempt': {'delivery': {'delivery_id': req.get('delivery_id', 'delivery-claim16'), 'lease_id': 'lease-1'}, 'session': req.get('session')}}
             if op == 'session-inbox-reconcile':
                 return {'reconciled': True}
-            return {}
+            raise AssertionError(f'unexpected API operation: {op}')
 
         with patch.object(coordination, 'call', side_effect=fake_call):
             with tempfile.TemporaryDirectory() as td:
                 state_p = Path(td) / 'session.json'
                 ctx_ret = coordination.inbox_context(config, state, state_p, observed)
                 self.assertEqual(ctx_ret, '')
-        reconcile_ops = [op for op, req in fake_api_calls if op == 'session-inbox-reconcile']
-        self.assertTrue(len(reconcile_ops) > 0)
+        self.assertEqual([op for op, _ in fake_api_calls],
+                         ['session-inbox-claim', 'session-inbox-reconcile'])
+        claim, reconcile = (req for _, req in fake_api_calls)
+        self.assertEqual(claim['native_turn_id'], hook_turn)
+        self.assertEqual(claim['delivery_id'], 'delivery-claim16')
+        self.assertEqual(reconcile['attempt_id'], 'store-poll-c16')
+        self.assertEqual(reconcile['session'], coordination.session_ref(state['agent']))
+        self.assertEqual(reconcile['reason'], 'delivery_completed')
+        self.assertNotIn('inbox_intent', state)
+        self.assertNotIn('inbox_attempt', state)
 
     def test_claim17_missing_config_refusal_preserves_retained_state(self):
         """Claim 17: Missing config/API failure in call() raises CoordinationError and NEVER clears retained state."""
@@ -1015,156 +1027,6 @@ class HermesCancellationE2ETests(unittest.TestCase):
         self.cli._admission_state = 'idle'
         self.cli._active_turn_id = None
         self.cli._active_request_id = None
-
-
-class HermesFixtureIsolationFailureTests(unittest.TestCase):
-    """B3: Prove isolation rejection performs NO operations on a foreign registry, and environment is restored."""
-
-    def _run_subp(self, code, *args):
-        import subprocess
-        env = dict(os.environ, HERMES_ROOT=str(_hermes_root))
-        cmd = [sys.executable, "-c", code, str(REPO_ROOT), str(_hermes_root), str(_venv_site), *args]
-        return subprocess.run(cmd, capture_output=True, text=True, env=env)
-
-    def test_isolation_rejection_never_touches_foreign_registry(self):
-        """Stage 1: Preloaded foreign registry with outside CHECKPOINT_PATH is rejected without kill_all or mutation."""
-        code = """
-import os, sys, json, tempfile
-from pathlib import Path
-from unittest.mock import patch
-
-sys.path.insert(0, sys.argv[1])
-sys.path.insert(0, sys.argv[2])
-for p in Path(sys.argv[3]).glob("python*/site-packages"):
-    sys.path.insert(0, str(p))
-
-orig_env = "/some/original/hermes/path"
-os.environ["HERMES_HOME"] = orig_env
-
-with tempfile.TemporaryDirectory(prefix="cairn-foreign-test-") as foreign_dir:
-    foreign_home = Path(foreign_dir) / ".hermes"
-    foreign_home.mkdir(parents=True, mode=0o700)
-    foreign_checkpoint = foreign_home / "processes.json"
-    initial_content = json.dumps([{"session_id": "foreign-proc-1", "pid": 99999}])
-    foreign_checkpoint.write_text(initial_content)
-    initial_mtime = foreign_checkpoint.stat().st_mtime
-
-    class ForeignReg:
-        CHECKPOINT_PATH = foreign_checkpoint
-        kill_all_called = False
-        def kill_all(self):
-            self.kill_all_called = True
-
-    foreign_reg = ForeignReg()
-    from scripts import test_hermes_cancellation_e2e as t
-
-    with patch("tools.process_registry.process_registry", foreign_reg), \
-         patch("tools.process_registry.CHECKPOINT_PATH", foreign_checkpoint):
-        try:
-            t.HermesCancellationE2ETests.setUpClass()
-            sys.exit(1)
-        except AssertionError as e:
-            assert "not in isolated" in str(e), f"unexpected error {e}"
-
-    assert not foreign_reg.kill_all_called, "foreign kill_all was called!"
-    assert foreign_checkpoint.read_text() == initial_content, "checkpoint file mutated!"
-    assert foreign_checkpoint.stat().st_mtime == initial_mtime, "checkpoint mtime mutated!"
-    assert os.environ.get("HERMES_HOME") == orig_env, f"env not restored: {os.environ.get('HERMES_HOME')} != {orig_env}"
-    print("STAGE 1 PASSED")
-"""
-        res = self._run_subp(code)
-        self.assertEqual(res.returncode, 0, f"Stage 1 failed: stdout={res.stdout}, stderr={res.stderr}")
-        self.assertIn("STAGE 1 PASSED", res.stdout)
-
-    def test_setup_failure_during_bridge_creation_restores_env(self):
-        """Stage 2: Setup failure after isolation check (bridge timeout) cleans only fixture resources and restores env."""
-        code = """
-import os, sys, json, tempfile
-from pathlib import Path
-from unittest.mock import patch
-
-sys.path.insert(0, sys.argv[1])
-sys.path.insert(0, sys.argv[2])
-for p in Path(sys.argv[3]).glob("python*/site-packages"):
-    sys.path.insert(0, str(p))
-
-orig_env = "/some/original/hermes/path"
-os.environ["HERMES_HOME"] = orig_env
-
-with tempfile.TemporaryDirectory(prefix="cairn-foreign-test-") as foreign_dir:
-    foreign_home = Path(foreign_dir) / ".hermes"
-    foreign_home.mkdir(parents=True, mode=0o700)
-    foreign_checkpoint = foreign_home / "processes.json"
-    initial_content = json.dumps([{"session_id": "foreign-proc-2", "pid": 77777}])
-    foreign_checkpoint.write_text(initial_content)
-    initial_mtime = foreign_checkpoint.stat().st_mtime
-
-    from scripts import test_hermes_cancellation_e2e as t
-
-    real_exists = os.path.exists
-    def fake_exists(path):
-        if "cairn-hermes" in str(path) and str(path).endswith(".sock"):
-            return False
-        return real_exists(path)
-
-    with patch("os.path.exists", side_effect=fake_exists), \
-         patch("time.sleep", return_value=None), \
-         patch("time.monotonic", side_effect=[0.0, 10.0, 10.0, 10.0]):
-        try:
-            t.HermesCancellationE2ETests.setUpClass()
-            sys.exit(1)
-        except RuntimeError as e:
-            assert "Bridge socket" in str(e), f"unexpected error {e}"
-
-    assert foreign_checkpoint.read_text() == initial_content, "checkpoint file mutated!"
-    assert foreign_checkpoint.stat().st_mtime == initial_mtime, "checkpoint mtime mutated!"
-    assert os.environ.get("HERMES_HOME") == orig_env, f"env not restored: {os.environ.get('HERMES_HOME')} != {orig_env}"
-    print("STAGE 2 PASSED")
-"""
-        res = self._run_subp(code)
-        self.assertEqual(res.returncode, 0, f"Stage 2 failed: stdout={res.stdout}, stderr={res.stderr}")
-        self.assertIn("STAGE 2 PASSED", res.stdout)
-
-    def test_subprocess_full_lifecycle_cleanup(self):
-        """Stage 3: End-to-end subprocess executing successful setup and teardown cleans up only fixture state."""
-        code = """
-import os, sys, json, tempfile
-from pathlib import Path
-
-sys.path.insert(0, sys.argv[1])
-sys.path.insert(0, sys.argv[2])
-for p in Path(sys.argv[3]).glob("python*/site-packages"):
-    sys.path.insert(0, str(p))
-
-orig_env = "/some/original/hermes/path"
-os.environ["HERMES_HOME"] = orig_env
-
-with tempfile.TemporaryDirectory(prefix="cairn-foreign-test-") as foreign_dir:
-    foreign_home = Path(foreign_dir) / ".hermes"
-    foreign_home.mkdir(parents=True, mode=0o700)
-    foreign_checkpoint = foreign_home / "processes.json"
-    initial_content = json.dumps([{"session_id": "foreign-proc-3", "pid": 66666}])
-    foreign_checkpoint.write_text(initial_content)
-    initial_mtime = foreign_checkpoint.stat().st_mtime
-
-    from scripts import test_hermes_cancellation_e2e as t
-
-    t.HermesCancellationE2ETests.setUpClass()
-    sock = t.HermesCancellationE2ETests.sock_path
-    assert t.HermesCancellationE2ETests._isolation_validated is True, "isolation not validated"
-    assert t.HermesCancellationE2ETests._bridge_initialized is True, "bridge not initialized"
-    assert os.path.exists(sock), f"bridge socket {sock} does not exist"
-
-    t.HermesCancellationE2ETests.tearDownClass()
-    assert not os.path.exists(sock), f"bridge socket {sock} was not cleaned up"
-    assert foreign_checkpoint.read_text() == initial_content, "checkpoint file mutated!"
-    assert foreign_checkpoint.stat().st_mtime == initial_mtime, "checkpoint mtime mutated!"
-    assert os.environ.get("HERMES_HOME") == orig_env, f"env not restored: {os.environ.get('HERMES_HOME')} != {orig_env}"
-    print("STAGE 3 PASSED")
-"""
-        res = self._run_subp(code)
-        self.assertEqual(res.returncode, 0, f"Stage 3 failed: stdout={res.stdout}, stderr={res.stderr}")
-        self.assertIn("STAGE 3 PASSED", res.stdout)
 
 
 class HermesFixtureIsolationFailureTests(unittest.TestCase):

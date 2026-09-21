@@ -297,6 +297,39 @@ is `/tmp/cairn-agent88-b5-review/review_native_path.py`. Both source snapshots
 remain isolated. Agent 2 has a bounded corrective assignment covering the
 API failure behavior, hook ownership and upstream regressions.
 
+### Corrective bridge review at `69f6a95` / `131e95b`
+
+Independent review now passes the bounded behavior checks. Admission, the native
+conversation wrapper, the actual turn-context builder, plugin hooks and tool
+context use the same turn ID. Foreign or missing pre/post hook identities cause
+no lifecycle invocation, plugin state change or CLI identity change. A barrier
+inside the lifecycle subprocess shows that a concurrent socket abort waits for
+the admission lock, then both operations finish and the original turn is
+interrupted. Missing configuration and a failing API subprocess retain the
+claim and persisted reconciliation retry. The coordinator reran this probe at
+`/tmp/cairn-agent88-b5-corrective-review/review_native_path.py` successfully.
+Provider/Relay boundaries and hook output are substituted; this does not prove
+real-model interruption or exclusive host admission.
+
+The upstream turn-context suite passes all 19 tests and the native queue suite
+passes 16 tests at `131e95b`. The submitted Cairn fixture still failed two cases:
+claim 14 invented a different hook identity after admission, and claim 16 omitted
+required session identity from its retained intent. The coordinator corrected
+the fixtures to use the admitted identity and complete intent, and added exact
+claim/reconcile operation, payload and final-state assertions. All 52 combined
+bridge/queue tests then passed. Logs and frozen sources are under
+`/tmp/cairn-agent88-b5-v2-9f74lq01/`.
+
+The isolated integration `27d1994` combines main `d760f85`, packaging `23b12b6`
+and corrective bridge `69f6a95`. Both `make test-integration` (disposable
+PostgreSQL, including native cancellation and no-terminal-fallback API checks)
+and `make check` passed. Logs are `/tmp/cairn-agent88-bridge-integration.log`
+and `/tmp/cairn-agent88-bridge-check.log`. Main retains its verified dormant core
+while final package assembly and bridge integration remain pending. Agent 67 is
+bundling the exact native companion patch and updating stale manifest claims.
+The installed Hermes source remains clean at `13f4cfeb`; no deployment or
+exclusive native cancellation has been enabled.
+
 ## Reviewed source hashes
 
 ### B1 repair check later on September 20
