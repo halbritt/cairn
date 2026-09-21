@@ -1,0 +1,28 @@
+{
+  "package": "Native queued delivery repairs",
+  "date": "2026-09-21",
+  "source_sha256": {
+    "integrations/lifecycle/coordination.py": "e1505bd3aaf8c9b8e3992e06707707bcbde14e4bc05a53e1b10257b1ecf6aa09",
+    "integrations/lifecycle/opencode_queue.py": "2092403c1b96d85fadf6eb94ce5ddb3bec297c22d4bb7585a71637bf1d4c636f",
+    "integrations/opencode/coordination.ts": "0c816ae60a423c2d262afb9ce6efea6bc3571557500592667325276920a146a6",
+    "scripts/test_idle_wakeup.py": "9b4808a1c85f2e9d43c40373f6487c3f7f53241cacbad68f68c5b164148e32fd",
+    "scripts/test_agent_coordination.py": "b629766957433810864191585c6cb848bcbcb34b9b8c3085def836c28fe518cc",
+    "scripts/test_opencode_queue.py": "04c5ddbbf073bd830c0c1b83b0392979562bb9a7f4b638be571c364895ef671b"
+  },
+  "validation": {
+    "opencode": "20 tests pass; installed OpenCode 1.18.31 real HTTP validator accepts omitted optional messageID and rejects delivery UUID; live model handling pending",
+    "claude": "9 configuration tests and 34 idle tests pass; selected malformed-directory regression red before fix across18subcases; independent final probe pending",
+    "idle": "34 tests pass after correcting 5 obsolete terminal fallback expectations; supported Agy terminal behavior preserved"
+  },
+  "acceptance": {
+    "live_opencode_automatic_delivery": false,
+    "live_claude65_automatic_delivery": false,
+    "coordination_v1_complete": false
+  },
+  "source_revisions": {
+    "opencode": "e3e8098c4aeb31ba30cc5558b6ce345b77314f02",
+    "claude_selector": "66faa97",
+    "selector_validation": "e790dcf",
+    "idle_contract_tests": "df58b3a"
+  }
+}
