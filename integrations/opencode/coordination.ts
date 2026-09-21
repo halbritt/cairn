@@ -4,7 +4,7 @@ import type { Part } from "@opencode-ai/sdk"
 import { execFile } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import { existsSync, unlinkSync, chmodSync } from "node:fs"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import net from "node:net"
 
 const MAX_PAYLOAD_BYTES = 65536
@@ -176,8 +176,8 @@ const plugin: Plugin = async ({ directory, client }) => {
           try {
             if (method === "session/prompt_async") {
               const { session_id, text, client_id, expected_session_id } = params
-              if (!session_id || !text) {
-                socket.write(JSON.stringify({ id, error: { code: -32602, message: "session_id and text required" } }) + "\n")
+              if ([session_id, text, client_id].some(value => typeof value !== "string" || !value.trim())) {
+                socket.write(JSON.stringify({ id, error: { code: -32602, message: "session_id, text, and client_id must be nonempty strings" } }) + "\n")
                 continue
               }
               if (!expected_session_id || typeof expected_session_id !== "string" || !expected_session_id.trim()) {
@@ -234,10 +234,13 @@ const plugin: Plugin = async ({ directory, client }) => {
               }
 
               // Deliver via native promptAsync - leaves composer buffer untouched
+              // Native message IDs have a global key and a msg prefix. Keep the
+              // Cairn delivery correlation unchanged; namespace its mapping by session.
+              const messageID = "msg_" + createHash("sha256").update(JSON.stringify([session_id, client_id])).digest("hex")
               const promptRes = await instClient.session.promptAsync({
                 path: { id: session_id },
                 body: {
-                  messageID: client_id,
+                  messageID,
                   parts: [{ type: "text", text }]
                 }
               })
