@@ -35,6 +35,11 @@ repaired a Claude delivery-latch bug that stopped the backlog after initial
 success; [sustained delivery evidence](verification/agent-delivery-delay-2026-09-21.md#follow-up-delivery-latch-stopped-the-backlog)
 is separate from channel activation.
 
+The [Hermes request-control candidate review](verification/hermes-native-request-control-2026-09-21.md)
+records native ownership, executor accounting and verified process containment.
+Its local tests and actual socket/process probes pass; CLI startup coverage,
+provider trials and deployment remain open. Native cancellation is still disabled.
+
 ## Single-user operating assumptions
 
 Owner clarification, 2026-09-11: Cairn must not be overburdened with security
