@@ -5,9 +5,10 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import types
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,24 +25,36 @@ class HermesProviderObservation(unittest.TestCase):
             with patch.dict(sys.modules,modules):
                 spec.loader.exec_module(plugin)
             callbacks = {}
-            ctx = Mock()
-            ctx.register_hook.side_effect = lambda name,callback:callbacks.update({name:callback})
+            unload = []
+            cli = types.SimpleNamespace(session_id='owner', _active_turn_id='owner:turn',
+                                        _admission_lock=threading.RLock())
+            ctx = types.SimpleNamespace(
+                _manager=types.SimpleNamespace(_cli_ref=cli),
+                register_hook=lambda name, callback: callbacks.update({name: callback}),
+                register_middleware=lambda name, callback: None,
+                on_unload=unload.append,
+            )
             plugin.register(ctx)
             sent = []
             def run(*_,**kwargs):
                 sent.append(json.loads(kwargs['input']))
                 return types.SimpleNamespace(returncode=0,stdout='{}')
             with patch.object(plugin.subprocess,'run',side_effect=run), patch.dict(os.environ,CAIRN_WAKE_CONTEXT='wake.json'):
-                callbacks['pre_llm_call'](session_id='owner',platform='cli')
-                callbacks['pre_llm_call'](session_id='child',parent_session_id='owner')
-                callbacks['api_request_error'](session_id='child',status_code=429,reason='rate_limit')
-                self.assertEqual(len(sent),1)
-                callbacks['api_request_error'](session_id='owner',status_code=429,reason='rate_limit',error={'message':'PRIVATE'},request={'body':'PRIVATE'})
-                self.assertEqual(sent[-1]['provider_failure'],dict(harness='hermes',source='native-hook',kind='rate_limit',code='rate_limit',status=429))
-                callbacks['post_api_request'](session_id='owner',response={'text':'PRIVATE'})
-                self.assertIsNone(sent[-1]['provider_failure'])
-                callbacks['api_request_error'](session_id='owner',status_code=402,reason='billing')
-                self.assertEqual(sent[-1]['provider_failure']['kind'],'billing')
-                callbacks['api_request_error'](session_id='owner',status_code=500,reason='server_error')
-                self.assertIsNone(sent[-1]['provider_failure'])
-                self.assertNotIn('PRIVATE',json.dumps(sent))
+                try:
+                    callbacks['pre_llm_call'](session_id='owner',turn_id='owner:turn',platform='cli')
+                    callbacks['pre_llm_call'](session_id='child',parent_session_id='owner')
+                    callbacks['api_request_error'](session_id='child',status_code=429,reason='rate_limit')
+                    self.assertEqual(len(sent),1)
+                    callbacks['api_request_error'](session_id='owner',status_code=429,reason='rate_limit',error={'message':'PRIVATE'},request={'body':'PRIVATE'})
+                    self.assertEqual(sent[-1]['provider_failure'],dict(harness='hermes',source='native-hook',kind='rate_limit',code='rate_limit',status=429))
+                    callbacks['post_api_request'](session_id='owner',response={'text':'PRIVATE'})
+                    self.assertIsNone(sent[-1]['provider_failure'])
+                    callbacks['api_request_error'](session_id='owner',status_code=402,reason='billing')
+                    self.assertEqual(sent[-1]['provider_failure']['kind'],'billing')
+                    callbacks['api_request_error'](session_id='owner',status_code=500,reason='server_error')
+                    self.assertIsNone(sent[-1]['provider_failure'])
+                    self.assertNotIn('PRIVATE',json.dumps(sent))
+                    callbacks['post_llm_call'](session_id='owner',turn_id='owner:turn',platform='cli')
+                finally:
+                    for close in unload:
+                        close()

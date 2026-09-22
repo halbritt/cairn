@@ -60,6 +60,43 @@ except ImportError:
 from integrations.lifecycle import hermes_queue
 
 
+def _cleanup_fixture_logging():
+    """Drain owned log files before removing the temporary Hermes home.
+
+    Native CLI import installs a process-wide async queue. Preserve file
+    handlers added by other fixtures, and never call global logging.shutdown().
+    """
+    logs = sys.modules.get('hermes_logging')
+    if logs is None:
+        return
+    with logs._queue_state_lock:
+        owned = [h for h in logs.rotating_file_handlers()
+                 if Path(h.baseFilename).resolve().is_relative_to(_hermes_home.resolve())]
+        if not owned:
+            return
+        listener = logs._queue_listener
+        if listener is not None:
+            listener.stop()  # Drain pending records while their files still exist.
+        logs._queue_listener = None
+        for handler in owned:
+            logs._queued_file_handlers.remove(handler)
+            handler.close()
+        if logs._queued_file_handlers:
+            logs._queue_listener = logs.QueueListener(
+                logs._log_queue, *logs._queued_file_handlers, respect_handler_level=True)
+            logs._queue_listener.start()
+        else:
+            import logging
+            root = logging.getLogger()
+            for handler in list(root.handlers):
+                if (getattr(handler, '_hermes_queue', False)
+                        and handler.queue is logs._log_queue):
+                    root.removeHandler(handler)
+                    handler.close()
+            logs._log_queue = None
+            logs._logging_initialized = False
+
+
 def _get_process_credentials():
     pid = os.getpid()
     stat_text = Path(f'/proc/{pid}/stat').read_text()
@@ -141,6 +178,7 @@ class HermesCancellationE2ETests(unittest.TestCase):
                 os.unlink(cls.sock_path)
             except OSError:
                 pass
+        _cleanup_fixture_logging()
         old_env = getattr(cls, 'old_hermes_home', _old_hermes_home)
         if old_env is not None:
             os.environ['HERMES_HOME'] = old_env
@@ -1136,6 +1174,66 @@ with tempfile.TemporaryDirectory(prefix="cairn-foreign-test-") as foreign_dir:
         res = self._run_subp(code)
         self.assertEqual(res.returncode, 0, f"Stage 2 failed: stdout={res.stdout}, stderr={res.stderr}")
         self.assertIn("STAGE 2 PASSED", res.stdout)
+
+    def test_logging_cleanup_preserves_unrelated_handlers(self):
+        # Regression: later tests logged through a listener targeting the deleted
+        # fixture home. Exercise the real async queue, including another owner.
+        for foreign in ("none", "before", "after"):
+            with self.subTest(foreign=foreign):
+                code = r"""
+import contextlib, io, logging, os, sys, tempfile
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+sys.path.insert(0, sys.argv[2])
+for p in Path(sys.argv[3]).glob("python*/site-packages"):
+    sys.path.insert(0, str(p))
+with tempfile.TemporaryDirectory(prefix="cairn-log-owner-") as foreign_home:
+    os.environ["HERMES_HOME"] = foreign_home
+    import hermes_logging as logs
+    foreign = sys.argv[4]
+    other = logging.FileHandler(Path(foreign_home) / "other.log")
+    ordinary_stream = io.StringIO()
+    ordinary = logging.StreamHandler(ordinary_stream)
+    logging.getLogger().addHandler(ordinary)
+    if foreign == "before":
+        logs._register_queued_handler(other)
+    from scripts import test_hermes_cancellation_e2e as t
+    owned = [h for h in logs.rotating_file_handlers()
+             if Path(h.baseFilename).is_relative_to(t._hermes_home)]
+    assert owned, "native CLI logging was not exercised"
+    t.HermesCancellationE2ETests.setUpClass()
+    if foreign == "after":
+        logs._register_queued_handler(other)
+    logging.warning("before fixture teardown")
+    logs.flush_log_queue()
+    listener_thread = logs._queue_listener._thread
+    stderr = io.StringIO()
+    with contextlib.redirect_stderr(stderr):
+        t.HermesCancellationE2ETests.tearDownClass()
+        t.HermesCancellationE2ETests.doClassCleanups()
+        # Repeated cleanup and subsequent suites must not resurrect owned files.
+        t.HermesCancellationE2ETests.tearDownClass()
+        for i in range(3):
+            logging.warning("after fixture teardown %s", i)
+            logs.flush_log_queue()
+    assert not listener_thread.is_alive(), "fixture listener survived teardown"
+    assert not t._hermes_home.exists()
+    assert not stderr.getvalue(), stderr.getvalue()
+    assert all(h not in logs.rotating_file_handlers() and h._closed for h in owned)
+    assert ordinary in logging.getLogger().handlers and not ordinary._closed
+    assert "after fixture teardown 2" in ordinary_stream.getvalue()
+    if foreign != "none":
+        assert other in logs.rotating_file_handlers() and not other._closed
+        assert "after fixture teardown 2" in Path(other.baseFilename).read_text()
+        logs._reset_queued_handlers()  # Remaining queue resources belong to this subprocess.
+    else:
+        assert logs._queue_listener is None
+        other.close()
+    logging.getLogger().removeHandler(ordinary)
+    ordinary.close()
+"""
+                res = self._run_subp(code, foreign)
+                self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
     def test_subprocess_full_lifecycle_cleanup(self):
         """Stage 3: End-to-end subprocess executing successful setup and teardown cleans up only fixture state."""
