@@ -51,6 +51,10 @@ Revocation waits for natural quiescence rather than signalling joined owner work
   A separate actual hook-timeout probe verified parent and detached-child
   termination. That probe explicitly initialized fixture coverage; it did not
   validate a live provider/configuration profile.
+- The full Cairn Python run executed 301 tests with 14 optional NumPy skips.
+  Its only error was a test-class build affected by the same VCS discovery
+  issue; that class's four tests passed when rerun with test-only VCS stamping
+  disabled. The composed native dependency path was supplied explicitly.
 - `make check` and the full disposable PostgreSQL integration run passed,
   including the controller's real authenticated API regressions for revocation,
   invalidated scans and lost committed-response recovery. Native evidence in
