@@ -63,9 +63,17 @@ def register(ctx):
                 sess_busy = state.get('busy') if state else False
                 bound_turn = cli_active_turn or (sess_turn if sess_busy else None)
 
-                # If an active bound turn exists, incoming hook MUST match it
+                # If an active bound turn exists, incoming hook MUST match it.
+                # A foreign turn id means owner input joined the conversation;
+                # report it so the engine revokes any exclusive ownership
+                # before a cancellation could act on the older turn.
                 if bound_turn:
                     if not turn_id or turn_id != bound_turn:
+                        if turn_id:
+                            try:
+                                invoke(session_id, 'ForeignTurn', turn_id=turn_id)
+                            except Exception:
+                                pass
                         return
 
                 effective_turn = turn_id or bound_turn or ''
@@ -243,9 +251,20 @@ def register(ctx):
                                 hook_busy = bool(sess and sess.get('busy'))
                             is_busy = cli_busy or hook_busy
 
-                            # Define callback to capture durable admission/refusal state
-                            def on_consumed_cb(status, current_sid, cid=client_id):
+                            # Define callback to capture durable admission/refusal state.
+                            # Admission runs under the Hermes admission lock, so
+                            # attesting exactly here makes admission and the
+                            # exclusive 049 claim atomic with respect to owner input.
+                            def on_consumed_cb(status, current_sid, cid=client_id,
+                                               rid=request_id, did=delivery_id, tid=turn_id,
+                                               sid=target_session):
                                 record_wake_outcome(cid, status, current_sid)
+                                if status == 'consumed' and did and tid:
+                                    try:
+                                        invoke(sid, 'WakeAdmitted', turn_id=tid,
+                                               delivery_id=did, request_id=rid)
+                                    except Exception:
+                                        logger.warning('Cairn wake admission attestation unavailable')
 
                             request_id = params.get('request_id')
                             delivery_id = params.get('delivery_id')

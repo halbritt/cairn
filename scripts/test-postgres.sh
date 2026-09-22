@@ -44,6 +44,7 @@ go run ./cmd/cairn create < fixtures/note.json
 go build -o "$test_root/cairn" ./cmd/cairn
 python3 scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
 python3 scripts/check_native_cancel.py "$test_root/cairn" "$test_root/native-cancel-home"
+python3 scripts/check_hermes_cancel.py "$test_root/cairn" "$test_root/hermes-cancel-home"
 if [[ -n "${XDG_RUNTIME_DIR:-}" ]] && systemctl --user show-environment >/dev/null 2>&1; then
     python3 scripts/check_wakeups.py "$test_root/cairn" "$test_root/wake-home"
     python3 scripts/check_worker_pools.py "$test_root/cairn" "$test_root/pool-home"

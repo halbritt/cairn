@@ -580,6 +580,12 @@ def normalize(config, event, event_name=None):
         raise CoordinationError("INVALID_HOST", "native workspace must be an existing absolute directory")
     if not isinstance(model, str) or len(model) > 256:
         raise CoordinationError("INVALID_HOST", "invalid observed model")
+    if observation.get('event') == 'WakeAdmitted':
+        hermes_admission_attest(config, state, path, observation)
+        return {}
+    if observation.get('event') == 'ForeignTurn':
+        hermes_foreign_turn_revoke(config, state, path)
+        return {}
     phases = {"SessionStart": "start", "UserPromptSubmit": "busy", "PreInvocation": "busy",
               "TurnStart": "busy", "Stop": "idle", "TurnEnd": "idle", "SessionEnd": "leave",
               "Interrupt": "interrupted", "ProviderObservation": "provider"}
@@ -778,6 +784,56 @@ def release_inbox(config, state, path, reason, fenced=False):
         state.pop(key, None)
     write_state(path, state)
     return True
+
+
+
+def hermes_admission_attest(config, state, path, observation):
+    """Bridge-reported admission of a queued wake. Exclusive ownership is
+    attested only when the observation matches the engine's recorded wake
+    binding exactly; a bare wake binding or unmatched id attests nothing."""
+    try:
+        import hermes_cancel
+    except ImportError:
+        return
+    wake = state.get('idle_wake') or {}
+    if (wake.get('status') != 'uncertain' or not observation.get('delivery_id')
+            or observation.get('delivery_id') != wake.get('delivery_id')
+            or not observation.get('turn_id')):
+        return
+    session = session_ref(state['agent'])
+    try:
+        hermes_cancel.attest_admission(config, session, observation['delivery_id'],
+                                       observation['turn_id'],
+                                       request_id=observation.get('claim_request_id'))
+        state['idle_wake'] = dict(wake, status='admitted')
+        write_state(path, state)
+    except hermes_cancel.CancelError as exc:
+        if exc.code in ('TURN_ALREADY_BOUND', 'IDEMPOTENCY_CONFLICT'):
+            return
+        raise
+
+
+def hermes_foreign_turn_revoke(config, state, path):
+    """A turn that does not match the recorded wake prompt started in a
+    conversation holding an unfinished exclusive attempt: revoke exclusive
+    ownership before any cancellation can act."""
+    try:
+        import hermes_cancel
+    except ImportError:
+        return
+    agent = state.get('agent')
+    if not agent:
+        return
+    session = session_ref(agent)
+    try:
+        attempt = hermes_cancel.inbox_control(config, session)
+    except hermes_cancel.CancelError:
+        return
+    if attempt and attempt.get('turn_exclusive') and not attempt.get('finished_at'):
+        try:
+            hermes_cancel.revoke_exclusivity(config, session, attempt['attempt_id'])
+        except hermes_cancel.CancelError:
+            pass
 
 
 def watch_inbox(config, state, path):
