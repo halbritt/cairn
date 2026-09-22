@@ -580,12 +580,6 @@ def normalize(config, event, event_name=None):
         raise CoordinationError("INVALID_HOST", "native workspace must be an existing absolute directory")
     if not isinstance(model, str) or len(model) > 256:
         raise CoordinationError("INVALID_HOST", "invalid observed model")
-    if observation.get('event') == 'WakeAdmitted':
-        hermes_admission_attest(config, state, path, observation)
-        return {}
-    if observation.get('event') == 'ForeignTurn':
-        hermes_foreign_turn_revoke(config, state, path)
-        return {}
     phases = {"SessionStart": "start", "UserPromptSubmit": "busy", "PreInvocation": "busy",
               "TurnStart": "busy", "Stop": "idle", "TurnEnd": "idle", "SessionEnd": "leave",
               "Interrupt": "interrupted", "ProviderObservation": "provider"}
@@ -966,6 +960,12 @@ def handle(config, event, event_name=None):
     if wake:
         config = dict(config, _wake=wake, native_delivery=False)
     observation = normalize(config, event, event_name)
+    if observation.get('event') == 'WakeAdmitted':
+        hermes_admission_attest(config, state, path, observation)
+        return {}
+    if observation.get('event') == 'ForeignTurn':
+        hermes_foreign_turn_revoke(config, state, path)
+        return {}
     if wake and wake.get('native_session_id') not in (None, observation['native_id']):
         return {}  # A child conversation must not inherit its parent's wake.
     if coordination_excluded(observation['workspace']):
