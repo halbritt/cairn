@@ -19,13 +19,35 @@ class CoordinationNormalization(unittest.TestCase):
         config = dict(harness='claude', binding='account-one', repo='fixture',
                       cairn='/fixture/cairn', socket='/fixture/api.sock', token_file='/fixture/token',
                       state_dir='/fixture/state', claude_channel_dir='/fixture/channels')
-        self.assertIs(coordination.claude_session_config(config, 'native-one'), config)
+        flagged = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', '--dangerously-load-development-channels', 'server:cairn-events'])
+        self.addCleanup(lambda: (flagged.terminate(), flagged.wait(timeout=5)))
+        enabled = coordination.process_reference(flagged.pid)
+        plain = coordination.process_reference(os.getpid())
+        self.assertIs(coordination.claude_session_config(config, 'native-one', enabled), config)
+        effective, reason = coordination.claude_channel_admission(config, 'native-one', plain)
+        self.assertNotIn('claude_channel_dir', effective)
+        self.assertIn('not launched with --dangerously-load-development-channels server:cairn-events', reason)
+        self.assertEqual(coordination.claude_channel_admission(dict(config, harness='codex'), 'native-one', plain),
+                         (dict(config, harness='codex'), None))
+        unconfigured = dict(config)
+        unconfigured.pop('claude_channel_dir')
+        self.assertEqual(coordination.claude_channel_admission(unconfigured, 'native-one', enabled),
+                         (unconfigured, 'binding has no claude_channel_dir'))
         for sessions in ([], ['native-one']):
             selected = dict(config, claude_channel_sessions=sessions)
             self.assertEqual(coordination.validate_config(selected), selected)
-            effective = coordination.claude_session_config(selected, 'native-one')
+            effective = coordination.claude_session_config(selected, 'native-one', enabled)
             self.assertEqual('claude_channel_dir' in effective, bool(sessions))
+            self.assertNotIn('claude_channel_dir', coordination.claude_session_config(selected, 'native-one', plain))
             self.assertIn('claude_channel_dir', selected)
+        for server in ('', 'a,b', 'a:b', 'bad name', 'x' * 129, 5, None):
+            with self.subTest(server=server), self.assertRaisesRegex(coordination.CoordinationError, 'INVALID_CONFIG'):
+                coordination.validate_config(dict(config, claude_channel_server=server))
+        with self.assertRaisesRegex(coordination.CoordinationError, 'INVALID_CONFIG'):
+            coordination.validate_config(dict(config, harness='codex', claude_channel_server='cairn-events'))
+        named = dict(config, claude_channel_server='cairn-events-two')
+        self.assertEqual(coordination.validate_config(named), named)
+        self.assertNotIn('claude_channel_dir', coordination.claude_session_config(named, 'native-one', enabled))
         for sessions in (None, True, 'native-one', {}, [None], [1], [''], ['  '],
                          ['bad\nname'], ['x' * 257], ['native-one', 'native-one']):
             with self.subTest(sessions=sessions), self.assertRaisesRegex(coordination.CoordinationError, 'INVALID_CONFIG'):

@@ -16,6 +16,22 @@ and semantic worker are unchanged. Check an installation with `cairn version`; u
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
 See [build identity](docs/build-identity.md) for unstamped builds and MCP processes.
 
+## 2026-09-22
+
+- Claude channel wakes are now admitted by detecting the live process's launch
+  flags instead of a hand-maintained conversation list. A Claude process not
+  launched with `--dangerously-load-development-channels server:cairn-events`
+  (or `--channels` naming it) keeps ordinary turn-boundary delivery, so
+  `claude_channel_dir` can be enabled per account without suppressing delivery.
+  The optional `claude_channel_sessions` list remains an additional restriction;
+  `claude_channel_server` overrides the expected server name.
+- The presence watcher logs once per delivery and reason when a ready delivery
+  has no automatic wake transport, instead of returning silently. On 2026-09-22
+  that silence had hidden that no live Claude conversation was wake-eligible:
+  the only listed conversation had exited and the second account had no channel
+  directory. See [native inbox delivery](docs/native-inbox.md) and the
+  [detection deployment report](docs/verification/claude-channel-detection-2026-09-22.md).
+
 ## 2026-09-16
 
 - Native Codex queue claims now bind an exact delivery and native turn with

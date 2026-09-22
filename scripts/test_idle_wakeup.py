@@ -115,7 +115,10 @@ class IdleWakeup(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.native = subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'],
+        # The default fixture process is launched channel-enabled, as a production
+        # Claude session must be; the flag is inert for the Agy/Codex fixtures.
+        self.native = subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)',
+            '--dangerously-load-development-channels', 'server:cairn-events'],
             env=dict(os.environ,HERDR_ENV='1',HERDR_SOCKET_PATH=str(self.root/'host.sock')))
         self.addCleanup(self.stop_native)
         for name, body in [('herdr',HOST),('cairn',API)]:
@@ -330,7 +333,7 @@ time.sleep(30)
             self.assertNotIn('Traceback',result.stderr)
             self.assertNotIn('idle_wake',json.loads((state_dir/'session.json').read_text()))
 
-    def spawn_channel_bridge(self, status='written'):
+    def spawn_channel_bridge(self, status='written', flagged=True):
         self.config['harness'] = 'claude'
         self.agent['metadata']['harness'] = 'claude'
         self.fixture['host']['agent'] = 'claude'
@@ -342,8 +345,10 @@ time.sleep(30)
         control.write_text(json.dumps({'status': status}))
         socket_path = channel_dir/'bridge.sock'
         self.stop_native()
-        self.native = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', 'claude'],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        launch = [sys.executable, '-c', 'import time; time.sleep(60)', 'claude']
+        if flagged:
+            launch += ['--dangerously-load-development-channels', 'server:cairn-events']
+        self.native = subprocess.Popen(launch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.addCleanup(lambda: (self.native.terminate(), self.native.wait(timeout=5)))
         bridge = subprocess.Popen([sys.executable, '-c', CHANNEL_BRIDGE, str(socket_path), str(control)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -387,6 +392,17 @@ time.sleep(30)
         registry = json.loads((Path(self.config['claude_channel_dir']) / f'{self.native.pid}.json').read_text())
         self.stop_native()
         self.native = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        unflagged = coordination.process_reference(self.native.pid)
+        coordination.write_state(self.path, dict(process=unflagged, agent=self.agent, workspace=str(self.root)))
+        registry['parent'] = unflagged
+        (Path(self.config['claude_channel_dir']) / f'{self.native.pid}.json').write_text(json.dumps(registry))
+        result = self.watch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('idle_wake', json.loads(self.path.read_text()), 'an unflagged replacement received a channel wake')
+        self.assertIn('was not launched with --dangerously-load-development-channels server:cairn-events', result.stderr)
+        self.assertEqual(len(self.channel_lines(socket_path)), 1)
+        self.stop_native()
+        self.native = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', '--dangerously-load-development-channels', 'server:cairn-events'])
         replacement = coordination.process_reference(self.native.pid)
         coordination.write_state(self.path, dict(process=replacement, agent=self.agent, workspace=str(self.root)))
         self.assertEqual(self.watch().returncode, 0)
@@ -405,7 +421,10 @@ time.sleep(30)
         _, socket_path = self.spawn_channel_bridge('written')
         self.config['claude_channel_sessions'] = ['another-session']
         original = json.loads(json.dumps(self.config))
-        self.assertEqual(self.watch().returncode, 0)
+        result = self.watch()
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('not listed in claude_channel_sessions', result.stderr)
+        self.assertEqual(self.watch().stderr, '', 'the same refusal was logged again on the next cycle')
         self.assertNotIn('idle_wake', json.loads(self.path.read_text()))
         self.assertEqual(self.channel_lines(socket_path), [])
         self.assertEqual(self.prompts(), [])
@@ -448,6 +467,8 @@ time.sleep(30)
         result = self.watch()
         self.assertEqual(len(self.channel_lines(socket_path)), 1, 'uncertain channel wake was resent')
         self.assertEqual(self.prompts(), [], 'uncertain channel wake fell back to terminal submission')
+        self.assertIn('claude-channel wake for this delivery is already uncertain', result.stderr)
+        self.assertEqual(self.watch().stderr, '', 'standing-marker refusal repeated on the next cycle')
 
     def test_claude_channel_unavailable_retries_cleanly(self):
         control, socket_path = self.spawn_channel_bridge('unavailable')
@@ -500,6 +521,9 @@ time.sleep(30)
                 coordination.inbox_context(dict(native_delivery=True), json.loads(path.read_text()),
                                            path, observation)
 
+    # This test's native host is the test runner, which was not launched
+    # channel-enabled; treat it as enabled so the channel-closed contract is exercised.
+    @mock.patch.object(coordination, 'claude_channel_enabled', new=lambda config, process: True)
     def test_missing_configured_channel_does_not_admit_work_on_owner_prompts(self):
         config = dict(self.config, harness='claude', native_delivery=True,
                       claude_channel_dir=str(self.root/'missing-channel'))
@@ -514,6 +538,9 @@ time.sleep(30)
                     self.assertNotIn('inbox_intent', state)
             api.assert_not_called()
 
+    # This test's native host is the test runner, which was not launched
+    # channel-enabled; treat it as enabled so the channel-closed contract is exercised.
+    @mock.patch.object(coordination, 'claude_channel_enabled', new=lambda config, process: True)
     def test_sequential_channel_deliveries_after_watcher_releases_completed_attempt(self):
         host = os.getppid()
         agent = dict(self.agent, context_revision=3, display_name='agent-one', inbox='agent/agent-one')
@@ -586,6 +613,9 @@ time.sleep(30)
                 self.assertEqual(len(claims), number+1)
             self.assertFalse(json.loads(path.read_text())['delivered_since_idle'])
 
+    # This test's native host is the test runner, which was not launched
+    # channel-enabled; treat it as enabled so the channel-closed contract is exercised.
+    @mock.patch.object(coordination, 'claude_channel_enabled', new=lambda config, process: True)
     def test_channel_wake_joining_active_prompt_is_refused_and_retried(self):
         # Live probe evidence (2026-09-16, /tmp/cairn-claude-go-probe): while a
         # prompt ran a Bash tool, Claude injected channel B into the SAME
@@ -959,6 +989,63 @@ time.sleep(30)
         self.watch()
         self.assertEqual(self.prompts(),[])
 
+    def test_claude_process_without_channel_flag_keeps_boundary_claims_and_logs_once(self):
+        _, socket_path = self.spawn_channel_bridge('written', flagged=False)
+        original = json.loads(json.dumps(self.config))
+        result = self.watch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('no automatic wake for agent-one (native native-one, pid ' + str(self.native.pid) + ')', result.stderr)
+        self.assertIn('was not launched with --dangerously-load-development-channels server:cairn-events', result.stderr)
+        self.assertIn('Delivery delivery-one remains pending', result.stderr)
+        self.assertEqual(self.watch().stderr, '', 'the same refusal was logged again on the next cycle')
+        state = json.loads(self.path.read_text())
+        self.assertNotIn('idle_wake', state)
+        self.assertEqual(state['wake_refusal']['delivery_id'], 'delivery-one')
+        self.assertEqual(self.channel_lines(socket_path), [], 'an ignored channel received a wake')
+        self.assertEqual(self.prompts(), [])
+        for event, phase in [('UserPromptSubmit', 'busy'), ('Stop', 'idle')]:
+            state = json.loads(self.path.read_text())
+            with mock.patch.object(coordination, 'call', return_value={'attempt': None}) as api:
+                coordination.inbox_context(self.config, state, self.path,
+                    dict(event=event, phase=phase, native_turn_id='owner-prompt'))
+                self.assertEqual(api.call_count, 1)
+                self.assertEqual(api.call_args.args[1], 'session-inbox-claim')
+        self.assertEqual(self.config, original)
+        # A changed delivery logs again; an emptied inbox clears the record.
+        self.fixture['delivery'] = 'delivery-two'
+        self.save_fixture()
+        self.assertIn('Delivery delivery-two remains pending', self.watch().stderr)
+        self.fixture['delivery'] = None
+        self.save_fixture()
+        self.assertEqual(self.watch().stderr, '')
+        self.assertNotIn('wake_refusal', json.loads(self.path.read_text()))
+
+    def test_claude_channel_flag_detection_forms(self):
+        cases = [
+            (['--dangerously-load-development-channels', 'server:cairn-events'], 'cairn-events', True),
+            (['--dangerously-load-development-channels=server:cairn-events'], 'cairn-events', True),
+            (['--channels', 'plugin:telegram@official,server:cairn-events'], 'cairn-events', True),
+            (['--channels', 'server:cairn-events'], 'other-name', False),
+            (['--channels', 'server:other-name'], 'other-name', True),
+            (['--channels', 'plugin:telegram@official'], 'cairn-events', False),
+            (['--dangerously-load-development-channels'], 'cairn-events', False),
+            (['server:cairn-events'], 'cairn-events', False),
+            ([], 'cairn-events', False),
+        ]
+        for arguments, server, expected in cases:
+            with self.subTest(arguments=arguments, server=server):
+                child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', *arguments])
+                try:
+                    process = coordination.process_reference(child.pid)
+                    config = dict(harness='claude', claude_channel_server=server)
+                    self.assertEqual(coordination.claude_channel_enabled(config, process), expected)
+                finally:
+                    child.terminate()
+                    child.wait(timeout=5)
+                self.assertFalse(coordination.claude_channel_enabled(config, process), 'an exited process counted as enabled')
+        stale = dict(coordination.process_reference(os.getpid()), start=1)
+        self.assertFalse(coordination.claude_channel_enabled(dict(harness='claude'), stale), 'a reused PID counted as enabled')
+
     def test_codex_without_native_queue_never_falls_back_even_with_matching_rollout(self):
         self.stop_native()
         native_id='243ce2f7-70bb-412b-b5ec-32584426a4bf'
@@ -976,13 +1063,15 @@ time.sleep(30)
         self.fixture['process_info']['foreground_processes']=[dict(pid=self.native.pid)]
         coordination.write_state(self.path,dict(process=coordination.process_reference(self.native.pid),agent=self.agent,workspace=str(self.root)))
         self.save_fixture()
-        self.watch()
+        first=self.watch()
         self.assertEqual(self.prompts(),[])
+        self.assertIn('no native Codex queue endpoint', first.stderr)
         self.agent['native_session_id']=native_id
         self.save_fixture()
-        self.watch()
+        result=self.watch()
         self.assertEqual(self.prompts(), [])
         self.assertNotIn('idle_wake', json.loads(self.path.read_text()))
+        self.assertEqual(result.stderr, '', 'the same refusal was logged again on the next cycle')
 
     def test_claude_without_channel_never_falls_back_to_terminal(self):
         self.config['harness'] = 'claude'
@@ -992,9 +1081,10 @@ time.sleep(30)
         self.save_fixture()
         coordination.write_state(self.path, dict(process=coordination.process_reference(self.native.pid),
             agent=self.agent, workspace=str(self.root)))
-        for _ in range(2):
-            result = self.watch()
-            self.assertEqual(result.returncode, 0, result.stderr)
+        first, second = self.watch(), self.watch()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertIn('binding has no claude_channel_dir', first.stderr)
+        self.assertEqual(second.stderr, '', 'the same refusal was logged again on the next cycle')
         self.assertEqual(self.prompts(), [])
         self.assertNotIn('idle_wake', json.loads(self.path.read_text()))
 

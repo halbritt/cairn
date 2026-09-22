@@ -137,17 +137,98 @@ def drop_idle_wake(path, wake):
             write_state(path, state)
 
 
-def claude_session_config(config, native_id):
+CLAUDE_CHANNEL_FLAGS = ('--channels', '--dangerously-load-development-channels')
+
+
+def claude_channel_server(config):
+    return config.get('claude_channel_server', 'cairn-events')
+
+
+def claude_channel_enabled(config, process):
+    """Detect whether this exact native Claude process accepts the configured channel.
+
+    Claude Code admits ``notifications/claude/channel`` only from servers named
+    on its launcher flags; MCP registration in ``.claude.json`` alone is
+    ignored. The command line is read from /proc and the process identity is
+    rechecked afterwards, so a reused PID never counts as the observed launch.
+    """
+    if not isinstance(process, dict) or not isinstance(process.get('pid'), int):
+        return False
+    try:
+        raw = Path(f"/proc/{process['pid']}/cmdline").read_bytes()
+    except OSError:
+        return False
+    if not process_alive(process):
+        return False
+    arguments = [argument.decode('utf-8', 'replace') for argument in raw.split(b'\0')]
+    named = set()
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        for flag in CLAUDE_CHANNEL_FLAGS:
+            if argument == flag and index + 1 < len(arguments):
+                index += 1
+                named.update(part.strip() for part in arguments[index].split(','))
+            elif argument.startswith(flag + '='):
+                named.update(part.strip() for part in argument[len(flag) + 1:].split(','))
+        index += 1
+    return 'server:' + claude_channel_server(config) in named
+
+
+def claude_channel_admission(config, native_id, process):
+    """Effective binding for one native Claude conversation, plus any refusal reason.
+
+    The channel directory is kept only for a conversation that is selected (no
+    ``claude_channel_sessions`` list, or listed in it) and whose live process was
+    launched with the configured channel server. Every other conversation
+    retains ordinary turn-boundary delivery, so enabling ``claude_channel_dir``
+    for an account never suppresses delivery to sessions that cannot receive
+    channel wakes. The reason names why no automatic wake is possible; it does
+    not change authorization, the binding name, the Cairn agent UUID or the
+    inbox consumer.
+    """
+    if config.get('harness') != 'claude':
+        return config, None
+    if not config.get('claude_channel_dir'):
+        return config, 'binding has no claude_channel_dir'
+    if 'claude_channel_sessions' in config and native_id not in config['claude_channel_sessions']:
+        reason = 'native conversation is not listed in claude_channel_sessions'
+    elif not claude_channel_enabled(config, process):
+        reason = (f'Claude process was not launched with --dangerously-load-development-channels '
+                  f'server:{claude_channel_server(config)} (or --channels naming it), so it cannot receive channel wakes')
+    else:
+        return config, None
+    config = dict(config)
+    config.pop('claude_channel_dir', None)
+    return config, reason
+
+
+def claude_session_config(config, native_id, process):
     """Select channel rollout without changing the session's routing identity."""
-    if (config.get('harness') == 'claude' and 'claude_channel_sessions' in config and
-            native_id not in config['claude_channel_sessions']):
-        config = dict(config)
-        config.pop('claude_channel_dir', None)
-    return config
+    return claude_channel_admission(config, native_id, process)[0]
+
+
+def note_wake_refusal(config, state, delivery, reason):
+    """Log once per (delivery, reason) why a ready delivery gets no automatic wake.
+
+    The watcher used to return silently here, which hid a whole account's
+    missing activation for days. The record persists in session state so a
+    30-second cycle does not repeat the line; a new delivery or a changed
+    reason logs again. Returns None so callers can ``return`` it directly.
+    """
+    record = dict(delivery_id=delivery, reason=reason)
+    if state.get('wake_refusal') == record:
+        return None
+    state['wake_refusal'] = record
+    agent = state['agent']
+    print(f"Cairn presence {config['binding']}: no automatic wake for "
+          f"{agent.get('display_name') or agent['agent_id']} (native {agent.get('native_session_id')}, "
+          f"pid {state['process']['pid']}): {reason}. Delivery {delivery} remains pending.", file=sys.stderr)
+    return None
 
 
 def prepare_idle_wake(config, state, path):
-    config = claude_session_config(config, state.get('agent', {}).get('native_session_id'))
+    config, refusal = claude_channel_admission(config, state.get('agent', {}).get('native_session_id'), state['process'])
     if (not config.get('idle_wakeup') or not config.get('native_delivery') or
             state.get('inbox_intent') or state.get('ending') or state.get('retired')):
         return None
@@ -159,6 +240,7 @@ def prepare_idle_wake(config, state, path):
     ready = call(config, 'session-inbox-ready', session_ref(agent))
     delivery = ready.get('delivery_id')
     if not delivery:
+        state.pop('wake_refusal', None)
         return None
     endpoint = codex_queue_endpoint(config, state['process'])
     prior = state.get('idle_wake', {})
@@ -167,9 +249,13 @@ def prepare_idle_wake(config, state, path):
                 prior.get('queued_submission_id') and prior.get('endpoint') == endpoint['endpoint'] and
                 prior.get('native_id') == agent['native_session_id']):
             return dict(wake=prior, process=state['process'])  # Retry only this retained start; never another add.
-        return None  # Submitted or uncertain; only native handling permits a new nudge.
+        # Submitted or uncertain; only native handling permits a new nudge.
+        return note_wake_refusal(config, state, delivery,
+            f"a {prior.get('transport') or 'terminal'} wake for this delivery is already {prior.get('status')}; "
+            "only native handling of that wake permits another")
     request_id = ready.get('request_id') or str(uuid.uuid4())
     if endpoint:
+        state.pop('wake_refusal', None)
         state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
             transport='codex-queue', endpoint=endpoint['endpoint'], owner=endpoint['owner'],
             native_id=agent['native_session_id'],
@@ -178,6 +264,7 @@ def prepare_idle_wake(config, state, path):
         return dict(wake=state['idle_wake'], process=state['process'])
     channel = claude_channel_endpoint(config, state['process'])
     if channel:
+        state.pop('wake_refusal', None)
         state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
             transport='claude-channel', endpoint=channel['socket'], bridge=channel['process'],
             parent=channel['parent'], native_id=agent['native_session_id'],
@@ -186,6 +273,7 @@ def prepare_idle_wake(config, state, path):
         return dict(wake=state['idle_wake'], process=state['process'])
     opencode = opencode_queue_endpoint(config, state['process'])
     if opencode:
+        state.pop('wake_refusal', None)
         state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
             transport='opencode-queue', endpoint=opencode, native_id=agent['native_session_id'],
             status='uncertain', attempted_at=time.time())
@@ -193,6 +281,7 @@ def prepare_idle_wake(config, state, path):
         return dict(wake=state['idle_wake'], process=state['process'])
     hermes = hermes_queue_endpoint(config, state['process'])
     if hermes:
+        state.pop('wake_refusal', None)
         state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
             transport='hermes-queue', endpoint=hermes, native_id=agent['native_session_id'],
             status='uncertain', attempted_at=time.time())
@@ -202,14 +291,20 @@ def prepare_idle_wake(config, state, path):
         # An explicitly configured native channel or known native harness
         # never falls back to the terminal route when its registry/socket is
         # stale, malformed or missing.
-        return None
+        return note_wake_refusal(config, state, delivery, refusal or {
+            'claude': 'no live channel bridge registry for this process; its cairn-events MCP server is not running',
+            'codex': 'no native Codex queue endpoint (explicit Unix listener) for this process',
+            'opencode': 'no OpenCode queue endpoint for this process',
+            'hermes': 'no Hermes queue endpoint for this process',
+        }.get(config['harness'], 'no native wake transport for this process'))
     environment = herdr_environment(state['process'])
     if environment is None:
-        return None
+        return note_wake_refusal(config, state, delivery, 'native process has no Herdr host environment')
     candidates = herdr_call(config, environment, 'agent', 'list')['agents']
     matches = [h for h in candidates if host_matches(config, state, h, environment)]
     if len(matches) != 1:
-        return None
+        return note_wake_refusal(config, state, delivery,
+            f'{len(matches)} idle Herdr panes match this session; exactly one is required')
     host = matches[0]
     current = herdr_call(config, environment, 'agent', 'get', host['pane_id'])['agent']
     keys = ('pane_id', 'terminal_id', 'revision', 'state_change_seq')
@@ -219,6 +314,7 @@ def prepare_idle_wake(config, state, path):
     # remains a hint, not a lease; the prompt contains no source/work payload.
     if call(config, 'session-inbox-ready', session_ref(agent)).get('delivery_id') != delivery:
         return None
+    state.pop('wake_refusal', None)
     state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
         target={k: current[k] for k in keys}, status='uncertain', attempted_at=time.time())
     write_state(path, state)
@@ -791,7 +887,7 @@ def watch_inbox(config, state, path):
 
 
 def inbox_context(config, state, path, observation, wake_binding=None):
-    config = claude_session_config(config, state.get('agent', {}).get('native_session_id'))
+    config = claude_session_config(config, state.get('agent', {}).get('native_session_id'), state.get('process'))
     if not config.get('native_delivery'):
         return ''
     owner_turn = state.get('inbox_intent', {}).get('native_turn_id')
@@ -1089,6 +1185,11 @@ def validate_config(config):
             raise CoordinationError('INVALID_CONFIG', 'claude_channel_sessions requires a Claude list of bounded native session IDs')
         if len(sessions) != len(set(sessions)):
             raise CoordinationError('INVALID_CONFIG', 'claude_channel_sessions must not contain duplicate native session IDs')
+    if 'claude_channel_server' in config:
+        server = config['claude_channel_server']
+        if (config['harness'] != 'claude' or not isinstance(server, str) or not server or len(server) > 128 or
+                any(c in server for c in ',:') or any(ord(c) <= 32 for c in server)):
+            raise CoordinationError('INVALID_CONFIG', 'claude_channel_server requires a bounded Claude MCP server name')
     if not isinstance(binding, str) or len(binding) > 128 or binding in ('.', '..') or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-' for c in binding):
         raise CoordinationError("INVALID_CONFIG", "invalid binding name")
     return config

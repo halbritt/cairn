@@ -35,28 +35,41 @@ input when a native endpoint is missing. The native hook still owns the claim.
 Sessions without an enabled host capability wait for another
 boundary. Native delivery never starts a fresh worker to consume a conversation's inbox.
 
-### Selective Claude channel rollout
+### Claude channel activation and selection
 
-A Claude binding can set `claude_channel_dir` and an optional
-`claude_channel_sessions` list of native conversation IDs. With no list, every
-conversation in that binding retains the configured channel admission rules.
-The selector requires an absolute, nonempty `claude_channel_dir`, including
-when the list is empty. An empty list selects none. Listed conversations use
-the channel and refuse
-ordinary owner-prompt/Stop inbox claims even while its bridge is unavailable.
-Unlisted conversations retain ordinary turn-boundary delivery and receive no
-automatic channel wake. The selector changes host routing configuration, not
-authorization, the binding name, Cairn agent UUID or inbox consumer.
+Claude Code admits channel notifications only from servers named on its launcher
+flags (`--dangerously-load-development-channels server:cairn-events`, or
+`--channels` naming that server); registering `cairn-events` in `.claude.json`
+alone is ignored. The watcher therefore detects activation per process: it reads
+the live Claude process's command line from `/proc`, rechecks its identity, and
+keeps the binding's `claude_channel_dir` only for a process launched with the
+configured server (`claude_channel_server`, default `cairn-events`). A process
+launched without the flag retains ordinary turn-boundary delivery and receives
+no channel wake, so enabling `claude_channel_dir` for an account never suppresses
+delivery to conversations that cannot receive channel wakes. Detection follows
+the process, so a resumed conversation is re-evaluated with its new launch.
 
-For a staged rollout, register `cairn-events` in the account's actual global MCP
-configuration, enable the channel on the selected conversation's native resume,
-and list its existing native session ID in the binding. Preserve its original
-account environment: default Claude uses `~/.claude.json`; an explicit
-`CLAUDE_CONFIG_DIR` uses that directory's `.claude.json`. Do not substitute an
-account configuration merely to activate the channel. Selection survives PID
-replacement because it uses the native conversation ID; the bridge registry
-still independently checks the current process identity. Do not remove a
-selection to bypass an unavailable bridge or an uncertain in-flight wake.
+A binding may still set an optional `claude_channel_sessions` list of native
+conversation IDs. With the list present, a conversation must be listed *and*
+channel-enabled to use the channel; an empty list selects none. Without the
+list, detection alone governs. The selector requires an absolute, nonempty
+`claude_channel_dir`. Channel-eligible conversations refuse ordinary
+owner-prompt/Stop inbox claims even while the bridge is unavailable; they wait
+for the bridge rather than admitting work on an unrelated prompt. Neither
+detection nor the list changes authorization, the binding name, the Cairn agent
+UUID or the inbox consumer. Preserve the account's original configuration
+environment when resuming: default Claude uses `~/.claude.json`; an explicit
+`CLAUDE_CONFIG_DIR` uses that directory's `.claude.json`.
+
+When a delivery is ready for an idle conversation but no wake transport exists,
+the watcher logs one line per delivery and reason to the presence journal,
+naming the agent, native conversation, process ID and cause: an unflagged Claude
+launch, an unlisted conversation, a binding without `claude_channel_dir`, a
+missing bridge registry, a missing Codex/OpenCode/Hermes queue endpoint, or a
+prior wake for the same delivery still submitted or uncertain. The record is
+kept in session state so a 30-second cycle does not repeat it; a new delivery
+or changed reason logs again, and an emptied inbox clears it. Silence in the
+journal previously hid an account whose activation was incomplete for days.
 
 Migration 048 adds an optional exact delivery and native turn pair to native
 claims. The explicit Codex Unix-listener route uses it: only the matching queued
