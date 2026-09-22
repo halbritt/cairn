@@ -421,6 +421,25 @@ def hermes_wake_binding(state, event):
     return dict(delivery_id=wake['delivery_id'], native_turn_id=turn)
 
 
+def hermes_control_binding(config, state, event, binding):
+    if (config.get('harness') != 'hermes' or not config.get('hermes_request_control') or
+            not binding or 'request_ownership' not in event):
+        return binding
+    import hermes_control
+    try:
+        selected = hermes_control.ownership(event['request_ownership'])
+    except hermes_control.ControlUncertain as exc:
+        raise CoordinationError('INVALID_HOST', str(exc)) from exc
+    wake = state['idle_wake']
+    expected = dict(session_id=wake['native_id'], request_id=wake['request_id'],
+                    delivery_id=wake['delivery_id'], turn_id=binding['native_turn_id'])
+    if (any(selected[k] != v for k, v in expected.items()) or selected['cancelled'] or
+            selected['turn_ended'] or selected['tool_admission_closed']):
+        raise CoordinationError('INVALID_HOST', 'native request ownership differs from the admitted wake')
+    state['hermes_request'] = {k: selected[k] for k in hermes_control.IDENTITY}
+    return dict(binding, turn_exclusive=selected['exclusive'])
+
+
 def wake_binding(config, state, event, joined=False):
     if config['harness'] == 'codex':
         return queued_wake_binding(state, event)
@@ -774,7 +793,7 @@ def release_inbox(config, state, path, reason, fenced=False):
         # after an unknown attempt was found absent.
         if not (fenced and exc.code == 'NOT_FOUND'):
             raise
-    for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response'):
+    for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response', 'hermes_request'):
         state.pop(key, None)
     write_state(path, state)
     return True
@@ -1007,7 +1026,9 @@ def handle(config, event, event_name=None):
                 # model. The owner prompt and any other hook output continue.
                 raise NativePromptRefused('joined channel wake rejected; a fresh copy retries when idle')
         if observation["phase"] != "interrupted":
-            inbox = inbox_context(config, state, path, observation, wake_binding(config, state, event, joined))
+            binding = wake_binding(config, state, event, joined)
+            binding = hermes_control_binding(config, state, event, binding)
+            inbox = inbox_context(config, state, path, observation, binding)
         if observation["phase"] == "idle":
             if inbox:
                 current = state['agent']
@@ -1038,6 +1059,16 @@ def watch_once(config):
     for path in sorted(Path(config["state_dir"]).glob("*.json")):
         try:
             prepared = None
+            if config.get('harness') == 'hermes' and config.get('hermes_request_control'):
+                import hermes_control
+                try:
+                    # Atomic file replacement provides a consistent snapshot.
+                    # Native token + store attempt checks fence stale snapshots;
+                    # no lifecycle file lock may span a native control callback.
+                    hermes_control.poll_host(config, json.loads(path.read_text()), sys.modules[__name__])
+                except (hermes_control.ControlUnavailable, hermes_control.ControlUncertain,
+                        hermes_control.ControlRefused, CoordinationError) as exc:
+                    print(f"Cairn native control {config['binding']}: {exc}; hold retained", file=sys.stderr)
             with session_lock(path):
                 state = json.loads(path.read_text())
                 if state.get("retired"):
@@ -1075,6 +1106,9 @@ def validate_config(config):
     if config.get("harness") not in ("codex", "claude", "agy", "opencode", "hermes") or not config.get("repo") or not config.get("binding"):
         raise CoordinationError("INVALID_CONFIG", "harness, collection and binding required")
     binding = config['binding']
+    if ('hermes_request_control' in config and
+            (config['harness'] != 'hermes' or type(config['hermes_request_control']) is not bool)):
+        raise CoordinationError('INVALID_CONFIG', 'hermes_request_control requires a Hermes boolean')
     if config.get('idle_wakeup') is not None:
         if not isinstance(config['idle_wakeup'], str) or not Path(config['idle_wakeup']).is_absolute() or not config.get('native_delivery'):
             raise CoordinationError('INVALID_CONFIG', 'idle_wakeup requires an absolute Herdr executable and native_delivery')
