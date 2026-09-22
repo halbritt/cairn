@@ -1,5 +1,15 @@
 # Coordination deployment — 2026-09-20
 
+## September 21 follow-up
+
+The original deployment observations below are historical. The subsequent
+[delivery repair report](native-delivery-repair-2026-09-21.md) records the final
+OpenCode message-ID fix, approved reloads of agents 24/67, and approved activation
+of Claude agent 65. Automatic delivery and explicit handling are now verified
+for both repaired routes. Source and verification are pushed through `b7d3eb8`;
+the core binary remains `b5aab96`, schema 049. Older unselected conversations and
+native exclusive cancellation remain outside those acceptance claims.
+
 ## Completion standard and current result
 
 The owner rejected the source-only completion claim. The delivery goal requires

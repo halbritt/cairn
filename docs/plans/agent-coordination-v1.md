@@ -31,6 +31,12 @@ substituted. The September 20 [deployment](../verification/coordination-deployme
 installed clean `b5aab96`, schema 049, all seven bindings and native Hermes
 `131e95b`. Existing native clients must reload to use newly installed plugins.
 
+September 21 operational update: the [delivery repair](../verification/native-delivery-repair-2026-09-21.md)
+records same-conversation restarts of OpenCode agents 24/67 and Claude agent 65,
+then verified automatic queue/channel handling. The OpenCode message-ID defect
+and agent 65 channel activation gap are closed. This does not establish draft
+preservation across every harness/account or exclusive cancellation.
+
 Remaining acceptance work is to establish exclusive request ownership through
 native admission and revocation, then exercise real-model interruption and
 host-observed cleanup, including failed termination. OpenCode cancellation stays

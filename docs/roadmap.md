@@ -1,6 +1,6 @@
 # Cairn roadmap
 
-Updated 2026-09-20. Original baseline: `e3b47c7` (local memory and task delivery loop).
+Updated 2026-09-21. Original baseline: `e3b47c7` (local memory and task delivery loop).
 
 ## Current coordination work
 
@@ -19,6 +19,14 @@ preservation/submission-race checks. Native cancellation enablement remains held
 [release deployment](verification/coordination-deployment-2026-09-20.md) does not
 close the remaining operational acceptance work. Source-level fixture success does not satisfy these operational
 milestones or establish general memory usefulness.
+
+The September 21 [delivery repair](verification/native-delivery-repair-2026-09-21.md)
+closes two observed rollout defects: OpenCode now uses native message IDs, and
+Claude agent 65 has an active channel in its original conversation. Automatic
+handling is verified on both routes. Other older client processes are not
+implicitly activated by those targeted restarts. The completion audit continues
+with native draft/submission preservation, per-request cancellation, and
+reconciliation of retained worktrees; these remain acceptance requirements.
 
 ## Single-user operating assumptions
 
