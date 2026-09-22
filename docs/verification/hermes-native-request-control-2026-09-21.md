@@ -51,10 +51,13 @@ Revocation waits for natural quiescence rather than signalling joined owner work
   A separate actual hook-timeout probe verified parent and detached-child
   termination. That probe explicitly initialized fixture coverage; it did not
   validate a live provider/configuration profile.
-- `make check` passed. The full disposable PostgreSQL integration run is still
-  pending for this composed candidate. The first invocation stopped at Go VCS
-  discovery of an unrelated `/tmp/.git`; the test-only rerun disables VCS
-  stamping. No production database is used for these checks.
+- `make check` and the full disposable PostgreSQL integration run passed,
+  including the controller's real authenticated API regressions for revocation,
+  invalidated scans and lost committed-response recovery. Native evidence in
+  that database check is an explicit double; actual native process probes are
+  separate. The first invocation stopped at Go VCS discovery of an unrelated
+  `/tmp/.git`; the successful test-only rerun disabled VCS stamping. No
+  production database was used.
 
 Private selected review artifacts are in
 `/tmp/cairn-agent88-bridge83-review/review.md`,
@@ -82,8 +85,7 @@ labelled accordingly; it cannot establish full interactive CLI acceptance.
 Completed scope ledgers also currently prevent token retirement indefinitely;
 a bounded terminal-receipt repair is being reviewed.
 
-Still required: complete disposable API validation, composed profile/CLI startup
-review, actual native mock HTTP trials, bounded real-model interruption and
+Still required: composed profile/CLI startup review, actual native mock HTTP trials, bounded real-model interruption and
 failed-cleanup trials, subsequent owner-turn preservation, release installation,
 and activation verification. OpenCode needs its separate atomic require-idle
 admission repair. Source integration and local fixture success do not close
