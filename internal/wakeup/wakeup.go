@@ -251,10 +251,16 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 	}
 	for ctx.Err() == nil {
 		if err = heartbeat(); err != nil {
+			if orderlyShutdown(ctx, err) {
+				break
+			}
 			return err
 		}
 		var claimed core.WakeResult
 		if err = client.Call(ctx, "wake-claim", core.WakeClaimRequest{RequestID: uuid.NewString(), Repo: c.Repo, WorkerID: worker.SupervisorID}, &claimed); err != nil {
+			if orderlyShutdown(ctx, err) {
+				break
+			}
 			return err
 		}
 		if claimed.Attempt == nil {
@@ -283,7 +289,9 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 				controlErr := client.Call(controlCtx, "wake-control", core.WakeControlRequest{AttemptID: w.ID}, &control)
 				cancelControl()
 				if controlErr != nil {
-					launchErr = controlErr
+					if !orderlyShutdown(ctx, controlErr) {
+						launchErr = controlErr
+					}
 					break
 				}
 				if control.StopReason != "" {
@@ -291,7 +299,9 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 					break
 				}
 				if beatErr := heartbeat(); beatErr != nil {
-					launchErr = beatErr
+					if !orderlyShutdown(ctx, beatErr) {
+						launchErr = beatErr
+					}
 					break
 				}
 				active, checkErr := manager.active(ctx, w.ID)
@@ -336,6 +346,11 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 	}
 	return nil
 }
+
+func orderlyShutdown(ctx context.Context, err error) bool {
+	return errors.Is(ctx.Err(), context.Canceled) && errors.Is(err, context.Canceled)
+}
+
 func pause(ctx context.Context, d time.Duration) bool {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
