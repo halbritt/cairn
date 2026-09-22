@@ -54,7 +54,9 @@ def register(ctx):
             return
         cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
         adm_lock = getattr(cli, '_admission_lock', None)
-        adm_ctx = adm_lock if adm_lock is not None else nullcontext()
+        adm_ctx = (adm_lock if adm_lock is not None
+                   and hasattr(adm_lock, '__enter__') and hasattr(adm_lock, '__exit__')
+                   else nullcontext())
         with adm_ctx:
             with lock:
                 state = sessions.get(session_id)
@@ -103,7 +105,9 @@ def register(ctx):
             return
         cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
         adm_lock = getattr(cli, '_admission_lock', None)
-        adm_ctx = adm_lock if adm_lock is not None else nullcontext()
+        adm_ctx = (adm_lock if adm_lock is not None
+                   and hasattr(adm_lock, '__enter__') and hasattr(adm_lock, '__exit__')
+                   else nullcontext())
         with adm_ctx:
             with lock:
                 state = sessions.get(session_id)
@@ -136,7 +140,9 @@ def register(ctx):
         cleanup_bridge()
         cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
         adm_lock = getattr(cli, '_admission_lock', None)
-        adm_ctx = adm_lock if adm_lock is not None else nullcontext()
+        adm_ctx = (adm_lock if adm_lock is not None
+                   and hasattr(adm_lock, '__enter__') and hasattr(adm_lock, '__exit__')
+                   else nullcontext())
         with adm_ctx:
             with lock:
                 for ident, state in list(sessions.items()):
