@@ -25,7 +25,7 @@ def snapshot():
                 turn_id='session:turn', ownership_token='token', exclusive=True,
                 revoked=False, cancelled=False, foreground_ended=False,
                 turn_ended=False, tool_admission_closed=False, active_native_runs=1,
-                active_tool_calls=0)
+                active_tool_calls=0, executor_capture_gap=False)
 
 
 class BridgeControlTests(unittest.TestCase):

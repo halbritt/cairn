@@ -48,7 +48,11 @@ def selected_ownership(snapshot):
             (snapshot['turn_ended'] and
              (not snapshot['foreground_ended'] or snapshot['active_native_runs'] != 0))):
         raise ControlRefusal('OWNERSHIP_INVALID')
-    return {key: snapshot[key] for key in (*OWNERSHIP_IDENTIFIERS, *OWNERSHIP_FLAGS, *OWNERSHIP_COUNTS)}
+    gap = snapshot.get('executor_capture_gap', True)
+    if type(gap) is not bool:
+        raise ControlRefusal('OWNERSHIP_INVALID')
+    selected = {key: snapshot[key] for key in (*OWNERSHIP_IDENTIFIERS, *OWNERSHIP_FLAGS, *OWNERSHIP_COUNTS)}
+    return dict(selected, executor_capture_gap=gap)
 
 
 def native_snapshot(cli, token=None):

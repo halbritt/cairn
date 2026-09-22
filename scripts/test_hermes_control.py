@@ -20,7 +20,8 @@ class Fixture:
                             turn_exclusive=True, delivery={'delivery_id': self.binding['delivery_id']},
                             cancel={'requested_at': 'now'}, tools=[])
         self.result = dict(ownership=dict(self.binding, exclusive=True, revoked=False, cancelled=False,
-                                         turn_ended=False, tool_admission_closed=False, active_tool_calls=0),
+                                         turn_ended=False, tool_admission_closed=False, active_tool_calls=0,
+                                         executor_capture_gap=False),
                            tools=[], inventory_complete=True, terminal_scan='unknown_remaining')
         self.ledger = dict(attempt_id=self.attempt['attempt_id'])
         self.saved = copy.deepcopy(self.ledger)
@@ -130,7 +131,8 @@ class ControlTests(unittest.TestCase):
 
     def test_confirm_requires_quiescence_and_complete_os_scan(self):
         for change in ({'active_tool_calls': 1}, {'turn_ended': False}, {'tool_admission_closed': False},
-                       {'inventory_complete': False}, {'terminal_scan': 'unknown_remaining'}):
+                       {'inventory_complete': False}, {'terminal_scan': 'unknown_remaining'},
+                       {'executor_capture_gap': True}):
             with self.subTest(change=change):
                 f = Fixture()
                 f.result['ownership'].update(cancelled=True, turn_ended=True, tool_admission_closed=True)
@@ -144,6 +146,14 @@ class ControlTests(unittest.TestCase):
         f.result['terminal_scan'] = 'clear'
         f.poll()
         self.assertEqual(f.calls('session-inbox-reconcile')[-1]['reason'], 'cancel_confirmed')
+
+    def test_missing_nested_executor_coverage_is_not_clear(self):
+        f = Fixture()
+        f.result['ownership'].pop('executor_capture_gap')
+        f.result['ownership'].update(cancelled=True, turn_ended=True, tool_admission_closed=True)
+        f.result['terminal_scan'] = 'clear'
+        f.poll()
+        self.assertEqual(f.calls('session-inbox-reconcile'), [])
 
     def test_disappearing_captured_tool_is_not_clear(self):
         f = Fixture()

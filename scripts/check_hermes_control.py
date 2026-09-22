@@ -76,7 +76,8 @@ def check(binary, home, controller_path=None):
                 assert json.loads(cancelled.stdout)['data']['native']['state'] == 'cancel_pending'
                 revoked = scenario == 'first_revocation_already_clear'
                 result = dict(ownership=dict(binding, exclusive=not revoked, revoked=revoked, cancelled=not revoked,
-                    turn_ended=True, tool_admission_closed=True, active_tool_calls=0), tools=[], inventory_complete=True,
+                    turn_ended=True, tool_admission_closed=True, active_tool_calls=0,
+                    executor_capture_gap=False), tools=[], inventory_complete=True,
                     terminal_scan='clear')
                 class NativeEvidence:
                     reads = 0

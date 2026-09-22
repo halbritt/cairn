@@ -27,7 +27,13 @@ def ownership(value):
             or type(value.get('active_tool_calls')) is not int or value['active_tool_calls'] < 0
             or value['exclusive'] == value['revoked']):
         raise ControlUncertain('native ownership snapshot is invalid')
-    return {k: value[k] for k in (*IDENTITY, *FLAGS, 'active_tool_calls')}
+    selected = {k: value[k] for k in (*IDENTITY, *FLAGS, 'active_tool_calls')}
+    # Older ownership APIs did not count nested executor workers. Absence is
+    # unknown coverage, never evidence that every callback stopped.
+    gap = value.get('executor_capture_gap', True)
+    if type(gap) is not bool:
+        raise ControlUncertain('native executor coverage is invalid')
+    return dict(selected, executor_capture_gap=gap)
 
 
 def evidence(result, expected):
@@ -121,7 +127,7 @@ class Controller:
         terminal = {t['item_id'] for t in tools if t['stop_state'] == 'terminated'}
         terminal |= {i for i, t in captured.items() if t['stop_state'] == 'terminated'}
         quiescent = (observed['turn_ended'] and observed['tool_admission_closed'] and
-                     observed['active_tool_calls'] == 0)
+                     observed['active_tool_calls'] == 0 and not observed['executor_capture_gap'])
         clear = complete and scan == 'clear' and quiescent and all_ids <= terminal
         report = dict(common, owner_join=observed['revoked'],
                       terminal_scan='clear' if clear else 'unknown_remaining',
