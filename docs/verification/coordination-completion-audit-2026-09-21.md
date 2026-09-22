@@ -35,6 +35,20 @@ in isolated worktrees because that open native bridge has a request/turn-fenced
 abort operation; model interruption and observed cleanup still require native
 acceptance afterward.
 
+The first candidate, `96a5b02` with follow-up `60505a1`, was rejected after
+independent native-method and process tests. Owner steering can join the active
+turn while the CLI admission lock is held, preserving its turn ID. The proposed
+foreign-turn observer therefore does not establish revocation before an owner
+join. Separately, the installed native process registry can report `killed` and
+`exited` while the original process is still alive. A disposable SIGTERM-ignoring
+child reproduced this with the supported zero-grace setting; the fixture then
+force-killed and reaped its own child. Registry flags alone cannot establish
+terminal cleanup. The candidate also used the wrong admission callback status
+and referenced callback variables before assignment. Its fake-bridge integration
+success did not cover these native contracts. A revision task requires repairs
+and native evidence in isolated Cairn and Hermes worktrees; nothing from this
+candidate was deployed.
+
 ## Standing tests
 
 The full Python discovery run on `b7d3eb8` executed 272 tests, with one error and
@@ -85,6 +99,12 @@ coverage, the native check-to-submission race, or cancellation safety.
 Private evidence is retained under the release's `completion-audit` directory,
 plus `/tmp/cairn-agent88-worktree-reconciliation.json`. Operational message
 bodies, credentials and raw native transcripts are not committed.
+
+Follow-up inspection found agent 65's initially functioning channel had stalled
+after several messages because idle cleanup skipped a completed-delivery latch.
+The repair was reproduced, independently reviewed, pushed and deployed as
+`ce17d4c`; see the [delay follow-up](agent-delivery-delay-2026-09-21.md#follow-up-delivery-latch-stopped-the-backlog).
+Initial successful messages were insufficient evidence of sustained delivery.
 
 ## Supervisor repair rollout
 

@@ -2,14 +2,15 @@
 
 ## Finding
 
-The observed delay occurs between publication and native inbox claim. Agent87's
-messages are stored and published promptly, but agent65's existing Claude
-conversation has no active native channel. The watcher deployed at 21:17 PDT on
+The original observed delay occurred between publication and native inbox claim.
+Agent87's messages were stored and published promptly, but agent65's existing Claude
+conversation had no active native channel. The watcher deployed at 21:17 PDT on
 September20 refuses the former terminal wake fallback for Claude. This incomplete
 activation left the recipient dependent on ordinary native turn boundaries.
 The coordinator deployed that watcher before completing the account's channel
-activation. The current backlog is a rollout gap, not a one-hour timer or slow
-message publication.
+activation. That backlog was a rollout gap, not a one-hour timer or slow message
+publication. Activation subsequently exposed a separate lifecycle defect,
+described below.
 
 ## Evidence
 
@@ -67,6 +68,46 @@ the same conversation and account, enabled its process-bound native channel,
 and selected only that conversation for channel admission. Independent checks
 confirmed subsequent backlog messages were claimed in `claude-channel:` turns
 and explicitly acknowledged at 14:17:58 and 14:18:36, without additional manual
-prompts. Other Claude sessions were unchanged. The wakeup gap is repaired; the
-backlog is draining, and its historical wait times are not erased. See the
+prompts. Other Claude sessions were unchanged. This proved initial channel
+delivery, but did not establish sustained backlog handling. See the
 [repair and live verification report](native-delivery-repair-2026-09-21.md).
+
+## Follow-up: delivery latch stopped the backlog
+
+A fresh read-only check at 17:31 PDT found 12 pending messages and no completion
+since 14:21:06. The next notification had reached Claude at 14:21:47, but no
+native inbox attempt was created. Claude reported the missing context and ended
+the turn. Its only diagnostic tool listed and searched context filenames.
+
+The lifecycle watcher can release an explicitly completed attempt before Claude's
+Stop hook. The native-admission guard then returned before clearing
+`delivered_since_idle`. A subsequent fresh channel prompt could not claim its
+message because the previous turn's delivery flag remained set. Its submitted
+wake marker correctly prevented blind retries, leaving the backlog stalled.
+
+The regression fails on the second sequential delivery before repair. Commit
+`ce17d4c` moves existing idle cleanup before the admission guard while retaining
+turn-ownership checks and refusal of ordinary unbound prompts. Three sequential
+deliveries, watcher/Stop ordering, active-at-Stop cleanup, and uncertain-write
+preservation pass. Ninety focused tests and `make check` passed; independent
+review reproduced the baseline failure and verified the correction.
+
+The coordinator pushed and installed the repair at 17:38 PDT and restarted only
+the presence watcher. Native conversations, their executions, and existing holds
+were unchanged. Installed script SHA-256:
+`dc80a394833c554ed8e3130322588fb26111aaeb0a01472e0b8639f488388e64`.
+
+One notification was rearmed after independent review and fresh checks of its
+exact conversation/process, terminal native outcome, pending delivery with zero
+attempts, absent hold, and idle host. Under the lifecycle lock, only its wake
+marker and stale delivery flag were cleared. The ordinary watcher and native
+hook then claimed it at 17:38:48. No task was replayed, manually claimed, or
+completed by the coordinator. Selected evidence and recovery guards are retained
+under the private release's `claude65-backlog-repair` directory.
+
+All 12 messages pending at the follow-up snapshot were subsequently handled in
+fresh `claude-channel:` turns, each with one claim and no failed delivery. The
+last explicit completion was at 17:48:27 PDT. Independent observation confirmed
+the same native process/execution and live idle cleanup with the delivery flag
+false between turns. This establishes sustained handling of that backlog after
+the repair, not universal coverage of unactivated accounts or native cancellation.

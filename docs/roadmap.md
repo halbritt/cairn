@@ -27,6 +27,13 @@ handling is verified on both routes. Other older client processes are not
 implicitly activated by those targeted restarts. The completion audit continues
 with native draft/submission preservation, per-request cancellation, and
 reconciliation of retained worktrees; these remain acceptance requirements.
+The [completion audit](verification/coordination-completion-audit-2026-09-21.md)
+also records the deployed supervisor shutdown repair, a passing live OpenCode
+idle-draft trial, and rejection of the first Hermes cancellation candidate after
+native ownership and process-cleanup failures. Follow-up observation found and
+repaired a Claude delivery-latch bug that stopped the backlog after initial
+success; [sustained delivery evidence](verification/agent-delivery-delay-2026-09-21.md#follow-up-delivery-latch-stopped-the-backlog)
+is separate from channel activation.
 
 ## Single-user operating assumptions
 

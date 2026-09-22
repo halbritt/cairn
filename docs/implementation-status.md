@@ -1,4 +1,20 @@
-# Implementation status — 2026-09-20
+# Implementation status — 2026-09-21
+
+The installed CLI/API, scheduler and seven worker supervisors now use clean
+`8f4fb501bc6d95394627f6fd7d32862c8d6ed367`, deployed after disposable integration
+and independent hash verification. Schema 049 is unchanged. The lifecycle
+adapter includes `ce17d4c`, deployed at 17:38 PDT to fix a completed-delivery flag
+that stalled Claude's backlog. Core binaries did not change for that Python repair.
+
+OpenCode agents 24 and 67 and Claude agent 65 were resumed in their original
+conversations with the owner's approval. Automatic delivery and one live OpenCode
+idle-draft trial passed. The first Hermes cancellation candidate failed independent
+native ownership and cleanup checks and remains undeployed. Busy admission races,
+native cancellation, and broader account coverage remain open. See the
+[completion audit](verification/coordination-completion-audit-2026-09-21.md) and
+[delivery-delay follow-up](verification/agent-delivery-delay-2026-09-21.md).
+
+## Historical deployment — 2026-09-20
 
 At 21:15 PDT on 2026-09-20, the installed CLI and running API were upgraded to
 clean revision `b5aab96b7dca46fa73db52e400548c058a5d226c`, with migration 049.
