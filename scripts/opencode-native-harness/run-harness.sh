@@ -32,6 +32,6 @@ cat > "$ROOT/config/opencode/opencode.json" <<EOF
 EOF
 
 echo "[harness] stage 3: admission probe inside the namespace (canary-checked)"
-"$HARNESS_DIR/netns-isolate.sh" env -u OPENROUTER_API_KEY -u ZAI_API_KEY -u OPENAI_API_KEY -u ANTHROPIC_API_KEY \
+"$HARNESS_DIR/isolate.sh" env -u OPENROUTER_API_KEY -u ZAI_API_KEY -u OPENAI_API_KEY -u ANTHROPIC_API_KEY \
   HARNESS_FIXTURE_ROOT="$ROOT" HARNESS_OPENCODE="$OPENCODE" \
   python3 "$HARNESS_DIR/admission_probe.py" "${1:-3}"

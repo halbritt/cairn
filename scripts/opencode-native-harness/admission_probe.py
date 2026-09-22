@@ -69,6 +69,9 @@ def scrubbed_env():
             continue  # never inherit credential-bearing variables
         if key in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
             continue
+        if key == "LD_PRELOAD":
+            env[key] = os.environ[key]  # preserve the verified interposer
+            continue
         env.setdefault(key, os.environ[key])
     return env
 
@@ -79,7 +82,7 @@ def canary_ok(text):
 
 def main():
     iterations = int(sys.argv[1]) if len(sys.argv) > 1 else 3
-    for required in (f"{CONFIG_DIR}/opencode.json",):
+    for required in (f"{CONFIG_DIR}/opencode/opencode.json",):
         if not os.path.exists(required):
             print(json.dumps({"error": f"missing {required}; run run-harness.sh"}))
             sys.exit(2)

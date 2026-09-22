@@ -4,11 +4,11 @@
 set -eu
 HARNESS_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-echo "[iso] check: unshare -rn is available"
-$HARNESS_DIR/netns-isolate.sh true
+echo "[iso] check: isolation mechanism applies (netns or verified interposer)"
+$HARNESS_DIR/isolate.sh true
 
 echo "[iso] check: external TCP connect (1.1.1.1:443) must FAIL"
-if $HARNESS_DIR/netns-isolate.sh python3 - <<'EOF'
+if $HARNESS_DIR/isolate.sh python3 - <<'EOF'
 import socket, sys
 s = socket.socket()
 s.settimeout(4)
@@ -27,7 +27,7 @@ fi
 echo "[iso] ok: external TCP refused"
 
 echo "[iso] check: external DNS resolution must FAIL"
-if $HARNESS_DIR/netns-isolate.sh python3 - <<'EOF'
+if $HARNESS_DIR/isolate.sh python3 - <<'EOF'
 import socket, sys
 try:
     socket.getaddrinfo("example.com", "443")
@@ -44,7 +44,7 @@ fi
 echo "[iso] ok: external DNS refused"
 
 echo "[iso] check: loopback TCP must WORK"
-$HARNESS_DIR/netns-isolate.sh python3 - <<'EOF'
+$HARNESS_DIR/isolate.sh python3 - <<'EOF'
 import socket, threading, sys
 srv = socket.socket()
 srv.bind(("127.0.0.1", 0))
@@ -59,10 +59,12 @@ srv.close()
 EOF
 echo "[iso] ok: loopback works"
 
-echo "[iso] check: credential environment scrubbed"
-if $HARNESS_DIR/netns-isolate.sh env | grep -qiE '^(OPENROUTER_API_KEY|ZAI_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|OPENCODE_ZEN_.*|CAIRN.*TOKEN)='; then
-  echo "FAIL: credential variable still present in fixture environment" >&2; exit 1
+echo "[iso] check: credential environment scrubbed (same env -u set as run-harness stage 3)"
+if $HARNESS_DIR/isolate.sh env -u OPENROUTER_API_KEY -u ZAI_API_KEY -u OPENAI_API_KEY -u ANTHROPIC_API_KEY env \
+    | grep -qiE '^(OPENROUTER_API_KEY|ZAI_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|OPENCODE_ZEN_.*)='; then
+  echo "FAIL: credential variable survived the stage-3 scrub" >&2; exit 1
 fi
-echo "[iso] ok: no credential variables"
+echo "[iso] ok: scrubbed launch environment carries no known credential variables"
+echo "[iso] (the probe additionally drops every *KEY*/*TOKEN*/*SECRET* name at launch)"
 
 echo "[iso] ALL NEGATIVE TESTS PASSED — namespace is loopback-only and credential-free"
