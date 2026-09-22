@@ -53,6 +53,9 @@ def launch(command):
             str(uid), str(gid), ','.join(map(str, groups)), str(root), str(HERE / 'verify.py'), *command]
     # close_fds prevents inherited host-connected descriptors from entering the namespace.
     result = subprocess.run(args, env={'PATH': PATH, 'LANG': 'C.UTF-8'}, close_fds=True)
+    # Distinguish unavailable setup from an executed workload's own exit code.
+    if not (root / 'verified.json').is_file():
+        return 77
     return result.returncode
 
 

@@ -24,7 +24,7 @@ class SetupRefusalTests(unittest.TestCase):
     def test_setup_error_never_falls_back_to_workload(self):
         marker = Path(os.environ['TMPDIR']) / 'must-not-run'
         command = ['/bin/sh', '-c', 'touch "$1"', 'fixture', str(marker)]
-        with patch.object(isolate.subprocess, 'run', return_value=subprocess.CompletedProcess([], 77)) as run:
+        with patch.object(isolate.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)) as run:
             self.assertEqual(isolate.launch(command), 77)
         self.assertEqual(run.call_count, 1)
         self.assertEqual(run.call_args.args[0][0], '/usr/bin/sudo')
