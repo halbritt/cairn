@@ -82,9 +82,16 @@ class BridgeControlTests(unittest.TestCase):
         self.plugin.register(self.ctx)
         self.addCleanup(lambda: [close() for close in self.unload])
         deadline = time.monotonic()+3
-        while not os.path.exists(self.sock) and time.monotonic() < deadline:
-            time.sleep(.005)
-        self.assertTrue(os.path.exists(self.sock))
+        while True:
+            try:
+                with socket.socket(socket.AF_UNIX) as probe:
+                    probe.settimeout(.2)
+                    probe.connect(self.sock)
+                break
+            except (FileNotFoundError, ConnectionRefusedError):
+                if time.monotonic() >= deadline:
+                    self.fail('bridge did not begin listening')
+                time.sleep(.005)
         self.params = {k: self.owned[k] for k in ('session_id', 'request_id', 'turn_id', 'ownership_token')}
 
     def rpc(self, method, params=None):
@@ -122,21 +129,71 @@ class BridgeControlTests(unittest.TestCase):
         self.assertEqual(self.rpc('session/request_cleanup', params)['error']['message'], 'CLEANUP_UNAVAILABLE')
         self.assertEqual(len(self.cancel_calls), 1)
 
-    def test_inventory_includes_children_without_private_output_or_false_terminal(self):
-        self.records = [dict(session_id='child-tool', session_key='different-child', pid=123,
-            request_id='request', turn_id='session:turn', exited=True, command='SECRET', output='SECRET'),
-            dict(session_id='foreign', pid=124, request_id='foreign', turn_id='foreign')]
+    def install_native_inventory(self):
+        self.inventory = dict(ownership=self.owned, tools=[], inventory_complete=True,
+                              terminal_scan='unknown_remaining')
+        self.cli.request_process_status = lambda **kwargs: dict(self.inventory, ownership=dict(self.owned))
+
+    def test_inventory_uses_native_ledger_and_excludes_private_fields(self):
+        self.install_native_inventory()
+        self.inventory['tools'] = [dict(item_id='scope', process_id='123:456',
+            native_turn_id='session:turn', stop_state='captured', command='SECRET')]
         result = self.rpc('session/request_status')['result']
-        self.assertEqual(result['tools'], [dict(item_id='child-tool', process_id='123',
+        self.assertEqual(result['tools'], [dict(item_id='scope', process_id='123:456',
             native_turn_id='session:turn', stop_state='captured')])
         self.assertTrue(result['inventory_complete'])
         self.assertNotIn('SECRET', json.dumps(result))
-        self.records.append(dict(session_id='unlabelled', pid=125))
-        self.assertFalse(self.rpc('session/request_status')['result']['inventory_complete'])
-        self.records = [dict(session_id=str(i), pid=i+1, request_id='request', turn_id='session:turn') for i in range(65)]
+        self.inventory['tools'][0]['native_turn_id'] = 'foreign'
+        self.assertIn('error', self.rpc('session/request_status'))
+        self.inventory['tools'] = [dict(item_id=str(i), process_id=str(i+1),
+            native_turn_id='session:turn', stop_state='captured') for i in range(65)]
+        self.assertIn('error', self.rpc('session/request_status'))
+
+    def test_missing_native_inventory_never_means_empty_complete(self):
         result = self.rpc('session/request_status')['result']
-        self.assertFalse(result['inventory_complete'])
         self.assertEqual(result['tools'], [])
+        self.assertFalse(result['inventory_complete'])
+        self.assertEqual(result['terminal_scan'], 'unknown_remaining')
+
+    def test_exact_cleanup_then_fresh_native_verification(self):
+        self.install_native_inventory()
+        tool = dict(item_id='scope', process_id='123:456', native_turn_id='session:turn', stop_state='captured')
+        self.inventory['tools'] = [tool]
+        calls = []
+        def cleanup(**params):
+            calls.append(params)
+            self.assertEqual(params['expected_ownership_token'], 'token')
+            self.assertEqual(params['item_id'], 'scope')
+            self.assertEqual(params['process_id'], '123:456')
+            # A successful signal acknowledgement alone cannot report clear.
+            return 'terminated'
+        self.cli.cleanup_owned_process = cleanup
+        self.owned.update(cancelled=True, tool_admission_closed=True, turn_ended=True,
+                          foreground_ended=True, active_native_runs=0)
+        params = dict(self.params, tools=[dict(item_id='scope', process_id='123:456')])
+        result = self.rpc('session/request_cleanup', params)['result']
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(result['terminal_scan'], 'unknown_remaining')
+        tool['stop_state'] = 'terminated'
+        self.inventory['terminal_scan'] = 'clear'
+        self.assertEqual(self.rpc('session/request_status')['result']['terminal_scan'], 'clear')
+        self.owned['executor_capture_gap'] = True
+        self.assertEqual(self.rpc('session/request_status')['result']['terminal_scan'], 'unknown_remaining')
+
+    def test_partial_cleanup_refusal_is_uncertain(self):
+        self.install_native_inventory()
+        calls = []
+        def cleanup(**params):
+            calls.append(params)
+            if len(calls) == 2:
+                raise ValueError('PROCESS_OWNERSHIP_MISMATCH')
+            return 'terminated'
+        self.cli.cleanup_owned_process = cleanup
+        params = dict(self.params, tools=[dict(item_id='first', process_id='1:2'),
+                                         dict(item_id='second', process_id='3:4')])
+        reply = self.rpc('session/request_cleanup', params)
+        self.assertTrue(reply is None or reply.get('id') != 'rpc')
+        self.assertEqual(len(calls), 2)
 
     def test_post_effect_malformed_response_is_uncertain(self):
         def malformed(**kwargs):

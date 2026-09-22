@@ -390,7 +390,7 @@ class HermesCancellationE2ETests(unittest.TestCase):
         self.assertEqual(get_current_request_id(), "cairn-req-uuid-42")
 
     def test_claim4_unverified_cleanup_never_claims_tool_termination(self):
-        """Native cancellation is separate from still-unavailable verified cleanup."""
+        """Caller-supplied registry labels cannot manufacture contained ownership."""
         params = self.admit_owned()
         proc = process_registry.spawn_local('sleep 60', session_key='child-session-key',
             request_id=params['request_id'], turn_id=params['turn_id'])
@@ -399,13 +399,17 @@ class HermesCancellationE2ETests(unittest.TestCase):
         result = self.control('session/request_cancel', params)['result']
         self.assertTrue(result['ownership']['cancelled'])
         self.assertEqual(len(self.interrupt_calls), 1)
-        captured = next(t for t in result['tools'] if t['item_id'] == proc.id)
-        self.assertEqual(captured['stop_state'], 'captured')
+        # These real processes were launched without native owned context.
+        # Matching request labels alone must not turn them into owned scopes.
+        self.assertNotIn(proc.id, [t['item_id'] for t in result['tools']])
+        self.assertFalse(result['inventory_complete'])
         self.assertNotIn(owner.id, [t['item_id'] for t in result['tools']])
         self.assertEqual(result['terminal_scan'], 'unknown_remaining')
         cleanup = self.control('session/request_cleanup', dict(params,
             tools=[dict(item_id=proc.id, process_id=str(proc.pid))]))
-        self.assertEqual(cleanup['error']['message'], 'CLEANUP_UNAVAILABLE')
+        expected = ('PROCESS_OWNERSHIP_MISMATCH' if callable(
+            getattr(self.cli, 'cleanup_owned_process', None)) else 'CLEANUP_UNAVAILABLE')
+        self.assertEqual(cleanup['error']['message'], expected)
         # Neither interruption acknowledgement nor registry flags authorize a
         # claim that either real process has terminated.
         os.kill(proc.pid, 0)

@@ -65,39 +65,67 @@ def native_snapshot(cli, token=None):
         raise ControlRefusal('OWNERSHIP_UNAVAILABLE') from exc
 
 
-def selected_inventory(ownership):
-    """Enumerate the entire registry, including child session keys.
-
-    Registry flags are not OS termination evidence. Until a reviewed native
-    verifier is available, every selected process remains merely captured.
-    """
-    try:
-        from tools.process_registry import process_registry
-        records = process_registry.list_sessions()
-    except Exception:
-        return [], False
-    if not isinstance(records, list):
-        return [], False
-    tools, complete, seen = [], True, set()
+def selected_inventory(cli, ownership):
+    """Use retained native containment evidence; never infer from registry flags."""
+    callback = getattr(cli, 'request_process_status', None)
+    if not callable(callback):
+        return ownership, [], False, 'unknown_remaining'
+    result = callback(expected_request_id=ownership['request_id'],
+                      expected_turn_id=ownership['turn_id'],
+                      expected_ownership_token=ownership['ownership_token'])
+    if not isinstance(result, dict):
+        raise ControlRefusal('PROCESS_INVENTORY_INVALID')
+    observed = selected_ownership(result.get('ownership'))
+    if any(observed[k] != ownership[k] for k in OWNERSHIP_IDENTIFIERS):
+        raise ControlRefusal('OWNERSHIP_MISMATCH')
+    records = result.get('tools')
+    if (not isinstance(records, list) or len(records) > MAX_REQUEST_TOOLS
+            or type(result.get('inventory_complete')) is not bool
+            or result.get('terminal_scan') not in ('clear', 'unknown_remaining')):
+        raise ControlRefusal('PROCESS_INVENTORY_INVALID')
+    tools, seen = [], set()
     for record in records:
-        if not isinstance(record, dict):
-            complete = False
-            continue
-        request, turn = record.get('request_id'), record.get('turn_id')
-        if not request or not turn:
-            complete = False  # An unlabelled process cannot be excluded as unrelated.
-            continue
-        if request != ownership['request_id'] or turn != ownership['turn_id']:
-            continue
-        item, pid = record.get('session_id'), record.get('pid')
-        if not valid_identifier(item) or type(pid) is not int or pid < 1 or item in seen:
-            complete = False
-            continue
-        seen.add(item)
-        if len(tools) >= MAX_REQUEST_TOOLS:
-            return [], False  # Never present a truncated inventory as complete.
-        tools.append(dict(item_id=item, process_id=str(pid), native_turn_id=turn, stop_state='captured'))
-    return tools, complete
+        if (not isinstance(record, dict) or not valid_identifier(record.get('item_id'))
+                or not valid_identifier(record.get('process_id'))
+                or record.get('native_turn_id') != ownership['turn_id']
+                or record.get('stop_state') not in ('captured', 'terminated', 'unavailable')
+                or record['item_id'] in seen):
+            raise ControlRefusal('PROCESS_INVENTORY_INVALID')
+        seen.add(record['item_id'])
+        tools.append({k: record[k] for k in ('item_id', 'process_id', 'native_turn_id', 'stop_state')})
+    complete = result['inventory_complete']
+    clear = (result['terminal_scan'] == 'clear' and complete and observed['turn_ended']
+             and observed['tool_admission_closed'] and not observed['active_tool_calls']
+             and not observed['executor_capture_gap']
+             and all(tool['stop_state'] == 'terminated' for tool in tools))
+    return observed, tools, complete, 'clear' if clear else 'unknown_remaining'
+
+
+def run_lifecycle(command, payload):
+    """Keep owned hook subprocesses inside the same retained native inventory."""
+    try:
+        from agent.request_ownership import ownership_for_agent
+    except ImportError:
+        return subprocess.run(command, input=payload, text=True, capture_output=True, timeout=15)
+    if ownership_for_agent(None) is None:
+        return subprocess.run(command, input=payload, text=True, capture_output=True, timeout=15)
+    from agent.request_processes import contained_popen, stop_contained_process, capture_gap
+    proc = contained_popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, text=True)
+    try:
+        stdout, stderr = proc.communicate(payload, timeout=15)
+        return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
+    except BaseException:
+        stop_contained_process(proc)
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            capture_gap('lifecycle_hook_cleanup_unavailable')
+        raise
+    finally:
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            if stream is not None:
+                stream.close()
 
 
 def register(ctx):
@@ -122,9 +150,8 @@ def register(ctx):
         payload = dict(session_id=session_id, hook_event_name=event, cwd=cwd, host_pid=os.getpid(), model=model, **selected)
         if turn_id:
             payload['turn_id'] = turn_id
-        result = subprocess.run([sys.executable, config['script'], 'hook', '--config', config['config']],
-            input=json.dumps(payload),
-            text=True, capture_output=True, timeout=15)
+        result = run_lifecycle([sys.executable, config['script'], 'hook', '--config', config['config']],
+                               json.dumps(payload))
         if result.returncode:
             raise RuntimeError('Cairn session presence unavailable')
         return json.loads(result.stdout).get('hookSpecificOutput', {}).get('additionalContext', '')
@@ -243,18 +270,39 @@ def register(ctx):
                     or not ownership['cancelled'] or not ownership['tool_admission_closed']):
                 raise RuntimeError('native cancellation response does not confirm the exact closed gate')
         if method == 'session/request_cleanup':
-            # A separate, durably captured item list is required. Do not turn
-            # legacy kill/poll registry flags into terminal evidence.
             tools = params.get('tools')
             if (not isinstance(tools, list) or not tools or len(tools) > MAX_REQUEST_TOOLS
                     or any(not isinstance(t, dict) or
                            not valid_identifier(t.get('item_id')) or
-                           not valid_identifier(t.get('process_id')) for t in tools)):
+                           not valid_identifier(t.get('process_id')) for t in tools)
+                    or len({t['item_id'] for t in tools}) != len(tools)):
                 raise ControlRefusal('CAPTURED_TOOL_IDENTITIES_REQUIRED', -32602)
-            raise ControlRefusal('CLEANUP_UNAVAILABLE', -32020)
-        tools, complete = selected_inventory(ownership)
+            callback = getattr(cli, 'cleanup_owned_process', None)
+            if not callable(callback):
+                raise ControlRefusal('CLEANUP_UNAVAILABLE', -32020)
+            changed = False
+            for tool in tools:
+                try:
+                    outcome = callback(expected_request_id=params['request_id'],
+                                       expected_turn_id=params['turn_id'],
+                                       expected_ownership_token=params['ownership_token'],
+                                       item_id=tool['item_id'], process_id=tool['process_id'])
+                except ValueError as exc:
+                    if not changed and str(exc) in ('OWNERSHIP_UNAVAILABLE', 'OWNERSHIP_MISMATCH',
+                            'EXACT_CANCELLED_OWNERSHIP_REQUIRED', 'PROCESS_OWNERSHIP_MISMATCH'):
+                        raise ControlRefusal(str(exc)) from exc
+                    raise RuntimeError('native cleanup outcome is unknown') from exc
+                changed = True
+                if outcome not in ('captured', 'terminated', 'unavailable'):
+                    raise RuntimeError('native cleanup response is invalid')
+        try:
+            ownership, tools, complete, scan = selected_inventory(cli, ownership)
+        except (ControlRefusal, ValueError) as exc:
+            if method in ('session/request_cleanup', 'session/request_cancel', 'session/abort'):
+                raise RuntimeError('post-effect native inventory is unknown') from exc
+            raise ControlRefusal('PROCESS_INVENTORY_INVALID') from exc
         return dict(ownership=ownership, tools=tools, inventory_complete=complete,
-                    terminal_scan='unknown_remaining')
+                    terminal_scan=scan)
 
     # Private local bridge for native queueing into Hermes
     bridge_path = f"/tmp/cairn-hermes-{os.getpid()}.sock"
@@ -531,6 +579,15 @@ def register(ctx):
 
     def api_success(session_id='', **_):
         provider_observation(session_id, None)
+
+    try:
+        from agent.request_coverage import declare_reviewed_hook
+    except ImportError:
+        pass  # Older native hosts cannot certify process coverage.
+    else:
+        for callback in (before, after, api_error, api_success, close):
+            declare_reviewed_hook(callback, capability='contained-subprocess/v1')
+        declare_reviewed_hook(request, capability='process-free/v1')
 
     ctx.register_hook('pre_llm_call', before)
     ctx.register_hook('post_llm_call', after)
