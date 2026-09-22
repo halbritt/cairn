@@ -39,8 +39,13 @@ class Fixture:
             raise self.api_error
         if operation == 'session-tool-capture':
             self.attempt['tools'].extend(dict(t, stop_state='captured') for t in request['items'])
-        if operation == 'session-tool-stop' and request.get('owner_join'):
-            self.attempt['turn_exclusive'] = False
+        if operation == 'session-tool-stop':
+            self.attempt['terminal_scan'] = request['terminal_scan']
+            if 'turn_stop' in request:
+                self.attempt['turn_stop_state'] = request['turn_stop']
+            if request.get('owner_join') and self.attempt['turn_exclusive']:
+                self.attempt['turn_exclusive'] = False
+                self.attempt['terminal_scan'] = ''
         return self.attempt
 
     def rpc(self, method, params):
@@ -181,6 +186,29 @@ class ControlTests(unittest.TestCase):
         f.attempt['turn_exclusive'] = False
         f.poll()
         self.assertEqual(f.calls('session/request_cancel'), [])
+
+    def test_first_owner_join_at_ended_turn_requires_fresh_scan(self):
+        f = Fixture()
+        f.result['ownership'].update(exclusive=False, revoked=True, turn_ended=True, tool_admission_closed=True)
+        f.result['terminal_scan'] = 'clear'
+        f.poll()
+        self.assertEqual(f.calls('session-inbox-reconcile'), [])
+        f.restart()
+        f.poll()
+        self.assertEqual(f.calls('session-inbox-reconcile')[-1]['reason'], 'exclusivity_revoked')
+
+    def test_definitive_reconcile_refusal_does_not_block_new_observations(self):
+        f = Fixture()
+        f.ledger['pending'] = dict(operation='session-inbox-reconcile', request=dict(
+            request_id=str(uuid.uuid4()), session=f.session, attempt_id=f.attempt['attempt_id'], reason='cancel_confirmed'))
+        f.api_error = coordination.CoordinationError('CLEANUP_UNCONFIRMED', 'new evidence required')
+        with self.assertRaises(coordination.CoordinationError):
+            f.poll()
+        f.restart()
+        f.api_error = None
+        f.poll()
+        self.assertEqual(len(f.calls('session-inbox-reconcile')), 1)
+        self.assertEqual(len(f.calls('session/request_status')), 1)
 
     def test_hook_binds_only_exact_native_admission_and_preserves_legacy_delivery(self):
         f = Fixture()

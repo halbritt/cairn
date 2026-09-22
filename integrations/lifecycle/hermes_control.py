@@ -5,6 +5,7 @@ inbox and never retries an uncertain native mutation. Cairn mutations retain
 their exact request UUID and payload until a response is observed.
 """
 import json
+import os
 import uuid
 from pathlib import Path
 
@@ -55,19 +56,31 @@ class Controller:
     def __init__(self, ledger, save, api, bridge):
         self.ledger, self.save, self.api, self.bridge = ledger, save, api, bridge
 
-    def mutation(self, operation, body):
+    def flush_pending(self):
         pending = self.ledger.get('pending')
         if pending is not None:
-            self.api(pending['operation'], pending['request'])
+            try:
+                result = self.api(pending['operation'], pending['request'])
+            except Exception as exc:
+                # These are explicit transactional precondition refusals, not
+                # uncertain responses. Retrying them before observing changed
+                # evidence would prevent the hold from ever recovering.
+                if (pending['operation'] == 'session-inbox-reconcile' and
+                        getattr(exc, 'code', None) in ('CLEANUP_UNCONFIRMED', 'DELIVERY_ACTIVE')):
+                    self.ledger['last_refusal'] = dict(pending, code=exc.code)
+                    self.ledger.pop('pending')
+                    self.save()
+                raise
             self.ledger.pop('pending')
             self.save()
+            return result
+
+    def mutation(self, operation, body):
+        self.flush_pending()
         request = dict(body, request_id=str(uuid.uuid4()))
         self.ledger['pending'] = dict(operation=operation, request=request)
         self.save()
-        result = self.api(operation, request)
-        self.ledger.pop('pending')
-        self.save()
-        return result
+        return self.flush_pending()
 
     def dispatch(self, kind, params, key):
         dispatched = self.ledger.setdefault('dispatch', {})
@@ -85,11 +98,7 @@ class Controller:
         # automatic retry loop, decides whether a new action is appropriate.
 
     def poll(self, session, binding):
-        pending = self.ledger.get('pending')
-        if pending:
-            self.api(pending['operation'], pending['request'])
-            self.ledger.pop('pending')
-            self.save()
+        self.flush_pending()
         attempt = self.api('session-inbox-control', session).get('attempt')
         if not attempt or attempt.get('finished_at'):
             return
@@ -120,14 +129,19 @@ class Controller:
                              for t in tools if t['stop_state'] == 'terminated'])
         if quiescent:
             report['turn_stop'] = 'ended'
-        self.mutation('session-tool-stop', report)
+        reported = self.mutation('session-tool-stop', report)
+        # The store invalidates an earlier scan when owner_join first revokes
+        # exclusivity. Observe its returned state; a later status/scan must
+        # establish clearance again before reconciliation can succeed.
+        clear = (clear and reported.get('terminal_scan') == 'clear' and
+                 reported.get('turn_stop_state') in ('ended', 'interrupted'))
         if not attempt.get('cancel'):
             return
         if observed['revoked']:
             if clear:
                 self.mutation('session-inbox-reconcile', dict(common, reason='exclusivity_revoked'))
             return  # No native mutation, including process kill, after owner join.
-        if not attempt.get('turn_exclusive'):
+        if not attempt.get('turn_exclusive') or not reported.get('turn_exclusive'):
             return  # A later snapshot cannot upgrade the original claim's authority.
         if clear:
             self.mutation('session-inbox-reconcile', dict(common, reason='cancel_confirmed'))
@@ -160,7 +174,18 @@ def poll_host(config, state, lifecycle):
         ledger = json.loads(path.read_text()) if path.exists() else dict(attempt_id=attempt['attempt_id'])
         if ledger['attempt_id'] != attempt['attempt_id']:
             raise ControlUncertain('control ledger belongs to another attempt')
-        controller = Controller(ledger, lambda: lifecycle.write_state(path, ledger),
+        def save():
+            lifecycle.write_state(path, ledger)
+            # write_state fsyncs contents before rename. Also persist both the
+            # rename and the newly created control directory before native RPC.
+            for directory in (path.parent, path.parent.parent):
+                fd = os.open(str(directory), os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+
+        controller = Controller(ledger, save,
                                 lambda op, body: lifecycle.call(config, op, body),
                                 BridgeClient(endpoint, state['process']))
         controller.poll(lifecycle.session_ref(state['agent']), binding)
