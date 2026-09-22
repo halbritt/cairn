@@ -36,9 +36,13 @@ acceptance afterward.
 The full Python discovery run on `b7d3eb8` executed 272 tests, with one error and
 14 skips. The error was a stale Hermes provider-observation fixture whose plain
 mock fabricated an admission context manager. Hermes fixture teardown also left
-an asynchronous logger pointing at a deleted temporary directory. Both are being
-repaired with explicit fixture ownership and shared-process validation; this run
-is not passing evidence.
+an asynchronous logger pointing at a deleted temporary directory. Both were repaired in `130f2c9`: the provider fixture uses an explicit context
+and real admission lock, and teardown drains and closes only fixture-owned
+logging handlers. An actual asynchronous logging regression fails before repair
+for three ownership scenarios and passes afterward. The coordinator independently
+reran full discovery: 273 tests, exit zero, 14 optional numerical skips, and no
+logging tracebacks. Existing resource warnings remain visible. The original
+failed run is retained as regression evidence.
 
 The 14 optional numerical tests passed separately, without skips, using the
 already installed semantic-worker Python environment. No dependencies were
