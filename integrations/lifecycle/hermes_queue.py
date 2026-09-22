@@ -25,11 +25,11 @@ def _discard(transport):
         pass
 
 
-def _open(endpoint, process):
+def _open(endpoint, process, timeout=4):
     """Connect and verify the exact native process before anything is sent."""
     transport = socket.socket(socket.AF_UNIX)
     try:
-        transport.settimeout(4)
+        transport.settimeout(timeout)
         transport.connect(endpoint)
         peer, _, _ = struct.unpack('3i', transport.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
         if peer != process['pid']:
