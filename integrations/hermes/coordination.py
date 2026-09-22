@@ -26,6 +26,10 @@ def register(ctx):
     sessions = {}
     wake_history_file = home / f'cairn-wake-history-{os.getpid()}.json'
     wake_history = {}
+    # Sessions whose cairn-exclusive turn was joined by owner input. Set
+    # BEFORE the durable revocation report and never cleared on reporting
+    # failure: abort refuses these even when the API is unreachable.
+    revoked_exclusive = set()
     if wake_history_file.is_file():
         try:
             wake_history = json.loads(wake_history_file.read_text())
@@ -72,10 +76,15 @@ def register(ctx):
                 if bound_turn:
                     if not turn_id or turn_id != bound_turn:
                         if turn_id:
+                            # Fence first, report second: whatever happens to
+                            # the durable revocation report, cancellation can
+                            # no longer treat the older turn as exclusively
+                            # owned.
+                            revoked_exclusive.add(session_id)
                             try:
                                 invoke(session_id, 'ForeignTurn', turn_id=turn_id)
                             except Exception:
-                                pass
+                                logger.warning('Cairn foreign-turn revocation report unavailable; local fence retained')
                         return
 
                 effective_turn = turn_id or bound_turn or ''
@@ -331,6 +340,11 @@ def register(ctx):
 
                             admission_lock = getattr(cli, '_admission_lock', None) or lock
                             with admission_lock:
+                                if target_session in revoked_exclusive:
+                                    conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32004,
+                                        'message': 'EXCLUSIVITY_REVOKED: owner input joined this conversation; '
+                                                   'exclusive cancellation is fenced off'}}).encode('utf-8') + '\n')
+                                    continue
                                 current_sid = getattr(cli, 'session_id', None)
                                 if target_session != current_sid:
                                     conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32002, 'message': f'SESSION_MISMATCH: expected {target_session!r}, active session is {current_sid!r}'}}).encode('utf-8') + b'\n')
