@@ -797,11 +797,6 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     owner_turn = state.get('inbox_intent', {}).get('native_turn_id')
     if owner_turn and owner_turn != observation.get('native_turn_id'):
         raise CoordinationError('NATIVE_TURN_MISMATCH', 'another native turn cannot take over or end this request')
-    if (not state.get('inbox_intent') and config.get('idle_wakeup') and
-            (codex_queue_endpoint(config, state['process']) or
-             hermes_queue_endpoint(config, state['process']) or
-             (config['harness'] == 'claude' and config.get('claude_channel_dir'))) and not wake_binding):
-        return ''  # This native wake transport owns admission; other prompts do not claim work.
     if observation['event'] == 'Stop' and observation['phase'] != 'idle':
         return ''  # Agy still has active background work.
     if observation['phase'] == 'idle':
@@ -812,6 +807,13 @@ def inbox_context(config, state, path, observation, wake_binding=None):
             return ''
         if config['harness'] not in ('codex', 'claude', 'hermes', 'agy'):
             return ''  # These adapters next deliver at their pre-turn boundary.
+    # A watcher may already have released a completed attempt before Stop.
+    # Clear its per-turn delivery latch above even when this prompt cannot admit work.
+    if (not state.get('inbox_intent') and config.get('idle_wakeup') and
+            (codex_queue_endpoint(config, state['process']) or
+             hermes_queue_endpoint(config, state['process']) or
+             (config['harness'] == 'claude' and config.get('claude_channel_dir'))) and not wake_binding):
+        return ''  # This native wake transport owns admission; other prompts do not claim work.
     recover_inbox(config, state, path)
     if not state.get('inbox_attempt'):
         if state.get('delivered_since_idle'):

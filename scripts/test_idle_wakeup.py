@@ -438,6 +438,13 @@ time.sleep(30)
         self.assertIn('WAKE_UNCERTAIN', result.stderr)
         wake = json.loads(self.path.read_text())['idle_wake']
         self.assertEqual(wake['status'], 'uncertain')
+        state = json.loads(self.path.read_text())
+        state['delivered_since_idle'] = True
+        coordination.write_state(self.path, state)
+        coordination.inbox_context(self.config, state, self.path,
+            dict(event='Stop', phase='idle', native_turn_id='previous-prompt'))
+        self.assertEqual(json.loads(self.path.read_text())['idle_wake'], wake,
+                         'idle bookkeeping rearmed an uncertain channel write')
         result = self.watch()
         self.assertEqual(len(self.channel_lines(socket_path)), 1, 'uncertain channel wake was resent')
         self.assertEqual(self.prompts(), [], 'uncertain channel wake fell back to terminal submission')
@@ -506,6 +513,78 @@ time.sleep(30)
                     self.assertEqual(result, '')
                     self.assertNotIn('inbox_intent', state)
             api.assert_not_called()
+
+    def test_sequential_channel_deliveries_after_watcher_releases_completed_attempt(self):
+        host = os.getppid()
+        agent = dict(self.agent, context_revision=3, display_name='agent-one', inbox='agent/agent-one')
+        config = dict(self.config, harness='claude', binding='sequential', process_names=[],
+                      claude_channel_dir=str(self.root/'channel-not-running'))
+        path = coordination.state_path(config, 'native-one')
+        coordination.write_state(path, dict(schema='cairn.native-session/1',
+            process=coordination.process_reference(host), agent=agent, workspace=str(self.root)))
+        claims, completed = [], set()
+
+        def fake_call(config, operation, request=None, **kwargs):
+            current = json.loads(path.read_text())
+            if operation == 'agent-heartbeat':
+                return current['agent']
+            if operation == 'agent-context':
+                return dict(current['agent'], context_revision=current['agent']['context_revision']+1,
+                            metadata=dict(request['metadata']))
+            if operation == 'session-inbox-claim':
+                claims.append(dict(request))
+                delivery_id = request['delivery_id']  # Ordinary unbound claims must fail this fixture.
+                return dict(attempt=dict(attempt_id=request['request_id'], session=request['session'],
+                    native_turn_id=request['native_turn_id'], delivery=dict(delivery_id=delivery_id,
+                        lease_id='lease-'+delivery_id, event=dict(event_id='event-'+delivery_id,
+                            kind='request', ref=dict(record_id='record', version=1), **{'from': 'agent:x'}))))
+            if operation == 'session-inbox-reconcile':
+                delivery = current['inbox_attempt']['delivery']['delivery_id']
+                if request['reason'] == 'delivery_completed' and delivery not in completed:
+                    raise coordination.CoordinationError('DELIVERY_ACTIVE', 'not yet completed')
+                return {}
+            if operation == 'event-renew':
+                return current['inbox_attempt']['delivery']
+            raise AssertionError('unexpected API operation '+operation)
+
+        def prompt(prompt_id, text, event='UserPromptSubmit'):
+            return dict(session_id='native-one', cwd=str(self.root), host_pid=host,
+                        hook_event_name=event, prompt_id=prompt_id, prompt=text)
+
+        with mock.patch.object(coordination, 'call', fake_call):
+            for number in range(3):
+                delivery_id = 'delivery-'+str(number)
+                marker = dict(transport='claude-channel', status='submitted', delivery_id=delivery_id,
+                              session=coordination.session_ref(agent))
+                state = json.loads(path.read_text())
+                state['idle_wake'] = marker
+                coordination.write_state(path, state)
+                wake_prompt = prompt('wake-'+str(number),
+                    f'<channel source="cairn-events">{coordination.wake_message(marker)}</channel>')
+                result = coordination.handle(config, wake_prompt)
+                self.assertIn('structured inbox context', result['hookSpecificOutput']['additionalContext'],
+                              'missing context for '+delivery_id)
+                self.assertEqual(len(claims), number+1, 'fresh channel delivery did not claim exactly once')
+                self.assertEqual(claims[-1]['delivery_id'], delivery_id)
+                self.assertEqual(claims[-1]['native_turn_id'], 'claude-channel:wake-'+str(number))
+                if number != 1:
+                    completed.add(delivery_id)
+                    # The watcher can observe explicit completion before native Stop.
+                    state = json.loads(path.read_text())
+                    coordination.watch_inbox(config, state, path)
+                    self.assertNotIn('inbox_intent', json.loads(path.read_text()))
+                else:
+                    self.assertIn('inbox_intent', json.loads(path.read_text()))
+                self.assertTrue(json.loads(path.read_text())['delivered_since_idle'])
+                coordination.handle(config, dict(wake_prompt, hook_event_name='Stop'))
+                self.assertNotIn('inbox_intent', json.loads(path.read_text()))
+                # Ordinary owner turns and repeated Stops must never consume the next delivery.
+                owner = prompt('owner-'+str(number), 'ordinary owner work')
+                coordination.handle(config, owner)
+                coordination.handle(config, dict(owner, hook_event_name='Stop'))
+                coordination.handle(config, dict(owner, hook_event_name='Stop'))
+                self.assertEqual(len(claims), number+1)
+            self.assertFalse(json.loads(path.read_text())['delivered_since_idle'])
 
     def test_channel_wake_joining_active_prompt_is_refused_and_retried(self):
         # Live probe evidence (2026-09-16, /tmp/cairn-claude-go-probe): while a
