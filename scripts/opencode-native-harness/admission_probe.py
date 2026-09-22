@@ -63,6 +63,7 @@ def scrubbed_env():
         "XDG_CACHE_HOME": CACHE_DIR,
         "OPENCODE_DISABLE_AUTOUPDATE": "1",
         "OPENCODE_DISABLE_PLUGINS": "1",
+        "OPENCODE_DISABLE_SHARE": "1",
     }
     for key in list(os.environ):
         if "KEY" in key.upper() or "TOKEN" in key.upper() or "SECRET" in key.upper():
