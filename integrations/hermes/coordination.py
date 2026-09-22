@@ -20,6 +20,82 @@ MAX_PAYLOAD_BYTES = 65536
 MAX_CONCURRENT_CLIENTS = 4
 
 
+MAX_REQUEST_TOOLS = 64
+OWNERSHIP_IDENTIFIERS = ('session_id', 'request_id', 'delivery_id', 'turn_id', 'ownership_token')
+OWNERSHIP_FLAGS = ('exclusive', 'revoked', 'cancelled', 'foreground_ended', 'turn_ended',
+                   'tool_admission_closed')
+OWNERSHIP_COUNTS = ('active_native_runs', 'active_tool_calls')
+
+
+class ControlRefusal(Exception):
+    def __init__(self, message, code=-32004):
+        super().__init__(message)
+        self.code = code
+
+
+def valid_identifier(value):
+    return (isinstance(value, str) and bool(value.strip()) and len(value.encode()) <= 256
+            and not any(ord(c) < 32 for c in value))
+
+
+def selected_ownership(snapshot):
+    if (not isinstance(snapshot, dict)
+            or any(not valid_identifier(snapshot.get(k)) for k in OWNERSHIP_IDENTIFIERS)
+            or any(type(snapshot.get(k)) is not bool for k in OWNERSHIP_FLAGS)
+            or any(type(snapshot.get(k)) is not int or snapshot[k] < 0 for k in OWNERSHIP_COUNTS)):
+        raise ControlRefusal('OWNERSHIP_INVALID')
+    if (snapshot['exclusive'] == snapshot['revoked'] or
+            (snapshot['turn_ended'] and
+             (not snapshot['foreground_ended'] or snapshot['active_native_runs'] != 0))):
+        raise ControlRefusal('OWNERSHIP_INVALID')
+    return {key: snapshot[key] for key in (*OWNERSHIP_IDENTIFIERS, *OWNERSHIP_FLAGS, *OWNERSHIP_COUNTS)}
+
+
+def native_snapshot(cli, token=None):
+    callback = getattr(cli, 'request_ownership_snapshot', None)
+    if not callable(callback):
+        raise ControlRefusal('OWNERSHIP_UNAVAILABLE')
+    try:
+        return selected_ownership(callback(expected_ownership_token=token))
+    except ValueError as exc:
+        raise ControlRefusal('OWNERSHIP_UNAVAILABLE') from exc
+
+
+def selected_inventory(ownership):
+    """Enumerate the entire registry, including child session keys.
+
+    Registry flags are not OS termination evidence. Until a reviewed native
+    verifier is available, every selected process remains merely captured.
+    """
+    try:
+        from tools.process_registry import process_registry
+        records = process_registry.list_sessions()
+    except Exception:
+        return [], False
+    if not isinstance(records, list):
+        return [], False
+    tools, complete, seen = [], True, set()
+    for record in records:
+        if not isinstance(record, dict):
+            complete = False
+            continue
+        request, turn = record.get('request_id'), record.get('turn_id')
+        if not request or not turn:
+            complete = False  # An unlabelled process cannot be excluded as unrelated.
+            continue
+        if request != ownership['request_id'] or turn != ownership['turn_id']:
+            continue
+        item, pid = record.get('session_id'), record.get('pid')
+        if not valid_identifier(item) or type(pid) is not int or pid < 1 or item in seen:
+            complete = False
+            continue
+        seen.add(item)
+        if len(tools) >= MAX_REQUEST_TOOLS:
+            return [], False  # Never present a truncated inventory as complete.
+        tools.append(dict(item_id=item, process_id=str(pid), native_turn_id=turn, stop_state='captured'))
+    return tools, complete
+
+
 def register(ctx):
     home = get_hermes_home()
     config = json.loads((home / 'cairn-coordination.json').read_text())
@@ -53,36 +129,43 @@ def register(ctx):
         if not session_id or parent_session_id or platform in ('cron', 'subagent', 'flush', 'auxiliary'):
             return
         cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
-        adm_lock = getattr(cli, '_admission_lock', None)
-        adm_ctx = adm_lock if adm_lock is not None else nullcontext()
-        with adm_ctx:
+        admission = getattr(cli, '_admission_lock', None) or nullcontext()
+        ownership = None
+        with admission:
             with lock:
-                state = sessions.get(session_id)
-                cli_active_turn = getattr(cli, '_active_turn_id', None) if (cli is not None and getattr(cli, 'session_id', None) == session_id) else None
-                sess_turn = state.get('turn_id') if state else None
-                sess_busy = state.get('busy') if state else False
-                bound_turn = cli_active_turn or (sess_turn if sess_busy else None)
-
-                # If an active bound turn exists, incoming hook MUST match it
-                if bound_turn:
-                    if not turn_id or turn_id != bound_turn:
-                        return
-
-                effective_turn = turn_id or bound_turn or ''
-                sessions[session_id] = dict(context='', task=task_id, model=model, busy=True, turn_id=effective_turn)
-                if cli is not None and getattr(cli, 'session_id', None) == session_id:
-                    if effective_turn:
-                        cli._active_turn_id = effective_turn
-                        try:
-                            from tools.approval import _approval_turn_id
-                            _approval_turn_id.set(effective_turn)
-                        except Exception:
-                            pass
-                try:
-                    context = invoke(session_id, 'TurnStart', task_id, model, turn_id=effective_turn, prompt=user_message)
-                    sessions[session_id]['context'] = context
-                except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
-                    logger.warning('Cairn native session registration/context unavailable')
+                previous = sessions.get(session_id, {})
+                current_cli = cli is not None and getattr(cli, 'session_id', None) == session_id
+                if platform == 'cli' and cli is not None and not current_cli:
+                    return
+                native_turn = getattr(cli, '_active_turn_id', None) if current_cli else None
+                bound = native_turn or (previous.get('turn_id') if previous.get('busy') else None)
+                if bound and (not turn_id or turn_id != bound):
+                    return
+                if current_cli:
+                    try:
+                        candidate = native_snapshot(cli)
+                        if candidate['session_id'] == session_id and candidate['turn_id'] == turn_id:
+                            ownership = candidate
+                    except ControlRefusal:
+                        pass  # Ordinary turns/older hosts provide no exclusive evidence.
+                state = dict(context='', task=task_id, model=model, busy=True, turn_id=turn_id)
+                sessions[session_id] = state
+        selected = {'request_ownership': ownership} if ownership is not None else {}
+        try:
+            context = invoke(session_id, 'TurnStart', task_id, model, turn_id=turn_id,
+                             prompt=user_message, **selected)
+        except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
+            logger.warning('Cairn native session registration/context unavailable')
+            return
+        # An IPC reply must not overwrite a later end hook or replacement turn.
+        with admission:
+            with lock:
+                if sessions.get(session_id) is not state or not state['busy']:
+                    return
+                if current_cli and (getattr(cli, 'session_id', None) != session_id
+                                    or getattr(cli, '_active_turn_id', None) != turn_id):
+                    return
+                state['context'] = context
 
     def request(request, session_id='', **_):
         with lock:
@@ -94,50 +177,80 @@ def register(ctx):
         if not session_id or platform in ('cron', 'subagent', 'flush', 'auxiliary'):
             return
         cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
-        adm_lock = getattr(cli, '_admission_lock', None)
-        adm_ctx = adm_lock if adm_lock is not None else nullcontext()
-        with adm_ctx:
+        admission = getattr(cli, '_admission_lock', None) or nullcontext()
+        with admission:
             with lock:
                 state = sessions.get(session_id)
-                if state is None:
+                if state is None or (state.get('turn_id') and state['turn_id'] != turn_id):
                     return
-                active_turn = state.get('turn_id', '')
-                cli_active_turn = getattr(cli, '_active_turn_id', None) if (cli is not None and getattr(cli, 'session_id', None) == session_id) else None
-                bound_turn = active_turn or cli_active_turn
-
-                # Validate incoming turn against active bound turn
-                if bound_turn:
-                    if not turn_id or turn_id != bound_turn:
-                        return
-
-                effective_turn = turn_id or bound_turn or ''
-                state['busy'] = False
-                try:
-                    invoke(session_id, 'TurnEnd' if platform == 'cli' else 'SessionEnd', state['task'], state['model'], turn_id=effective_turn)
-                except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
-                    logger.warning('Cairn native session stop unavailable; presence will expire')
-                finally:
-                    state['context'] = ''
-                    state['turn_id'] = ''
-                    if platform != 'cli':
-                        sessions.pop(session_id, None)
+                if not state.get('busy'):
+                    return
+                ended = dict(state)
+                state.update(busy=False, context='', turn_id='')
+                if platform != 'cli':
+                    sessions.pop(session_id, None)
+        try:
+            invoke(session_id, 'TurnEnd' if platform == 'cli' else 'SessionEnd',
+                   ended['task'], ended['model'], turn_id=ended['turn_id'])
+        except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
+            logger.warning('Cairn native session stop unavailable; presence will expire')
 
     def close():
         nonlocal bridge_running
-        bridge_running = False
+        with lock:
+            bridge_running = False
+            ended = list(sessions.items())
+            sessions.clear()
         cleanup_bridge()
+        if bridge_thread is not threading.current_thread():
+            bridge_thread.join(timeout=2)
+        for ident, state in ended:
+            try:
+                invoke(ident, 'SessionEnd', state['task'], state['model'], turn_id=state['turn_id'])
+            except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
+                logger.warning('Cairn native session leave unavailable; presence will expire')
+
+    def request_control(method, params):
+        keys = ('session_id', 'request_id', 'turn_id', 'ownership_token')
+        if any(not valid_identifier(params.get(key)) for key in keys):
+            raise ControlRefusal('EXACT_REQUEST_OWNERSHIP_REQUIRED', -32602)
         cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
-        adm_lock = getattr(cli, '_admission_lock', None)
-        adm_ctx = adm_lock if adm_lock is not None else nullcontext()
-        with adm_ctx:
-            with lock:
-                for ident, state in list(sessions.items()):
-                    try:
-                        turn_id = state.get('turn_id', '')
-                        invoke(ident, 'SessionEnd', state['task'], state['model'], turn_id=turn_id)
-                    except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
-                        logger.warning('Cairn native session leave unavailable; presence will expire')
-                sessions.clear()
+        ownership = native_snapshot(cli, params['ownership_token'])
+        if any(ownership[key] != params[key] for key in keys):
+            raise ControlRefusal('OWNERSHIP_MISMATCH')
+        if method in ('session/request_cancel', 'session/abort'):
+            callback = getattr(cli, 'abort_owned_request', None)
+            if not callable(callback):
+                raise ControlRefusal('OWNERSHIP_UNAVAILABLE')
+            try:
+                result = callback(expected_request_id=params['request_id'],
+                                  expected_turn_id=params['turn_id'],
+                                  expected_ownership_token=params['ownership_token'])
+            except ValueError as exc:
+                if str(exc) in ('OWNERSHIP_UNAVAILABLE', 'OWNERSHIP_MISMATCH',
+                                'OWNERSHIP_REVOKED', 'OWNERSHIP_AGENT_UNAVAILABLE'):
+                    raise ControlRefusal(str(exc)) from exc
+                raise RuntimeError('native cancellation outcome is unknown') from exc
+            try:
+                ownership = selected_ownership(result)
+            except ControlRefusal as exc:
+                raise RuntimeError('native cancellation response is invalid') from exc
+            if (any(ownership[key] != params[key] for key in keys)
+                    or not ownership['cancelled'] or not ownership['tool_admission_closed']):
+                raise RuntimeError('native cancellation response does not confirm the exact closed gate')
+        if method == 'session/request_cleanup':
+            # A separate, durably captured item list is required. Do not turn
+            # legacy kill/poll registry flags into terminal evidence.
+            tools = params.get('tools')
+            if (not isinstance(tools, list) or not tools or len(tools) > MAX_REQUEST_TOOLS
+                    or any(not isinstance(t, dict) or
+                           not valid_identifier(t.get('item_id')) or
+                           not valid_identifier(t.get('process_id')) for t in tools)):
+                raise ControlRefusal('CAPTURED_TOOL_IDENTITIES_REQUIRED', -32602)
+            raise ControlRefusal('CLEANUP_UNAVAILABLE', -32020)
+        tools, complete = selected_inventory(ownership)
+        return dict(ownership=ownership, tools=tools, inventory_complete=complete,
+                    terminal_scan='unknown_remaining')
 
     # Private local bridge for native queueing into Hermes
     bridge_path = f"/tmp/cairn-hermes-{os.getpid()}.sock"
@@ -186,6 +299,10 @@ def register(ctx):
                             conn.sendall(json.dumps({'id': None, 'error': {'code': -32700, 'message': 'Parse error'}}).encode('utf-8') + b'\n')
                             continue
 
+                        if not isinstance(req, dict) or not isinstance(req.get('params', {}), dict):
+                            conn.sendall(json.dumps({'id': req.get('id') if isinstance(req, dict) else None,
+                                'error': {'code': -32602, 'message': 'object request and params required'}}).encode() + b'\n')
+                            continue
                         req_id = req.get('id')
                         method = req.get('method')
                         params = req.get('params', {})
@@ -287,247 +404,16 @@ def register(ctx):
                             }
                             conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
 
-                        elif method == 'session/abort':
-                            target_session = params.get('session_id')
-                            expected_request_id = params.get('expected_request_id')
-                            expected_turn_id = params.get('expected_turn_id')
-
-                            if not target_session:
-                                conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32602, 'message': 'session_id required'}}).encode('utf-8') + b'\n')
-                                continue
-
-                            cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
-                            if cli is None:
-                                conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32000, 'message': 'Hermes CLI instance unavailable; abort refused'}}).encode('utf-8') + b'\n')
-                                continue
-
-                            admission_lock = getattr(cli, '_admission_lock', None) or lock
-                            with admission_lock:
-                                current_sid = getattr(cli, 'session_id', None)
-                                if target_session != current_sid:
-                                    conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32002, 'message': f'SESSION_MISMATCH: expected {target_session!r}, active session is {current_sid!r}'}}).encode('utf-8') + b'\n')
-                                    continue
-
-                                # 1. Check if the message is still in _pending_input (not yet admitted)
-                                dequeued = False
-                                if hasattr(cli, '_pending_input'):
-                                    try:
-                                        with cli._pending_input.mutex:
-                                            for item in list(cli._pending_input.queue):
-                                                matches = True
-                                                if expected_request_id and getattr(item, 'request_id', None) != expected_request_id:
-                                                    matches = False
-                                                if expected_turn_id and getattr(item, 'turn_id', None) != expected_turn_id:
-                                                    matches = False
-                                                if not expected_request_id and not expected_turn_id:
-                                                    matches = False
-                                                if matches:
-                                                    item.status = 'refused'
-                                                    item.refusal_reason = 'cancelled_before_admission'
-                                                    item.consumed_session_id = current_sid
-                                                    cli._pending_input.queue.remove(item)
-                                                    if getattr(item, 'on_consumed', None):
-                                                        try:
-                                                            item.on_consumed('refused', current_sid)
-                                                        except Exception:
-                                                            pass
-                                                    dequeued = True
-                                                    break
-                                    except Exception as exc:
-                                        logger.warning("Error inspecting _pending_input: %s", exc)
-
-                                if dequeued:
-                                    resp = {
-                                        'id': req_id,
-                                        'result': {
-                                            'aborted': True,
-                                            'turn_stop': 'dequeued_before_admission',
-                                            'session_id': target_session,
-                                            'request_id': expected_request_id,
-                                            'turn_id': expected_turn_id,
-                                            'tools': [],
-                                        }
-                                    }
-                                    conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
-                                    continue
-
-                                adm_state = getattr(cli, '_admission_state', None)
-                                is_running = getattr(cli, '_agent_running', False)
-                                if adm_state is None:
-                                    adm_state = 'running' if is_running else 'idle'
-
-                                if adm_state == 'idle' and not is_running:
-                                    resp = {
-                                        'id': req_id,
-                                        'result': {
-                                            'aborted': False,
-                                            'turn_stop': 'already_ended',
-                                            'session_id': target_session,
-                                            'request_id': expected_request_id,
-                                            'turn_id': expected_turn_id,
-                                            'tools': [],
-                                        }
-                                    }
-                                    conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
-                                    continue
-
-                                active_req = getattr(cli, '_active_request_id', None)
-                                active_turn = getattr(cli, '_active_turn_id', None)
-
-                                # Never interrupt active turn on request/turn mismatch or unspecified abort:
-                                if expected_request_id and active_req != expected_request_id:
-                                    conn.sendall(json.dumps({
-                                        'id': req_id,
-                                        'error': {
-                                            'code': -32001,
-                                            'message': f'REQUEST_MISMATCH: active turn belongs to request {active_req!r} (expected {expected_request_id!r}); abort refused to protect active turn'
-                                        }
-                                    }).encode('utf-8') + b'\n')
-                                    continue
-
-                                if expected_turn_id and active_turn != expected_turn_id:
-                                    conn.sendall(json.dumps({
-                                        'id': req_id,
-                                        'error': {
-                                            'code': -32003,
-                                            'message': f'TURN_MISMATCH: active turn is {active_turn!r} (expected {expected_turn_id!r}); abort refused to protect active turn'
-                                        }
-                                    }).encode('utf-8') + b'\n')
-                                    continue
-
-                                if not expected_request_id and not expected_turn_id:
-                                    conn.sendall(json.dumps({
-                                        'id': req_id,
-                                        'error': {
-                                            'code': -32004,
-                                            'message': 'UNSPECIFIED_ABORT: expected_request_id or expected_turn_id required while agent is running; abort refused to protect active turn'
-                                        }
-                                    }).encode('utf-8') + b'\n')
-                                    continue
-
-                                if adm_state == 'admitting' and not is_running:
-                                    cli._active_cancelled = True
-                                    cli._admission_state = 'cancelled'
-                                    resp = {
-                                        'id': req_id,
-                                        'result': {
-                                            'aborted': True,
-                                            'turn_stop': 'cancelled_before_running',
-                                            'session_id': target_session,
-                                            'request_id': expected_request_id or active_req,
-                                            'turn_id': expected_turn_id or active_turn,
-                                            'tools': [],
-                                        }
-                                    }
-                                    conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
-                                    continue
-
-                                # 4. Request / turn matches! Signal turn interruption
-                                agent = getattr(cli, 'agent', None)
-                                if agent and hasattr(agent, 'interrupt') and callable(getattr(agent, 'interrupt')):
-                                    agent.interrupt(hard_cancel=True)
-                                    turn_stop = 'interrupted'
-                                else:
-                                    turn_stop = 'interruption_requested'
-                                cli._last_turn_interrupted = True
-
-                                # 5. Stop ONLY tools captured as belonging to the exact requested turn and verified process identity
-                                tool_outcomes = []
-                                tool_error = None
-                                try:
-                                    from tools.process_registry import process_registry, ProcessRegistry
-                                    all_procs = process_registry.list_sessions(session_key=target_session)
-                                    if not all_procs:
-                                        all_procs = process_registry.list_sessions()
-                                    for proc in all_procs:
-                                        proc_id = proc.get('session_id')
-                                        proc_req = proc.get('request_id')
-                                        proc_turn = proc.get('turn_id')
-
-                                        # Exact turn / request matching:
-                                        if expected_request_id and proc_req != expected_request_id:
-                                            continue
-                                        if expected_turn_id and proc_turn != expected_turn_id:
-                                            continue
-                                        if not proc_req and not proc_turn:
-                                            continue
-
-                                        if proc.get('status') == 'running':
-                                            pid = proc.get('pid')
-                                            host_start = proc.get('host_start_time')
-                                            # Verified process identity check: never kill a recycled PID
-                                            if not ProcessRegistry._host_pid_is_ours(pid, host_start):
-                                                tool_outcomes.append({
-                                                    'item_id': proc_id,
-                                                    'process_id': str(pid or ''),
-                                                    'stop_state': 'unverified_process_identity',
-                                                })
-                                                continue
-
-                                            process_registry.kill_process(proc_id, source="cairn.abort")
-                                            # Bounded polling to positively verify termination
-                                            verified = False
-                                            poll_deadline = time.monotonic() + 3.0
-                                            while time.monotonic() < poll_deadline:
-                                                poll_info = process_registry.poll(proc_id)
-                                                if poll_info.get('status') == 'exited' or poll_info.get('exited'):
-                                                    verified = True
-                                                    break
-                                                time.sleep(0.05)
-                                            stop_state = 'terminated' if verified else 'stop_issued'
-                                            tool_outcomes.append({
-                                                'item_id': proc_id,
-                                                'process_id': str(pid or ''),
-                                                'stop_state': stop_state,
-                                            })
-                                except Exception as exc:
-                                    logger.warning("Error terminating tool processes: %s", exc)
-                                    tool_error = str(exc)
-                                    tool_outcomes.append({
-                                        'item_id': 'tool_inventory',
-                                        'process_id': '',
-                                        'stop_state': f'unavailable: {exc}',
-                                    })
-
-                                resp = {
-                                    'id': req_id,
-                                    'result': {
-                                        'aborted': True,
-                                        'turn_stop': turn_stop,
-                                        'session_id': target_session,
-                                        'request_id': expected_request_id or active_req,
-                                        'turn_id': expected_turn_id or active_turn,
-                                        'tools': tool_outcomes,
-                                    }
-                                }
-                                if tool_error:
-                                    resp['result']['tool_error'] = tool_error
-                                    resp['result']['tools_uncertain'] = True
-                                conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
-
-                        elif method == 'session/tools_status':
-                            target_session = params.get('session_id')
-                            tool_ids = params.get('tool_ids') or []
+                        elif method in ('session/request_status', 'session/request_cancel',
+                                        'session/request_cleanup', 'session/abort', 'session/tools_status'):
+                            if method == 'session/abort':
+                                params = dict(params, request_id=params.get('request_id') or params.get('expected_request_id'),
+                                              turn_id=params.get('turn_id') or params.get('expected_turn_id'))
                             try:
-                                from tools.process_registry import process_registry
-                                all_procs = process_registry.list_sessions(session_key=target_session)
-                                if tool_ids:
-                                    id_set = set(tool_ids)
-                                    filtered = [p for p in all_procs if p.get('session_id') in id_set or str(p.get('pid')) in id_set]
-                                else:
-                                    filtered = all_procs
-                                resp = {
-                                    'id': req_id,
-                                    'result': {
-                                        'session_id': target_session,
-                                        'tools': filtered,
-                                    }
-                                }
-                            except Exception as exc:
-                                resp = {
-                                    'id': req_id,
-                                    'error': {'code': -32000, 'message': f'tools_status failed: {exc}'}
-                                }
+                                result = request_control(method, params)
+                                resp = {'id': req_id, 'result': result}
+                            except ControlRefusal as exc:
+                                resp = {'id': req_id, 'error': {'code': exc.code, 'message': str(exc)}}
                             conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
 
                         elif method == 'session/status':
@@ -550,9 +436,9 @@ def register(ctx):
 
                         else:
                             conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32601, 'message': f'Method {method} not found'}}).encode('utf-8') + b'\n')
-        except Exception as exc:
+        except Exception:
             try:
-                conn.sendall(json.dumps({'id': None, 'error': {'code': -32000, 'message': str(exc)}}).encode('utf-8') + b'\n')
+                conn.sendall(json.dumps({'id': None, 'error': {'code': -32000, 'message': 'native bridge operation outcome unavailable'}}).encode('utf-8') + b'\n')
             except OSError:
                 pass
         finally:
@@ -561,26 +447,29 @@ def register(ctx):
     def serve_bridge():
         nonlocal bridge_server, bridge_bound
         try:
-            if os.path.exists(bridge_path):
-                try:
-                    # Test if an active server is listening
-                    test_sock = socket.socket(socket.AF_UNIX)
-                    test_sock.connect(bridge_path)
-                    test_sock.close()
-                    logger.warning("Another bridge is listening at %s; aborting bind", bridge_path)
+            with lock:
+                if not bridge_running:
                     return
-                except OSError:
+                if os.path.exists(bridge_path):
                     try:
-                        os.unlink(bridge_path)
+                        # Test if an active server is listening
+                        with socket.socket(socket.AF_UNIX) as test_sock:
+                            test_sock.settimeout(0.1)
+                            test_sock.connect(bridge_path)
+                        logger.warning("Another bridge is listening at %s; aborting bind", bridge_path)
+                        return
                     except OSError:
-                        pass
+                        try:
+                            os.unlink(bridge_path)
+                        except OSError:
+                            pass
 
-            bridge_server = socket.socket(socket.AF_UNIX)
-            bridge_server.bind(bridge_path)
-            bridge_bound = True
-            os.chmod(bridge_path, 0o600)
-            bridge_server.listen(MAX_CONCURRENT_CLIENTS)
-            bridge_server.settimeout(1.0)
+                bridge_server = socket.socket(socket.AF_UNIX)
+                bridge_server.bind(bridge_path)
+                bridge_bound = True
+                os.chmod(bridge_path, 0o600)
+                bridge_server.listen(MAX_CONCURRENT_CLIENTS)
+                bridge_server.settimeout(1.0)
             while bridge_running:
                 try:
                     conn, _ = bridge_server.accept()
@@ -599,18 +488,19 @@ def register(ctx):
 
     def cleanup_bridge():
         nonlocal bridge_bound
-        if bridge_server:
-            try:
-                bridge_server.close()
-            except OSError:
-                pass
-        if bridge_bound:
-            bridge_bound = False
-            try:
-                if os.path.exists(bridge_path):
-                    os.unlink(bridge_path)
-            except OSError:
-                pass
+        with lock:
+            if bridge_server:
+                try:
+                    bridge_server.close()
+                except OSError:
+                    pass
+            if bridge_bound:
+                bridge_bound = False
+                try:
+                    if os.path.exists(bridge_path):
+                        os.unlink(bridge_path)
+                except OSError:
+                    pass
 
     bridge_thread = threading.Thread(target=serve_bridge, daemon=True)
     bridge_thread.start()
@@ -622,10 +512,11 @@ def register(ctx):
             state = sessions.get(session_id)
             if state is None:
                 return
-            try:
-                invoke(session_id, 'ProviderObservation', state['task'], state['model'], provider_failure=failure)
-            except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
-                logger.warning('Cairn provider observation could not be retained')
+            task, model = state['task'], state['model']
+        try:
+            invoke(session_id, 'ProviderObservation', task, model, provider_failure=failure)
+        except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
+            logger.warning('Cairn provider observation could not be retained')
 
     def api_error(session_id='', status_code=None, reason=None, **_):
         failure = None

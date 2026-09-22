@@ -265,6 +265,7 @@ class HermesCancellationE2ETests(unittest.TestCase):
             self.interrupt_calls.append((args, kwargs))
 
         self.agent.interrupt = mock_interrupt
+        self.agent.hard_interrupt = mock_interrupt
 
         # Set plugin manager CLI reference
         pm = get_plugin_manager()
@@ -275,6 +276,31 @@ class HermesCancellationE2ETests(unittest.TestCase):
             set_current_request_id("")
 
         self.addCleanup(cleanup_tools)
+
+    def control(self, method, params):
+        """Use the actual bridge socket; controller transport has separate tests."""
+        with socket.socket(socket.AF_UNIX) as conn:
+            conn.settimeout(5)
+            conn.connect(self.sock_path)
+            conn.sendall((json.dumps(dict(id='control-test', method=method, params=params))+'\n').encode())
+            with conn.makefile('rb') as response:
+                result = json.loads(response.readline(65537))
+            self.assertEqual(result['id'], 'control-test')
+            return result
+
+    def ownership_params(self):
+        if not callable(getattr(self.cli, 'request_ownership_snapshot', None)):
+            self.skipTest('native host predates request ownership API; tokenless refusal tested separately')
+        owned = self.cli.request_ownership_snapshot()
+        return {k: owned[k] for k in ('session_id', 'request_id', 'turn_id', 'ownership_token')}
+
+    def admit_owned(self, request='owned-request', running=True):
+        if not callable(getattr(self.cli, 'request_ownership_snapshot', None)):
+            self.skipTest('native host predates request ownership API; tokenless refusal tested separately')
+        self.cli._dequeue_pending_input(QueuedMessage(text='owned wake', request_id=request,
+            delivery_id='delivery-'+request, expected_session_id=self.cli.session_id))
+        self.cli._agent_running = running
+        return self.ownership_params()
 
     def test_claim1_queued_wake_preserves_typed_composer_draft(self):
         """Claim 1: Queued wake preserves human typed composer draft in prompt_toolkit."""
@@ -363,142 +389,39 @@ class HermesCancellationE2ETests(unittest.TestCase):
         self.assertIsNotNone(self.cli._active_turn_id)
         self.assertEqual(get_current_request_id(), "cairn-req-uuid-42")
 
-    def test_claim4_bounded_long_running_tool_stops_on_request_cancel(self):
-        """Claim 4: Request cancellation terminates tracked tool processes and positively verifies termination.
-
-        Crucially: background tools NOT captured as belonging to this exact request/turn are PRESERVED.
-        """
-        # Setup active turn for request req-tool-cancel
-        req_id = "req-tool-cancel-99"
-        turn_id = "turn-tool-cancel-99"
-        self.cli._active_request_id = req_id
-        self.cli._active_turn_id = turn_id
-        self.cli._agent_running = True
-        set_current_request_id(req_id)
-        set_current_turn_id(turn_id)
-
-        # Spawn a real long-running OS process through process_registry belonging to this request/turn
-        proc_sess = process_registry.spawn_local(
-            "sleep 60",
-            session_key=self.cli.session_id,
-            request_id=req_id,
-            turn_id=turn_id,
-        )
-        self.assertIsNotNone(proc_sess.pid)
-        self.assertFalse(proc_sess.exited)
-        os.kill(proc_sess.pid, 0)
-
-        # Spawn an unrelated background tool (e.g. owner tool or prior turn)
-        set_current_request_id("")
-        set_current_turn_id("owner-turn-42")
-        owner_tool = process_registry.spawn_local(
-            "sleep 60",
-            session_key=self.cli.session_id,
-            request_id="",
-            turn_id="owner-turn-42",
-        )
-        set_current_request_id(req_id)
-        set_current_turn_id(turn_id)
-        self.assertIsNotNone(owner_tool.pid)
-        self.assertFalse(owner_tool.exited)
-        os.kill(owner_tool.pid, 0)
-
-        # Check tools status via bridge socket
-        tstatus = hermes_queue.tools_status(
-            self.sock_path, self.process, self.cli.session_id, tool_ids=[proc_sess.id]
-        )
-        self.assertEqual(len(tstatus.get("tools", [])), 1)
-        self.assertEqual(tstatus["tools"][0]["status"], "running")
-
-        # Now issue request cancellation via native socket
-        abort_res = hermes_queue.abort(
-            self.sock_path,
-            self.process,
-            self.cli.session_id,
-            expected_request_id=req_id,
-            expected_turn_id=turn_id,
-        )
-
-        # Verify abort outcome
-        self.assertTrue(abort_res.get("aborted"))
-        self.assertEqual(abort_res.get("turn_stop"), "interrupted")
+    def test_claim4_unverified_cleanup_never_claims_tool_termination(self):
+        """Native cancellation is separate from still-unavailable verified cleanup."""
+        params = self.admit_owned()
+        proc = process_registry.spawn_local('sleep 60', session_key='child-session-key',
+            request_id=params['request_id'], turn_id=params['turn_id'])
+        owner = process_registry.spawn_local('sleep 60', session_key=self.cli.session_id,
+            request_id='owner-request', turn_id='owner-turn')
+        result = self.control('session/request_cancel', params)['result']
+        self.assertTrue(result['ownership']['cancelled'])
         self.assertEqual(len(self.interrupt_calls), 1)
-        self.assertTrue(self.interrupt_calls[0][1].get("hard_cancel"))
+        captured = next(t for t in result['tools'] if t['item_id'] == proc.id)
+        self.assertEqual(captured['stop_state'], 'captured')
+        self.assertNotIn(owner.id, [t['item_id'] for t in result['tools']])
+        self.assertEqual(result['terminal_scan'], 'unknown_remaining')
+        cleanup = self.control('session/request_cleanup', dict(params,
+            tools=[dict(item_id=proc.id, process_id=str(proc.pid))]))
+        self.assertEqual(cleanup['error']['message'], 'CLEANUP_UNAVAILABLE')
+        # Neither interruption acknowledgement nor registry flags authorize a
+        # claim that either real process has terminated.
+        os.kill(proc.pid, 0)
+        os.kill(owner.pid, 0)
 
-        # Verify tool termination outcome reported by bridge: ONLY proc_sess terminated!
-        tools = abort_res.get("tools", [])
-        self.assertEqual(len(tools), 1)
-        self.assertEqual(tools[0]["item_id"], proc_sess.id)
-        self.assertEqual(tools[0]["stop_state"], "terminated")
-
-        # Positive proof: proc_sess was terminated
-        time.sleep(0.1)
-        with self.assertRaises(ProcessLookupError):
-            os.kill(proc_sess.pid, 0)
-
-        # Positive proof: owner_tool was PRESERVED and is still alive!
-        os.kill(owner_tool.pid, 0)
-        self.assertFalse(owner_tool.exited)
-
-        # Cleanup owner_tool
-        process_registry.kill_process(owner_tool.id, source="test.cleanup")
-
-    def test_claim5_later_owner_work_unaffected_against_stale_cancel(self):
-        """Claim 5: Cancellation of previous request/turn is refused against active owner turn."""
-        old_req_id = "req-completed-earlier"
-
-        # Turn finishes, finally block resets active request state
-        self.cli._active_request_id = None
-        self.cli._active_delivery_id = None
-        self.cli._active_turn_id = None
-        set_current_request_id("")
-        set_current_turn_id("")
-        self.cli._agent_running = False
-
-        # Owner starts a new interactive turn
-        self.cli._dequeue_pending_input("Owner interactive command")
+    def test_claim5_tokenless_legacy_abort_preserves_owner_work(self):
+        self.cli._dequeue_pending_input('Owner interactive command')
         self.cli._agent_running = True
-        self.assertIsNone(self.cli._active_request_id)
-        owner_turn_id = self.cli._active_turn_id
-        self.assertIsNotNone(owner_turn_id)
-
-        # 1. Stale cancellation for old_req_id arrives while owner is working -> refused!
-        with self.assertRaises(hermes_queue.RequestMismatchError) as ctx:
-            hermes_queue.abort(
-                self.sock_path,
-                self.process,
-                self.cli.session_id,
-                expected_request_id=old_req_id,
-            )
-        self.assertIn("REQUEST_MISMATCH", str(ctx.exception))
-        self.assertEqual(len(self.interrupt_calls), 0)
+        original = self.cli._active_turn_id
+        for extra in ({}, dict(expected_request_id='old'), dict(expected_turn_id='old'),
+                      dict(expected_request_id='old', expected_turn_id=original)):
+            reply = self.control('session/abort', dict(session_id=self.cli.session_id, **extra))
+            self.assertEqual(reply['error']['message'], 'EXACT_REQUEST_OWNERSHIP_REQUIRED')
+        self.assertEqual(self.interrupt_calls, [])
+        self.assertEqual(self.cli._active_turn_id, original)
         self.assertTrue(self.cli._agent_running)
-
-        # 2. Turn mismatch arrives with wrong expected_turn_id -> refused!
-        with self.assertRaises(hermes_queue.RequestMismatchError) as ctx:
-            hermes_queue.abort(
-                self.sock_path,
-                self.process,
-                self.cli.session_id,
-                expected_turn_id="turn-stale-999",
-            )
-        self.assertIn("TURN_MISMATCH", str(ctx.exception))
-        self.assertEqual(len(self.interrupt_calls), 0)
-        self.assertTrue(self.cli._agent_running)
-
-        # 3. Unspecified abort (neither request nor turn) arrives while owner is working -> refused!
-        with self.assertRaises(hermes_queue.RequestMismatchError) as ctx:
-            hermes_queue.abort(
-                self.sock_path,
-                self.process,
-                self.cli.session_id,
-            )
-        self.assertIn("UNSPECIFIED_ABORT", str(ctx.exception))
-        self.assertEqual(len(self.interrupt_calls), 0)
-        self.assertTrue(self.cli._agent_running)
-
-        # Owner finishes turn normally without interruption
-        self.cli._agent_running = False
 
     def test_claim6_retained_uncertainty_and_recovery(self):
         """Claim 6: Peer credentials, session mismatches, and connection drops report honest uncertainty."""
@@ -510,15 +433,9 @@ class HermesCancellationE2ETests(unittest.TestCase):
             )
         self.assertIn("different process", str(ctx.exception))
 
-        # 2. Session mismatch refuses honestly
-        with self.assertRaises(hermes_queue.QueueUnavailable) as ctx:
-            hermes_queue.abort(
-                self.sock_path,
-                self.process,
-                "ses_nonexistent",
-                expected_request_id="req-any",
-            )
-        self.assertIn("SESSION_MISMATCH", str(ctx.exception))
+        # A tokenless request cannot obtain or mutate another session.
+        reply = self.control('session/abort', dict(session_id='ses_nonexistent', expected_request_id='req-any'))
+        self.assertEqual(reply['error']['message'], 'EXACT_REQUEST_OWNERSHIP_REQUIRED')
 
         # 3. Connection drop / closed socket reports uncertain outcome (never fake success)
         dead_sock = str(self.home / "dead.sock")
@@ -532,89 +449,25 @@ class HermesCancellationE2ETests(unittest.TestCase):
         self.assertIn("unavailable", str(ctx.exception))
 
     def test_claim7_abort_during_admission_cancels_before_execution(self):
-        """Claim 7: Abort arriving during admitting state cancels before chat can start."""
-        req_id = "req-admit-race-1"
-        turn_id = "turn-admit-race-1"
-        qm = QueuedMessage(
-            text="Wake for admission race",
-            expected_session_id=self.cli.session_id,
-            request_id=req_id,
-            turn_id=turn_id,
-        )
-        self.cli._pending_input.put(qm)
-
-        # Dequeue item: state becomes 'admitting', but chat has not started
-        user_input = self.cli._dequeue_pending_input(self.cli._pending_input.get())
-        self.assertEqual(user_input, "Wake for admission race")
-        self.assertEqual(self.cli._admission_state, "admitting")
-        self.assertFalse(self.cli._agent_running)
-
-        # Abort arrives while admitting
-        abort_res = hermes_queue.abort(
-            self.sock_path,
-            self.process,
-            self.cli.session_id,
-            expected_request_id=req_id,
-            expected_turn_id=turn_id,
-        )
-        self.assertTrue(abort_res.get("aborted"))
-        self.assertEqual(abort_res.get("turn_stop"), "cancelled_before_running")
+        params = self.admit_owned(running=False)
+        result = self.control('session/request_cancel', params)['result']['ownership']
+        self.assertTrue(result['cancelled'])
+        self.assertTrue(result['turn_ended'])
+        self.assertTrue(result['tool_admission_closed'])
         self.assertTrue(self.cli._active_cancelled)
+        self.assertEqual(self.interrupt_calls, [])
 
-        # When _process_loop reaches the execution block under _admission_lock:
-        mock_chat = MagicMock()
-        self.cli.chat = mock_chat
-        with self.cli._admission_lock:
-            if self.cli._active_cancelled:
-                self.cli._admission_state = "idle"
-                self.cli._active_cancelled = False
-                self.cli._active_request_id = None
-                self.cli._active_delivery_id = None
-                self.cli._active_turn_id = None
-            else:
-                self.cli.chat(user_input)
-
-        # Chat was never started
-        mock_chat.assert_not_called()
-        self.assertEqual(self.cli._admission_state, "idle")
-
-    def test_claim8_pending_abort_requires_all_supplied_ids_match(self):
-        """Claim 8: Pending queue abort requires all supplied IDs to match; partial mismatch does not dequeue."""
-        req_id = "req-both-match"
-        turn_id = "turn-both-match"
-        qm = QueuedMessage(
-            text="Wake requiring exact match",
-            expected_session_id=self.cli.session_id,
-            request_id=req_id,
-            turn_id=turn_id,
-        )
-        self.cli._pending_input.put(qm)
-
-        # 1. Supply matching request_id but mismatched turn_id:
-        abort_mismatch = hermes_queue.abort(
-            self.sock_path,
-            self.process,
-            self.cli.session_id,
-            expected_request_id=req_id,
-            expected_turn_id="turn-WRONG",
-        )
-        self.assertFalse(abort_mismatch.get("aborted"))
-        self.assertEqual(abort_mismatch.get("turn_stop"), "already_ended")
-        # Item must still be in pending input
-        self.assertEqual(self.cli._pending_input.qsize(), 1)
-        self.assertEqual(self.cli._pending_input.queue[0].request_id, req_id)
-
-        # 2. Supply both correctly:
-        abort_match = hermes_queue.abort(
-            self.sock_path,
-            self.process,
-            self.cli.session_id,
-            expected_request_id=req_id,
-            expected_turn_id=turn_id,
-        )
-        self.assertTrue(abort_match.get("aborted"))
-        self.assertEqual(abort_match.get("turn_stop"), "dequeued_before_admission")
-        self.assertEqual(self.cli._pending_input.qsize(), 0)
+    def test_claim8_unadmitted_queue_cannot_be_cancelled_without_native_token(self):
+        item = QueuedMessage(text='pending wake', expected_session_id=self.cli.session_id,
+            request_id='request', delivery_id='delivery', turn_id='turn')
+        self.cli._pending_input.put(item)
+        for extra in ({}, dict(ownership_token='invented-token')):
+            reply = self.control('session/request_cancel', dict(session_id=self.cli.session_id,
+                request_id='request', turn_id='turn', **extra))
+            self.assertIn('error', reply)
+            self.assertIs(self.cli._pending_input.queue[0], item)
+            self.assertEqual(self.cli._pending_input.qsize(), 1)
+        self.assertEqual(self.interrupt_calls, [])
 
     def test_claim9_immediate_refusal_on_stale_session_in_queue_message(self):
         """Claim 9: Queueing message for mismatched session immediately refuses with SESSION_MISMATCH."""
@@ -681,6 +534,8 @@ class HermesCancellationE2ETests(unittest.TestCase):
         self.assertEqual(qm.status, "admitted")
     def test_claim12_dequeue_to_admission_cancellation_atomicity(self):
         """Claim 12: Dequeue-to-admission atomicity holds admission lock across queue removal and admission."""
+        if not callable(getattr(self.cli, 'request_ownership_snapshot', None)):
+            self.skipTest('native host predates request ownership API')
         removed = threading.Event()
         release = threading.Event()
         cancelled = threading.Event()
@@ -701,7 +556,7 @@ class HermesCancellationE2ETests(unittest.TestCase):
             QueuedMessage(
                 text="wake-boundary",
                 expected_session_id=self.cli.session_id,
-                request_id="req-boundary",
+                request_id="req-boundary", delivery_id="delivery-boundary",
             )
         )
 
@@ -715,14 +570,8 @@ class HermesCancellationE2ETests(unittest.TestCase):
 
         def cancel():
             try:
-                result.update(
-                    hermes_queue.abort(
-                        self.sock_path,
-                        self.process,
-                        self.cli.session_id,
-                        expected_request_id="req-boundary",
-                    )
-                )
+                params = self.ownership_params()
+                result.update(self.control('session/request_cancel', params)['result']['ownership'])
             except BaseException as e:
                 errors.append(repr(e))
             finally:
@@ -755,39 +604,17 @@ class HermesCancellationE2ETests(unittest.TestCase):
             chat,
             "Chat must not be called after cancellation during admission handoff",
         )
-        self.assertEqual(result.get("turn_stop"), "cancelled_before_running")
+        self.assertTrue(result.get("cancelled"))
+        self.assertTrue(result.get("turn_ended"))
 
-    def test_claim13_tool_inventory_failure_reported_as_uncertain(self):
-        """Claim 13: Tool inventory failure reports tools_uncertain and explicit tool_error."""
-        from unittest.mock import patch
-        req_id = "req-tool-inventory-fail"
-        self.cli._admission_state = "running"
-        self.cli._agent_running = True
-        self.cli._active_request_id = req_id
-        self.cli._active_turn_id = "turn-tool-fail"
-
-        try:
-            with patch.object(process_registry, 'list_sessions',
-                              side_effect=RuntimeError('tool inventory unavailable')):
-                result = hermes_queue.abort(
-                    self.sock_path,
-                    self.process,
-                    self.cli.session_id,
-                    expected_request_id=req_id,
-                )
-            self.assertTrue(result.get("aborted"))
-            self.assertEqual(result.get("turn_stop"), "interrupted")
-            self.assertTrue(result.get("tools_uncertain"))
-            self.assertIn("tool inventory unavailable", result.get("tool_error", ""))
-            tools = result.get("tools", [])
-            self.assertEqual(len(tools), 1)
-            self.assertEqual(tools[0].get("item_id"), "tool_inventory")
-            self.assertIn("unavailable: tool inventory unavailable", tools[0].get("stop_state", ""))
-        finally:
-            self.cli._agent_running = False
-            self.cli._admission_state = "idle"
-            self.cli._active_request_id = None
-            self.cli._active_turn_id = None
+    def test_claim13_tool_inventory_failure_never_reports_clear(self):
+        params = self.admit_owned()
+        with patch.object(process_registry, 'list_sessions', side_effect=RuntimeError('unavailable')):
+            result = self.control('session/request_cancel', params)['result']
+        self.assertTrue(result['ownership']['cancelled'])
+        self.assertFalse(result['inventory_complete'])
+        self.assertEqual(result['tools'], [])
+        self.assertEqual(result['terminal_scan'], 'unknown_remaining')
 
     def test_claim14_native_turn_binding_end_to_end_and_reconciliation(self):
         """Claim 14: Admission identity reaches hooks, a substituted store boundary, and abort."""
@@ -864,24 +691,14 @@ class HermesCancellationE2ETests(unittest.TestCase):
         self.assertNotIn('inbox_intent', state)
         self.assertNotIn('inbox_attempt', state)
 
-        # Abort using the bound hook turn is accepted
-        self.cli._agent_running = True
-        self.cli._admission_state = 'running'
-        try:
-            abort_res = hermes_queue.abort(
-                self.sock_path,
-                self.process,
-                self.cli.session_id,
-                expected_request_id='wake-request-claim14',
-                expected_turn_id=binding['native_turn_id'],
-            )
-            self.assertTrue(abort_res.get('aborted'))
-            self.assertEqual(abort_res.get('turn_stop'), 'interrupted')
-        finally:
-            self.cli._agent_running = False
-            self.cli._admission_state = 'idle'
-            self.cli._active_request_id = None
-            self.cli._active_turn_id = None
+        # Native binding alone never authorizes the legacy tokenless API.
+        reply = self.control('session/abort', dict(session_id=self.cli.session_id,
+            expected_request_id='wake-request-claim14', expected_turn_id=binding['native_turn_id']))
+        self.assertEqual(reply['error']['message'], 'EXACT_REQUEST_OWNERSHIP_REQUIRED')
+        if callable(getattr(self.cli, 'request_ownership_snapshot', None)):
+            result = self.control('session/request_cancel', self.ownership_params())['result']
+            self.assertTrue(result['ownership']['cancelled'])
+            self.assertEqual(result['ownership']['turn_id'], binding['native_turn_id'])
 
     def test_claim15_adverse_turn_binding_rejection(self):
         """Claim 15: Adverse turn bindings (wrong prompt, missing turn_id, foreign session) are strictly rejected."""
@@ -1048,15 +865,11 @@ class HermesCancellationE2ETests(unittest.TestCase):
                        turn_id='foreign-session:task:turn2', user_message='foreign text', platform='cli')
         self.assertEqual(self.cli._active_turn_id, admitted_turn)
 
-        # 4. Original turn targeted abort succeeds
-        abort_res = hermes_queue.abort(
-            self.sock_path,
-            self.process,
-            self.cli.session_id,
-            expected_request_id='req-18',
-            expected_turn_id=admitted_turn,
-        )
-        self.assertTrue(abort_res.get('aborted'))
+        # A fabricated active ID does not create native ownership evidence.
+        reply = self.control('session/abort', dict(session_id=self.cli.session_id,
+            expected_request_id='req-18', expected_turn_id=admitted_turn))
+        self.assertEqual(reply['error']['message'], 'EXACT_REQUEST_OWNERSHIP_REQUIRED')
+        self.assertEqual(self.interrupt_calls, [])
 
         # 5. Matching post hook cleans up
         pm.invoke_hook('post_llm_call', session_id=self.cli.session_id,
