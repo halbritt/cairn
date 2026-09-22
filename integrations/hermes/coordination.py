@@ -251,24 +251,27 @@ def register(ctx):
                                 hook_busy = bool(sess and sess.get('busy'))
                             is_busy = cli_busy or hook_busy
 
+                            request_id = params.get('request_id')
+                            delivery_id = params.get('delivery_id')
+                            turn_id = params.get('turn_id')
+
                             # Define callback to capture durable admission/refusal state.
-                            # Admission runs under the Hermes admission lock, so
-                            # attesting exactly here makes admission and the
-                            # exclusive 049 claim atomic with respect to owner input.
+                            # The closure is defined after the ids are read so its
+                            # defaults are bound. Admission runs under the Hermes
+                            # admission lock, so attesting exactly here makes
+                            # admission and the exclusive 049 claim atomic with
+                            # respect to owner input. The native companion (131e95b)
+                            # reports 'admitted'; older cores report 'consumed'.
                             def on_consumed_cb(status, current_sid, cid=client_id,
                                                rid=request_id, did=delivery_id, tid=turn_id,
                                                sid=target_session):
                                 record_wake_outcome(cid, status, current_sid)
-                                if status == 'consumed' and did and tid:
+                                if status in ('admitted', 'consumed') and did and tid:
                                     try:
                                         invoke(sid, 'WakeAdmitted', turn_id=tid,
                                                delivery_id=did, request_id=rid)
                                     except Exception:
                                         logger.warning('Cairn wake admission attestation unavailable')
-
-                            request_id = params.get('request_id')
-                            delivery_id = params.get('delivery_id')
-                            turn_id = params.get('turn_id')
 
                             # Exact public seam: content=text (keyword is content, not text!)
                             qm = ctx.queue_message(

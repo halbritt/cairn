@@ -39,6 +39,7 @@ def install(root, settings, config):
     engine.write_state(config_path, config)
     engine.load_config(config_path)
     shutil.copyfile(ROOT / 'integrations/lifecycle/codex_queue.py', root / 'codex_queue.py')
+    shutil.copyfile(ROOT / 'integrations/lifecycle/hermes_cancel.py', root / 'hermes_cancel.py')
     shutil.copyfile(ROOT / 'integrations/lifecycle/claude_channel.py', root / 'claude_channel.py')
     shutil.copyfile(ROOT / 'integrations/lifecycle/opencode_queue.py', root / 'opencode_queue.py')
     shutil.copyfile(ROOT / 'integrations/lifecycle/hermes_queue.py', root / 'hermes_queue.py')

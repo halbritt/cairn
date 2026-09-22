@@ -147,32 +147,56 @@ def execute_cancellation(config, session, attempt, bridge, native_session_id,
     scan, then the 049 evidence contract. Failed cleanup keeps the hold."""
     attempt_id = attempt['attempt_id']
     cancel = attempt.get('cancel') or {}
+    # Cancellation intent is required: a stale exclusive flag alone is not
+    # authority to stop anything.
+    if not cancel:
+        return dict(confirmed=False, reason='no_cancellation_intent', attempt_id=attempt_id)
     if not attempt.get('turn_exclusive'):
         # A shared or unproven turn can never be cancelled as exclusively
         # owned; surface the refusal instead of acting.
         return dict(confirmed=False, reason='turn_not_exclusive', attempt_id=attempt_id)
     if cancel.get('confirmed_at'):
         return dict(confirmed=False, reason='already_confirmed', attempt_id=attempt_id)
+    if not attempt.get('native_turn_id'):
+        return dict(confirmed=False, reason='native_identity_missing', attempt_id=attempt_id)
     result = bridge.abort(native_session_id,
                           request_id=attempt.get('native_request_id'),
-                          turn_id=attempt.get('native_turn_id') or None)
+                          turn_id=attempt['native_turn_id'])
+    if not isinstance(result, dict) or result.get('aborted') is not True:
+        return dict(confirmed=False, reason='abort_not_confirmed', attempt_id=attempt_id)
+    # The abort must confirm it acted on the exact identity we sent.
+    if result.get('turn_id') not in (None, attempt['native_turn_id']):
+        return dict(confirmed=False, reason='abort_identity_mismatch', attempt_id=attempt_id)
+    raw_tools = result.get('tools')
+    if raw_tools is None or not isinstance(raw_tools, list):
+        return dict(confirmed=False, reason='abort_evidence_malformed', attempt_id=attempt_id)
     turn_stop = TURN_STOP_MAP.get(result.get('turn_stop'), 'ambiguous')
     tools = []
-    for tool in result.get('tools') or []:
-        state = TOOL_STOP_MAP.get(tool.get('stop_state'), 'stop_issued')
-        tools.append(dict(item_id=str(tool.get('item_id') or ''), stop_state=state))
+    for tool in raw_tools:
+        if not isinstance(tool, dict) or not tool.get('item_id') or not tool.get('stop_state'):
+            return dict(confirmed=False, reason='abort_evidence_malformed', attempt_id=attempt_id)
+        state = TOOL_STOP_MAP.get(tool['stop_state'])
+        if state is None:
+            # Unknown registry outcomes prove nothing; hold, never guess.
+            state = 'stop_issued'
+        tools.append(dict(item_id=str(tool['item_id']), stop_state=state))
     report_stop(config, session, attempt_id, turn_stop=turn_stop, tools=tools)
-    # Verified terminal scan: only a bridge tools_status that shows no running
-    # owned tools proves cleanup; otherwise the hold is retained.
+    # Verified terminal scan: only a well-formed bridge tools_status that
+    # positively reports no running owned tools proves cleanup. A missing or
+    # malformed tools list is unavailable evidence and retains the hold; it
+    # is never treated as clear.
     deadline = time.monotonic() + verify_seconds
     while time.monotonic() < deadline:
         try:
             status = bridge.tools_status(native_session_id)
         except CancelError:
             return dict(confirmed=False, reason='verification_unavailable', attempt_id=attempt_id)
-        running = [tool for tool in (status.get('tools') or [])
+        listed = status.get('tools') if isinstance(status, dict) else None
+        if not isinstance(listed, list) or not all(isinstance(t, dict) and t.get('item_id') for t in listed):
+            return dict(confirmed=False, reason='scan_evidence_malformed', attempt_id=attempt_id)
+        running = [tool for tool in listed
                    if tool.get('status') == 'running'
-                   and (not attempt.get('native_turn_id') or tool.get('turn_id') == attempt.get('native_turn_id'))]
+                   and tool.get('turn_id') == attempt['native_turn_id']]
         if not running:
             report_stop(config, session, attempt_id, terminal_scan='clear')
             break
@@ -197,6 +221,8 @@ def handle_watcher_cycle(config, state, path, bridge_factory):
     if attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
         if not attempt.get('turn_exclusive'):
             return dict(confirmed=False, reason='turn_not_exclusive', attempt_id=attempt['attempt_id'])
+        if bridge_factory is None:
+            return dict(confirmed=False, reason='bridge_unavailable', attempt_id=attempt['attempt_id'])
         bridge = bridge_factory()
         return execute_cancellation(config, session, attempt, bridge, native_session_id)
     return None

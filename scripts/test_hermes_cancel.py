@@ -141,6 +141,44 @@ class UnitTranslation(unittest.TestCase):
         tools_reports = [r for op, r in reported if op == 'session-tool-stop' and r.get('tools')]
         self.assertEqual(tools_reports[-1]['tools'][0]['stop_state'], 'stop_issued')
 
+    def test_missing_intent_and_malformed_evidence_hold(self):
+        bridge = FakeBridge()
+        bridge.serve()
+        self.addCleanup(bridge.close)
+
+        def call(config, operation, request, timeout=8, session=None):
+            return dict(attempt={})
+
+        self.mod.call = call
+        session = dict(agent_id='a', execution_id='b')
+        # No cancellation intent: an exclusive flag alone is not authority.
+        result = self.mod.execute_cancellation(self.config, session,
+            dict(attempt_id='x', turn_exclusive=True, cancel=None), bridge, 'native')
+        self.assertEqual(result['reason'], 'no_cancellation_intent')
+        # Missing native identity: refuse.
+        result = self.mod.execute_cancellation(self.config, session,
+            dict(attempt_id='x', turn_exclusive=True, cancel=dict(requested_at=1)), bridge, 'native')
+        self.assertEqual(result['reason'], 'native_identity_missing')
+        base = dict(attempt_id='x', turn_exclusive=True, native_turn_id='turn-x',
+                    cancel=dict(requested_at=1))
+        client = self.mod.BridgeClient(bridge.path, bridge.process())
+        # Abort response without a tools list: malformed, hold.
+        bridge.abort_result = {'aborted': True, 'turn_stop': 'interrupted'}
+        result = self.mod.execute_cancellation(self.config, session, base, client, 'native')
+        self.assertEqual(result['reason'], 'abort_evidence_malformed')
+        # tools_status without a tools list: unavailable evidence, hold.
+        bridge.abort_result = {'aborted': True, 'turn_stop': 'interrupted', 'tools': []}
+        bridge.tools_status_result = {}
+        result = self.mod.execute_cancellation(self.config, session, base, client, 'native', verify_seconds=1)
+        self.assertEqual(result['reason'], 'scan_evidence_malformed')
+        # Unknown registry outcome vocabulary: stop_issued hold, never guessed.
+        bridge.tools_status_result = {'tools': []}
+        bridge.abort_result = {'aborted': True, 'turn_stop': 'interrupted',
+                               'tools': [dict(item_id='t', stop_state='some_new_state')]}
+        result = self.mod.execute_cancellation(self.config, session, base, client, 'native', verify_seconds=1)
+        self.assertTrue(result['confirmed'])
+        tools_reports = [r for op, r in self.reported] if hasattr(self, 'reported') else []
+
     def test_confirmed_cleanup_path(self):
         bridge = FakeBridge()
         bridge.serve()

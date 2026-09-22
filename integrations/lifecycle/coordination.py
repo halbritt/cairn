@@ -11,6 +11,11 @@ from pathlib import Path
 import signal
 import shlex
 import subprocess
+
+try:
+    import hermes_cancel as _hermes_cancel
+except ImportError:  # Older installs without the hermes cancellation executor.
+    _hermes_cancel = None
 import sys
 import tempfile
 import threading
@@ -1103,6 +1108,11 @@ def watch_once(config):
                         state["agent"] = call(config, "agent-register", state["registration"])
                     else:
                         state["agent"] = heartbeat(config, state)
+                        if config["harness"] == "hermes" and _hermes_cancel is not None:
+                            # One bounded cancellation cycle per watcher pass;
+                            # admission attestation happens in the bridge
+                            # callback, never here.
+                            _hermes_cancel.handle_watcher_cycle(config, state, path, None)
                         watch_inbox(config, state, path)
                         prepared = prepare_idle_wake(config, state, path)
                 elif not state.get("agent"):
