@@ -1,4 +1,5 @@
 """Native Hermes session presence and draft-preserving queue bridge."""
+import atexit
 import json
 import logging
 import os
@@ -558,29 +559,32 @@ def register(ctx):
         finally:
             client_semaphore.release()
 
-    def serve_bridge():
+    def bind_bridge():
+        """Bind synchronously so unload/exit cleanup always sees the socket."""
         nonlocal bridge_server, bridge_bound
-        try:
-            if os.path.exists(bridge_path):
+        if os.path.exists(bridge_path):
+            try:
+                # Test if an active server is listening
+                test_sock = socket.socket(socket.AF_UNIX)
+                test_sock.connect(bridge_path)
+                test_sock.close()
+                logger.warning("Another bridge is listening at %s; aborting bind", bridge_path)
+                return False
+            except OSError:
                 try:
-                    # Test if an active server is listening
-                    test_sock = socket.socket(socket.AF_UNIX)
-                    test_sock.connect(bridge_path)
-                    test_sock.close()
-                    logger.warning("Another bridge is listening at %s; aborting bind", bridge_path)
-                    return
+                    os.unlink(bridge_path)
                 except OSError:
-                    try:
-                        os.unlink(bridge_path)
-                    except OSError:
-                        pass
+                    pass
+        bridge_server = socket.socket(socket.AF_UNIX)
+        bridge_server.bind(bridge_path)
+        bridge_bound = True
+        os.chmod(bridge_path, 0o600)
+        bridge_server.listen(MAX_CONCURRENT_CLIENTS)
+        bridge_server.settimeout(1.0)
+        return True
 
-            bridge_server = socket.socket(socket.AF_UNIX)
-            bridge_server.bind(bridge_path)
-            bridge_bound = True
-            os.chmod(bridge_path, 0o600)
-            bridge_server.listen(MAX_CONCURRENT_CLIENTS)
-            bridge_server.settimeout(1.0)
+    def serve_bridge():
+        try:
             while bridge_running:
                 try:
                     conn, _ = bridge_server.accept()
@@ -594,11 +598,17 @@ def register(ctx):
                     continue
                 except OSError:
                     break
-        except Exception as exc:
-            logger.warning('Cairn Hermes bridge server failed to initialize: %s', exc)
+        finally:
+            cleanup_bridge()
+
+    bridge_owner = os.getpid()
 
     def cleanup_bridge():
+        # Idempotent; reachable from unload, the accept loop and atexit. A forked
+        # child inherits atexit handlers but must never remove its parent's socket.
         nonlocal bridge_bound
+        if os.getpid() != bridge_owner:
+            return
         if bridge_server:
             try:
                 bridge_server.close()
@@ -612,8 +622,13 @@ def register(ctx):
             except OSError:
                 pass
 
-    bridge_thread = threading.Thread(target=serve_bridge, daemon=True)
-    bridge_thread.start()
+    try:
+        if bind_bridge():
+            threading.Thread(target=serve_bridge, daemon=True).start()
+            atexit.register(cleanup_bridge)  # Exits that skip plugin unload (Ctrl-C, SIGTERM handlers, sys.exit).
+    except Exception as exc:
+        cleanup_bridge()
+        logger.warning('Cairn Hermes bridge server failed to initialize: %s', exc)
 
     def provider_observation(session_id, failure):
         if not os.environ.get('CAIRN_WAKE_CONTEXT'):
