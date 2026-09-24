@@ -76,14 +76,17 @@ class CodexTranscriptTests(unittest.TestCase):
             dict(role="user", text="Also keep this owner line."),
             dict(role="assistant", text="Fixed the heading.")])
 
-    def test_rollouts_without_kinds_filter_each_part(self):
+    def test_rollouts_without_kinds_strip_only_known_injected_forms(self):
         self.write([
             item("user", "<recommended_plugins>\nPRIVATE\n</recommended_plugins>", "# AGENTS.md instructions\nPRIVATE",
                  "<environment_context>\n  <cwd>/repo</cwd>PRIVATE\n</environment_context>"),
-            item("user", "<recommended_plugins>PRIVATE</recommended_plugins>", "Keep the owner request."),
+            item("user", "<recommended_plugins>PRIVATE</recommended_plugins>\nPlease fix the heading."),
+            item("user", "<permissions instructions>PRIVATE</permissions instructions>\n<request>Fix this</request>"),
             item("user", "Use <b>bold</b> in the heading."),
         ])
-        self.assertEqual(hook.conversation(self.path), [dict(role="user", text="Keep the owner request."),
+        self.assertNotIn("PRIVATE", json.dumps(hook.conversation(self.path)))
+        self.assertEqual(hook.conversation(self.path), [dict(role="user", text="Please fix the heading."),
+                                                        dict(role="user", text="<request>Fix this</request>"),
                                                         dict(role="user", text="Use <b>bold</b> in the heading.")])
 
     def test_oversized_rollout_message_is_bounded_and_marked(self):
@@ -100,8 +103,8 @@ class CodexTranscriptTests(unittest.TestCase):
 
 
 def considered(event, state):
-    """What a completed real capture records: the marker of its snapshot."""
-    state["capture_snapshot_marker"] = hook.message_digest(hook.conversation(event["transcript_path"])[-1])
+    """What a completed real capture records: the position of its snapshot."""
+    state["capture_snapshot_marker"] = hook.codex_snapshot_marker(event["transcript_path"])
     return {}
 
 
@@ -167,6 +170,39 @@ class CodexHookTests(unittest.TestCase):
         state = json.loads((Path(self.config["state_dir"]) / (SESSION + ".json")).read_text())
         self.assertEqual(hook.codex_new_messages(self.event, state), 2,
                          "messages that arrived during selection were marked as captured")
+
+    def test_repeated_identical_messages_still_count_as_new(self):
+        records = [item("user", f"step {n}") if n % 2 == 0 else item("assistant", "Done.") for n in range(6)]
+        self.transcript.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+        with patch.object(hook, "capture", side_effect=lambda memory, event, state: considered(event, state)) as capture:
+            hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
+            with self.transcript.open("a") as out:
+                for n in range(3):
+                    out.write(json.dumps(item("user", "again")) + "\n" + json.dumps(item("assistant", "Done.")) + "\n")
+            state = json.loads((Path(self.config["state_dir"]) / (SESSION + ".json")).read_text())
+            self.assertEqual(hook.codex_new_messages(self.event, state), 6, "repeated content hid new dialogue")
+            hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
+            self.assertEqual(capture.call_count, 2)
+
+    def test_replaced_or_truncated_rollout_counts_as_new(self):
+        self.dialogue(hook.CODEX_STOP_MIN_MESSAGES // 2)
+        with patch.object(hook, "capture", side_effect=lambda memory, event, state: considered(event, state)):
+            hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
+        state = json.loads((Path(self.config["state_dir"]) / (SESSION + ".json")).read_text())
+        self.transcript.write_text(json.dumps(item("user", "fresh")) + "\n")  # shorter than the saved offset
+        self.assertEqual(hook.codex_new_messages(self.event, state), 1)
+        other = self.root / "other.jsonl"; other.write_text(json.dumps(item("user", "forked")) + "\n")
+        self.assertEqual(hook.codex_new_messages(dict(self.event, transcript_path=str(other)), state), 1)
+
+    def test_snapshot_marker_is_scoped_to_codex(self):
+        self.dialogue(1)
+        state = {}
+        with patch.object(hook.Memory, "checkpoint", return_value=None), \
+             patch.object(hook, "handoff_candidates", return_value=[]), \
+             patch.object(hook, "durable_candidates", return_value=[]), \
+             patch.object(hook, "select_json", return_value={"structured_output": {"checkpoint": None, "workstream": None, "memories": []}}):
+            hook.capture(hook.Memory(dict(self.config, harness="claude"), SESSION), dict(self.event, hook_event_name="PreCompact"), state)
+        self.assertNotIn("capture_snapshot_marker", state)
 
     def test_failed_capture_does_not_advance_the_marker(self):
         self.dialogue(hook.CODEX_STOP_MIN_MESSAGES)

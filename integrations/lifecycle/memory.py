@@ -25,9 +25,16 @@ CODEX_STOP_MIN_MESSAGES = 6
 # Codex injects instructions and context as user-role items. Codex 0.156 labels
 # every content part (content_item_kinds); owner-typed text is "user.text".
 CODEX_OWNER_KIND = "user.text"
-# Rollouts without that metadata: drop parts that are the AGENTS.md block or a
-# single wholly tagged block such as <environment_context>...</environment_context>.
-CODEX_TAGGED_BLOCK = re.compile(r"\s*<([A-Za-z_][\w-]*)>.*</\1>\s*", re.S)
+# Compatibility for rollouts without that metadata (Codex before 0.156): drop the
+# AGENTS.md block and strip only these known host-injected tag blocks; any other
+# text, including owner-written markup, is kept. Unknown future injected forms are
+# covered only by the structural path above.
+CODEX_INJECTED_TAGS = ("environment_context", "user_instructions", "INSTRUCTIONS", "turn_aborted",
+                       "recommended_plugins", "skills_instructions", "permissions instructions",
+                       "collaboration_mode", "multi_agent_mode", "multi_agent_role", "model_switch",
+                       "user_shell_command", "skill")
+CODEX_INJECTED_BLOCK = re.compile("|".join(r"<%s>.*?</%s>" % (re.escape(tag), re.escape(tag))
+                                           for tag in CODEX_INJECTED_TAGS), re.S)
 
 
 def codex_owner_parts(payload):
@@ -40,9 +47,8 @@ def codex_owner_parts(payload):
     if isinstance(kinds, list) and len(kinds) == len(content):
         return [part.get("text", "") for part, kind in zip(content, kinds)
                 if kind == CODEX_OWNER_KIND and part.get("type") == "input_text"]
-    return [part.get("text", "") for part in parts
-            if not part.get("text", "").lstrip().startswith("# AGENTS.md instructions")
-            and not CODEX_TAGGED_BLOCK.fullmatch(part.get("text", ""))]
+    return [CODEX_INJECTED_BLOCK.sub("", part.get("text", "")).strip() for part in parts
+            if not part.get("text", "").lstrip().startswith("# AGENTS.md instructions")]
 DURABLE_KINDS = ("decision", "preference", "lesson", "procedure")
 CAPTURE_SCHEMA = {
     "type": "object", "properties": {
@@ -183,16 +189,24 @@ class Memory:
         return None
 
 
-def conversation(path):
-    """Read bounded top-level dialogue, excluding tool payloads and reasoning."""
+def conversation(path, with_offsets=False):
+    """Read bounded top-level dialogue, excluding tool payloads and reasoning.
+
+    with_offsets also returns each kept message's absolute end offset in the
+    append-only transcript, a stable position even for repeated identical text.
+    """
     with Path(path).open("rb") as stream:
         size = stream.seek(0, 2)
-        stream.seek(max(0, size - TRANSCRIPT_BYTES))
+        start = max(0, size - TRANSCRIPT_BYTES)
+        stream.seek(start)
         if size > TRANSCRIPT_BYTES:
-            stream.readline()  # discard the first partial JSONL record
+            start += len(stream.readline())  # discard the first partial JSONL record
         raw = stream.read(TRANSCRIPT_BYTES)
-    messages, seen = [], set()
-    for line in raw.splitlines():
+    messages, seen, offsets, position = [], set(), [], start
+    for line in raw.splitlines(keepends=True):
+        position += len(line)
+        if not line.strip():
+            continue
         record = json.loads(line)
         if record.get("type") == "response_item":
             # Codex rollout: only top-level user/assistant message items; developer
@@ -203,6 +217,7 @@ def conversation(path):
             text = "\n".join(part for part in codex_owner_parts(payload) if part.strip())
             if text.strip():
                 messages.append({"role": payload["role"], "text": text})
+                offsets.append(position)
             continue
         if (record.get("type") not in ("user", "assistant") or record.get("isSidechain")
                 or record.get("isCompactSummary") or record.get("isMeta")):
@@ -221,7 +236,11 @@ def conversation(path):
             seen.add(identity)
         if text.strip():
             messages.append({"role": record["type"], "text": text})
-    return bounded_dialogue(messages)
+            offsets.append(position)
+    bounded = bounded_dialogue(messages)
+    if with_offsets:
+        return bounded, offsets[len(offsets) - len(bounded):]
+    return bounded
 
 
 def bounded_dialogue(messages):
@@ -639,8 +658,9 @@ def capture(memory, event, state=None):
     if not messages:
         record_capture_status(state, "empty")
         return {}
-    # Marker of exactly this snapshot; the host may append while selection runs.
-    state["capture_snapshot_marker"] = message_digest(messages[-1])
+    if memory.config.get("harness") == "codex" and "messages" not in event:
+        # Position of exactly this snapshot; the host may append while selection runs.
+        state["capture_snapshot_marker"] = codex_snapshot_marker(event["transcript_path"])
     def fingerprint(dialogue):
         return hashlib.sha256(encoded([CAPTURE_PROMPT, CAPTURE_SCHEMA, memory.config.get("model"), dialogue]).encode()).hexdigest()
     digest = fingerprint(messages)
@@ -683,20 +703,24 @@ def capture(memory, event, state=None):
     return {"systemMessage": "Cairn selected memories saved: " + ", ".join(saved)} if saved else {}
 
 
-def message_digest(message):
-    return hashlib.sha256(encoded(message).encode("utf-8")).hexdigest()
+def codex_snapshot_marker(path):
+    """Transcript identity plus the end offset of its newest kept message."""
+    messages, offsets = conversation(path, with_offsets=True)
+    return dict(path=str(Path(path).resolve()), offset=offsets[-1] if offsets else 0)
 
 
 def codex_new_messages(event, state):
-    """Messages after the last captured one. The excerpt is a bounded recent
-    window, so counting its length would saturate on long sessions; a marker that
-    has scrolled out of the window means plenty of new dialogue."""
-    messages = conversation(event["transcript_path"])
+    """Messages after the last captured position. Offsets in the append-only
+    rollout stay distinct for repeated identical text and do not saturate with
+    the bounded excerpt window. Another file, or one shorter than the saved
+    offset, counts everything as new."""
+    path = event["transcript_path"]
+    messages, offsets = conversation(path, with_offsets=True)
     marker = state.get("codex_capture_marker")
-    for index in range(len(messages) - 1, -1, -1):
-        if message_digest(messages[index]) == marker:
-            return len(messages) - index - 1
-    return len(messages) if marker is None else len(messages) + CODEX_STOP_MIN_MESSAGES
+    if (not isinstance(marker, dict) or marker.get("path") != str(Path(path).resolve())
+            or not isinstance(marker.get("offset"), int) or marker["offset"] > Path(path).stat().st_size):
+        return len(messages)
+    return sum(1 for offset in offsets if offset > marker["offset"])
 
 
 def handle(config, event):

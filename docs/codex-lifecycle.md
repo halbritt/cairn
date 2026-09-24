@@ -17,10 +17,13 @@ adapter does not capture at exit. The background Stop hook covers ordinary
 sessions without delaying the turn. Exit capture is not guaranteed: dialogue
 after the last Stop capture can be lost, and Codex may cancel an unfinished
 background hook when the session ends. PreCompact can add one selection
-alongside Stop. The engine records a
-digest of the newest message in the snapshot that capture actually considered,
-not a count, because it reads a bounded recent window of the rollout. Dialogue
-that arrives while selection runs stays uncaptured for the next Stop. A failed capture leaves the marker where
+alongside Stop. The engine records the rollout
+path and the byte offset of the newest message in the snapshot capture actually
+considered. Offsets in the append-only rollout stay distinct when the assistant
+repeats identical text. They also keep working after the bounded excerpt
+window stops growing. Dialogue that arrives while selection runs stays
+uncaptured for the next Stop. A different rollout file, or one shorter than
+the saved offset, counts all its dialogue as new. A failed capture leaves the marker where
 it was, so the next Stop retries. A Stop continuation (`stop_hook_active`) is
 not treated as a new boundary.
 
@@ -31,9 +34,12 @@ The transcript reader keeps only top-level `user` and `assistant` message
 items from the Codex rollout. Codex 0.156 labels each content part in
 `content_item_kinds`. From user items the reader keeps only `user.text` parts,
 which excludes `AGENTS.md`, environment context, plugin and skill blocks, and
-this adapter's own `hooks.additional_context`. For rollouts without those
-labels, it drops each part that is the `AGENTS.md` block or one wholly tagged
-block. Developer items, reasoning, tool calls and their output are always
+this adapter's own `hooks.additional_context`. Rollouts without those labels
+come from Codex versions before 0.156. For those, the reader drops the
+`AGENTS.md` block and strips only a closed list of known injected tag blocks,
+such as `<environment_context>` and `<recommended_plugins>`. All other text is
+kept, including owner-written markup. That fallback covers only these known
+forms, and the structural labels are the supported path. Developer items, reasoning, tool calls and their output are always
 omitted. A scan of 30 recent real rollouts (277 excerpt messages) found no
 injected context in the output.
 Codex now performs edits through its generic `exec` tool instead of
