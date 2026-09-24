@@ -91,8 +91,13 @@ unit or an unreadable final state retains the hold.
 
 ## Native interactive cancellation (OpenCode trial gate)
 
-Native cancellation remains disabled in the installed configuration and has
-not passed a real-model trial. The OpenCode host adapter can opt in with the
+Native cancellation remains disabled in the installed configuration. OpenCode
+is the only attesting adapter; Codex, Claude and Hermes cancellation is
+unsupported. The OpenCode adapter passed an owned real-model trial (C1 to C5)
+on 2026-09-24 against a disposable store
+([record](verification/opencode-cancel-trial-2026-09-24.md)). That covers
+marker-preserving fixture workloads in one session, not general tool-process
+cleanup or full design acceptance. The OpenCode host adapter can opt in with the
 installer's `--opencode-cancel-trial` flag (which writes
 `opencode_cancel_enabled: true`) only after the request-specific native route,
 tool-capture plugin, and process scanner are installed together. At admission
