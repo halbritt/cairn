@@ -2,7 +2,9 @@ package semantic
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/halbritt/cairn/core"
 )
@@ -17,15 +19,19 @@ func TestColdWorkerCanFinishBeforeNativeClientDeadline(t *testing.T) {
 			t.Parallel()
 			// A cold corpus can take longer than the former 20-second budget.
 			// Keep this below the native client's 30-second outer deadline.
-			path := script(t, `exec /usr/bin/python3 -c '
+			// The worker answers at a fixed instant rather than after a fixed
+			// sleep, so interpreter startup under suite load does not eat the margin.
+			start := time.Now()
+			ready := float64(start.Add(20500*time.Millisecond).UnixNano()) / 1e9
+			path := script(t, fmt.Sprintf(`exec /usr/bin/python3 -c '
 import json,sys,time
 first=True
 for line in sys.stdin:
  request=json.loads(line)
- if first: time.sleep(21); first=False
+ if first: time.sleep(max(0, %.3f-time.time())); first=False
  result=dict(model_sha256="test",algorithm="test/1",scores=[])
  print(json.dumps(dict(id=request["id"],result=result) if "id" in request else result),flush=True)
-'`)
+'`, ready))
 			var rank core.SemanticRanker
 			var err error
 			if streaming {
@@ -43,6 +49,9 @@ for line in sys.stdin:
 			result, err := rank(context.Background(), core.SemanticRankRequest{Query: "cold corpus"})
 			if err != nil || result.Algorithm != "test/1" {
 				t.Fatalf("cold response was lost: %+v %v", result, err)
+			}
+			if elapsed := time.Since(start); elapsed <= 20*time.Second {
+				t.Fatalf("cold response arrived after %v; it must exceed the former 20-second budget", elapsed)
 			}
 			if streaming {
 				warm, err := rank(context.Background(), core.SemanticRankRequest{Query: "warm corpus"})
