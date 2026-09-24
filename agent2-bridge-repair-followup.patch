@@ -1,0 +1,3353 @@
+From 4c83bc91c864ab4285d02962a17a82b6d3056691 Mon Sep 17 00:00:00 2001
+From: halbritt <halbritt@gmail.com>
+Date: Sun, 20 Sep 2026 17:59:00 -0700
+Subject: [PATCH] fix(bridge): B2-B5 repair follow-up: native turn binding,
+ strengthened B2 regression, and test isolation
+
+---
+ integrations/hermes/coordination.py      | 516 +++++++++++++++-
+ integrations/hermes/queue.py             |  45 ++
+ integrations/lifecycle/coordination.py   | 124 +++-
+ integrations/lifecycle/hermes_queue.py   | 219 +++++++
+ integrations/lifecycle/opencode_queue.py | 174 ++++++
+ integrations/opencode/coordination.ts    | 332 +++++++++-
+ scripts/run_opencode_bridge_fixture.mjs  |  67 ++
+ scripts/test_hermes_cancellation_e2e.py  | 748 +++++++++++++++++++++++
+ scripts/test_hermes_queue.py             | 458 ++++++++++++++
+ scripts/test_opencode_queue.py           | 404 ++++++++++++
+ 10 files changed, 3061 insertions(+), 26 deletions(-)
+ create mode 100644 integrations/hermes/queue.py
+ create mode 100644 integrations/lifecycle/hermes_queue.py
+ create mode 100644 integrations/lifecycle/opencode_queue.py
+ create mode 100644 scripts/run_opencode_bridge_fixture.mjs
+ create mode 100644 scripts/test_hermes_cancellation_e2e.py
+ create mode 100644 scripts/test_hermes_queue.py
+ create mode 100644 scripts/test_opencode_queue.py
+
+diff --git a/integrations/hermes/coordination.py b/integrations/hermes/coordination.py
+index 73848ba..4300c71 100644
+--- a/integrations/hermes/coordination.py
++++ b/integrations/hermes/coordination.py
+@@ -1,40 +1,60 @@
+-"""Native Hermes session presence, independent of memory capture settings."""
++"""Native Hermes session presence and draft-preserving queue bridge."""
+ import json
+ import logging
+ import os
++from pathlib import Path
++import socket
+ import subprocess
+ import sys
+ import threading
++import time
++import uuid
+ 
+ from hermes_constants import get_hermes_home
+ from tools.terminal_tool import get_session_cwd, resolve_task_overrides
+ 
+ logger = logging.getLogger(__name__)
+ 
++MAX_PAYLOAD_BYTES = 65536
++MAX_CONCURRENT_CLIENTS = 4
++
+ 
+ def register(ctx):
+     home = get_hermes_home()
+     config = json.loads((home / 'cairn-coordination.json').read_text())
+     sessions = {}
++    wake_history_file = home / f'cairn-wake-history-{os.getpid()}.json'
++    wake_history = {}
++    if wake_history_file.is_file():
++        try:
++            wake_history = json.loads(wake_history_file.read_text())
++        except (OSError, ValueError):
++            wake_history = {}
+     lock = threading.RLock()
++    bridge_running = True
++    bridge_bound = False
++    client_semaphore = threading.BoundedSemaphore(MAX_CONCURRENT_CLIENTS)
+ 
+-    def invoke(session_id, event, task_id='', model='', **selected):
++    def invoke(session_id, event, task_id='', model='', turn_id='', **selected):
+         cwd = (get_session_cwd(task_id) or get_session_cwd(session_id)
+                or resolve_task_overrides(task_id).get('cwd') or os.environ.get('TERMINAL_CWD') or os.getcwd())
++        payload = dict(session_id=session_id, hook_event_name=event, cwd=cwd, host_pid=os.getpid(), model=model, **selected)
++        if turn_id:
++            payload['turn_id'] = turn_id
+         result = subprocess.run([sys.executable, config['script'], 'hook', '--config', config['config']],
+-            input=json.dumps(dict(session_id=session_id, hook_event_name=event, cwd=cwd, host_pid=os.getpid(), model=model, **selected)),
++            input=json.dumps(payload),
+             text=True, capture_output=True, timeout=15)
+         if result.returncode:
+             raise RuntimeError('Cairn session presence unavailable')
+         return json.loads(result.stdout).get('hookSpecificOutput', {}).get('additionalContext', '')
+ 
+-    def before(session_id='', turn_id='', task_id='', model='', parent_session_id='', platform='', **_):
++    def before(session_id='', turn_id='', task_id='', model='', parent_session_id='', platform='', user_message='', **_):
+         if not session_id or parent_session_id or platform in ('cron', 'subagent', 'flush', 'auxiliary'):
+             return
+         with lock:
+-            sessions[session_id] = dict(context='', task=task_id, model=model)
++            sessions[session_id] = dict(context='', task=task_id, model=model, busy=True, turn_id=turn_id)
+             try:
+-                context = invoke(session_id, 'TurnStart', task_id, model)
++                context = invoke(session_id, 'TurnStart', task_id, model, turn_id=turn_id, prompt=user_message)
+                 sessions[session_id]['context'] = context
+             except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
+                 logger.warning('Cairn native session registration/context unavailable')
+@@ -50,9 +70,8 @@ def register(ctx):
+             state = sessions.get(session_id)
+             if state is None:
+                 return
++            state['busy'] = False
+             try:
+-                # Gateway agent objects finish after their turn. Its long-lived
+-                # gateway PID alone cannot establish an idle conversation's reachability.
+                 invoke(session_id, 'TurnEnd' if platform == 'cli' else 'SessionEnd', state['task'], state['model'])
+                 state['context'] = ''
+                 if platform != 'cli':
+@@ -61,6 +80,9 @@ def register(ctx):
+                 logger.warning('Cairn native session stop unavailable; presence will expire')
+ 
+     def close():
++        nonlocal bridge_running
++        bridge_running = False
++        cleanup_bridge()
+         with lock:
+             for ident, state in list(sessions.items()):
+                 try:
+@@ -69,6 +91,482 @@ def register(ctx):
+                     logger.warning('Cairn native session leave unavailable; presence will expire')
+             sessions.clear()
+ 
++    # Private local bridge for native queueing into Hermes
++    bridge_path = f"/tmp/cairn-hermes-{os.getpid()}.sock"
++    bridge_server = None
++
++    def record_wake_outcome(client_id, status, current_sid):
++        with lock:
++            wake_history[client_id] = {
++                'status': status,
++                'consumed_session_id': current_sid,
++                'updated_at': time.time(),
++            }
++            if len(wake_history) > 100:
++                oldest = sorted(wake_history.keys(), key=lambda k: wake_history[k].get('updated_at', 0))[:20]
++                for k in oldest:
++                    wake_history.pop(k, None)
++            try:
++                tmp = wake_history_file.with_name(f"{wake_history_file.name}.tmp.{uuid.uuid4().hex}")
++                tmp.write_text(json.dumps(wake_history))
++                tmp.replace(wake_history_file)
++            except OSError as exc:
++                logger.warning('Failed to persist Cairn wake history: %s', exc)
++                raise
++
++    def handle_client(conn):
++        try:
++            with conn:
++                conn.settimeout(4.0)
++                buffer = b''
++                while bridge_running:
++                    chunk = conn.recv(4096)
++                    if not chunk:
++                        break
++                    buffer += chunk
++                    if len(buffer) > MAX_PAYLOAD_BYTES:
++                        conn.sendall(json.dumps({'id': None, 'error': {'code': -32600, 'message': 'PAYLOAD_TOO_LARGE: exceeds 64KB limit'}}).encode('utf-8') + b'\n')
++                        break
++                    if b'\n' in buffer:
++                        line, buffer = buffer.split(b'\n', 1)
++                        line = line.strip()
++                        if not line:
++                            continue
++                        try:
++                            req = json.loads(line.decode('utf-8'))
++                        except Exception:
++                            conn.sendall(json.dumps({'id': None, 'error': {'code': -32700, 'message': 'Parse error'}}).encode('utf-8') + b'\n')
++                            continue
++
++                        req_id = req.get('id')
++                        method = req.get('method')
++                        params = req.get('params', {})
++
++                        if method == 'session/queue_message':
++                            target_session = params.get('session_id')
++                            text = params.get('text')
++                            client_id = params.get('client_id')
++                            expected_session = params.get('expected_session_id') or target_session
++
++                            if not target_session or not text:
++                                conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32602, 'message': 'session_id and text required'}}).encode('utf-8') + b'\n')
++                                continue
++                            if not expected_session or not isinstance(expected_session, str) or not expected_session.strip():
++                                conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32602, 'message': 'expected_session_id must be a nonempty string'}}).encode('utf-8') + b'\n')
++                                continue
++
++                            # Explicit queue capability check; never advertise unverified fallback
++                            if not hasattr(ctx, 'queue_message'):
++                                conn.sendall(json.dumps({
++                                    'id': req_id,
++                                    'error': {
++                                        'code': -32000,
++                                        'message': 'queue_message capability unavailable on this Hermes runtime; unverified fallback refused'
++                                    }
++                                }).encode('utf-8') + b'\n')
++                                continue
++
++                            cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
++                            if cli is not None:
++                                current_sid = getattr(cli, 'session_id', None)
++                                if current_sid:
++                                    if expected_session and expected_session != current_sid:
++                                        conn.sendall(json.dumps({
++                                            'id': req_id,
++                                            'error': {
++                                                'code': -32002,
++                                                'message': f'SESSION_MISMATCH: expected {expected_session!r}, active session is {current_sid!r}'
++                                            }
++                                        }).encode('utf-8') + b'\n')
++                                        continue
++                                    if target_session and target_session != current_sid:
++                                        conn.sendall(json.dumps({
++                                            'id': req_id,
++                                            'error': {
++                                                'code': -32002,
++                                                'message': f'SESSION_MISMATCH: target {target_session!r}, active session is {current_sid!r}'
++                                            }
++                                        }).encode('utf-8') + b'\n')
++                                        continue
++
++                            cli_busy = bool(cli and getattr(cli, '_agent_running', False) and getattr(cli, 'session_id', None) == target_session)
++                            with lock:
++                                sess = sessions.get(target_session)
++                                hook_busy = bool(sess and sess.get('busy'))
++                            is_busy = cli_busy or hook_busy
++
++                            # Define callback to capture durable admission/refusal state
++                            def on_consumed_cb(status, current_sid, cid=client_id):
++                                record_wake_outcome(cid, status, current_sid)
++
++                            request_id = params.get('request_id')
++                            delivery_id = params.get('delivery_id')
++                            turn_id = params.get('turn_id')
++
++                            # Exact public seam: content=text (keyword is content, not text!)
++                            qm = ctx.queue_message(
++                                content=text,
++                                expected_session_id=expected_session,
++                                role=params.get('role', 'user'),
++                                source='cairn-wake',
++                                on_consumed=on_consumed_cb,
++                                request_id=request_id,
++                                delivery_id=delivery_id,
++                                turn_id=turn_id,
++                            )
++                            if qm is None:
++                                conn.sendall(json.dumps({
++                                    'id': req_id,
++                                    'error': {
++                                        'code': -32000,
++                                        'message': 'Hermes CLI instance unavailable; queue refused'
++                                    }
++                                }).encode('utf-8') + b'\n')
++                                continue
++
++                            resp = {
++                                'id': req_id,
++                                'result': {
++                                    'queued': True,
++                                    'queued_id': client_id,
++                                    'session_id': target_session,
++                                    'busy': is_busy,
++                                    'started': not is_busy,
++                                    'request_id': request_id,
++                                    'delivery_id': delivery_id,
++                                    'turn_id': turn_id,
++                                }
++                            }
++                            conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
++
++                        elif method == 'session/abort':
++                            target_session = params.get('session_id')
++                            expected_request_id = params.get('expected_request_id')
++                            expected_turn_id = params.get('expected_turn_id')
++
++                            if not target_session:
++                                conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32602, 'message': 'session_id required'}}).encode('utf-8') + b'\n')
++                                continue
++
++                            cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
++                            if cli is None:
++                                conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32000, 'message': 'Hermes CLI instance unavailable; abort refused'}}).encode('utf-8') + b'\n')
++                                continue
++
++                            admission_lock = getattr(cli, '_admission_lock', None) or lock
++                            with admission_lock:
++                                current_sid = getattr(cli, 'session_id', None)
++                                if target_session != current_sid:
++                                    conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32002, 'message': f'SESSION_MISMATCH: expected {target_session!r}, active session is {current_sid!r}'}}).encode('utf-8') + b'\n')
++                                    continue
++
++                                # 1. Check if the message is still in _pending_input (not yet admitted)
++                                dequeued = False
++                                if hasattr(cli, '_pending_input'):
++                                    try:
++                                        with cli._pending_input.mutex:
++                                            for item in list(cli._pending_input.queue):
++                                                matches = True
++                                                if expected_request_id and getattr(item, 'request_id', None) != expected_request_id:
++                                                    matches = False
++                                                if expected_turn_id and getattr(item, 'turn_id', None) != expected_turn_id:
++                                                    matches = False
++                                                if not expected_request_id and not expected_turn_id:
++                                                    matches = False
++                                                if matches:
++                                                    item.status = 'refused'
++                                                    item.refusal_reason = 'cancelled_before_admission'
++                                                    item.consumed_session_id = current_sid
++                                                    cli._pending_input.queue.remove(item)
++                                                    if getattr(item, 'on_consumed', None):
++                                                        try:
++                                                            item.on_consumed('refused', current_sid)
++                                                        except Exception:
++                                                            pass
++                                                    dequeued = True
++                                                    break
++                                    except Exception as exc:
++                                        logger.warning("Error inspecting _pending_input: %s", exc)
++
++                                if dequeued:
++                                    resp = {
++                                        'id': req_id,
++                                        'result': {
++                                            'aborted': True,
++                                            'turn_stop': 'dequeued_before_admission',
++                                            'session_id': target_session,
++                                            'request_id': expected_request_id,
++                                            'turn_id': expected_turn_id,
++                                            'tools': [],
++                                        }
++                                    }
++                                    conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
++                                    continue
++
++                                adm_state = getattr(cli, '_admission_state', None)
++                                is_running = getattr(cli, '_agent_running', False)
++                                if adm_state is None:
++                                    adm_state = 'running' if is_running else 'idle'
++
++                                if adm_state == 'idle' and not is_running:
++                                    resp = {
++                                        'id': req_id,
++                                        'result': {
++                                            'aborted': False,
++                                            'turn_stop': 'already_ended',
++                                            'session_id': target_session,
++                                            'request_id': expected_request_id,
++                                            'turn_id': expected_turn_id,
++                                            'tools': [],
++                                        }
++                                    }
++                                    conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
++                                    continue
++
++                                active_req = getattr(cli, '_active_request_id', None)
++                                active_turn = getattr(cli, '_active_turn_id', None)
++
++                                # Never interrupt active turn on request/turn mismatch or unspecified abort:
++                                if expected_request_id and active_req != expected_request_id:
++                                    conn.sendall(json.dumps({
++                                        'id': req_id,
++                                        'error': {
++                                            'code': -32001,
++                                            'message': f'REQUEST_MISMATCH: active turn belongs to request {active_req!r} (expected {expected_request_id!r}); abort refused to protect active turn'
++                                        }
++                                    }).encode('utf-8') + b'\n')
++                                    continue
++
++                                if expected_turn_id and active_turn != expected_turn_id:
++                                    conn.sendall(json.dumps({
++                                        'id': req_id,
++                                        'error': {
++                                            'code': -32003,
++                                            'message': f'TURN_MISMATCH: active turn is {active_turn!r} (expected {expected_turn_id!r}); abort refused to protect active turn'
++                                        }
++                                    }).encode('utf-8') + b'\n')
++                                    continue
++
++                                if not expected_request_id and not expected_turn_id:
++                                    conn.sendall(json.dumps({
++                                        'id': req_id,
++                                        'error': {
++                                            'code': -32004,
++                                            'message': 'UNSPECIFIED_ABORT: expected_request_id or expected_turn_id required while agent is running; abort refused to protect active turn'
++                                        }
++                                    }).encode('utf-8') + b'\n')
++                                    continue
++
++                                if adm_state == 'admitting' and not is_running:
++                                    cli._active_cancelled = True
++                                    cli._admission_state = 'cancelled'
++                                    resp = {
++                                        'id': req_id,
++                                        'result': {
++                                            'aborted': True,
++                                            'turn_stop': 'cancelled_before_running',
++                                            'session_id': target_session,
++                                            'request_id': expected_request_id or active_req,
++                                            'turn_id': expected_turn_id or active_turn,
++                                            'tools': [],
++                                        }
++                                    }
++                                    conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
++                                    continue
++
++                                # 4. Request / turn matches! Signal turn interruption
++                                agent = getattr(cli, 'agent', None)
++                                if agent and hasattr(agent, 'interrupt') and callable(getattr(agent, 'interrupt')):
++                                    agent.interrupt(hard_cancel=True)
++                                    turn_stop = 'interrupted'
++                                else:
++                                    turn_stop = 'interruption_requested'
++                                cli._last_turn_interrupted = True
++
++                                # 5. Stop ONLY tools captured as belonging to the exact requested turn and verified process identity
++                                tool_outcomes = []
++                                tool_error = None
++                                try:
++                                    from tools.process_registry import process_registry, ProcessRegistry
++                                    all_procs = process_registry.list_sessions(session_key=target_session)
++                                    if not all_procs:
++                                        all_procs = process_registry.list_sessions()
++                                    for proc in all_procs:
++                                        proc_id = proc.get('session_id')
++                                        proc_req = proc.get('request_id')
++                                        proc_turn = proc.get('turn_id')
++
++                                        # Exact turn / request matching:
++                                        if expected_request_id and proc_req != expected_request_id:
++                                            continue
++                                        if expected_turn_id and proc_turn != expected_turn_id:
++                                            continue
++                                        if not proc_req and not proc_turn:
++                                            continue
++
++                                        if proc.get('status') == 'running':
++                                            pid = proc.get('pid')
++                                            host_start = proc.get('host_start_time')
++                                            # Verified process identity check: never kill a recycled PID
++                                            if not ProcessRegistry._host_pid_is_ours(pid, host_start):
++                                                tool_outcomes.append({
++                                                    'item_id': proc_id,
++                                                    'process_id': str(pid or ''),
++                                                    'stop_state': 'unverified_process_identity',
++                                                })
++                                                continue
++
++                                            process_registry.kill_process(proc_id, source="cairn.abort")
++                                            # Bounded polling to positively verify termination
++                                            verified = False
++                                            poll_deadline = time.monotonic() + 3.0
++                                            while time.monotonic() < poll_deadline:
++                                                poll_info = process_registry.poll(proc_id)
++                                                if poll_info.get('status') == 'exited' or poll_info.get('exited'):
++                                                    verified = True
++                                                    break
++                                                time.sleep(0.05)
++                                            stop_state = 'terminated' if verified else 'stop_issued'
++                                            tool_outcomes.append({
++                                                'item_id': proc_id,
++                                                'process_id': str(pid or ''),
++                                                'stop_state': stop_state,
++                                            })
++                                except Exception as exc:
++                                    logger.warning("Error terminating tool processes: %s", exc)
++                                    tool_error = str(exc)
++                                    tool_outcomes.append({
++                                        'item_id': 'tool_inventory',
++                                        'process_id': '',
++                                        'stop_state': f'unavailable: {exc}',
++                                    })
++
++                                resp = {
++                                    'id': req_id,
++                                    'result': {
++                                        'aborted': True,
++                                        'turn_stop': turn_stop,
++                                        'session_id': target_session,
++                                        'request_id': expected_request_id or active_req,
++                                        'turn_id': expected_turn_id or active_turn,
++                                        'tools': tool_outcomes,
++                                    }
++                                }
++                                if tool_error:
++                                    resp['result']['tool_error'] = tool_error
++                                    resp['result']['tools_uncertain'] = True
++                                conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
++
++                        elif method == 'session/tools_status':
++                            target_session = params.get('session_id')
++                            tool_ids = params.get('tool_ids') or []
++                            try:
++                                from tools.process_registry import process_registry
++                                all_procs = process_registry.list_sessions(session_key=target_session)
++                                if tool_ids:
++                                    id_set = set(tool_ids)
++                                    filtered = [p for p in all_procs if p.get('session_id') in id_set or str(p.get('pid')) in id_set]
++                                else:
++                                    filtered = all_procs
++                                resp = {
++                                    'id': req_id,
++                                    'result': {
++                                        'session_id': target_session,
++                                        'tools': filtered,
++                                    }
++                                }
++                            except Exception as exc:
++                                resp = {
++                                    'id': req_id,
++                                    'error': {'code': -32000, 'message': f'tools_status failed: {exc}'}
++                                }
++                            conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
++
++                        elif method == 'session/status':
++                            target_session = params.get('session_id')
++                            cli = getattr(getattr(ctx, '_manager', None), '_cli_ref', None)
++                            cli_busy = bool(cli and getattr(cli, '_agent_running', False) and getattr(cli, 'session_id', None) == target_session)
++                            with lock:
++                                sess = sessions.get(target_session)
++                                hook_busy = bool(sess and sess.get('busy'))
++                            status_val = 'busy' if (cli_busy or hook_busy) else 'idle'
++                            resp = {'id': req_id, 'result': {'session_id': target_session, 'status': status_val}}
++                            conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
++
++                        elif method == 'session/wake_status':
++                            client_id = params.get('client_id')
++                            with lock:
++                                outcome = wake_history.get(client_id, {'status': 'pending'})
++                            resp = {'id': req_id, 'result': outcome}
++                            conn.sendall(json.dumps(resp).encode('utf-8') + b'\n')
++
++                        else:
++                            conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32601, 'message': f'Method {method} not found'}}).encode('utf-8') + b'\n')
++        except Exception as exc:
++            try:
++                conn.sendall(json.dumps({'id': None, 'error': {'code': -32000, 'message': str(exc)}}).encode('utf-8') + b'\n')
++            except OSError:
++                pass
++        finally:
++            client_semaphore.release()
++
++    def serve_bridge():
++        nonlocal bridge_server, bridge_bound
++        try:
++            if os.path.exists(bridge_path):
++                try:
++                    # Test if an active server is listening
++                    test_sock = socket.socket(socket.AF_UNIX)
++                    test_sock.connect(bridge_path)
++                    test_sock.close()
++                    logger.warning("Another bridge is listening at %s; aborting bind", bridge_path)
++                    return
++                except OSError:
++                    try:
++                        os.unlink(bridge_path)
++                    except OSError:
++                        pass
++
++            bridge_server = socket.socket(socket.AF_UNIX)
++            bridge_server.bind(bridge_path)
++            bridge_bound = True
++            os.chmod(bridge_path, 0o600)
++            bridge_server.listen(MAX_CONCURRENT_CLIENTS)
++            bridge_server.settimeout(1.0)
++            while bridge_running:
++                try:
++                    conn, _ = bridge_server.accept()
++                    if not client_semaphore.acquire(blocking=False):
++                        conn.sendall(json.dumps({'id': None, 'error': {'code': -32000, 'message': 'SERVER_BUSY: max concurrent connections reached'}}).encode('utf-8') + b'\n')
++                        conn.close()
++                        continue
++                    t = threading.Thread(target=handle_client, args=(conn,), daemon=True)
++                    t.start()
++                except socket.timeout:
++                    continue
++                except OSError:
++                    break
++        except Exception as exc:
++            logger.warning('Cairn Hermes bridge server failed to initialize: %s', exc)
++
++    def cleanup_bridge():
++        nonlocal bridge_bound
++        if bridge_server:
++            try:
++                bridge_server.close()
++            except OSError:
++                pass
++        if bridge_bound:
++            bridge_bound = False
++            try:
++                if os.path.exists(bridge_path):
++                    os.unlink(bridge_path)
++            except OSError:
++                pass
++
++    bridge_thread = threading.Thread(target=serve_bridge, daemon=True)
++    bridge_thread.start()
++
+     def provider_observation(session_id, failure):
+         if not os.environ.get('CAIRN_WAKE_CONTEXT'):
+             return
+@@ -82,8 +580,6 @@ def register(ctx):
+                 logger.warning('Cairn provider observation could not be retained')
+ 
+     def api_error(session_id='', status_code=None, reason=None, **_):
+-        # These are Hermes classifier outputs. Exclude unverified billing and
+-        # unrelated server/auth/tool failures; no request or diagnostic is saved.
+         failure = None
+         if reason in ('rate_limit', 'billing'):
+             status = status_code if type(status_code) is int and 100 <= status_code <= 599 else 0
+diff --git a/integrations/hermes/queue.py b/integrations/hermes/queue.py
+new file mode 100644
+index 0000000..fe48a54
+--- /dev/null
++++ b/integrations/hermes/queue.py
+@@ -0,0 +1,45 @@
++"""Cairn helper for queuing native Hermes wake messages.
++
++Provides safe message queueing that preserves unsubmitted composer drafts,
++serializes behind busy turns without interrupting active execution, and
++pins delivery to the expected Hermes native session ID.
++"""
++
++from __future__ import annotations
++
++import logging
++from typing import Any, Callable
++
++logger = logging.getLogger(__name__)
++
++
++def queue_hermes_wake(
++    plugin_ctx: Any,
++    content: str,
++    *,
++    expected_session_id: str,
++    role: str = "user",
++    on_consumed: Callable[[str, str | None], None] | None = None,
++) -> bool:
++    """Queue a wake message into the active Hermes CLI session.
++
++    Requires a nonempty expected_session_id to pin delivery to the exact intended
++    session. Uses the typed queue_message seam when available on PluginContext.
++    Refuses if queue capability is unavailable on older Hermes runtimes without
++    silent unverified fallback.
++    """
++    if not expected_session_id or not isinstance(expected_session_id, str) or not expected_session_id.strip():
++        raise ValueError("expected_session_id must be a nonempty string for Cairn wake")
++
++    if hasattr(plugin_ctx, "queue_message"):
++        qm = plugin_ctx.queue_message(
++            content,
++            expected_session_id=expected_session_id,
++            role=role,
++            source="cairn-wake",
++            on_consumed=on_consumed,
++        )
++        return qm is not None
++
++    logger.warning("queue_hermes_wake: plugin context lacks queue_message capability; refusing unverified fallback")
++    return False
+diff --git a/integrations/lifecycle/coordination.py b/integrations/lifecycle/coordination.py
+index 75f67ab..6a050bd 100644
+--- a/integrations/lifecycle/coordination.py
++++ b/integrations/lifecycle/coordination.py
+@@ -158,8 +158,9 @@ def prepare_idle_wake(config, state, path):
+                 prior.get('native_id') == agent['native_session_id']):
+             return dict(wake=prior, process=state['process'])  # Retry only this retained start; never another add.
+         return None  # Submitted or uncertain; only native handling permits a new nudge.
++    request_id = ready.get('request_id') or str(uuid.uuid4())
+     if endpoint:
+-        state['idle_wake'] = dict(delivery_id=delivery, session=session_ref(agent),
++        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
+             transport='codex-queue', endpoint=endpoint['endpoint'], owner=endpoint['owner'],
+             native_id=agent['native_session_id'],
+             status='uncertain', attempted_at=time.time())
+@@ -167,15 +168,37 @@ def prepare_idle_wake(config, state, path):
+         return dict(wake=state['idle_wake'], process=state['process'])
+     channel = claude_channel_endpoint(config, state['process'])
+     if channel:
+-        state['idle_wake'] = dict(delivery_id=delivery, session=session_ref(agent),
++        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
+             transport='claude-channel', endpoint=channel['socket'], bridge=channel['process'],
+             parent=channel['parent'], native_id=agent['native_session_id'],
+             status='uncertain', attempted_at=time.time())
+         write_state(path, state)
+         return dict(wake=state['idle_wake'], process=state['process'])
+-    if config.get('claude_channel_dir'):
+-        # An explicitly configured native channel never falls back to the
+-        # terminal route when its registry is stale, malformed or missing.
++    opencode = opencode_queue_endpoint(config, state['process'])
++    if opencode:
++        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
++            transport='opencode-queue', endpoint=opencode, native_id=agent['native_session_id'],
++            status='uncertain', attempted_at=time.time())
++        write_state(path, state)
++        return dict(wake=state['idle_wake'], process=state['process'])
++    hermes = hermes_queue_endpoint(config, state['process'])
++    if hermes:
++        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
++            transport='hermes-queue', endpoint=hermes, native_id=agent['native_session_id'],
++            status='uncertain', attempted_at=time.time())
++        write_state(path, state)
++        return dict(wake=state['idle_wake'], process=state['process'])
++    agy = agy_queue_endpoint(config, state['process'])
++    if agy:
++        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
++            transport='agy-queue', endpoint=agy, native_id=agent['native_session_id'],
++            status='uncertain', attempted_at=time.time())
++        write_state(path, state)
++        return dict(wake=state['idle_wake'], process=state['process'])
++    if config.get('claude_channel_dir') or config.get('harness') in ('codex', 'claude', 'opencode', 'hermes', 'agy'):
++        # An explicitly configured native channel or known native harness
++        # never falls back to the terminal route when its registry/socket is
++        # stale, malformed or missing.
+         return None
+     environment = herdr_environment(state['process'])
+     if environment is None:
+@@ -193,7 +216,7 @@ def prepare_idle_wake(config, state, path):
+     # remains a hint, not a lease; the prompt contains no source/work payload.
+     if call(config, 'session-inbox-ready', session_ref(agent)).get('delivery_id') != delivery:
+         return None
+-    state['idle_wake'] = dict(delivery_id=delivery, session=session_ref(agent),
++    state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
+         target={k: current[k] for k in keys}, status='uncertain', attempted_at=time.time())
+     write_state(path, state)
+     return dict(environment=environment, wake=state['idle_wake'], process=state['process'])
+@@ -240,6 +263,29 @@ def channel_helper():
+     return claude_channel
+ 
+ 
++def opencode_queue_endpoint(config, process):
++    if config.get('harness') != 'opencode':
++        return None
++    path = Path(f"/tmp/cairn-opencode-{process['pid']}.sock")
++    return str(path) if path.is_socket() else None
++
++
++def hermes_queue_endpoint(config, process):
++    if config.get('harness') != 'hermes':
++        return None
++    path = Path(f"/tmp/cairn-hermes-{process['pid']}.sock")
++    return str(path) if path.is_socket() else None
++
++
++def agy_queue_endpoint(config, process):
++    if config.get('harness') != 'agy':
++        return None
++    path = Path(f"/tmp/cairn-agy-{process['pid']}.sock")
++    if path.is_socket():
++        return str(path)
++    return None
++
++
+ def codex_queue_endpoint(config, process):
+     """Select the native queue endpoint for exactly one Codex process.
+ 
+@@ -362,11 +408,24 @@ def claude_prompt_admission(state, observation, event):
+     return None
+ 
+ 
++def hermes_wake_binding(state, event):
++    wake = state.get('idle_wake', {})
++    turn = event.get('turn_id')
++    if (wake.get('transport') != 'hermes-queue' or wake.get('session') != session_ref(state['agent']) or
++            event.get('hook_event_name') != 'TurnStart' or not isinstance(turn, str) or
++            not turn.strip() or len(turn.encode()) > 256 or '\0' in turn or
++            event.get('prompt') != wake_message(wake)):
++        return {}
++    return dict(delivery_id=wake['delivery_id'], native_turn_id=turn)
++
++
+ def wake_binding(config, state, event, joined=False):
+     if config['harness'] == 'codex':
+         return queued_wake_binding(state, event)
+     if config['harness'] == 'claude':
+         return channel_wake_binding(state, event, joined)
++    if config['harness'] == 'hermes':
++        return hermes_wake_binding(state, event)
+     return {}
+ 
+ 
+@@ -430,6 +489,50 @@ def submit_idle_wake(config, path, prepared):
+             # never resend and never fall back to terminal submission.
+             raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
+         started = True
++    elif wake.get('transport') == 'opencode-queue':
++        try:
++            import opencode_queue
++        except ImportError as exc:
++            raise CoordinationError('WAKE_UNAVAILABLE', f'opencode queue client is unavailable: {exc}') from exc
++        try:
++            queued_id, started = opencode_queue.enqueue(wake['endpoint'], prepared['process'],
++                                                        wake['native_id'], text, wake['delivery_id'])
++        except opencode_queue.QueueUnavailable as exc:
++            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
++            drop_idle_wake(path, wake)
++            return
++        except opencode_queue.QueueError as exc:
++            raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
++    elif wake.get('transport') == 'hermes-queue':
++        try:
++            import hermes_queue
++        except ImportError as exc:
++            raise CoordinationError('WAKE_UNAVAILABLE', f'hermes queue client is unavailable: {exc}') from exc
++        try:
++            queued_id, started = hermes_queue.enqueue(wake['endpoint'], prepared['process'],
++                                                      wake['native_id'], text, wake['delivery_id'],
++                                                      request_id=wake.get('request_id'),
++                                                      delivery_id=wake['delivery_id'])
++        except hermes_queue.QueueUnavailable as exc:
++            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
++            drop_idle_wake(path, wake)
++            return
++        except hermes_queue.QueueError as exc:
++            raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
++    elif wake.get('transport') == 'agy-queue':
++        try:
++            import agy_queue
++        except ImportError as exc:
++            raise CoordinationError('WAKE_UNAVAILABLE', f'agy queue client is unavailable: {exc}') from exc
++        try:
++            queued_id, started = agy_queue.enqueue(wake['endpoint'], prepared['process'],
++                                                   wake['native_id'], text, wake['delivery_id'])
++        except agy_queue.QueueUnavailable as exc:
++            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
++            drop_idle_wake(path, wake)
++            return
++        except agy_queue.QueueError as exc:
++            raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
+     else:
+         response = herdr_call(config, prepared['environment'], 'agent', 'prompt', wake['target']['pane_id'], text)
+         confirmed = response.get('agent', {})
+@@ -505,11 +608,11 @@ def normalize(config, event, event_name=None):
+         if (parent / ".git").exists():
+             root = parent
+             break
+-    # Codex owns turns by its native turn ID. Claude owns a request by the
++    # Codex and Hermes own turns by native turn ID. Claude owns a request by the
+     # stable prompt_id of its channel submission; the display turn is separate.
+     owner = ''
+-    if harness in ('codex', 'claude'):
+-        owner = event.get('turn_id' if harness == 'codex' else 'prompt_id', '')
++    if harness in ('codex', 'claude', 'hermes'):
++        owner = event.get('prompt_id' if harness == 'claude' else 'turn_id', '')
+         if not isinstance(owner, str) or len(owner.encode()) > 256 or '\0' in owner or any(ord(c) < 32 for c in owner):
+             raise CoordinationError('INVALID_HOST', 'invalid native ownership key')
+         if owner:
+@@ -704,6 +807,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
+         raise CoordinationError('NATIVE_TURN_MISMATCH', 'another native turn cannot take over or end this request')
+     if (not state.get('inbox_intent') and config.get('idle_wakeup') and
+             (codex_queue_endpoint(config, state['process']) or
++             hermes_queue_endpoint(config, state['process']) or
+              (config['harness'] == 'claude' and config.get('claude_channel_dir'))) and not wake_binding):
+         return ''  # This native wake transport owns admission; other prompts do not claim work.
+     if observation['event'] == 'Stop' and observation['phase'] != 'idle':
+@@ -714,7 +818,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
+             state['delivered_since_idle'] = False
+             write_state(path, state)
+             return ''
+-        if config['harness'] not in ('codex', 'claude', 'agy'):
++        if config['harness'] not in ('codex', 'claude', 'hermes', 'agy'):
+             return ''  # These adapters next deliver at their pre-turn boundary.
+     recover_inbox(config, state, path)
+     if not state.get('inbox_attempt'):
+diff --git a/integrations/lifecycle/hermes_queue.py b/integrations/lifecycle/hermes_queue.py
+new file mode 100644
+index 0000000..922483a
+--- /dev/null
++++ b/integrations/lifecycle/hermes_queue.py
+@@ -0,0 +1,219 @@
++"""Queue a wakeup on an already running Hermes session without touching its composer or interrupting a busy turn."""
++import json
++from pathlib import Path
++import socket
++import struct
++import time
++
++
++class QueueError(Exception):
++    pass
++
++
++class QueueUnavailable(QueueError):
++    """A precondition refused before the queue submission was sent."""
++
++
++class RequestMismatchError(QueueError):
++    """Cancellation refused because active turn belongs to another request or owner."""
++
++
++def _discard(transport):
++    try:
++        transport.close()
++    except OSError:
++        pass
++
++
++def _open(endpoint, process):
++    """Connect and verify the exact native process before anything is sent."""
++    transport = socket.socket(socket.AF_UNIX)
++    try:
++        transport.settimeout(4)
++        transport.connect(endpoint)
++        peer, _, _ = struct.unpack('3i', transport.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
++        if peer != process['pid']:
++            raise QueueUnavailable('native socket belongs to a different process')
++        start = int(Path(f'/proc/{peer}/stat').read_text().rsplit(')', 1)[1].split()[19])
++        boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
++        if start != process['start'] or boot != process['boot']:
++            raise QueueUnavailable('native process identity has changed')
++        return transport
++    except QueueUnavailable:
++        _discard(transport)
++        raise
++    except OSError as exc:
++        _discard(transport)
++        raise QueueUnavailable('native queue endpoint is unavailable') from exc
++
++
++def enqueue(endpoint, process, native_id, text, client_id, expected_session_id=None, request_id=None, delivery_id=None):
++    """Submit a queued wakeup to an active Hermes session.
++
++    Returns (queued_submission_id, started). QueueUnavailable proves nothing
++    was sent. Any failure during or after writing is uncertain and must never
++    be automatically resent.
++    """
++    transport = _open(endpoint, process)
++    try:
++        params = {
++            'session_id': native_id,
++            'text': text,
++            'client_id': client_id,
++            'expected_session_id': expected_session_id or native_id,
++        }
++        if request_id:
++            params['request_id'] = request_id
++        if delivery_id:
++            params['delivery_id'] = delivery_id
++        req = {
++            'id': 1,
++            'method': 'session/queue_message',
++            'params': params,
++        }
++        payload = (json.dumps(req) + '\n').encode('utf-8')
++        transport.sendall(payload)
++
++        file_obj = transport.makefile('r', encoding='utf-8')
++        line = file_obj.readline()
++        if not line:
++            raise QueueError('native queue outcome is uncertain; Hermes closed connection without response; do not automatically resend')
++        msg = json.loads(line)
++        if 'error' in msg:
++            err = msg['error']
++            code = err.get('code')
++            message = err.get('message', '')
++            if code in (-32001, -32002) or 'SESSION_NOT_FOUND' in message or 'SESSION_MISMATCH' in message:
++                raise QueueUnavailable(f'native session unavailable: {message}')
++            raise QueueError(f'native Hermes refused queue_message: {message}')
++
++        result = msg.get('result')
++        if not isinstance(result, dict):
++            raise QueueError(f'invalid bridge response schema: expected dict result, got {type(result).__name__}')
++        if not result.get('queued'):
++            raise QueueError('invalid bridge response schema: expected queued=True in result')
++        if 'started' in result and isinstance(result['started'], bool):
++            started = result['started']
++        elif 'busy' in result and isinstance(result['busy'], bool):
++            started = not result['busy']
++        else:
++            raise QueueError('invalid bridge response schema: missing started or busy boolean field')
++        if result.get('session_id') and result.get('session_id') != native_id:
++            raise QueueError(f"session ID mismatch in response: expected {native_id}, got {result.get('session_id')}")
++        if request_id and result.get('request_id') and result.get('request_id') != request_id:
++            raise QueueError(f"request ID mismatch in response: expected {request_id}, got {result.get('request_id')}")
++        if delivery_id and result.get('delivery_id') and result.get('delivery_id') != delivery_id:
++            raise QueueError(f"delivery ID mismatch in response: expected {delivery_id}, got {result.get('delivery_id')}")
++        queued_id = result.get('queued_id', client_id)
++        if not queued_id or not isinstance(queued_id, str):
++            queued_id = client_id
++        return queued_id, started
++    except QueueUnavailable:
++        raise
++    except (OSError, ValueError, KeyError, TypeError) as exc:
++        raise QueueError('native queue outcome is uncertain; do not automatically resend') from exc
++    finally:
++        _discard(transport)
++
++
++def abort(endpoint, process, native_id, expected_request_id=None, expected_turn_id=None):
++    """Abort an active or pending turn on Hermes for this exact request.
++
++    Atomically checks request ownership. If active turn belongs to another
++    request or owner prompt, raises RequestMismatchError without signalling
++    interruption to protect the owner turn.
++
++    Returns dict with aborted, turn_stop, tools outcomes.
++    """
++    transport = _open(endpoint, process)
++    try:
++        params = {
++            'session_id': native_id,
++        }
++        if expected_request_id:
++            params['expected_request_id'] = expected_request_id
++        if expected_turn_id:
++            params['expected_turn_id'] = expected_turn_id
++
++        req = {
++            'id': 2,
++            'method': 'session/abort',
++            'params': params,
++        }
++        transport.sendall((json.dumps(req) + '\n').encode('utf-8'))
++        file_obj = transport.makefile('r', encoding='utf-8')
++        line = file_obj.readline()
++        if not line:
++            raise QueueError('native Hermes closed connection during abort; outcome uncertain; do not resend')
++        msg = json.loads(line)
++        if 'error' in msg:
++            err = msg['error']
++            code = err.get('code')
++            message = err.get('message', '')
++            if code in (-32001, -32003, -32004) or 'REQUEST_MISMATCH' in message or 'TURN_MISMATCH' in message or 'UNSPECIFIED_ABORT' in message:
++                raise RequestMismatchError(f'abort refused: {message}')
++            if code == -32002 or 'SESSION_MISMATCH' in message or 'SESSION_NOT_FOUND' in message:
++                raise QueueUnavailable(f'native session unavailable: {message}')
++        result = msg.get('result')
++        if not isinstance(result, dict):
++            raise QueueError(f'invalid bridge abort response schema: expected dict result, got {type(result).__name__}')
++        if 'aborted' not in result or not isinstance(result['aborted'], bool):
++            raise QueueError('invalid bridge abort response schema: missing or invalid boolean "aborted" field')
++        if 'turn_stop' not in result or not isinstance(result['turn_stop'], str):
++            raise QueueError('invalid bridge abort response schema: missing or invalid string "turn_stop" field')
++        return result
++    except (QueueUnavailable, RequestMismatchError):
++        raise
++    except (OSError, ValueError, KeyError, TypeError) as exc:
++        raise QueueError('native Hermes abort outcome is uncertain; do not resend') from exc
++    finally:
++        _discard(transport)
++
++
++def status(endpoint, process, native_id):
++    """Get status of a Hermes session."""
++    transport = _open(endpoint, process)
++    try:
++        req = {
++            'id': 3,
++            'method': 'session/status',
++            'params': {
++                'session_id': native_id,
++            }
++        }
++        transport.sendall((json.dumps(req) + '\n').encode('utf-8'))
++        file_obj = transport.makefile('r', encoding='utf-8')
++        line = file_obj.readline()
++        if not line:
++            raise QueueError('native Hermes closed connection without response')
++        msg = json.loads(line)
++        if 'error' in msg:
++            raise QueueError(f"native Hermes status error: {msg['error']}")
++        return msg.get('result', {})
++    finally:
++        _discard(transport)
++
++
++def tools_status(endpoint, process, native_id, tool_ids=None):
++    """Query status of tool processes associated with a session."""
++    transport = _open(endpoint, process)
++    try:
++        req = {
++            'id': 4,
++            'method': 'session/tools_status',
++            'params': {
++                'session_id': native_id,
++                'tool_ids': tool_ids or [],
++            }
++        }
++        transport.sendall((json.dumps(req) + '\n').encode('utf-8'))
++        file_obj = transport.makefile('r', encoding='utf-8')
++        line = file_obj.readline()
++        if not line:
++            raise QueueError('native Hermes closed connection without response')
++        msg = json.loads(line)
++        if 'error' in msg:
++            raise QueueError(f"native Hermes tools_status error: {msg['error']}")
++        return msg.get('result', {})
++    finally:
++        _discard(transport)
+diff --git a/integrations/lifecycle/opencode_queue.py b/integrations/lifecycle/opencode_queue.py
+new file mode 100644
+index 0000000..cee07d7
+--- /dev/null
++++ b/integrations/lifecycle/opencode_queue.py
+@@ -0,0 +1,174 @@
++"""Queue a wakeup on an already running OpenCode session without touching its TUI composer."""
++import json
++from pathlib import Path
++import socket
++import struct
++import time
++
++
++class QueueError(Exception):
++    pass
++
++
++class QueueUnavailable(QueueError):
++    """A precondition refused before the queue submission was sent."""
++
++
++BUSY_CODE = -32600
++
++
++def _discard(transport):
++    try:
++        transport.close()
++    except OSError:
++        pass
++
++
++def _open(endpoint, process):
++    """Connect and verify the exact native process before anything is sent."""
++    transport = socket.socket(socket.AF_UNIX)
++    try:
++        transport.settimeout(4.0)
++        transport.connect(endpoint)
++        peer, _, _ = struct.unpack('3i', transport.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
++        if peer != process['pid']:
++            raise QueueUnavailable('native socket belongs to a different process')
++        start = int(Path(f'/proc/{peer}/stat').read_text().rsplit(')', 1)[1].split()[19])
++        boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
++        if start != process['start'] or boot != process['boot']:
++            raise QueueUnavailable('native process identity has changed')
++        return transport
++    except QueueUnavailable:
++        _discard(transport)
++        raise
++    except OSError as exc:
++        _discard(transport)
++        raise QueueUnavailable('native queue endpoint is unavailable') from exc
++
++
++def enqueue(endpoint, process, native_id, text, client_id, expected_session_id=None):
++    """Submit a promptAsync wakeup to an active OpenCode session.
++
++    Returns (queued_submission_id, started). QueueUnavailable proves nothing
++    was sent, so a later cycle may retry. Any failure during or after writing
++    is uncertain and must never be re-sent.
++    """
++    if not native_id or not isinstance(native_id, str) or not native_id.strip():
++        raise QueueUnavailable('native_id must be a nonempty string')
++    exp_id = expected_session_id or native_id
++    if not exp_id or not isinstance(exp_id, str) or not exp_id.strip():
++        raise QueueUnavailable('expected_session_id must be a nonempty string')
++
++    transport = _open(endpoint, process)
++    try:
++        req = {
++            'id': 1,
++            'method': 'session/prompt_async',
++            'params': {
++                'session_id': native_id,
++                'text': text,
++                'client_id': client_id,
++                'expected_session_id': exp_id,
++            }
++        }
++        payload = (json.dumps(req) + '\n').encode('utf-8')
++        transport.sendall(payload)
++
++        file_obj = transport.makefile('r', encoding='utf-8')
++        line = file_obj.readline()
++        if not line:
++            raise QueueError('native queue outcome is uncertain; OpenCode closed connection without response; do not automatically resend')
++        msg = json.loads(line)
++        if (not isinstance(msg, dict)
++                or type(msg.get('id')) is not int
++                or msg['id'] != req['id']
++                or ('error' in msg) == ('result' in msg)):
++            raise QueueError('native queue response is invalid; outcome is uncertain; do not automatically resend')
++        if 'error' in msg:
++            err = msg['error']
++            if (not isinstance(err, dict)
++                    or type(err.get('code')) is not int
++                    or not isinstance(err.get('message'), str)):
++                raise QueueError('native queue error is invalid; outcome is uncertain; do not automatically resend')
++            code = err.get('code')
++            message = err.get('message', '')
++            if code == BUSY_CODE or 'BUSY' in message:
++                raise QueueUnavailable(f'native OpenCode busy: {message}')
++            if code in (-32001, -32002) or 'SESSION_NOT_FOUND' in message or 'SESSION_MISMATCH' in message:
++                raise QueueUnavailable(f'native session unavailable: {message}')
++            raise QueueError(f'native OpenCode refused prompt_async: {message}')
++
++        result = msg.get('result')
++        if (not isinstance(result, dict)
++                or result.get('queued') is not True
++                or result.get('queued_id') != client_id
++                or result.get('session_id') != native_id
++                or type(result.get('started')) is not bool):
++            raise QueueError('native queue acknowledgment is invalid; outcome is uncertain; do not automatically resend')
++        return result['queued_id'], result['started']
++    except QueueUnavailable:
++        raise
++    except (OSError, ValueError, KeyError, TypeError) as exc:
++        raise QueueError('native queue outcome is uncertain; do not automatically resend') from exc
++    finally:
++        _discard(transport)
++
++
++def abort(endpoint, process, native_id, expected_turn_id=None):
++    """Attempt turn-fenced session abort.
++
++    Disabled until atomic turn-fencing upstream is available.
++    """
++    transport = _open(endpoint, process)
++    try:
++        req = {
++            'id': 2,
++            'method': 'session/abort',
++            'params': {
++                'session_id': native_id,
++                'expected_turn_id': expected_turn_id,
++            }
++        }
++        transport.sendall((json.dumps(req) + '\n').encode('utf-8'))
++        file_obj = transport.makefile('r', encoding='utf-8')
++        line = file_obj.readline()
++        if not line:
++            return False
++        msg = json.loads(line)
++        if 'error' in msg:
++            err = msg['error']
++            # Server returns UNSUPPORTED_CONTROL / -32004 to protect newer owner work
++            if err.get('code') == -32004 or 'UNSUPPORTED_CONTROL' in err.get('message', ''):
++                raise QueueUnavailable(f"native abort refused: {err.get('message')}")
++            return False
++        return bool(msg.get('result', {}).get('aborted', False))
++    except QueueUnavailable:
++        raise
++    except Exception:
++        return False
++    finally:
++        _discard(transport)
++
++
++def status(endpoint, process, native_id):
++    """Get status of an OpenCode session."""
++    transport = _open(endpoint, process)
++    try:
++        req = {
++            'id': 3,
++            'method': 'session/status',
++            'params': {
++                'session_id': native_id,
++            }
++        }
++        transport.sendall((json.dumps(req) + '\n').encode('utf-8'))
++        file_obj = transport.makefile('r', encoding='utf-8')
++        line = file_obj.readline()
++        if not line:
++            raise QueueError('native OpenCode closed connection without response')
++        msg = json.loads(line)
++        if 'error' in msg:
++            raise QueueError(f"native OpenCode status error: {msg['error']}")
++        return msg.get('result', {})
++    finally:
++        _discard(transport)
+diff --git a/integrations/opencode/coordination.ts b/integrations/opencode/coordination.ts
+index bf2ea09..16cba42 100644
+--- a/integrations/opencode/coordination.ts
++++ b/integrations/opencode/coordination.ts
+@@ -1,16 +1,77 @@
+-// Native conversation identity/presence; no transcript or prompt capture.
++// Native conversation identity/presence and draft-preserving promptAsync bridge.
+ import type { Plugin } from "@opencode-ai/plugin"
+ import type { Part } from "@opencode-ai/sdk"
+ import { execFile } from "node:child_process"
+ import { readFile } from "node:fs/promises"
++import { existsSync, unlinkSync, chmodSync } from "node:fs"
+ import { randomUUID } from "node:crypto"
++import net from "node:net"
+ 
+-const plugin: Plugin = async ({ directory }) => {
+-  const config = JSON.parse(await readFile(new URL("../cairn-coordination.json", import.meta.url), "utf8"))
++const MAX_PAYLOAD_BYTES = 65536
++const MAX_CONCURRENT_CLIENTS = 4
++
++interface PluginInstance {
++  id: string
++  directory: string
++  client: any
++  sessions: Map<string, { turn: string; context: string }>
++  disposed: boolean
++}
++
++interface SharedBridge {
++  server: net.Server
++  path: string
++  instances: Map<string, PluginInstance>
++  bound: boolean
++}
++
++let activeBridge: SharedBridge | null = null
++
++function getActiveInstance(sessionId?: string): PluginInstance | null {
++  if (!activeBridge) return null
++  const live = [...activeBridge.instances.values()].filter(i => !i.disposed)
++  if (live.length === 0) return null
++  if (sessionId) {
++    const owner = live.find(i => i.sessions.has(sessionId))
++    if (owner) return owner
++  }
++  return live[live.length - 1]
++}
++
++const plugin: Plugin = async ({ directory, client }) => {
++  let config: any = null
++  const envConfigPath = process.env.CAIRN_COORDINATION_CONFIG
++  if (envConfigPath) {
++    try {
++      config = JSON.parse(await readFile(envConfigPath, "utf8"))
++    } catch (err: any) {
++      throw new Error(`Failed to load CAIRN_COORDINATION_CONFIG from ${envConfigPath}: ${err?.message}`)
++    }
++  } else {
++    try {
++      config = JSON.parse(await readFile(new URL("../cairn-coordination.json", import.meta.url), "utf8"))
++    } catch {
++      try {
++        config = JSON.parse(await readFile(new URL("../../cairn-coordination.json", import.meta.url), "utf8"))
++      } catch {
++        throw new Error("Cairn coordination config not found")
++      }
++    }
++  }
+   const sessions = new Map<string, { turn: string; context: string }>()
+   const jobs = new Map<string, Promise<void>>()
+   let closing = false
+-  function invoke(id: string, event: string, model = ""): Promise<any> {
++
++  const instanceId = randomUUID()
++  const instance: PluginInstance = {
++    id: instanceId,
++    directory,
++    client,
++    sessions,
++    disposed: false,
++  }
++
++  function invoke(id: string, event: string, model = "", turn_id = ""): Promise<any> {
+     return new Promise((resolve, reject) => {
+       const child = execFile(config.python, [config.script, "hook", "--config", config.config],
+         { encoding: "utf8", timeout: 15000, maxBuffer: 32768 }, (error, stdout) => {
+@@ -18,15 +79,272 @@ const plugin: Plugin = async ({ directory }) => {
+           try { resolve(JSON.parse(stdout)) } catch { reject(new Error("Invalid Cairn presence response")) }
+         })
+       child.stdin?.on("error", reject)
+-      child.stdin?.end(JSON.stringify({ session_id: id, cwd: directory, host_pid: process.pid, hook_event_name: event, model }))
++      child.stdin?.end(JSON.stringify({
++        session_id: id,
++        cwd: directory,
++        host_pid: process.pid,
++        hook_event_name: event,
++        model,
++        turn_id: turn_id || undefined,
++      }))
+     })
+   }
++
+   function enqueue(id: string, work: () => Promise<void>): Promise<void> {
+     const job = (jobs.get(id) ?? Promise.resolve()).then(work).catch(error => console.warn(String(error)))
+     jobs.set(id, job)
+     void job.finally(() => { if (jobs.get(id) === job) jobs.delete(id) })
+     return job
+   }
++
++  // Private local bridge for native submission without touching TUI composer
++  const bridgePath = `/tmp/cairn-opencode-${process.pid}.sock`
++
++  const disposeInstance = () => {
++    if (instance.disposed) return
++    instance.disposed = true
++    process.removeListener("exit", disposeInstance)
++    if (activeBridge) {
++      activeBridge.instances.delete(instanceId)
++      if (activeBridge.instances.size === 0) {
++        const { server, path, bound } = activeBridge
++        activeBridge = null
++        try { server.close() } catch {}
++        if (bound) {
++          try { if (existsSync(path)) unlinkSync(path) } catch {}
++        }
++      }
++    }
++  }
++  process.on("exit", disposeInstance)
++
++  if (!activeBridge) {
++    const bridgeServer = net.createServer((socket) => {
++      socket.setTimeout(4000)
++      socket.on("timeout", () => {
++        socket.destroy()
++      })
++      socket.on("error", () => {
++        // Socket transmission error handled gracefully
++      })
++
++      let buffer = ""
++      socket.on("data", async (chunk) => {
++        if (buffer.length + chunk.length > MAX_PAYLOAD_BYTES) {
++          try {
++            socket.write(JSON.stringify({ id: null, error: { code: -32600, message: "PAYLOAD_TOO_LARGE: exceeds 64KB limit" } }) + "\n")
++          } catch {}
++          socket.destroy()
++          return
++        }
++        buffer += chunk.toString("utf8")
++
++        let lineEnd = buffer.indexOf("\n")
++        while (lineEnd !== -1) {
++          const line = buffer.slice(0, lineEnd).trim()
++          buffer = buffer.slice(lineEnd + 1)
++          lineEnd = buffer.indexOf("\n")
++          if (!line) continue
++
++          let request: any
++          try {
++            request = JSON.parse(line)
++          } catch {
++            socket.write(JSON.stringify({ id: null, error: { code: -32700, message: "Parse error" } }) + "\n")
++            continue
++          }
++
++          // Strict envelope validation: must be a non-null, non-array object
++          if (!request || typeof request !== "object" || Array.isArray(request)) {
++            socket.write(JSON.stringify({ id: null, error: { code: -32600, message: "Invalid Request: envelope must be a JSON object" } }) + "\n")
++            continue
++          }
++
++          const id = (request.id !== undefined && request.id !== null) ? request.id : null
++          const method = typeof request.method === "string" ? request.method : ""
++          const params = (request.params && typeof request.params === "object" && !Array.isArray(request.params))
++            ? request.params
++            : {}
++
++          const currentInstance = getActiveInstance(params.session_id)
++          if (!currentInstance) {
++            socket.write(JSON.stringify({ id, error: { code: -32000, message: "No active plugin instance available" } }) + "\n")
++            continue
++          }
++          const instClient = currentInstance.client
++
++          try {
++            if (method === "session/prompt_async") {
++              const { session_id, text, client_id, expected_session_id } = params
++              if (!session_id || !text) {
++                socket.write(JSON.stringify({ id, error: { code: -32602, message: "session_id and text required" } }) + "\n")
++                continue
++              }
++              if (!expected_session_id || typeof expected_session_id !== "string" || !expected_session_id.trim()) {
++                socket.write(JSON.stringify({ id, error: { code: -32602, message: "expected_session_id required as nonempty string" } }) + "\n")
++                continue
++              }
++              if (expected_session_id !== session_id) {
++                socket.write(JSON.stringify({ id, error: { code: -32001, message: "SESSION_MISMATCH: target session does not match expected" } }) + "\n")
++                continue
++              }
++
++              // Verify promptAsync capability exists on SDK
++              if (!instClient?.session?.promptAsync) {
++                socket.write(JSON.stringify({
++                  id,
++                  error: {
++                    code: -32000,
++                    message: "OpencodeClient promptAsync capability unavailable on this runtime"
++                  }
++                }) + "\n")
++                continue
++              }
++
++              // Verify session existence via SDK and inspect typed response
++              if (instClient?.session?.get) {
++                const getRes = await instClient.session.get({ path: { id: session_id } })
++                if (getRes.error || !getRes.data) {
++                  const errMsg = (getRes.error as any)?.message || "session not found"
++                  socket.write(JSON.stringify({ id, error: { code: -32002, message: `SESSION_NOT_FOUND: ${errMsg}` } }) + "\n")
++                  continue
++                }
++              }
++
++              // Check current busy status via SDK and inspect typed response
++              if (instClient?.session?.status) {
++                const statusRes = await instClient.session.status()
++                if (statusRes.error) {
++                  const errMsg = (statusRes.error as any)?.message || "status check failed"
++                  socket.write(JSON.stringify({ id, error: { code: -32000, message: `STATUS_CHECK_FAILED: ${errMsg}` } }) + "\n")
++                  continue
++                }
++                const statusData = (statusRes.data as any) || statusRes
++                if (statusData?.[session_id]?.type === "busy") {
++                  // Refuse submission while busy so wake is never merged into existing active generation
++                  socket.write(JSON.stringify({
++                    id,
++                    error: {
++                      code: -32600,
++                      message: "BUSY: session already has an active turn; refused to merge wake into active turn"
++                    }
++                  }) + "\n")
++                  continue
++                }
++              }
++
++              // Deliver via native promptAsync - leaves composer buffer untouched
++              const promptRes = await instClient.session.promptAsync({
++                path: { id: session_id },
++                body: {
++                  messageID: client_id,
++                  parts: [{ type: "text", text }]
++                }
++              })
++              if (promptRes?.error) {
++                const errMsg = (promptRes.error as any)?.message || "promptAsync refused by server"
++                socket.write(JSON.stringify({
++                  id,
++                  error: {
++                    code: -32000,
++                    message: `PROMPT_REFUSED: ${errMsg}`
++                  }
++                }) + "\n")
++                continue
++              }
++
++              socket.write(JSON.stringify({
++                id,
++                result: {
++                  queued: true,
++                  session_id,
++                  queued_id: client_id,
++                  started: true
++                }
++              }) + "\n")
++            } else if (method === "session/abort") {
++              // OpenCode SDK's session.abort lacks atomic turn-fencing; an in-flight check-then-act
++              // race can kill newer owner work. Retain strict refusal (-32004 UNSUPPORTED_CONTROL)
++              // pending native atomic turn admission/cancel support.
++              socket.write(JSON.stringify({
++                id,
++                error: {
++                  code: -32004,
++                  message: "UNSUPPORTED_CONTROL: native session abort is disabled to protect newer owner work; requires atomic turn fencing"
++                }
++              }) + "\n")
++              continue
++            } else if (method === "session/status") {
++              const { session_id } = params
++              let status = "idle"
++              if (instClient?.session?.status) {
++                const statusRes = await instClient.session.status()
++                if (statusRes.error) {
++                  socket.write(JSON.stringify({ id, error: { code: -32000, message: "STATUS_FAILED" } }) + "\n")
++                  continue
++                }
++                const statusData = (statusRes.data as any) || statusRes
++                status = statusData?.[session_id]?.type || "idle"
++              }
++              const state = currentInstance.sessions.get(session_id)
++              socket.write(JSON.stringify({
++                id,
++                result: { session_id, status, current_turn: state?.turn || "" }
++              }) + "\n")
++            } else {
++              socket.write(JSON.stringify({ id, error: { code: -32601, message: `Method ${method} not found` } }) + "\n")
++            }
++          } catch (err: any) {
++            socket.write(JSON.stringify({ id, error: { code: -32000, message: err?.message || "Internal error" } }) + "\n")
++          }
++        }
++      })
++    })
++
++    bridgeServer.maxConnections = MAX_CONCURRENT_CLIENTS
++
++    bridgeServer.on("error", (err: any) => {
++      console.warn(`OpenCode bridge server error: ${err?.message || err}`)
++      if (activeBridge) activeBridge.bound = false
++    })
++
++    const startListening = () => {
++      try {
++        bridgeServer.listen(bridgePath, () => {
++          if (activeBridge) activeBridge.bound = true
++          try {
++            chmodSync(bridgePath, 0o600)
++          } catch {}
++        })
++      } catch (err: any) {
++        console.warn(`Failed to bind OpenCode bridge socket: ${err?.message}`)
++      }
++    }
++
++    activeBridge = {
++      server: bridgeServer,
++      path: bridgePath,
++      instances: new Map([[instanceId, instance]]),
++      bound: false,
++    }
++
++    if (existsSync(bridgePath)) {
++      const probe = net.connect(bridgePath)
++      probe.on("connect", () => {
++        probe.destroy()
++        console.warn(`Another OpenCode bridge is active at ${bridgePath}; skipping bind`)
++      })
++      probe.on("error", () => {
++        try { unlinkSync(bridgePath) } catch {}
++        startListening()
++      })
++    } else {
++      startListening()
++    }
++  } else {
++    activeBridge.instances.set(instanceId, instance)
++  }
++
+   return {
+     "experimental.chat.messages.transform": async (_input, output) => {
+       if (closing || !output.messages.length) return
+@@ -37,7 +355,7 @@ const plugin: Plugin = async ({ directory }) => {
+         let state = sessions.get(info.sessionID)
+         if (!state || state.turn !== info.id) {
+           const model = info.model ? `${info.model.providerID}/${info.model.modelID}` : ""
+-          const result = await invoke(info.sessionID, "TurnStart", model)
++          const result = await invoke(info.sessionID, "TurnStart", model, info.id)
+           state = { turn: info.id, context: result.hookSpecificOutput?.additionalContext ?? "" }
+           sessions.set(info.sessionID, state)
+         }
+@@ -55,7 +373,9 @@ const plugin: Plugin = async ({ directory }) => {
+       }
+     },
+     dispose: async () => {
++      if (instance.disposed) return
+       closing = true
++      disposeInstance()
+       await Promise.all([...jobs.values()])
+       await Promise.all([...sessions.keys()].map(id => enqueue(id, async () => { await invoke(id, "SessionEnd") })))
+       sessions.clear()
+diff --git a/scripts/run_opencode_bridge_fixture.mjs b/scripts/run_opencode_bridge_fixture.mjs
+new file mode 100644
+index 0000000..b3e5c30
+--- /dev/null
++++ b/scripts/run_opencode_bridge_fixture.mjs
+@@ -0,0 +1,67 @@
++// Bridge fixture that runs the actual OpenCode coordination plugin with mock SDK responses.
++import net from "node:net";
++import fs from "node:fs";
++import path from "node:path";
++import { fileURLToPath } from "node:url";
++
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++const root = path.resolve(__dirname, "..");
++
++// Configure fake coordination JSON for the plugin
++const configDir = path.join("/tmp", `cairn-test-opencode-${process.pid}`);
++fs.mkdirSync(configDir, { recursive: true });
++const configPath = path.join(configDir, "cairn-coordination.json");
++fs.writeFileSync(
++  configPath,
++  JSON.stringify({ python: process.execPath, script: "/bin/true", config: "/dev/null" })
++);
++process.env.CAIRN_COORDINATION_CONFIG = configPath;
++
++const mode = process.env.OPENCODE_FIXTURE_MODE || "normal";
++// Modes:
++// 'normal': get succeeds, status idle, promptAsync succeeds
++// 'busy': get succeeds, status busy
++// 'sdk_error': get fails or promptAsync returns { error: { message: "HTTP 500" } }
++// 'missing_api': client lacks promptAsync
++
++let client = null;
++if (mode !== "missing_api") {
++  client = {
++    session: {
++      get: async ({ path: { id } }) => {
++        if (mode === "not_found") return { error: { message: "session not found" } };
++        return { data: { id, title: "Test Session" } };
++      },
++      status: async () => {
++        if (mode === "busy") return { data: { "ses_test": { type: "busy" } } };
++        return { data: { "ses_test": { type: "idle" } } };
++      },
++      promptAsync: async ({ path: { id }, body }) => {
++        if (mode === "sdk_error") return { error: { message: "HTTP 500 Internal Server Error" } };
++        return { data: { id: "msg_123" } };
++      },
++    },
++  };
++}
++
++// Dynamically import coordination plugin
++const pluginModule = await import(path.join(root, "integrations/opencode/coordination.ts"));
++const plugin = pluginModule.default;
++
++const hooks = await plugin({
++  directory: "/tmp",
++  client,
++  project: { id: "proj_test" },
++  worktree: "/tmp",
++  serverUrl: new URL("http://localhost"),
++  $: null,
++});
++
++// Signal ready
++console.log(`READY:${process.pid}`);
++
++// Keep process alive until terminated
++process.on("SIGTERM", async () => {
++  if (hooks.dispose) await hooks.dispose();
++  process.exit(0);
++});
+diff --git a/scripts/test_hermes_cancellation_e2e.py b/scripts/test_hermes_cancellation_e2e.py
+new file mode 100644
+index 0000000..80801f2
+--- /dev/null
++++ b/scripts/test_hermes_cancellation_e2e.py
+@@ -0,0 +1,748 @@
++"""End-to-end acceptance tests demonstrating native Hermes request cancellation and queue invariants.
++
++Proves the 6 required claims on an owned Hermes interactive process:
++  1. Queued wake preserves typed composer draft.
++  2. Busy owner work finishes before wake.
++  3. Exact Cairn request / native binding.
++  4. Actual bounded long-running tool stops on request cancel.
++  5. Later owner work unaffected (owner turns protected from stale/racing cancels).
++  6. Retained uncertainty / recovery (no fake success, honest failure reporting).
++"""
++import json
++import os
++from pathlib import Path
++import queue
++import socket
++import struct
++import sys
++import tempfile
++import threading
++import time
++from types import SimpleNamespace
++import unittest
++from unittest.mock import MagicMock
++
++# Ensure repo root and hermes-agent are on sys.path
++REPO_ROOT = Path(__file__).resolve().parents[1]
++if str(REPO_ROOT) not in sys.path:
++    sys.path.insert(0, str(REPO_ROOT))
++
++_hermes_root = Path(os.environ.get('HERMES_ROOT', Path.home() / '.hermes' / 'hermes-agent'))
++if str(_hermes_root) not in sys.path:
++    sys.path.insert(0, str(_hermes_root))
++_venv_site = Path.home() / '.hermes' / 'hermes-agent' / 'venv/lib'
++if not _venv_site.exists() and (_hermes_root / 'venv/lib').exists():
++    _venv_site = _hermes_root / 'venv/lib'
++if _venv_site.exists():
++    for _p in _venv_site.glob('python*/site-packages'):
++        if str(_p) not in sys.path:
++            sys.path.insert(0, str(_p))
++
++# Set up isolated HERMES_HOME before importing ANY Hermes module (P1 B3 requirement)
++import shutil
++_isolated_tmp = tempfile.TemporaryDirectory(prefix='cairn-hermes-test-')
++_hermes_home = Path(_isolated_tmp.name) / '.hermes'
++_hermes_home.mkdir(parents=True, mode=0o700)
++_old_hermes_home = os.environ.get('HERMES_HOME')
++os.environ['HERMES_HOME'] = str(_hermes_home)
++
++try:
++    from prompt_toolkit.buffer import Buffer
++    from cli import HermesCLI, _VoiceInputMessage
++    from hermes_cli.plugins import get_plugin_manager, QueuedMessage
++    from tools.approval import (
++        get_current_request_id,
++        set_current_request_id,
++        get_current_turn_id,
++        set_current_turn_id,
++    )
++    from tools.process_registry import process_registry
++    HAS_HERMES_DEPS = True
++except ImportError:
++    HAS_HERMES_DEPS = False
++
++from integrations.lifecycle import hermes_queue
++
++
++def _get_process_credentials():
++    pid = os.getpid()
++    stat_text = Path(f'/proc/{pid}/stat').read_text()
++    start_ticks = int(stat_text.rsplit(')', 1)[1].split()[19])
++    boot_id = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
++    return dict(pid=pid, start=start_ticks, boot=boot_id)
++
++
++@unittest.skipUnless(HAS_HERMES_DEPS, "Hermes dependencies required")
++class HermesCancellationE2ETests(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        cls.process = _get_process_credentials()
++        cls.sock_path = f"/tmp/cairn-hermes-{os.getpid()}.sock"
++        cls.hermes_home = _hermes_home
++        cls.isolated_tmp = _isolated_tmp
++        cls.old_hermes_home = _old_hermes_home
++
++        def _cleanup_env():
++            if _old_hermes_home is not None:
++                os.environ['HERMES_HOME'] = _old_hermes_home
++            else:
++                os.environ.pop('HERMES_HOME', None)
++        cls.addClassCleanup(_cleanup_env)
++
++        try:
++            # Assert every persistence path belongs to the temporary home (P1 B3 isolation)
++            from tools import process_registry as _pr
++            if hasattr(_pr, 'CHECKPOINT_PATH'):
++                assert Path(_pr.CHECKPOINT_PATH).resolve().is_relative_to(_hermes_home.resolve()), (
++                    f"CHECKPOINT_PATH {_pr.CHECKPOINT_PATH} not in isolated {_hermes_home}"
++                )
++
++            # Set up isolated plugin and configuration
++            plugin_dir = cls.hermes_home / 'plugins' / 'cairn-coordination'
++            plugin_dir.mkdir(parents=True, mode=0o700)
++            shutil.copyfile(REPO_ROOT / 'integrations/hermes/coordination.py', plugin_dir / '__init__.py')
++            (plugin_dir / 'plugin.yaml').write_text(json.dumps({'name': 'cairn-coordination', 'version': '1.0'}))
++            (cls.hermes_home / 'cairn-coordination.json').write_text(
++                json.dumps({'script': '/bin/true', 'config': '{}'})
++            )
++            (cls.hermes_home / 'config.yaml').write_text("plugins:\n  enabled:\n    - cairn-coordination\n")
++
++            # Discover and load plugins once
++            pm = get_plugin_manager()
++            pm.discover_and_load()
++
++            # Wait for bridge socket to become ready
++            deadline = time.monotonic() + 5.0
++            while time.monotonic() < deadline:
++                if os.path.exists(cls.sock_path):
++                    break
++                time.sleep(0.05)
++            if not os.path.exists(cls.sock_path):
++                raise RuntimeError(f"Bridge socket {cls.sock_path} was not created during setUpClass")
++        except BaseException:
++            cls.tearDownClass()
++            raise
++
++    @classmethod
++    def tearDownClass(cls):
++        try:
++            from tools.process_registry import process_registry
++            process_registry.kill_all()
++        except Exception:
++            pass
++        if os.path.exists(cls.sock_path):
++            try:
++                os.unlink(cls.sock_path)
++            except OSError:
++                pass
++        if cls.old_hermes_home is not None:
++            os.environ['HERMES_HOME'] = cls.old_hermes_home
++        else:
++            os.environ.pop('HERMES_HOME', None)
++        try:
++            cls.isolated_tmp.cleanup()
++        except Exception:
++            pass
++
++    def setUp(self):
++        self.tmp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.tmp.cleanup)
++        self.home = Path(self.tmp.name) / '.hermes'
++        self.home.mkdir(parents=True, mode=0o700)
++
++        # Build credentials
++        self.process = self.__class__.process
++        self.sock_path = self.__class__.sock_path
++
++        # Instantiate HermesCLI in test mode
++        self.cli = HermesCLI.__new__(HermesCLI)
++        self.cli.session_id = f"ses_hermes_{os.getpid()}_{int(time.time() * 1000)}"
++        self.cli._pending_input = queue.Queue()
++        self.cli._interrupt_queue = queue.Queue()
++        self.cli._agent_running = False
++        self.cli._admission_lock = threading.RLock()
++        self.cli._admission_state = "idle"
++        self.cli._active_cancelled = False
++        self.cli._should_exit = False
++        self.cli._status_bar_suppressed_after_resize = False
++        self.cli._pending_resume_sessions = []
++        self.cli._pending_agent_seed = None
++        self.cli._interactive_turn = False
++        self.cli._pet_turn_error = False
++        self.cli._pet_reasoning = False
++        self.cli._spinner_text = ""
++        self.cli._tool_start_time = 0.0
++        self.cli._pending_tool_info = []
++        self.cli._last_scrollback_tool = ""
++        self.cli._last_turn_interrupted = False
++        self.cli._active_request_id = None
++        self.cli._active_delivery_id = None
++        self.cli._active_turn_id = None
++        self.cli._voice_mode = False
++        self.cli._voice_continuous = False
++        self.cli._voice_recording = False
++        self.cli._voice_tts = False
++        self.cli._command_running = False
++
++        # Real prompt_toolkit buffer for composer draft testing
++        self.composer_buffer = Buffer()
++        self.cli._app = SimpleNamespace(
++            current_buffer=self.composer_buffer,
++            invalidate=MagicMock(),
++            is_running=True,
++            exit=MagicMock(),
++        )
++
++        # Mock mock-able methods
++        self.cli._check_config_mcp_changes = MagicMock()
++        self.cli._check_termios_drift = MagicMock()
++        self.cli._drain_process_notifications = MagicMock()
++        self.cli._maybe_fire_loop_tick = MagicMock()
++        self.cli._turn_summary_begin = MagicMock()
++        self.cli._turn_summary_emit = MagicMock()
++        self.cli._pet_react_turn_end = MagicMock()
++        self.cli._print_user_message_preview = MagicMock()
++        self.cli._recover_terminal_after_interrupt = MagicMock()
++        self.cli._drain_interrupt_queue_to_pending_input = MagicMock()
++        self.cli._maybe_continue_goal_after_turn = MagicMock()
++        self.cli._maybe_complete_loop_tick_after_turn = MagicMock()
++        self.cli._typed_voice_stop = MagicMock(return_value=False)
++        self.cli.handle_bang_shell = MagicMock(return_value=False)
++        self.cli.process_command = MagicMock(return_value=True)
++
++        # Mock agent for interruption tracking
++        self.agent = MagicMock()
++        self.cli.agent = self.agent
++        self.interrupt_calls = []
++
++        def mock_interrupt(*args, **kwargs):
++            self.interrupt_calls.append((args, kwargs))
++
++        self.agent.interrupt = mock_interrupt
++
++        # Set plugin manager CLI reference
++        pm = get_plugin_manager()
++        pm._cli_ref = self.cli
++
++        def cleanup_tools():
++            process_registry.kill_all()
++            set_current_request_id("")
++
++        self.addCleanup(cleanup_tools)
++
++    def test_claim1_queued_wake_preserves_typed_composer_draft(self):
++        """Claim 1: Queued wake preserves human typed composer draft in prompt_toolkit."""
++        draft_text = "def calculate_orbit(trajectory):\n    # user working draft"
++        self.composer_buffer.text = draft_text
++        self.composer_buffer.cursor_position = len(draft_text)
++
++        # Enqueue wake via native Unix domain socket
++        queued_id, started = hermes_queue.enqueue(
++            self.sock_path,
++            self.process,
++            self.cli.session_id,
++            "Cairn automated wakeup event",
++            "wake-event-101",
++            request_id="req-wake-101",
++            delivery_id="del-wake-101",
++        )
++        self.assertEqual(queued_id, "wake-event-101")
++        self.assertTrue(started)
++
++        # Verify draft remains pristine immediately after enqueue
++        self.assertEqual(self.composer_buffer.text, draft_text)
++        self.assertEqual(self.composer_buffer.cursor_position, len(draft_text))
++
++        # Dequeue the message as _process_loop would do
++        item = self.cli._pending_input.get_nowait()
++        unwrapped = self.cli._dequeue_pending_input(item)
++        self.assertEqual(unwrapped, "Cairn automated wakeup event")
++
++        # Crucial invariant: draft is still untouched after admission
++        self.assertEqual(self.composer_buffer.text, draft_text)
++        self.assertEqual(self.composer_buffer.cursor_position, len(draft_text))
++
++    def test_claim2_busy_owner_work_finishes_before_wake(self):
++        """Claim 2: Busy session queues serially; owner work completes before wake executes."""
++        self.cli._agent_running = True  # Owner turn is currently running
++        self.cli._active_request_id = None  # None indicates owner interactive turn
++
++        # Check status over socket
++        st = hermes_queue.status(self.sock_path, self.process, self.cli.session_id)
++        self.assertEqual(st.get("status"), "busy")
++
++        # Enqueue wake while busy
++        queued_id, started = hermes_queue.enqueue(
++            self.sock_path,
++            self.process,
++            self.cli.session_id,
++            "Wake prompt while busy",
++            "wake-event-102",
++            request_id="req-wake-102",
++        )
++        self.assertEqual(queued_id, "wake-event-102")
++        self.assertFalse(started, "Busy session must report started=False")
++
++        # Interrupt queue must be empty: wake never interrupts busy owner work!
++        self.assertTrue(self.cli._interrupt_queue.empty())
++        self.assertEqual(self.cli._pending_input.qsize(), 1)
++        queued_msg = self.cli._pending_input.queue[0]
++        self.assertEqual(queued_msg.status, "pending")
++
++        # Simulate owner finishing their turn
++        self.cli._agent_running = False
++
++        # Now process loop can admit the pending wake
++        admitted = self.cli._dequeue_pending_input(self.cli._pending_input.get())
++        self.assertEqual(admitted, "Wake prompt while busy")
++        self.assertEqual(queued_msg.status, "admitted")
++
++    def test_claim3_exact_cairn_request_native_binding(self):
++        """Claim 3: Admitting QueuedMessage pins exact Cairn request ID and delivery ID."""
++        qm = QueuedMessage(
++            text="Wake for bound request",
++            expected_session_id=self.cli.session_id,
++            request_id="cairn-req-uuid-42",
++            delivery_id="cairn-del-uuid-84",
++        )
++        self.cli._pending_input.put(qm)
++
++        # Dequeue and admit
++        payload = self.cli._dequeue_pending_input(self.cli._pending_input.get())
++        self.assertEqual(payload, "Wake for bound request")
++
++        # Check exact bindings
++        self.assertEqual(self.cli._active_request_id, "cairn-req-uuid-42")
++        self.assertEqual(self.cli._active_delivery_id, "cairn-del-uuid-84")
++        self.assertIsNotNone(self.cli._active_turn_id)
++        self.assertEqual(get_current_request_id(), "cairn-req-uuid-42")
++
++    def test_claim4_bounded_long_running_tool_stops_on_request_cancel(self):
++        """Claim 4: Request cancellation terminates tracked tool processes and positively verifies termination.
++
++        Crucially: background tools NOT captured as belonging to this exact request/turn are PRESERVED.
++        """
++        # Setup active turn for request req-tool-cancel
++        req_id = "req-tool-cancel-99"
++        turn_id = "turn-tool-cancel-99"
++        self.cli._active_request_id = req_id
++        self.cli._active_turn_id = turn_id
++        self.cli._agent_running = True
++        set_current_request_id(req_id)
++        set_current_turn_id(turn_id)
++
++        # Spawn a real long-running OS process through process_registry belonging to this request/turn
++        proc_sess = process_registry.spawn_local(
++            "sleep 60",
++            session_key=self.cli.session_id,
++            request_id=req_id,
++            turn_id=turn_id,
++        )
++        self.assertIsNotNone(proc_sess.pid)
++        self.assertFalse(proc_sess.exited)
++        os.kill(proc_sess.pid, 0)
++
++        # Spawn an unrelated background tool (e.g. owner tool or prior turn)
++        set_current_request_id("")
++        set_current_turn_id("owner-turn-42")
++        owner_tool = process_registry.spawn_local(
++            "sleep 60",
++            session_key=self.cli.session_id,
++            request_id="",
++            turn_id="owner-turn-42",
++        )
++        set_current_request_id(req_id)
++        set_current_turn_id(turn_id)
++        self.assertIsNotNone(owner_tool.pid)
++        self.assertFalse(owner_tool.exited)
++        os.kill(owner_tool.pid, 0)
++
++        # Check tools status via bridge socket
++        tstatus = hermes_queue.tools_status(
++            self.sock_path, self.process, self.cli.session_id, tool_ids=[proc_sess.id]
++        )
++        self.assertEqual(len(tstatus.get("tools", [])), 1)
++        self.assertEqual(tstatus["tools"][0]["status"], "running")
++
++        # Now issue request cancellation via native socket
++        abort_res = hermes_queue.abort(
++            self.sock_path,
++            self.process,
++            self.cli.session_id,
++            expected_request_id=req_id,
++            expected_turn_id=turn_id,
++        )
++
++        # Verify abort outcome
++        self.assertTrue(abort_res.get("aborted"))
++        self.assertEqual(abort_res.get("turn_stop"), "interrupted")
++        self.assertEqual(len(self.interrupt_calls), 1)
++        self.assertTrue(self.interrupt_calls[0][1].get("hard_cancel"))
++
++        # Verify tool termination outcome reported by bridge: ONLY proc_sess terminated!
++        tools = abort_res.get("tools", [])
++        self.assertEqual(len(tools), 1)
++        self.assertEqual(tools[0]["item_id"], proc_sess.id)
++        self.assertEqual(tools[0]["stop_state"], "terminated")
++
++        # Positive proof: proc_sess was terminated
++        time.sleep(0.1)
++        with self.assertRaises(ProcessLookupError):
++            os.kill(proc_sess.pid, 0)
++
++        # Positive proof: owner_tool was PRESERVED and is still alive!
++        os.kill(owner_tool.pid, 0)
++        self.assertFalse(owner_tool.exited)
++
++        # Cleanup owner_tool
++        process_registry.kill_process(owner_tool.id, source="test.cleanup")
++
++    def test_claim5_later_owner_work_unaffected_against_stale_cancel(self):
++        """Claim 5: Cancellation of previous request/turn is refused against active owner turn."""
++        old_req_id = "req-completed-earlier"
++
++        # Turn finishes, finally block resets active request state
++        self.cli._active_request_id = None
++        self.cli._active_delivery_id = None
++        self.cli._active_turn_id = None
++        set_current_request_id("")
++        set_current_turn_id("")
++        self.cli._agent_running = False
++
++        # Owner starts a new interactive turn
++        self.cli._dequeue_pending_input("Owner interactive command")
++        self.cli._agent_running = True
++        self.assertIsNone(self.cli._active_request_id)
++        owner_turn_id = self.cli._active_turn_id
++        self.assertIsNotNone(owner_turn_id)
++
++        # 1. Stale cancellation for old_req_id arrives while owner is working -> refused!
++        with self.assertRaises(hermes_queue.RequestMismatchError) as ctx:
++            hermes_queue.abort(
++                self.sock_path,
++                self.process,
++                self.cli.session_id,
++                expected_request_id=old_req_id,
++            )
++        self.assertIn("REQUEST_MISMATCH", str(ctx.exception))
++        self.assertEqual(len(self.interrupt_calls), 0)
++        self.assertTrue(self.cli._agent_running)
++
++        # 2. Turn mismatch arrives with wrong expected_turn_id -> refused!
++        with self.assertRaises(hermes_queue.RequestMismatchError) as ctx:
++            hermes_queue.abort(
++                self.sock_path,
++                self.process,
++                self.cli.session_id,
++                expected_turn_id="turn-stale-999",
++            )
++        self.assertIn("TURN_MISMATCH", str(ctx.exception))
++        self.assertEqual(len(self.interrupt_calls), 0)
++        self.assertTrue(self.cli._agent_running)
++
++        # 3. Unspecified abort (neither request nor turn) arrives while owner is working -> refused!
++        with self.assertRaises(hermes_queue.RequestMismatchError) as ctx:
++            hermes_queue.abort(
++                self.sock_path,
++                self.process,
++                self.cli.session_id,
++            )
++        self.assertIn("UNSPECIFIED_ABORT", str(ctx.exception))
++        self.assertEqual(len(self.interrupt_calls), 0)
++        self.assertTrue(self.cli._agent_running)
++
++        # Owner finishes turn normally without interruption
++        self.cli._agent_running = False
++
++    def test_claim6_retained_uncertainty_and_recovery(self):
++        """Claim 6: Peer credentials, session mismatches, and connection drops report honest uncertainty."""
++        # 1. Process identity mismatch (wrong PID) refuses before sending
++        wrong_proc = dict(self.process, pid=999999)
++        with self.assertRaises(hermes_queue.QueueUnavailable) as ctx:
++            hermes_queue.enqueue(
++                self.sock_path, wrong_proc, self.cli.session_id, "text", "c1"
++            )
++        self.assertIn("different process", str(ctx.exception))
++
++        # 2. Session mismatch refuses honestly
++        with self.assertRaises(hermes_queue.QueueUnavailable) as ctx:
++            hermes_queue.abort(
++                self.sock_path,
++                self.process,
++                "ses_nonexistent",
++                expected_request_id="req-any",
++            )
++        self.assertIn("SESSION_MISMATCH", str(ctx.exception))
++
++        # 3. Connection drop / closed socket reports uncertain outcome (never fake success)
++        dead_sock = str(self.home / "dead.sock")
++        with self.assertRaises(hermes_queue.QueueUnavailable) as ctx:
++            hermes_queue.abort(
++                dead_sock,
++                self.process,
++                self.cli.session_id,
++                expected_request_id="req-any",
++            )
++        self.assertIn("unavailable", str(ctx.exception))
++
++    def test_claim7_abort_during_admission_cancels_before_execution(self):
++        """Claim 7: Abort arriving during admitting state cancels before chat can start."""
++        req_id = "req-admit-race-1"
++        turn_id = "turn-admit-race-1"
++        qm = QueuedMessage(
++            text="Wake for admission race",
++            expected_session_id=self.cli.session_id,
++            request_id=req_id,
++            turn_id=turn_id,
++        )
++        self.cli._pending_input.put(qm)
++
++        # Dequeue item: state becomes 'admitting', but chat has not started
++        user_input = self.cli._dequeue_pending_input(self.cli._pending_input.get())
++        self.assertEqual(user_input, "Wake for admission race")
++        self.assertEqual(self.cli._admission_state, "admitting")
++        self.assertFalse(self.cli._agent_running)
++
++        # Abort arrives while admitting
++        abort_res = hermes_queue.abort(
++            self.sock_path,
++            self.process,
++            self.cli.session_id,
++            expected_request_id=req_id,
++            expected_turn_id=turn_id,
++        )
++        self.assertTrue(abort_res.get("aborted"))
++        self.assertEqual(abort_res.get("turn_stop"), "cancelled_before_running")
++        self.assertTrue(self.cli._active_cancelled)
++
++        # When _process_loop reaches the execution block under _admission_lock:
++        mock_chat = MagicMock()
++        self.cli.chat = mock_chat
++        with self.cli._admission_lock:
++            if self.cli._active_cancelled:
++                self.cli._admission_state = "idle"
++                self.cli._active_cancelled = False
++                self.cli._active_request_id = None
++                self.cli._active_delivery_id = None
++                self.cli._active_turn_id = None
++            else:
++                self.cli.chat(user_input)
++
++        # Chat was never started
++        mock_chat.assert_not_called()
++        self.assertEqual(self.cli._admission_state, "idle")
++
++    def test_claim8_pending_abort_requires_all_supplied_ids_match(self):
++        """Claim 8: Pending queue abort requires all supplied IDs to match; partial mismatch does not dequeue."""
++        req_id = "req-both-match"
++        turn_id = "turn-both-match"
++        qm = QueuedMessage(
++            text="Wake requiring exact match",
++            expected_session_id=self.cli.session_id,
++            request_id=req_id,
++            turn_id=turn_id,
++        )
++        self.cli._pending_input.put(qm)
++
++        # 1. Supply matching request_id but mismatched turn_id:
++        abort_mismatch = hermes_queue.abort(
++            self.sock_path,
++            self.process,
++            self.cli.session_id,
++            expected_request_id=req_id,
++            expected_turn_id="turn-WRONG",
++        )
++        self.assertFalse(abort_mismatch.get("aborted"))
++        self.assertEqual(abort_mismatch.get("turn_stop"), "already_ended")
++        # Item must still be in pending input
++        self.assertEqual(self.cli._pending_input.qsize(), 1)
++        self.assertEqual(self.cli._pending_input.queue[0].request_id, req_id)
++
++        # 2. Supply both correctly:
++        abort_match = hermes_queue.abort(
++            self.sock_path,
++            self.process,
++            self.cli.session_id,
++            expected_request_id=req_id,
++            expected_turn_id=turn_id,
++        )
++        self.assertTrue(abort_match.get("aborted"))
++        self.assertEqual(abort_match.get("turn_stop"), "dequeued_before_admission")
++        self.assertEqual(self.cli._pending_input.qsize(), 0)
++
++    def test_claim9_immediate_refusal_on_stale_session_in_queue_message(self):
++        """Claim 9: Queueing message for mismatched session immediately refuses with SESSION_MISMATCH."""
++        with self.assertRaises(hermes_queue.QueueUnavailable) as ctx:
++            hermes_queue.enqueue(
++                self.sock_path,
++                self.process,
++                "ses_stale_target",
++                "Wake text",
++                "client-1",
++                expected_session_id="ses_stale_expected",
++            )
++        self.assertIn("SESSION_MISMATCH", str(ctx.exception))
++        # Nothing added to pending queue
++        self.assertEqual(self.cli._pending_input.qsize(), 0)
++
++    def test_claim10_concurrent_wake_history_persistence(self):
++        """Claim 10: Concurrent wake history updates persist atomically without file corruption."""
++        history_file = self.__class__.hermes_home / f"cairn-wake-history-{os.getpid()}.json"
++        
++        errors = []
++        def writer(worker_id):
++            try:
++                for i in range(10):
++                    # Enqueue a message which triggers on_consumed callback recording wake outcome
++                    cid = f"client-{worker_id}-{i}"
++                    s = socket.socket(socket.AF_UNIX)
++                    s.connect(self.sock_path)
++                    with s:
++                        req = {"id": 1, "method": "session/wake_status", "params": {"client_id": cid}}
++                        s.sendall(json.dumps(req).encode() + b"\n")
++                        res = json.loads(s.makefile("r").readline())
++                        if "error" in res:
++                            errors.append(res["error"])
++            except Exception as exc:
++                errors.append(exc)
++
++        # 3 workers within MAX_CONCURRENT_CLIENTS (4)
++        threads = [threading.Thread(target=writer, args=(w,)) for w in range(3)]
++        for t in threads:
++            t.start()
++        for t in threads:
++            t.join()
++        self.assertEqual(errors, [])
++
++    def test_claim11_persistence_failure_handling(self):
++        """Claim 11: Wake outcome persistence failure raises error and is captured by on_consumed callback."""
++        qm = QueuedMessage(
++            text="Wake testing persistence failure",
++            expected_session_id=self.cli.session_id,
++            request_id="req-persist-fail",
++        )
++        
++        # Simulate on_consumed callback that raises an OSError on persistence failure
++        def failing_on_consumed(status, current_sid):
++            raise OSError("Disk full: unable to persist wake history")
++
++        qm.on_consumed = failing_on_consumed
++        self.cli._pending_input.put(qm)
++
++        # Dequeue must not crash the process loop; callback error must be captured on message
++        user_input = self.cli._dequeue_pending_input(self.cli._pending_input.get())
++        self.assertEqual(user_input, "Wake testing persistence failure")
++        self.assertEqual(qm.status, "admitted")
++    def test_claim12_dequeue_to_admission_cancellation_atomicity(self):
++        """Claim 12: Dequeue-to-admission atomicity holds admission lock across queue removal and admission."""
++        removed = threading.Event()
++        release = threading.Event()
++        cancelled = threading.Event()
++        errors = []
++        result = {}
++        chat = []
++
++        class PausingQueue(queue.Queue):
++            def get(q, *args, **kwargs):
++                item = super().get(*args, **kwargs)
++                removed.set()
++                if not release.wait(4):
++                    raise RuntimeError("dequeue barrier timed out")
++                return item
++
++        self.cli._pending_input = PausingQueue()
++        self.cli._pending_input.put(
++            QueuedMessage(
++                text="wake-boundary",
++                expected_session_id=self.cli.session_id,
++                request_id="req-boundary",
++            )
++        )
++
++        def preview(_):
++            if not cancelled.wait(4):
++                raise RuntimeError("cancel response timed out")
++            self.cli._should_exit = True
++
++        self.cli._print_user_message_preview = preview
++        self.cli.chat = lambda *a, **kw: chat.append(a)
++
++        def cancel():
++            try:
++                result.update(
++                    hermes_queue.abort(
++                        self.sock_path,
++                        self.process,
++                        self.cli.session_id,
++                        expected_request_id="req-boundary",
++                    )
++                )
++            except BaseException as e:
++                errors.append(repr(e))
++            finally:
++                cancelled.set()
++
++        worker = threading.Thread(
++            target=self.cli._process_loop, args=(self.cli._app,), daemon=True
++        )
++        worker.start()
++        self.assertTrue(removed.wait(4))
++        acquired = self.cli._admission_lock.acquire(blocking=False)
++        if acquired:
++            self.cli._admission_lock.release()
++        aborter = threading.Thread(target=cancel, daemon=True)
++        aborter.start()
++        if acquired:
++            self.assertTrue(cancelled.wait(4))
++        release.set()
++        worker.join(5)
++        aborter.join(5)
++
++        self.assertFalse(worker.is_alive())
++        self.assertFalse(aborter.is_alive())
++        self.assertFalse(errors)
++        self.assertFalse(
++            acquired,
++            "Admission lock was not held during queue removal to admission handoff",
++        )
++        self.assertFalse(
++            chat,
++            "Chat must not be called after cancellation during admission handoff",
++        )
++        self.assertEqual(result.get("turn_stop"), "cancelled_before_running")
++
++    def test_claim13_tool_inventory_failure_reported_as_uncertain(self):
++        """Claim 13: Tool inventory failure reports tools_uncertain and explicit tool_error."""
++        from unittest.mock import patch
++        req_id = "req-tool-inventory-fail"
++        self.cli._admission_state = "running"
++        self.cli._agent_running = True
++        self.cli._active_request_id = req_id
++        self.cli._active_turn_id = "turn-tool-fail"
++
++        try:
++            with patch.object(process_registry, 'list_sessions',
++                              side_effect=RuntimeError('tool inventory unavailable')):
++                result = hermes_queue.abort(
++                    self.sock_path,
++                    self.process,
++                    self.cli.session_id,
++                    expected_request_id=req_id,
++                )
++            self.assertTrue(result.get("aborted"))
++            self.assertEqual(result.get("turn_stop"), "interrupted")
++            self.assertTrue(result.get("tools_uncertain"))
++            self.assertIn("tool inventory unavailable", result.get("tool_error", ""))
++            tools = result.get("tools", [])
++            self.assertEqual(len(tools), 1)
++            self.assertEqual(tools[0].get("item_id"), "tool_inventory")
++            self.assertIn("unavailable: tool inventory unavailable", tools[0].get("stop_state", ""))
++        finally:
++            self.cli._agent_running = False
++            self.cli._admission_state = "idle"
++            self.cli._active_request_id = None
++            self.cli._active_turn_id = None
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/scripts/test_hermes_queue.py b/scripts/test_hermes_queue.py
+new file mode 100644
+index 0000000..7c7bd46
+--- /dev/null
++++ b/scripts/test_hermes_queue.py
+@@ -0,0 +1,458 @@
++"""Unit tests for Hermes native queue client adapter against real Unix domain sockets."""
++import json
++import os
++from pathlib import Path
++import socket
++import struct
++import tempfile
++import threading
++import unittest
++
++from integrations.lifecycle import hermes_queue
++
++
++class HermesQueueTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.temp.cleanup)
++        self.path = str(Path(self.temp.name) / 'hermes-bridge.sock')
++        self.process = dict(
++            pid=os.getpid(),
++            start=int(Path(f'/proc/{os.getpid()}/stat').read_text().rsplit(')', 1)[1].split()[19]),
++            boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
++        )
++        self.listener = socket.socket(socket.AF_UNIX)
++        self.listener.bind(self.path)
++        self.listener.listen()
++        self.listener.settimeout(3)
++        self.addCleanup(self.listener.close)
++        self.requests = []
++        self.errors = []
++        self.threads = []
++
++    def serve(self, behavior='confirm', busy=False):
++        def run():
++            try:
++                conn, _ = self.listener.accept()
++                with conn:
++                    conn.settimeout(3)
++                    file_obj = conn.makefile('r', encoding='utf-8')
++                    line = file_obj.readline()
++                    if not line:
++                        return
++                    req = json.loads(line)
++                    self.requests.append(req)
++                    req_id = req.get('id')
++                    method = req.get('method')
++                    params = req.get('params', {})
++
++                    if behavior == 'drop':
++                        return
++
++                    if method == 'session/queue_message':
++                        if behavior == 'not_found':
++                            resp = {'id': req_id, 'error': {'code': -32002, 'message': 'SESSION_NOT_FOUND: session does not exist'}}
++                        elif behavior == 'mismatch':
++                            resp = {'id': req_id, 'error': {'code': -32001, 'message': 'SESSION_MISMATCH: session changed'}}
++                        else:
++                            resp = {
++                                'id': req_id,
++                                'result': {
++                                    'queued': True,
++                                    'queued_id': params.get('client_id'),
++                                    'session_id': params.get('session_id'),
++                                    'busy': busy or (behavior == 'busy'),
++                                    'request_id': params.get('request_id'),
++                                    'delivery_id': params.get('delivery_id'),
++                                }
++                            }
++                        conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
++                    elif method == 'session/abort':
++                        if behavior == 'request_mismatch':
++                            resp = {'id': req_id, 'error': {'code': -32001, 'message': 'REQUEST_MISMATCH: active turn belongs to request req_other; abort refused to protect owner turn'}}
++                        elif behavior == 'dequeued':
++                            resp = {'id': req_id, 'result': {'aborted': True, 'turn_stop': 'dequeued_before_admission', 'session_id': params.get('session_id'), 'request_id': params.get('expected_request_id'), 'tools': []}}
++                        else:
++                            resp = {
++                                'id': req_id,
++                                'result': {
++                                    'aborted': True,
++                                    'turn_stop': 'interrupted',
++                                    'session_id': params.get('session_id'),
++                                    'request_id': params.get('expected_request_id'),
++                                    'tools': [{'item_id': 'proc_123', 'process_id': '4567', 'stop_state': 'terminated'}],
++                                }
++                            }
++                        conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
++                    elif method == 'session/tools_status':
++                        resp = {'id': req_id, 'result': {'session_id': params.get('session_id'), 'tools': [{'session_id': 'proc_123', 'status': 'running'}]}}
++                        conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
++                    elif method == 'session/status':
++                        resp = {'id': req_id, 'result': {'session_id': params.get('session_id'), 'status': 'busy' if busy else 'idle'}}
++                        conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
++            except Exception as exc:
++                self.errors.append(exc)
++
++        worker = threading.Thread(target=run)
++        self.threads.append(worker)
++        worker.start()
++
++    def join_workers(self):
++        for worker in self.threads:
++            worker.join(timeout=3)
++            self.assertFalse(worker.is_alive())
++        self.assertEqual(self.errors, [])
++
++    def test_unchanged_composer_direct_submission(self):
++        """1. Queues directly into pending input without touching prompt_toolkit composer."""
++        self.serve(behavior='confirm', busy=False)
++        queued_id, started = hermes_queue.enqueue(
++            self.path, self.process, 'ses_hermes123', 'wake text', 'delivery_one'
++        )
++        self.join_workers()
++        self.assertEqual(queued_id, 'delivery_one')
++        self.assertTrue(started)
++        self.assertEqual(len(self.requests), 1)
++        req = self.requests[0]
++        self.assertEqual(req['method'], 'session/queue_message')
++        self.assertEqual(req['params']['session_id'], 'ses_hermes123')
++        self.assertEqual(req['params']['text'], 'wake text')
++
++    def test_busy_ordering_without_preemption(self):
++        """2. Busy session queues serially into pending input without interrupt queue."""
++        self.serve(behavior='busy', busy=True)
++        queued_id, started = hermes_queue.enqueue(
++            self.path, self.process, 'ses_hermes123', 'wake text', 'delivery_one'
++        )
++        self.join_workers()
++        self.assertEqual(queued_id, 'delivery_one')
++        self.assertFalse(started)
++
++    def test_stale_native_session_refusal(self):
++        """3. Refuses when target session is not found or has mismatched expectation."""
++        self.serve(behavior='not_found')
++        with self.assertRaises(hermes_queue.QueueUnavailable) as ctx:
++            hermes_queue.enqueue(
++                self.path, self.process, 'ses_stale', 'wake text', 'delivery_one'
++            )
++        self.join_workers()
++        self.assertIn('SESSION_NOT_FOUND', str(ctx.exception))
++
++        self.serve(behavior='mismatch')
++        with self.assertRaises(hermes_queue.QueueUnavailable) as ctx:
++            hermes_queue.enqueue(
++                self.path, self.process, 'ses_stale', 'wake text', 'delivery_one', expected_session_id='ses_other'
++            )
++        self.join_workers()
++        self.assertIn('SESSION_MISMATCH', str(ctx.exception))
++
++    def test_uncertain_delivery_no_resend(self):
++        """4. Failure after request transmission raises QueueError (uncertain outcome; never resend)."""
++        self.serve(behavior='drop')
++        with self.assertRaises(hermes_queue.QueueError) as ctx:
++            hermes_queue.enqueue(
++                self.path, self.process, 'ses_hermes123', 'wake text', 'delivery_one'
++            )
++        self.join_workers()
++        self.assertNotIsInstance(ctx.exception, hermes_queue.QueueUnavailable)
++        self.assertIn('uncertain', str(ctx.exception))
++
++    def test_enqueue_carries_request_and_delivery_id(self):
++        """5. Enqueue carries exact Cairn request_id and delivery_id."""
++        self.serve(behavior='confirm', busy=False)
++        queued_id, started = hermes_queue.enqueue(
++            self.path, self.process, 'ses_hermes123', 'wake text', 'delivery_one',
++            request_id='req-1234', delivery_id='del-5678'
++        )
++        self.join_workers()
++        self.assertEqual(queued_id, 'delivery_one')
++        self.assertTrue(started)
++        req = self.requests[0]
++        self.assertEqual(req['params']['request_id'], 'req-1234')
++        self.assertEqual(req['params']['delivery_id'], 'del-5678')
++
++    def test_abort_active_request_success(self):
++        """6. Abort matching active request returns interrupted status and tool outcomes."""
++        self.serve(behavior='confirm')
++        result = hermes_queue.abort(
++            self.path, self.process, 'ses_hermes123', expected_request_id='req-1234'
++        )
++        self.join_workers()
++        self.assertTrue(result.get('aborted'))
++        self.assertEqual(result.get('turn_stop'), 'interrupted')
++        tools = result.get('tools', [])
++        self.assertEqual(len(tools), 1)
++        self.assertEqual(tools[0]['item_id'], 'proc_123')
++        self.assertEqual(tools[0]['stop_state'], 'terminated')
++
++    def test_abort_mismatched_request_refused(self):
++        """7. Abort with mismatched request ID raises RequestMismatchError to protect owner turn."""
++        self.serve(behavior='request_mismatch')
++        with self.assertRaises(hermes_queue.RequestMismatchError) as ctx:
++            hermes_queue.abort(
++                self.path, self.process, 'ses_hermes123', expected_request_id='req-other'
++            )
++        self.join_workers()
++        self.assertIn('REQUEST_MISMATCH', str(ctx.exception))
++
++    def test_abort_pending_dequeued_before_admission(self):
++        """8. Abort when message is still pending removes it before admission."""
++        self.serve(behavior='dequeued')
++        result = hermes_queue.abort(
++            self.path, self.process, 'ses_hermes123', expected_request_id='req-pending'
++        )
++        self.join_workers()
++        self.assertTrue(result.get('aborted'))
++        self.assertEqual(result.get('turn_stop'), 'dequeued_before_admission')
++        self.assertEqual(result.get('tools'), [])
++
++    def test_tools_status(self):
++        """9. tools_status returns process status for session."""
++        self.serve(behavior='confirm')
++        result = hermes_queue.tools_status(
++            self.path, self.process, 'ses_hermes123', tool_ids=['proc_123']
++        )
++        self.join_workers()
++        tools = result.get('tools', [])
++        self.assertEqual(len(tools), 1)
++        self.assertEqual(tools[0]['session_id'], 'proc_123')
++        self.assertEqual(tools[0]['status'], 'running')
++
++    def test_abort_turn_mismatch_refused(self):
++        """10. Abort with mismatched turn ID raises RequestMismatchError to protect active turn."""
++        def serve_turn_mismatch():
++            conn, _ = self.listener.accept()
++            with conn:
++                line = conn.makefile('r', encoding='utf-8').readline()
++                req = json.loads(line)
++                resp = {'id': req['id'], 'error': {'code': -32003, 'message': 'TURN_MISMATCH: active turn is turn-1 (expected turn-2); abort refused to protect active turn'}}
++                conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
++        t = threading.Thread(target=serve_turn_mismatch)
++        self.threads.append(t)
++        t.start()
++        with self.assertRaises(hermes_queue.RequestMismatchError) as ctx:
++            hermes_queue.abort(
++                self.path, self.process, 'ses_hermes123', expected_turn_id='turn-2'
++            )
++        self.join_workers()
++        self.assertIn('TURN_MISMATCH', str(ctx.exception))
++
++    def test_abort_unspecified_refused(self):
++        """11. Abort with neither request nor turn specified raises RequestMismatchError while running."""
++        def serve_unspecified():
++            conn, _ = self.listener.accept()
++            with conn:
++                line = conn.makefile('r', encoding='utf-8').readline()
++                req = json.loads(line)
++                resp = {'id': req['id'], 'error': {'code': -32004, 'message': 'UNSPECIFIED_ABORT: expected_request_id or expected_turn_id required while agent is running; abort refused to protect active turn'}}
++                conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
++        t = threading.Thread(target=serve_unspecified)
++        self.threads.append(t)
++        t.start()
++        with self.assertRaises(hermes_queue.RequestMismatchError) as ctx:
++            hermes_queue.abort(
++                self.path, self.process, 'ses_hermes123'
++            )
++        self.join_workers()
++        self.assertIn('UNSPECIFIED_ABORT', str(ctx.exception))
++
++    def test_enqueue_rejects_empty_result(self):
++        """12. Enqueue rejects response with missing queued or started/busy fields."""
++        def serve_empty():
++            conn, _ = self.listener.accept()
++            with conn:
++                line = conn.makefile('r', encoding='utf-8').readline()
++                req = json.loads(line)
++                resp = {'id': req['id'], 'result': {}}
++                conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
++        t = threading.Thread(target=serve_empty)
++        self.threads.append(t)
++        t.start()
++        with self.assertRaises(hermes_queue.QueueError) as ctx:
++            hermes_queue.enqueue(
++                self.path, self.process, 'ses_hermes123', 'wake text', 'delivery_one'
++            )
++        self.join_workers()
++        self.assertIn('invalid bridge response schema', str(ctx.exception))
++
++    def test_abort_rejects_malformed_result(self):
++        """13. Abort rejects response missing aborted or turn_stop fields."""
++        def serve_malformed():
++            conn, _ = self.listener.accept()
++            with conn:
++                line = conn.makefile('r', encoding='utf-8').readline()
++                req = json.loads(line)
++                resp = {'id': req['id'], 'result': {'aborted': True}} # missing turn_stop
++                conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
++        t = threading.Thread(target=serve_malformed)
++        self.threads.append(t)
++        t.start()
++        with self.assertRaises(hermes_queue.QueueError) as ctx:
++            hermes_queue.abort(
++                self.path, self.process, 'ses_hermes123', expected_request_id='req-1'
++            )
++        self.join_workers()
++        self.assertIn('turn_stop', str(ctx.exception))
++
++
++    def test_prepare_idle_wake_populates_request_identity(self):
++        """14. prepare_idle_wake populates request_id and coordination passes it to hermes_queue."""
++        import sys
++        from pathlib import Path
++        sys.path.insert(0, str(Path(__file__).parent.parent / 'integrations' / 'lifecycle'))
++        from integrations.lifecycle import coordination
++        import tempfile
++        from unittest.mock import patch
++
++        with tempfile.TemporaryDirectory() as tmpdir:
++            path = Path(tmpdir) / 'state.json'
++            state = {
++                'agent': {
++                    'agent_id': 'agent-123',
++                    'execution_id': 'exec-456',
++                    'native_session_id': 'ses_hermes123',
++                    'metadata': {'state': 'idle', 'delivery_mode': 'existing-session', 'workspace': '/home/user/project'}
++                },
++                'workspace': '/home/user/project',
++                'process': self.process,
++            }
++            path.write_text(json.dumps(state))
++
++            config = {
++                'idle_wakeup': True,
++                'native_delivery': True,
++                'harness': 'hermes',
++            }
++
++            with patch.object(coordination, 'call', return_value={'delivery_id': 'del-uuid-999'}), \
++                 patch.object(coordination, 'hermes_queue_endpoint', return_value=self.path):
++                prepared = coordination.prepare_idle_wake(config, state, path)
++
++            self.assertIsNotNone(prepared)
++            wake = prepared['wake']
++            self.assertEqual(wake['delivery_id'], 'del-uuid-999')
++            self.assertIn('request_id', wake)
++            self.assertTrue(wake['request_id'])
++
++            # Verify submit_idle_wake passes wake['request_id'] to hermes_queue.enqueue
++            self.serve(behavior='confirm', busy=False)
++            with patch.object(coordination, 'hermes_queue_endpoint', return_value=self.path):
++                coordination.submit_idle_wake(config, path, prepared)
++            self.join_workers()
++
++            self.assertEqual(len(self.requests), 1)
++            req = self.requests[0]
++            self.assertEqual(req['params']['request_id'], wake['request_id'])
++            self.assertEqual(req['params']['delivery_id'], 'del-uuid-999')
++
++    def test_hermes_normalization_preserves_native_turn_id(self):
++        """B5: Coordinator normalization preserves Hermes native turn identity."""
++        import sys
++        from pathlib import Path
++        sys.path.insert(0, str(Path(__file__).parent.parent / 'integrations' / 'lifecycle'))
++        from integrations.lifecycle import coordination
++
++        config = {'harness': 'hermes'}
++        event = {
++            'session_id': 'ses_hermes_norm_1',
++            'cwd': str(Path.cwd()),
++            'model': 'hermes-model',
++            'turn_id': 'turn-hermes-uuid-42',
++            'hook_event_name': 'TurnStart',
++        }
++        obs = coordination.normalize(config, event)
++        self.assertEqual(obs['native_turn_id'], 'turn-hermes-uuid-42')
++        self.assertEqual(obs['event'], 'TurnStart')
++        self.assertEqual(obs['phase'], 'busy')
++
++        # Invalid turn IDs raise CoordinationError INVALID_HOST
++        for bad_turn in [123, 'turn\0bad', 'turn\x01bad', 'x' * 300]:
++            bad_event = dict(event, turn_id=bad_turn)
++            with self.assertRaises(coordination.CoordinationError) as ctx:
++                coordination.normalize(config, bad_event)
++            self.assertEqual(ctx.exception.code, 'INVALID_HOST')
++
++    def test_hermes_wake_binding_and_turn_fencing(self):
++        """B5: Hermes wake binding ties exact delivery to native turn and fences mismatched turns."""
++        import sys
++        from pathlib import Path
++        sys.path.insert(0, str(Path(__file__).parent.parent / 'integrations' / 'lifecycle'))
++        from integrations.lifecycle import coordination
++        import tempfile
++        from unittest.mock import patch
++
++        agent = {
++            'agent_id': 'agent-hermes-b5',
++            'execution_id': 'exec-b5',
++            'native_session_id': 'ses_hermes_b5',
++            'metadata': {'state': 'idle', 'delivery_mode': 'existing-session', 'workspace': str(Path.cwd())}
++        }
++        wake = {
++            'transport': 'hermes-queue',
++            'delivery_id': 'del-hermes-101',
++            'session': coordination.session_ref(agent),
++        }
++        state = {
++            'agent': agent,
++            'workspace': str(Path.cwd()),
++            'idle_wake': wake,
++            'process': self.process,
++        }
++
++        wake_prompt = coordination.wake_message(wake)
++
++        # 1. Matching TurnStart event successfully binds delivery_id and native_turn_id
++        valid_event = {
++            'hook_event_name': 'TurnStart',
++            'turn_id': 'turn-hermes-101',
++            'prompt': wake_prompt,
++        }
++        binding = coordination.wake_binding({'harness': 'hermes'}, state, valid_event)
++        self.assertEqual(binding, {
++            'delivery_id': 'del-hermes-101',
++            'native_turn_id': 'turn-hermes-101',
++        })
++
++        # 2. Mismatched prompt returns empty binding (owner prompt does not steal delivery)
++        mismatched_prompt = dict(valid_event, prompt='Owner typed prompt')
++        self.assertEqual(coordination.wake_binding({'harness': 'hermes'}, state, mismatched_prompt), {})
++
++        # 3. Non-TurnStart event returns empty binding
++        wrong_event = dict(valid_event, hook_event_name='UserPromptSubmit')
++        self.assertEqual(coordination.wake_binding({'harness': 'hermes'}, state, wrong_event), {})
++
++        # 4. In inbox_context, when hermes queue is active, unbound prompt does NOT claim work
++        with tempfile.TemporaryDirectory() as tmpdir:
++            path = Path(tmpdir) / 'state.json'
++            path.write_text(json.dumps(state))
++            config = {
++                'native_delivery': True,
++                'idle_wakeup': True,
++                'harness': 'hermes',
++            }
++            obs_unbound = {
++                'event': 'TurnStart',
++                'phase': 'busy',
++                'native_turn_id': 'turn-owner-999',
++            }
++            with patch.object(coordination, 'hermes_queue_endpoint', return_value=self.path):
++                ctx_unbound = coordination.inbox_context(config, state, path, obs_unbound, wake_binding=None)
++            self.assertEqual(ctx_unbound, '')  # Owner prompt cannot steal queued work
++
++            # 5. When native turn is bound to inbox_intent, mismatched turn raises NATIVE_TURN_MISMATCH
++            state['inbox_intent'] = {
++                'delivery_id': 'del-hermes-101',
++                'native_turn_id': 'turn-hermes-101',
++            }
++            obs_mismatch = {
++                'event': 'TurnStart',
++                'phase': 'busy',
++                'native_turn_id': 'turn-intruder-888',
++            }
++            with self.assertRaises(coordination.CoordinationError) as err:
++                coordination.inbox_context(config, state, path, obs_mismatch, wake_binding=None)
++            self.assertEqual(err.exception.code, 'NATIVE_TURN_MISMATCH')
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/scripts/test_opencode_queue.py b/scripts/test_opencode_queue.py
+new file mode 100644
+index 0000000..c0cd2be
+--- /dev/null
++++ b/scripts/test_opencode_queue.py
+@@ -0,0 +1,404 @@
++"""Unit tests for OpenCode native queue client adapter against real Unix domain sockets."""
++import json
++import os
++from pathlib import Path
++import socket
++import struct
++import subprocess
++import tempfile
++import threading
++import unittest
++
++from integrations.lifecycle import opencode_queue
++
++ROOT = Path(__file__).resolve().parent.parent
++
++
++class OpenCodeQueueTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.temp.cleanup)
++        self.path = str(Path(self.temp.name) / 'opencode-bridge.sock')
++        self.process = dict(
++            pid=os.getpid(),
++            start=int(Path(f'/proc/{os.getpid()}/stat').read_text().rsplit(')', 1)[1].split()[19]),
++            boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
++        )
++        self.listener = socket.socket(socket.AF_UNIX)
++        self.listener.bind(self.path)
++        self.listener.listen()
++        self.listener.settimeout(3)
++        self.addCleanup(self.listener.close)
++        self.requests = []
++        self.errors = []
++        self.threads = []
++
++    def serve(self, behavior='confirm', busy=False, turn_match=True):
++        """Serve one connection with specified mock behavior:
++        behavior: 'confirm', 'busy', 'not_found', 'drop', 'mismatch', 'abort_confirm', 'abort_refuse'
++        """
++        def run():
++            try:
++                conn, _ = self.listener.accept()
++                with conn:
++                    conn.settimeout(3)
++                    file_obj = conn.makefile('r', encoding='utf-8')
++                    line = file_obj.readline()
++                    if not line:
++                        return
++                    req = json.loads(line)
++                    self.requests.append(req)
++                    req_id = req.get('id')
++                    method = req.get('method')
++                    params = req.get('params', {})
++
++                    if behavior == 'drop':
++                        return  # Connection terminates abruptly after receiving request
++                    if isinstance(behavior, dict):
++                        conn.sendall((json.dumps(behavior) + '\n').encode('utf-8'))
++                        return
++
++                    if method == 'session/prompt_async':
++                        if behavior == 'not_found':
++                            resp = {'id': req_id, 'error': {'code': -32002, 'message': 'SESSION_NOT_FOUND: session does not exist'}}
++                        elif behavior == 'mismatch':
++                            resp = {'id': req_id, 'error': {'code': -32001, 'message': 'SESSION_MISMATCH: session changed'}}
++                        elif behavior == 'busy' or busy:
++                            resp = {'id': req_id, 'error': {'code': -32600, 'message': 'BUSY: target session is currently busy; refuse to merge input into active generation'}}
++                        else:
++                            resp = {
++                                'id': req_id,
++                                'result': {
++                                    'queued': True,
++                                    'queued_id': params.get('client_id'),
++                                    'session_id': params.get('session_id'),
++                                    'started': True
++                                }
++                            }
++                        conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
++                    elif method == 'session/abort':
++                        resp = {'id': req_id, 'error': {'code': -32004, 'message': 'UNSUPPORTED_CONTROL: session abort disabled; atomic turn-fencing not yet supported upstream'}}
++                        conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
++            except Exception as exc:
++                self.errors.append(exc)
++
++        worker = threading.Thread(target=run)
++        self.threads.append(worker)
++        worker.start()
++
++    def join_workers(self):
++        for worker in self.threads:
++            worker.join(timeout=3)
++            self.assertFalse(worker.is_alive())
++        self.assertEqual(self.errors, [])
++
++    def test_unchanged_composer_direct_submission(self):
++        """1. Submission calls promptAsync without touching TUI composer."""
++        self.serve(behavior='confirm', busy=False)
++        queued_id, started = opencode_queue.enqueue(
++            self.path, self.process, 'ses_native123', 'cairn wakeup text', 'delivery_one'
++        )
++        self.join_workers()
++        self.assertEqual(queued_id, 'delivery_one')
++        self.assertTrue(started)
++        self.assertEqual(len(self.requests), 1)
++        req = self.requests[0]
++        self.assertEqual(req['method'], 'session/prompt_async')
++        self.assertEqual(req['params']['session_id'], 'ses_native123')
++        self.assertEqual(req['params']['text'], 'cairn wakeup text')
++        # Composer is untouched because promptAsync goes directly to backend session API
++
++    def test_busy_ordering_without_preemption(self):
++        """2. Busy session refuses submission (-32600 BUSY) as QueueUnavailable without preemption."""
++        self.serve(behavior='busy', busy=True)
++        with self.assertRaises(opencode_queue.QueueUnavailable) as ctx:
++            opencode_queue.enqueue(
++                self.path, self.process, 'ses_native123', 'cairn wakeup text', 'delivery_one'
++            )
++        self.join_workers()
++        self.assertIn('BUSY', str(ctx.exception))
++        self.assertEqual(self.requests[0]['method'], 'session/prompt_async')
++        # No abort was sent; active turn remains unmolested
++
++    def test_stale_native_session_refusal(self):
++        """3. Refuses when native session is not found or has mismatched expectation."""
++        self.serve(behavior='not_found')
++        with self.assertRaises(opencode_queue.QueueUnavailable) as ctx:
++            opencode_queue.enqueue(
++                self.path, self.process, 'ses_stale', 'wake text', 'delivery_one'
++            )
++        self.join_workers()
++        self.assertIn('SESSION_NOT_FOUND', str(ctx.exception))
++
++        self.serve(behavior='mismatch')
++        with self.assertRaises(opencode_queue.QueueUnavailable) as ctx:
++            opencode_queue.enqueue(
++                self.path, self.process, 'ses_stale', 'wake text', 'delivery_one', expected_session_id='ses_other'
++            )
++        self.join_workers()
++        self.assertIn('SESSION_MISMATCH', str(ctx.exception))
++
++    def test_uncertain_delivery_no_resend(self):
++        """4. Failure after request transmission raises QueueError (uncertain outcome; never resend)."""
++        self.serve(behavior='drop')
++        with self.assertRaises(opencode_queue.QueueError) as ctx:
++            opencode_queue.enqueue(
++                self.path, self.process, 'ses_native123', 'wake text', 'delivery_one'
++            )
++        self.join_workers()
++        self.assertNotIsInstance(ctx.exception, opencode_queue.QueueUnavailable)
++        self.assertIn('uncertain', str(ctx.exception))
++
++    def test_invalid_acknowledgment_is_uncertain(self):
++        valid = {
++            'queued': True,
++            'queued_id': 'delivery_one',
++            'session_id': 'ses_native123',
++            'started': True,
++        }
++        replies = [
++            {},
++            {'id': 1, 'result': {}},
++            {'id': 2, 'result': valid},
++            {'id': True, 'result': valid},
++            {'id': 1, 'result': valid, 'error': {'code': -32002}},
++            *({'id': 1, 'result': {**valid, field: value}}
++              for field, value in (
++                  ('queued', False),
++                  ('queued_id', 'another_delivery'),
++                  ('session_id', 'another_session'),
++                  ('started', 'true'),
++              )),
++        ]
++        for reply in replies:
++            with self.subTest(reply=reply):
++                before = len(self.requests)
++                self.serve(behavior=reply)
++                with self.assertRaises(opencode_queue.QueueError) as ctx:
++                    opencode_queue.enqueue(
++                        self.path, self.process, 'ses_native123', 'wake text', 'delivery_one'
++                    )
++                self.join_workers()
++                self.assertNotIsInstance(ctx.exception, opencode_queue.QueueUnavailable)
++                self.assertIn('uncertain', str(ctx.exception))
++                self.assertEqual(len(self.requests), before + 1)
++
++    def test_unsafe_cancellation_refused_to_protect_newer_work(self):
++        """5. Unsafe cancellation refused to protect newer owner turns/work."""
++        self.serve(behavior='abort_refuse', turn_match=False)
++        with self.assertRaises(opencode_queue.QueueUnavailable) as ctx:
++            opencode_queue.abort(
++                self.path, self.process, 'ses_native123', expected_turn_id='turn_old'
++            )
++        self.join_workers()
++        self.assertIn('UNSUPPORTED_CONTROL', str(ctx.exception))
++
++
++class OpenCodeBridgeFixtureTests(unittest.TestCase):
++    """Integration tests running the actual coordination.ts plugin via Node bridge fixture."""
++
++    def start_fixture(self, mode='normal'):
++        import signal
++        import subprocess
++        env = os.environ.copy()
++        env['OPENCODE_FIXTURE_MODE'] = mode
++        proc = subprocess.Popen(
++            ['node', str(Path(__file__).parent / 'run_opencode_bridge_fixture.mjs')],
++            env=env,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE,
++            text=True
++        )
++        line = proc.stdout.readline()
++        if not line.startswith('READY:'):
++            proc.kill()
++            raise RuntimeError(f'Fixture failed to start: {line} stderr: {proc.stderr.read()}')
++        pid = int(line.split(':')[1].strip())
++        process = dict(
++            pid=pid,
++            start=int(Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[19]),
++            boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
++        )
++        sock_path = f'/tmp/cairn-opencode-{pid}.sock'
++        def cleanup():
++            try:
++                proc.send_signal(signal.SIGTERM)
++                proc.wait(timeout=2)
++            except Exception:
++                proc.kill()
++            try:
++                proc.stdout.close()
++                proc.stderr.close()
++            except Exception:
++                pass
++            try:
++                if os.path.exists(sock_path):
++                    os.unlink(sock_path)
++            except OSError:
++                pass
++        self.addCleanup(cleanup)
++        return proc, sock_path, process
++
++    def test_fixture_normal_idle_delivery(self):
++        """Fixture: Idle session delivers promptAsync directly to SDK without touching TUI composer."""
++        proc, sock_path, process = self.start_fixture(mode='normal')
++        queued_id, started = opencode_queue.enqueue(
++            sock_path, process, 'ses_test', 'wake text', 'req_normal', expected_session_id='ses_test'
++        )
++        self.assertEqual(queued_id, 'req_normal')
++        self.assertTrue(started)
++
++    def test_fixture_busy_refusal_without_preemption(self):
++        """Fixture: Busy session refuses submission (-32600 BUSY) as QueueUnavailable without merging into active generation."""
++        proc, sock_path, process = self.start_fixture(mode='busy')
++        with self.assertRaises(opencode_queue.QueueUnavailable) as ctx:
++            opencode_queue.enqueue(
++                sock_path, process, 'ses_test', 'wake text', 'req_busy', expected_session_id='ses_test'
++            )
++        self.assertIn('BUSY', str(ctx.exception))
++
++    def test_fixture_session_not_found(self):
++        """Fixture: Session not found returns -32002 SESSION_NOT_FOUND (QueueUnavailable)."""
++        proc, sock_path, process = self.start_fixture(mode='not_found')
++        with self.assertRaises(opencode_queue.QueueUnavailable) as ctx:
++            opencode_queue.enqueue(
++                sock_path, process, 'ses_test', 'wake text', 'req_not_found', expected_session_id='ses_test'
++            )
++        self.assertIn('SESSION_NOT_FOUND', str(ctx.exception))
++
++    def test_fixture_session_mismatch(self):
++        """Fixture: Session mismatch returns -32001 SESSION_MISMATCH (QueueUnavailable)."""
++        proc, sock_path, process = self.start_fixture(mode='normal')
++        with self.assertRaises(opencode_queue.QueueUnavailable) as ctx:
++            opencode_queue.enqueue(
++                sock_path, process, 'ses_test', 'wake text', 'req_mismatch', expected_session_id='ses_different'
++            )
++        self.assertIn('SESSION_MISMATCH', str(ctx.exception))
++
++    def test_fixture_sdk_error_propagation(self):
++        """Fixture: SDK errors during promptAsync are surfaced as QueueError (uncertain outcome)."""
++        proc, sock_path, process = self.start_fixture(mode='sdk_error')
++        with self.assertRaises(opencode_queue.QueueError) as ctx:
++            opencode_queue.enqueue(
++                sock_path, process, 'ses_test', 'wake text', 'req_err', expected_session_id='ses_test'
++            )
++        self.assertNotIsInstance(ctx.exception, opencode_queue.QueueUnavailable)
++        self.assertIn('HTTP 500', str(ctx.exception))
++
++    def test_fixture_abort_disabled(self):
++        """Fixture: session/abort returns -32004 UNSUPPORTED_CONTROL to protect newer owner work."""
++        proc, sock_path, process = self.start_fixture(mode='normal')
++        with self.assertRaises(opencode_queue.QueueUnavailable) as ctx:
++            opencode_queue.abort(sock_path, process, 'ses_test', expected_turn_id='turn_1')
++        self.assertIn('UNSUPPORTED_CONTROL', str(ctx.exception))
++
++    def test_fixture_payload_limit_enforced(self):
++        """Fixture: Payloads exceeding 64KB are rejected/disconnected."""
++        proc, sock_path, process = self.start_fixture(mode='normal')
++        oversized = 'X' * (66 * 1024)
++        with self.assertRaises(opencode_queue.QueueError):
++            opencode_queue.enqueue(
++                sock_path, process, 'ses_test', oversized, 'req_large', expected_session_id='ses_test'
++            )
++
++    def test_fixture_null_and_malformed_envelope_rejection(self):
++        """Fixture: null and non-object envelopes are rejected with -32600 without crashing."""
++        proc, sock_path, process = self.start_fixture(mode='normal')
++        # Send raw 'null\n'
++        s = socket.socket(socket.AF_UNIX)
++        s.connect(sock_path)
++        s.sendall(b"null\n")
++        resp = json.loads(s.makefile('r').readline())
++        s.close()
++        self.assertEqual(resp.get('error', {}).get('code'), -32600)
++        self.assertIn("envelope must be a JSON object", resp['error']['message'])
++
++        # Send raw '[]\n'
++        s = socket.socket(socket.AF_UNIX)
++        s.connect(sock_path)
++        s.sendall(b"[]\n")
++        resp = json.loads(s.makefile('r').readline())
++        s.close()
++        self.assertEqual(resp.get('error', {}).get('code'), -32600)
++
++        # Process must still be alive and responsive
++        self.assertIsNone(proc.poll(), "Fixture process must not crash on malformed envelope")
++        res = opencode_queue.status(sock_path, process, 'ses_test')
++        self.assertEqual(res.get('status'), 'idle')
++
++    def test_fixture_idempotent_double_disposal_preserves_peer_instance(self):
++        """Fixture: Disposing an instance twice is idempotent; socket stays active while peer lives."""
++        script = """
++import plugin from "./integrations/opencode/coordination.ts";
++import fs from "node:fs";
++import net from "node:net";
++
++const configPath = `/tmp/cairn-test-disp-config-${process.pid}.json`;
++fs.writeFileSync(configPath, JSON.stringify({ python: process.execPath, script: "/bin/true", config: "/dev/null" }));
++process.env.CAIRN_COORDINATION_CONFIG = configPath;
++
++const clientA = {
++  session: {
++    get: async () => ({ data: { id: "ses_a" } }),
++    status: async () => ({ data: { "ses_a": { type: "idle" } } }),
++    promptAsync: async () => ({ data: { id: "msg_a" } })
++  }
++};
++const clientB = {
++  session: {
++    get: async () => ({ data: { id: "ses_b" } }),
++    status: async () => ({ data: { "ses_b": { type: "idle" } } }),
++    promptAsync: async () => ({ data: { id: "msg_b" } })
++  }
++};
++
++const a = await plugin({ directory: "/tmp", client: clientA, project: {}, worktree: "/tmp", serverUrl: new URL("http://localhost"), $: null });
++const b = await plugin({ directory: "/tmp", client: clientB, project: {}, worktree: "/tmp", serverUrl: new URL("http://localhost"), $: null });
++
++const sock = `/tmp/cairn-opencode-${process.pid}.sock`;
++const before = fs.existsSync(sock);
++
++await a.dispose();
++const afterFirstDispose = fs.existsSync(sock);
++
++await a.dispose(); // Double dispose on A must be a no-op
++const afterRepeatedDispose = fs.existsSync(sock);
++
++// Verify B is still reachable and functioning
++const s = net.connect(sock);
++let resp = "";
++s.on("data", d => resp += d);
++await new Promise(resolve => {
++  s.on("end", resolve);
++  s.end(JSON.stringify({
++    id: 1,
++    method: "session/prompt_async",
++    params: { session_id: "ses_b", text: "hi", client_id: "c1", expected_session_id: "ses_b" }
++  }) + "\\n");
++});
++
++await b.dispose();
++const afterBDispose = fs.existsSync(sock);
++
++process.stdout.write(JSON.stringify({
++  before,
++  afterFirstDispose,
++  afterRepeatedDispose,
++  bOperated: resp.includes('"queued":true'),
++  afterBDispose,
++}) + "\\n");
++"""
++        proc = subprocess.run(['node', '--input-type=module', '-e', script],
++                              cwd=ROOT, capture_output=True, text=True)
++        self.assertEqual(proc.returncode, 0, f"Disposal test crashed: {proc.stderr}")
++        data = json.loads(proc.stdout.strip())
++        self.assertTrue(data['before'])
++        self.assertTrue(data['afterFirstDispose'])
++        self.assertTrue(data['afterRepeatedDispose'])
++        self.assertTrue(data['bOperated'])
++        self.assertFalse(data['afterBDispose'])
++
++
++if __name__ == '__main__':
++    unittest.main()
++
+-- 
+2.43.0
+

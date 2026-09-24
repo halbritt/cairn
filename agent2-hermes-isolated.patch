@@ -1,0 +1,1406 @@
+From b8ae93b034707ed1c1146b9946ed02d5e1760a9e Mon Sep 17 00:00:00 2001
+From: halbritt <halbritt@gmail.com>
+Date: Sun, 20 Sep 2026 17:59:15 -0700
+Subject: [PATCH] feat(cli): atomic dequeue-to-admission and native queue
+ message support
+
+---
+ cli.py                                     | 665 +++++++++++++--------
+ hermes_cli/plugins.py                      |  93 ++-
+ tests/hermes_cli/test_cli_queue_message.py | 400 +++++++++++++
+ tools/approval.py                          |  32 +
+ tools/process_registry.py                  |  43 ++
+ 5 files changed, 980 insertions(+), 253 deletions(-)
+ create mode 100644 tests/hermes_cli/test_cli_queue_message.py
+
+diff --git a/cli.py b/cli.py
+index b539063..ce55c54 100644
+--- a/cli.py
++++ b/cli.py
+@@ -5454,6 +5454,12 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
+         # don't auto-queue another continuation on top of a user-cancelled
+         # turn (which would make Ctrl+C feel like it did nothing).
+         self._last_turn_interrupted = False
++        self._admission_lock = threading.RLock()
++        self._admission_state = "idle"
++        self._active_cancelled = False
++        self._active_request_id = None
++        self._active_delivery_id = None
++        self._active_turn_id = None
+         # When stdout/PTY raises EIO (broken pipe after a stream-stall
+         # interrupt), freeze further UI paints so we don't spin the main
+         # thread at hundreds of escape-sequence writes/sec (#81521).
+@@ -5593,6 +5599,12 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
+         self._background_tasks: Dict[str, threading.Thread] = {}
+         self._background_task_counter = 0
+ 
++        try:
++            from hermes_cli.plugins import get_plugin_manager
++            get_plugin_manager()._cli_ref = self
++        except Exception:
++            pass
++
+     def _claim_active_session(self, surface: str = "cli", *, stderr: bool = False) -> bool:
+         """Claim a global active-session slot for this CLI process."""
+         if self._active_session_lease is not None:
+@@ -17343,6 +17355,406 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
+             ] if item is not None
+         ]
+ 
++    def _reset_admission_state(self):
++        """Reset admission and active turn metadata to idle under _admission_lock."""
++        admission_lock = getattr(self, "_admission_lock", None)
++        if admission_lock is None:
++            admission_lock = threading.RLock()
++            self._admission_lock = admission_lock
++        with admission_lock:
++            self._admission_state = "idle"
++            self._active_cancelled = False
++            self._active_request_id = None
++            self._active_delivery_id = None
++            self._active_turn_id = None
++
++    def _dequeue_pending_input(self, user_input: Any) -> Optional[Any]:
++        """Dequeue, validate, and unwrap an item from _pending_input.
++
++        Handles QueuedMessage validation against current session_id,
++        _VoiceInputMessage unwrapping, and empty filtering. Returns the
++        unwrapped payload (str or tuple) to process, or None if the item
++        should be skipped or discarded.
++        """
++        admission_lock = getattr(self, "_admission_lock", None)
++        if admission_lock is None:
++            admission_lock = threading.RLock()
++            self._admission_lock = admission_lock
++
++        with admission_lock:
++            from hermes_cli.plugins import QueuedMessage
++            if isinstance(user_input, QueuedMessage):
++                current_sid = getattr(self, "session_id", None)
++                if user_input.expected_session_id and user_input.expected_session_id != current_sid:
++                    user_input.status = "refused"
++                    user_input.refusal_reason = (
++                        f"Session mismatch: expected {user_input.expected_session_id!r}, "
++                        f"current {current_sid!r}"
++                    )
++                    user_input.consumed_session_id = current_sid
++                    self._admission_state = "idle"
++                    self._active_cancelled = False
++                    self._active_request_id = None
++                    self._active_delivery_id = None
++                    self._active_turn_id = None
++                    if user_input.on_consumed:
++                        try:
++                            user_input.on_consumed(user_input.status, current_sid)
++                        except Exception as exc:
++                            user_input.callback_error = str(exc)
++                            logger.error(
++                                "QueuedMessage on_consumed callback failed for refused message: %s",
++                                exc,
++                                exc_info=True,
++                            )
++                    logger.warning(
++                        "Discarding queued message for session %r (current session is %r)",
++                        user_input.expected_session_id,
++                        current_sid,
++                    )
++                    return None
++
++                user_input.status = "admitted"
++                user_input.consumed_session_id = current_sid
++                self._admission_state = "admitting"
++                self._active_cancelled = False
++                self._active_request_id = getattr(user_input, "request_id", None)
++                self._active_delivery_id = getattr(user_input, "delivery_id", None)
++                self._active_turn_id = getattr(user_input, "turn_id", None) or str(uuid.uuid4())
++                try:
++                    from tools.approval import _approval_request_id, _approval_turn_id
++                    _approval_request_id.set(self._active_request_id or "")
++                    _approval_turn_id.set(self._active_turn_id or "")
++                except Exception:
++                    pass
++                if user_input.on_consumed:
++                    try:
++                        user_input.on_consumed(user_input.status, current_sid)
++                    except Exception as exc:
++                        user_input.callback_error = str(exc)
++                        logger.error(
++                            "QueuedMessage on_consumed callback failed for admitted message: %s",
++                            exc,
++                            exc_info=True,
++                        )
++                user_input = user_input.text
++            else:
++                self._admission_state = "admitting"
++                self._active_cancelled = False
++                self._active_request_id = None
++                self._active_delivery_id = None
++                self._active_turn_id = str(uuid.uuid4())
++                try:
++                    from tools.approval import _approval_request_id, _approval_turn_id
++                    _approval_request_id.set("")
++                    _approval_turn_id.set(self._active_turn_id or "")
++                except Exception:
++                    pass
++
++            if isinstance(user_input, _VoiceInputMessage):
++                user_input = user_input.text
++
++            if not user_input:
++                self._admission_state = "idle"
++                self._active_cancelled = False
++                self._active_request_id = None
++                self._active_delivery_id = None
++                self._active_turn_id = None
++                return None
++
++            return user_input
++
++    def _process_loop(self, app=None):
++        """Background loop to process inputs and run agent."""
++        if app is None:
++            app = getattr(self, "_app", None)
++        while not self._should_exit:
++            try:
++                # Atomically dequeue and admit under admission_lock to prevent cancellation races
++                admission_lock = getattr(self, "_admission_lock", None)
++                if admission_lock is None:
++                    admission_lock = threading.RLock()
++                    self._admission_lock = admission_lock
++
++                with admission_lock:
++                    try:
++                        user_input = self._pending_input.get_nowait()
++                    except queue.Empty:
++                        user_input = None
++                    else:
++                        is_voice_input = isinstance(user_input, _VoiceInputMessage)
++                        user_input = self._dequeue_pending_input(user_input)
++
++                if user_input is None:
++                    if self._should_exit:
++                        break
++                    if self._pending_input.empty():
++                        # Periodic config watcher — auto-reload MCP on mcp_servers change
++                        if not self._agent_running:
++                            self._check_config_mcp_changes()
++                            # Heal cooked-mode termios drift (lost
++                            # run_in_terminal restore) before draining
++                            # notifications — a drifted tty makes the CLI
++                            # look dead even though the loop is healthy.
++                            try:
++                                self._check_termios_drift()
++                            except Exception:
++                                pass
++                            # Check for background process notifications (completions
++                            # and watch pattern matches) while agent is idle.
++                            try:
++                                self._drain_process_notifications("cli-idle")
++                            except Exception:
++                                pass
++                            # Fire a due /loop wakeup while idle (defers to
++                            # queued user input and active /goal loops).
++                            try:
++                                self._maybe_fire_loop_tick()
++                            except Exception:
++                                pass
++                        time.sleep(0.05)
++                    continue
++
++                # The user has typed and submitted something, so any
++                # post-resize transient suppression should end here.
++                self._status_bar_suppressed_after_resize = False
++
++                # Unpack image payload: (text, [Path, ...]) or plain str
++                submit_images = []
++                if isinstance(user_input, tuple):
++                    user_input, submit_images = user_input
++
++                if isinstance(user_input, str):
++                    user_input = _strip_leaked_bracketed_paste_wrappers(user_input)
++                    user_input, _had_mouse_reports = _strip_leaked_terminal_responses_with_meta(user_input)
++                    if _had_mouse_reports:
++                        self._recover_terminal_input_modes(reason="mouse reports leaked into submitted input")
++
++                # Typed bare stop phrase while a voice chat is active ends
++                # the voice chat (same semantics as SAYING "stop") instead
++                # of sending the word to the agent. Voice transcripts are
++                # already stop-checked at the transcription points, so this
++                # only intercepts typed input.
++                if not is_voice_input and self._typed_voice_stop(user_input):
++                    self._reset_admission_state()
++                    continue
++                
++                # Check for commands — but detect dragged/pasted file paths first.
++                # See _detect_file_drop() for details.
++                _file_drop = _detect_file_drop(user_input) if isinstance(user_input, str) else None
++                if _file_drop:
++                    _drop_path = _file_drop["path"]
++                    _remainder = _file_drop["remainder"]
++                    if _file_drop["is_image"]:
++                        submit_images.append(_drop_path)
++                        user_input = _remainder or f"[User attached image: {_drop_path.name}]"
++                        _cprint(f"  📎 Auto-attached image: {_drop_path.name}")
++                    else:
++                        _cprint(f"  📄 Detected file: {_drop_path.name}")
++                        user_input = (
++                            f"[User attached file: {_drop_path}]"
++                            + (f"\n{_remainder}" if _remainder else "")
++                        )
++
++                # A bare number right after a bare `/resume` prompt selects
++                # that session (see #34584). Checked before chat routing so
++                # the digit isn't sent to the agent as a message.
++                if (
++                    not _file_drop
++                    and self._pending_resume_sessions
++                    and isinstance(user_input, str)
++                    and self._consume_pending_resume_selection(user_input)
++                ):
++                    self._reset_admission_state()
++                    continue
++
++                # `!<command>` shell mode — run it here and loop back to
++                # idle. Checked BEFORE slash routing and before the chat
++                # path so nothing enters conversation history and no model
++                # turn is spent. See handle_bang_shell().
++                if (
++                    not _file_drop
++                    and isinstance(user_input, str)
++                    and self.handle_bang_shell(user_input)
++                ):
++                    self._reset_admission_state()
++                    continue
++
++                if not _file_drop and isinstance(user_input, str) and _looks_like_slash_command(user_input):
++                    _cprint(f"\n⚙️  {user_input}")
++                    try:
++                        if not self.process_command(user_input):
++                            self._should_exit = True
++                            # Schedule app exit
++                            if app.is_running:
++                                app.exit()
++                    except KeyboardInterrupt:
++                        # Ctrl+C during a slow slash command (e.g. /skills browse,
++                        # /sessions list with a large DB) should interrupt the
++                        # command and return to the prompt, NOT exit the entire
++                        # session. Without this guard a KeyboardInterrupt unwinds
++                        # to the outer prompt_toolkit loop and the session dies.
++                        _cprint("\n[dim]Command interrupted.[/dim]")
++                        self._reset_admission_state()
++                        continue
++                    # A slash handler may set a one-shot pending seed (e.g.
++                    # /blueprint <name>) to be run as the next agent turn.
++                    # If present, fall through to the chat path with the seed
++                    # as the user message instead of looping back to idle.
++                    _seed = getattr(self, "_pending_agent_seed", None)
++                    if _seed:
++                        self._pending_agent_seed = None
++                        user_input = _seed
++                    else:
++                        self._reset_admission_state()
++                        continue
++                
++                # Expand paste references back to full content
++                _paste_ref_re = re.compile(r'\[Pasted text #\d+: \d+ lines \u2192 (.+?)\]')
++                paste_refs = list(_paste_ref_re.finditer(user_input)) if isinstance(user_input, str) else []
++                if paste_refs:
++                    user_input = self._expand_paste_references(user_input)
++                print()
++                self._print_user_message_preview(user_input)
++                
++                # Show image attachment count
++                if submit_images:
++                    n = len(submit_images)
++                    _cprint(f"  {_DIM}📎 {n} image{'s' if n > 1 else ''} attached{_RST}")
++
++                # Regular chat - run agent
++                with self._admission_lock:
++                    if self._active_cancelled:
++                        self._admission_state = "idle"
++                        self._active_cancelled = False
++                        self._active_request_id = None
++                        self._active_delivery_id = None
++                        self._active_turn_id = None
++                        continue
++                    self._admission_state = "running"
++                    self._agent_running = True
++                    self._interactive_turn = True
++                    self._pet_turn_error = False
++                    self._pet_reasoning = False
++                    self._turn_summary_begin()
++                app.invalidate()  # Refresh status line
++
++                try:
++                    self.chat(user_input, images=submit_images or None, voice_input=is_voice_input)
++                finally:
++                    with self._admission_lock:
++                        self._admission_state = "idle"
++                        self._agent_running = False
++                        self._active_cancelled = False
++                        self._active_request_id = None
++                        self._active_delivery_id = None
++                        self._active_turn_id = None
++                    self._spinner_text = ""
++                    self._tool_start_time = 0.0
++                    self._pending_tool_info.clear()
++                    self._last_scrollback_tool = ""
++                    self._pet_reasoning = False
++                    self._pet_react_turn_end()
++                    # Post-turn accounting line (display.turn_summary).
++                    # Emitted after the response box, before the prompt
++                    # returns, so it reads as a footer for the turn.
++                    self._turn_summary_emit()
++                    self._interactive_turn = False
++                    try:
++                        from tools.approval import _approval_request_id, _approval_turn_id
++                        _approval_request_id.set("")
++                        _approval_turn_id.set("")
++                    except Exception:
++                        pass
++
++                    app.invalidate()  # Refresh status line
++
++                    # Post-turn terminal recovery (#33271): after an
++                    # interrupt the prompt_toolkit renderer may have
++                    # drifted from the physical terminal state — CSI 6n
++                    # cursor position reports can leak as literal text
++                    # (^[[19;1R), and the VT100 input parser can stall in
++                    # a partial-escape state, accepting no further
++                    # keystrokes.  Drain stray escape bytes from the OS
++                    # input buffer and force a clean renderer redraw.
++                    if self._last_turn_interrupted:
++                        self._recover_terminal_after_interrupt()
++
++                    # Re-queue any messages that arrived in _interrupt_queue
++                    # while the agent was running and were never claimed by
++                    # the explicit interrupt path. See
++                    # _drain_interrupt_queue_to_pending_input for the full
++                    # rationale. Regression of #17666 / #18760 — the drain
++                    # block from the original PR #17939 was deferred as
++                    # "worth its own review" and never re-landed (#20271).
++                    self._drain_interrupt_queue_to_pending_input()
++
++                    # Goal continuation: if a standing goal is active, ask
++                    # the judge whether the turn satisfied it. If not, and
++                    # there's no real user message already queued, push the
++                    # continuation prompt back into _pending_input so the
++                    # next loop iteration picks it up naturally (and any
++                    # user input that arrives in between still preempts).
++                    try:
++                        self._maybe_continue_goal_after_turn()
++                    except Exception as _goal_exc:
++                        logging.debug("goal continuation hook failed: %s", _goal_exc)
++
++                    # /loop tick completion: if the turn that just ended
++                    # was a loop wakeup, evaluate it (LOOP_COMPLETE marker,
++                    # --until judge, caps) and schedule the next tick.
++                    try:
++                        self._maybe_complete_loop_tick_after_turn()
++                    except Exception as _loop_exc:
++                        logging.debug("loop completion hook failed: %s", _loop_exc)
++
++                    # Continuous voice: auto-restart recording after agent responds.
++                    # Dispatch to a daemon thread so play_beep (sd.wait) and
++                    # AudioRecorder.start (lock acquire) never block process_loop —
++                    # otherwise queued user input would stall silently.
++                    if self._voice_mode and self._voice_continuous and not self._voice_recording:
++                        def _restart_recording():
++                            try:
++                                if self._voice_tts:
++                                    self._voice_tts_done.wait(timeout=60)
++                                    time.sleep(0.3)
++                                # A barge-in capture already owns the mic and
++                                # will submit the interruption itself.
++                                if self._voice_barge_capture.is_set():
++                                    return
++                                self._voice_start_recording()
++                                app.invalidate()
++                            except Exception as e:
++                                _cprint(f"{_DIM}Voice auto-restart failed: {e}{_RST}")
++                        threading.Thread(target=_restart_recording, daemon=True).start()
++
++                    # Drain process notifications (completions + watch matches)
++                    # that arrived while the agent was running.
++                    try:
++                        self._drain_process_notifications("cli-post-turn")
++                    except Exception:
++                        pass  # Non-fatal — don't break the main loop
++
++            except OSError as e:
++                if getattr(e, "errno", None) == errno.EIO:
++                    self._mark_terminal_io_broken("process_loop")
++                    logger.warning(
++                        "process_loop EIO — freezing UI paints (#81521): %s",
++                        e,
++                    )
++                    continue
++                logger.warning("process_loop unhandled error (msg may be lost): %s", e)
++            except Exception as e:
++                if isinstance(e, OSError) and getattr(e, "errno", None) == errno.EIO:
++                    self._mark_terminal_io_broken("process_loop")
++                    logger.warning(
++                        "process_loop EIO — freezing UI paints (#81521): %s",
++                        e,
++                    )
++                    continue
++                logger.warning("process_loop unhandled error (msg may be lost): %s", e)
++    
++
+     def run(self):
+         """Run the interactive CLI loop with persistent input at bottom."""
+         if not self._claim_active_session("cli"):
+@@ -20137,259 +20549,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
+         
+         # Background thread to process inputs and run agent
+         def process_loop():
+-            while not self._should_exit:
+-                try:
+-                    # Check for pending input with timeout
+-                    try:
+-                        user_input = self._pending_input.get(timeout=0.1)
+-                    except queue.Empty:
+-                        # Periodic config watcher — auto-reload MCP on mcp_servers change
+-                        if not self._agent_running:
+-                            self._check_config_mcp_changes()
+-                            # Heal cooked-mode termios drift (lost
+-                            # run_in_terminal restore) before draining
+-                            # notifications — a drifted tty makes the CLI
+-                            # look dead even though the loop is healthy.
+-                            try:
+-                                self._check_termios_drift()
+-                            except Exception:
+-                                pass
+-                            # Check for background process notifications (completions
+-                            # and watch pattern matches) while agent is idle.
+-                            try:
+-                                self._drain_process_notifications("cli-idle")
+-                            except Exception:
+-                                pass
+-                            # Fire a due /loop wakeup while idle (defers to
+-                            # queued user input and active /goal loops).
+-                            try:
+-                                self._maybe_fire_loop_tick()
+-                            except Exception:
+-                                pass
+-                        continue
+-
+-                    # Voice-transcribed messages arrive wrapped in a sentinel
+-                    # so only genuine STT output gets the voice prefix (#65827).
+-                    is_voice_input = isinstance(user_input, _VoiceInputMessage)
+-                    if is_voice_input:
+-                        user_input = user_input.text
+-
+-                    if not user_input:
+-                        continue
+-
+-                    # The user has typed and submitted something, so any
+-                    # post-resize transient suppression should end here.
+-                    self._status_bar_suppressed_after_resize = False
+-
+-                    # Unpack image payload: (text, [Path, ...]) or plain str
+-                    submit_images = []
+-                    if isinstance(user_input, tuple):
+-                        user_input, submit_images = user_input
+-
+-                    if isinstance(user_input, str):
+-                        user_input = _strip_leaked_bracketed_paste_wrappers(user_input)
+-                        user_input, _had_mouse_reports = _strip_leaked_terminal_responses_with_meta(user_input)
+-                        if _had_mouse_reports:
+-                            self._recover_terminal_input_modes(reason="mouse reports leaked into submitted input")
+-
+-                    # Typed bare stop phrase while a voice chat is active ends
+-                    # the voice chat (same semantics as SAYING "stop") instead
+-                    # of sending the word to the agent. Voice transcripts are
+-                    # already stop-checked at the transcription points, so this
+-                    # only intercepts typed input.
+-                    if not is_voice_input and self._typed_voice_stop(user_input):
+-                        continue
+-                    
+-                    # Check for commands — but detect dragged/pasted file paths first.
+-                    # See _detect_file_drop() for details.
+-                    _file_drop = _detect_file_drop(user_input) if isinstance(user_input, str) else None
+-                    if _file_drop:
+-                        _drop_path = _file_drop["path"]
+-                        _remainder = _file_drop["remainder"]
+-                        if _file_drop["is_image"]:
+-                            submit_images.append(_drop_path)
+-                            user_input = _remainder or f"[User attached image: {_drop_path.name}]"
+-                            _cprint(f"  📎 Auto-attached image: {_drop_path.name}")
+-                        else:
+-                            _cprint(f"  📄 Detected file: {_drop_path.name}")
+-                            user_input = (
+-                                f"[User attached file: {_drop_path}]"
+-                                + (f"\n{_remainder}" if _remainder else "")
+-                            )
++            self._process_loop(app)
+ 
+-                    # A bare number right after a bare `/resume` prompt selects
+-                    # that session (see #34584). Checked before chat routing so
+-                    # the digit isn't sent to the agent as a message.
+-                    if (
+-                        not _file_drop
+-                        and self._pending_resume_sessions
+-                        and isinstance(user_input, str)
+-                        and self._consume_pending_resume_selection(user_input)
+-                    ):
+-                        continue
+-
+-                    # `!<command>` shell mode — run it here and loop back to
+-                    # idle. Checked BEFORE slash routing and before the chat
+-                    # path so nothing enters conversation history and no model
+-                    # turn is spent. See handle_bang_shell().
+-                    if (
+-                        not _file_drop
+-                        and isinstance(user_input, str)
+-                        and self.handle_bang_shell(user_input)
+-                    ):
+-                        continue
+-
+-                    if not _file_drop and isinstance(user_input, str) and _looks_like_slash_command(user_input):
+-                        _cprint(f"\n⚙️  {user_input}")
+-                        try:
+-                            if not self.process_command(user_input):
+-                                self._should_exit = True
+-                                # Schedule app exit
+-                                if app.is_running:
+-                                    app.exit()
+-                        except KeyboardInterrupt:
+-                            # Ctrl+C during a slow slash command (e.g. /skills browse,
+-                            # /sessions list with a large DB) should interrupt the
+-                            # command and return to the prompt, NOT exit the entire
+-                            # session. Without this guard a KeyboardInterrupt unwinds
+-                            # to the outer prompt_toolkit loop and the session dies.
+-                            _cprint("\n[dim]Command interrupted.[/dim]")
+-                            continue
+-                        # A slash handler may set a one-shot pending seed (e.g.
+-                        # /blueprint <name>) to be run as the next agent turn.
+-                        # If present, fall through to the chat path with the seed
+-                        # as the user message instead of looping back to idle.
+-                        _seed = getattr(self, "_pending_agent_seed", None)
+-                        if _seed:
+-                            self._pending_agent_seed = None
+-                            user_input = _seed
+-                        else:
+-                            continue
+-                    
+-                    # Expand paste references back to full content
+-                    _paste_ref_re = re.compile(r'\[Pasted text #\d+: \d+ lines \u2192 (.+?)\]')
+-                    paste_refs = list(_paste_ref_re.finditer(user_input)) if isinstance(user_input, str) else []
+-                    if paste_refs:
+-                        user_input = self._expand_paste_references(user_input)
+-                    print()
+-                    self._print_user_message_preview(user_input)
+-                    
+-                    # Show image attachment count
+-                    if submit_images:
+-                        n = len(submit_images)
+-                        _cprint(f"  {_DIM}📎 {n} image{'s' if n > 1 else ''} attached{_RST}")
+-
+-                    # Regular chat - run agent
+-                    self._agent_running = True
+-                    self._interactive_turn = True
+-                    self._pet_turn_error = False
+-                    self._pet_reasoning = False
+-                    self._turn_summary_begin()
+-                    app.invalidate()  # Refresh status line
+-
+-                    try:
+-                        self.chat(user_input, images=submit_images or None, voice_input=is_voice_input)
+-                    finally:
+-                        self._agent_running = False
+-                        self._spinner_text = ""
+-                        self._tool_start_time = 0.0
+-                        self._pending_tool_info.clear()
+-                        self._last_scrollback_tool = ""
+-                        self._pet_reasoning = False
+-                        self._pet_react_turn_end()
+-                        # Post-turn accounting line (display.turn_summary).
+-                        # Emitted after the response box, before the prompt
+-                        # returns, so it reads as a footer for the turn.
+-                        self._turn_summary_emit()
+-                        self._interactive_turn = False
+-
+-                        app.invalidate()  # Refresh status line
+-
+-                        # Post-turn terminal recovery (#33271): after an
+-                        # interrupt the prompt_toolkit renderer may have
+-                        # drifted from the physical terminal state — CSI 6n
+-                        # cursor position reports can leak as literal text
+-                        # (^[[19;1R), and the VT100 input parser can stall in
+-                        # a partial-escape state, accepting no further
+-                        # keystrokes.  Drain stray escape bytes from the OS
+-                        # input buffer and force a clean renderer redraw.
+-                        if self._last_turn_interrupted:
+-                            self._recover_terminal_after_interrupt()
+-
+-                        # Re-queue any messages that arrived in _interrupt_queue
+-                        # while the agent was running and were never claimed by
+-                        # the explicit interrupt path. See
+-                        # _drain_interrupt_queue_to_pending_input for the full
+-                        # rationale. Regression of #17666 / #18760 — the drain
+-                        # block from the original PR #17939 was deferred as
+-                        # "worth its own review" and never re-landed (#20271).
+-                        self._drain_interrupt_queue_to_pending_input()
+-
+-                        # Goal continuation: if a standing goal is active, ask
+-                        # the judge whether the turn satisfied it. If not, and
+-                        # there's no real user message already queued, push the
+-                        # continuation prompt back into _pending_input so the
+-                        # next loop iteration picks it up naturally (and any
+-                        # user input that arrives in between still preempts).
+-                        try:
+-                            self._maybe_continue_goal_after_turn()
+-                        except Exception as _goal_exc:
+-                            logging.debug("goal continuation hook failed: %s", _goal_exc)
+-
+-                        # /loop tick completion: if the turn that just ended
+-                        # was a loop wakeup, evaluate it (LOOP_COMPLETE marker,
+-                        # --until judge, caps) and schedule the next tick.
+-                        try:
+-                            self._maybe_complete_loop_tick_after_turn()
+-                        except Exception as _loop_exc:
+-                            logging.debug("loop completion hook failed: %s", _loop_exc)
+-
+-                        # Continuous voice: auto-restart recording after agent responds.
+-                        # Dispatch to a daemon thread so play_beep (sd.wait) and
+-                        # AudioRecorder.start (lock acquire) never block process_loop —
+-                        # otherwise queued user input would stall silently.
+-                        if self._voice_mode and self._voice_continuous and not self._voice_recording:
+-                            def _restart_recording():
+-                                try:
+-                                    if self._voice_tts:
+-                                        self._voice_tts_done.wait(timeout=60)
+-                                        time.sleep(0.3)
+-                                    # A barge-in capture already owns the mic and
+-                                    # will submit the interruption itself.
+-                                    if self._voice_barge_capture.is_set():
+-                                        return
+-                                    self._voice_start_recording()
+-                                    app.invalidate()
+-                                except Exception as e:
+-                                    _cprint(f"{_DIM}Voice auto-restart failed: {e}{_RST}")
+-                            threading.Thread(target=_restart_recording, daemon=True).start()
+-
+-                        # Drain process notifications (completions + watch matches)
+-                        # that arrived while the agent was running.
+-                        try:
+-                            self._drain_process_notifications("cli-post-turn")
+-                        except Exception:
+-                            pass  # Non-fatal — don't break the main loop
+-
+-                except OSError as e:
+-                    if getattr(e, "errno", None) == errno.EIO:
+-                        self._mark_terminal_io_broken("process_loop")
+-                        logger.warning(
+-                            "process_loop EIO — freezing UI paints (#81521): %s",
+-                            e,
+-                        )
+-                        continue
+-                    logger.warning("process_loop unhandled error (msg may be lost): %s", e)
+-                except Exception as e:
+-                    if isinstance(e, OSError) and getattr(e, "errno", None) == errno.EIO:
+-                        self._mark_terminal_io_broken("process_loop")
+-                        logger.warning(
+-                            "process_loop EIO — freezing UI paints (#81521): %s",
+-                            e,
+-                        )
+-                        continue
+-                    logger.warning("process_loop unhandled error (msg may be lost): %s", e)
+-        
+         # Start processing thread
+         process_thread = threading.Thread(target=process_loop, daemon=True)
+         process_thread.start()
+diff --git a/hermes_cli/plugins.py b/hermes_cli/plugins.py
+index 2493d8f..0748d36 100644
+--- a/hermes_cli/plugins.py
++++ b/hermes_cli/plugins.py
+@@ -102,6 +102,40 @@ class PluginToolOverrideError(PermissionError):
+     """
+ 
+ 
++@dataclass
++class QueuedMessage:
++    """Typed message queued for serial CLI consumption with session pinning.
++
++    Ensures that a message queued for a specific native conversation ID is only
++    admitted if the CLI is still on that session when process_loop dequeues it.
++    If the conversation has changed (e.g. via /resume), the message is refused
++    and discarded with an observable status and warning.
++
++    Status transitions:
++      - "pending": Enqueued in _pending_input, waiting to be dequeued.
++      - "refused": Dequeued when active session != expected_session_id; discarded.
++      - "admitted": Dequeued and verified against active session; admitted to chat.
++        (Note: "admitted" indicates dequeued/admitted to the chat execution pipeline,
++        NOT that execution has completed or succeeded).
++    """
++
++    text: str
++    expected_session_id: str | None = None
++    role: str = "user"
++    source: str = ""
++    status: str = "pending"  # "pending", "admitted", "refused"
++    refusal_reason: str | None = None
++    consumed_session_id: str | None = None
++    on_consumed: Callable[[str, str | None], None] | None = None
++    callback_error: str | None = None
++    request_id: str | None = None
++    delivery_id: str | None = None
++    turn_id: str | None = None
++
++    def __str__(self) -> str:
++        return self.text
++
++
+ logger = logging.getLogger(__name__)
+ 
+ 
+@@ -1970,17 +2004,65 @@ class PluginContext:
+ 
+     # -- message injection --------------------------------------------------
+ 
++    def queue_message(
++        self,
++        content: str,
++        *,
++        expected_session_id: str | None = None,
++        role: str = "user",
++        source: str = "",
++        on_consumed: Callable[[str, str | None], None] | None = None,
++        request_id: str | None = None,
++        delivery_id: str | None = None,
++        turn_id: str | None = None,
++    ) -> QueuedMessage | None:
++        """Queue a message for serialized consumption by the CLI without interrupting.
++
++        Never interrupts a busy turn. The message is queued into the CLI's
++        serial input queue and checked at consumption time against the active
++        session_id. If the session has changed (e.g. via /resume), the message
++        is refused with status="refused" and an observable warning.
++
++        Preserves unsubmitted user drafts in the composer.
++        """
++        cli = self._manager._cli_ref
++        if cli is None:
++            return None
++
++        msg_text = content if role == "user" else f"[{role}] {content}"
++        plugin_id = self.manifest.key or self.manifest.name if hasattr(self, "manifest") else ""
++        qm = QueuedMessage(
++            text=msg_text,
++            expected_session_id=expected_session_id,
++            role=role,
++            source=source or plugin_id,
++            on_consumed=on_consumed,
++            request_id=request_id,
++            delivery_id=delivery_id,
++            turn_id=turn_id,
++        )
++        cli._pending_input.put(qm)
++        return qm
++
+     def inject_message(
+         self,
+         content: str,
+         role: str = "user",
+         *,
+         session_key: str | None = None,
++        expected_session_id: str | None = None,
++        interrupt_busy: bool = True,
++        on_consumed: Callable[[str, str | None], None] | None = None,
+     ) -> bool:
+         """Inject a message into a CLI or gateway conversation.
+ 
+         If the agent is idle (waiting for user input), this starts a new turn.
+-        If the agent is running, this interrupts and injects the message.
++        If the agent is running and interrupt_busy is True (without expected_session_id),
++        this interrupts and injects the message.
++
++        If expected_session_id is provided or interrupt_busy is False, the message
++        is queued serially via queue_message without interrupting active execution,
++        and its session ID is checked at consumption time.
+ 
+         This enables plugins (e.g. remote control viewers, messaging bridges)
+         to send messages into the conversation from external sources.
+@@ -1996,6 +2078,15 @@ class PluginContext:
+         msg = content if role == "user" else f"[{role}] {content}"
+ 
+         if cli is not None:
++            if expected_session_id is not None or not interrupt_busy:
++                qm = self.queue_message(
++                    content,
++                    expected_session_id=expected_session_id or session_key,
++                    role=role,
++                    on_consumed=on_consumed,
++                )
++                return qm is not None
++
+             if getattr(cli, "_agent_running", False):
+                 # Agent is mid-turn - interrupt with the message
+                 cli._interrupt_queue.put(msg)
+diff --git a/tests/hermes_cli/test_cli_queue_message.py b/tests/hermes_cli/test_cli_queue_message.py
+new file mode 100644
+index 0000000..6862c2c
+--- /dev/null
++++ b/tests/hermes_cli/test_cli_queue_message.py
+@@ -0,0 +1,400 @@
++"""Tests for Hermes CLI queued messages exercising production seams in cli.py."""
++
++from pathlib import Path
++import queue
++from types import SimpleNamespace
++import unittest
++from unittest.mock import MagicMock
++
++from prompt_toolkit.buffer import Buffer
++
++from cli import HermesCLI, _VoiceInputMessage
++from hermes_cli.plugins import PluginContext, PluginManager, PluginManifest, QueuedMessage
++
++
++def _create_cli(session_id: str = "session-original") -> HermesCLI:
++    """Create a HermesCLI instance with real buffers and queues for testing."""
++    cli = HermesCLI.__new__(HermesCLI)
++    cli.session_id = session_id
++    cli._pending_input = queue.Queue()
++    cli._interrupt_queue = queue.Queue()
++    cli._agent_running = False
++    cli._should_exit = False
++    cli._status_bar_suppressed_after_resize = False
++    cli._pending_resume_sessions = []
++    cli._pending_agent_seed = None
++    cli._interactive_turn = False
++    cli._pet_turn_error = False
++    cli._pet_reasoning = False
++    cli._spinner_text = ""
++    cli._tool_start_time = 0.0
++    cli._pending_tool_info = []
++    cli._last_scrollback_tool = ""
++    cli._last_turn_interrupted = False
++    cli._voice_mode = False
++    cli._voice_continuous = False
++    cli._voice_recording = False
++    cli._voice_tts = False
++    cli._command_running = False
++    cli._app = SimpleNamespace(
++        current_buffer=Buffer(),
++        invalidate=MagicMock(),
++        is_running=False,
++        exit=MagicMock(),
++    )
++    # UI and background bookkeeping methods called by _process_loop
++    cli._check_config_mcp_changes = MagicMock()
++    cli._check_termios_drift = MagicMock()
++    cli._drain_process_notifications = MagicMock()
++    cli._maybe_fire_loop_tick = MagicMock()
++    cli._turn_summary_begin = MagicMock()
++    cli._turn_summary_emit = MagicMock()
++    cli._pet_react_turn_end = MagicMock()
++    cli._print_user_message_preview = MagicMock()
++    cli._recover_terminal_after_interrupt = MagicMock()
++    cli._drain_interrupt_queue_to_pending_input = MagicMock()
++    cli._maybe_continue_goal_after_turn = MagicMock()
++    cli._maybe_complete_loop_tick_after_turn = MagicMock()
++    cli._typed_voice_stop = MagicMock(return_value=False)
++    cli.handle_bang_shell = MagicMock(return_value=False)
++    cli.process_command = MagicMock(return_value=True)
++    return cli
++
++
++class TestHermesQueueSeam(unittest.TestCase):
++    """Unit tests for production queue seam methods in cli.py."""
++
++    def test_production_dequeue_admitted_matching_session(self):
++        """Production seam: matching session marks 'admitted' and unwraps text."""
++        cli = _create_cli(session_id="session-matching")
++        callback = MagicMock()
++        qm = QueuedMessage(
++            text="wake instruction",
++            expected_session_id="session-matching",
++            on_consumed=callback,
++        )
++
++        result = cli._dequeue_pending_input(qm)
++
++        self.assertEqual(result, "wake instruction")
++        self.assertEqual(qm.status, "admitted")
++        self.assertEqual(qm.consumed_session_id, "session-matching")
++        self.assertIsNone(qm.refusal_reason)
++        callback.assert_called_once_with("admitted", "session-matching")
++
++    def test_production_dequeue_refuses_on_changed_session(self):
++        """Production seam: session mismatch (e.g. /resume) marks 'refused' and discards."""
++        cli = _create_cli(session_id="session-switched")
++        callback = MagicMock()
++        qm = QueuedMessage(
++            text="wake instruction",
++            expected_session_id="session-original",
++            on_consumed=callback,
++        )
++
++        result = cli._dequeue_pending_input(qm)
++
++        # Must be discarded (None) so process_loop skips execution
++        self.assertIsNone(result)
++        self.assertEqual(qm.status, "refused")
++        self.assertEqual(qm.consumed_session_id, "session-switched")
++        self.assertIn("Session mismatch", qm.refusal_reason)
++        self.assertIn("session-original", qm.refusal_reason)
++        self.assertIn("session-switched", qm.refusal_reason)
++        callback.assert_called_once_with("refused", "session-switched")
++
++    def test_composer_buffer_preserved_through_queue_consumption(self):
++        """Unsubmitted human typing in real prompt_toolkit Buffer is never cleared by dequeue."""
++        cli = _create_cli(session_id="session-active")
++        # Simulate user in the middle of typing a draft in prompt_toolkit
++        cli._app.current_buffer.text = "half written user draft"
++        cli._app.current_buffer.cursor_position = len("half written user draft")
++
++        qm = QueuedMessage(text="background wake", expected_session_id="session-active")
++        result = cli._dequeue_pending_input(qm)
++
++        self.assertEqual(result, "background wake")
++        # Crucial guarantee: composer buffer remains intact
++        self.assertEqual(cli._app.current_buffer.text, "half written user draft")
++        self.assertEqual(cli._app.current_buffer.cursor_position, len("half written user draft"))
++
++    def test_busy_ordering_never_preempts_or_interrupts(self):
++        """PluginContext.queue_message queues serially without entering _interrupt_queue."""
++        cli = _create_cli(session_id="session-busy")
++        cli._agent_running = True  # Agent actively executing tools
++
++        manager = PluginManager()
++        manifest = PluginManifest(name="cairn-plugin", key="cairn", source="user")
++        ctx = PluginContext(manifest, manager)
++        manager._cli_ref = cli
++
++        qm = ctx.queue_message("wake while busy", expected_session_id="session-busy")
++
++        self.assertIsNotNone(qm)
++        self.assertTrue(cli._interrupt_queue.empty(), "Wake message must never enter _interrupt_queue")
++        self.assertFalse(cli._pending_input.empty(), "Wake message must be queued in _pending_input")
++        queued_item = cli._pending_input.get_nowait()
++        self.assertIs(queued_item, qm)
++
++    def test_callback_exception_recorded_without_crashing_cli(self):
++        """Exceptions inside on_consumed callback are captured in callback_error."""
++        cli = _create_cli(session_id="session-err")
++
++        def faulty_callback(status, sid):
++            raise RuntimeError("simulated subscriber persistence error")
++
++        qm = QueuedMessage(
++            text="wake",
++            expected_session_id="session-err",
++            on_consumed=faulty_callback,
++        )
++
++        result = cli._dequeue_pending_input(qm)
++
++        self.assertEqual(result, "wake")
++        self.assertEqual(qm.status, "admitted")
++        self.assertEqual(qm.callback_error, "simulated subscriber persistence error")
++
++    def test_normal_inputs_pass_through_unmodified(self):
++        """Strings, image tuples, and voice messages pass through _dequeue_pending_input."""
++        cli = _create_cli(session_id="session-normal")
++
++        # String
++        self.assertEqual(cli._dequeue_pending_input("hello world"), "hello world")
++
++        # Image tuple
++        image_tuple = ("analyze this", [Path("/tmp/test.png")])
++        self.assertEqual(cli._dequeue_pending_input(image_tuple), image_tuple)
++
++        # Voice input
++        voice = _VoiceInputMessage("transcribed audio prompt")
++        self.assertEqual(cli._dequeue_pending_input(voice), "transcribed audio prompt")
++
++        # Empty inputs filtered
++        self.assertIsNone(cli._dequeue_pending_input(""))
++        self.assertIsNone(cli._dequeue_pending_input(None))
++
++
++class TestProcessLoopEndToEnd(unittest.TestCase):
++    """Regression tests executing HermesCLI._process_loop end-to-end through chat dispatch."""
++
++    def test_process_loop_normal_text_dispatches_with_voice_false(self):
++        """Normal text passes through _process_loop to chat with voice_input=False."""
++        cli = _create_cli(session_id="session-text")
++        dispatched = []
++
++        def mock_chat(user_input, images=None, voice_input=False):
++            dispatched.append({"input": user_input, "images": images, "voice": voice_input})
++            cli._should_exit = True
++
++        cli.chat = mock_chat
++        cli._pending_input.put("hello from human")
++
++        cli._process_loop(cli._app)
++
++        self.assertEqual(len(dispatched), 1)
++        self.assertEqual(dispatched[0]["input"], "hello from human")
++        self.assertFalse(dispatched[0]["voice"])
++        self.assertIsNone(dispatched[0]["images"])
++
++    def test_process_loop_voice_input_preserves_voice_flag_through_chat(self):
++        """_VoiceInputMessage preserves voice_input=True flag in self.chat dispatch.
++
++        Guards against regression where _dequeue_pending_input unwrapped text
++        without setting is_voice_input before the typed-voice check / chat dispatch.
++        """
++        cli = _create_cli(session_id="session-voice")
++        dispatched = []
++
++        def mock_chat(user_input, images=None, voice_input=False):
++            dispatched.append({"input": user_input, "images": images, "voice": voice_input})
++            cli._should_exit = True
++
++        cli.chat = mock_chat
++        cli._pending_input.put(_VoiceInputMessage("spoken instruction from mic"))
++
++        cli._process_loop(cli._app)
++
++        self.assertEqual(len(dispatched), 1)
++        self.assertEqual(dispatched[0]["input"], "spoken instruction from mic")
++        self.assertTrue(dispatched[0]["voice"], "voice_input flag must be True for _VoiceInputMessage")
++
++    def test_process_loop_queued_wake_admitted_and_composer_preserved(self):
++        """QueuedMessage passes through _process_loop, executes chat, and preserves composer buffer."""
++        cli = _create_cli(session_id="session-wake")
++        cli._app.current_buffer.text = "unsubmitted human draft typed in terminal"
++        cli._app.current_buffer.cursor_position = len(cli._app.current_buffer.text)
++
++        callback = MagicMock()
++        qm = QueuedMessage(
++            text="autonomous wake instruction",
++            expected_session_id="session-wake",
++            on_consumed=callback,
++        )
++        cli._pending_input.put(qm)
++
++        dispatched = []
++
++        def mock_chat(user_input, images=None, voice_input=False):
++            dispatched.append({"input": user_input, "voice": voice_input})
++            cli._should_exit = True
++
++        cli.chat = mock_chat
++
++        cli._process_loop(cli._app)
++
++        # 1. Chat dispatched with unwrapped text
++        self.assertEqual(len(dispatched), 1)
++        self.assertEqual(dispatched[0]["input"], "autonomous wake instruction")
++        self.assertFalse(dispatched[0]["voice"])
++
++        # 2. QueuedMessage marked admitted and callback notified
++        self.assertEqual(qm.status, "admitted")
++        self.assertEqual(qm.consumed_session_id, "session-wake")
++        callback.assert_called_once_with("admitted", "session-wake")
++
++        # 3. User composer buffer was untouched throughout loop execution
++        self.assertEqual(cli._app.current_buffer.text, "unsubmitted human draft typed in terminal")
++        self.assertEqual(cli._app.current_buffer.cursor_position, len("unsubmitted human draft typed in terminal"))
++
++    def test_process_loop_mismatched_session_refused_without_chat_dispatch(self):
++        """QueuedMessage with mismatched expected session is refused and skipped in _process_loop."""
++        cli = _create_cli(session_id="session-active-now")
++        callback = MagicMock()
++        qm = QueuedMessage(
++            text="stale wake for earlier session",
++            expected_session_id="session-stale",
++            on_consumed=callback,
++        )
++        cli._pending_input.put(qm)
++        # Follow with a normal input that terminates the loop
++        cli._pending_input.put("resume normal work")
++
++        dispatched = []
++
++        def mock_chat(user_input, images=None, voice_input=False):
++            dispatched.append(user_input)
++            cli._should_exit = True
++
++        cli.chat = mock_chat
++
++        cli._process_loop(cli._app)
++
++        # Chat only dispatched for normal work, NOT the mismatched wake
++        self.assertEqual(dispatched, ["resume normal work"])
++        self.assertEqual(qm.status, "refused")
++        self.assertEqual(qm.consumed_session_id, "session-active-now")
++        self.assertIn("Session mismatch", qm.refusal_reason)
++        callback.assert_called_once_with("refused", "session-active-now")
++
++    def test_typed_voice_stop_does_not_intercept_voice_input_in_loop(self):
++        """Voice input containing stop is not intercepted by _typed_voice_stop."""
++        cli = _create_cli(session_id="session-stop")
++        cli._typed_voice_stop = MagicMock(return_value=True)
++
++        dispatched = []
++
++        def mock_chat(user_input, images=None, voice_input=False):
++            dispatched.append({"input": user_input, "voice": voice_input})
++            cli._should_exit = True
++
++        cli.chat = mock_chat
++        # Put voice input
++        cli._pending_input.put(_VoiceInputMessage("stop"))
++
++        cli._process_loop(cli._app)
++
++        # Because is_voice_input was True, _typed_voice_stop was NOT allowed to intercept
++        self.assertEqual(len(dispatched), 1)
++        self.assertEqual(dispatched[0]["input"], "stop")
++    def test_production_dequeue_pins_request_id_and_turn_id(self):
++        """Production seam: admitting QueuedMessage pins _active_request_id and _active_turn_id."""
++        cli = _create_cli(session_id="session-pinned")
++        qm = QueuedMessage(
++            text="pinned request text",
++            expected_session_id="session-pinned",
++            request_id="cairn-req-uuid-1234",
++            delivery_id="cairn-del-uuid-5678",
++        )
++
++        result = cli._dequeue_pending_input(qm)
++        self.assertEqual(result, "pinned request text")
++        self.assertEqual(cli._active_request_id, "cairn-req-uuid-1234")
++        self.assertEqual(cli._active_delivery_id, "cairn-del-uuid-5678")
++        self.assertIsNotNone(cli._active_turn_id)
++
++    def test_production_dequeue_clears_active_request_for_normal_input(self):
++        """Production seam: normal prompt input sets _active_request_id to None."""
++        cli = _create_cli(session_id="session-normal")
++        cli._active_request_id = "stale-request-id"
++
++        result = cli._dequeue_pending_input("normal user prompt")
++        self.assertEqual(result, "normal user prompt")
++        self.assertIsNone(cli._active_request_id)
++        self.assertIsNone(cli._active_delivery_id)
++        self.assertIsNotNone(cli._active_turn_id)
++
++    def test_process_loop_clears_active_request_id_in_finally(self):
++        """End-to-end loop: _active_request_id is cleared after turn completes."""
++        cli = _create_cli(session_id="session-loop-clean")
++        qm = QueuedMessage(
++            text="task prompt",
++            expected_session_id="session-loop-clean",
++            request_id="req-clean-1",
++        )
++
++        seen_active_in_chat = []
++
++        def mock_chat(user_input, images=None, voice_input=False):
++            seen_active_in_chat.append(cli._active_request_id)
++            cli._should_exit = True
++
++        cli.chat = mock_chat
++        cli._pending_input.put(qm)
++        cli._process_loop(cli._app)
++
++        self.assertEqual(seen_active_in_chat, ["req-clean-1"])
++        self.assertIsNone(cli._active_request_id)
++        self.assertIsNone(cli._active_turn_id)
++
++
++    def test_process_registry_attaches_request_id_from_context(self):
++        """ProcessRegistry.spawn_local captures active request_id from contextvar."""
++        from tools.approval import set_current_request_id, get_current_request_id
++        from tools.process_registry import ProcessRegistry
++
++        reg = ProcessRegistry()
++        token = set_current_request_id("test-cairn-req-99")
++        try:
++            sess = reg.spawn_local("echo hello")
++            self.assertEqual(sess.request_id, "test-cairn-req-99")
++            listed = reg.list_sessions()
++            matching = [p for p in listed if p["session_id"] == sess.id]
++            self.assertEqual(len(matching), 1)
++            self.assertEqual(matching[0]["request_id"], "test-cairn-req-99")
++        finally:
++            set_current_request_id("")
++            reg.kill_all()
++
++    def test_process_registry_attaches_turn_id_from_context(self):
++        """ProcessRegistry.spawn_local captures active turn_id from contextvar."""
++        from tools.approval import set_current_turn_id, get_current_turn_id
++        from tools.process_registry import ProcessRegistry
++
++        reg = ProcessRegistry()
++        token = set_current_turn_id("test-turn-uuid-42")
++        try:
++            sess = reg.spawn_local("echo hello-turn")
++            self.assertEqual(sess.turn_id, "test-turn-uuid-42")
++            listed = reg.list_sessions()
++            matching = [p for p in listed if p["session_id"] == sess.id]
++            self.assertEqual(len(matching), 1)
++            self.assertEqual(matching[0]["turn_id"], "test-turn-uuid-42")
++            self.assertIn("host_start_time", matching[0])
++        finally:
++            set_current_turn_id("")
++            reg.kill_all()
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools/approval.py b/tools/approval.py
+index 1ecda55..4652c01 100644
+--- a/tools/approval.py
++++ b/tools/approval.py
+@@ -62,6 +62,14 @@ _approval_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+     "approval_session_id",
+     default="",
+ )
++_approval_request_id: contextvars.ContextVar[str] = contextvars.ContextVar(
++    "approval_request_id",
++    default="",
++)
++_approval_turn_id: contextvars.ContextVar[str] = contextvars.ContextVar(
++    "approval_turn_id",
++    default="",
++)
+ 
+ # Interactive-CLI flag. Concurrent ACP sessions run on a shared
+ # ThreadPoolExecutor (acp_adapter/server.py), so mutating the process-global
+@@ -239,6 +247,30 @@ def get_current_session_key(default: str = "default") -> str:
+     return get_session_env("HERMES_SESSION_KEY", default)
+ 
+ 
++def get_current_request_id(default: str = "") -> str:
++    """Return the active Cairn request ID, preferring context-local state."""
++    request_id = _approval_request_id.get()
++    if request_id:
++        return request_id
++    return os.getenv("CAIRN_ACTIVE_REQUEST_ID", default)
++
++
++def set_current_request_id(request_id: str) -> contextvars.Token:
++    return _approval_request_id.set(request_id)
++
++
++def get_current_turn_id(default: str = "") -> str:
++    """Return the active turn ID, preferring context-local state."""
++    turn_id = _approval_turn_id.get()
++    if turn_id:
++        return turn_id
++    return os.getenv("CAIRN_ACTIVE_TURN_ID", default)
++
++
++def set_current_turn_id(turn_id: str) -> contextvars.Token:
++    return _approval_turn_id.set(turn_id)
++
++
+ def _get_session_platform() -> str:
+     """Return the current gateway platform from contextvars/env fallback."""
+     try:
+diff --git a/tools/process_registry.py b/tools/process_registry.py
+index b5fdf77..2141fd8 100644
+--- a/tools/process_registry.py
++++ b/tools/process_registry.py
+@@ -370,6 +370,8 @@ class ProcessSession:
+     command: str                                 # Original command string
+     task_id: str = ""                           # Task/sandbox isolation key
+     session_key: str = ""                       # Gateway session key (for reset protection)
++    request_id: Optional[str] = None            # Cairn request ID for cancellation tracking
++    turn_id: Optional[str] = None               # Turn ID for exact turn cancellation tracking
+     pid: Optional[int] = None                   # OS process ID
+     process: Optional[subprocess.Popen] = None  # Popen handle (local only)
+     env_ref: Any = None                         # Reference to the environment object
+@@ -979,6 +981,8 @@ class ProcessRegistry:
+         session_key: str = "",
+         env_vars: dict = None,
+         use_pty: bool = False,
++        request_id: str = "",
++        turn_id: str = "",
+     ) -> ProcessSession:
+         """
+         Spawn a background process locally.
+@@ -989,6 +993,8 @@ class ProcessRegistry:
+             use_pty: If True, use a pseudo-terminal via ptyprocess for interactive
+                      CLI tools (Codex, Claude Code, Python REPL). Falls back to
+                      subprocess.Popen if ptyprocess is not installed.
++            request_id: Cairn request ID for cancellation tracking.
++            turn_id: Turn ID for exact turn cancellation tracking.
+         """
+         # Guard against the `A && B &` subshell-wait trap (issue #68915).
+         # Bash parses ``A && B &`` as ``(A && B) &`` — a subshell that holds
+@@ -999,11 +1005,27 @@ class ProcessRegistry:
+ 
+         safe_command = _rewrite_bg(command)
+ 
++        if not request_id:
++            try:
++                from tools.approval import get_current_request_id
++                request_id = get_current_request_id()
++            except Exception:
++                pass
++
++        if not turn_id:
++            try:
++                from tools.approval import get_current_turn_id
++                turn_id = get_current_turn_id()
++            except Exception:
++                pass
++
+         session = ProcessSession(
+             id=f"proc_{uuid.uuid4().hex[:12]}",
+             command=command,
+             task_id=task_id,
+             session_key=session_key,
++            request_id=request_id or None,
++            turn_id=turn_id or None,
+             cwd=_resolve_safe_cwd(cwd or os.getcwd()),
+             started_at=time.time(),
+         )
+@@ -1217,6 +1239,8 @@ class ProcessRegistry:
+         task_id: str = "",
+         session_key: str = "",
+         timeout: int = 10,
++        request_id: str = "",
++        turn_id: str = "",
+     ) -> ProcessSession:
+         """
+         Spawn a background process through a non-local environment backend.
+@@ -1229,11 +1253,27 @@ class ProcessRegistry:
+         This is less capable than local spawn (no live stdout pipe, no stdin),
+         but it ensures the command runs in the correct sandbox context.
+         """
++        if not request_id:
++            try:
++                from tools.approval import get_current_request_id
++                request_id = get_current_request_id()
++            except Exception:
++                pass
++
++        if not turn_id:
++            try:
++                from tools.approval import get_current_turn_id
++                turn_id = get_current_turn_id()
++            except Exception:
++                pass
++
+         session = ProcessSession(
+             id=f"proc_{uuid.uuid4().hex[:12]}",
+             command=command,
+             task_id=task_id,
+             session_key=session_key,
++            request_id=request_id or None,
++            turn_id=turn_id or None,
+             cwd=cwd,
+             started_at=time.time(),
+             env_ref=env,
+@@ -2342,6 +2382,9 @@ class ProcessRegistry:
+                 "command": s.command[:200],
+                 "cwd": s.cwd,
+                 "pid": s.pid,
++                "request_id": getattr(s, "request_id", None),
++                "turn_id": getattr(s, "turn_id", None),
++                "host_start_time": getattr(s, "host_start_time", None),
+                 "started_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(s.started_at)),
+                 "uptime_seconds": int(time.time() - s.started_at),
+                 "status": "exited" if s.exited else "running",
+-- 
+2.43.0
+

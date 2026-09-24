@@ -1,0 +1,248 @@
+From f938a0d54b8562476e51b6b124266c467da8dedc Mon Sep 17 00:00:00 2001
+From: halbritt <halbritt@gmail.com>
+Date: Sun, 20 Sep 2026 18:14:32 -0700
+Subject: [PATCH] fix(test): B3 fixture cleanup ownership on foreign isolation
+ rejection
+
+---
+ scripts/test_hermes_cancellation_e2e.py | 186 ++++++++++++++++++++++--
+ 1 file changed, 174 insertions(+), 12 deletions(-)
+
+diff --git a/scripts/test_hermes_cancellation_e2e.py b/scripts/test_hermes_cancellation_e2e.py
+index 80801f2..af894f1 100644
+--- a/scripts/test_hermes_cancellation_e2e.py
++++ b/scripts/test_hermes_cancellation_e2e.py
+@@ -74,13 +74,18 @@ def _get_process_credentials():
+ 
+ @unittest.skipUnless(HAS_HERMES_DEPS, "Hermes dependencies required")
+ class HermesCancellationE2ETests(unittest.TestCase):
++    _isolation_validated = False
++    _bridge_initialized = False
++
+     @classmethod
+     def setUpClass(cls):
+-        cls.process = _get_process_credentials()
+-        cls.sock_path = f"/tmp/cairn-hermes-{os.getpid()}.sock"
++        cls._isolation_validated = False
++        cls._bridge_initialized = False
++        cls.old_hermes_home = _old_hermes_home
+         cls.hermes_home = _hermes_home
+         cls.isolated_tmp = _isolated_tmp
+-        cls.old_hermes_home = _old_hermes_home
++        cls.sock_path = f"/tmp/cairn-hermes-{os.getpid()}.sock"
++        cls.process = _get_process_credentials()
+ 
+         def _cleanup_env():
+             if _old_hermes_home is not None:
+@@ -96,6 +101,8 @@ class HermesCancellationE2ETests(unittest.TestCase):
+                 assert Path(_pr.CHECKPOINT_PATH).resolve().is_relative_to(_hermes_home.resolve()), (
+                     f"CHECKPOINT_PATH {_pr.CHECKPOINT_PATH} not in isolated {_hermes_home}"
+                 )
++            # Isolation verified: only now may this fixture claim ownership of process registry resources
++            cls._isolation_validated = True
+ 
+             # Set up isolated plugin and configuration
+             plugin_dir = cls.hermes_home / 'plugins' / 'cairn-coordination'
+@@ -110,6 +117,7 @@ class HermesCancellationE2ETests(unittest.TestCase):
+             # Discover and load plugins once
+             pm = get_plugin_manager()
+             pm.discover_and_load()
++            cls._bridge_initialized = True
+ 
+             # Wait for bridge socket to become ready
+             deadline = time.monotonic() + 5.0
+@@ -125,22 +133,26 @@ class HermesCancellationE2ETests(unittest.TestCase):
+ 
+     @classmethod
+     def tearDownClass(cls):
+-        try:
+-            from tools.process_registry import process_registry
+-            process_registry.kill_all()
+-        except Exception:
+-            pass
+-        if os.path.exists(cls.sock_path):
++        # Clean up ONLY resources actually owned and created by this fixture
++        if getattr(cls, '_isolation_validated', False):
++            try:
++                from tools.process_registry import process_registry
++                process_registry.kill_all()
++            except Exception:
++                pass
++        if getattr(cls, '_bridge_initialized', False) and hasattr(cls, 'sock_path') and os.path.exists(cls.sock_path):
+             try:
+                 os.unlink(cls.sock_path)
+             except OSError:
+                 pass
+-        if cls.old_hermes_home is not None:
+-            os.environ['HERMES_HOME'] = cls.old_hermes_home
++        old_env = getattr(cls, 'old_hermes_home', _old_hermes_home)
++        if old_env is not None:
++            os.environ['HERMES_HOME'] = old_env
+         else:
+             os.environ.pop('HERMES_HOME', None)
+         try:
+-            cls.isolated_tmp.cleanup()
++            if getattr(cls, 'isolated_tmp', None) is not None:
++                cls.isolated_tmp.cleanup()
+         except Exception:
+             pass
+ 
+@@ -744,5 +756,155 @@ class HermesCancellationE2ETests(unittest.TestCase):
+             self.cli._active_turn_id = None
+ 
+ 
++class HermesFixtureIsolationFailureTests(unittest.TestCase):
++    """B3: Prove isolation rejection performs NO operations on a foreign registry, and environment is restored."""
++
++    def _run_subp(self, code, *args):
++        import subprocess
++        env = dict(os.environ, HERMES_ROOT=str(_hermes_root))
++        cmd = [sys.executable, "-c", code, str(REPO_ROOT), str(_hermes_root), str(_venv_site), *args]
++        return subprocess.run(cmd, capture_output=True, text=True, env=env)
++
++    def test_isolation_rejection_never_touches_foreign_registry(self):
++        """Stage 1: Preloaded foreign registry with outside CHECKPOINT_PATH is rejected without kill_all or mutation."""
++        code = """
++import os, sys, json, tempfile
++from pathlib import Path
++from unittest.mock import patch
++
++sys.path.insert(0, sys.argv[1])
++sys.path.insert(0, sys.argv[2])
++for p in Path(sys.argv[3]).glob("python*/site-packages"):
++    sys.path.insert(0, str(p))
++
++orig_env = "/some/original/hermes/path"
++os.environ["HERMES_HOME"] = orig_env
++
++with tempfile.TemporaryDirectory(prefix="cairn-foreign-test-") as foreign_dir:
++    foreign_home = Path(foreign_dir) / ".hermes"
++    foreign_home.mkdir(parents=True, mode=0o700)
++    foreign_checkpoint = foreign_home / "processes.json"
++    initial_content = json.dumps([{"session_id": "foreign-proc-1", "pid": 99999}])
++    foreign_checkpoint.write_text(initial_content)
++    initial_mtime = foreign_checkpoint.stat().st_mtime
++
++    class ForeignReg:
++        CHECKPOINT_PATH = foreign_checkpoint
++        kill_all_called = False
++        def kill_all(self):
++            self.kill_all_called = True
++
++    foreign_reg = ForeignReg()
++    from scripts import test_hermes_cancellation_e2e as t
++
++    with patch("tools.process_registry.process_registry", foreign_reg), \
++         patch("tools.process_registry.CHECKPOINT_PATH", foreign_checkpoint):
++        try:
++            t.HermesCancellationE2ETests.setUpClass()
++            sys.exit(1)
++        except AssertionError as e:
++            assert "not in isolated" in str(e), f"unexpected error {e}"
++
++    assert not foreign_reg.kill_all_called, "foreign kill_all was called!"
++    assert foreign_checkpoint.read_text() == initial_content, "checkpoint file mutated!"
++    assert foreign_checkpoint.stat().st_mtime == initial_mtime, "checkpoint mtime mutated!"
++    assert os.environ.get("HERMES_HOME") == orig_env, f"env not restored: {os.environ.get('HERMES_HOME')} != {orig_env}"
++    print("STAGE 1 PASSED")
++"""
++        res = self._run_subp(code)
++        self.assertEqual(res.returncode, 0, f"Stage 1 failed: stdout={res.stdout}, stderr={res.stderr}")
++        self.assertIn("STAGE 1 PASSED", res.stdout)
++
++    def test_setup_failure_during_bridge_creation_restores_env(self):
++        """Stage 2: Setup failure after isolation check (bridge timeout) cleans only fixture resources and restores env."""
++        code = """
++import os, sys, json, tempfile
++from pathlib import Path
++from unittest.mock import patch
++
++sys.path.insert(0, sys.argv[1])
++sys.path.insert(0, sys.argv[2])
++for p in Path(sys.argv[3]).glob("python*/site-packages"):
++    sys.path.insert(0, str(p))
++
++orig_env = "/some/original/hermes/path"
++os.environ["HERMES_HOME"] = orig_env
++
++with tempfile.TemporaryDirectory(prefix="cairn-foreign-test-") as foreign_dir:
++    foreign_home = Path(foreign_dir) / ".hermes"
++    foreign_home.mkdir(parents=True, mode=0o700)
++    foreign_checkpoint = foreign_home / "processes.json"
++    initial_content = json.dumps([{"session_id": "foreign-proc-2", "pid": 77777}])
++    foreign_checkpoint.write_text(initial_content)
++    initial_mtime = foreign_checkpoint.stat().st_mtime
++
++    from scripts import test_hermes_cancellation_e2e as t
++
++    real_exists = os.path.exists
++    def fake_exists(path):
++        if "cairn-hermes" in str(path) and str(path).endswith(".sock"):
++            return False
++        return real_exists(path)
++
++    with patch("os.path.exists", side_effect=fake_exists), \
++         patch("time.sleep", return_value=None), \
++         patch("time.monotonic", side_effect=[0.0, 10.0, 10.0, 10.0]):
++        try:
++            t.HermesCancellationE2ETests.setUpClass()
++            sys.exit(1)
++        except RuntimeError as e:
++            assert "Bridge socket" in str(e), f"unexpected error {e}"
++
++    assert foreign_checkpoint.read_text() == initial_content, "checkpoint file mutated!"
++    assert foreign_checkpoint.stat().st_mtime == initial_mtime, "checkpoint mtime mutated!"
++    assert os.environ.get("HERMES_HOME") == orig_env, f"env not restored: {os.environ.get('HERMES_HOME')} != {orig_env}"
++    print("STAGE 2 PASSED")
++"""
++        res = self._run_subp(code)
++        self.assertEqual(res.returncode, 0, f"Stage 2 failed: stdout={res.stdout}, stderr={res.stderr}")
++        self.assertIn("STAGE 2 PASSED", res.stdout)
++
++    def test_subprocess_full_lifecycle_cleanup(self):
++        """Stage 3: End-to-end subprocess executing successful setup and teardown cleans up only fixture state."""
++        code = """
++import os, sys, json, tempfile
++from pathlib import Path
++
++sys.path.insert(0, sys.argv[1])
++sys.path.insert(0, sys.argv[2])
++for p in Path(sys.argv[3]).glob("python*/site-packages"):
++    sys.path.insert(0, str(p))
++
++orig_env = "/some/original/hermes/path"
++os.environ["HERMES_HOME"] = orig_env
++
++with tempfile.TemporaryDirectory(prefix="cairn-foreign-test-") as foreign_dir:
++    foreign_home = Path(foreign_dir) / ".hermes"
++    foreign_home.mkdir(parents=True, mode=0o700)
++    foreign_checkpoint = foreign_home / "processes.json"
++    initial_content = json.dumps([{"session_id": "foreign-proc-3", "pid": 66666}])
++    foreign_checkpoint.write_text(initial_content)
++    initial_mtime = foreign_checkpoint.stat().st_mtime
++
++    from scripts import test_hermes_cancellation_e2e as t
++
++    t.HermesCancellationE2ETests.setUpClass()
++    sock = t.HermesCancellationE2ETests.sock_path
++    assert t.HermesCancellationE2ETests._isolation_validated is True, "isolation not validated"
++    assert t.HermesCancellationE2ETests._bridge_initialized is True, "bridge not initialized"
++    assert os.path.exists(sock), f"bridge socket {sock} does not exist"
++
++    t.HermesCancellationE2ETests.tearDownClass()
++    assert not os.path.exists(sock), f"bridge socket {sock} was not cleaned up"
++    assert foreign_checkpoint.read_text() == initial_content, "checkpoint file mutated!"
++    assert foreign_checkpoint.stat().st_mtime == initial_mtime, "checkpoint mtime mutated!"
++    assert os.environ.get("HERMES_HOME") == orig_env, f"env not restored: {os.environ.get('HERMES_HOME')} != {orig_env}"
++    print("STAGE 3 PASSED")
++"""
++        res = self._run_subp(code)
++        self.assertEqual(res.returncode, 0, f"Stage 3 failed: stdout={res.stdout}, stderr={res.stderr}")
++        self.assertIn("STAGE 3 PASSED", res.stdout)
++
++
+ if __name__ == "__main__":
+     unittest.main()
+-- 
+2.43.0
+
