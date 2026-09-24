@@ -291,6 +291,46 @@ class OpenCodeCancelHostTests(unittest.TestCase):
         self.assertNotIn('cairn', output)
         self.assertEqual(json.loads(path.read_text())['opencode_turn_since'], 1)
 
+    def test_repeated_accepted_turn_start_reuses_the_claim_and_completion(self):
+        session = self.session
+        delivery = dict(delivery_id='delivery-one', lease_id='lease-one',
+                        event=dict(event_id='event-one', kind='request', ref={},
+                                   **{'from': 'agent/source'}))
+        attempt = dict(attempt_id='attempt-one', session=session,
+                       native_turn_id='turn-one', turn_exclusive=True, delivery=delivery)
+        wake = dict(transport='opencode-queue', session=session, delivery_id='delivery-one',
+                    request_id='delivery-one', native_id='ses-one', endpoint='/unused/bridge.sock',
+                    cancel_capable=True)
+        state = dict(agent=dict(**session, native_session_id='ses-one'),
+                     process=self.state['process'], idle_wake=wake)
+        coordination.write_state(self.path, state)
+        self.config['idle_wakeup'] = '/unused/herdr'
+        claims = []
+
+        def store_call(_config, operation, request, **_kwargs):
+            if operation == 'session-inbox-claim':
+                claims.append(copy.deepcopy(request))
+                return dict(attempt=copy.deepcopy(attempt))
+            if operation == 'session-inbox-control':
+                return dict(attempt=copy.deepcopy(attempt))
+            if operation == 'session-inbox-reconcile':
+                raise coordination.CoordinationError('DELIVERY_ACTIVE', 'still running')
+            if operation == 'event-renew':
+                return copy.deepcopy(delivery)
+            self.fail(f'unexpected operation {operation}')
+
+        observation = dict(event='TurnStart', phase='busy', native_turn_id='turn-one')
+        binding = dict(delivery_id='delivery-one', native_turn_id='turn-one', turn_exclusive=True)
+        with patch.object(coordination, 'call', side_effect=store_call):
+            first = coordination.inbox_context(self.config, state, self.path, observation, binding)
+            completion_id = state['inbox_completion']
+            second = coordination.inbox_context(self.config, state, self.path, observation)
+        self.assertIn('Cairn has a request', first)
+        self.assertIn('Cairn has a request', second)
+        self.assertEqual(len(claims), 1)
+        self.assertEqual(state['inbox_completion'], completion_id)
+        self.assertEqual(state['inbox_attempt']['attempt_id'], 'attempt-one')
+
 
 if __name__ == '__main__':
     unittest.main()
