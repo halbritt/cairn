@@ -274,7 +274,9 @@ def prepare_idle_wake(config, state, path):
     opencode = opencode_queue_endpoint(config, state['process'])
     if opencode:
         state.pop('wake_refusal', None)
-        state['idle_wake'] = dict(delivery_id=delivery, request_id=request_id, session=session_ref(agent),
+        # The delivery UUID is stable across a BUSY retry and is the exact
+        # requestID supplied to OpenCode's idempotent native admission.
+        state['idle_wake'] = dict(delivery_id=delivery, request_id=delivery, session=session_ref(agent),
             transport='opencode-queue', endpoint=opencode, native_id=agent['native_session_id'],
             status='uncertain', attempted_at=time.time())
         write_state(path, state)
@@ -517,6 +519,20 @@ def hermes_wake_binding(state, event):
     return dict(delivery_id=wake['delivery_id'], native_turn_id=turn)
 
 
+def opencode_wake_binding(state, event):
+    """Bind the accepted native request to the observed OpenCode user message."""
+    wake = state.get('idle_wake', {})
+    turn = event.get('turn_id')
+    if (wake.get('transport') != 'opencode-queue' or wake.get('session') != session_ref(state['agent']) or
+            event.get('hook_event_name') != 'TurnStart' or not isinstance(turn, str) or
+            not turn.strip() or len(turn.encode()) > 256 or '\0' in turn or
+            event.get('request_id') != wake.get('request_id') or
+            event.get('delivery_id') != wake.get('delivery_id') or
+            event.get('prompt') != wake_message(wake)):
+        return {}
+    return dict(delivery_id=wake['delivery_id'], native_turn_id=turn, turn_exclusive=True)
+
+
 def wake_binding(config, state, event, joined=False):
     if config['harness'] == 'codex':
         return queued_wake_binding(state, event)
@@ -524,6 +540,8 @@ def wake_binding(config, state, event, joined=False):
         return channel_wake_binding(state, event, joined)
     if config['harness'] == 'hermes':
         return hermes_wake_binding(state, event)
+    if config['harness'] == 'opencode':
+        return opencode_wake_binding(state, event)
     return {}
 
 
@@ -594,10 +612,20 @@ def submit_idle_wake(config, path, prepared):
             raise CoordinationError('WAKE_UNAVAILABLE', f'opencode queue client is unavailable: {exc}') from exc
         try:
             queued_id, started = opencode_queue.enqueue(wake['endpoint'], prepared['process'],
-                                                        wake['native_id'], text, wake['delivery_id'])
+                                                        wake['native_id'], text, wake['delivery_id'],
+                                                        request_id=wake['request_id'])
         except opencode_queue.QueueUnavailable as exc:
             print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
             drop_idle_wake(path, wake)
+            return
+        except opencode_queue.QueueRefused as exc:
+            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
+            with session_lock(path):
+                state = json.loads(path.read_text())
+                if state.get('idle_wake') == wake:
+                    state['idle_wake']['status'] = 'refused'
+                    state['idle_wake']['refusal'] = str(exc)
+                    write_state(path, state)
             return
         except opencode_queue.QueueError as exc:
             raise CoordinationError('WAKE_UNCERTAIN', str(exc)) from exc
@@ -695,7 +723,7 @@ def normalize(config, event, event_name=None):
     # Codex and Hermes own turns by native turn ID. Claude owns a request by the
     # stable prompt_id of its channel submission; the display turn is separate.
     owner = ''
-    if harness in ('codex', 'claude', 'hermes'):
+    if harness in ('codex', 'claude', 'hermes', 'opencode'):
         owner = event.get('prompt_id' if harness == 'claude' else 'turn_id', '')
         if not isinstance(owner, str) or len(owner.encode()) > 256 or '\0' in owner or any(ord(c) < 32 for c in owner):
             raise CoordinationError('INVALID_HOST', 'invalid native ownership key')
@@ -908,6 +936,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     if (not state.get('inbox_intent') and config.get('idle_wakeup') and
             (codex_queue_endpoint(config, state['process']) or
              hermes_queue_endpoint(config, state['process']) or
+             config['harness'] == 'opencode' or
              (config['harness'] == 'claude' and config.get('claude_channel_dir'))) and not wake_binding):
         return ''  # This native wake transport owns admission; other prompts do not claim work.
     recover_inbox(config, state, path)

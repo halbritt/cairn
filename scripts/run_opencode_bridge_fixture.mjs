@@ -11,18 +11,30 @@ const root = path.resolve(__dirname, "..");
 const configDir = path.join("/tmp", `cairn-test-opencode-${process.pid}`);
 fs.mkdirSync(configDir, { recursive: true });
 const configPath = path.join(configDir, "cairn-coordination.json");
+const hookPath = path.join(configDir, "hook.mjs");
+if (process.env.OPENCODE_FIXTURE_HOOK_CAPTURE) {
+  fs.writeFileSync(hookPath, `
+import fs from "node:fs";
+let input = "";
+for await (const chunk of process.stdin) input += chunk;
+fs.appendFileSync(process.env.OPENCODE_FIXTURE_HOOK_CAPTURE, input + "\\n");
+process.stdout.write(JSON.stringify({ hookSpecificOutput: { additionalContext: "" } }));
+`);
+}
 fs.writeFileSync(
   configPath,
-  JSON.stringify({ python: process.execPath, script: "/bin/true", config: "/dev/null" })
+  JSON.stringify({ python: process.execPath,
+    script: process.env.OPENCODE_FIXTURE_HOOK_CAPTURE ? hookPath : "/bin/true", config: "/dev/null" })
 );
 process.env.CAIRN_COORDINATION_CONFIG = configPath;
 
 const mode = process.env.OPENCODE_FIXTURE_MODE || "normal";
 // Modes:
-// 'normal': get succeeds, status idle, promptAsync succeeds
-// 'busy': get succeeds, status busy
-// 'sdk_error': get fails or promptAsync returns { error: { message: "HTTP 500" } }
-// 'missing_api': client lacks promptAsync
+// 'normal': atomic promptIdle accepts
+// 'busy': atomic promptIdle refuses with busy
+// 'conflict': requestID is already bound to different native work
+// 'sdk_error': promptIdle returns an SDK error
+// 'missing_api': client lacks promptIdle
 
 let client = null;
 if (mode !== "missing_api") {
@@ -32,26 +44,34 @@ if (mode !== "missing_api") {
         if (mode === "not_found") return { error: { message: "session not found" } };
         return { data: { id, title: "Test Session" } };
       },
-      status: async () => {
-        if (mode === "busy") return { data: { "ses_test": { type: "busy" } } };
-        return { data: { "ses_test": { type: "idle" } } };
-      },
-      promptAsync: async ({ path: { id }, body }) => {
+      promptIdle: async ({ path: { id }, body }) => {
         if (process.env.OPENCODE_FIXTURE_CAPTURE) {
           fs.appendFileSync(process.env.OPENCODE_FIXTURE_CAPTURE, JSON.stringify({ session_id: id, body }) + "\n");
         }
         if (mode === "native_schema") {
           // The isolated native server has no sessions. A valid payload reaches
           // its session lookup (404); a bad native message ID fails schema (400).
-          const response = await fetch(`${process.env.OPENCODE_FIXTURE_URL}/session/${id}/prompt_async`, {
+          const response = await fetch(`${process.env.OPENCODE_FIXTURE_URL}/session/${id}/prompt_idle`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
           });
-          return { error: { message: `HTTP ${response.status}: ${await response.text()}` } };
+          return { error: { message: `HTTP ${response.status}: ${await response.text()}` }, response: { status: response.status } };
         }
         if (mode === "sdk_error") return { error: { message: "HTTP 500 Internal Server Error" } };
-        return { data: { id: "msg_123" } };
+        if (mode === "busy") return { data: { status: "busy" } };
+        if (mode === "conflict") return { data: { status: "conflict" } };
+        if (process.env.OPENCODE_FIXTURE_HOOK_CAPTURE) {
+          // Run the hook before the bridge has consumed the HTTP result. It
+          // must wait for atomic admission before claiming the request.
+          queueMicrotask(async () => {
+            const info = { role: "user", sessionID: id, id: "msg_native_one" };
+            const parts = body.parts.map(part => ({ ...part, synthetic: false, ignored: false }));
+            await hooks["experimental.chat.messages.transform"]({}, { messages: [{ info, parts }] });
+            await hooks.event({ event: { type: "session.idle", properties: { sessionID: id } } });
+          });
+        }
+        return { data: { status: "accepted" } };
       },
     },
   };
@@ -61,7 +81,7 @@ if (mode !== "missing_api") {
 const pluginModule = await import(path.join(root, "integrations/opencode/coordination.ts"));
 const plugin = pluginModule.default;
 
-const hooks = await plugin({
+let hooks = await plugin({
   directory: "/tmp",
   client,
   project: { id: "proj_test" },

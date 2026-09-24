@@ -1,4 +1,4 @@
-// Native conversation identity/presence and draft-preserving promptAsync bridge.
+// Native conversation identity/presence and atomic idle-only admission bridge.
 import type { Plugin } from "@opencode-ai/plugin"
 import type { Part } from "@opencode-ai/sdk"
 import { execFile } from "node:child_process"
@@ -15,7 +15,16 @@ interface PluginInstance {
   directory: string
   client: any
   sessions: Map<string, { turn: string; context: string }>
+  admissions: Map<string, Admission>
   disposed: boolean
+}
+
+interface Admission {
+  requestID: string
+  deliveryID: string
+  text: string
+  settled: Promise<boolean>
+  resolve: (accepted: boolean) => void
 }
 
 interface SharedBridge {
@@ -32,10 +41,11 @@ function getActiveInstance(sessionId?: string): PluginInstance | null {
   const live = [...activeBridge.instances.values()].filter(i => !i.disposed)
   if (live.length === 0) return null
   if (sessionId) {
-    const owner = live.find(i => i.sessions.has(sessionId))
+    const owner = live.find(i => i.sessions.has(sessionId) || i.admissions.has(sessionId))
     if (owner) return owner
   }
-  return live[live.length - 1]
+  // An unknown session in a multi-instance process has no safe owner.
+  return live.length === 1 ? live[0] : null
 }
 
 const plugin: Plugin = async ({ directory, client }) => {
@@ -59,6 +69,7 @@ const plugin: Plugin = async ({ directory, client }) => {
     }
   }
   const sessions = new Map<string, { turn: string; context: string }>()
+  const admissions = new Map<string, Admission>()
   const jobs = new Map<string, Promise<void>>()
   let closing = false
 
@@ -68,10 +79,11 @@ const plugin: Plugin = async ({ directory, client }) => {
     directory,
     client,
     sessions,
+    admissions,
     disposed: false,
   }
 
-  function invoke(id: string, event: string, model = "", turn_id = ""): Promise<any> {
+  function invoke(id: string, event: string, model = "", turn_id = "", admission?: Admission): Promise<any> {
     return new Promise((resolve, reject) => {
       const child = execFile(config.python, [config.script, "hook", "--config", config.config],
         { encoding: "utf8", timeout: 15000, maxBuffer: 32768 }, (error, stdout) => {
@@ -86,6 +98,9 @@ const plugin: Plugin = async ({ directory, client }) => {
         hook_event_name: event,
         model,
         turn_id: turn_id || undefined,
+        request_id: admission?.requestID,
+        delivery_id: admission?.deliveryID,
+        prompt: admission?.text,
       }))
     })
   }
@@ -174,10 +189,10 @@ const plugin: Plugin = async ({ directory, client }) => {
           const instClient = currentInstance.client
 
           try {
-            if (method === "session/prompt_async") {
-              const { session_id, text, client_id, expected_session_id } = params
-              if ([session_id, text, client_id].some(value => typeof value !== "string" || !value.trim())) {
-                socket.write(JSON.stringify({ id, error: { code: -32602, message: "session_id, text, and client_id must be nonempty strings" } }) + "\n")
+            if (method === "session/prompt_idle") {
+              const { session_id, text, delivery_id, request_id, expected_session_id } = params
+              if ([session_id, text, delivery_id, request_id].some(value => typeof value !== "string" || !value.trim())) {
+                socket.write(JSON.stringify({ id, error: { code: -32602, message: "session_id, text, delivery_id, and request_id must be nonempty strings" } }) + "\n")
                 continue
               }
               if (!expected_session_id || typeof expected_session_id !== "string" || !expected_session_id.trim()) {
@@ -189,13 +204,14 @@ const plugin: Plugin = async ({ directory, client }) => {
                 continue
               }
 
-              // Verify promptAsync capability exists on SDK
-              if (!instClient?.session?.promptAsync) {
+              // A patched native server is required; the old promptAsync route
+              // does not reserve ownership atomically with its idle check.
+              if (!instClient?.session?.promptIdle) {
                 socket.write(JSON.stringify({
                   id,
                   error: {
                     code: -32000,
-                    message: "OpencodeClient promptAsync capability unavailable on this runtime"
+                    message: "UNSUPPORTED_CONTROL: native prompt_idle capability unavailable"
                   }
                 }) + "\n")
                 continue
@@ -211,55 +227,65 @@ const plugin: Plugin = async ({ directory, client }) => {
                 }
               }
 
-              // Check current busy status via SDK and inspect typed response
-              if (instClient?.session?.status) {
-                const statusRes = await instClient.session.status()
-                if (statusRes.error) {
-                  const errMsg = (statusRes.error as any)?.message || "status check failed"
-                  socket.write(JSON.stringify({ id, error: { code: -32000, message: `STATUS_CHECK_FAILED: ${errMsg}` } }) + "\n")
-                  continue
-                }
-                const statusData = (statusRes.data as any) || statusRes
-                if (statusData?.[session_id]?.type === "busy") {
-                  // Refuse submission while busy so wake is never merged into existing active generation
-                  socket.write(JSON.stringify({
-                    id,
-                    error: {
-                      code: -32600,
-                      message: "BUSY: session already has an active turn; refused to merge wake into active turn"
-                    }
-                  }) + "\n")
-                  continue
-                }
+              if (currentInstance.admissions.has(session_id)) {
+                socket.write(JSON.stringify({ id, error: { code: -32600, message: "BUSY: another Cairn admission is pending" } }) + "\n")
+                continue
               }
-
-              // Deliver via native promptAsync - leaves composer buffer untouched
-              // Let OpenCode generate its chronological message ID. client_id
-              // remains the Cairn correlation in the acknowledgment, not a native ID.
-              const promptRes = await instClient.session.promptAsync({
-                path: { id: session_id },
-                body: {
-                  parts: [{ type: "text", text }]
-                }
-              })
+              // Register before the native call: its model hook may run before
+              // the HTTP response. The hook waits for the admission result.
+              let resolve!: (accepted: boolean) => void
+              const settled = new Promise<boolean>(done => { resolve = done })
+              const admission: Admission = { requestID: request_id, deliveryID: delivery_id, text, settled, resolve }
+              currentInstance.admissions.set(session_id, admission)
+              let promptRes: any
+              try {
+                promptRes = await instClient.session.promptIdle({
+                  path: { id: session_id },
+                  body: { requestID: request_id, parts: [{ type: "text", text }] },
+                })
+              } catch (err) {
+                admission.resolve(false)
+                currentInstance.admissions.delete(session_id)
+                throw err
+              }
               if (promptRes?.error) {
-                const errMsg = (promptRes.error as any)?.message || "promptAsync refused by server"
+                admission.resolve(false)
+                currentInstance.admissions.delete(session_id)
+                const missing = promptRes.response?.status === 404
+                const errMsg = (promptRes.error as any)?.message || "prompt_idle outcome unknown"
                 socket.write(JSON.stringify({
                   id,
                   error: {
-                    code: -32000,
-                    message: `PROMPT_REFUSED: ${errMsg}`
+                    code: missing ? -32002 : -32000,
+                    message: missing ? `SESSION_NOT_FOUND: ${errMsg}` : `PROMPT_OUTCOME_UNCERTAIN: ${errMsg}`
                   }
                 }) + "\n")
                 continue
               }
+
+              const outcome = promptRes?.data?.status
+              if (outcome !== "accepted") {
+                admission.resolve(false)
+                currentInstance.admissions.delete(session_id)
+                const busy = outcome === "busy"
+                const refused = ["conflict", "completed", "cancelled", "failed"].includes(outcome)
+                socket.write(JSON.stringify({ id, error: {
+                  code: busy ? -32600 : refused ? -32003 : -32000,
+                  message: busy ? "BUSY: native idle admission refused" :
+                    refused ? `CONFLICT: native idle admission returned ${outcome}` :
+                    "PROMPT_OUTCOME_UNCERTAIN: invalid native admission response",
+                } }) + "\n")
+                continue
+              }
+              admission.resolve(true)
 
               socket.write(JSON.stringify({
                 id,
                 result: {
                   queued: true,
                   session_id,
-                  queued_id: client_id,
+                  queued_id: delivery_id,
+                  request_id,
                   started: true
                 }
               }) + "\n")
@@ -356,7 +382,12 @@ const plugin: Plugin = async ({ directory, client }) => {
         let state = sessions.get(info.sessionID)
         if (!state || state.turn !== info.id) {
           const model = info.model ? `${info.model.providerID}/${info.model.modelID}` : ""
-          const result = await invoke(info.sessionID, "TurnStart", model, info.id)
+          const admission = admissions.get(info.sessionID)
+          const matched = admission && owner.parts.some(p => p.type === "text" && p.text === admission.text && !p.synthetic && !p.ignored)
+            ? admission : undefined
+          const accepted = matched ? await matched.settled : false
+          const result = await invoke(info.sessionID, "TurnStart", model, info.id, accepted ? matched : undefined)
+          if (accepted && admissions.get(info.sessionID) === matched) admissions.delete(info.sessionID)
           state = { turn: info.id, context: result.hookSpecificOutput?.additionalContext ?? "" }
           sessions.set(info.sessionID, state)
         }
@@ -367,10 +398,14 @@ const plugin: Plugin = async ({ directory, client }) => {
     },
     event: async ({ event }) => {
       if (event.type === "session.idle" && sessions.has(event.properties.sessionID) && !closing)
-        await enqueue(event.properties.sessionID, async () => { await invoke(event.properties.sessionID, "TurnEnd") })
+        await enqueue(event.properties.sessionID, async () => {
+          const session = sessions.get(event.properties.sessionID)
+          await invoke(event.properties.sessionID, "TurnEnd", "", session?.turn)
+          admissions.delete(event.properties.sessionID)
+        })
       if (event.type === "session.deleted" && sessions.has(event.properties.info.id)) {
         const id = event.properties.info.id
-        await enqueue(id, async () => { await invoke(id, "SessionEnd"); sessions.delete(id) })
+        await enqueue(id, async () => { await invoke(id, "SessionEnd", "", sessions.get(id)?.turn); sessions.delete(id); admissions.delete(id) })
       }
     },
     dispose: async () => {
@@ -378,8 +413,9 @@ const plugin: Plugin = async ({ directory, client }) => {
       closing = true
       disposeInstance()
       await Promise.all([...jobs.values()])
-      await Promise.all([...sessions.keys()].map(id => enqueue(id, async () => { await invoke(id, "SessionEnd") })))
+      await Promise.all([...sessions.keys()].map(id => enqueue(id, async () => { await invoke(id, "SessionEnd", "", sessions.get(id)?.turn) })))
       sessions.clear()
+      admissions.clear()
     },
   }
 }

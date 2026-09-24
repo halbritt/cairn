@@ -11,7 +11,11 @@ class QueueError(Exception):
 
 
 class QueueUnavailable(QueueError):
-    """A precondition refused before the queue submission was sent."""
+    """A pre-send refusal or atomic BUSY result proves no native admission."""
+
+
+class QueueRefused(QueueError):
+    """Native admission definitely refused this request; retain it for review."""
 
 
 BUSY_CODE = -32600
@@ -46,17 +50,21 @@ def _open(endpoint, process):
         raise QueueUnavailable('native queue endpoint is unavailable') from exc
 
 
-def enqueue(endpoint, process, native_id, text, client_id, expected_session_id=None):
-    """Submit a promptAsync wakeup to an active OpenCode session.
+def enqueue(endpoint, process, native_id, text, delivery_id, expected_session_id=None, request_id=None):
+    """Submit an atomic idle-only wakeup to an active OpenCode session.
 
-    Returns (queued_submission_id, started). QueueUnavailable proves nothing
-    was sent, so a later cycle may retry. Any failure during or after writing
-    is uncertain and must never be re-sent.
+    Returns (delivery_id, started). A BUSY result proves no admission and may
+    retry at the next idle boundary. Transport failures after sending remain
+    uncertain and must never be automatically retried.
     """
     if not native_id or not isinstance(native_id, str) or not native_id.strip():
         raise QueueUnavailable('native_id must be a nonempty string')
-    if not isinstance(client_id, str) or not client_id.strip():
-        raise QueueUnavailable('client_id must be a nonempty string')
+    if not isinstance(delivery_id, str) or not delivery_id.strip():
+        raise QueueUnavailable('delivery_id must be a nonempty string')
+    if request_id is None:
+        request_id = delivery_id
+    if not isinstance(request_id, str) or not request_id.strip():
+        raise QueueUnavailable('request_id must be a nonempty string')
     exp_id = expected_session_id or native_id
     if not exp_id or not isinstance(exp_id, str) or not exp_id.strip():
         raise QueueUnavailable('expected_session_id must be a nonempty string')
@@ -65,11 +73,12 @@ def enqueue(endpoint, process, native_id, text, client_id, expected_session_id=N
     try:
         req = {
             'id': 1,
-            'method': 'session/prompt_async',
+            'method': 'session/prompt_idle',
             'params': {
                 'session_id': native_id,
                 'text': text,
-                'client_id': client_id,
+                'delivery_id': delivery_id,
+                'request_id': request_id,
                 'expected_session_id': exp_id,
             }
         }
@@ -98,14 +107,17 @@ def enqueue(endpoint, process, native_id, text, client_id, expected_session_id=N
                 raise QueueUnavailable(f'native OpenCode busy: {message}')
             if code in (-32001, -32002) or 'SESSION_NOT_FOUND' in message or 'SESSION_MISMATCH' in message:
                 raise QueueUnavailable(f'native session unavailable: {message}')
-            raise QueueError(f'native OpenCode refused prompt_async: {message}')
+            if code == -32003 or 'CONFLICT' in message:
+                raise QueueRefused(f'native OpenCode refused prompt_idle: {message}')
+            raise QueueError(f'native OpenCode prompt_idle outcome is uncertain: {message}')
 
         result = msg.get('result')
         if (not isinstance(result, dict)
                 or result.get('queued') is not True
-                or result.get('queued_id') != client_id
+                or result.get('queued_id') != delivery_id
+                or result.get('request_id') != request_id
                 or result.get('session_id') != native_id
-                or type(result.get('started')) is not bool):
+                or result.get('started') is not True):
             raise QueueError('native queue acknowledgment is invalid; outcome is uncertain; do not automatically resend')
         return result['queued_id'], result['started']
     except QueueUnavailable:
