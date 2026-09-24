@@ -17,6 +17,9 @@ production profile: `opencode-one` keeps cancellation disabled.
 - Store: a disposable PostgreSQL cluster and `cairn serve` created by
   `scripts/opencode-cancel-trial-env.sh up /tmp/cairn-oc-trial`, with
   trial-only session and sender identities for a unique trial collection.
+  The run used the pre-hardening script (`f3c113b`). Its teardown was later
+  made to validate a process-identity manifest (`524029b`); that fix was not
+  the version used during this run.
   The production database, API socket, profile, watcher and `opencode-one`
   were not used.
 - Binding: `opencode-trial`, installed with `--root`, `--settings`,
