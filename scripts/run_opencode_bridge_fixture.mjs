@@ -33,6 +33,7 @@ const mode = process.env.OPENCODE_FIXTURE_MODE || "normal";
 // 'normal': atomic promptIdle accepts
 // 'busy': atomic promptIdle refuses with busy
 // 'conflict': requestID is already bound to different native work
+// 'completed'/'cancelled'/'failed': idempotent request already ran
 // 'sdk_error': promptIdle returns an SDK error
 // 'missing_api': client lacks promptIdle
 
@@ -61,6 +62,7 @@ if (mode !== "missing_api") {
         if (mode === "sdk_error") return { error: { message: "HTTP 500 Internal Server Error" } };
         if (mode === "busy") return { data: { status: "busy" } };
         if (mode === "conflict") return { data: { status: "conflict" } };
+        if (["completed", "cancelled", "failed"].includes(mode)) return { data: { status: mode } };
         if (process.env.OPENCODE_FIXTURE_HOOK_CAPTURE) {
           // Run the hook before the bridge has consumed the HTTP result. It
           // must wait for atomic admission before claiming the request.

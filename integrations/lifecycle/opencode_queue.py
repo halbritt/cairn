@@ -18,6 +18,14 @@ class QueueRefused(QueueError):
     """Native admission definitely refused this request; retain it for review."""
 
 
+class QueueAlreadyAdmitted(QueueError):
+    """The idempotent native request ran earlier; use owner-boundary recovery."""
+
+
+class QueueUnsupported(QueueUnavailable):
+    """The process has no native prompt_idle route; use owner boundaries."""
+
+
 BUSY_CODE = -32600
 
 
@@ -48,6 +56,25 @@ def _open(endpoint, process):
     except OSError as exc:
         _discard(transport)
         raise QueueUnavailable('native queue endpoint is unavailable') from exc
+
+
+def supports_idle(endpoint, process, native_id):
+    """Probe a peer-verified bridge for its nonmutating prompt_idle capability."""
+    transport = _open(endpoint, process)
+    try:
+        request = {'id': 4, 'method': 'session/capabilities', 'params': {'session_id': native_id}}
+        transport.sendall((json.dumps(request) + '\n').encode('utf-8'))
+        line = transport.makefile('r', encoding='utf-8').readline()
+        if not line:
+            return False
+        response = json.loads(line)
+        result = response.get('result') if isinstance(response, dict) and response.get('id') == 4 else None
+        return (isinstance(result, dict) and result.get('session_id') == native_id and
+                result.get('prompt_idle') is True)
+    except (OSError, ValueError, TypeError):
+        return False
+    finally:
+        _discard(transport)
 
 
 def enqueue(endpoint, process, native_id, text, delivery_id, expected_session_id=None, request_id=None):
@@ -105,10 +132,14 @@ def enqueue(endpoint, process, native_id, text, delivery_id, expected_session_id
             message = err.get('message', '')
             if code == BUSY_CODE:
                 raise QueueUnavailable(f'native OpenCode busy: {message}')
+            if code in (-32004, -32601) or (code == -32000 and message.startswith('UNSUPPORTED_CONTROL:')):
+                raise QueueUnsupported(f'native OpenCode prompt_idle unavailable: {message}')
             if code in (-32001, -32002):
                 raise QueueUnavailable(f'native session unavailable: {message}')
             if code == -32003:
                 raise QueueRefused(f'native OpenCode refused prompt_idle: {message}')
+            if code == -32005:
+                raise QueueAlreadyAdmitted(f'native OpenCode request already admitted: {message}')
             raise QueueError(f'native OpenCode prompt_idle outcome is uncertain: {message}')
 
         result = msg.get('result')

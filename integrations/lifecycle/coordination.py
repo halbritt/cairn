@@ -241,7 +241,13 @@ def prepare_idle_wake(config, state, path):
     delivery = ready.get('delivery_id')
     if not delivery:
         state.pop('wake_refusal', None)
+        state.pop('opencode_replay', None)
         return None
+    replay = state.get('opencode_replay', {})
+    if replay.get('delivery_id') == delivery and replay.get('session') == session_ref(agent):
+        return note_wake_refusal(config, state, delivery,
+            'native OpenCode already admitted this request; the next owner prompt can recover pending delivery')
+    state.pop('opencode_replay', None)
     endpoint = codex_queue_endpoint(config, state['process'])
     prior = state.get('idle_wake', {})
     if prior.get('delivery_id') == delivery and prior.get('session') == session_ref(agent):
@@ -271,7 +277,7 @@ def prepare_idle_wake(config, state, path):
             status='uncertain', attempted_at=time.time())
         write_state(path, state)
         return dict(wake=state['idle_wake'], process=state['process'])
-    opencode = opencode_queue_endpoint(config, state['process'])
+    opencode = opencode_idle_endpoint(config, state['process'], agent['native_session_id'], state)
     if opencode:
         state.pop('wake_refusal', None)
         # The delivery UUID is stable across a BUSY retry and is the exact
@@ -296,7 +302,7 @@ def prepare_idle_wake(config, state, path):
         return note_wake_refusal(config, state, delivery, refusal or {
             'claude': 'no live channel bridge registry for this process; its cairn-events MCP server is not running',
             'codex': 'no native Codex queue endpoint (explicit Unix listener) for this process',
-            'opencode': 'no OpenCode queue endpoint for this process',
+            'opencode': 'no verified OpenCode prompt_idle bridge for this process; owner prompts remain eligible',
             'hermes': 'no Hermes queue endpoint for this process',
         }.get(config['harness'], 'no native wake transport for this process'))
     environment = herdr_environment(state['process'])
@@ -369,6 +375,24 @@ def opencode_queue_endpoint(config, process):
         return None
     path = Path(f"/tmp/cairn-opencode-{process['pid']}.sock")
     return str(path) if path.is_socket() else None
+
+
+def opencode_idle_endpoint(config, process, native_id, state=None):
+    """Select only a peer-verified bridge advertising native idle admission."""
+    identity = {key: process.get(key) for key in ('pid', 'start', 'boot')}
+    if state and state.get('opencode_unsupported') == identity:
+        return None
+    endpoint = opencode_queue_endpoint(config, process)
+    if not endpoint:
+        return None
+    try:
+        import opencode_queue
+    except ImportError:
+        return None
+    try:
+        return endpoint if opencode_queue.supports_idle(endpoint, process, native_id) else None
+    except opencode_queue.QueueUnavailable:
+        return None
 
 
 def hermes_queue_endpoint(config, process):
@@ -527,8 +551,7 @@ def opencode_wake_binding(state, event):
             event.get('hook_event_name') != 'TurnStart' or not isinstance(turn, str) or
             not turn.strip() or len(turn.encode()) > 256 or '\0' in turn or
             event.get('request_id') != wake.get('request_id') or
-            event.get('delivery_id') != wake.get('delivery_id') or
-            event.get('prompt') != wake_message(wake)):
+            event.get('delivery_id') != wake.get('delivery_id')):
         return {}
     return dict(delivery_id=wake['delivery_id'], native_turn_id=turn, turn_exclusive=True)
 
@@ -614,6 +637,16 @@ def submit_idle_wake(config, path, prepared):
             queued_id, started = opencode_queue.enqueue(wake['endpoint'], prepared['process'],
                                                         wake['native_id'], text, wake['delivery_id'],
                                                         request_id=wake['request_id'])
+        except opencode_queue.QueueUnsupported as exc:
+            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
+            with session_lock(path):
+                state = json.loads(path.read_text())
+                if state.get('idle_wake') == wake:
+                    state.pop('idle_wake')
+                    state['opencode_unsupported'] = {key: prepared['process'].get(key)
+                                                     for key in ('pid', 'start', 'boot')}
+                    write_state(path, state)
+            return
         except opencode_queue.QueueUnavailable as exc:
             print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
             drop_idle_wake(path, wake)
@@ -625,6 +658,15 @@ def submit_idle_wake(config, path, prepared):
                 if state.get('idle_wake') == wake:
                     state['idle_wake']['status'] = 'refused'
                     state['idle_wake']['refusal'] = str(exc)
+                    write_state(path, state)
+            return
+        except opencode_queue.QueueAlreadyAdmitted as exc:
+            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
+            with session_lock(path):
+                state = json.loads(path.read_text())
+                if state.get('idle_wake') == wake:
+                    state.pop('idle_wake')
+                    state['opencode_replay'] = dict(delivery_id=wake['delivery_id'], session=wake['session'])
                     write_state(path, state)
             return
         except opencode_queue.QueueError as exc:
@@ -933,22 +975,35 @@ def inbox_context(config, state, path, observation, wake_binding=None):
             return ''  # These adapters next deliver at their pre-turn boundary.
     # A watcher may already have released a completed attempt before Stop.
     # Clear its per-turn delivery latch above even when this prompt cannot admit work.
+    opencode_pending = (state.get('idle_wake', {}).get('transport') == 'opencode-queue' and
+                        state['idle_wake'].get('session') == session_ref(state['agent']))
+    opencode_replay = state.get('opencode_replay', {}).get('session') == session_ref(state['agent'])
     if (not state.get('inbox_intent') and config.get('idle_wakeup') and
             (codex_queue_endpoint(config, state['process']) or
              hermes_queue_endpoint(config, state['process']) or
-             config['harness'] == 'opencode' or
+             (config['harness'] == 'opencode' and (opencode_pending or
+                (not opencode_replay and opencode_idle_endpoint(config, state['process'],
+                    state['agent']['native_session_id'], state)))) or
              (config['harness'] == 'claude' and config.get('claude_channel_dir'))) and not wake_binding):
         return ''  # This native wake transport owns admission; other prompts do not claim work.
     recover_inbox(config, state, path)
     if not state.get('inbox_attempt'):
         if state.get('delivered_since_idle'):
             return ''
-        state['inbox_intent'] = dict(request_id=str(uuid.uuid4()), session=session_ref(state['agent']), **(wake_binding or {}))
+        replay_binding = {}
+        if opencode_replay and observation.get('native_turn_id'):
+            replay_binding = dict(delivery_id=state['opencode_replay']['delivery_id'],
+                                  native_turn_id=observation['native_turn_id'])
+        state['inbox_intent'] = dict(request_id=str(uuid.uuid4()), session=session_ref(state['agent']),
+                                     **(wake_binding or replay_binding))
         write_state(path, state)
         recover_inbox(config, state, path)
     attempt = state.get('inbox_attempt')
     if not attempt:
         return ''
+    if state.get('opencode_replay', {}).get('delivery_id') == attempt['delivery']['delivery_id']:
+        state.pop('opencode_replay', None)
+        write_state(path, state)
     if attempt.get('finished_at'):
         release_inbox(config, state, path, 'delivery_completed')
         return ''

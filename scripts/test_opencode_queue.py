@@ -18,6 +18,52 @@ from integrations.lifecycle import coordination, opencode_queue
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def assert_owner_boundary_fallback(test, endpoint, process, state_dir, probe, state_update=None):
+    """An unpatched process must still claim pending work at an owner turn."""
+    delivery_id = '00000000-0000-4000-8000-000000000001'
+    session = dict(agent_id='fixture-agent', execution_id='fixture-execution')
+    state = dict(workspace=str(state_dir), process=process, agent=dict(**session,
+        native_session_id='ses_test', metadata=dict(workspace=str(state_dir), state='idle',
+                                                  delivery_mode='existing-session')))
+    state.update(state_update or {})
+    path = state_dir / 'session.json'
+    coordination.write_state(path, state)
+    config = dict(harness='opencode', binding='fixture', native_delivery=True, idle_wakeup=True,
+                  cairn='/usr/bin/cairn', socket='/tmp/cairn.sock', token_file='/tmp/cairn.token',
+                  state_dir=str(state_dir))
+    delivery = dict(delivery_id=delivery_id, lease_id='00000000-0000-4000-8000-000000000002',
+                    event=dict(event_id='event-one', kind='request', **{'from': 'agent/source', 'ref': {}}))
+    claims = []
+
+    def store_call(_config, operation, request, **_kwargs):
+        if operation == 'session-inbox-ready':
+            return dict(delivery_id=delivery_id)
+        if operation == 'session-inbox-claim':
+            claims.append(request.copy())
+            return dict(attempt=dict(attempt_id=request['request_id'], session=session, delivery=delivery))
+        if operation == 'session-inbox-reconcile':
+            raise coordination.CoordinationError('DELIVERY_ACTIVE', 'request still active')
+        if operation == 'event-renew':
+            return delivery
+        test.fail(f'unexpected store operation: {operation}')
+
+    with patch.object(coordination, 'call', side_effect=store_call), \
+            patch.object(coordination, 'opencode_queue_endpoint', return_value=endpoint), \
+            patch.dict('sys.modules', {'opencode_queue': opencode_queue}):
+        probe()
+        with coordination.session_lock(path):
+            test.assertIsNone(coordination.prepare_idle_wake(config, state, path))
+            coordination.write_state(path, state)
+        test.assertNotIn('idle_wake', state)
+        probe()
+        result = coordination.inbox_context(config, state, path, dict(
+            event='TurnStart', phase='busy', native_turn_id='msg_owner'))
+    test.assertIn('Cairn has a request', result)
+    test.assertEqual(len(claims), 1)
+    test.assertNotIn('turn_exclusive', claims[0])
+    return claims[0]
+
+
 class OpenCodeQueueTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -62,7 +108,14 @@ class OpenCodeQueueTests(unittest.TestCase):
                         conn.sendall((json.dumps(behavior) + '\n').encode('utf-8'))
                         return
 
-                    if method == 'session/prompt_idle':
+                    if method == 'session/capabilities':
+                        if behavior == 'old_plugin':
+                            resp = {'id': req_id, 'error': {'code': -32601, 'message': 'Method session/capabilities not found'}}
+                        else:
+                            resp = {'id': req_id, 'result': {
+                                'session_id': params.get('session_id'), 'prompt_idle': behavior != 'missing_api'}}
+                        conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
+                    elif method == 'session/prompt_idle':
                         if behavior == 'not_found':
                             resp = {'id': req_id, 'error': {'code': -32002, 'message': 'SESSION_NOT_FOUND: session does not exist'}}
                         elif behavior == 'mismatch':
@@ -135,6 +188,51 @@ class OpenCodeQueueTests(unittest.TestCase):
         self.assertEqual(self.requests[0]['method'], 'session/prompt_idle')
         # No abort was sent; active turn remains unmolested
 
+    def test_old_plugin_endpoint_falls_back_to_owner_boundary(self):
+        claim = assert_owner_boundary_fallback(
+            self, self.path, self.process, Path(self.temp.name), lambda: self.serve('old_plugin'))
+        self.join_workers()
+        self.assertEqual(claim['session']['agent_id'], 'fixture-agent')
+        self.assertEqual([request['method'] for request in self.requests],
+                         ['session/capabilities', 'session/capabilities'])
+
+    def test_unpatched_bridge_codes_are_definite_no_admission(self):
+        for code, message in ((-32601, 'Method session/prompt_idle not found'),
+                              (-32000, 'UNSUPPORTED_CONTROL: native prompt_idle capability unavailable'),
+                              (-32004, 'UNSUPPORTED_CONTROL: prompt_idle route missing')):
+            with self.subTest(code=code):
+                self.serve({'id': 1, 'error': {'code': code, 'message': message}})
+                with self.assertRaises(opencode_queue.QueueUnavailable):
+                    opencode_queue.enqueue(self.path, self.process, 'ses_test', 'wake', 'delivery_one')
+                self.join_workers()
+
+    def test_unsupported_response_disables_wake_for_this_process(self):
+        delivery_id = '00000000-0000-4000-8000-000000000001'
+        session = dict(agent_id='fixture-agent', execution_id='fixture-execution')
+        state = dict(workspace=self.temp.name, process=self.process, agent=dict(**session,
+            native_session_id='ses_test', metadata=dict(workspace=self.temp.name, state='idle',
+                                                        delivery_mode='existing-session')))
+        path = Path(self.temp.name) / 'unsupported.json'
+        coordination.write_state(path, state)
+        config = dict(harness='opencode', binding='fixture', native_delivery=True, idle_wakeup=True)
+        with patch.object(coordination, 'call', return_value=dict(delivery_id=delivery_id)), \
+                patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path), \
+                patch.dict('sys.modules', {'opencode_queue': opencode_queue}):
+            with coordination.session_lock(path):
+                prepared = coordination.prepare_idle_wake(config, state, path)
+            self.serve({'id': 1, 'error': {'code': -32004,
+                                         'message': 'UNSUPPORTED_CONTROL: prompt_idle route missing'}})
+            coordination.submit_idle_wake(config, path, prepared)
+            self.join_workers()
+        state = json.loads(path.read_text())
+        self.assertNotIn('idle_wake', state)
+        identity = {key: self.process[key] for key in ('pid', 'start', 'boot')}
+        self.assertEqual(state['opencode_unsupported'], identity)
+        with tempfile.TemporaryDirectory() as tmp:
+            claim = assert_owner_boundary_fallback(self, self.path, self.process, Path(tmp),
+                                                   lambda: None, dict(opencode_unsupported=identity))
+        self.assertEqual(claim['session'], session)
+
     def test_busy_retries_the_same_delivery_at_next_idle(self):
         state_path = Path(self.temp.name) / 'session.json'
         delivery = '00000000-0000-4000-8000-000000000001'
@@ -144,7 +242,7 @@ class OpenCodeQueueTests(unittest.TestCase):
             metadata=dict(workspace=self.temp.name, state='idle', delivery_mode='existing-session')))
         coordination.write_state(state_path, state)
         with patch.object(coordination, 'call', return_value=dict(delivery_id=delivery)), \
-                patch.object(coordination, 'opencode_queue_endpoint', return_value=self.path), \
+                patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path), \
                 patch.dict('sys.modules', {'opencode_queue': opencode_queue}):
             with coordination.session_lock(state_path):
                 prepared = coordination.prepare_idle_wake(config, state, state_path)
@@ -175,9 +273,11 @@ class OpenCodeQueueTests(unittest.TestCase):
         self.assertEqual(coordination.opencode_wake_binding(state, event), dict(
             delivery_id=delivery, native_turn_id='msg_native_one', turn_exclusive=True))
         for field, value in [('request_id', 'other'), ('delivery_id', 'other'),
-                             ('prompt', 'owner text'), ('turn_id', ''), ('hook_event_name', 'TurnEnd')]:
+                             ('turn_id', ''), ('hook_event_name', 'TurnEnd')]:
             with self.subTest(field=field):
                 self.assertEqual(coordination.opencode_wake_binding(state, dict(event, **{field: value})), {})
+        self.assertEqual(coordination.opencode_wake_binding(state, dict(event, prompt='older wake text')),
+                         dict(delivery_id=delivery, native_turn_id='msg_native_one', turn_exclusive=True))
 
     def test_admitted_turn_is_claimed_exclusively_for_exact_delivery(self):
         delivery_id = '00000000-0000-4000-8000-000000000001'
@@ -218,6 +318,55 @@ class OpenCodeQueueTests(unittest.TestCase):
         self.assertEqual(claim[0]['delivery_id'], delivery_id)
         self.assertEqual(claim[0]['native_turn_id'], 'msg_native_one')
         self.assertIs(claim[0]['turn_exclusive'], True)
+
+    def test_terminal_replay_recovers_exact_delivery_on_owner_turn(self):
+        delivery_id = '00000000-0000-4000-8000-000000000001'
+        session = dict(agent_id='fixture-agent', execution_id='fixture-execution')
+        state = dict(workspace=self.temp.name, process=self.process, agent=dict(**session,
+            native_session_id='ses_test', metadata=dict(workspace=self.temp.name, state='idle',
+                                                        delivery_mode='existing-session')))
+        path = Path(self.temp.name) / 'session.json'
+        coordination.write_state(path, state)
+        config = dict(harness='opencode', binding='fixture', native_delivery=True,
+                      idle_wakeup=True, cairn='/usr/bin/cairn', socket='/tmp/cairn.sock',
+                      token_file='/tmp/cairn.token', state_dir=self.temp.name)
+        delivery = dict(delivery_id=delivery_id, lease_id='00000000-0000-4000-8000-000000000002',
+                        event=dict(event_id='event-one', kind='request', **{'from': 'agent/source', 'ref': {}}))
+        claims = []
+
+        def store_call(_config, operation, request, **_kwargs):
+            if operation == 'session-inbox-ready':
+                return dict(delivery_id=delivery_id)
+            if operation == 'session-inbox-claim':
+                claims.append(request.copy())
+                return dict(attempt=dict(attempt_id=request['request_id'], session=session, delivery=delivery))
+            if operation == 'session-inbox-reconcile':
+                raise coordination.CoordinationError('DELIVERY_ACTIVE', 'request still active')
+            if operation == 'event-renew':
+                return delivery
+            self.fail(f'unexpected store operation: {operation}')
+
+        with patch.object(coordination, 'call', side_effect=store_call), \
+                patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path), \
+                patch.dict('sys.modules', {'opencode_queue': opencode_queue}):
+            with coordination.session_lock(path):
+                prepared = coordination.prepare_idle_wake(config, state, path)
+            self.serve({'id': 1, 'error': {'code': -32005, 'message': 'ALREADY_ADMITTED: native request is completed'}})
+            coordination.submit_idle_wake(config, path, prepared)
+            self.join_workers()
+            state = json.loads(path.read_text())
+            self.assertNotIn('idle_wake', state)
+            self.assertEqual(state['opencode_replay']['delivery_id'], delivery_id)
+            with coordination.session_lock(path):
+                self.assertIsNone(coordination.prepare_idle_wake(config, state, path))
+            result = coordination.inbox_context(config, state, path, dict(
+                event='TurnStart', phase='busy', native_turn_id='msg_owner'))
+        self.assertIn('Cairn has a request', result)
+        self.assertEqual(len(self.requests), 1, 'terminal replay must not be submitted again')
+        self.assertEqual(len(claims), 1)
+        self.assertEqual(claims[0]['delivery_id'], delivery_id)
+        self.assertEqual(claims[0]['native_turn_id'], 'msg_owner')
+        self.assertNotIn('turn_exclusive', claims[0])
 
     def test_stale_native_session_refusal(self):
         """3. Refuses when native session is not found or has mismatched expectation."""
@@ -276,7 +425,7 @@ class OpenCodeQueueTests(unittest.TestCase):
             return ready
 
         with patch.object(coordination, 'call', side_effect=ready_call), \
-                patch.object(coordination, 'opencode_queue_endpoint', return_value=self.path), \
+                patch.object(coordination, 'opencode_idle_endpoint', return_value=self.path), \
                 patch.dict('sys.modules', {'opencode_queue': opencode_queue}):
             for outcome in ('confirm', 'drop', {'id': 99, 'result': {}},
                             {'id': 1, 'error': {'code': -32003, 'message': 'CONFLICT: request belongs to another prompt'}}):
@@ -479,6 +628,22 @@ class OpenCodeBridgeFixtureTests(unittest.TestCase):
         with self.assertRaises(opencode_queue.QueueRefused) as ctx:
             opencode_queue.enqueue(endpoint, process, 'ses_test', 'wake text', 'req_conflict')
         self.assertIn('CONFLICT', str(ctx.exception))
+
+    def test_fixture_new_plugin_without_native_api_falls_back_to_owner_boundary(self):
+        _, endpoint, process = self.start_fixture(mode='missing_api')
+        self.assertFalse(opencode_queue.supports_idle(endpoint, process, 'ses_test'))
+        with self.assertRaises(opencode_queue.QueueUnavailable):
+            opencode_queue.enqueue(endpoint, process, 'ses_test', 'wake', 'delivery_one')
+        with tempfile.TemporaryDirectory() as tmp:
+            assert_owner_boundary_fallback(self, endpoint, process, Path(tmp), lambda: None)
+
+    def test_fixture_terminal_replay_is_already_admitted(self):
+        for mode in ('completed', 'cancelled', 'failed'):
+            with self.subTest(mode=mode):
+                _, endpoint, process = self.start_fixture(mode=mode)
+                with self.assertRaises(opencode_queue.QueueAlreadyAdmitted) as ctx:
+                    opencode_queue.enqueue(endpoint, process, 'ses_test', 'wake', 'delivery_one')
+                self.assertIn(mode, str(ctx.exception))
 
     def test_fixture_session_not_found(self):
         """Fixture: Session not found returns -32002 SESSION_NOT_FOUND (QueueUnavailable)."""
@@ -684,8 +849,9 @@ class OpenCodeNativeSchemaTests(unittest.TestCase):
         })
         with self.assertRaises(opencode_queue.QueueUnavailable) as outcome:
             opencode_queue.enqueue(endpoint, process, 'ses_fixture_missing', 'schema fixture', delivery_id)
-        # No session exists: native lookup rejects only AFTER request validation.
-        self.assertIn('SESSION_NOT_FOUND', str(outcome.exception))
+        # The fixture's fake preflight succeeds, then the isolated native
+        # server returns 404 for the missing session after payload validation.
+        self.assertIn('UNSUPPORTED_CONTROL', str(outcome.exception))
         submitted = [json.loads(line) for line in capture.read_text().splitlines()]
         self.assertEqual(len(submitted), 1)
         self.assertEqual(submitted[0]['body']['requestID'], delivery_id)

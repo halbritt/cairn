@@ -189,7 +189,18 @@ const plugin: Plugin = async ({ directory, client }) => {
           const instClient = currentInstance.client
 
           try {
-            if (method === "session/prompt_idle") {
+            if (method === "session/capabilities") {
+              const session_id = params.session_id
+              if (typeof session_id !== "string" || !session_id.trim()) {
+                socket.write(JSON.stringify({ id, error: { code: -32602, message: "session_id must be a nonempty string" } }) + "\n")
+                continue
+              }
+              socket.write(JSON.stringify({ id, result: {
+                session_id,
+                prompt_idle: typeof instClient?.session?.promptIdle === "function",
+              } }) + "\n")
+              continue
+            } else if (method === "session/prompt_idle") {
               const { session_id, text, delivery_id, request_id, expected_session_id } = params
               if ([session_id, text, delivery_id, request_id].some(value => typeof value !== "string" || !value.trim())) {
                 socket.write(JSON.stringify({ id, error: { code: -32602, message: "session_id, text, delivery_id, and request_id must be nonempty strings" } }) + "\n")
@@ -210,7 +221,7 @@ const plugin: Plugin = async ({ directory, client }) => {
                 socket.write(JSON.stringify({
                   id,
                   error: {
-                    code: -32000,
+                    code: -32004,
                     message: "UNSUPPORTED_CONTROL: native prompt_idle capability unavailable"
                   }
                 }) + "\n")
@@ -251,13 +262,16 @@ const plugin: Plugin = async ({ directory, client }) => {
               if (promptRes?.error) {
                 admission.resolve(false)
                 currentInstance.admissions.delete(session_id)
-                const missing = promptRes.response?.status === 404
+                // A successful session.get above means a 404 here is the
+                // unpatched route, not a missing session.
+                const missingRoute = promptRes.response?.status === 404
                 const errMsg = (promptRes.error as any)?.message || "prompt_idle outcome unknown"
                 socket.write(JSON.stringify({
                   id,
                   error: {
-                    code: missing ? -32002 : -32000,
-                    message: missing ? `SESSION_NOT_FOUND: ${errMsg}` : `PROMPT_OUTCOME_UNCERTAIN: ${errMsg}`
+                    code: missingRoute ? -32004 : -32000,
+                    message: missingRoute ? `UNSUPPORTED_CONTROL: prompt_idle route missing (${errMsg})` :
+                      `PROMPT_OUTCOME_UNCERTAIN: ${errMsg}`
                   }
                 }) + "\n")
                 continue
@@ -268,11 +282,13 @@ const plugin: Plugin = async ({ directory, client }) => {
                 admission.resolve(false)
                 currentInstance.admissions.delete(session_id)
                 const busy = outcome === "busy"
-                const refused = ["conflict", "completed", "cancelled", "failed"].includes(outcome)
+                const refused = outcome === "conflict"
+                const prior = ["completed", "cancelled", "failed"].includes(outcome)
                 socket.write(JSON.stringify({ id, error: {
-                  code: busy ? -32600 : refused ? -32003 : -32000,
+                  code: busy ? -32600 : refused ? -32003 : prior ? -32005 : -32000,
                   message: busy ? "BUSY: native idle admission refused" :
                     refused ? `CONFLICT: native idle admission returned ${outcome}` :
+                    prior ? `ALREADY_ADMITTED: native request is ${outcome}` :
                     "PROMPT_OUTCOME_UNCERTAIN: invalid native admission response",
                 } }) + "\n")
                 continue
