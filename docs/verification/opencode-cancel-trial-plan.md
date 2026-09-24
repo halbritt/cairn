@@ -1,9 +1,9 @@
 # OpenCode real-model cancellation trial (CAIRN-2): plan
 
-Status: **prepared, not run.** Execution waits for agent-112's OpenCode
-request-cancel bridge (the request-specific cancel route, session-inbox-control
-polling, tool capture/stop reports and reconciliation) to be reviewed, merged
-and enabled. Until then native cancellation stays `UNSUPPORTED_CONTROL`
+Status: **prepared, not run.** The request-specific bridge and host cleanup
+adapter are on `agent112/opencode-cancel-host` for review. Execution waits for
+that branch to be merged and installed on an owned scratch OpenCode binding
+with `--opencode-cancel-trial`. Until then native cancellation stays `UNSUPPORTED_CONTROL`
 ([request-controls](../request-controls.md)), and nothing here claims it works.
 
 The core contract already has synthetic and disposable-database coverage. This
@@ -33,7 +33,8 @@ observer that reads `/proc` without consulting Cairn.
 ## Setup
 
 - An owned tmux session running the installed OpenCode build with the bridge
-  enabled, in a scratch directory under `/tmp/cairn-draft-trial/`, registered
+  enabled and the Cairn binding installed with `--opencode-cancel-trial`, in a
+  scratch directory under `/tmp/cairn-draft-trial/`, registered
   through the normal native path. Never a session someone else is using.
 - The request is published to that session's inbox with an ordinary `request`
   event. The body asks the model to run exactly one fixture command. Nothing is
@@ -77,3 +78,6 @@ For each case, record in `docs/verification/opencode-cancel-trial-<date>.md`:
 
 Keep the prompt and model output out of the record beyond the fixture command.
 Leave no survivors: run `cleanup` on every ledger before ending the trial.
+The fixture retains Cairn's shell environment marker. A process that erases
+that marker or changes user identity is outside this trial's scan coverage;
+passing these cases does not establish general tool-process cleanup.
