@@ -951,7 +951,7 @@ def opencode_inbox_control(config, state, path):
     Cancellation can arrive between hooks and watcher ticks. A local attempt
     snapshot cannot authorize renewal, completion, or native stop decisions.
     """
-    if config['harness'] != 'opencode' or not state.get('inbox_attempt'):
+    if config.get('harness') != 'opencode' or not state.get('inbox_attempt'):
         return None
     local = state['inbox_attempt']
     result = call(config, 'session-inbox-control', session_ref(state['agent']))
@@ -1160,7 +1160,7 @@ def release_inbox(config, state, path, reason, fenced=False):
 def watch_inbox(config, state, path):
     if not state.get('inbox_intent'):
         return
-    if config['harness'] == 'opencode':
+    if config.get('harness') == 'opencode':
         attempt = opencode_inbox_control(config, state, path)
         if not attempt and state.get('inbox_close', {}).get('reason') in ('cancel_confirmed', 'exclusivity_revoked'):
             release_inbox(config, state, path, state['inbox_close']['reason'])
@@ -1187,7 +1187,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         return ''
     owner_turn = state.get('inbox_intent', {}).get('native_turn_id')
     if owner_turn and owner_turn != observation.get('native_turn_id'):
-        if config['harness'] == 'opencode' and observation['event'] == 'TurnStart':
+        if config.get('harness') == 'opencode' and observation['event'] == 'TurnStart':
             attempt = opencode_inbox_control(config, state, path)
             if attempt and attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
                 if attempt.get('turn_stop_state') not in ('ended', 'interrupted'):
@@ -1214,7 +1214,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
                 try:
                     release_inbox(config, state, path, 'turn_ended')
                 except CoordinationError as exc:
-                    if config['harness'] != 'opencode' or exc.code != 'CLEANUP_UNCONFIRMED':
+                    if config.get('harness') != 'opencode' or exc.code != 'CLEANUP_UNCONFIRMED':
                         raise
                     # Cancellation won the race after the control read.
                     attempt = opencode_inbox_control(config, state, path)
@@ -1254,7 +1254,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     attempt = state.get('inbox_attempt')
     if not attempt:
         return ''
-    if config['harness'] == 'opencode':
+    if config.get('harness') == 'opencode':
         attempt = opencode_inbox_control(config, state, path)
         if not attempt:
             return ''
@@ -1300,7 +1300,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     write_state(target, context)
     state['delivered_since_idle'] = True
     wake = state.get('idle_wake', {})
-    if (config['harness'] == 'opencode' and wake.get('transport') == 'opencode-queue' and
+    if (config.get('harness') == 'opencode' and wake.get('transport') == 'opencode-queue' and
             wake.get('delivery_id') == attempt['delivery']['delivery_id'] and
             isinstance(wake.get('endpoint'), str)):
         state['opencode_request_endpoint'] = wake['endpoint']
