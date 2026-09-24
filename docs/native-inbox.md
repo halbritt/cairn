@@ -42,7 +42,10 @@ that poll cannot change its delivery or turn, including after an API restart.
 Another turn cannot receive or finish the retained context. The context and
 operator review expose the selected `native_turn_id`; raw prompts are not stored.
 Other native routes retain their existing boundary behavior. A recorded turn ID
-does not yet provide interactive cancellation or prove that its tools have stopped.
+pins per-request ownership: operator cancellation (`work-cancel`) fences
+completion through the attempt, and the Codex stop contract interrupts exactly
+that turn, terminates durably captured tool handles and releases the hold only
+on confirmed cleanup. See [request controls](request-controls.md).
 
 One unfinished native attempt owns the session inbox. A normal inbox consumer
 cannot claim another item while that hold exists. Fresh-worker claims reject

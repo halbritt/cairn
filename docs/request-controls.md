@@ -89,6 +89,42 @@ its stop command. Even when that command fails, the supervisor checks the final
 unit and cgroup state before deciding whether cleanup finished. A still-running
 unit or an unreadable final state retains the hold.
 
+## Native interactive cancellation
+
+`work-cancel` on a delivery held by a native session attempt no longer refuses.
+It records a durable cancellation on that attempt and returns
+`native.state="cancel_pending"` with the exact agent, execution, attempt and
+pinned native turn. The fence applies immediately: `complete`, `event-renew` and
+`event-retry` on that delivery fail with `REQUEST_CANCELLED` until the
+cancellation is reconciled. A repeated cancellation observes the same pending
+intent; it never resets or drifts. Manual leases without a wake or native
+attempt remain `UNSUPPORTED_CONTROL`.
+
+The hold survives the fence. While the cancellation is pending,
+`session-inbox-reconcile` with `turn_ended`, `process_exited` or
+`delivery_completed` is refused with `CLEANUP_UNCONFIRMED`, and the binding's
+watcher stands down ordinary renewal. Only `cancel_confirmed` releases the
+attempt, and only after the host reported the pinned turn stopped
+(`turn_stop_state` in `interrupted`, `ended` or `unavailable`) and every
+captured tool process terminal. On confirmation the delivery fails with
+`operator_cancelled` and control attribution from the recorded operator intent.
+
+Tool ownership is durable because historical item reads omit running tools.
+The Codex capture listener subscribes to the binding's own app-server socket
+(peer-verified) and records `item/started` handles whose `turnId` equals the
+attempt's pinned turn through `session-tool-capture`; items from any other
+turn are refused. The bounded stop sequence interrupts exactly that turn
+(`turn/interrupt` with the pinned id; an inactive or replaced active turn is
+reported `ended` and never substituted), terminates only captured handles via
+`thread/backgroundTerminals/terminate`, verifies absence through
+`thread/backgroundTerminals/list`, and persists its intent to local state
+before each native call so an adapter crash resumes rather than replays.
+Handles that cannot be terminated but are verified absent close as
+`unavailable`. A tool that remains listed past the bounded budget keeps the
+hold with reason `tools_remaining`; `coordination-review` exposes the pending
+cancellation, stop state and open tool count. Killing a shared gateway or an
+interactive process is not part of this contract.
+
 ## Sweep, review and recovery
 
 `cairn request-control-sweep` accepts `{"repo":"/home/halbritt/git/cairn"}`.

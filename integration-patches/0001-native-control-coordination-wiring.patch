@@ -1,0 +1,76 @@
+--- a/integrations/lifecycle/coordination.py
++++ b/integrations/lifecycle/coordination.py
+@@ -12,6 +12,7 @@
+ import shlex
+ import subprocess
+ import sys
++import native_control
+ import tempfile
+ import threading
+ import time
+@@ -296,7 +297,7 @@
+             not turn.strip() or len(turn.encode()) > 256 or '\0' in turn or
+             event.get('prompt') != wake_message(wake)):
+         return {}
+-    return dict(delivery_id=wake['delivery_id'], native_turn_id=turn)
++    return dict(delivery_id=wake['delivery_id'], native_turn_id=turn, turn_exclusive=True)
+ 
+ 
+ def channel_wake_binding(state, event, joined=False):
+@@ -687,6 +688,8 @@
+ 
+ 
+ def watch_inbox(config, state, path):
++    if state.get('native_cancel'):
++        return
+     if not state.get('inbox_intent') or release_inbox(config, state, path, 'delivery_completed'):
+         return
+     attempt = state['inbox_attempt']
+@@ -699,6 +702,10 @@
+ def inbox_context(config, state, path, observation, wake_binding=None):
+     if not config.get('native_delivery'):
+         return ''
++    if state.get('inbox_attempt'):
++        current = call(config, 'session-inbox-control', session_ref(state['agent']))
++        if (current.get('attempt') or {}).get('cancel'):
++            return ''
+     owner_turn = state.get('inbox_intent', {}).get('native_turn_id')
+     if owner_turn and owner_turn != observation.get('native_turn_id'):
+         raise CoordinationError('NATIVE_TURN_MISMATCH', 'another native turn cannot take over or end this request')
+@@ -951,8 +958,16 @@
+                         state["agent"] = call(config, "agent-register", state["registration"])
+                     else:
+                         state["agent"] = heartbeat(config, state)
++                        endpoint = codex_queue_endpoint(config, state['process'])
++                        capture_ready = True
++                        if endpoint:
++                            peer = queue_helper().verified_peer(endpoint['endpoint'], state['process'], endpoint['owner'])
++                            capture_ready = native_control.ensure_capture(config, state, path,
++                                endpoint['endpoint'], peer=peer)
++                            native_control.pending_cancellation(config, state, path, endpoint['endpoint'], peer=peer)
+                         watch_inbox(config, state, path)
+-                        prepared = prepare_idle_wake(config, state, path)
++                        if capture_ready:
++                            prepared = prepare_idle_wake(config, state, path)
+                 elif not state.get("agent"):
+                     # An uncertain registration may have committed; without an
+                     # observed response it expires naturally within 90 seconds.
+@@ -962,7 +977,7 @@
+                 write_state(path, state)
+             if prepared:
+                 submit_idle_wake(config, path, prepared)
+-        except CoordinationError as exc:
++        except (CoordinationError, native_control.ControlError) as exc:
+             if exc.code == "SESSION_BUSY":
+                 continue  # The hook owns presence until it releases this lock.
+             print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
+--- a/scripts/install-agent-coordination.py
++++ b/scripts/install-agent-coordination.py
+@@ -40,6 +40,7 @@
+     engine.load_config(config_path)
+     shutil.copyfile(ROOT / 'integrations/lifecycle/codex_queue.py', root / 'codex_queue.py')
+     shutil.copyfile(ROOT / 'integrations/lifecycle/claude_channel.py', root / 'claude_channel.py')
++    shutil.copyfile(ROOT / 'integrations/lifecycle/native_control.py', root / 'native_control.py')
+     shutil.copyfile(ROOT / 'integrations/lifecycle/coordination.py', script)
+     script.chmod(0o700)
+     command = [sys.executable, str(script), 'hook', '--config', str(config_path)]

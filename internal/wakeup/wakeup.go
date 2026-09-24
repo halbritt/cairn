@@ -237,10 +237,18 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 	}
 	for ctx.Err() == nil {
 		if err = heartbeat(); err != nil {
+			if orderlyShutdown(ctx, err) {
+				break
+			}
 			return err
 		}
 		var claimed core.WakeResult
 		if err = client.Call(ctx, "wake-claim", core.WakeClaimRequest{RequestID: uuid.NewString(), Repo: c.Repo, WorkerID: worker.SupervisorID}, &claimed); err != nil {
+			// A SIGTERM landing while the claim RPC is in flight surfaces as
+			// its cancellation; that is an orderly shutdown, not a failure.
+			if orderlyShutdown(ctx, err) {
+				break
+			}
 			return err
 		}
 		if claimed.Attempt == nil {
@@ -269,7 +277,9 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 				controlErr := client.Call(controlCtx, "wake-control", core.WakeControlRequest{AttemptID: w.ID}, &control)
 				cancelControl()
 				if controlErr != nil {
-					launchErr = controlErr
+					if !orderlyShutdown(ctx, controlErr) {
+						launchErr = controlErr
+					}
 					break
 				}
 				if control.StopReason != "" {
@@ -322,6 +332,13 @@ func Serve(ctx context.Context, path string, log io.Writer) error {
 	}
 	return nil
 }
+
+// orderlyShutdown reports whether an outer-loop RPC error is only the effect
+// of this supervisor's own shutdown canceling an in-flight call.
+func orderlyShutdown(ctx context.Context, err error) bool {
+	return ctx.Err() != nil && errors.Is(err, context.Canceled)
+}
+
 func pause(ctx context.Context, d time.Duration) bool {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
