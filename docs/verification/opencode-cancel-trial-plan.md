@@ -1,10 +1,9 @@
 # OpenCode real-model cancellation trial (CAIRN-2): plan
 
-Status: **prepared, not run.** The request-specific bridge and host cleanup
-adapter are merged on `main` at `781c77a`. Execution waits for an owned scratch
-OpenCode binding installed with `--opencode-cancel-trial`. Until then native
-cancellation stays `UNSUPPORTED_CONTROL`
-([request-controls](../request-controls.md)), and nothing here claims it works.
+Status: **run on 2026-09-24; C1 to C5 passed** on one owned scratch session
+([record](opencode-cancel-trial-2026-09-24.md)). Native cancellation stays
+disabled in installed profiles until it is deliberately enabled; this trial
+does not establish general tool-process cleanup.
 
 The core contract already has synthetic and disposable-database coverage. This
 trial adds host observation: a real model, a real tool process tree, and an
