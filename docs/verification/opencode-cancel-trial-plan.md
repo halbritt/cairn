@@ -32,6 +32,9 @@ observer that reads `/proc` without consulting Cairn.
 
 ## Setup
 
+- A disposable Cairn PostgreSQL cluster and API socket with a trial-only agent
+  profile. Point the scratch binding at this API and profile. Do not use the
+  existing production database for the trial or its cleanup.
 - An owned tmux session running the installed OpenCode build with the bridge
   enabled and the Cairn binding installed with `--opencode-cancel-trial`, in a
   scratch directory under `/tmp/cairn-draft-trial/`, registered
@@ -78,6 +81,13 @@ For each case, record in `docs/verification/opencode-cancel-trial-<date>.md`:
 
 Keep the prompt and model output out of the record beyond the fixture command.
 Leave no survivors: run `cleanup` on every ledger before ending the trial.
+If C5 leaves an uncertain stop and a held attempt, record that held state as
+the expected result. After the independent observer confirms every fixture
+process is gone, stop the owned scratch session and dispose of the trial
+database; do not manufacture a positive turn-stop report or clear a production
+hold to make the case look complete. The one-shot native stop can leave this
+held state after a lost response, and recovery requires an explicit operator
+decision outside the automatic watcher path.
 The fixture retains Cairn's shell environment marker. A process that erases
 that marker or changes user identity is outside this trial's scan coverage;
 passing these cases does not establish general tool-process cleanup.
