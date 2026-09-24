@@ -159,8 +159,23 @@ def post(url, body, headers, timeout):
     request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
     with urllib.request.urlopen(request, timeout=timeout) as response:
         answer = json.load(response)["answers"]["skill"]
-    return {"choice": answer["choice"], "confidence": float(answer.get("confidence") or 0.0),
-            "probabilities": answer.get("probabilities") or {}}
+    return valid_answer(answer)
+
+
+def valid_answer(answer):
+    """The answer in the shape the router uses, or ValueError for any other shape."""
+    if not isinstance(answer, dict) or not isinstance(answer.get("choice"), str):
+        raise ValueError("answer lacks a string choice")
+    confidence = answer.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        raise ValueError("answer lacks a numeric confidence")
+    probabilities = answer.get("probabilities")
+    if probabilities is None:
+        probabilities = {}
+    if not isinstance(probabilities, dict) or not all(
+            isinstance(k, str) and isinstance(v, (int, float)) and not isinstance(v, bool) for k, v in probabilities.items()):
+        raise ValueError("answer probabilities are not a name-to-number map")
+    return {"choice": answer["choice"], "confidence": float(confidence), "probabilities": dict(probabilities)}
 
 
 def ask(body, opts):
@@ -240,7 +255,16 @@ class Route:
             self.outcome = dict(fired=False, reason="error: " + type(exc).__name__)
 
     def merge(self, result, state):
-        """The memory result with the chosen skill added; unchanged when nothing fires."""
+        """The memory result with the chosen skill added; unchanged when nothing fires or anything fails."""
+        try:
+            return self._merge(result, state)
+        except Exception as exc:
+            state["last_route"] = dict(at=time.time(), fired=False, reason="error: " + type(exc).__name__)
+            log(self.config, dict(at=time.time(), session=self.event.get("session_id"), fired=False,
+                                  reason="error: " + type(exc).__name__))
+            return result
+
+    def _merge(self, result, state):
         self.thread.join(timeout=max(0.0, self.deadline - time.monotonic()))
         outcome = self.outcome or dict(fired=False, reason="timeout")
         record = dict(at=time.time(), session=self.event["session_id"], harness=self.config.get("harness") or "claude",

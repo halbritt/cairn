@@ -143,7 +143,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
       await enqueue(sessionID, () => capture(sessionID, "PreCompact"))
       compacting.add(sessionID)
       const state = sessions.get(sessionID)
-      if (state) { state.started = false; state.turn = undefined; state.blocks.clear() }
+      if (state) { state.started = false; state.turn = undefined; state.blocks.clear(); state.skills.clear() }
     },
     event: async ({ event }) => {
       if (event.type === "message.part.updated") {

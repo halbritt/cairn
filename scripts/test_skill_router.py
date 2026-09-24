@@ -226,6 +226,30 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(result, self.memory)
         self.assertEqual(self.log_lines()[-1]["reason"], "no leg")
 
+    def test_malformed_answers_fall_through_and_keep_memory(self):
+        malformed = [
+            {"type": "choice", "choice": "hidden-a", "confidence": 0.95, "probabilities": [0.95]},
+            {"type": "choice", "choice": "hidden-a", "confidence": "high", "probabilities": {}},
+            {"type": "choice", "choice": ["hidden-a"], "confidence": 0.95},
+            {"type": "choice", "choice": "hidden-a", "confidence": 0.95, "probabilities": {"hidden-a": "x"}},
+            ["not", "a", "mapping"],
+        ]
+        self.kev.mode = "error"
+        for answer in malformed:
+            self.jev.answer = answer
+            with patch.object(hook, "recall", return_value=self.memory), patch.object(hook, "Memory"):
+                (Path(self.config["state_dir"]) / (SESSION + ".json")).unlink(missing_ok=True)
+                self.assertEqual(hook.handle(self.config, self.event), self.memory, answer)
+            self.assertEqual(self.log_lines()[-1]["reason"], "no leg", answer)
+            self.assertIn("jev: ValueError", self.log_lines()[-1]["errors"], answer)
+
+    def test_any_merge_failure_keeps_memory(self):
+        self.jev.choose("hidden-a", 0.95)
+        with patch.object(router, "skill_text", side_effect=RuntimeError("boom")):
+            result, state = self.route(result=self.memory)
+        self.assertEqual(result, self.memory)
+        self.assertEqual(state["last_route"]["reason"], "error: RuntimeError")
+
     def test_oversized_skill_becomes_a_pointer(self):
         self.jev.choose("big-c", 0.97)
         result, _ = self.route(result=self.memory)

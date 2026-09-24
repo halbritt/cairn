@@ -93,6 +93,13 @@ try {
   assert.equal(rendered.split("ROUTED SKILL").length - 1, 2, "A turn with no route adds nothing and keeps both skills")
   rendered = await skillTransform([said("s3", "plain")])
   assert.equal(rendered.split("ROUTED SKILL").length - 1, 0, "Skills leave with their messages")
+  const compacted = [said("c1", "skill-only")]
+  assert.equal((await skillTransform(compacted)).split("ROUTED SKILL skill-only").length - 1, 1)
+  await skillHooks["experimental.session.compacting"]({ sessionID: "ses_skill" }, { context: [] })
+  await skillTransform(compacted)  // the compaction request itself acquires nothing
+  compacted.push(said("c2", "plain"))
+  rendered = await skillTransform(compacted)
+  assert.equal(rendered.split("ROUTED SKILL").length - 1, 0, "Compaction must drop routed skills with memory")
   await skillHooks.dispose()
   events = (await readFile(log, "utf8")).trim().split("\n").map(JSON.parse)
   const before = events.length
