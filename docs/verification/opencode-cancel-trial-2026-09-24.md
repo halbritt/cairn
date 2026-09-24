@@ -99,8 +99,9 @@ Attempt transitions:
 | C4 | `failed`, `operator_cancelled`, `held: false`, native reason `cancel_confirmed`, finished 05:32:34.812 |
 | C5 | `leased`, `held: true`, native `running`, no reason, at +118 s and again at +363 s |
 
-In every case `event-status` for the request showed the same terminal
-delivery state and `operator_cancelled` control as `coordination-review`.
+`event-status` was read for C1 only. It showed the same terminal delivery
+state (`failed`) and `operator_cancelled` control as `coordination-review`.
+The other cases were read through `coordination-review`.
 
 C3's transition from held to `cancel_confirmed` went as follows:
 
