@@ -1,9 +1,9 @@
 # OpenCode real-model cancellation trial (CAIRN-2): plan
 
 Status: **prepared, not run.** The request-specific bridge and host cleanup
-adapter are on `agent112/opencode-cancel-host` for review. Execution waits for
-that branch to be merged and installed on an owned scratch OpenCode binding
-with `--opencode-cancel-trial`. Until then native cancellation stays `UNSUPPORTED_CONTROL`
+adapter are merged on `main` at `781c77a`. Execution waits for an owned scratch
+OpenCode binding installed with `--opencode-cancel-trial`. Until then native
+cancellation stays `UNSUPPORTED_CONTROL`
 ([request-controls](../request-controls.md)), and nothing here claims it works.
 
 The core contract already has synthetic and disposable-database coverage. This
@@ -88,6 +88,13 @@ database; do not manufacture a positive turn-stop report or clear a production
 hold to make the case look complete. The one-shot native stop can leave this
 held state after a lost response, and recovery requires an explicit operator
 decision outside the automatic watcher path.
+
+If C2 reports `owner_join` before a positive pinned `TurnEnd`, record the case
+as failed and the still-held attempt. A lost forced `TurnEnd` can leave that
+hold without automatic release. Confirm fixture cleanup with the independent
+observer, then stop the scratch session and dispose of the trial database;
+do not manufacture a pinned turn stop to release the hold.
+
 The fixture retains Cairn's shell environment marker. A process that erases
 that marker or changes user identity is outside this trial's scan coverage;
 passing these cases does not establish general tool-process cleanup.
