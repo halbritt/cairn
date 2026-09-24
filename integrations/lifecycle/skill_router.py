@@ -36,6 +36,9 @@ DEFAULTS = dict(
     context_chars=9500,
     exclude_paths=["~/git/council"],
 )
+# Hard ceiling on the combined hook context: memory's CONTEXT_BYTES and the Codex
+# hooks' additionalContextLimit. Past it even a pointer is not injected.
+CONTEXT_BYTES_MAX = 12000
 NONE = "none"
 NONE_TEXT = "No listed skill fits; answer directly."
 INSTRUCTIONS = ("Which one skill (a packaged workflow the agent can load) should the agent use for "
@@ -208,6 +211,8 @@ class Route:
         self.config, self.event, self.opts = config, event, opts
         self.loaded = dict(state.get("skills_loaded") or {})
         self.started = time.monotonic()
+        # Both legs time out on their own; this bounds the wait after recall as well.
+        self.deadline = self.started + 2 * float(opts["timeout"]) + 0.5
         self.outcome = None
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
@@ -236,7 +241,7 @@ class Route:
 
     def merge(self, result, state):
         """The memory result with the chosen skill added; unchanged when nothing fires."""
-        self.thread.join(timeout=2 * float(self.opts["timeout"]) + 2)
+        self.thread.join(timeout=max(0.0, self.deadline - time.monotonic()))
         outcome = self.outcome or dict(fired=False, reason="timeout")
         record = dict(at=time.time(), session=self.event["session_id"], harness=self.config.get("harness") or "claude",
                       event=self.event.get("hook_event_name"), fired=outcome["fired"], reason=outcome.get("reason"),
@@ -254,6 +259,10 @@ class Route:
                 opencode = self.config.get("harness") == "opencode"
                 room = int(self.opts["context_chars"]) - (0 if opencode else len(memory_text) + 2)
                 text, mode = skill_text(skill, answer, room)
+                total = len(text.encode()) + (0 if opencode else len(memory_text.encode()) + 1)
+                if total > CONTEXT_BYTES_MAX:
+                    record.update(fired=False, reason="no room")
+                    return result
                 record["mode"] = mode
                 self.loaded[skill["name"]] = time.time()
                 state["skills_loaded"] = self.loaded

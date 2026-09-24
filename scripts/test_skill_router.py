@@ -235,6 +235,32 @@ class RouterTests(unittest.TestCase):
         self.assertLessEqual(len(context), 9500)
         self.assertEqual(self.log_lines()[-1]["mode"], "pointer")
 
+    def test_skill_that_cannot_fit_beside_memory_is_not_injected(self):
+        self.jev.choose("big-c", 0.97)
+        crowded = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "m" * 11900}}
+        result, state = self.route(result=crowded)
+        self.assertEqual(result, crowded)
+        self.assertNotIn("skills_loaded", state)
+        self.assertEqual(self.log_lines()[-1]["reason"], "no room")
+
+    def test_stalled_legs_bound_the_wait(self):
+        self.jev.mode = self.kev.mode = "stall"
+        started = time.monotonic()
+        result, _ = self.route(result=self.memory)
+        self.assertEqual(result, self.memory)
+        self.assertLess(time.monotonic() - started, 2 * 0.5 + 0.5 + 0.5)
+
+    def test_missing_router_file_is_recorded_in_session_state(self):
+        destination = self.root / "partial"
+        destination.mkdir()
+        shutil.copyfile(ROOT / "integrations/lifecycle/memory.py", destination / "lifecycle.py")
+        installed = module("installed_partial", destination / "lifecycle.py")
+        config = dict(self.config, state_dir=str(destination / "state"))
+        with patch.object(installed, "recall", return_value=self.memory), patch.object(installed, "Memory"):
+            self.assertEqual(installed.handle(config, self.event), self.memory)
+        state = json.loads((destination / "state" / (SESSION + ".json")).read_text())
+        self.assertTrue(state["last_route"]["reason"].startswith("router unavailable"))
+
     def test_opencode_gets_the_skill_apart_from_memory(self):
         self.jev.choose("hidden-a", 0.95)
         config = dict(self.config, harness="opencode")

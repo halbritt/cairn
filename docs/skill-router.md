@@ -28,6 +28,12 @@ prompt, the engine starts `skill_router.py` in a thread beside memory recall.
    the memory context together exceed `context_chars`, a short pointer that
    tells the model to read the `SKILL.md` replaces the body.
 
+Nothing is injected when even the pointer and memory together would exceed
+12,000 bytes, the ceiling that memory's `CONTEXT_BYTES` and the Codex hooks'
+`additionalContextLimit` share. The router waits at most twice the per-leg
+`timeout` plus half a second, 3.5 seconds by default, inside the hook's
+13-second limit.
+
 The skill block comes before memory in `additionalContext`. For OpenCode the
 engine returns it as `cairn_skill`, and the plugin keeps it as its own block on
 the owner message, apart from memory's budget and replacement rules.
@@ -83,7 +89,9 @@ characters arrived whole, and 11,000 lost their tail. Memory's own budget is
 
 Set `"enabled": false` in the installed `config.json`, set
 `CAIRN_SKILL_ROUTER=0`, or reinstall with `--no-skill-router`. A missing or
-broken `skill_router.py` leaves memory recall unchanged.
+broken `skill_router.py` leaves memory recall unchanged and records
+`router unavailable` as `last_route` in the session's state file. The Hermes
+installer copies the module but leaves it disabled.
 
 ## Measured behavior
 

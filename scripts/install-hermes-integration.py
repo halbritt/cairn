@@ -35,6 +35,8 @@ def install(home, native, claude, skill, model=None):
     plugin.mkdir(parents=True, exist_ok=True, mode=0o700)
     for source, target in [(ROOT / 'integrations/hermes/__init__.py', plugin / '__init__.py'),
                            (ROOT / 'integrations/lifecycle/memory.py', plugin / 'memory.py'),
+                           # Copied beside the engine; unused until a skill_router block enables it.
+                           (ROOT / 'integrations/lifecycle/skill_router.py', plugin / 'skill_router.py'),
                            (ROOT / 'integrations/hermes/controls.py', plugin / 'controls.py')]:
         shutil.copyfile(source, target)
     commands = home / 'plugins/cairn-controls'
@@ -79,7 +81,7 @@ def install(home, native, claude, skill, model=None):
         'schema': 'cairn.hermes-install/1',
         'source_revision': revision, 'source_modified': modified,
         'files': {str(p.relative_to(home)): hashlib.sha256(p.read_bytes()).hexdigest()
-                  for p in (plugin / '__init__.py', plugin / 'memory.py', plugin / 'controls.py',
+                  for p in (plugin / '__init__.py', plugin / 'memory.py', plugin / 'skill_router.py', plugin / 'controls.py',
                             commands / '__init__.py', commands / 'controls.py', commands / 'plugin.yaml', skill_dir / 'SKILL.md')}})
     return config
 

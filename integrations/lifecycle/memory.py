@@ -741,7 +741,9 @@ def start_route(config, event, state):
         router = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(router)
         return router.start(config, event, state)
-    except Exception:  # optional: a missing or broken router never affects memory
+    except Exception as exc:  # optional: a missing or broken router never affects memory
+        # Visible in the session state file, the lifecycle status surface.
+        state["last_route"] = dict(at=time.time(), fired=False, reason="router unavailable: " + type(exc).__name__)
         return None
 
 
