@@ -3,6 +3,7 @@
 import argparse
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -730,6 +731,20 @@ def codex_new_messages(event, state):
     return sum(1 for offset in offsets if offset > marker["offset"])
 
 
+def start_route(config, event, state):
+    """Start optional skill routing beside recall; None when not installed or not enabled."""
+    if not isinstance(config.get("skill_router"), dict):
+        return None
+    path = Path(__file__).resolve().parent / "skill_router.py"
+    try:
+        spec = importlib.util.spec_from_file_location("cairn_skill_router", path)
+        router = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(router)
+        return router.start(config, event, state)
+    except Exception:  # optional: a missing or broken router never affects memory
+        return None
+
+
 def handle(config, event):
     if os.environ.get("CAIRN_LIFECYCLE_CHILD") == "1" or os.environ.get("CAIRN_LIFECYCLE_DISABLED") == "1":
         return {}
@@ -784,7 +799,11 @@ def handle(config, event):
             state = {"binding": binding}
         if topic:
             state["workstream"] = workstream_prefix(event) + topic
+        route = None
         if event_name in ("SessionStart", "UserPromptSubmit"):
+            if event_name == "SessionStart":
+                state.pop("skills_loaded", None)  # new or compacted context holds no skill
+            route = start_route(config, event, state)
             result = recall(memory, event, state)
         elif event_name in ("PostToolUse", "PostToolUseFailure"):
             result = observe(event, state)
@@ -797,6 +816,8 @@ def handle(config, event):
                 state["codex_capture_marker"] = state["capture_snapshot_marker"]
             elif prior is not None:
                 state["capture_snapshot_marker"] = prior
+        if route is not None:
+            result = route.merge(result, state)
         save_state(path, state)
         if config.get("harness") == "hermes":
             result = dict(result, cairn_status={key: state[key] for key in ("last_recall", "last_capture", "workstream") if key in state})

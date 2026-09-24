@@ -16,6 +16,13 @@ try {
     const event = JSON.parse(input);
     appendFileSync(${JSON.stringify(log)}, JSON.stringify(event) + "\\n");
     const recall = ["SessionStart", "UserPromptSubmit"].includes(event.hook_event_name);
+    if (event.session_id === "ses_skill" && recall) {
+      // Routed skills arrive in cairn_skill, apart from memory's additionalContext.
+      const skill = {cairn_skill:{name:"probe", text:"ROUTED SKILL " + event.prompt}};
+      const memory = {hookSpecificOutput:{additionalContext:'Cairn lifecycle memory:\\n' + JSON.stringify({selected:[], index:[{record_id:"skillnote", version:1}]})}};
+      console.log(JSON.stringify(event.prompt === "skill-only" ? skill : event.prompt === "skill-and-memory" ? {...skill, ...memory} : {}));
+      process.exit(0);
+    }
     if (event.session_id === "ses_mandatory" && recall) {
       const view = event.prompt === "optional" ? {selected:[], index:[{record_id:"optional", version:1}], expanded:{selection:{record:{body:"Retained optional lesson"}}}} : {selected:[{record:{record_id:"required", version:1, body:"Required instruction " + "x".repeat(3000)}, mandatory:true}], index:[]};
       console.log(JSON.stringify({hookSpecificOutput:{additionalContext:'Cairn lifecycle memory:\\n' + JSON.stringify(view)}}));
@@ -70,6 +77,24 @@ try {
   events = (await readFile(log, "utf8")).trim().split("\n").map(JSON.parse)
   assert(events.at(-1).retained_record_ids.includes("required"))
   await mandatoryHooks.dispose()
+  const skillHooks = await plugin({ client, directory: root, worktree: root })
+  const skillTransform = async (messages) => { const output = { messages: structuredClone(messages) }; await skillHooks["experimental.chat.messages.transform"]({}, output); return JSON.stringify(output) }
+  const said = (id, words) => { const m = owner(id, "ses_skill"); m.parts[0].text = words; return m }
+  const turns = [said("s1", "skill-only")]
+  let rendered = await skillTransform(turns)
+  assert.equal(rendered.split("ROUTED SKILL skill-only").length - 1, 1, "A skill without memory must be injected, not parsed as memory")
+  turns.push(said("s2", "skill-and-memory"))
+  rendered = await skillTransform(turns)
+  assert.equal(rendered.split("ROUTED SKILL skill-only").length - 1, 1, "An earlier routed skill must stay with its message")
+  assert.equal(rendered.split("ROUTED SKILL skill-and-memory").length - 1, 1)
+  assert.equal(rendered.split("skillnote").length - 1, 1, "Memory beside a skill keeps its own block")
+  turns.push(said("s3", "plain"))
+  rendered = await skillTransform(turns)
+  assert.equal(rendered.split("ROUTED SKILL").length - 1, 2, "A turn with no route adds nothing and keeps both skills")
+  rendered = await skillTransform([said("s3", "plain")])
+  assert.equal(rendered.split("ROUTED SKILL").length - 1, 0, "Skills leave with their messages")
+  await skillHooks.dispose()
+  events = (await readFile(log, "utf8")).trim().split("\n").map(JSON.parse)
   const before = events.length
   await writeFile(join(root, ".cairn-no-memory"), "")
   const disabled = await plugin({ client, directory: root, worktree: root })

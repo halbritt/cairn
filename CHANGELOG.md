@@ -23,6 +23,16 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
   `exited` with exit code -1. `cairn run` exits with 128 plus the signal
   number. Run status reports the new `signal` field. See
   [run status](docs/run-status.md#signal-terminated-workers).
+- The lifecycle hook can route each owner prompt to one skill. It asks
+  TypeSafe one Choice over the skillpack catalog, falls back to local Kev,
+  and injects a skill that skillpack hides from the model when confidence is
+  at least 0.70. Visible skills stay with the model. Claude Code, Codex and
+  OpenCode installers enable it by default; `--no-skill-router` leaves it
+  off. Council paths, slash commands and `.cairn-no-memory` are refused before
+  any request. See [skill router](docs/skill-router.md).
+- Claude Code delivers about 10,000 characters of hook context and drops the
+  rest, below memory's 12,000-byte budget. The router keeps its own
+  injection under 9,500 characters with memory included.
 
 ## 2026-09-23
 

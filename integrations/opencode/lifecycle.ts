@@ -7,7 +7,8 @@ import { join } from "node:path"
 import { randomUUID } from "node:crypto"
 
 type Block = { text: string; ids: string[] }
-type Session = { started: boolean; turn?: string; blocks: Map<string, Block> }
+// skills: routed skill instructions per owner message, retained apart from the memory budget.
+type Session = { started: boolean; turn?: string; blocks: Map<string, Block>; skills: Map<string, string> }
 const budget = 12000
 const plugin: Plugin = async ({ client, directory, worktree }) => {
   const config = JSON.parse(await readFile(new URL("../cairn-lifecycle.json", import.meta.url), "utf8"))
@@ -55,7 +56,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
     const response = await client.session.get({ path: { id }, signal: AbortSignal.timeout(5000) })
     if (response.error || !response.data) throw new Error("Host session unavailable")
     if (response.data.parentID) return // only owner-facing sessions
-    const state = { started: false, blocks: new Map<string, Block>() }
+    const state = { started: false, blocks: new Map<string, Block>(), skills: new Map<string, string>() }
     sessions.set(id, state)
     return state
   }
@@ -92,6 +93,7 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         if (!state) return
         const visible = new Set(output.messages.map(m => m.info.id))
         for (const key of state.blocks.keys()) if (!visible.has(key)) state.blocks.delete(key)
+        for (const key of state.skills.keys()) if (!visible.has(key)) state.skills.delete(key)
         if (state.turn !== owner.info.id) {
           const result = await invoke(id, {
             hook_event_name: state.started ? "UserPromptSubmit" : "SessionStart", source: "startup",
@@ -99,6 +101,8 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
           })
           state.started = true
           state.turn = owner.info.id
+          const skill = result.cairn_skill?.text
+          if (typeof skill === "string" && skill) state.skills.set(owner.info.id, skill)
           const context = result.hookSpecificOutput?.additionalContext
           if (context) {
             const start = context.indexOf('{"selected":')
@@ -117,10 +121,10 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
         }
         // Transform the request copy, not persisted messages or title requests.
         for (const message of output.messages) {
-          const block = state.blocks.get(message.info.id)
-          if (block && !message.parts.some(p => p.type === "text" && p.text === block.text))
-            message.parts.push({ type: "text", text: block.text, synthetic: true,
-              id: "prt_" + randomUUID().replaceAll("-", ""), sessionID: id, messageID: message.info.id } as Part)
+          for (const extra of [state.skills.get(message.info.id), state.blocks.get(message.info.id)?.text])
+            if (extra && !message.parts.some(p => p.type === "text" && p.text === extra))
+              message.parts.push({ type: "text", text: extra, synthetic: true,
+                id: "prt_" + randomUUID().replaceAll("-", ""), sessionID: id, messageID: message.info.id } as Part)
         }
       })
     },

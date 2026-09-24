@@ -47,7 +47,7 @@ def trust(config_home, hooks_path, command):
     coordination.trust_codex_hooks(config_home, hooks_path, command, expected=len(EVENTS))
 
 
-def install(hooks_path, destination, config):
+def install(hooks_path, destination, config, skill_router=True):
     data = json.loads(hooks_path.read_text()) if hooks_path.exists() else {}
     hooks = data.setdefault("hooks", {})
     script = destination / "lifecycle.py"
@@ -64,6 +64,10 @@ def install(hooks_path, destination, config):
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
     shutil.copyfile(ROOT / "integrations/lifecycle/memory.py", script)
     script.chmod(0o700)
+    shutil.copyfile(ROOT / "integrations/lifecycle/skill_router.py", destination / "skill_router.py")
+    (destination / "skill_router.py").chmod(0o600)
+    if skill_router:
+        config = dict(config, skill_router={"enabled": True})
     write_json(config_path, dict(config, harness="codex", state_dir=str(destination / "state")))
     backup = hooks_path.with_name(hooks_path.name + ".before-cairn-lifecycle")
     if original is not None and not backup.exists():
@@ -88,12 +92,13 @@ def main():
     parser.add_argument("--socket", type=Path, default=home / ".local/share/cairn/api.sock")
     parser.add_argument("--token-file", type=Path, default=home / ".local/share/cairn/hosted-agent.token")
     parser.add_argument("--repo", default=str(home / "git/cairn"))
+    parser.add_argument("--no-skill-router", action="store_true", help="install without prompt-time skill routing")
     args = parser.parse_args()
     if not args.cairn or not args.claude:
         parser.error("installed cairn and claude executables are required")
     config = dict(cairn=str(Path(args.cairn).absolute()), claude=str(Path(args.claude).absolute()), model=args.model,
                   socket=str(args.socket.absolute()), token_file=str(args.token_file.absolute()), repo=args.repo)
-    install(args.hooks.absolute(), args.destination.absolute(), config)
+    install(args.hooks.absolute(), args.destination.absolute(), config, skill_router=not args.no_skill_router)
     print(f"Installed and trusted Cairn lifecycle hooks in {args.hooks}. Start a fresh Codex session.")
 
 
