@@ -262,6 +262,35 @@ class OpenCodeCancelHostTests(unittest.TestCase):
         self.assertEqual(reports[0]['attempt_id'], 'attempt-one')
         self.assertIn('inbox_intent', self.state)
 
+    def test_owner_turn_does_not_inherit_cancelled_turn_capture(self):
+        self.attempt['turn_stop_state'] = 'ended'
+        self.state['opencode_turn_since'] = 1
+        self.state['workspace'] = self.temp.name
+        self.state['agent'].update(context_revision=1, display_name='agent-one',
+                                   inbox='agent/agent-one', metadata=dict(
+                                       harness='opencode', project=Path(self.temp.name).name,
+                                       workspace=self.temp.name, state='busy',
+                                       delivery_mode='existing-session'))
+        self.config.update(repo='/unused/repo', opencode_cancel_enabled=True)
+        path = coordination.state_path(self.config, 'ses-one')
+        coordination.write_state(path, self.state)
+
+        def store_call(_config, operation, _request, **_kwargs):
+            if operation == 'agent-heartbeat':
+                return copy.deepcopy(self.state['agent'])
+            if operation == 'session-inbox-control':
+                return dict(attempt=copy.deepcopy(self.attempt))
+            self.fail(f'unexpected operation {operation}')
+
+        event = dict(session_id='ses-one', cwd=self.temp.name, host_pid=os.getpid(),
+                     hook_event_name='TurnStart', turn_id='owner-turn')
+        with patch.object(coordination, 'owner_process', return_value=self.state['process']), \
+                patch.object(coordination, 'call', side_effect=store_call), \
+                patch.object(coordination, 'opencode_capture_available', return_value=True):
+            output = coordination.handle(self.config, event)
+        self.assertNotIn('cairn', output)
+        self.assertEqual(json.loads(path.read_text())['opencode_turn_since'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

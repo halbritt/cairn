@@ -1455,7 +1455,8 @@ def handle(config, event, event_name=None):
         if observation["phase"] != "interrupted":
             inbox = inbox_context(config, state, path, observation, wake_binding(config, state, event, joined))
         if (config['harness'] == 'opencode' and observation['event'] == 'TurnStart' and
-                state.get('inbox_attempt', {}).get('turn_exclusive')):
+                state.get('inbox_attempt', {}).get('turn_exclusive') and
+                state['inbox_attempt'].get('native_turn_id') == observation['native_turn_id']):
             state['opencode_turn_since'] = int(time.clock_gettime(time.CLOCK_BOOTTIME) * os.sysconf('SC_CLK_TCK'))
             write_state(path, state)
         if observation["phase"] == "idle":
@@ -1484,7 +1485,8 @@ def handle(config, event, event_name=None):
         output = {"hookSpecificOutput": {"hookEventName": observation["event"], "additionalContext": message}}
         if (config['harness'] == 'opencode' and observation['event'] == 'TurnStart' and
                 config.get('opencode_cancel_enabled') and opencode_capture_available() and
-                state.get('inbox_attempt', {}).get('turn_exclusive')):
+                state.get('inbox_attempt', {}).get('turn_exclusive') and
+                state['inbox_attempt'].get('native_turn_id') == observation['native_turn_id']):
             output['cairn'] = {'tool_capture': True}
         return output
 
