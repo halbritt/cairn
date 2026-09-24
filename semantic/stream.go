@@ -165,25 +165,28 @@ func serveStream(ctx context.Context, path string, idle time.Duration, jobs <-ch
 }
 
 func startStream(path string) (*streamWorkerProcess, error) {
-	command := exec.Command(path)
-	// Older workers ignore this capability. New workers omit cache responses
-	// when launched by an older host, which does not advertise it.
-	command.Env = append(workerEnvironment(), "CAIRN_SEMANTIC_STREAM_CACHE=1")
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	command.WaitDelay = time.Second
-	command.Stderr = io.Discard
-	input, err := command.StdinPipe()
+	var input io.WriteCloser
+	var output io.ReadCloser
+	command, err := startRetryingBusy(context.Background(), func() (*exec.Cmd, error) {
+		command := exec.Command(path)
+		// Older workers ignore this capability. New workers omit cache responses
+		// when launched by an older host, which does not advertise it.
+		command.Env = append(workerEnvironment(), "CAIRN_SEMANTIC_STREAM_CACHE=1")
+		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		command.WaitDelay = time.Second
+		command.Stderr = io.Discard
+		var err error
+		if input, err = command.StdinPipe(); err != nil {
+			return nil, err
+		}
+		if output, err = command.StdoutPipe(); err != nil {
+			input.Close()
+			return nil, err
+		}
+		return command, nil
+	})
 	if err != nil {
-		return nil, err
-	}
-	output, err := command.StdoutPipe()
-	if err != nil {
-		input.Close()
-		return nil, err
-	}
-	if err = command.Start(); err != nil {
-		input.Close()
-		output.Close()
+		// A failed Start closes the pipes it created.
 		return nil, err
 	}
 	return &streamWorkerProcess{command: command, input: input, output: output, reader: bufio.NewReaderSize(output, streamFrameLimit+1)}, nil

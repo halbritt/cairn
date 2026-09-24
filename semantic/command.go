@@ -30,6 +30,30 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 	return b.buffer.Write(p)
 }
 
+// startRetryingBusy starts a freshly built command, retrying briefly while the
+// executable is still open for writing in another process (ETXTBSY), as when a
+// concurrently forked child inherited the writer's descriptor. A failed start
+// launches nothing, so rebuilding and retrying has no side effects.
+func startRetryingBusy(ctx context.Context, build func() (*exec.Cmd, error)) (*exec.Cmd, error) {
+	delay := 10 * time.Millisecond
+	for attempt := 1; ; attempt++ {
+		command, err := build()
+		if err != nil {
+			return nil, err
+		}
+		err = command.Start()
+		if err == nil || !errors.Is(err, syscall.ETXTBSY) || attempt == 5 {
+			return command, err
+		}
+		select {
+		case <-ctx.Done():
+			return command, err
+		case <-time.After(delay):
+		}
+		delay *= 2
+	}
+}
+
 // Command permits one worker at a time across callers. Busy, failed or timed-out
 // workers return errors for the compiler's labelled lexical fallback.
 func Command(path string) (core.SemanticRanker, error) {
@@ -50,18 +74,23 @@ func Command(path string) (core.SemanticRanker, error) {
 		if err != nil {
 			return core.SemanticRankResult{}, err
 		}
-		command := exec.CommandContext(ctx, path)
-		command.Env = workerEnvironment()
-		command.Stdin = bytes.NewReader(input)
-		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
-		command.WaitDelay = time.Second
 		output := &boundedOutput{}
-		command.Stdout = output
-		// Worker diagnostics may include note/query content. They are not API
-		// responses or persistent logs; the receipt retains fallback disposition.
-		command.Stderr = io.Discard
-		runErr := command.Run()
+		command, runErr := startRetryingBusy(ctx, func() (*exec.Cmd, error) {
+			command := exec.CommandContext(ctx, path)
+			command.Env = workerEnvironment()
+			command.Stdin = bytes.NewReader(input)
+			command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
+			command.WaitDelay = time.Second
+			command.Stdout = output
+			// Worker diagnostics may include note/query content. They are not API
+			// responses or persistent logs; the receipt retains fallback disposition.
+			command.Stderr = io.Discard
+			return command, nil
+		})
+		if runErr == nil {
+			runErr = command.Wait()
+		}
 		var cleanup error
 		if command.Process != nil {
 			cleanup = reapGroup(command.Process.Pid)
