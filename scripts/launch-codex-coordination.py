@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 
-# Installed Codex 0.154 global options. Value-taking options consume the next
+# Installed Codex 0.156 global options. Value-taking options consume the next
 # argument unless written as --name=value; --image additionally consumes
 # further non-option values (clap variadic).
 VALUE_OPTIONS = {'-c', '--config', '--enable', '--disable', '--remote',
