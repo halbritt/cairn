@@ -1,12 +1,13 @@
 """Host cancellation observations for one pinned OpenCode inbox attempt."""
 import copy
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from integrations.lifecycle import coordination
+from integrations.lifecycle import coordination, opencode_queue
 
 
 class OpenCodeCancelHostTests(unittest.TestCase):
@@ -20,6 +21,7 @@ class OpenCodeCancelHostTests(unittest.TestCase):
                             cancel=dict(requested_at='now'), turn_stop_state='',
                             delivery=dict(delivery_id='delivery-one', lease_id='lease-one'))
         self.state = dict(agent=dict(**self.session, native_session_id='ses-one'),
+                          process=coordination.process_reference(os.getpid()),
                           inbox_intent=dict(request_id='attempt-one', session=self.session,
                                             native_turn_id='turn-one'),
                           inbox_attempt=copy.deepcopy(self.attempt), delivered_since_idle=True)
@@ -38,9 +40,31 @@ class OpenCodeCancelHostTests(unittest.TestCase):
             return dict(attempt=copy.deepcopy(self.attempt))
 
         with patch.object(coordination, 'call', side_effect=store_call):
-            coordination.watch_inbox(self.config, self.state, self.path)
+            request = coordination.watch_inbox(self.config, self.state, self.path)
         self.assertEqual(calls, ['session-inbox-control'])
         self.assertIn('inbox_intent', self.state)
+        self.assertEqual(request['request_id'], 'delivery-one')
+        self.assertEqual(request['expected_turn_id'], 'turn-one')
+        self.assertIsNone(coordination.prepare_opencode_cancel(
+            self.config, self.state, self.path, self.attempt))
+
+    def test_native_stop_runs_without_the_state_lock_and_is_one_shot(self):
+        with coordination.session_lock(self.path):
+            request = coordination.prepare_opencode_cancel(self.config, self.state, self.path, self.attempt)
+        sent = []
+
+        def native_cancel(*args):
+            with coordination.session_lock(self.path):
+                sent.append(args)
+            return dict(outcome='accepted')
+
+        with patch.dict('sys.modules', {'opencode_queue': opencode_queue}), \
+                patch.object(opencode_queue, 'cancel_request', side_effect=native_cancel):
+            coordination.submit_opencode_cancel(self.config, self.path, request)
+        self.assertEqual(sent[0][2:], ('ses-one', 'delivery-one', 'turn-one'))
+        state = json.loads(self.path.read_text())
+        self.assertEqual(state['cancel_submission']['status'], 'accepted')
+        self.assertIsNone(coordination.prepare_opencode_cancel(self.config, state, self.path, self.attempt))
 
     def test_exact_turn_end_records_stop_and_retains_hold(self):
         calls = []
@@ -87,6 +111,36 @@ class OpenCodeCancelHostTests(unittest.TestCase):
             coordination.inbox_context(self.config, self.state, self.path, observation)
         self.assertEqual(seen[0], seen[1])
         self.assertIn('inbox_intent', self.state)
+
+    def test_tool_start_capture_precedes_execution_and_retries_same_request(self):
+        self.attempt.pop('cancel')
+        self.config['opencode_cancel_enabled'] = True
+        captures = []
+
+        def store_call(_config, operation, request, **_kwargs):
+            if operation == 'session-inbox-control':
+                return dict(attempt=copy.deepcopy(self.attempt))
+            if operation == 'session-tool-capture':
+                captures.append(copy.deepcopy(request))
+                if len(captures) == 1:
+                    raise coordination.CoordinationError('API_UNAVAILABLE', 'capture response lost')
+                return copy.deepcopy(self.attempt)
+            self.fail(f'uncaptured tool must not call {operation}')
+
+        observation = dict(event='ToolStart', native_turn_id='turn-one')
+        event = dict(call_id='call-one', tool='bash', request_id='delivery-one')
+        with patch.object(coordination, 'opencode_capture_available', return_value=True), \
+                patch.object(coordination, 'call', side_effect=store_call):
+            with self.assertRaises(coordination.CoordinationError):
+                coordination.opencode_tool_event(self.config, self.state, self.path, observation, event)
+            self.state = json.loads(self.path.read_text())
+            coordination.opencode_tool_event(self.config, self.state, self.path, observation, event)
+            coordination.opencode_tool_event(self.config, self.state, self.path,
+                dict(event='ToolEnd', native_turn_id='turn-one'), event)
+        self.assertEqual(captures[0], captures[1])
+        self.assertEqual(captures[0]['items'][0]['item_id'], 'call-one')
+        self.assertEqual(captures[0]['items'][0]['native_turn_id'], 'turn-one')
+        self.assertTrue(self.state['tool_calls']['call-one']['ended'])
 
 
 if __name__ == '__main__':

@@ -281,7 +281,7 @@ def prepare_idle_wake(config, state, path):
     if opencode:
         state.pop('wake_refusal', None)
         cancel_capable = False
-        if config.get('opencode_cancel_enabled'):
+        if config.get('opencode_cancel_enabled') and opencode_capture_available():
             try:
                 import opencode_queue
             except ImportError:
@@ -405,6 +405,14 @@ def opencode_idle_endpoint(config, process, native_id, state=None):
         return endpoint if opencode_queue.supports_idle(endpoint, process, native_id) else None
     except opencode_queue.QueueUnavailable:
         return None
+
+
+def opencode_capture_available():
+    try:
+        import process_scan
+    except ImportError:
+        return False
+    return callable(getattr(process_scan, 'markers', None))
 
 
 def hermes_queue_endpoint(config, process):
@@ -760,10 +768,13 @@ def normalize(config, event, event_name=None):
     if not isinstance(model, str) or len(model) > 256:
         raise CoordinationError("INVALID_HOST", "invalid observed model")
     phases = {"SessionStart": "start", "UserPromptSubmit": "busy", "PreInvocation": "busy",
-              "TurnStart": "busy", "Stop": "idle", "TurnEnd": "idle", "SessionEnd": "leave",
+              "TurnStart": "busy", "ToolStart": "busy", "ToolEnd": "busy",
+              "Stop": "idle", "TurnEnd": "idle", "SessionEnd": "leave",
               "Interrupt": "interrupted", "ProviderObservation": "provider"}
     if name not in phases:
         raise CoordinationError("INVALID_HOST", "unsupported coordination hook event")
+    if name in ('ToolStart', 'ToolEnd') and harness != 'opencode':
+        raise CoordinationError('INVALID_HOST', 'tool capture hooks are OpenCode-only')
     if name == "Interrupt" and harness != "codex":
         raise CoordinationError("INVALID_HOST", "interrupt observation is a Codex-only hook")
     phase = phases[name]
@@ -970,6 +981,90 @@ def opencode_cancelled_turn_end(config, state, path, observation, attempt):
     return True
 
 
+def opencode_tool_event(config, state, path, observation, event):
+    """Capture a native tool call before execution; completion awaits a process scan."""
+    if not config.get('opencode_cancel_enabled') or not opencode_capture_available():
+        raise CoordinationError('UNSUPPORTED_CONTROL', 'OpenCode tool capture is not enabled')
+    call_id, tool, request_id = (event.get(key) for key in ('call_id', 'tool', 'request_id'))
+    if (not all(isinstance(value, str) and value.strip() for value in (call_id, tool, request_id)) or
+            len(call_id.encode()) > 128 or len(tool.encode()) > 1024 or len(request_id.encode()) > 256 or
+            any('\0' in value or any(ord(c) < 32 for c in value) for value in (call_id, tool, request_id))):
+        raise CoordinationError('INVALID_HOST', 'invalid OpenCode tool identity')
+    attempt = opencode_inbox_control(config, state, path)
+    if (not attempt or not attempt.get('turn_exclusive') or
+            attempt.get('native_turn_id') != observation['native_turn_id'] or
+            attempt['delivery']['delivery_id'] != request_id):
+        raise CoordinationError('NATIVE_TURN_MISMATCH', 'tool does not belong to this exclusive request')
+    calls = state.setdefault('tool_calls', {})
+    if observation['event'] == 'ToolEnd':
+        if call_id not in calls:
+            raise CoordinationError('INVALID_HOST', 'tool end has no captured start')
+        calls[call_id]['ended'] = True
+        write_state(path, state)
+        return {}
+    if attempt.get('cancel'):
+        raise CoordinationError('REQUEST_CANCELLED', 'a cancelled request cannot start another tool')
+    recorded = calls.get(call_id)
+    if recorded and recorded.get('attempt_id') != attempt['attempt_id']:
+        raise CoordinationError('INVALID_HOST', 'tool call ID belongs to another attempt')
+    if not recorded:
+        # This boot clock precedes the shell's spawn; later /proc scans can
+        # ignore inaccessible processes that predate this tool call.
+        since = int(time.clock_gettime(time.CLOCK_BOOTTIME) * os.sysconf('SC_CLK_TCK'))
+        recorded = dict(attempt_id=attempt['attempt_id'], since=since,
+                        capture=dict(request_id=str(uuid.uuid4()), session=attempt['session'],
+                                     attempt_id=attempt['attempt_id'], items=[dict(item_id=call_id,
+                                     process_id='opencode-call:' + call_id, command=tool,
+                                     native_turn_id=attempt['native_turn_id'])]))
+        calls[call_id] = recorded
+        write_state(path, state)
+    state['inbox_attempt'] = call(config, 'session-tool-capture', recorded['capture'])
+    write_state(path, state)
+    return {}
+
+
+def prepare_opencode_cancel(config, state, path, attempt):
+    """Persist the exact one-shot native stop before leaving the state lock."""
+    if (not attempt.get('turn_exclusive') or not attempt.get('native_turn_id') or
+            attempt.get('turn_stop_state') in ('interrupted', 'ended')):
+        return None
+    prior = state.get('cancel_submission', {})
+    if prior.get('attempt_id') == attempt['attempt_id']:
+        return None  # An uncertain submission must never be resent automatically.
+    request = dict(attempt_id=attempt['attempt_id'], session_id=state['agent']['native_session_id'],
+                   request_id=attempt['delivery']['delivery_id'],
+                   expected_turn_id=attempt['native_turn_id'], process=state['process'],
+                   endpoint=f"/tmp/cairn-opencode-{state['process']['pid']}.sock")
+    state['cancel_submission'] = dict(request, status='uncertain')
+    write_state(path, state)
+    return request
+
+
+def submit_opencode_cancel(config, path, request):
+    """Let native cancellation settle without blocking the pinned TurnEnd hook."""
+    try:
+        import opencode_queue
+    except ImportError:
+        status = 'unavailable'
+    else:
+        try:
+            opencode_queue.cancel_request(request['endpoint'], request['process'], request['session_id'],
+                                          request['request_id'], request['expected_turn_id'])
+            status = 'accepted'
+        except opencode_queue.CancelRefused as exc:
+            status = 'refused:' + exc.reason
+        except opencode_queue.CancelUncertain:
+            status = 'uncertain'
+    with session_lock(path):
+        state = json.loads(path.read_text())
+        if all(state.get('cancel_submission', {}).get(key) == request[key] for key in request):
+            state['cancel_submission']['status'] = status
+            write_state(path, state)
+    if status != 'accepted':
+        print(f"Cairn presence {config['binding']}: native OpenCode request cancellation is {status}; "
+              "the inbox hold remains until cleanup is observed", file=sys.stderr)
+
+
 def release_inbox(config, state, path, reason, fenced=False):
     if not fenced:
         recover_inbox(config, state, path)
@@ -991,7 +1086,7 @@ def release_inbox(config, state, path, reason, fenced=False):
         if not (fenced and exc.code == 'NOT_FOUND'):
             raise
     for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response',
-                'cancel_turn_end'):
+                'cancel_turn_end', 'cancel_submission', 'tool_calls'):
         state.pop(key, None)
     write_state(path, state)
     return True
@@ -1005,7 +1100,7 @@ def watch_inbox(config, state, path):
         if attempt and attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
             # The store has already fenced completion and renewal. Retain the
             # hold until a pinned turn stop and terminal tool scan are proved.
-            return
+            return prepare_opencode_cancel(config, state, path, attempt)
     if release_inbox(config, state, path, 'delivery_completed'):
         return
     attempt = state['inbox_attempt']
@@ -1231,6 +1326,8 @@ def handle(config, event, event_name=None):
                 write_state(path, state)
                 state["agent"] = call(config, "agent-register", state["registration"])
                 write_state(path, state)
+        if observation['event'] in ('ToolStart', 'ToolEnd'):
+            return opencode_tool_event(config, state, path, observation, event)
         current = state["agent"]
         metadata = dict(current["metadata"])
         metadata['delivery_mode'] = 'fresh-worker' if wake else 'existing-session'
@@ -1287,13 +1384,19 @@ def handle(config, event, event_name=None):
             message += '\n' + inbox
         if config["harness"] == "agy":
             return {"injectSteps": [{"ephemeralMessage": message}]}
-        return {"hookSpecificOutput": {"hookEventName": observation["event"], "additionalContext": message}}
+        output = {"hookSpecificOutput": {"hookEventName": observation["event"], "additionalContext": message}}
+        if (config['harness'] == 'opencode' and observation['event'] == 'TurnStart' and
+                config.get('opencode_cancel_enabled') and opencode_capture_available() and
+                state.get('inbox_attempt', {}).get('turn_exclusive')):
+            output['cairn'] = {'tool_capture': True}
+        return output
 
 
 def watch_once(config):
     for path in sorted(Path(config["state_dir"]).glob("*.json")):
         try:
             prepared = None
+            cancel_prepared = None
             with session_lock(path):
                 state = json.loads(path.read_text())
                 if state.get("retired"):
@@ -1305,7 +1408,7 @@ def watch_once(config):
                         state["agent"] = call(config, "agent-register", state["registration"])
                     else:
                         state["agent"] = heartbeat(config, state)
-                        watch_inbox(config, state, path)
+                        cancel_prepared = watch_inbox(config, state, path)
                         prepared = prepare_idle_wake(config, state, path)
                 elif not state.get("agent"):
                     # An uncertain registration may have committed; without an
@@ -1316,6 +1419,8 @@ def watch_once(config):
                 write_state(path, state)
             if prepared:
                 submit_idle_wake(config, path, prepared)
+            if cancel_prepared:
+                submit_opencode_cancel(config, path, cancel_prepared)
         except CoordinationError as exc:
             if exc.code == "SESSION_BUSY":
                 continue  # The hook owns presence until it releases this lock.
