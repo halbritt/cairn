@@ -57,10 +57,15 @@ and Codex submitted prompts render with the same prefix as the composer.
 
 ## Observations
 
-- On Codex account two, the busy trial's owner prompt was submitted while the
-  preceding wake turn was still finishing. Codex queued the prompt as a
-  separate turn after the wake completed. The next wake followed the owner
-  turn. Input that arrives during a wake turn was not merged into it.
+- On Codex account two, the busy trial's owner prompt followed the idle
+  trial's wake turn closely. The rollout shows the wake's `task_complete` at
+  01:01:54.870Z, the owner `task_started` at 01:01:55.476Z, and the next
+  wake's `task_started` at 01:02:29.330Z, so these were three separate turns.
+  The Enter keystroke has no retained timestamp, so this trial does not show
+  whether the input arrived before the wake finished. An earlier Codex probe
+  on September 18 observed owner steering into an active turn. This trial
+  does not establish a general no-merge guarantee for input sent during a
+  wake turn.
 - Claude account two was out of Fable 5.1 credit, and Codex account one had
   reached its usage limit until September 26. The trials switched those
   throwaway sessions to Sonnet 5 and to Codex's no-cost fallback model. No
@@ -72,6 +77,24 @@ and Codex submitted prompts render with the same prefix as the composer.
   [the native inbox guide](../native-inbox.md) now use the `=` form.
 - This was the first live exercise of the `claude-two` channel directory,
   which was added on September 22.
+
+## Selected identifiers
+
+These identifiers support independent audit without raw transcripts. The
+times are PDT, and each event reached `handled` with `attempts=1`.
+
+| Route | Native session | Idle event | Busy event |
+| --- | --- | --- | --- |
+| Claude one | `6bf0b557-9742-4013-a680-072816725054` | `d2c62eab-4b35-4e27-b7c1-e7a3f4eefa12` | `171f9b67-ee0e-4f00-a6bc-8e9344b0ab2d` |
+| Claude two | `f60f97e4-a2e4-4c5d-aaad-d338bdfe05b0` | `85f33cdd-d51e-4fa6-989e-4d85ead46526` | `2ef47c74-868c-48e7-819f-69fde77f499a` |
+| Codex one | `01a0d0ea-3941-74b1-812a-ec349e878da4` | `6e99b776-3c36-4623-8e90-57cf5e1199d3` | `73fae46c-4169-4192-91d1-e1939b346355` |
+| Codex two | `01a0d0ee-3665-76b2-88b3-dba6a521d733` | `a22cfc64-0c32-4fb2-895a-adc4adf0500f` | `dfb7177b-53a3-4401-8aa6-24fd437c3e1e` |
+| Hermes | `20260923_180907_4741b6` | `6c5f807d-d138-490a-bfc2-319905db7fff` | `3a911ab2-33bc-4689-bef0-c6a4086738e6` |
+| OpenCode | `ses_f2f05a23effeulpkKfXAbz3UM0` | `2b4aeb82-f692-4a5b-853e-c342ba1b7160` | `2f176b94-a249-4e8b-9b0e-175803ecb427` |
+
+In the Claude account-one transcript the prompts have distinct `prompt_id`
+prefixes: the first channel wake is `1f12dc7a`, the owner busy prompt is
+`758f9a02`, and the second channel wake is `39c5d0c8`.
 
 ## Limits
 

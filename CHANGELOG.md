@@ -18,9 +18,11 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-23
 
-- Automatic wakes preserve unsubmitted drafts on every native queue route.
-  Idle and busy-owner-turn trials passed on both Claude and both Codex
-  accounts, Hermes and OpenCode. See the
+- Twelve live idle-draft and busy-owner-turn trials passed on six native
+  queue routes: both Claude accounts, both Codex accounts, Hermes and
+  OpenCode. In every trial the unsubmitted draft survived and was never
+  submitted. This is trial evidence, not a guarantee. Agy's terminal route and
+  sub-second keystroke races are not covered. See the
   [trial report](docs/verification/draft-preservation-2026-09-23.md).
 - Use `--dangerously-load-development-channels=server:cairn-events` (the `=`
   form). With a space the variadic flag also consumes a following prompt.

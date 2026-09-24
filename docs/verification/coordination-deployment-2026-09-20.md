@@ -138,6 +138,13 @@ selected `~/.claude` home. Account two already selects `~/.claude-harm`.
 No existing process was restarted and organization policy is not bypassed.
 Older isolated Claude probe channels are not production deployment evidence.
 
+Correction, 2026-09-23: use the `=` form,
+`--dangerously-load-development-channels=server:cairn-events`. The flag
+accepts several values, so with a space it also consumes a following
+positional prompt and Claude exits. The watcher now detects activation from
+the launch flags, so a binding session list is not needed. See
+[native inbox delivery](../native-inbox.md#claude-channel-activation-and-selection).
+
 Read-only OpenCode source review found that SIGUSR2 reload and instance disposal
 lack a busy/admission guard; plain module imports can also reuse cached plugin
 code. Those operations are not a proven safe activation path. The coordinator
