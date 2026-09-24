@@ -3,7 +3,8 @@
 
 Retrieval runs at SessionStart and UserPromptSubmit. Capture runs at PreCompact
 and, in the background, at Stop once enough new dialogue has accumulated:
-Codex SessionEnd allows too little time for checkpoint selection.
+Codex SessionEnd is synchronous with a 1 s default and 3 s maximum, too short
+for checkpoint selection, so exit capture is not guaranteed.
 """
 import argparse
 import importlib.util

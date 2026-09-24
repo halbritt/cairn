@@ -22,9 +22,27 @@ SEARCH_ROOM = 8000
 # Codex Stop fires after every turn and SessionEnd allows too little time for the
 # selector, so Stop offers capture only after this much new top-level dialogue.
 CODEX_STOP_MIN_MESSAGES = 6
-# Codex injects instructions and environment context as user-role items.
-CODEX_INJECTED_PREFIXES = ("# AGENTS.md instructions", "<environment_context>", "<user_instructions>",
-                           "<INSTRUCTIONS>", "<turn_aborted>", "<user_shell_command>", "<skill>")
+# Codex injects instructions and context as user-role items. Codex 0.156 labels
+# every content part (content_item_kinds); owner-typed text is "user.text".
+CODEX_OWNER_KIND = "user.text"
+# Rollouts without that metadata: drop parts that are the AGENTS.md block or a
+# single wholly tagged block such as <environment_context>...</environment_context>.
+CODEX_TAGGED_BLOCK = re.compile(r"\s*<([A-Za-z_][\w-]*)>.*</\1>\s*", re.S)
+
+
+def codex_owner_parts(payload):
+    """Owner-visible text parts of one Codex message item."""
+    parts = [part for part in payload.get("content") or [] if part.get("type") in ("input_text", "output_text")]
+    if payload.get("role") == "assistant":
+        return [part.get("text", "") for part in parts]
+    kinds = (payload.get("internal_chat_message_metadata_passthrough") or {}).get("content_item_kinds")
+    content = payload.get("content") or []
+    if isinstance(kinds, list) and len(kinds) == len(content):
+        return [part.get("text", "") for part, kind in zip(content, kinds)
+                if kind == CODEX_OWNER_KIND and part.get("type") == "input_text"]
+    return [part.get("text", "") for part in parts
+            if not part.get("text", "").lstrip().startswith("# AGENTS.md instructions")
+            and not CODEX_TAGGED_BLOCK.fullmatch(part.get("text", ""))]
 DURABLE_KINDS = ("decision", "preference", "lesson", "procedure")
 CAPTURE_SCHEMA = {
     "type": "object", "properties": {
@@ -182,10 +200,7 @@ def conversation(path):
             payload = record.get("payload") or {}
             if payload.get("type") != "message" or payload.get("role") not in ("user", "assistant"):
                 continue
-            text = "\n".join(part.get("text", "") for part in payload.get("content") or []
-                             if part.get("type") in ("input_text", "output_text"))
-            if payload["role"] == "user" and text.lstrip().startswith(CODEX_INJECTED_PREFIXES):
-                continue
+            text = "\n".join(part for part in codex_owner_parts(payload) if part.strip())
             if text.strip():
                 messages.append({"role": payload["role"], "text": text})
             continue
@@ -624,6 +639,8 @@ def capture(memory, event, state=None):
     if not messages:
         record_capture_status(state, "empty")
         return {}
+    # Marker of exactly this snapshot; the host may append while selection runs.
+    state["capture_snapshot_marker"] = message_digest(messages[-1])
     def fingerprint(dialogue):
         return hashlib.sha256(encoded([CAPTURE_PROMPT, CAPTURE_SCHEMA, memory.config.get("model"), dialogue]).encode()).hexdigest()
     digest = fingerprint(messages)
@@ -668,12 +685,6 @@ def capture(memory, event, state=None):
 
 def message_digest(message):
     return hashlib.sha256(encoded(message).encode("utf-8")).hexdigest()
-
-
-def codex_marker(event):
-    """Digest of the newest dialogue message a completed capture has considered."""
-    messages = conversation(event["transcript_path"])
-    return message_digest(messages[-1]) if messages else None
 
 
 def codex_new_messages(event, state):
@@ -749,9 +760,12 @@ def handle(config, event):
         elif event_name == "Stop" and codex_new_messages(event, state) < CODEX_STOP_MIN_MESSAGES:
             result = {}  # Too little new dialogue to justify a selector call yet.
         else:
+            prior = state.pop("capture_snapshot_marker", None)
             result = capture(memory, event, state)
-            if config.get("harness") == "codex":
-                state["codex_capture_marker"] = codex_marker(event)
+            if config.get("harness") == "codex" and state.get("capture_snapshot_marker"):
+                state["codex_capture_marker"] = state["capture_snapshot_marker"]
+            elif prior is not None:
+                state["capture_snapshot_marker"] = prior
         save_state(path, state)
         if config.get("harness") == "hermes":
             result = dict(result, cairn_status={key: state[key] for key in ("last_recall", "last_capture", "workstream") if key in state})

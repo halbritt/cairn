@@ -21,10 +21,12 @@ installer = module("install_codex_hooks", ROOT / "scripts/install-codex-hooks.py
 SESSION = "01a0d0ea-3941-74b1-812a-ec349e878da4"  # Codex session IDs are UUIDv7
 
 
-def item(role, *texts, kind=None):
+def item(role, *texts, kind=None, kinds=None):
     content_type = kind or ("output_text" if role == "assistant" else "input_text")
-    return dict(timestamp="2026-09-23T00:00:00Z", type="response_item",
-                payload=dict(type="message", role=role, content=[dict(type=content_type, text=t) for t in texts]))
+    payload = dict(type="message", role=role, content=[dict(type=content_type, text=t) for t in texts])
+    if kinds is not None:  # Codex 0.156 structural metadata, one kind per content part
+        payload["internal_chat_message_metadata_passthrough"] = dict(turn_id="t", content_item_kinds=kinds)
+    return dict(timestamp="2026-09-23T00:00:00Z", type="response_item", payload=payload)
 
 
 class CodexTranscriptTests(unittest.TestCase):
@@ -56,6 +58,34 @@ class CodexTranscriptTests(unittest.TestCase):
         self.assertEqual(excerpt, [dict(role="user", text="Use PostgreSQL for the store."),
                                    dict(role="assistant", text="Decision recorded: PostgreSQL.")])
 
+    def test_structural_kinds_separate_injected_context_from_owner_text(self):
+        self.write([
+            item("user", "# AGENTS.md instructions for /repo\n<INSTRUCTIONS>PRIVATE</INSTRUCTIONS>",
+                 "<environment_context>PRIVATE</environment_context>",
+                 kinds=["agents_md.instructions", "environments.environment_context"]),
+            item("user", "Cairn lifecycle memory: PRIVATE hook context", kinds=["hooks.additional_context"]),
+            item("user", "# AGENTS.md instructions are wrong in this repo; fix the heading.", kinds=["user.text"]),
+            item("user", "<recommended_plugins>PRIVATE</recommended_plugins>", "Also keep this owner line.",
+                 kinds=["unknown", "user.text"]),
+            item("assistant", "Fixed the heading.", kinds=["unknown"]),
+        ])
+        excerpt = hook.conversation(self.path)
+        self.assertNotIn("PRIVATE", json.dumps(excerpt))
+        self.assertEqual(excerpt, [
+            dict(role="user", text="# AGENTS.md instructions are wrong in this repo; fix the heading."),
+            dict(role="user", text="Also keep this owner line."),
+            dict(role="assistant", text="Fixed the heading.")])
+
+    def test_rollouts_without_kinds_filter_each_part(self):
+        self.write([
+            item("user", "<recommended_plugins>\nPRIVATE\n</recommended_plugins>", "# AGENTS.md instructions\nPRIVATE",
+                 "<environment_context>\n  <cwd>/repo</cwd>PRIVATE\n</environment_context>"),
+            item("user", "<recommended_plugins>PRIVATE</recommended_plugins>", "Keep the owner request."),
+            item("user", "Use <b>bold</b> in the heading."),
+        ])
+        self.assertEqual(hook.conversation(self.path), [dict(role="user", text="Keep the owner request."),
+                                                        dict(role="user", text="Use <b>bold</b> in the heading.")])
+
     def test_oversized_rollout_message_is_bounded_and_marked(self):
         self.write([item("user", "Summarize."), item("assistant", "日" * 10000)])
         excerpt = hook.conversation(self.path)
@@ -67,6 +97,12 @@ class CodexTranscriptTests(unittest.TestCase):
                     dict(type="assistant", message=dict(content=[dict(type="text", text="Recorded.")]))])
         self.assertEqual(hook.conversation(self.path),
                          [dict(role="user", text="Use PostgreSQL."), dict(role="assistant", text="Recorded.")])
+
+
+def considered(event, state):
+    """What a completed real capture records: the marker of its snapshot."""
+    state["capture_snapshot_marker"] = hook.message_digest(hook.conversation(event["transcript_path"])[-1])
+    return {}
 
 
 class CodexHookTests(unittest.TestCase):
@@ -92,7 +128,7 @@ class CodexHookTests(unittest.TestCase):
         calls = []
         def capture(memory, event, state):
             calls.append(event["hook_event_name"])
-            return {}
+            return considered(event, state)
         with patch.object(hook, "capture", side_effect=capture):
             self.dialogue(1)
             self.assertEqual(hook.handle(self.config, dict(self.event, hook_event_name="Stop")), {})
@@ -107,7 +143,7 @@ class CodexHookTests(unittest.TestCase):
 
     def test_stop_threshold_does_not_saturate_on_long_sessions(self):
         calls = []
-        with patch.object(hook, "capture", side_effect=lambda memory, event, state: calls.append(1) or {}):
+        with patch.object(hook, "capture", side_effect=lambda memory, event, state: calls.append(1) or considered(event, state)):
             self.dialogue(400)  # far larger than the bounded excerpt window
             hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
             self.assertEqual(len(calls), 1)
@@ -117,12 +153,27 @@ class CodexHookTests(unittest.TestCase):
             hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
             self.assertEqual(len(calls), 2)
 
+    def test_dialogue_appended_during_capture_is_not_marked_captured(self):
+        self.dialogue(hook.CODEX_STOP_MIN_MESSAGES // 2)  # six messages
+        def select(config, schema, prompt, excerpt, timeout=35):
+            self.assertEqual(len(excerpt["messages"]), hook.CODEX_STOP_MIN_MESSAGES)
+            self.dialogue(hook.CODEX_STOP_MIN_MESSAGES // 2 + 1)  # a new pair lands during selection
+            return {"structured_output": {"checkpoint": None, "workstream": None, "memories": []}}
+        with patch.object(hook.Memory, "checkpoint", return_value=None), \
+             patch.object(hook, "handoff_candidates", return_value=[]), \
+             patch.object(hook, "durable_candidates", return_value=[]), \
+             patch.object(hook, "select_json", side_effect=select):
+            hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
+        state = json.loads((Path(self.config["state_dir"]) / (SESSION + ".json")).read_text())
+        self.assertEqual(hook.codex_new_messages(self.event, state), 2,
+                         "messages that arrived during selection were marked as captured")
+
     def test_failed_capture_does_not_advance_the_marker(self):
         self.dialogue(hook.CODEX_STOP_MIN_MESSAGES)
         with patch.object(hook, "capture", side_effect=hook.HookError("selector failed")):
             with self.assertRaises(hook.HookError):
                 hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
-        with patch.object(hook, "capture", return_value={}) as retry:
+        with patch.object(hook, "capture", side_effect=lambda memory, event, state: considered(event, state)) as retry:
             hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
             retry.assert_called_once()
 

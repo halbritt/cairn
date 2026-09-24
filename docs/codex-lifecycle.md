@@ -11,11 +11,16 @@ capture that Claude Code already has. They use the shared lifecycle engine,
 | `PreCompact` | Selects and saves a checkpoint before manual or automatic compaction. |
 | `Stop` (async) | Offers a checkpoint in the background once at least six new top-level messages exist since the last capture. |
 
-Codex caps `SessionEnd` at a one-second budget. That is too short for checkpoint
-selection, so the Codex adapter does not capture at exit. The background Stop
-hook covers ordinary sessions without delaying the turn. The engine records a
-digest of the newest captured message rather than a count, because it reads a
-bounded recent window of the rollout. A failed capture leaves the marker where
+Codex `SessionEnd` hooks run synchronously, with a one-second default and a
+three-second maximum. That is too short for checkpoint selection, so the Codex
+adapter does not capture at exit. The background Stop hook covers ordinary
+sessions without delaying the turn. Exit capture is not guaranteed: dialogue
+after the last Stop capture can be lost, and Codex may cancel an unfinished
+background hook when the session ends. PreCompact can add one selection
+alongside Stop. The engine records a
+digest of the newest message in the snapshot that capture actually considered,
+not a count, because it reads a bounded recent window of the rollout. Dialogue
+that arrives while selection runs stays uncaptured for the next Stop. A failed capture leaves the marker where
 it was, so the next Stop retries. A Stop continuation (`stop_hook_active`) is
 not treated as a new boundary.
 
@@ -23,8 +28,14 @@ A prompt submitted while that background capture still holds the session lock
 skips optional retrieval for that prompt instead of reporting a hook failure.
 
 The transcript reader keeps only top-level `user` and `assistant` message
-items from the Codex rollout. It omits developer instructions, injected
-`AGENTS.md` and environment context, reasoning, tool calls and their output.
+items from the Codex rollout. Codex 0.156 labels each content part in
+`content_item_kinds`. From user items the reader keeps only `user.text` parts,
+which excludes `AGENTS.md`, environment context, plugin and skill blocks, and
+this adapter's own `hooks.additional_context`. For rollouts without those
+labels, it drops each part that is the `AGENTS.md` block or one wholly tagged
+block. Developer items, reasoning, tool calls and their output are always
+omitted. A scan of 30 recent real rollouts (277 excerpt messages) found no
+injected context in the output.
 Codex now performs edits through its generic `exec` tool instead of
 `apply_patch`, so the adapter does not collect file hints from tool use.
 Quoted identifiers and task terms still guide retrieval.
