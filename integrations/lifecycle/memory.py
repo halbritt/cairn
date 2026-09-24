@@ -817,7 +817,17 @@ def handle(config, event):
             if event_name == "SessionStart":
                 state.pop("skills_loaded", None)  # new or compacted context holds no skill
             route = start_route(config, event, state)
-            result = recall(memory, event, state)
+            try:
+                result = recall(memory, event, state)
+            except HookError as exc:
+                # A fired skill does not depend on memory: deliver it alone rather than
+                # losing both (CAIRN-38). With nothing routed, fail as before.
+                routed = route.merge({}, state) if route is not None else {}
+                route = None
+                if not routed:
+                    raise
+                print("Cairn lifecycle: " + str(exc) + "; delivered the routed skill without memory.", file=sys.stderr)
+                result = routed
         elif event_name in ("PostToolUse", "PostToolUseFailure"):
             result = observe(event, state)
         elif event_name == "Stop" and codex_new_messages(event, state) < CODEX_STOP_MIN_MESSAGES:

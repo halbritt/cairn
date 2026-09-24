@@ -294,6 +294,36 @@ class RouterTests(unittest.TestCase):
         state = json.loads((destination / "state" / (SESSION + ".json")).read_text())
         self.assertTrue(state["last_route"]["reason"].startswith("router unavailable"))
 
+    def test_non_ascii_memory_gets_a_pointer_not_a_drop(self):
+        # 3,000 x "é" is 3,000 characters but 6,000 bytes: the skill fits the character room
+        # (6,498) but not the byte room (3,499), so it must fall back to its pointer.
+        skill(self.skills, "mid-d", "Use for mid-sized procedures.", "MID " + "y" * 4500, True)
+        self.jev.choose("mid-d", 0.95)
+        memory = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "é" * 3000}}
+        config = dict(self.config, context_bytes=9500)
+        result, state = self.route(result=memory, config=config)
+        context = result["hookSpecificOutput"]["additionalContext"]
+        self.assertEqual(self.log_lines()[-1]["mode"], "pointer")
+        self.assertNotIn("MID yyy", context)
+        self.assertLessEqual(len(context.encode()), 9500)
+        self.assertIn("mid-d", state["skills_loaded"])
+
+    def test_fired_skill_survives_a_recall_error(self):
+        self.jev.choose("hidden-a", 0.95)
+        with patch.object(hook, "recall", side_effect=hook.HookError("retrieval exceeds lifecycle context budget")), \
+                patch.object(hook, "Memory"), patch("sys.stderr"):
+            result = hook.handle(self.config, self.event)
+        self.assertIn("HIDDEN A BODY", result["hookSpecificOutput"]["additionalContext"])
+        self.assertNotIn("Cairn lifecycle memory", result["hookSpecificOutput"]["additionalContext"])
+        self.jev.choose("none", 0.99)
+        (Path(self.config["state_dir"]) / (SESSION + ".json")).unlink()
+        with patch.object(hook, "recall", side_effect=hook.HookError("boom")), patch.object(hook, "Memory"):
+            with self.assertRaises(hook.HookError):
+                hook.handle(self.config, self.event)
+        with patch.object(hook, "recall", side_effect=hook.HookError("boom")), patch.object(hook, "Memory"):
+            with self.assertRaises(hook.HookError):
+                hook.handle({k: v for k, v in self.config.items() if k != "skill_router"}, self.event)
+
     def test_opencode_gets_the_skill_apart_from_memory(self):
         self.jev.choose("hidden-a", 0.95)
         config = dict(self.config, harness="opencode")

@@ -34,6 +34,12 @@ default, which matches the Codex hooks' `additionalContextLimit`. The router wai
 `timeout` plus half a second, 3.5 seconds by default, inside the hook's
 13-second limit.
 
+The room is measured in UTF-8 bytes, like the total, so memory with
+multi-byte characters sends a large skill to its pointer instead of dropping
+it. If memory recall fails, for example because the index alone exceeds the
+budget, a skill that fired is still delivered on its own and the memory error
+goes to stderr. With nothing routed, the hook fails as before.
+
 The skill block comes before memory in `additionalContext`. For OpenCode the
 engine returns it as `cairn_skill`, and the plugin keeps it as its own block on
 the owner message, apart from memory's budget and replacement rules.

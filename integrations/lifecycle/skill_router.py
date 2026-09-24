@@ -201,7 +201,7 @@ def ask(body, opts):
 
 
 def skill_text(skill, answer, room):
-    """Injected block for one skill: the full SKILL.md when it fits `room`, else a pointer."""
+    """Injected block for one skill: the full SKILL.md when it fits `room` UTF-8 bytes, else a pointer."""
     directory = Path(skill["dir"])
     _, body = parse_frontmatter((directory / "SKILL.md").read_text(encoding="utf-8", errors="replace"))
     files = sorted(str(p) for p in directory.rglob("*") if p.is_file() and p.name != "SKILL.md"
@@ -213,7 +213,7 @@ def skill_text(skill, answer, room):
             f"Base directory for this skill: {directory}\n"
             "Relative paths in this skill are relative to that directory.\n"
             + ("Files:\n" + "\n".join(files[:MAX_FILES]) + "\n" if files else ""))
-    if len(full) <= room:
+    if len(full.encode()) <= room:
         return full, "inline"
     return (header + f"Read {directory / 'SKILL.md'} before you start, and follow it if it fits the request.\n",
             "pointer")
@@ -284,7 +284,9 @@ class Route:
                 budget = self.config.get("context_bytes", CONTEXT_BYTES_MAX)
                 if type(budget) is not int or not 1000 <= budget <= CONTEXT_BYTES_MAX:
                     budget = CONTEXT_BYTES_MAX  # the engine already refused an invalid value
-                room = min(int(self.opts["context_chars"]), budget) - (0 if opencode else len(memory_text) + 2)
+                # Bytes throughout: UTF-8 bytes never undercount Claude's character cap, and the
+                # total below is checked in bytes, so the room must be too (CAIRN-37).
+                room = min(int(self.opts["context_chars"]), budget) - (0 if opencode else len(memory_text.encode()) + 1)
                 text, mode = skill_text(skill, answer, room)
                 total = len(text.encode()) + (0 if opencode else len(memory_text.encode()) + 1)
                 if total > budget:
