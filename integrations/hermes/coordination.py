@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 MAX_PAYLOAD_BYTES = 65536
 MAX_CONCURRENT_CLIENTS = 4
+BRIDGE_PROBE_SECONDS = 0.5
 
 
 def register(ctx):
@@ -563,18 +564,27 @@ def register(ctx):
         """Bind synchronously so unload/exit cleanup always sees the socket."""
         nonlocal bridge_server, bridge_bound
         if os.path.exists(bridge_path):
+            # Probe the existing path with a bounded connect: register() runs on
+            # Hermes startup, so an unresponsive listener must not block it. Only
+            # a definite stale socket (refused, or already gone) is replaced;
+            # a live, saturated or unknown listener is left in place.
+            probe = socket.socket(socket.AF_UNIX)
             try:
-                # Test if an active server is listening
-                test_sock = socket.socket(socket.AF_UNIX)
-                test_sock.connect(bridge_path)
-                test_sock.close()
-                logger.warning("Another bridge is listening at %s; aborting bind", bridge_path)
-                return False
-            except OSError:
+                probe.settimeout(BRIDGE_PROBE_SECONDS)
+                probe.connect(bridge_path)
+            except (ConnectionRefusedError, FileNotFoundError):
                 try:
                     os.unlink(bridge_path)
-                except OSError:
+                except FileNotFoundError:
                     pass
+            except OSError as exc:
+                logger.warning("Existing bridge at %s did not answer (%s); not binding", bridge_path, exc)
+                return False
+            else:
+                logger.warning("Another bridge is listening at %s; aborting bind", bridge_path)
+                return False
+            finally:
+                probe.close()
         bridge_server = socket.socket(socket.AF_UNIX)
         bridge_server.bind(bridge_path)
         bridge_bound = True

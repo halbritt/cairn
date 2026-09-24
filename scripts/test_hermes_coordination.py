@@ -72,8 +72,29 @@ unload = []
 cli = types.SimpleNamespace(session_id='owner', _active_turn_id='', _admission_lock=threading.RLock())
 ctx = types.SimpleNamespace(_manager=types.SimpleNamespace(_cli_ref=cli), register_hook=lambda *a: None,
                             register_middleware=lambda *a: None, on_unload=unload.append)
-plugin.register(ctx)
 path = f'/tmp/cairn-hermes-{os.getpid()}.sock'
+import socket, time
+holders = []
+if mode == 'saturated':
+    # Another live bridge whose accept loop is wedged: listen(1) and never accept.
+    live = socket.socket(socket.AF_UNIX); live.bind(path); live.listen(1); holders.append(live)
+    for _ in range(4):
+        queued = socket.socket(socket.AF_UNIX); queued.setblocking(False)
+        try:
+            queued.connect(path)
+        except (BlockingIOError, OSError):
+            pass
+        holders.append(queued)
+    live_inode = os.stat(path).st_ino
+elif mode == 'stale':
+    dead = socket.socket(socket.AF_UNIX); dead.bind(path); dead.close()  # file left behind, nobody listening
+started = time.monotonic()
+plugin.register(ctx)
+elapsed = time.monotonic() - started
+if mode == 'saturated':
+    print(json.dumps(dict(pid=os.getpid(), bound=False, elapsed=elapsed, kept_live=os.path.exists(path) and os.stat(path).st_ino == live_inode)), flush=True)
+    os.unlink(path)
+    raise SystemExit(0)
 print(json.dumps(dict(pid=os.getpid(), bound=os.path.exists(path))), flush=True)
 if mode == 'unload':
     for close in unload:
@@ -113,6 +134,16 @@ class HermesBridgeSocketLifetime(unittest.TestCase):
         lines, path = self.run_child('exit')
         self.assertTrue(lines[0]['bound'])
         self.assertFalse(path.exists(), 'normal interpreter exit without plugin unload leaked the socket')
+
+    def test_wedged_live_bridge_does_not_block_register_or_lose_its_socket(self):
+        lines, path = self.run_child('saturated')
+        self.assertLess(lines[0]['elapsed'], 3, 'register() blocked on a saturated existing listener')
+        self.assertTrue(lines[0]['kept_live'], "an unresponsive live bridge's socket was replaced")
+
+    def test_stale_socket_file_is_replaced(self):
+        lines, path = self.run_child('stale')
+        self.assertTrue(lines[0]['bound'], 'a refused stale socket was not replaced')
+        self.assertFalse(path.exists())
 
     def test_forked_child_exit_keeps_the_parent_socket(self):
         lines, path = self.run_child('fork')

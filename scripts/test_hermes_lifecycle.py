@@ -154,8 +154,8 @@ class HermesBoundaryTests(unittest.TestCase):
         while True:
             try:
                 state = status.read_text().split()[2]
-            except FileNotFoundError:
-                return  # The killed child has already been reaped.
+            except (FileNotFoundError, ProcessLookupError):
+                return  # Reaped between the lookup and the read (open or read can fail).
             if state == 'Z' or time.monotonic() > deadline:
                 break
             time.sleep(0.02)
