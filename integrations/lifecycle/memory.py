@@ -14,7 +14,7 @@ import tempfile
 import time
 import uuid
 
-CONTEXT_BYTES = 12000
+CONTEXT_BYTES = 12000  # default; installations may lower it with config["context_bytes"]
 TEXT_BYTES = 24000
 TRANSCRIPT_BYTES = 2 * 1024 * 1024
 NOTE_BYTES = 6000
@@ -188,6 +188,16 @@ class Memory:
                 if record["body"].startswith(title + "\n"):
                     return record
         return None
+
+
+def context_budget(config):
+    """Byte budget for injected hook context. Claude Code keeps only about
+    10,000 characters of additionalContext, so its installers set 9500; bytes
+    never undercount characters, so the cap holds for any text."""
+    value = config.get("context_bytes", CONTEXT_BYTES)
+    if type(value) is not int or not 1000 <= value <= 65536:
+        raise HookError("invalid context_bytes; expected an integer from 1000 to 65536")
+    return value
 
 
 def conversation(path, with_offsets=False):
@@ -396,7 +406,7 @@ def semantic_candidate(memory, event, intent, result, seen, status):
         # Do not ask a model to accept a body that cannot be delivered in full.
         view = dict(selected=selected, index=[{k: entry[k] for k in
                     ("record_id", "version", "summary", "pull_arguments")}], expanded=pulled)
-        if len((GUIDANCE + encoded(view)).encode()) > CONTEXT_BYTES:
+        if len((GUIDANCE + encoded(view)).encode()) > context_budget(memory.config):
             status["discovery"] = "context_budget"
             return None, None
         verdict = select_json(memory.config, RELEVANCE_SCHEMA, RELEVANCE_PROMPT,
@@ -440,15 +450,16 @@ def recall(memory, event, state=None):
         for entry in entries]}
     if not view["selected"] and not entries:
         return {}  # no guidance boilerplate or weak matches added to the conversation
+    budget = context_budget(memory.config)
     text = GUIDANCE + encoded(view)
-    if len(text.encode("utf-8")) > CONTEXT_BYTES:
+    if len(text.encode("utf-8")) > budget:
         raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")
     expanded_id = None
     if entries:
         try:
             pulled = semantic_pull or memory.call("pull", payload=entries[0]["pull_arguments"])
             candidate = GUIDANCE + encoded(dict(view, expanded=pulled))
-            if len(candidate.encode("utf-8")) <= CONTEXT_BYTES:
+            if len(candidate.encode("utf-8")) <= budget:
                 text = candidate
                 expanded_id = entries[0]["record_id"]
                 record = pulled.get("selection", {}).get("record", {})
@@ -457,7 +468,7 @@ def recall(memory, event, state=None):
                     state["workstream"] = title
         except HookError:
             warning = "Optional body unavailable; search again before relying on its preview.\n"
-            if len((warning + text).encode("utf-8")) > CONTEXT_BYTES:
+            if len((warning + text).encode("utf-8")) > budget:
                 raise HookError("optional body unavailable and context budget exhausted")
             text = warning + text
     # Remember body delivery only. A preview with an expiring handle must remain

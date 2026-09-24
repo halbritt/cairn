@@ -29,8 +29,8 @@ prompt, the engine starts `skill_router.py` in a thread beside memory recall.
    tells the model to read the `SKILL.md` replaces the body.
 
 Nothing is injected when even the pointer and memory together would exceed
-12,000 bytes, the ceiling that memory's `CONTEXT_BYTES` and the Codex hooks'
-`additionalContextLimit` share. The router waits at most twice the per-leg
+the installation's `context_bytes`: 9,500 for Claude Code and 12,000 by
+default, which matches the Codex hooks' `additionalContextLimit`. The router waits at most twice the per-leg
 `timeout` plus half a second, 3.5 seconds by default, inside the hook's
 13-second limit.
 
@@ -82,8 +82,9 @@ below inside that block to override its default.
 
 `context_chars` is 9,500 because Claude Code delivers about 10,000 characters
 of hook `additionalContext` and drops the rest. Measured on 2026-09-24: 9,000
-characters arrived whole, and 11,000 lost their tail. Memory's own budget is
-12,000 bytes, so a large memory result can already be cut off in Claude Code.
+characters arrived whole, and 11,000 lost their tail. The Claude installers
+now also set the engine's `context_bytes` to 9,500 (CAIRN-35), so memory alone
+cannot be cut off either.
 
 ## Rollback
 

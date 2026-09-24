@@ -18,6 +18,11 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 
 ## 2026-09-24
 
+- The lifecycle context budget is now set per installation (`context_bytes`,
+  12,000 bytes by default). The Claude installers set 9,500, because Claude
+  Code keeps only about 10,000 characters of hook context and silently cut off
+  larger memory recalls. The skill router uses the same budget. Rerun
+  `scripts/install-claude-hooks.py` to apply it.
 - Migration 050 records a worker killed by a signal the runner did not send
   as `signaled`, with the signal number. Before, such a worker appeared as
   `exited` with exit code -1. `cairn run` exits with 128 plus the signal

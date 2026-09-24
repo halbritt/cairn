@@ -267,6 +267,15 @@ class RouterTests(unittest.TestCase):
         self.assertNotIn("skills_loaded", state)
         self.assertEqual(self.log_lines()[-1]["reason"], "no room")
 
+    def test_combined_context_respects_the_installation_budget(self):
+        self.jev.choose("hidden-a", 0.97)
+        crowded = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "m" * 4900}}
+        result, state = self.route(result=crowded, config=dict(self.config, context_bytes=5000))
+        self.assertEqual(result, crowded, "skill injected past the installation's context budget")
+        self.assertEqual(self.log_lines()[-1]["reason"], "no room")
+        roomy, _ = self.route(result=crowded, state={}, config=dict(self.config, context_bytes=12000))
+        self.assertIn("HIDDEN A BODY", roomy["hookSpecificOutput"]["additionalContext"])
+
     def test_stalled_legs_bound_the_wait(self):
         self.jev.mode = self.kev.mode = "stall"
         started = time.monotonic()

@@ -10,6 +10,9 @@ import sys
 import tempfile
 
 
+CLAUDE_CONTEXT_BYTES = 9500
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False, encoding="utf-8") as out:
@@ -50,7 +53,10 @@ def install(settings_path, destination, config, skill_router=True):
     shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/lifecycle/memory.py", script)
     script.chmod(0o700)
     config = install_router(destination, config, skill_router)
-    write_json(config_path, dict(config, state_dir=str(destination / "state")))
+    # Claude Code keeps only about 10,000 characters of hook additionalContext
+    # (measured 2026-09-24); keep injected memory and skills under it.
+    write_json(config_path, dict(config, state_dir=str(destination / "state"),
+                                 context_bytes=config.get("context_bytes", CLAUDE_CONTEXT_BYTES)))
     backup = settings_path.with_name(settings_path.name + ".before-cairn-lifecycle")
     if original is not None and not backup.exists():
         backup.write_bytes(original)

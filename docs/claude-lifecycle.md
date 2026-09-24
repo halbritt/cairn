@@ -72,8 +72,11 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
 
 ## Bounds and failures
 
-- Each retrieval reserves 8,000 bytes of Cairn memory room. Delivered context text
-  is capped at 12,000 UTF-8 bytes, including guidance and the optional body.
+- Each retrieval reserves 8,000 bytes of Cairn memory room. Delivered context text,
+  including guidance and the optional body, is capped by the installation's
+  `context_bytes`: 9,500 UTF-8 bytes for Claude Code, whose hooks keep only about
+  10,000 characters of `additionalContext`, and 12,000 bytes by default elsewhere.
+  An oversized optional body is left out while its index entry and pull handle stay.
   Mandatory context is never truncated. Retrieval runs on lifecycle events, not
   on every model or tool request; it does not enforce the whole conversation's
   context budget.

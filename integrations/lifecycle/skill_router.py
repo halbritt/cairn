@@ -281,10 +281,13 @@ class Route:
                 skill = outcome["skill"]
                 memory_text = (result.get("hookSpecificOutput") or {}).get("additionalContext", "")
                 opencode = self.config.get("harness") == "opencode"
-                room = int(self.opts["context_chars"]) - (0 if opencode else len(memory_text) + 2)
+                budget = self.config.get("context_bytes", CONTEXT_BYTES_MAX)
+                if type(budget) is not int or not 1000 <= budget <= CONTEXT_BYTES_MAX:
+                    budget = CONTEXT_BYTES_MAX  # the engine already refused an invalid value
+                room = min(int(self.opts["context_chars"]), budget) - (0 if opencode else len(memory_text) + 2)
                 text, mode = skill_text(skill, answer, room)
                 total = len(text.encode()) + (0 if opencode else len(memory_text.encode()) + 1)
-                if total > CONTEXT_BYTES_MAX:
+                if total > budget:
                     record.update(fired=False, reason="no room")
                     return result
                 record["mode"] = mode
