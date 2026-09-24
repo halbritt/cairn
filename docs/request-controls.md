@@ -155,8 +155,10 @@ evades the scan.
 Tool capture is opt-in by the host. The plugin sends `ToolStart` and `ToolEnd`
 hook events, with `tool`, `call_id` and `request_id`, only when the TurnStart
 reply carries `cairn.tool_capture: true`. An exclusive turn refuses tools if
-the host did not advertise capture or if `ToolStart` fails. The host currently
-admits only marked `bash` tools for this trial. `ToolEnd` alone does not prove
+`ToolStart` fails. An ordinary wake without capture support runs its tools
+normally; an admitted wake whose `TurnStart` hook fails refuses tools because
+its host state is unknown. The host currently admits only marked `bash` tools
+for this trial. `ToolEnd` alone does not prove
 process termination; the host scans before reporting terminal tool state.
 Environment clearing can evade this scan, so this adapter does not establish
 general cleanup for arbitrary tool workloads. The trial fixture preserves the

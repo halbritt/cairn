@@ -25,7 +25,8 @@ class OpenCodeCancelHostTests(unittest.TestCase):
                           process=coordination.process_reference(os.getpid()),
                           inbox_intent=dict(request_id='attempt-one', session=self.session,
                                             native_turn_id='turn-one'),
-                          inbox_attempt=copy.deepcopy(self.attempt), delivered_since_idle=True)
+                          inbox_attempt=copy.deepcopy(self.attempt), delivered_since_idle=True,
+                          opencode_request_endpoint='/unused/bridge.sock')
         self.config = dict(harness='opencode', native_delivery=True, binding='fixture',
                            cairn='/unused/cairn', socket='/unused/api.sock',
                            token_file='/unused/token', state_dir=self.temp.name)

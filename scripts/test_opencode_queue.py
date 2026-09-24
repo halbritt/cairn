@@ -905,13 +905,17 @@ class OpenCodeToolCaptureTests(unittest.TestCase):
     start_fixture = OpenCodeBridgeFixtureTests.start_fixture
     REQUEST = '00000000-0000-4000-8000-000000000001'
 
-    def run_turn(self, capture_mode=None):
+    def run_turn(self, capture_mode=None, owner_before_idle=False, turn_start_fail=False):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         hooks, observed = Path(tmp.name) / 'hooks.jsonl', Path(tmp.name) / 'observed.json'
         env = dict(OPENCODE_FIXTURE_HOOK_CAPTURE=str(hooks), OPENCODE_FIXTURE_TOOL_RESULT=str(observed))
         if capture_mode:
             env['OPENCODE_FIXTURE_TOOL_CAPTURE'] = capture_mode
+        if owner_before_idle:
+            env['OPENCODE_FIXTURE_OWNER_BEFORE_IDLE'] = '1'
+        if turn_start_fail:
+            env['OPENCODE_FIXTURE_TURN_START_FAIL'] = '1'
         _, endpoint, process = self.start_fixture(extra_env=env)
         opencode_queue.enqueue(endpoint, process, 'ses_test', 'wake text',
                                '00000000-0000-4000-8000-000000000002', request_id=self.REQUEST)
@@ -923,7 +927,7 @@ class OpenCodeToolCaptureTests(unittest.TestCase):
         return json.loads(observed.read_text()), events
 
     def test_exclusive_turn_marks_shell_environment_and_owner_turn_does_not(self):
-        observed, _ = self.run_turn()
+        observed, _ = self.run_turn('1')
         self.assertEqual(observed['exclusive_env'], dict(
             CAIRN_REQUEST_ID=self.REQUEST, CAIRN_NATIVE_TURN_ID='msg_native_one', CAIRN_TOOL_CALL_ID='call_one'))
         self.assertEqual(observed['after_idle_env'], {})
@@ -931,10 +935,21 @@ class OpenCodeToolCaptureTests(unittest.TestCase):
 
     def test_no_capture_events_until_the_host_advertises_support(self):
         observed, events = self.run_turn()
-        self.assertIn('refusing a tool in an exclusive Cairn request', observed['before'])
-        self.assertEqual(observed['after'], 'skipped')
+        self.assertEqual((observed['before'], observed['other_before'], observed['after']),
+                         ('ok', 'ok', 'ok'))
+        self.assertEqual(observed['exclusive_env'], {})
         self.assertNotIn('ToolStart', [e['hook_event_name'] for e in events])
         self.assertNotIn('ToolEnd', [e['hook_event_name'] for e in events])
+
+    def test_owner_turn_before_idle_reports_pinned_end_first(self):
+        observed, events = self.run_turn('1', owner_before_idle=True)
+        self.assertEqual(observed['owner_before'], 'ok')
+        turns = [(e['hook_event_name'], e.get('turn_id')) for e in events
+                 if e['hook_event_name'] in ('TurnStart', 'TurnEnd')]
+        self.assertEqual(turns[:4], [('TurnStart', 'msg_native_one'),
+                                     ('TurnEnd', 'msg_native_one'),
+                                     ('TurnStart', 'msg_owner_two'),
+                                     ('TurnEnd', 'msg_owner_two')])
 
     def test_advertised_capture_reports_exclusive_tools_only(self):
         observed, events = self.run_turn('1')
@@ -949,6 +964,12 @@ class OpenCodeToolCaptureTests(unittest.TestCase):
         observed, events = self.run_turn('fail')
         self.assertIn('refusing an uncaptured tool', observed['before'])
         self.assertEqual(observed['owner_before'], 'ok')
+
+    def test_failed_turn_start_refuses_tools_for_unknown_admission(self):
+        observed, events = self.run_turn(turn_start_fail=True)
+        self.assertIn('refusing a tool in an exclusive Cairn request', observed['before'])
+        self.assertEqual(observed['after'], 'skipped')
+        self.assertNotIn('ToolStart', [e['hook_event_name'] for e in events])
 
 
 class OpenCodeNativeSchemaTests(unittest.TestCase):

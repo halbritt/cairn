@@ -1036,10 +1036,17 @@ def prepare_opencode_cancel(config, state, path, attempt):
     prior = state.get('cancel_submission', {})
     if prior.get('attempt_id') == attempt['attempt_id']:
         return None  # An uncertain submission must never be resent automatically.
+    wake = state.get('idle_wake', {})
+    endpoint = state.get('opencode_request_endpoint')
+    if not endpoint and wake.get('delivery_id') == attempt['delivery']['delivery_id']:
+        endpoint = wake.get('endpoint')
+    endpoint = endpoint or opencode_queue_endpoint(config, state['process'])
+    if not endpoint:
+        return None  # No exact native endpoint is available; keep the hold.
     request = dict(attempt_id=attempt['attempt_id'], session_id=state['agent']['native_session_id'],
                    request_id=attempt['delivery']['delivery_id'],
                    expected_turn_id=attempt['native_turn_id'], process=state['process'],
-                   endpoint=f"/tmp/cairn-opencode-{state['process']['pid']}.sock")
+                   endpoint=endpoint)
     state['cancel_submission'] = dict(request, status='uncertain')
     write_state(path, state)
     return request
@@ -1143,7 +1150,7 @@ def release_inbox(config, state, path, reason, fenced=False):
             raise
     for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response',
                 'cancel_turn_end', 'cancel_submission', 'cancel_scan_report', 'cancel_final_report',
-                'tool_calls', 'opencode_turn_since'):
+                'tool_calls', 'opencode_turn_since', 'opencode_request_endpoint'):
         state.pop(key, None)
     write_state(path, state)
     return True
@@ -1278,6 +1285,11 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     target = Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')
     write_state(target, context)
     state['delivered_since_idle'] = True
+    wake = state.get('idle_wake', {})
+    if (config['harness'] == 'opencode' and wake.get('transport') == 'opencode-queue' and
+            wake.get('delivery_id') == attempt['delivery']['delivery_id'] and
+            isinstance(wake.get('endpoint'), str)):
+        state['opencode_request_endpoint'] = wake['endpoint']
     state.pop('idle_wake', None)
     write_state(path, state)
     return (f"Cairn has a {event['kind']} from {event['from']} for this conversation. "

@@ -21,6 +21,7 @@ fs.appendFileSync(process.env.OPENCODE_FIXTURE_HOOK_CAPTURE, input + "\\n");
 const event = JSON.parse(input).hook_event_name;
 const capture = process.env.OPENCODE_FIXTURE_TOOL_CAPTURE;
 if (capture === "fail" && event === "ToolStart") process.exit(1);
+if (process.env.OPENCODE_FIXTURE_TURN_START_FAIL && event === "TurnStart") process.exit(1);
 process.stdout.write(JSON.stringify({ hookSpecificOutput: { additionalContext: "" },
   ...(capture && event === "TurnStart" ? { cairn: { tool_capture: true } } : {}) }));
 `);
@@ -48,6 +49,8 @@ const mode = process.env.OPENCODE_FIXTURE_MODE || "normal";
 // tool hooks, then an owner turn, and write what they observed to this file.
 // OPENCODE_FIXTURE_TOOL_CAPTURE: '1' makes TurnStart advertise tool capture;
 // 'fail' also advertises it but fails every ToolStart hook call.
+// OPENCODE_FIXTURE_OWNER_BEFORE_IDLE: queue an owner transform before idle.
+// OPENCODE_FIXTURE_TURN_START_FAIL: host admission reply is unavailable.
 const cancelMode = process.env.OPENCODE_FIXTURE_CANCEL
 
 let client = null;
@@ -99,18 +102,25 @@ if (mode !== "missing_api") {
             if (toolResult) {
               observed.exclusive_env = await shellEnv();
               observed.before = await run("tool.execute.before", { output: { args: {} } });
+              if (!process.env.OPENCODE_FIXTURE_TOOL_CAPTURE)
+                observed.other_before = await run("tool.execute.before",
+                  { tool: "read", callID: "call_other", output: { args: {} } });
               observed.after = observed.before === "ok"
                 ? await run("tool.execute.after", { args: {}, output: { title: "", output: "", metadata: {} } })
                 : "skipped";
             }
-            await hooks.event({ event: { type: "session.idle", properties: { sessionID: id } } });
-            if (toolResult) {
-              observed.after_idle_env = await shellEnv();
-              const owner = { role: "user", sessionID: id, id: "msg_owner_two" };
-              await hooks["experimental.chat.messages.transform"]({}, { messages: [{ info: owner,
+            const owner = async () => {
+              const info = { role: "user", sessionID: id, id: "msg_owner_two" };
+              await hooks["experimental.chat.messages.transform"]({}, { messages: [{ info,
                 parts: [{ type: "text", text: "owner prompt", synthetic: false, ignored: false }] }] });
               observed.owner_env = await shellEnv();
               observed.owner_before = await run("tool.execute.before", { output: { args: {} } });
+            };
+            if (toolResult && process.env.OPENCODE_FIXTURE_OWNER_BEFORE_IDLE) await owner();
+            await hooks.event({ event: { type: "session.idle", properties: { sessionID: id } } });
+            if (toolResult) {
+              observed.after_idle_env = await shellEnv();
+              if (!process.env.OPENCODE_FIXTURE_OWNER_BEFORE_IDLE) await owner();
               fs.writeFileSync(toolResult, JSON.stringify(observed));
             }
           });

@@ -468,16 +468,27 @@ const plugin: Plugin = async ({ directory, client }) => {
       await enqueue(info.sessionID, async () => {
         let state = sessions.get(info.sessionID)
         if (!state || state.turn !== info.id) {
+          const prior = exclusive.get(info.sessionID)
+          if (state && prior?.turn === state.turn) {
+            // Native admission queues owner work until the exclusive request
+            // settles. If its idle event is late, this new owner turn proves
+            // the pinned request turn ended. Block tools until TurnEnd lands.
+            prior.capture = false
+            await invoke(info.sessionID, "TurnEnd", "", state.turn)
+            exclusive.delete(info.sessionID)
+          }
           const model = info.model ? `${info.model.providerID}/${info.model.modelID}` : ""
           const admission = admissions.get(info.sessionID)
           const matched = admission && owner.parts.some(p => p.type === "text" && p.text === admission.text && !p.synthetic && !p.ignored)
             ? admission : undefined
           const accepted = matched ? await matched.settled : false
+          if (accepted && matched)
+            exclusive.set(info.sessionID, { requestID: matched.requestID, turn: info.id, capture: false })
           const result = await invoke(info.sessionID, "TurnStart", model, info.id, accepted ? matched : undefined)
           if (accepted && admissions.get(info.sessionID) === matched) admissions.delete(info.sessionID)
-          if (accepted && matched) exclusive.set(info.sessionID, { requestID: matched.requestID, turn: info.id,
-            capture: result?.cairn?.tool_capture === true })
-          else exclusive.delete(info.sessionID)
+          if (accepted && matched && result?.cairn?.tool_capture === true)
+            exclusive.set(info.sessionID, { requestID: matched.requestID, turn: info.id, capture: true })
+          else exclusive.delete(info.sessionID) // Ordinary wake: no exclusive capture contract.
           state = { turn: info.id, context: result.hookSpecificOutput?.additionalContext ?? "" }
           sessions.set(info.sessionID, state)
         }
