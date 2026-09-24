@@ -129,6 +129,18 @@ class RouterTests(unittest.TestCase):
         changed = {s["name"]: s for s in router.catalog(self.skills, cache)}
         self.assertEqual(changed["visible-b"]["description"], "Changed.")
 
+    def test_wrapped_and_block_descriptions_fold_and_nested_mappings_do_not(self):
+        fields, body = router.parse_frontmatter(
+            "---\nname: wrapped\ndescription: Use for samtools failures; see body for SIGPIPE\n"
+            "  and newline fixes.\nmetadata:\n  trigger: samtools depth\n  nested: value\n"
+            "other: >\n  folded block\n  text\nquoted: \"Use it\"\n---\nBODY\n")
+        self.assertEqual(fields["description"], "Use for samtools failures; see body for SIGPIPE and newline fixes.")
+        self.assertEqual(fields["metadata"], "")
+        self.assertEqual(fields["other"], "folded block text")
+        self.assertEqual(fields["quoted"], "Use it")
+        self.assertEqual(body, "BODY")
+        self.assertEqual(router.parse_frontmatter("no header\n"), (None, "no header\n"))
+
     def test_only_a_bounded_prompt_and_the_directory_name_leave_the_box(self):
         self.jev.choose("hidden-a", 0.95)
         long_prompt = "drop it " + "p" * 5000

@@ -71,17 +71,32 @@ def excluded(event, opts):
 
 
 def parse_frontmatter(text):
-    """({key: value}, body) for a `---` fenced header; (None, text) otherwise."""
+    """({key: value}, body) for a `---` fenced header; (None, text) otherwise.
+
+    Top-level scalars only. Indented continuation lines and `>`/`|` block scalars
+    fold into their key's value; a key with an empty value (a nested mapping such as
+    `metadata:`) keeps an empty string and its indented lines are ignored.
+    """
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return None, text
-    fields = {}
+    fields, folding = {}, None
     for i, line in enumerate(lines[1:], start=1):
         if line.strip() == "---":
-            return fields, "\n".join(lines[i + 1:]).strip("\n")
-        if ":" in line and line[:1] not in (" ", "\t"):
+            return ({key: value.strip().strip('"').strip("'") for key, value in fields.items()},
+                    "\n".join(lines[i + 1:]).strip("\n"))
+        if line[:1] in (" ", "\t"):
+            if folding and line.strip():
+                fields[folding] = (fields[folding] + " " + line.strip()).strip()
+            continue
+        folding = None
+        if ":" in line:
             key, _, value = line.partition(":")
-            fields[key.strip()] = value.strip().strip('"').strip("'")
+            key, value = key.strip(), value.strip()
+            if value in (">", "|", ">-", "|-", ">+", "|+"):
+                fields[key], folding = "", key
+            else:
+                fields[key], folding = value, (key if value else None)
     return None, text
 
 
