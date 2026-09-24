@@ -730,6 +730,10 @@ def handle(config, event):
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
+            if config.get("harness") == "codex" and event_name in ("SessionStart", "UserPromptSubmit"):
+                # Codex captures at an async Stop that can still hold the lock when
+                # the next prompt arrives; skip optional retrieval instead of failing.
+                return {}
             raise HookError("a memory hook is already running for this session") from exc
         path = lock_dir / (state_key + ".json")
         state = json.loads(path.read_text()) if path.exists() else {}

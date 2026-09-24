@@ -126,6 +126,18 @@ class CodexHookTests(unittest.TestCase):
             hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
             retry.assert_called_once()
 
+    def test_prompt_during_background_capture_skips_retrieval_quietly(self):
+        import fcntl, hashlib
+        state_dir = Path(self.config["state_dir"]); state_dir.mkdir(parents=True)
+        with (state_dir / (SESSION + ".lock")).open("a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)  # the async Stop capture
+            with patch.object(hook.Memory, "call", side_effect=AssertionError("retrieval ran under the capture lock")):
+                self.assertEqual(hook.handle(self.config, dict(self.event, hook_event_name="UserPromptSubmit", prompt="next task")), {})
+            with self.assertRaises(hook.HookError):  # a second capture still refuses rather than racing
+                hook.handle(self.config, dict(self.event, hook_event_name="PreCompact"))
+            with self.assertRaises(hook.HookError):  # other harnesses keep the existing refusal
+                hook.handle(dict(self.config, harness="claude"), dict(self.event, hook_event_name="UserPromptSubmit", prompt="x"))
+
     def test_stop_continuation_and_other_harnesses_do_not_capture(self):
         with patch.object(hook, "capture", side_effect=AssertionError("unexpected capture")):
             self.dialogue(hook.CODEX_STOP_MIN_MESSAGES)

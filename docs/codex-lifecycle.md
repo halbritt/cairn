@@ -19,6 +19,9 @@ bounded recent window of the rollout. A failed capture leaves the marker where
 it was, so the next Stop retries. A Stop continuation (`stop_hook_active`) is
 not treated as a new boundary.
 
+A prompt submitted while that background capture still holds the session lock
+skips optional retrieval for that prompt instead of reporting a hook failure.
+
 The transcript reader keeps only top-level `user` and `assistant` message
 items from the Codex rollout. It omits developer instructions, injected
 `AGENTS.md` and environment context, reasoning, tool calls and their output.
