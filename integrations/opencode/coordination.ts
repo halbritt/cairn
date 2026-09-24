@@ -73,6 +73,10 @@ const plugin: Plugin = async ({ directory, client }) => {
   }
   const sessions = new Map<string, { turn: string; context: string }>()
   const admissions = new Map<string, Admission>()
+  // Sessions whose current turn is an admitted exclusive Cairn request. Owner
+  // turns are never marked or captured. capture is set only when the host's
+  // TurnStart reply advertises tool capture support.
+  const exclusive = new Map<string, { requestID: string; turn: string; capture: boolean }>()
   const jobs = new Map<string, Promise<void>>()
   let closing = false
 
@@ -86,7 +90,8 @@ const plugin: Plugin = async ({ directory, client }) => {
     disposed: false,
   }
 
-  function invoke(id: string, event: string, model = "", turn_id = "", admission?: Admission): Promise<any> {
+  function invoke(id: string, event: string, model = "", turn_id = "", admission?: Admission,
+                  extra: Record<string, string> = {}): Promise<any> {
     return new Promise((resolve, reject) => {
       const child = execFile(config.python, [config.script, "hook", "--config", config.config],
         { encoding: "utf8", timeout: 15000, maxBuffer: 32768 }, (error, stdout) => {
@@ -104,6 +109,7 @@ const plugin: Plugin = async ({ directory, client }) => {
         request_id: admission?.requestID,
         delivery_id: admission?.deliveryID,
         prompt: admission?.text,
+        ...extra,
       }))
     })
   }
@@ -468,6 +474,9 @@ const plugin: Plugin = async ({ directory, client }) => {
           const accepted = matched ? await matched.settled : false
           const result = await invoke(info.sessionID, "TurnStart", model, info.id, accepted ? matched : undefined)
           if (accepted && admissions.get(info.sessionID) === matched) admissions.delete(info.sessionID)
+          if (accepted && matched) exclusive.set(info.sessionID, { requestID: matched.requestID, turn: info.id,
+            capture: result?.cairn?.tool_capture === true })
+          else exclusive.delete(info.sessionID)
           state = { turn: info.id, context: result.hookSpecificOutput?.additionalContext ?? "" }
           sessions.set(info.sessionID, state)
         }
@@ -476,16 +485,45 @@ const plugin: Plugin = async ({ directory, client }) => {
             id: "prt_" + randomUUID().replaceAll("-", ""), sessionID: info.sessionID, messageID: info.id } as Part)
       })
     },
+    // Descendants inherit these, including setsid and double-fork escapees,
+    // so a host marker scan can find every process of the exclusive request.
+    "shell.env": async (input, output) => {
+      const current = input.sessionID ? exclusive.get(input.sessionID) : undefined
+      if (!current || closing) return
+      output.env.CAIRN_REQUEST_ID = current.requestID
+      output.env.CAIRN_NATIVE_TURN_ID = current.turn
+      if (input.callID) output.env.CAIRN_TOOL_CALL_ID = input.callID
+    },
+    "tool.execute.before": async (input) => {
+      const current = exclusive.get(input.sessionID)
+      if (!current?.capture || closing) return
+      // The capture must be durable before the tool starts; an uncaptured tool
+      // in an exclusive turn could not be safely cancelled, so refuse it.
+      try {
+        await invoke(input.sessionID, "ToolStart", "", current.turn, undefined,
+          { tool: input.tool, call_id: input.callID, request_id: current.requestID })
+      } catch {
+        throw new Error("Cairn tool capture unavailable; refusing an uncaptured tool in an exclusive Cairn request")
+      }
+    },
+    "tool.execute.after": async (input) => {
+      const current = exclusive.get(input.sessionID)
+      if (!current?.capture || closing) return
+      // A missed ToolEnd leaves the tool non-terminal, which keeps any hold.
+      await invoke(input.sessionID, "ToolEnd", "", current.turn, undefined,
+        { tool: input.tool, call_id: input.callID, request_id: current.requestID }).catch(() => {})
+    },
     event: async ({ event }) => {
       if (event.type === "session.idle" && sessions.has(event.properties.sessionID) && !closing)
         await enqueue(event.properties.sessionID, async () => {
           const session = sessions.get(event.properties.sessionID)
           await invoke(event.properties.sessionID, "TurnEnd", "", session?.turn)
           admissions.delete(event.properties.sessionID)
+          exclusive.delete(event.properties.sessionID)
         })
       if (event.type === "session.deleted" && sessions.has(event.properties.info.id)) {
         const id = event.properties.info.id
-        await enqueue(id, async () => { await invoke(id, "SessionEnd", "", sessions.get(id)?.turn); sessions.delete(id); admissions.delete(id) })
+        await enqueue(id, async () => { await invoke(id, "SessionEnd", "", sessions.get(id)?.turn); sessions.delete(id); admissions.delete(id); exclusive.delete(id) })
       }
     },
     dispose: async () => {
@@ -496,6 +534,7 @@ const plugin: Plugin = async ({ directory, client }) => {
       await Promise.all([...sessions.keys()].map(id => enqueue(id, async () => { await invoke(id, "SessionEnd", "", sessions.get(id)?.turn) })))
       sessions.clear()
       admissions.clear()
+      exclusive.clear()
     },
   }
 }

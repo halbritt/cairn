@@ -42,6 +42,7 @@ def install(root, settings, config):
     shutil.copyfile(ROOT / 'integrations/lifecycle/claude_channel.py', root / 'claude_channel.py')
     shutil.copyfile(ROOT / 'integrations/lifecycle/opencode_queue.py', root / 'opencode_queue.py')
     shutil.copyfile(ROOT / 'integrations/lifecycle/hermes_queue.py', root / 'hermes_queue.py')
+    shutil.copyfile(ROOT / 'integrations/lifecycle/process_scan.py', root / 'process_scan.py')
     shutil.copyfile(ROOT / 'integrations/lifecycle/coordination.py', script)
     script.chmod(0o700)
     command = [sys.executable, str(script), 'hook', '--config', str(config_path)]

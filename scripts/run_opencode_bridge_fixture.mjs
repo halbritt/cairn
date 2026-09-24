@@ -18,7 +18,11 @@ import fs from "node:fs";
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
 fs.appendFileSync(process.env.OPENCODE_FIXTURE_HOOK_CAPTURE, input + "\\n");
-process.stdout.write(JSON.stringify({ hookSpecificOutput: { additionalContext: "" } }));
+const event = JSON.parse(input).hook_event_name;
+const capture = process.env.OPENCODE_FIXTURE_TOOL_CAPTURE;
+if (capture === "fail" && event === "ToolStart") process.exit(1);
+process.stdout.write(JSON.stringify({ hookSpecificOutput: { additionalContext: "" },
+  ...(capture && event === "TurnStart" ? { cairn: { tool_capture: true } } : {}) }));
 `);
 }
 fs.writeFileSync(
@@ -40,6 +44,10 @@ const mode = process.env.OPENCODE_FIXTURE_MODE || "normal";
 // 'cancelled', 'not_active', 'route_missing' (404), 'bad_request' (400),
 // 'server_error' (500), 'invalid', 'slow' (settles after 5s), 'throw'.
 // OPENCODE_FIXTURE_TURN records that owner turn for ses_test at startup.
+// OPENCODE_FIXTURE_TOOL_RESULT: after an admitted turn, run the shell.env and
+// tool hooks, then an owner turn, and write what they observed to this file.
+// OPENCODE_FIXTURE_TOOL_CAPTURE: '1' makes TurnStart advertise tool capture;
+// 'fail' also advertises it but fails every ToolStart hook call.
 const cancelMode = process.env.OPENCODE_FIXTURE_CANCEL
 
 let client = null;
@@ -75,7 +83,34 @@ if (mode !== "missing_api") {
             const info = { role: "user", sessionID: id, id: "msg_native_one" };
             const parts = body.parts.map(part => ({ ...part, synthetic: false, ignored: false }));
             await hooks["experimental.chat.messages.transform"]({}, { messages: [{ info, parts }] });
+            const toolResult = process.env.OPENCODE_FIXTURE_TOOL_RESULT;
+            const shellEnv = async () => {
+              const output = { env: {} };
+              await hooks["shell.env"]({ cwd: "/tmp", sessionID: id, callID: "call_one" }, output);
+              return output.env;
+            };
+            const run = async (name, extra) => {
+              try {
+                await hooks[name]({ tool: "bash", sessionID: id, callID: "call_one", ...extra }, extra.output);
+                return "ok";
+              } catch (err) { return String(err?.message || err); }
+            };
+            const observed = {};
+            if (toolResult) {
+              observed.exclusive_env = await shellEnv();
+              observed.before = await run("tool.execute.before", { output: { args: {} } });
+              observed.after = await run("tool.execute.after", { args: {}, output: { title: "", output: "", metadata: {} } });
+            }
             await hooks.event({ event: { type: "session.idle", properties: { sessionID: id } } });
+            if (toolResult) {
+              observed.after_idle_env = await shellEnv();
+              const owner = { role: "user", sessionID: id, id: "msg_owner_two" };
+              await hooks["experimental.chat.messages.transform"]({}, { messages: [{ info: owner,
+                parts: [{ type: "text", text: "owner prompt", synthetic: false, ignored: false }] }] });
+              observed.owner_env = await shellEnv();
+              observed.owner_before = await run("tool.execute.before", { output: { args: {} } });
+              fs.writeFileSync(toolResult, JSON.stringify(observed));
+            }
           });
         }
         return { data: { status: "accepted" } };

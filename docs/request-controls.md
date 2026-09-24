@@ -138,6 +138,24 @@ never kills a process.
 Acceptance is not evidence of a turn stop or tool cleanup; reconciliation still
 needs those host observations.
 
+For an admitted exclusive turn, and never for an owner turn, the plugin's
+`shell.env` hook injects three variables into every spawned shell:
+`CAIRN_REQUEST_ID`, `CAIRN_NATIVE_TURN_ID` and `CAIRN_TOOL_CALL_ID`.
+Descendants inherit them, including processes that call setsid or
+double-fork, which a process-group scan misses.
+
+`process_scan.markers(name, value, since)` finds live same-user processes by
+that marker in `/proc/*/environ`. It reports coverage as unknown, and so never
+clear, when a same-user process started at or after `since` has an unreadable
+environment. Zombies are excluded. A process that clears its own environment
+evades the scan.
+
+Tool capture is opt-in by the host. The plugin sends `ToolStart` and `ToolEnd`
+hook events, with `tool`, `call_id` and `request_id`, only when the TurnStart
+reply carries `cairn.tool_capture: true`. Once capture is advertised, a failed
+`ToolStart` refuses the tool rather than running it uncaptured, and a missed
+`ToolEnd` leaves the tool non-terminal.
+
 ## Sweep, review and recovery
 
 `cairn request-control-sweep` accepts `{"repo":"/home/halbritt/git/cairn"}`.

@@ -899,6 +899,57 @@ class OpenCodeCancelRouteTests(unittest.TestCase):
         self.assertEqual(calls(), [])
 
 
+class OpenCodeToolCaptureTests(unittest.TestCase):
+    """Exclusive turns mark tool processes and capture tools only when the host supports it."""
+
+    start_fixture = OpenCodeBridgeFixtureTests.start_fixture
+    REQUEST = '00000000-0000-4000-8000-000000000001'
+
+    def run_turn(self, capture_mode=None):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        hooks, observed = Path(tmp.name) / 'hooks.jsonl', Path(tmp.name) / 'observed.json'
+        env = dict(OPENCODE_FIXTURE_HOOK_CAPTURE=str(hooks), OPENCODE_FIXTURE_TOOL_RESULT=str(observed))
+        if capture_mode:
+            env['OPENCODE_FIXTURE_TOOL_CAPTURE'] = capture_mode
+        _, endpoint, process = self.start_fixture(extra_env=env)
+        opencode_queue.enqueue(endpoint, process, 'ses_test', 'wake text',
+                               '00000000-0000-4000-8000-000000000002', request_id=self.REQUEST)
+        deadline = time.monotonic() + 5
+        while not observed.exists():
+            self.assertLess(time.monotonic(), deadline, 'fixture tool scenario did not finish')
+            time.sleep(.02)
+        events = [json.loads(line) for line in hooks.read_text().splitlines()]
+        return json.loads(observed.read_text()), events
+
+    def test_exclusive_turn_marks_shell_environment_and_owner_turn_does_not(self):
+        observed, _ = self.run_turn()
+        self.assertEqual(observed['exclusive_env'], dict(
+            CAIRN_REQUEST_ID=self.REQUEST, CAIRN_NATIVE_TURN_ID='msg_native_one', CAIRN_TOOL_CALL_ID='call_one'))
+        self.assertEqual(observed['after_idle_env'], {})
+        self.assertEqual(observed['owner_env'], {})
+
+    def test_no_capture_events_until_the_host_advertises_support(self):
+        observed, events = self.run_turn()
+        self.assertEqual((observed['before'], observed['after']), ('ok', 'ok'))
+        self.assertNotIn('ToolStart', [e['hook_event_name'] for e in events])
+        self.assertNotIn('ToolEnd', [e['hook_event_name'] for e in events])
+
+    def test_advertised_capture_reports_exclusive_tools_only(self):
+        observed, events = self.run_turn('1')
+        self.assertEqual((observed['before'], observed['after'], observed['owner_before']), ('ok', 'ok', 'ok'))
+        tools = [e for e in events if e['hook_event_name'] in ('ToolStart', 'ToolEnd')]
+        self.assertEqual([e['hook_event_name'] for e in tools], ['ToolStart', 'ToolEnd'])
+        for event in tools:
+            self.assertEqual((event['tool'], event['call_id'], event['request_id'], event['turn_id']),
+                             ('bash', 'call_one', self.REQUEST, 'msg_native_one'))
+
+    def test_failed_capture_refuses_the_tool(self):
+        observed, events = self.run_turn('fail')
+        self.assertIn('refusing an uncaptured tool', observed['before'])
+        self.assertEqual(observed['owner_before'], 'ok')
+
+
 class OpenCodeNativeSchemaTests(unittest.TestCase):
     """Check actual installed server validation, without a session or provider turn."""
 
