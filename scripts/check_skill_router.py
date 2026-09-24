@@ -20,10 +20,10 @@ HOME = Path.home()
 STATE = HOME / ".local/share/cairn"
 HARNESSES = {
     "claude": dict(log=STATE / "claude-hooks/state/skill-router.jsonl", env={"CLAUDE_CONFIG_DIR": str(HOME / ".claude")},
-                   argv=["claude", "--print", "--no-session-persistence", "--max-turns", "1", "--tools", ""]),
+                   argv=["claude", "--print", "--no-session-persistence", "--tools", "", "--max-turns", "1"]),
     "claude-harm": dict(log=STATE / "claude-harm-hooks/state/skill-router.jsonl",
                         env={"CLAUDE_CONFIG_DIR": str(HOME / ".claude-harm")},
-                        argv=["claude", "--print", "--no-session-persistence", "--max-turns", "1", "--tools", ""]),
+                        argv=["claude", "--print", "--no-session-persistence", "--tools", "", "--max-turns", "1"]),
     "opencode": dict(log=STATE / "opencode-hooks/state/skill-router.jsonl", env={}, argv=["opencode", "run"]),
     "codex": dict(log=STATE / "codex-hooks/state/skill-router.jsonl", env={},
                   argv=["codex", "exec", "--skip-git-repo-check", "-s", "read-only"]),

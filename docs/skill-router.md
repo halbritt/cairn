@@ -106,6 +106,17 @@ injected the right skill on 10 of the 11 hidden-skill prompts. It made no
 wrong injections and did not fire on any visible-skill prompt. Latency was
 170 ms p50 and 247 ms p95.
 
+Deployed on proximal on 2026-09-24 from `af3e54a` to Claude Code (both
+accounts), OpenCode and Codex (both homes share `codex-hooks`). Live check,
+`scripts/check_skill_router.py HARNESS`, with the prompt "samtools depth exits
+141 in the pipeline": the router fired inline for
+`samtools-sigpipe-and-depth-fix` at confidence 1.0 through TypeSafe in every
+harness, 1.2 to 1.6 seconds including memory recall. In Claude Code, OpenCode
+(local Qwen) and the second Codex account the reply applied the skill's fix.
+The first Codex account was out of quota, so there only the routing was
+verified. Run the checks one at a time: the script accepts any new matching
+line in the log, so concurrent routing to the same skill could pass a probe.
+
 This is a small set of prompts written by the same session that wrote the
 question. The router's log supports a later comparison with the skills the
 model actually loads (CAIRN-30).
