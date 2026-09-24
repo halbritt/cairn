@@ -30,6 +30,12 @@ See [build identity](docs/build-identity.md) for unstamped builds and MCP proces
 - The Codex launcher accepts Codex 0.156's `--no-daemon`; it no longer fails
   with "--no-daemon cannot be used with --remote".
 - The Hermes engine-timeout test no longer fails intermittently under load.
+- Codex can use the same lifecycle memory as Claude Code. Install it with
+  `scripts/install-codex-hooks.py`: retrieval runs at session start and on each
+  prompt, and checkpoints are captured at compaction and in the background at
+  Stop. See [Codex lifecycle memory](docs/codex-lifecycle.md).
+- The Hermes coordination plugin no longer leaves `/tmp/cairn-hermes-<pid>.sock`
+  files behind, and it does not block startup on an unresponsive existing socket.
 
 ## 2026-09-22
 

@@ -7,6 +7,10 @@ new Cairn hooks in this change.
 
 ## Codex
 
+Update 2026-09-23: implemented as [Codex lifecycle memory](codex-lifecycle.md),
+capturing at PreCompact and an async Stop because SessionEnd allows too little time.
+
+
 Installed `codex-cli 0.154.0` reports `hooks` as stable and enabled. The existing
 `~/.codex/hooks.json` already contains a separate SessionStart hook. These are
 local installation observations, not evidence that a new Cairn adapter has run.

@@ -94,7 +94,7 @@ def install(root, settings, config):
     return config_path
 
 
-def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=None):
+def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=None, expected=5):
     """Use the installed native protocol to trust only the reviewed Cairn commands."""
     codex = codex_binary or shutil.which('codex')
     if not codex:
@@ -137,16 +137,16 @@ def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=
             response = rpc('hooks/list', dict(cwds=[cwd]))
             hooks = [h for entry in response['data'] for h in entry['hooks']
                      if h['sourcePath'] == str(settings) and h.get('command') == command]
-            if len(hooks) != 5:
-                raise RuntimeError('Codex did not load all five Cairn hook definitions')
+            if len(hooks) != expected:
+                raise RuntimeError(f'Codex did not load all {expected} Cairn hook definitions')
             for hook in hooks:
                 rpc('config/value/write', dict(filePath=str(config_home / 'config.toml'),
                     keyPath='hooks.state.' + json.dumps(hook['key']) + '.trusted_hash',
                     value=hook['currentHash'], mergeStrategy='replace'))
             verified = rpc('hooks/list', dict(cwds=[cwd]))
             selected = [h for entry in verified['data'] for h in entry['hooks'] if h['key'] in {h['key'] for h in hooks}]
-            if len(selected) != 5 or any(h['trustStatus'] != 'trusted' or not h['enabled'] for h in selected):
-                raise RuntimeError('Codex did not confirm the five reviewed Cairn hooks are enabled')
+            if len(selected) != expected or any(h['trustStatus'] != 'trusted' or not h['enabled'] for h in selected):
+                raise RuntimeError(f'Codex did not confirm the {expected} reviewed Cairn hooks are enabled')
             if verify is not None:
                 verify(rpc)
         finally:

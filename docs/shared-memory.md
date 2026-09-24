@@ -76,7 +76,7 @@ installed customization guide documents its global MCP configuration at
 The owner's Claude profiles, OpenCode, and Hermes CLI/Slack use the shared lifecycle engine for
 selective ambient recall, separate durable memories and named workstream handoffs.
 Unchanged conversation content skips model selection after a confirmed capture.
-See [Claude setup](claude-lifecycle.md), [OpenCode setup](opencode-lifecycle.md),
+See [Claude setup](claude-lifecycle.md), [Codex setup](codex-lifecycle.md), [OpenCode setup](opencode-lifecycle.md),
 [Hermes setup](hermes-lifecycle.md), [Hermes verification](verification/hermes-integration-2026-09-13.md), and
 [verification](verification/lifecycle-improvements-2026-09-13.md). Codex and Agy
 continue using their ordinary tools and proactive skill; their supported hook

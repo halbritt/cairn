@@ -19,6 +19,12 @@ TRANSCRIPT_BYTES = 2 * 1024 * 1024
 NOTE_BYTES = 6000
 CHECKPOINT_BYTES = 4500
 SEARCH_ROOM = 8000
+# Codex Stop fires after every turn and SessionEnd allows too little time for the
+# selector, so Stop offers capture only after this much new top-level dialogue.
+CODEX_STOP_MIN_MESSAGES = 6
+# Codex injects instructions and environment context as user-role items.
+CODEX_INJECTED_PREFIXES = ("# AGENTS.md instructions", "<environment_context>", "<user_instructions>",
+                           "<INSTRUCTIONS>", "<turn_aborted>", "<user_shell_command>", "<skill>")
 DURABLE_KINDS = ("decision", "preference", "lesson", "procedure")
 CAPTURE_SCHEMA = {
     "type": "object", "properties": {
@@ -170,6 +176,19 @@ def conversation(path):
     messages, seen = [], set()
     for line in raw.splitlines():
         record = json.loads(line)
+        if record.get("type") == "response_item":
+            # Codex rollout: only top-level user/assistant message items; developer
+            # context, reasoning, tool calls/outputs and event_msg duplicates are omitted.
+            payload = record.get("payload") or {}
+            if payload.get("type") != "message" or payload.get("role") not in ("user", "assistant"):
+                continue
+            text = "\n".join(part.get("text", "") for part in payload.get("content") or []
+                             if part.get("type") in ("input_text", "output_text"))
+            if payload["role"] == "user" and text.lstrip().startswith(CODEX_INJECTED_PREFIXES):
+                continue
+            if text.strip():
+                messages.append({"role": payload["role"], "text": text})
+            continue
         if (record.get("type") not in ("user", "assistant") or record.get("isSidechain")
                 or record.get("isCompactSummary") or record.get("isMeta")):
             continue
@@ -647,6 +666,28 @@ def capture(memory, event, state=None):
     return {"systemMessage": "Cairn selected memories saved: " + ", ".join(saved)} if saved else {}
 
 
+def message_digest(message):
+    return hashlib.sha256(encoded(message).encode("utf-8")).hexdigest()
+
+
+def codex_marker(event):
+    """Digest of the newest dialogue message a completed capture has considered."""
+    messages = conversation(event["transcript_path"])
+    return message_digest(messages[-1]) if messages else None
+
+
+def codex_new_messages(event, state):
+    """Messages after the last captured one. The excerpt is a bounded recent
+    window, so counting its length would saturate on long sessions; a marker that
+    has scrolled out of the window means plenty of new dialogue."""
+    messages = conversation(event["transcript_path"])
+    marker = state.get("codex_capture_marker")
+    for index in range(len(messages) - 1, -1, -1):
+        if message_digest(messages[index]) == marker:
+            return len(messages) - index - 1
+    return len(messages) if marker is None else len(messages) + CODEX_STOP_MIN_MESSAGES
+
+
 def handle(config, event):
     if os.environ.get("CAIRN_LIFECYCLE_CHILD") == "1" or os.environ.get("CAIRN_LIFECYCLE_DISABLED") == "1":
         return {}
@@ -664,7 +705,10 @@ def handle(config, event):
         except ValueError as exc:
             raise HookError("host session identity must be a UUID") from exc
     event_name = event.get("hook_event_name")
-    if event_name not in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse", "PostToolUseFailure"):
+    if event_name == "Stop" and (config.get("harness") != "codex" or event.get("stop_hook_active")):
+        return {}  # Only Codex captures at Stop; a Stop continuation is not a new boundary.
+    if event_name not in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse",
+                          "PostToolUseFailure", "Stop"):
         return {}
     if not Path(event["cwd"]).is_dir():
         raise HookError("host working directory is unavailable")
@@ -698,8 +742,12 @@ def handle(config, event):
             result = recall(memory, event, state)
         elif event_name in ("PostToolUse", "PostToolUseFailure"):
             result = observe(event, state)
+        elif event_name == "Stop" and codex_new_messages(event, state) < CODEX_STOP_MIN_MESSAGES:
+            result = {}  # Too little new dialogue to justify a selector call yet.
         else:
             result = capture(memory, event, state)
+            if config.get("harness") == "codex":
+                state["codex_capture_marker"] = codex_marker(event)
         save_state(path, state)
         if config.get("harness") == "hermes":
             result = dict(result, cairn_status={key: state[key] for key in ("last_recall", "last_capture", "workstream") if key in state})
