@@ -206,6 +206,24 @@ class OpenCodeCancelHostTests(unittest.TestCase):
         self.assertEqual(calls[1][1], close)
         self.assertNotIn('inbox_intent', self.state)
 
+    def test_exclusive_admission_requires_cancel_and_capture_capabilities(self):
+        self.config.update(idle_wakeup='/unused/herdr', opencode_cancel_enabled=True)
+        state = dict(agent=dict(**self.session, native_session_id='ses-one',
+                                metadata=dict(workspace=self.temp.name, state='idle',
+                                              delivery_mode='existing-session')),
+                     process=self.state['process'], workspace=self.temp.name)
+        for capture, expected in ((False, False), (True, True)):
+            with self.subTest(capture=capture), \
+                    patch.dict('sys.modules', {'opencode_queue': opencode_queue}), \
+                    patch.object(coordination, 'opencode_idle_endpoint', return_value='/unused/bridge.sock'), \
+                    patch.object(coordination, 'opencode_capture_available', return_value=True), \
+                    patch.object(opencode_queue, 'supports_cancel', return_value=True), \
+                    patch.object(opencode_queue, 'supports_tool_capture', return_value=capture), \
+                    patch.object(coordination, 'call', return_value=dict(delivery_id='delivery-one')):
+                prepared = coordination.prepare_idle_wake(self.config, state, self.path)
+            self.assertIs(prepared['wake']['cancel_capable'], expected)
+            state.pop('idle_wake')
+
 
 if __name__ == '__main__':
     unittest.main()
