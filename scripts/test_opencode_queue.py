@@ -248,6 +248,16 @@ class OpenCodeQueueTests(unittest.TestCase):
         self.assertNotIsInstance(ctx.exception, opencode_queue.QueueUnavailable)
         self.assertIn('uncertain', str(ctx.exception))
 
+    def test_busy_word_inside_unknown_error_does_not_authorize_retry(self):
+        self.serve({'id': 1, 'error': {
+            'code': -32000,
+            'message': 'PROMPT_OUTCOME_UNCERTAIN: connection failed after BUSY warning',
+        }})
+        with self.assertRaises(opencode_queue.QueueError) as ctx:
+            opencode_queue.enqueue(self.path, self.process, 'ses_native123', 'wake', 'delivery_one')
+        self.assertNotIsInstance(ctx.exception, opencode_queue.QueueUnavailable)
+        self.join_workers()
+
     def test_coordinator_retains_single_submission_after_success_or_uncertainty(self):
         state_path = Path(self.temp.name) / 'session.json'
         config = dict(harness='opencode', binding='fixture', native_delivery=True, idle_wakeup=True)

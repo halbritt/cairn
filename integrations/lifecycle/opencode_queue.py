@@ -103,11 +103,11 @@ def enqueue(endpoint, process, native_id, text, delivery_id, expected_session_id
                 raise QueueError('native queue error is invalid; outcome is uncertain; do not automatically resend')
             code = err.get('code')
             message = err.get('message', '')
-            if code == BUSY_CODE or 'BUSY' in message:
+            if code == BUSY_CODE:
                 raise QueueUnavailable(f'native OpenCode busy: {message}')
-            if code in (-32001, -32002) or 'SESSION_NOT_FOUND' in message or 'SESSION_MISMATCH' in message:
+            if code in (-32001, -32002):
                 raise QueueUnavailable(f'native session unavailable: {message}')
-            if code == -32003 or 'CONFLICT' in message:
+            if code == -32003:
                 raise QueueRefused(f'native OpenCode refused prompt_idle: {message}')
             raise QueueError(f'native OpenCode prompt_idle outcome is uncertain: {message}')
 

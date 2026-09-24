@@ -18,7 +18,7 @@ CAIRN-2 verifies host-observed interruption and cleanup.
 
 Local checks on this source candidate:
 
-- `OPENCODE_TEST_BINARY=.../packages/opencode/dist/opencode-linux-x64/bin/opencode python3 -m unittest scripts.test_opencode_queue -q`: 25 tests passed, including the patched binary's isolated request schema, atomic busy retry, conflict retention, hook attribution and exact exclusive claim payload.
+- `OPENCODE_TEST_BINARY=.../packages/opencode/dist/opencode-linux-x64/bin/opencode python3 -m unittest scripts.test_opencode_queue -q`: 26 tests passed, including the patched binary's isolated request schema, atomic busy retry, conflict retention, uncertain error classification, hook attribution and exact exclusive claim payload.
 - `make check`: passed.
 - `make test`: Go packages passed and 331 Python tests passed (15 skipped). This does not run database integration without a disposable test cluster.
 
