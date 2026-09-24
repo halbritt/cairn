@@ -654,13 +654,20 @@ def select_json(config, schema, prompt, excerpt, timeout=35):
 
 def capture(memory, event, state=None):
     state = state if state is not None else {}
-    messages = bounded_dialogue(event["messages"]) if "messages" in event else conversation(event["transcript_path"])
+    codex = memory.config.get("harness") == "codex" and "messages" not in event
+    if "messages" in event:
+        messages = bounded_dialogue(event["messages"])
+    elif codex:
+        # One read yields both the excerpt and its end position, so dialogue
+        # appended at any later moment stays uncaptured for the next Stop.
+        messages, offsets = conversation(event["transcript_path"], with_offsets=True)
+    else:
+        messages = conversation(event["transcript_path"])
     if not messages:
         record_capture_status(state, "empty")
         return {}
-    if memory.config.get("harness") == "codex" and "messages" not in event:
-        # Position of exactly this snapshot; the host may append while selection runs.
-        state["capture_snapshot_marker"] = codex_snapshot_marker(event["transcript_path"])
+    if codex:
+        state["capture_snapshot_marker"] = dict(path=str(Path(event["transcript_path"]).resolve()), offset=offsets[-1])
     def fingerprint(dialogue):
         return hashlib.sha256(encoded([CAPTURE_PROMPT, CAPTURE_SCHEMA, memory.config.get("model"), dialogue]).encode()).hexdigest()
     digest = fingerprint(messages)

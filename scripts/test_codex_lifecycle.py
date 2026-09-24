@@ -171,6 +171,25 @@ class CodexHookTests(unittest.TestCase):
         self.assertEqual(hook.codex_new_messages(self.event, state), 2,
                          "messages that arrived during selection were marked as captured")
 
+    def test_dialogue_appended_between_excerpt_and_marker_is_not_skipped(self):
+        self.dialogue(hook.CODEX_STOP_MIN_MESSAGES // 2)
+        real = hook.conversation
+        reads = []
+        def racing_conversation(path, with_offsets=False):
+            result = real(path, with_offsets)
+            reads.append(1)
+            if len(reads) == 2:  # between capture's excerpt read and any later read
+                self.dialogue(hook.CODEX_STOP_MIN_MESSAGES // 2 + 1)
+            return result
+        with patch.object(hook, "conversation", side_effect=racing_conversation), \
+             patch.object(hook.Memory, "checkpoint", return_value=None), \
+             patch.object(hook, "handoff_candidates", return_value=[]), \
+             patch.object(hook, "durable_candidates", return_value=[]), \
+             patch.object(hook, "select_json", return_value={"structured_output": {"checkpoint": None, "workstream": None, "memories": []}}):
+            hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
+        state = json.loads((Path(self.config["state_dir"]) / (SESSION + ".json")).read_text())
+        self.assertEqual(hook.codex_new_messages(self.event, state), 2, "dialogue appended after the excerpt read was skipped")
+
     def test_repeated_identical_messages_still_count_as_new(self):
         records = [item("user", f"step {n}") if n % 2 == 0 else item("assistant", "Done.") for n in range(6)]
         self.transcript.write_text("\n".join(json.dumps(r) for r in records) + "\n")
