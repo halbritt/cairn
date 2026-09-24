@@ -33,6 +33,10 @@ if args[:2] == ['app-server', '--listen']:
     time.sleep(60)
 if args[0] == '--remote':
     assert args[1].startswith('unix://'), args
+    head = args[:args.index('--')] if '--' in args else args
+    if '--no-daemon' in head:  # Codex 0.156 refuses the combination.
+        sys.stderr.write('ERROR: --no-daemon cannot be used with --remote.\n')
+        raise SystemExit(2)
     if os.environ.get('LAUNCHER_TUI_PID'):
         pathlib.Path(os.environ['LAUNCHER_TUI_PID']).write_text(str(os.getpid()))
     time.sleep(float(os.environ.get('LAUNCHER_TUI_SECONDS', '0.2')))
@@ -55,7 +59,7 @@ class CodexLauncher(unittest.TestCase):
                    LAUNCHER_SERVER_PID=str(work / 'server.pid'),
                    LAUNCHER_TUI_EXIT=tui_exit)
         result = subprocess.run([sys.executable, str(ROOT / 'scripts/launch-codex-coordination.py'),
-            '--codex', str(shim), *forwarded], env=env, capture_output=True, text=True, timeout=30)
+            '--codex', str(shim), '--', *forwarded], env=env, capture_output=True, text=True, timeout=30)
         entries = [json.loads(line) for line in (work / 'log.jsonl').read_text().splitlines()]
         sockets = list(runtime.glob('*.sock')) if runtime.exists() else []
         return result, entries, sockets, work
@@ -73,6 +77,24 @@ class CodexLauncher(unittest.TestCase):
         pid = int((work / 'server.pid').read_text())
         with self.assertRaises(ProcessLookupError):
             os.kill(pid, 0)  # the app-server must not outlive the TUI
+
+    def test_no_daemon_is_satisfied_by_the_private_app_server(self):
+        # Codex 0.156 added --no-daemon ("run without the shared background
+        # server") and refuses it alongside --remote. The launcher's private
+        # app-server is not the shared daemon, so the flag is already honored:
+        # it is dropped from the served TUI, while literal prompt text keeps it.
+        for forwarded, expected in [
+                (['--no-daemon'], []),
+                (['--no-daemon', 'resume', '--last'], ['resume', '--last']),
+                (['-m', 'gpt', '--no-daemon', '--', 'explain --no-daemon'], ['-m', 'gpt', '--', 'explain --no-daemon'])]:
+            with self.subTest(forwarded=forwarded):
+                result, entries, sockets, work = self.launch(forwarded)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                server, tui = entries
+                self.assertNotIn('--no-daemon', server)
+                self.assertEqual(tui[:2], ['--remote', server[2]])
+                self.assertEqual(tui[2:], expected)
+                self.assertEqual(sockets, [])
 
     def test_tui_exit_status_is_propagated_with_cleanup(self):
         result, entries, sockets, work = self.launch([], tui_exit='3')

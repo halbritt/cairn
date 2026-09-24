@@ -139,17 +139,26 @@ class HermesBoundaryTests(unittest.TestCase):
 
     def test_timeout_kills_engine_and_selector_child(self):
         pidfile = self.home / 'child.pid'
-        command = [sys.executable, '-c', 'import subprocess,sys,time,pathlib; p=subprocess.Popen([sys.executable,"-c","import time; time.sleep(60)"]); pathlib.Path(sys.argv[1]).write_text(str(p.pid)); time.sleep(60)', str(pidfile)]
+        # The grandchild PID is published atomically so a loaded host never reads a partial file.
+        command = [sys.executable, '-c', 'import os,subprocess,sys,time,pathlib; p=subprocess.Popen([sys.executable,"-c","import time; time.sleep(60)"]); t=pathlib.Path(sys.argv[1]+".tmp"); t.write_text(str(p.pid)); os.replace(t,sys.argv[1]); time.sleep(60)', str(pidfile)]
         started = time.monotonic()
         with self.assertRaises(plugin.subprocess.TimeoutExpired):
-            plugin.run_engine(command,{},timeout=.3)
-        self.assertLess(time.monotonic()-started,3)
+            plugin.run_engine(command,{},timeout=1)
+        self.assertLess(time.monotonic()-started,6)
         self.assertTrue(pidfile.exists())
         status = Path('/proc') / pidfile.read_text() / 'stat'
-        try:
-            state = status.read_text().split()[2]
-        except FileNotFoundError:
-            return  # The killed child has already been reaped.
+        # SIGKILL to the group is asynchronous: the reparented selector child can
+        # still be scheduled briefly after run_engine returns. Require it to die
+        # promptly rather than at the exact instant of return.
+        deadline = time.monotonic() + 3
+        while True:
+            try:
+                state = status.read_text().split()[2]
+            except FileNotFoundError:
+                return  # The killed child has already been reaped.
+            if state == 'Z' or time.monotonic() > deadline:
+                break
+            time.sleep(0.02)
         self.assertEqual(state, 'Z', 'selector child is still running')
 
     def test_profile_guard_prevents_same_session_label_crossing_homes(self):

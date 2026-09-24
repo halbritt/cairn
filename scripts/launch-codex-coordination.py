@@ -24,7 +24,7 @@ VALUE_OPTIONS = {'-c', '--config', '--enable', '--disable', '--remote',
                  '--remote-auth-token-env', '-i', '--image', '-m', '--model',
                  '--local-provider', '-p', '--profile', '-s', '--sandbox',
                  '-C', '--cd', '--add-dir', '-a', '--ask-for-approval'}
-FLAG_OPTIONS = {'--strict-config', '--oss', '--approve-for-me',
+FLAG_OPTIONS = {'--strict-config', '--oss', '--approve-for-me', '--no-daemon',
                 '--dangerously-bypass-approvals-and-sandbox',
                 '--dangerously-bypass-hook-trust', '--worktree', '--search',
                 '--no-alt-screen', '-h', '--help', '-V', '--version'}
@@ -37,6 +37,11 @@ DIRECT_COMMANDS = {'exec', 'e', 'review', 'login', 'logout', 'mcp', 'plugin',
                    'archive', 'delete', 'migrate-rollouts', 'unarchive',
                    'cloud', 'exec-server', 'features', 'help', 'version',
                    'agents'}
+# Codex 0.156 --no-daemon means "run without the shared background server"
+# and is refused alongside --remote. The launcher's private app-server is not
+# that shared daemon, so the served TUI already honors it; drop it from the
+# option head only, never from literal prompt text after --.
+SERVED_DROP = {'--no-daemon'}
 # Options that change effective configuration loading: the serving app-server
 # must receive them exactly like the TUI it serves.
 CONFIG_OPTIONS = {'-c', '--config', '--enable', '--disable', '--strict-config',
@@ -129,7 +134,9 @@ def main():
                 print('cairn codex launcher: the app-server socket never appeared', file=sys.stderr)
                 return 125
             time.sleep(0.05)
-        tui = subprocess.Popen([args.codex, '--remote', 'unix://' + str(socket_path), *forwarded])
+        literal = forwarded.index('--') if '--' in forwarded else len(forwarded)
+        served = [a for a in forwarded[:literal] if a not in SERVED_DROP] + forwarded[literal:]
+        tui = subprocess.Popen([args.codex, '--remote', 'unix://' + str(socket_path), *served])
         while True:
             try:
                 return tui.wait(timeout=0.2)
