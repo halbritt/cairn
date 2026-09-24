@@ -26,7 +26,7 @@ class CoordinationNormalization(unittest.TestCase):
         self.assertIs(coordination.claude_session_config(config, 'native-one', enabled), config)
         effective, reason = coordination.claude_channel_admission(config, 'native-one', plain)
         self.assertNotIn('claude_channel_dir', effective)
-        self.assertIn('not launched with --dangerously-load-development-channels server:cairn-events', reason)
+        self.assertIn('not launched with --dangerously-load-development-channels=server:cairn-events', reason)
         self.assertEqual(coordination.claude_channel_admission(dict(config, harness='codex'), 'native-one', plain),
                          (dict(config, harness='codex'), None))
         unconfigured = dict(config)

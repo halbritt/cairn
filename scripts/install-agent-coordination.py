@@ -311,7 +311,8 @@ def register_claude_channel(cairn, directory, config_home):
     engine.write_state(path, data)
     print(f'Registered the cairn-events channel MCP server in {path}.')
     print('Activation requires launching Claude with '
-          '--dangerously-load-development-channels server:cairn-events; '
+          '--dangerously-load-development-channels=server:cairn-events (the = form: the flag is variadic and '
+          'would otherwise consume a following prompt); '
           'MCP registration alone does not enable the channel and org policy is not bypassed.')
 
 

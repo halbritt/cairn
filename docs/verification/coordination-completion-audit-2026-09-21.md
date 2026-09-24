@@ -92,7 +92,7 @@ coverage, the native check-to-submission race, or cancellation safety.
 | Commit, push and deploy intended release | Clean `8f4fb50` CLI/API, scheduler and seven supervisors deployed and independently hash-verified after full disposable integration; schema 049 unchanged | Finish remaining native acceptance work |
 | Reconcile agent deliverables | All three named agents completed audit requests; 96-file independent worktree comparison; shutdown omission repaired | Keep unsupported prototypes separate; Hermes cancellation slice underway |
 | Automatic current-session delivery | Agy boundary handling, OpenCode native queue and selected Claude channel observed | Older unactivated clients remain distinct from these targeted checks |
-| Draft preservation | Live OpenCode idle canary passed; native fixtures cover additional cases | Busy submission races and broader harness/account live coverage |
+| Draft preservation | Live OpenCode idle canary passed; native fixtures cover additional cases. Update 2026-09-23: idle and busy-race trials passed on six routes ([report](draft-preservation-2026-09-23.md)) | Agy terminal route (no atomic guarantee); sub-second keystroke races |
 | Per-request native cancellation | Dormant 049 core; Hermes request/turn-fenced bridge | Exclusive admission/revocation, real-model interruption, confirmed owned-tool cleanup and failed-termination drill |
 | Unsupported native seams | No verified Agy idle RPC/server; OpenCode installed abort lacks expected-turn fencing; Claude has shared prompt joins | Preserve explicit refusal; do not invent capability or silently drop acceptance requirements |
 

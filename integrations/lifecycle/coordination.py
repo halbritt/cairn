@@ -194,7 +194,7 @@ def claude_channel_admission(config, native_id, process):
     if 'claude_channel_sessions' in config and native_id not in config['claude_channel_sessions']:
         reason = 'native conversation is not listed in claude_channel_sessions'
     elif not claude_channel_enabled(config, process):
-        reason = (f'Claude process was not launched with --dangerously-load-development-channels '
+        reason = (f'Claude process was not launched with --dangerously-load-development-channels='
                   f'server:{claude_channel_server(config)} (or --channels naming it), so it cannot receive channel wakes')
     else:
         return config, None

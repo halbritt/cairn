@@ -38,9 +38,11 @@ boundary. Native delivery never starts a fresh worker to consume a conversation'
 ### Claude channel activation and selection
 
 Claude Code admits channel notifications only from servers named on its launcher
-flags (`--dangerously-load-development-channels server:cairn-events`, or
+flags (`--dangerously-load-development-channels=server:cairn-events`, or
 `--channels` naming that server); registering `cairn-events` in `.claude.json`
-alone is ignored. The watcher therefore detects activation per process: it reads
+alone is ignored. Use the `=` form in launchers and aliases: the flag accepts
+several values, so with a space it also consumes a following positional prompt
+as a channel entry and Claude exits with "entries must be tagged". The watcher therefore detects activation per process: it reads
 the live Claude process's command line from `/proc`, rechecks its identity, and
 keeps the binding's `claude_channel_dir` only for a process launched with the
 configured server (`claude_channel_server`, default `cairn-events`). A process

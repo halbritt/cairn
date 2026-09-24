@@ -40,8 +40,10 @@ preservation across every harness/account or exclusive cancellation.
 Remaining acceptance work is to establish exclusive request ownership through
 native admission and revocation, then exercise real-model interruption and
 host-observed cleanup, including failed termination. OpenCode cancellation stays
-unavailable until atomic native turn fencing exists. Broader draft preservation
-and host submission races still require the live trials specified below.
+unavailable until atomic native turn fencing exists. Draft preservation and
+busy-owner submission races passed live on both Claude and both Codex accounts,
+Hermes and OpenCode on September 23; Agy's terminal route remains without an
+atomic guarantee ([trials](../verification/draft-preservation-2026-09-23.md)).
 [Implementation status](../implementation-status.md) records the installed build
 separately. These repairs do not complete coordination v1.
 

@@ -16,6 +16,19 @@ and semantic worker are unchanged. Check an installation with `cairn version`; u
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
 See [build identity](docs/build-identity.md) for unstamped builds and MCP processes.
 
+## 2026-09-23
+
+- Automatic wakes preserve unsubmitted drafts on every native queue route.
+  Idle and busy-owner-turn trials passed on both Claude and both Codex
+  accounts, Hermes and OpenCode. See the
+  [trial report](docs/verification/draft-preservation-2026-09-23.md).
+- Use `--dangerously-load-development-channels=server:cairn-events` (the `=`
+  form). With a space the variadic flag also consumes a following prompt.
+  Refusal text, installer hint and docs now say so.
+- The Codex launcher accepts Codex 0.156's `--no-daemon`; it no longer fails
+  with "--no-daemon cannot be used with --remote".
+- The Hermes engine-timeout test no longer fails intermittently under load.
+
 ## 2026-09-22
 
 - Claude channel wakes are now admitted by detecting the live process's launch

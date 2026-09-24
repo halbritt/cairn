@@ -71,7 +71,9 @@ then claimed at the owner's next prompt.
 ## Activation
 
 To make a Claude conversation wakeable, resume it with
-`--dangerously-load-development-channels server:cairn-events` in its own
-account environment. Detection then admits it on the next watcher cycle; no
+`--dangerously-load-development-channels=server:cairn-events` in its own
+account environment. (Correction, 2026-09-23: use the `=` form; with a space the
+variadic flag consumes a following positional prompt. The owner's `claude` and
+`claude-harm` aliases use the `=` form.) Detection then admits it on the next watcher cycle; no
 binding edit is needed. Conversations launched without the flag continue to
 receive inbox items at owner prompts, and the journal now says why.
