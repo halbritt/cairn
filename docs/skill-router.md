@@ -37,8 +37,10 @@ default, which matches the Codex hooks' `additionalContextLimit`. The router wai
 The room is measured in UTF-8 bytes, like the total, so memory with
 multi-byte characters sends a large skill to its pointer instead of dropping
 it. If memory recall fails, for example because the index alone exceeds the
-budget, a skill that fired is still delivered on its own and the memory error
-goes to stderr. With nothing routed, the hook fails as before.
+budget, a skill that fired is still delivered, followed by one line telling
+the model that Cairn memory was unavailable and why; OpenCode gets that line
+inside the skill block. The error also goes to stderr. With nothing routed,
+the hook fails as before.
 
 The skill block comes before memory in `additionalContext`. For OpenCode the
 engine returns it as `cairn_skill`, and the plugin keeps it as its own block on

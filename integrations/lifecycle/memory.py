@@ -820,12 +820,22 @@ def handle(config, event):
             try:
                 result = recall(memory, event, state)
             except HookError as exc:
-                # A fired skill does not depend on memory: deliver it alone rather than
-                # losing both (CAIRN-38). With nothing routed, fail as before.
-                routed = route.merge({}, state) if route is not None else {}
-                route = None
-                if not routed:
+                # A fired skill does not depend on memory: deliver it rather than losing both
+                # (CAIRN-38), and tell the model memory is missing, because Claude Code hides
+                # stderr for a successful hook. With nothing routed, fail as before.
+                if route is None:
                     raise
+                notice = ("Cairn memory was unavailable for this prompt (" + clip(str(exc), 200)
+                          + "); search it explicitly if prior decisions matter.")
+                # Passed as memory text so the router budgets for it and places it after the skill.
+                carrier = {"hookSpecificOutput": {"hookEventName": event_name, "additionalContext": notice}}
+                routed = route.merge(carrier, state)
+                route = None
+                if routed is carrier:  # nothing fired
+                    raise
+                if "cairn_skill" in routed:  # OpenCode parses additionalContext as memory JSON
+                    routed = {"cairn_skill": dict(routed["cairn_skill"],
+                                                  text=routed["cairn_skill"]["text"] + "\n" + notice)}
                 print("Cairn lifecycle: " + str(exc) + "; delivered the routed skill without memory.", file=sys.stderr)
                 result = routed
         elif event_name in ("PostToolUse", "PostToolUseFailure"):

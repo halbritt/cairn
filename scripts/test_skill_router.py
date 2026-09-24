@@ -313,8 +313,19 @@ class RouterTests(unittest.TestCase):
         with patch.object(hook, "recall", side_effect=hook.HookError("retrieval exceeds lifecycle context budget")), \
                 patch.object(hook, "Memory"), patch("sys.stderr"):
             result = hook.handle(self.config, self.event)
-        self.assertIn("HIDDEN A BODY", result["hookSpecificOutput"]["additionalContext"])
-        self.assertNotIn("Cairn lifecycle memory", result["hookSpecificOutput"]["additionalContext"])
+        context = result["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("HIDDEN A BODY", context)
+        self.assertNotIn("Cairn lifecycle memory", context)
+        self.assertTrue(context.endswith("Cairn memory was unavailable for this prompt (retrieval exceeds lifecycle "
+                                         "context budget); search it explicitly if prior decisions matter."))
+        self.assertLessEqual(len(context.encode()), 9500)
+        opencode = dict(self.config, harness="opencode")
+        with patch.object(hook, "recall", side_effect=hook.HookError("Cairn retrieval is not ready")), \
+                patch.object(hook, "Memory"), patch("sys.stderr"):
+            result = hook.handle(opencode, dict(self.event, session_id="ses_recallerror"))
+        self.assertEqual(set(result), {"cairn_skill"}, "OpenCode must not receive a non-memory additionalContext")
+        self.assertIn("HIDDEN A BODY", result["cairn_skill"]["text"])
+        self.assertIn("Cairn memory was unavailable for this prompt (Cairn retrieval is not ready)", result["cairn_skill"]["text"])
         self.jev.choose("none", 0.99)
         (Path(self.config["state_dir"]) / (SESSION + ".json")).unlink()
         with patch.object(hook, "recall", side_effect=hook.HookError("boom")), patch.object(hook, "Memory"):
