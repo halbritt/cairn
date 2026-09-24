@@ -24,6 +24,17 @@ The lifecycle hook matches the request and delivery IDs supplied only after
 the plugin has matched the admitted native message. It does not regenerate
 the wake text, so an in-flight request survives a watcher text change.
 
+For an `uncertain` OpenCode wake, record the delivery and request UUIDs and
+the process identity from the session state in the configured `state_dir`.
+Inspect Cairn's delivery status, the native session's user-message history,
+and any native inbox context for that delivery. If the admitted turn reaches
+its hook, normal claim and completion clear the marker. Until admission or
+non-admission is established, leave the marker intact: do not resend the
+request, delete the state entry, or restart/resume the session as a recovery
+shortcut. A process restart loses its in-memory idempotency record, so this
+candidate provides no automatic safe retry after an uncertain process exit.
+Escalate unresolved cases for an explicit operator disposition.
+
 The source depends on the patched OpenCode `prompt_idle` API from the approved
 CAIRN-3 source at `f0ef1c0`. The installed OpenCode process and plugin have not
 been changed. Native `cancel_request` remains unavailable to Cairn until
