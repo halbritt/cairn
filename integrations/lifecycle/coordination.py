@@ -280,10 +280,22 @@ def prepare_idle_wake(config, state, path):
     opencode = opencode_idle_endpoint(config, state['process'], agent['native_session_id'], state)
     if opencode:
         state.pop('wake_refusal', None)
+        cancel_capable = False
+        if config.get('opencode_cancel_enabled'):
+            try:
+                import opencode_queue
+            except ImportError:
+                pass
+            else:
+                try:
+                    cancel_capable = opencode_queue.supports_cancel(opencode, state['process'], agent['native_session_id'])
+                except opencode_queue.QueueUnavailable:
+                    pass
         # The delivery UUID is stable across a BUSY retry and is the exact
         # requestID supplied to OpenCode's idempotent native admission.
         state['idle_wake'] = dict(delivery_id=delivery, request_id=delivery, session=session_ref(agent),
             transport='opencode-queue', endpoint=opencode, native_id=agent['native_session_id'],
+            cancel_capable=cancel_capable,
             status='uncertain', attempted_at=time.time())
         write_state(path, state)
         return dict(wake=state['idle_wake'], process=state['process'])
@@ -553,7 +565,8 @@ def opencode_wake_binding(state, event):
             event.get('request_id') != wake.get('request_id') or
             event.get('delivery_id') != wake.get('delivery_id')):
         return {}
-    return dict(delivery_id=wake['delivery_id'], native_turn_id=turn, turn_exclusive=True)
+    return dict(delivery_id=wake['delivery_id'], native_turn_id=turn,
+                turn_exclusive=bool(wake.get('cancel_capable')))
 
 
 def wake_binding(config, state, event, joined=False):
@@ -920,6 +933,43 @@ def recover_inbox(config, state, path):
         write_state(path, state)
 
 
+def opencode_inbox_control(config, state, path):
+    """Refresh the store-owned attempt before acting on an OpenCode delivery.
+
+    Cancellation can arrive between hooks and watcher ticks. A local attempt
+    snapshot cannot authorize renewal, completion, or native stop decisions.
+    """
+    if config['harness'] != 'opencode' or not state.get('inbox_attempt'):
+        return None
+    local = state['inbox_attempt']
+    result = call(config, 'session-inbox-control', session_ref(state['agent']))
+    attempt = result.get('attempt') if isinstance(result, dict) else None
+    if not attempt or attempt.get('attempt_id') != local['attempt_id']:
+        raise CoordinationError('INBOX_ATTEMPT_MISMATCH', 'native control no longer names the local attempt')
+    state['inbox_attempt'] = attempt
+    write_state(path, state)
+    return attempt
+
+
+def opencode_cancelled_turn_end(config, state, path, observation, attempt):
+    """Record only the pinned native TurnEnd; tool cleanup remains unconfirmed."""
+    if (observation.get('event') != 'TurnEnd' or observation.get('native_turn_id') != attempt.get('native_turn_id')
+            or not attempt.get('native_turn_id')):
+        return False
+    if attempt.get('turn_stop_state') in ('ended', 'interrupted'):
+        return True
+    request = state.get('cancel_turn_end')
+    if not request or request.get('attempt_id') != attempt['attempt_id']:
+        request = dict(request_id=str(uuid.uuid4()), session=attempt['session'],
+                       attempt_id=attempt['attempt_id'], turn_stop='ended', tools=[])
+        state['cancel_turn_end'] = request
+        write_state(path, state)
+    state['inbox_attempt'] = call(config, 'session-tool-stop', request)
+    state.pop('cancel_turn_end', None)
+    write_state(path, state)
+    return True
+
+
 def release_inbox(config, state, path, reason, fenced=False):
     if not fenced:
         recover_inbox(config, state, path)
@@ -940,14 +990,23 @@ def release_inbox(config, state, path, reason, fenced=False):
         # after an unknown attempt was found absent.
         if not (fenced and exc.code == 'NOT_FOUND'):
             raise
-    for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response'):
+    for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response',
+                'cancel_turn_end'):
         state.pop(key, None)
     write_state(path, state)
     return True
 
 
 def watch_inbox(config, state, path):
-    if not state.get('inbox_intent') or release_inbox(config, state, path, 'delivery_completed'):
+    if not state.get('inbox_intent'):
+        return
+    if config['harness'] == 'opencode':
+        attempt = opencode_inbox_control(config, state, path)
+        if attempt and attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
+            # The store has already fenced completion and renewal. Retain the
+            # hold until a pinned turn stop and terminal tool scan are proved.
+            return
+    if release_inbox(config, state, path, 'delivery_completed'):
         return
     attempt = state['inbox_attempt']
     delivery = attempt['delivery']
@@ -967,7 +1026,20 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         return ''  # Agy still has active background work.
     if observation['phase'] == 'idle':
         if state.get('delivered_since_idle') or state.get('inbox_intent'):
-            release_inbox(config, state, path, 'turn_ended')
+            attempt = opencode_inbox_control(config, state, path)
+            if attempt and attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
+                opencode_cancelled_turn_end(config, state, path, observation, attempt)
+            else:
+                try:
+                    release_inbox(config, state, path, 'turn_ended')
+                except CoordinationError as exc:
+                    if config['harness'] != 'opencode' or exc.code != 'CLEANUP_UNCONFIRMED':
+                        raise
+                    # Cancellation won the race after the control read.
+                    attempt = opencode_inbox_control(config, state, path)
+                    if not attempt or not attempt.get('cancel'):
+                        raise
+                    opencode_cancelled_turn_end(config, state, path, observation, attempt)
             state['delivered_since_idle'] = False
             write_state(path, state)
             return ''
@@ -1001,6 +1073,10 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     attempt = state.get('inbox_attempt')
     if not attempt:
         return ''
+    if config['harness'] == 'opencode':
+        attempt = opencode_inbox_control(config, state, path)
+        if attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
+            return ''  # The operator has fenced this request; no reinjection or renewal.
     if state.get('opencode_replay', {}).get('delivery_id') == attempt['delivery']['delivery_id']:
         state.pop('opencode_replay', None)
         write_state(path, state)
@@ -1254,6 +1330,9 @@ def validate_config(config):
             raise CoordinationError("INVALID_CONFIG", f"absolute {key} required")
     if config.get("harness") not in ("codex", "claude", "agy", "opencode", "hermes") or not config.get("repo") or not config.get("binding"):
         raise CoordinationError("INVALID_CONFIG", "harness, collection and binding required")
+    if 'opencode_cancel_enabled' in config and (config['harness'] != 'opencode' or
+            type(config['opencode_cancel_enabled']) is not bool):
+        raise CoordinationError('INVALID_CONFIG', 'opencode_cancel_enabled requires an OpenCode boolean')
     binding = config['binding']
     if config.get('idle_wakeup') is not None:
         if not isinstance(config['idle_wakeup'], str) or not Path(config['idle_wakeup']).is_absolute() or not config.get('native_delivery'):

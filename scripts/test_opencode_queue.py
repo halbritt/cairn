@@ -41,6 +41,8 @@ def assert_owner_boundary_fallback(test, endpoint, process, state_dir, probe, st
         if operation == 'session-inbox-claim':
             claims.append(request.copy())
             return dict(attempt=dict(attempt_id=request['request_id'], session=session, delivery=delivery))
+        if operation == 'session-inbox-control':
+            return dict(attempt=dict(attempt_id=claims[-1]['request_id'], session=session, delivery=delivery))
         if operation == 'session-inbox-reconcile':
             raise coordination.CoordinationError('DELIVERY_ACTIVE', 'request still active')
         if operation == 'event-renew':
@@ -265,7 +267,7 @@ class OpenCodeQueueTests(unittest.TestCase):
         delivery = '00000000-0000-4000-8000-000000000001'
         session = dict(agent_id='fixture-agent', execution_id='fixture-execution')
         wake = dict(transport='opencode-queue', session=session, delivery_id=delivery,
-                    request_id=delivery, native_id='ses_native123')
+                    request_id=delivery, native_id='ses_native123', cancel_capable=True)
         state = dict(agent=session, idle_wake=wake)
         event = dict(hook_event_name='TurnStart', session_id='ses_native123',
                      turn_id='msg_native_one', delivery_id=delivery, request_id=delivery,
@@ -284,7 +286,7 @@ class OpenCodeQueueTests(unittest.TestCase):
         lease_id = '00000000-0000-4000-8000-000000000002'
         session = dict(agent_id='fixture-agent', execution_id='fixture-execution')
         wake = dict(transport='opencode-queue', session=session, delivery_id=delivery_id,
-                    request_id=delivery_id, native_id='ses_native123')
+                    request_id=delivery_id, native_id='ses_native123', cancel_capable=True)
         state = dict(agent=dict(**session, native_session_id='ses_native123'),
                      idle_wake=wake, process=self.process)
         path = Path(self.temp.name) / 'session.json'
@@ -303,6 +305,8 @@ class OpenCodeQueueTests(unittest.TestCase):
             if operation == 'session-inbox-claim':
                 claim.append(request.copy())
                 return dict(attempt=dict(attempt_id=request['request_id'], session=session, delivery=delivery))
+            if operation == 'session-inbox-control':
+                return dict(attempt=dict(attempt_id=claim[-1]['request_id'], session=session, delivery=delivery))
             if operation == 'session-inbox-reconcile':
                 raise coordination.CoordinationError('DELIVERY_ACTIVE', 'request still active')
             if operation == 'event-renew':
@@ -340,6 +344,8 @@ class OpenCodeQueueTests(unittest.TestCase):
             if operation == 'session-inbox-claim':
                 claims.append(request.copy())
                 return dict(attempt=dict(attempt_id=request['request_id'], session=session, delivery=delivery))
+            if operation == 'session-inbox-control':
+                return dict(attempt=dict(attempt_id=claims[-1]['request_id'], session=session, delivery=delivery))
             if operation == 'session-inbox-reconcile':
                 raise coordination.CoordinationError('DELIVERY_ACTIVE', 'request still active')
             if operation == 'event-renew':
