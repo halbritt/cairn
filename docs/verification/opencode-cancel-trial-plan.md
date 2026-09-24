@@ -26,9 +26,9 @@ observer that reads `/proc` without consulting Cairn.
 - `observe LEDGER` reports each ledger process as alive or gone, matching on pid
   and start time so a reused pid counts as gone. It exits 1 if anything survives.
 - `cleanup LEDGER` sends SIGKILL to the survivors whose identity still matches,
-  for the explicit cleanup step. It opens a pidfd, rechecks the start time
-  through it and signals only that pinned process, so a pid reused mid-trial
-  is never signalled.
+  for the explicit cleanup step. It opens a pidfd, then rechecks the start time
+  in `/proc` while the pidfd pins the process, and signals through the pidfd,
+  so a pid reused mid-trial is never signalled.
 
 ## Setup
 
