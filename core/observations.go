@@ -27,6 +27,9 @@ type OutcomeRequest struct {
 	ExitCode     *int   `json:"exit_code"`
 	DurationMS   int64  `json:"duration_ms"`
 	ProcessState string `json:"process_state"`
+	// Signal is set only for process_state "signaled"; omitted otherwise so
+	// earlier outcome requests keep their idempotency digest.
+	Signal       *int   `json:"signal,omitempty"`
 	StdoutSHA256 string `json:"stdout_sha256"`
 	StderrSHA256 string `json:"stderr_sha256"`
 }
@@ -156,12 +159,18 @@ func (s *Store) RecordOutcome(ctx context.Context, req OutcomeRequest) (Observat
 		return Observation{}, failure("INVALID_REQUEST", "invalid outcome metadata")
 	}
 	switch req.ProcessState {
-	case "exited", "launch_failed", "timeout", "cancelled", "unknown":
+	case "exited", "launch_failed", "timeout", "cancelled", "unknown", "signaled":
 	default:
 		return Observation{}, failure("INVALID_REQUEST", "unknown process state")
 	}
 	if req.ProcessState == "exited" && req.ExitCode == nil {
 		return Observation{}, failure("INVALID_REQUEST", "exited process requires an observed exit code")
+	}
+	if (req.ProcessState == "signaled") != (req.Signal != nil) {
+		return Observation{}, failure("INVALID_REQUEST", "a signal is recorded exactly for a signaled process")
+	}
+	if req.Signal != nil && (*req.Signal <= 0 || *req.Signal > 128 || req.ExitCode != nil) {
+		return Observation{}, failure("INVALID_REQUEST", "a signaled process has a positive signal number and no exit code")
 	}
 	return privileged(ctx, s, "outcome", req.RequestID, req, func(tx pgx.Tx) (Observation, error) {
 		if err := s.receiptAccess(ctx, tx, req.ReceiptID); err != nil {
@@ -178,7 +187,7 @@ func (s *Store) RecordOutcome(ctx context.Context, req OutcomeRequest) (Observat
 			taskOutcome = "not_attempted"
 		}
 		id := uuid.NewString()
-		_, err := tx.Exec(ctx, `INSERT INTO cairn.run_outcome(outcome_id,receipt_id,exit_code,duration_ms,process_state,task_outcome,stdout_sha256,stderr_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, id, req.ReceiptID, req.ExitCode, req.DurationMS, req.ProcessState, taskOutcome, req.StdoutSHA256, req.StderrSHA256)
+		_, err := tx.Exec(ctx, `INSERT INTO cairn.run_outcome(outcome_id,receipt_id,exit_code,duration_ms,process_state,task_outcome,stdout_sha256,stderr_sha256,signal) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, id, req.ReceiptID, req.ExitCode, req.DurationMS, req.ProcessState, taskOutcome, req.StdoutSHA256, req.StderrSHA256, req.Signal)
 		return Observation{id}, err
 	})
 }

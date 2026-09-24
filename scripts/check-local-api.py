@@ -264,6 +264,7 @@ try:
     retry = subprocess.run(command, env=client_env, capture_output=True, text=True, timeout=15)
     assert retry.returncode != 0 and not retry.stdout and 'RUN_ALREADY_STARTED' in retry.stderr
     for args, code, state in [(['/bin/sh', '-c', 'exit 7'], 1, 'exited'),
+                              (['/bin/sh', '-c', 'kill -KILL $$'], 137, 'signaled'),
                               (['/bin/sleep', '10'], 124, 'timeout')]:
         run = subprocess.run([*host, 'run', '--repo', 'fixture:socket', '--timeout', '100ms',
                               '--', *args], env=client_env, capture_output=True, text=True, timeout=15)
@@ -272,7 +273,7 @@ try:
     report = subprocess.run([*host, 'run-report'], input=json.dumps(dict(repo='fixture:socket', limit=10)),
                             env=client_env, capture_output=True, text=True, check=True)
     rows = json.loads(report.stdout)['data']['rows']
-    assert len(rows) == 3 and all(r['outcome_observed'] and r['task_outcome'] == 'unknown' for r in rows)
+    assert len(rows) == 4 and all(r['outcome_observed'] and r['task_outcome'] == 'unknown' for r in rows)
     assert [r['attempt_id'] for r in rows if 'attempt_id' in r] == [attempt_id]
     # Exercise the same host controller as the OpenCode trial, using a real
     # wrapper process, the hosted profile, and an unusable client DSN.

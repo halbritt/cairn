@@ -152,6 +152,9 @@ func main() {
 			if r.ProcessState == "cancelled" {
 				exitCode = 130
 			}
+			if r.ProcessState == "signaled" && r.Signal != nil {
+				exitCode = 128 + *r.Signal // shell convention for a signal-terminated child
+			}
 		}
 	}
 	if encodeErr := json.NewEncoder(output).Encode(envelope); encodeErr != nil {

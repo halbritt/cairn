@@ -16,6 +16,14 @@ and semantic worker are unchanged. Check an installation with `cairn version`; u
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
 See [build identity](docs/build-identity.md) for unstamped builds and MCP processes.
 
+## 2026-09-24
+
+- Migration 050 records a worker killed by a signal the runner did not send
+  as `signaled`, with the signal number. Before, such a worker appeared as
+  `exited` with exit code -1. `cairn run` exits with 128 plus the signal
+  number. Run status reports the new `signal` field. See
+  [run status](docs/run-status.md#signal-terminated-workers).
+
 ## 2026-09-23
 
 - Twelve live idle-draft and busy-owner-turn trials passed on six native

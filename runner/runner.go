@@ -58,6 +58,7 @@ type Result struct {
 	Seal             string         `json:"seal"`
 	ProcessState     string         `json:"process_state"`
 	ExitCode         *int           `json:"exit_code,omitempty"`
+	Signal           *int           `json:"signal,omitempty"`
 	OutcomeID        string         `json:"outcome_id,omitempty"`
 	Artifacts        string         `json:"artifacts"`
 }
@@ -239,25 +240,32 @@ func run(ctx context.Context, store Store, req Request, stdout, stderr io.Writer
 		}
 	}
 	state := "exited"
-	var exitCode *int
+	var exitCode, signal *int
 	if startErr != nil {
 		state = "launch_failed"
 	} else if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 		state = "timeout"
 	} else if runCtx.Err() != nil {
 		state = "cancelled"
+	} else if status, ok := command.ProcessState.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+		// Killed by a signal this runner did not send (timeout and cancellation
+		// are classified above); ExitCode() would only report a synthetic -1.
+		state = "signaled"
+		number := int(status.Signal())
+		signal = &number
 	} else {
 		code := command.ProcessState.ExitCode()
 		exitCode = &code
 	}
 	result.ProcessState = state
 	result.ExitCode = exitCode
+	result.Signal = signal
 	processErr := errors.Join(startErr, deliveryErr, cleanupErr)
 	var exitErr *exec.ExitError
 	if state == "exited" && waitErr != nil && !errors.As(waitErr, &exitErr) {
 		processErr = errors.Join(processErr, waitErr)
 	}
-	outcome := core.OutcomeRequest{RequestID: uuid.NewString(), ReceiptID: pkg.ReceiptID, ExitCode: exitCode, DurationMS: time.Since(started).Milliseconds(), ProcessState: state, StdoutSHA256: hex.EncodeToString(outHash.Sum(nil)), StderrSHA256: hex.EncodeToString(errHash.Sum(nil))}
+	outcome := core.OutcomeRequest{RequestID: uuid.NewString(), ReceiptID: pkg.ReceiptID, ExitCode: exitCode, Signal: signal, DurationMS: time.Since(started).Milliseconds(), ProcessState: state, StdoutSHA256: hex.EncodeToString(outHash.Sum(nil)), StderrSHA256: hex.EncodeToString(errHash.Sum(nil))}
 	// A cancelled task still needs a durable outcome. If the DB is down, preserve
 	// the exact retry request locally and report the persistence failure.
 	encoded, err := json.MarshalIndent(outcome, "", "  ")

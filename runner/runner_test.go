@@ -346,3 +346,39 @@ func TestPreparationFailureRetainsUnattemptedOutcome(t *testing.T) {
 		})
 	}
 }
+
+func TestExternalSignalIsRecordedAsSignaled(t *testing.T) {
+	s := runStore(t)
+	for _, scenario := range []struct {
+		name    string
+		command []string
+		state   string
+		signal  int
+		exit    int
+	}{
+		{"sigkill", []string{"/bin/sh", "-c", "kill -KILL $$"}, "signaled", 9, 0},
+		{"sigterm", []string{"/bin/sh", "-c", "kill -TERM $$"}, "signaled", 15, 0},
+		{"nonzero exit", []string{"/bin/sh", "-c", "exit 3"}, "exited", 0, 3},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			req := Request{Compile: core.CompileRequest{RequestID: uuid.NewString(), Scope: core.Scope{Repo: uuid.NewString(), TaskID: "t", RunID: "r"}, Purpose: "context", AvailableTokens: 32000}, Destination: core.Destination{Name: "local", AllowLocal: true}, Command: scenario.command, Carrier: "stdin", Timeout: 10 * time.Second, ArtifactDirectory: t.TempDir()}
+			var out bytes.Buffer
+			result, _ := Run(context.Background(), s, req, &out, &out)
+			if result.ProcessState != scenario.state || result.OutcomeID == "" {
+				t.Fatalf("%+v", result)
+			}
+			status, err := s.RunStatus(context.Background(), result.ReceiptID)
+			if err != nil || status.Outcome == nil || status.Outcome.ProcessState != scenario.state {
+				t.Fatalf("stored outcome %+v %v", status.Outcome, err)
+			}
+			if scenario.signal != 0 {
+				if result.Signal == nil || *result.Signal != scenario.signal || result.ExitCode != nil ||
+					status.Outcome.Signal == nil || *status.Outcome.Signal != scenario.signal || status.Outcome.ExitCode != nil {
+					t.Fatalf("signal not recorded: result=%+v stored=%+v", result, status.Outcome)
+				}
+			} else if result.Signal != nil || result.ExitCode == nil || *result.ExitCode != scenario.exit {
+				t.Fatalf("ordinary exit misrecorded: %+v", result)
+			}
+		})
+	}
+}
