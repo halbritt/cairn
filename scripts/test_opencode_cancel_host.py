@@ -225,6 +225,43 @@ class OpenCodeCancelHostTests(unittest.TestCase):
             self.assertIs(prepared['wake']['cancel_capable'], expected)
             state.pop('idle_wake')
 
+    def test_queued_owner_turn_runs_after_positive_cancelled_turn_end(self):
+        self.attempt['turn_stop_state'] = 'ended'
+        operations = []
+
+        def store_call(_config, operation, _request, **_kwargs):
+            operations.append(operation)
+            if operation == 'session-inbox-control':
+                return dict(attempt=copy.deepcopy(self.attempt))
+            self.fail(f'queued owner must not change the cancelled attempt through {operation}')
+
+        with patch.object(coordination, 'call', side_effect=store_call):
+            result = coordination.inbox_context(self.config, self.state, self.path,
+                dict(event='TurnStart', phase='busy', native_turn_id='owner-turn'))
+        self.assertEqual(result, '')
+        self.assertEqual(operations, ['session-inbox-control'])
+        self.assertIn('inbox_intent', self.state)
+
+    def test_owner_join_before_turn_stop_revokes_exclusivity(self):
+        reports = []
+
+        def store_call(_config, operation, request, **_kwargs):
+            if operation == 'session-inbox-control':
+                return dict(attempt=copy.deepcopy(self.attempt))
+            if operation == 'session-tool-stop':
+                reports.append(copy.deepcopy(request))
+                return dict(self.attempt, turn_exclusive=False)
+            self.fail(f'unexpected operation {operation}')
+
+        with patch.object(coordination, 'call', side_effect=store_call):
+            result = coordination.inbox_context(self.config, self.state, self.path,
+                dict(event='TurnStart', phase='busy', native_turn_id='joined-owner'))
+        self.assertEqual(result, '')
+        self.assertEqual(len(reports), 1)
+        self.assertIs(reports[0]['owner_join'], True)
+        self.assertEqual(reports[0]['attempt_id'], 'attempt-one')
+        self.assertIn('inbox_intent', self.state)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1149,7 +1149,8 @@ def release_inbox(config, state, path, reason, fenced=False):
         if not (fenced and exc.code == 'NOT_FOUND'):
             raise
     for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response',
-                'cancel_turn_end', 'cancel_submission', 'cancel_scan_report', 'cancel_final_report',
+                'cancel_turn_end', 'cancel_submission', 'cancel_owner_join',
+                'cancel_scan_report', 'cancel_final_report',
                 'tool_calls', 'opencode_turn_since', 'opencode_request_endpoint'):
         state.pop(key, None)
     write_state(path, state)
@@ -1186,6 +1187,19 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         return ''
     owner_turn = state.get('inbox_intent', {}).get('native_turn_id')
     if owner_turn and owner_turn != observation.get('native_turn_id'):
+        if config['harness'] == 'opencode' and observation['event'] == 'TurnStart':
+            attempt = opencode_inbox_control(config, state, path)
+            if attempt and attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
+                if attempt.get('turn_stop_state') not in ('ended', 'interrupted'):
+                    request = state.get('cancel_owner_join')
+                    if not request or request.get('attempt_id') != attempt['attempt_id']:
+                        request = dict(request_id=str(uuid.uuid4()), session=attempt['session'],
+                                       attempt_id=attempt['attempt_id'], owner_join=True, tools=[])
+                        state['cancel_owner_join'] = request
+                        write_state(path, state)
+                    state['inbox_attempt'] = call(config, 'session-tool-stop', request)
+                    write_state(path, state)
+                return ''  # The owner turn may proceed; the cancelled inbox keeps its hold.
         raise CoordinationError('NATIVE_TURN_MISMATCH', 'another native turn cannot take over or end this request')
     if observation['event'] == 'Stop' and observation['phase'] != 'idle':
         return ''  # Agy still has active background work.

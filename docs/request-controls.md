@@ -119,6 +119,9 @@ stop outside its state lock, records the pinned `TurnEnd`, scans marked tool
 processes, reports terminal captures and reconciles only after a fresh clear
 scan. It never kills the shared native process. An uncertain stop is not
 resent automatically. A live or unreadable marked process keeps the hold.
+If another native turn starts before a positive stop of the pinned turn, the
+host records an owner join and revokes the exclusivity attestation; the hold
+still requires turn and tool cleanup before `exclusivity_revoked` reconciliation.
 
 The OpenCode bridge exposes the native stop as `session/cancel_request`. It
 takes `session_id`, `request_id` and `expected_turn_id`
