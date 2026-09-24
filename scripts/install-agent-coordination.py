@@ -354,6 +354,8 @@ def main():
     parser.add_argument('--repo', default=str(home / 'git/cairn'))
     parser.add_argument('--model', default='')
     parser.add_argument('--native-delivery', action='store_true', help='enable turn-boundary inbox handling (requires schema 039 and matching API)')
+    parser.add_argument('--opencode-cancel-trial', action='store_true',
+                        help='opt in the OpenCode binding to the request-cancellation trial (requires native delivery and idle wakeup)')
     parser.add_argument('--idle-wakeup', action='store_true', help='automatically prompt eligible idle Herdr sessions with pending inbox work; also installs Herdr\'s native integration in the selected account home through the installed herdr CLI when missing')
     parser.add_argument('--herdr', default=shutil.which('herdr'), help='Herdr executable for --idle-wakeup')
     parser.add_argument('--claude-channel-dir', type=Path, help='owner-only directory bridging Claude channel wakes (Claude + --idle-wakeup only)')
@@ -364,9 +366,13 @@ def main():
         parser.error('installed cairn and an existing profile token are required')
     if not args.binding or len(args.binding) > 128 or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-' for c in args.binding) or args.binding in ('.', '..'):
         parser.error('binding must be a bounded name without path components')
+    if args.opencode_cancel_trial and (args.harness != 'opencode' or not args.native_delivery or not args.idle_wakeup):
+        parser.error('--opencode-cancel-trial requires --harness opencode --native-delivery --idle-wakeup')
     config = dict(cairn=str(Path(args.cairn).resolve()), socket=str(args.socket.resolve()), token_file=str(args.token_file.resolve()),
                   repo=args.repo, harness=args.harness, binding=args.binding, model=args.model,
                   process_names=[args.harness], native_delivery=args.native_delivery)
+    if args.opencode_cancel_trial:
+        config['opencode_cancel_enabled'] = True
     if args.idle_wakeup:
         if not args.native_delivery or not args.herdr or not Path(args.herdr).is_file():
             parser.error('--idle-wakeup requires --native-delivery and an installed Herdr executable')

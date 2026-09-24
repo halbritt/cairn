@@ -931,7 +931,8 @@ class OpenCodeToolCaptureTests(unittest.TestCase):
 
     def test_no_capture_events_until_the_host_advertises_support(self):
         observed, events = self.run_turn()
-        self.assertEqual((observed['before'], observed['after']), ('ok', 'ok'))
+        self.assertIn('refusing a tool in an exclusive Cairn request', observed['before'])
+        self.assertEqual(observed['after'], 'skipped')
         self.assertNotIn('ToolStart', [e['hook_event_name'] for e in events])
         self.assertNotIn('ToolEnd', [e['hook_event_name'] for e in events])
 

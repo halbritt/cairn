@@ -99,7 +99,9 @@ if (mode !== "missing_api") {
             if (toolResult) {
               observed.exclusive_env = await shellEnv();
               observed.before = await run("tool.execute.before", { output: { args: {} } });
-              observed.after = await run("tool.execute.after", { args: {}, output: { title: "", output: "", metadata: {} } });
+              observed.after = observed.before === "ok"
+                ? await run("tool.execute.after", { args: {}, output: { title: "", output: "", metadata: {} } })
+                : "skipped";
             }
             await hooks.event({ event: { type: "session.idle", properties: { sessionID: id } } });
             if (toolResult) {

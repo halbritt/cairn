@@ -208,6 +208,7 @@ const plugin: Plugin = async ({ directory, client }) => {
                 session_id,
                 prompt_idle: typeof instClient?.session?.promptIdle === "function",
                 cancel_request: typeof instClient?.session?.cancelRequest === "function",
+                tool_capture: true,
               } }) + "\n")
               continue
             } else if (method === "session/prompt_idle") {
@@ -496,7 +497,9 @@ const plugin: Plugin = async ({ directory, client }) => {
     },
     "tool.execute.before": async (input) => {
       const current = exclusive.get(input.sessionID)
-      if (!current?.capture || closing) return
+      if (!current || closing) return
+      if (!current.capture)
+        throw new Error("Cairn tool capture unavailable; refusing a tool in an exclusive Cairn request")
       // The capture must be durable before the tool starts; an uncaptured tool
       // in an exclusive turn could not be safely cancelled, so refuse it.
       try {

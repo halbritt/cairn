@@ -56,7 +56,7 @@ def markers(name, value, since=0, proc='/proc'):
                 environment = source.read().split(b'\0')
             if needle not in environment:
                 continue
-            status = _stat(pid)
+            status = _stat_at(proc, pid)
             if status['state'] == 'Z':
                 continue
             cmd = Path(f'{proc}/{pid}/cmdline').read_bytes().replace(b'\0', b' ').strip()

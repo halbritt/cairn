@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import types
 import unittest
 from unittest.mock import patch
 
@@ -141,6 +142,69 @@ class OpenCodeCancelHostTests(unittest.TestCase):
         self.assertEqual(captures[0]['items'][0]['item_id'], 'call-one')
         self.assertEqual(captures[0]['items'][0]['native_turn_id'], 'turn-one')
         self.assertTrue(self.state['tool_calls']['call-one']['ended'])
+
+    def test_live_escapee_keeps_hold_until_fresh_clear_scan(self):
+        self.attempt['turn_stop_state'] = 'ended'
+        self.attempt['tools'] = [dict(item_id='call-one', stop_state='captured')]
+        self.state['tool_calls'] = dict(call_one=dict(attempt_id='attempt-one', since=1))
+        self.state['opencode_turn_since'] = 1
+        self.config['opencode_cancel_enabled'] = True
+        scans = iter([dict(clear=False, coverage='complete', processes=[dict(pid=55)], unknown=[]),
+                      dict(clear=True, coverage='complete', processes=[], unknown=[])])
+        operations = []
+
+        def store_call(_config, operation, request, **_kwargs):
+            operations.append(operation)
+            if operation == 'session-tool-stop':
+                if request['terminal_scan'] == 'unknown_remaining':
+                    return dict(self.attempt, terminal_scan='unknown_remaining')
+                self.assertEqual(request['tools'], [dict(item_id='call-one', stop_state='terminated')])
+                return dict(self.attempt, terminal_scan='clear',
+                            tools=[dict(item_id='call-one', stop_state='terminated')])
+            if operation == 'session-inbox-reconcile':
+                self.assertEqual(request['reason'], 'cancel_confirmed')
+                return dict(self.attempt, finished_at='now')
+            self.fail(f'unexpected operation {operation}')
+
+        scan_module = types.SimpleNamespace(markers=lambda *_args, **_kwargs: next(scans))
+        with patch.dict('sys.modules', {'process_scan': scan_module}), \
+                patch.object(coordination, 'call', side_effect=store_call):
+            coordination.scan_opencode_cancel(self.config, self.state, self.path, self.attempt)
+            self.assertEqual(operations, ['session-tool-stop'])
+            self.assertIn('inbox_intent', self.state)
+            coordination.scan_opencode_cancel(self.config, self.state, self.path,
+                                             self.state['inbox_attempt'])
+        self.assertEqual(operations, ['session-tool-stop', 'session-tool-stop', 'session-inbox-reconcile'])
+        self.assertNotIn('inbox_intent', self.state)
+
+    def test_clear_scan_cannot_replace_missing_turn_stop(self):
+        scan_module = types.SimpleNamespace(markers=lambda *_args, **_kwargs: self.fail('scan is premature'))
+        with patch.dict('sys.modules', {'process_scan': scan_module}), \
+                patch.object(coordination, 'call', side_effect=lambda *_args, **_kwargs: self.fail('premature API write')):
+            coordination.scan_opencode_cancel(self.config, self.state, self.path, self.attempt)
+        self.assertIn('inbox_intent', self.state)
+
+    def test_committed_cancel_reconcile_recovers_after_local_crash(self):
+        close = dict(request_id='close-one', session=self.session,
+                     attempt_id='attempt-one', reason='cancel_confirmed')
+        self.state['inbox_close'] = close
+        coordination.write_state(self.path, self.state)
+        calls = []
+
+        def store_call(_config, operation, request, **_kwargs):
+            calls.append((operation, copy.deepcopy(request)))
+            if operation == 'session-inbox-control':
+                return dict(attempt=None)
+            if operation == 'session-inbox-reconcile':
+                return dict(self.attempt, finished_at='now')
+            self.fail(f'unexpected operation {operation}')
+
+        with patch.object(coordination, 'call', side_effect=store_call):
+            coordination.watch_inbox(self.config, self.state, self.path)
+        self.assertEqual([operation for operation, _ in calls],
+                         ['session-inbox-control', 'session-inbox-reconcile'])
+        self.assertEqual(calls[1][1], close)
+        self.assertNotIn('inbox_intent', self.state)
 
 
 if __name__ == '__main__':

@@ -288,7 +288,8 @@ def prepare_idle_wake(config, state, path):
                 pass
             else:
                 try:
-                    cancel_capable = opencode_queue.supports_cancel(opencode, state['process'], agent['native_session_id'])
+                    cancel_capable = (opencode_queue.supports_cancel(opencode, state['process'], agent['native_session_id']) and
+                                      opencode_queue.supports_tool_capture(opencode, state['process'], agent['native_session_id']))
                 except opencode_queue.QueueUnavailable:
                     pass
         # The delivery UUID is stable across a BUSY retry and is the exact
@@ -955,6 +956,8 @@ def opencode_inbox_control(config, state, path):
     local = state['inbox_attempt']
     result = call(config, 'session-inbox-control', session_ref(state['agent']))
     attempt = result.get('attempt') if isinstance(result, dict) else None
+    if not attempt and state.get('inbox_close', {}).get('reason') in ('cancel_confirmed', 'exclusivity_revoked'):
+        return None  # Reconcile committed before local state cleanup; retry its exact request.
     if not attempt or attempt.get('attempt_id') != local['attempt_id']:
         raise CoordinationError('INBOX_ATTEMPT_MISMATCH', 'native control no longer names the local attempt')
     state['inbox_attempt'] = attempt
@@ -990,6 +993,8 @@ def opencode_tool_event(config, state, path, observation, event):
             len(call_id.encode()) > 128 or len(tool.encode()) > 1024 or len(request_id.encode()) > 256 or
             any('\0' in value or any(ord(c) < 32 for c in value) for value in (call_id, tool, request_id))):
         raise CoordinationError('INVALID_HOST', 'invalid OpenCode tool identity')
+    if tool != 'bash':
+        raise CoordinationError('UNSUPPORTED_CONTROL', 'only marked bash tools can run in a cancellable turn')
     attempt = opencode_inbox_control(config, state, path)
     if (not attempt or not attempt.get('turn_exclusive') or
             attempt.get('native_turn_id') != observation['native_turn_id'] or
@@ -1040,6 +1045,55 @@ def prepare_opencode_cancel(config, state, path, attempt):
     return request
 
 
+def scan_opencode_cancel(config, state, path, attempt):
+    """Reconcile only after TurnEnd and a fresh scan of marked tool descendants."""
+    if attempt.get('turn_stop_state') not in ('ended', 'interrupted'):
+        return
+    if not opencode_capture_available():
+        return
+    import process_scan
+    calls = state.get('tool_calls', {})
+    if any(item.get('attempt_id') != attempt['attempt_id'] for item in calls.values()):
+        raise CoordinationError('INBOX_ATTEMPT_MISMATCH', 'tool capture belongs to another attempt')
+    since = state.get('opencode_turn_since', state['process']['start'])
+    if calls:
+        since = min(since, *(item['since'] for item in calls.values()))
+    scan = process_scan.markers('CAIRN_REQUEST_ID', attempt['delivery']['delivery_id'], since=since)
+    if not scan['clear']:
+        if attempt.get('terminal_scan') != 'unknown_remaining':
+            request = state.get('cancel_scan_report')
+            if not request or request.get('attempt_id') != attempt['attempt_id']:
+                request = dict(request_id=str(uuid.uuid4()), session=attempt['session'],
+                               attempt_id=attempt['attempt_id'], terminal_scan='unknown_remaining', tools=[])
+                state['cancel_scan_report'] = request
+                write_state(path, state)
+            state['inbox_attempt'] = call(config, 'session-tool-stop', request)
+            write_state(path, state)
+        return
+    state.pop('cancel_scan_report', None)
+    if (attempt.get('terminal_scan') == 'clear' and
+            all(tool['stop_state'] in ('terminated', 'unavailable') for tool in attempt.get('tools', []))):
+        release_inbox(config, state, path,
+                      'cancel_confirmed' if attempt.get('turn_exclusive') else 'exclusivity_revoked')
+        return
+    stops = [dict(item_id=tool['item_id'], stop_state='terminated') for tool in attempt.get('tools', [])
+             if tool['stop_state'] not in ('terminated', 'unavailable')]
+    request = state.get('cancel_final_report')
+    expected = dict(session=attempt['session'], attempt_id=attempt['attempt_id'],
+                    terminal_scan='clear', tools=stops)
+    if not request or any(request.get(key) != value for key, value in expected.items()):
+        request = dict(request_id=str(uuid.uuid4()), **expected)
+        state['cancel_final_report'] = request
+        write_state(path, state)
+    state['inbox_attempt'] = call(config, 'session-tool-stop', request)
+    write_state(path, state)
+    latest = state['inbox_attempt']
+    if (latest.get('terminal_scan') == 'clear' and
+            all(tool['stop_state'] in ('terminated', 'unavailable') for tool in latest.get('tools', []))):
+        release_inbox(config, state, path,
+                      'cancel_confirmed' if latest.get('turn_exclusive') else 'exclusivity_revoked')
+
+
 def submit_opencode_cancel(config, path, request):
     """Let native cancellation settle without blocking the pinned TurnEnd hook."""
     try:
@@ -1054,6 +1108,8 @@ def submit_opencode_cancel(config, path, request):
         except opencode_queue.CancelRefused as exc:
             status = 'refused:' + exc.reason
         except opencode_queue.CancelUncertain:
+            status = 'uncertain'
+        except opencode_queue.QueueError:
             status = 'uncertain'
     with session_lock(path):
         state = json.loads(path.read_text())
@@ -1086,7 +1142,8 @@ def release_inbox(config, state, path, reason, fenced=False):
         if not (fenced and exc.code == 'NOT_FOUND'):
             raise
     for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response',
-                'cancel_turn_end', 'cancel_submission', 'tool_calls'):
+                'cancel_turn_end', 'cancel_submission', 'cancel_scan_report', 'cancel_final_report',
+                'tool_calls', 'opencode_turn_since'):
         state.pop(key, None)
     write_state(path, state)
     return True
@@ -1097,9 +1154,15 @@ def watch_inbox(config, state, path):
         return
     if config['harness'] == 'opencode':
         attempt = opencode_inbox_control(config, state, path)
+        if not attempt and state.get('inbox_close', {}).get('reason') in ('cancel_confirmed', 'exclusivity_revoked'):
+            release_inbox(config, state, path, state['inbox_close']['reason'])
+            return
         if attempt and attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
             # The store has already fenced completion and renewal. Retain the
             # hold until a pinned turn stop and terminal tool scan are proved.
+            scan_opencode_cancel(config, state, path, attempt)
+            if not state.get('inbox_intent'):
+                return
             return prepare_opencode_cancel(config, state, path, attempt)
     if release_inbox(config, state, path, 'delivery_completed'):
         return
@@ -1122,7 +1185,9 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     if observation['phase'] == 'idle':
         if state.get('delivered_since_idle') or state.get('inbox_intent'):
             attempt = opencode_inbox_control(config, state, path)
-            if attempt and attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
+            if not attempt and state.get('inbox_close', {}).get('reason') in ('cancel_confirmed', 'exclusivity_revoked'):
+                release_inbox(config, state, path, state['inbox_close']['reason'])
+            elif attempt and attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
                 opencode_cancelled_turn_end(config, state, path, observation, attempt)
             else:
                 try:
@@ -1170,6 +1235,8 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         return ''
     if config['harness'] == 'opencode':
         attempt = opencode_inbox_control(config, state, path)
+        if not attempt:
+            return ''
         if attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
             return ''  # The operator has fenced this request; no reinjection or renewal.
     if state.get('opencode_replay', {}).get('delivery_id') == attempt['delivery']['delivery_id']:
@@ -1361,6 +1428,10 @@ def handle(config, event, event_name=None):
                 raise NativePromptRefused('joined channel wake rejected; a fresh copy retries when idle')
         if observation["phase"] != "interrupted":
             inbox = inbox_context(config, state, path, observation, wake_binding(config, state, event, joined))
+        if (config['harness'] == 'opencode' and observation['event'] == 'TurnStart' and
+                state.get('inbox_attempt', {}).get('turn_exclusive')):
+            state['opencode_turn_since'] = int(time.clock_gettime(time.CLOCK_BOOTTIME) * os.sysconf('SC_CLK_TCK'))
+            write_state(path, state)
         if observation["phase"] == "idle":
             if inbox:
                 current = state['agent']

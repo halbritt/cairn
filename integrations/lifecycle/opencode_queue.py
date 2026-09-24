@@ -114,6 +114,11 @@ def supports_cancel(endpoint, process, native_id):
     return _supports(endpoint, process, native_id, 'cancel_request')
 
 
+def supports_tool_capture(endpoint, process, native_id):
+    """Probe the bridge's fail-closed pre-tool capture hooks."""
+    return _supports(endpoint, process, native_id, 'tool_capture')
+
+
 def cancel_request(endpoint, process, native_id, request_id, expected_turn_id):
     """Cancel only the exact exclusive native request on its pinned turn.
 

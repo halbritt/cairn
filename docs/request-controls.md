@@ -89,20 +89,20 @@ its stop command. Even when that command fails, the supervisor checks the final
 unit and cgroup state before deciding whether cleanup finished. A still-running
 unit or an unreadable final state retains the hold.
 
-## Native interactive cancellation (core contract, pending)
+## Native interactive cancellation (OpenCode trial gate)
 
-Interactive native cancellation REMAINS UNSUPPORTED operationally. The core
-contract added by migration 049 is dormant: `work-cancel` on a native session
-attempt still refuses with `UNSUPPORTED_CONTROL` unless that attempt
-explicitly attested exclusive single-request ownership of one pinned native
-turn, and no installed adapter attests that today (a joined Claude channel
-prompt shares the owner prompt id; owner input can join an admitted Codex
-queue turn; no exclusive admission or host-observed revocation lifecycle has
-been demonstrated). All evidence for this contract is synthetic or
-core-level: disposable-database unit regressions and a real-API component
-check with fabricated native identities. No watcher integration exists.
+Native cancellation remains disabled in the installed configuration and has
+not passed a real-model trial. The OpenCode host adapter can opt in with the
+installer's `--opencode-cancel-trial` flag (which writes
+`opencode_cancel_enabled: true`) only after the request-specific native route,
+tool-capture plugin, and process scanner are installed together. At admission
+it probes the peer-verified bridge for both `cancel_request` and
+`tool_capture`; otherwise it claims the turn without an exclusivity attestation,
+so `work-cancel` returns `UNSUPPORTED_CONTROL`. Codex, Claude and Hermes do not
+attest cancellable turns. A joined Claude channel prompt shares the owner
+prompt ID; owner input can join an admitted Codex queue turn.
 
-For a future attested attempt the contract is: `work-cancel` records an
+For an attested attempt, `work-cancel` records an
 idempotent pending cancellation fencing complete/renew/retry with
 `REQUEST_CANCELLED`. Reconciliation releases the hold only after a positive
 turn stop (`interrupted`/`ended`; `ambiguous` holds), terminal captured tools
@@ -113,13 +113,15 @@ invalidated by the cancellation decision, every later capture, a new turn-stop
 observation, a real capture-loss transition and any host-observed owner join
 (which also revokes the exclusivity attestation one-way). A latched
 `capture_gap` preserves lost coverage.
-Host operations: `session-inbox-control`, `session-tool-capture`,
-`session-tool-stop`. The adapter-side capture listener and native stop
-executor are separate future work. Killing a shared gateway or interactive
-process is never part of this contract.
+Host operations are `session-inbox-control`, `session-tool-capture` and
+`session-tool-stop`. The OpenCode watcher polls control, issues one exact native
+stop outside its state lock, records the pinned `TurnEnd`, scans marked tool
+processes, reports terminal captures and reconciles only after a fresh clear
+scan. It never kills the shared native process. An uncertain stop is not
+resent automatically. A live or unreadable marked process keeps the hold.
 
-The OpenCode bridge exposes the native stop as `session/cancel_request`, which
-nothing calls yet. It takes `session_id`, `request_id` and `expected_turn_id`
+The OpenCode bridge exposes the native stop as `session/cancel_request`. It
+takes `session_id`, `request_id` and `expected_turn_id`
 from the pinned attempt. It is advertised as `cancel_request` by
 `session/capabilities` only when the patched native `cancelRequest` exists.
 It refuses a turn that is not the plugin's current owner turn and a missing
@@ -152,9 +154,13 @@ evades the scan.
 
 Tool capture is opt-in by the host. The plugin sends `ToolStart` and `ToolEnd`
 hook events, with `tool`, `call_id` and `request_id`, only when the TurnStart
-reply carries `cairn.tool_capture: true`. Once capture is advertised, a failed
-`ToolStart` refuses the tool rather than running it uncaptured, and a missed
-`ToolEnd` leaves the tool non-terminal.
+reply carries `cairn.tool_capture: true`. An exclusive turn refuses tools if
+the host did not advertise capture or if `ToolStart` fails. The host currently
+admits only marked `bash` tools for this trial. `ToolEnd` alone does not prove
+process termination; the host scans before reporting terminal tool state.
+Environment clearing can evade this scan, so this adapter does not establish
+general cleanup for arbitrary tool workloads. The trial fixture preserves the
+marker, and its independent `/proc` ledger checks for false release.
 
 ## Sweep, review and recovery
 
