@@ -26,7 +26,34 @@ class QueueUnsupported(QueueUnavailable):
     """The process has no native prompt_idle route; use owner boundaries."""
 
 
+class CancelRefused(QueueError):
+    """Native cancellation definitely did not act on any request.
+
+    reason is one of unavailable, unsupported, invalid, session_unavailable,
+    turn_mismatch, not_active or native_refused.
+    """
+
+    def __init__(self, reason, message):
+        super().__init__(message)
+        self.reason = reason
+
+
+class CancelUncertain(QueueError):
+    """The cancel call may have reached native code; its outcome is unknown."""
+
+
 BUSY_CODE = -32600
+# Covers the plugin's 30-second native settle limit plus transport slack.
+CANCEL_TIMEOUT = 35.0
+CANCEL_REFUSALS = {
+    -32601: 'unsupported',
+    -32004: 'unsupported',
+    -32602: 'invalid',
+    -32002: 'session_unavailable',
+    -32006: 'turn_mismatch',
+    -32007: 'not_active',
+    -32003: 'native_refused',
+}
 
 
 def _discard(transport):
@@ -58,8 +85,8 @@ def _open(endpoint, process):
         raise QueueUnavailable('native queue endpoint is unavailable') from exc
 
 
-def supports_idle(endpoint, process, native_id):
-    """Probe a peer-verified bridge for its nonmutating prompt_idle capability."""
+def _supports(endpoint, process, native_id, capability):
+    """Probe a peer-verified bridge for one nonmutating capability flag."""
     transport = _open(endpoint, process)
     try:
         request = {'id': 4, 'method': 'session/capabilities', 'params': {'session_id': native_id}}
@@ -70,9 +97,72 @@ def supports_idle(endpoint, process, native_id):
         response = json.loads(line)
         result = response.get('result') if isinstance(response, dict) and response.get('id') == 4 else None
         return (isinstance(result, dict) and result.get('session_id') == native_id and
-                result.get('prompt_idle') is True)
+                result.get(capability) is True)
     except (OSError, ValueError, TypeError):
         return False
+    finally:
+        _discard(transport)
+
+
+def supports_idle(endpoint, process, native_id):
+    """Probe a peer-verified bridge for its nonmutating prompt_idle capability."""
+    return _supports(endpoint, process, native_id, 'prompt_idle')
+
+
+def supports_cancel(endpoint, process, native_id):
+    """Probe a peer-verified bridge for request-specific native cancellation."""
+    return _supports(endpoint, process, native_id, 'cancel_request')
+
+
+def cancel_request(endpoint, process, native_id, request_id, expected_turn_id):
+    """Cancel only the exact exclusive native request on its pinned turn.
+
+    Returns the accepted result once the native runner's cancellation settled.
+    That is not evidence that the turn stopped or its tools were cleaned up;
+    the host must still observe both. Raises CancelRefused when native code
+    definitely did not act, and CancelUncertain when it may have. Never
+    automatically resend an uncertain cancellation.
+    """
+    for name, value in (('native_id', native_id), ('request_id', request_id),
+                        ('expected_turn_id', expected_turn_id)):
+        if not isinstance(value, str) or not value.strip():
+            raise CancelRefused('invalid', f'{name} must be a nonempty string')
+    try:
+        transport = _open(endpoint, process)
+    except QueueUnavailable as exc:
+        raise CancelRefused('unavailable', str(exc)) from exc
+    try:
+        transport.settimeout(CANCEL_TIMEOUT)
+        req = {'id': 5, 'method': 'session/cancel_request', 'params': {
+            'session_id': native_id, 'request_id': request_id, 'expected_turn_id': expected_turn_id}}
+        transport.sendall((json.dumps(req) + '\n').encode('utf-8'))
+        line = transport.makefile('r', encoding='utf-8').readline()
+        if not line:
+            raise CancelUncertain('native cancel outcome is uncertain; OpenCode closed connection without response')
+        msg = json.loads(line)
+        if (not isinstance(msg, dict) or type(msg.get('id')) is not int or msg['id'] != req['id']
+                or ('error' in msg) == ('result' in msg)):
+            raise CancelUncertain('native cancel response is invalid; outcome is uncertain')
+        if 'error' in msg:
+            err = msg['error']
+            if not isinstance(err, dict) or type(err.get('code')) is not int or not isinstance(err.get('message'), str):
+                raise CancelUncertain('native cancel error is invalid; outcome is uncertain')
+            code, message = err['code'], err['message']
+            if code in CANCEL_REFUSALS:
+                raise CancelRefused(CANCEL_REFUSALS[code], f'native OpenCode did not cancel: {message}')
+            if code == -32000 and message.startswith('UNSUPPORTED_CONTROL:'):
+                raise CancelRefused('unsupported', f'native OpenCode did not cancel: {message}')
+            raise CancelUncertain(f'native OpenCode cancel outcome is uncertain: {message}')
+        result = msg['result']
+        if (not isinstance(result, dict) or result.get('outcome') != 'accepted'
+                or result.get('session_id') != native_id or result.get('request_id') != request_id
+                or result.get('turn_id') != expected_turn_id):
+            raise CancelUncertain('native cancel acknowledgment is invalid; outcome is uncertain')
+        return result
+    except QueueError:
+        raise
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise CancelUncertain('native cancel outcome is uncertain; do not automatically resend') from exc
     finally:
         _discard(transport)
 

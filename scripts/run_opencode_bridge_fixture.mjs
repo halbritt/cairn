@@ -36,6 +36,11 @@ const mode = process.env.OPENCODE_FIXTURE_MODE || "normal";
 // 'completed'/'cancelled'/'failed': idempotent request already ran
 // 'sdk_error': promptIdle returns an SDK error
 // 'missing_api': client lacks promptIdle
+// OPENCODE_FIXTURE_CANCEL selects cancelRequest behaviour (absent: no route):
+// 'cancelled', 'not_active', 'route_missing' (404), 'bad_request' (400),
+// 'server_error' (500), 'invalid', 'slow' (settles after 5s), 'throw'.
+// OPENCODE_FIXTURE_TURN records that owner turn for ses_test at startup.
+const cancelMode = process.env.OPENCODE_FIXTURE_CANCEL
 
 let client = null;
 if (mode !== "missing_api") {
@@ -77,6 +82,20 @@ if (mode !== "missing_api") {
       },
     },
   };
+  if (cancelMode) {
+    client.session.cancelRequest = async ({ path: { id }, body }) => {
+      if (process.env.OPENCODE_FIXTURE_CAPTURE) {
+        fs.appendFileSync(process.env.OPENCODE_FIXTURE_CAPTURE, JSON.stringify({ cancel: { session_id: id, body } }) + "\n");
+      }
+      if (cancelMode === "throw") throw new Error("socket hang up");
+      if (cancelMode === "slow") await new Promise(done => setTimeout(done, 5000));
+      if (cancelMode === "not_active") return { data: { cancelled: false } };
+      if (cancelMode === "invalid") return { data: {} };
+      const status = { route_missing: 404, bad_request: 400, server_error: 500 }[cancelMode];
+      if (status) return { error: { message: `HTTP ${status}` }, response: { status } };
+      return { data: { cancelled: true } };
+    };
+  }
 }
 
 // Dynamically import coordination plugin
@@ -91,6 +110,12 @@ let hooks = await plugin({
   serverUrl: new URL("http://localhost"),
   $: null,
 });
+
+if (process.env.OPENCODE_FIXTURE_TURN) {
+  const info = { role: "user", sessionID: "ses_test", id: process.env.OPENCODE_FIXTURE_TURN };
+  await hooks["experimental.chat.messages.transform"]({}, { messages: [{ info,
+    parts: [{ type: "text", text: "owner turn", synthetic: false, ignored: false }] }] });
+}
 
 // Signal ready
 console.log(`READY:${process.pid}`);

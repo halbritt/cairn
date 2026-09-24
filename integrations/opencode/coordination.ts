@@ -9,6 +9,9 @@ import net from "node:net"
 
 const MAX_PAYLOAD_BYTES = 65536
 const MAX_CONCURRENT_CLIENTS = 4
+// cancel_request returns only after the native runner's cancellation settles,
+// which can outlast the ordinary 4-second socket idle limit.
+const CANCEL_TIMEOUT_MS = 30000
 
 interface PluginInstance {
   id: string
@@ -198,6 +201,7 @@ const plugin: Plugin = async ({ directory, client }) => {
               socket.write(JSON.stringify({ id, result: {
                 session_id,
                 prompt_idle: typeof instClient?.session?.promptIdle === "function",
+                cancel_request: typeof instClient?.session?.cancelRequest === "function",
               } }) + "\n")
               continue
             } else if (method === "session/prompt_idle") {
@@ -305,6 +309,66 @@ const plugin: Plugin = async ({ directory, client }) => {
                   started: true
                 }
               }) + "\n")
+            } else if (method === "session/cancel_request") {
+              // Cancels only the named exclusive native request, never the
+              // session or process. A stale request ID or turn cannot stop
+              // other work. Acceptance means the native runner's cancellation
+              // settled; it is not evidence of turn stop or tool cleanup.
+              const { session_id, request_id, expected_turn_id } = params
+              if ([session_id, request_id, expected_turn_id].some(value => typeof value !== "string" || !value.trim())) {
+                socket.write(JSON.stringify({ id, error: { code: -32602, message: "session_id, request_id, and expected_turn_id must be nonempty strings" } }) + "\n")
+                continue
+              }
+              if (!instClient?.session?.cancelRequest) {
+                socket.write(JSON.stringify({ id, error: { code: -32004,
+                  message: "UNSUPPORTED_CONTROL: native cancel_request capability unavailable" } }) + "\n")
+                continue
+              }
+              const turn = currentInstance.sessions.get(session_id)?.turn
+              if (turn !== expected_turn_id) {
+                socket.write(JSON.stringify({ id, error: { code: -32006,
+                  message: `TURN_MISMATCH: current native turn is ${turn || "unknown"}` } }) + "\n")
+                continue
+              }
+              if (instClient?.session?.get) {
+                const getRes = await instClient.session.get({ path: { id: session_id } })
+                if (getRes.error || !getRes.data) {
+                  const errMsg = (getRes.error as any)?.message || "session not found"
+                  socket.write(JSON.stringify({ id, error: { code: -32002, message: `SESSION_NOT_FOUND: ${errMsg}` } }) + "\n")
+                  continue
+                }
+              }
+              socket.setTimeout(CANCEL_TIMEOUT_MS)
+              const cancelRes = await instClient.session.cancelRequest({
+                path: { id: session_id },
+                body: { requestID: request_id },
+              })
+              if (cancelRes?.error) {
+                // The session exists, so 404 means the route is unpatched and
+                // 400 means the native server rejected the request unchanged.
+                const httpStatus = cancelRes.response?.status
+                const errMsg = (cancelRes.error as any)?.message || "cancel_request outcome unknown"
+                socket.write(JSON.stringify({ id, error: {
+                  code: httpStatus === 404 ? -32004 : httpStatus === 400 ? -32003 : -32000,
+                  message: httpStatus === 404 ? `UNSUPPORTED_CONTROL: cancel_request route missing (${errMsg})` :
+                    httpStatus === 400 ? `CANCEL_REFUSED: ${errMsg}` : `CANCEL_OUTCOME_UNCERTAIN: ${errMsg}`,
+                } }) + "\n")
+                continue
+              }
+              const cancelled = cancelRes?.data?.cancelled
+              if (cancelled === false) {
+                socket.write(JSON.stringify({ id, error: { code: -32007,
+                  message: "NOT_ACTIVE: the request is not the session's active exclusive request" } }) + "\n")
+                continue
+              }
+              if (cancelled !== true) {
+                socket.write(JSON.stringify({ id, error: { code: -32000,
+                  message: "CANCEL_OUTCOME_UNCERTAIN: invalid native cancel response" } }) + "\n")
+                continue
+              }
+              socket.write(JSON.stringify({ id, result: {
+                session_id, request_id, turn_id: expected_turn_id, outcome: "accepted",
+              } }) + "\n")
             } else if (method === "session/abort") {
               // OpenCode SDK's session.abort lacks atomic turn-fencing; an in-flight check-then-act
               // race can kill newer owner work. Retain strict refusal (-32004 UNSUPPORTED_CONTROL)

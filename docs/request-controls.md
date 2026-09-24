@@ -118,6 +118,26 @@ Host operations: `session-inbox-control`, `session-tool-capture`,
 executor are separate future work. Killing a shared gateway or interactive
 process is never part of this contract.
 
+The OpenCode bridge exposes the native stop as `session/cancel_request`, which
+nothing calls yet. It takes `session_id`, `request_id` and `expected_turn_id`
+from the pinned attempt. It is advertised as `cancel_request` by
+`session/capabilities` only when the patched native `cancelRequest` exists.
+It refuses a turn that is not the plugin's current owner turn and a missing
+session before any native call. It then calls native `cancelRequest` by request
+ID. It never uses a whole-session abort (`session/abort` stays refused) and
+never kills a process.
+
+`opencode_queue.cancel_request` returns three outcomes:
+
+- **accepted**: the native runner's cancellation settled.
+- **`CancelRefused`**: native code definitely did not act. Its reason is
+  `unavailable`, `unsupported`, `invalid`, `session_unavailable`,
+  `turn_mismatch`, `not_active` or `native_refused`.
+- **`CancelUncertain`**: native code may have acted. Never automatically resend.
+
+Acceptance is not evidence of a turn stop or tool cleanup; reconciliation still
+needs those host observations.
+
 ## Sweep, review and recovery
 
 `cairn request-control-sweep` accepts `{"repo":"/home/halbritt/git/cairn"}`.

@@ -793,6 +793,112 @@ process.stdout.write(JSON.stringify({
         self.assertFalse(data['afterBDispose'])
 
 
+class OpenCodeCancelRouteTests(unittest.TestCase):
+    """session/cancel_request cancels one exact native request, fail closed."""
+
+    start_fixture = OpenCodeBridgeFixtureTests.start_fixture
+
+    def cancel_fixture(self, cancel=None, turn='msg_admitted', mode='normal'):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        capture = Path(tmp.name) / 'sdk.jsonl'
+        env = dict(OPENCODE_FIXTURE_CAPTURE=str(capture),
+                   OPENCODE_FIXTURE_HOOK_CAPTURE=str(Path(tmp.name) / 'hook.jsonl'))
+        if cancel:
+            env['OPENCODE_FIXTURE_CANCEL'] = cancel
+        if turn:
+            env['OPENCODE_FIXTURE_TURN'] = turn
+        _, endpoint, process = self.start_fixture(mode=mode, extra_env=env)
+
+        def calls():
+            if not capture.exists():
+                return []
+            return [json.loads(line)['cancel'] for line in capture.read_text().splitlines()
+                    if 'cancel' in json.loads(line)]
+        return endpoint, process, calls
+
+    def refused(self, reason, endpoint, process, turn='msg_admitted'):
+        with self.assertRaises(opencode_queue.CancelRefused) as ctx:
+            opencode_queue.cancel_request(endpoint, process, 'ses_test', 'req_one', turn)
+        self.assertEqual(ctx.exception.reason, reason, str(ctx.exception))
+        return ctx.exception
+
+    def test_capability_advertised_only_with_native_route(self):
+        endpoint, process, _ = self.cancel_fixture(cancel='cancelled')
+        self.assertTrue(opencode_queue.supports_cancel(endpoint, process, 'ses_test'))
+        endpoint, process, calls = self.cancel_fixture(cancel=None)
+        self.assertTrue(opencode_queue.supports_idle(endpoint, process, 'ses_test'))
+        self.assertFalse(opencode_queue.supports_cancel(endpoint, process, 'ses_test'))
+        self.refused('unsupported', endpoint, process)
+        self.assertEqual(calls(), [])
+
+    def test_accepted_cancel_targets_only_the_exact_request(self):
+        endpoint, process, calls = self.cancel_fixture(cancel='cancelled')
+        result = opencode_queue.cancel_request(endpoint, process, 'ses_test', 'req_one', 'msg_admitted')
+        self.assertEqual(result, dict(session_id='ses_test', request_id='req_one',
+                                      turn_id='msg_admitted', outcome='accepted'))
+        self.assertEqual(calls(), [dict(session_id='ses_test', body=dict(requestID='req_one'))])
+
+    def test_turn_mismatch_never_reaches_native_code(self):
+        endpoint, process, calls = self.cancel_fixture(cancel='cancelled', turn='msg_owner_later')
+        self.assertIn('msg_owner_later', str(self.refused('turn_mismatch', endpoint, process)))
+        endpoint, process, calls_unknown = self.cancel_fixture(cancel='cancelled', turn=None)
+        self.refused('turn_mismatch', endpoint, process)
+        self.assertEqual(calls() + calls_unknown(), [])
+
+    def test_missing_session_is_refused_before_native_cancel(self):
+        endpoint, process, calls = self.cancel_fixture(cancel='cancelled', mode='not_found')
+        self.refused('session_unavailable', endpoint, process)
+        self.assertEqual(calls(), [])
+
+    def test_definite_native_refusals(self):
+        for cancel, reason in (('not_active', 'not_active'), ('route_missing', 'unsupported'),
+                               ('bad_request', 'native_refused')):
+            with self.subTest(cancel=cancel):
+                endpoint, process, calls = self.cancel_fixture(cancel=cancel)
+                self.refused(reason, endpoint, process)
+                self.assertEqual(len(calls()), 1)
+
+    def test_unknown_native_outcomes_are_uncertain(self):
+        for cancel in ('server_error', 'invalid', 'throw'):
+            with self.subTest(cancel=cancel):
+                endpoint, process, _ = self.cancel_fixture(cancel=cancel)
+                with self.assertRaises(opencode_queue.CancelUncertain):
+                    opencode_queue.cancel_request(endpoint, process, 'ses_test', 'req_one', 'msg_admitted')
+
+    def test_slow_native_settle_outlasts_ordinary_socket_idle_limit(self):
+        endpoint, process, _ = self.cancel_fixture(cancel='slow')
+        started = time.monotonic()
+        result = opencode_queue.cancel_request(endpoint, process, 'ses_test', 'req_one', 'msg_admitted')
+        self.assertEqual(result['outcome'], 'accepted')
+        self.assertGreaterEqual(time.monotonic() - started, 4.5)
+
+    def test_invalid_parameters_are_refused_before_and_at_the_bridge(self):
+        with self.assertRaises(opencode_queue.CancelRefused) as ctx:
+            opencode_queue.cancel_request('/nonexistent/socket', {}, 'ses_test', 'req_one', ' ')
+        self.assertEqual(ctx.exception.reason, 'invalid')
+        endpoint, process, calls = self.cancel_fixture(cancel='cancelled')
+        with socket.socket(socket.AF_UNIX) as conn:
+            conn.settimeout(5)
+            conn.connect(endpoint)
+            conn.sendall((json.dumps(dict(id=9, method='session/cancel_request', params=dict(
+                session_id='ses_test', request_id='req_one'))) + '\n').encode())
+            reply = json.loads(conn.makefile('r').readline())
+        self.assertEqual(reply['error']['code'], -32602)
+        self.assertEqual(calls(), [])
+
+    def test_unverified_peer_is_refused_without_sending(self):
+        endpoint, process, calls = self.cancel_fixture(cancel='cancelled')
+        self.refused('unavailable', endpoint, dict(process, start=process['start'] + 1))
+        self.assertEqual(calls(), [])
+
+    def test_whole_session_abort_remains_refused(self):
+        endpoint, process, calls = self.cancel_fixture(cancel='cancelled')
+        with self.assertRaises(opencode_queue.QueueUnavailable):
+            opencode_queue.abort(endpoint, process, 'ses_test', expected_turn_id='msg_admitted')
+        self.assertEqual(calls(), [])
+
+
 class OpenCodeNativeSchemaTests(unittest.TestCase):
     """Check actual installed server validation, without a session or provider turn."""
 
