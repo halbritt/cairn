@@ -440,9 +440,17 @@ class CandidateBudgetTests(unittest.TestCase):
             hook.selected_writes(memory,event,selected,None,[],[])
         memory.call.assert_not_called()
 
+    def test_generated_note_title_pushing_body_past_limit_is_rejected(self):
+        from unittest.mock import Mock
+        event = dict(cwd='/tmp/cairn-budget-project')
+        memory = Mock()
+        long_body = "x" * (hook.NOTE_BYTES - 10)
+        selection = dict(workstream=None, checkpoint=None, memories=[
+            dict(record_id=None, kind="decision", title="Long Title", body=long_body)
+        ])
+        with self.assertRaisesRegex(hook.HookError, "invalid note fields"):
+            hook.selected_writes(memory, event, selection, None, [])
 
-if __name__ == "__main__":
-    unittest.main()
 
 class SemanticFallbackTests(unittest.TestCase):
     def test_paraphrase_requires_full_body_verification_and_preserves_required_context(self):
@@ -514,3 +522,7 @@ class CheckpointCurrentnessTests(unittest.TestCase):
                 hook.selected_writes(memory, event, selection, None, [])
             with self.assertRaises(hook.HookError):
                 hook.selected_writes(memory, event, dict(selection, checkpoint='x'*(hook.CHECKPOINT_BYTES+1)), old, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

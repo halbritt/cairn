@@ -533,6 +533,8 @@ def selected_writes(memory, event, selected, previous, candidates, handoffs=()):
                 raise HookError("memory selection returned an invalid topic title")
             title = clip(project_root(event).name, 40) + ": " + title.strip()
             body = title + "\n\n" + body.strip()
+            if not valid_body(body):
+                raise HookError("memory selection returned invalid note fields")
             old = memory.checkpoint(title)
             if old and old["body"] != body:
                 # A note outside the supplied candidate set must be read and

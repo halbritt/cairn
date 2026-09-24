@@ -2,6 +2,7 @@
 package wakeup
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -43,7 +44,14 @@ func ReadConfig(path string) (Config, error) {
 		return c, err
 	}
 	defer f.Close()
-	dec := json.NewDecoder(io.LimitReader(f, 32769))
+	data, err := io.ReadAll(io.LimitReader(f, 32769))
+	if err != nil {
+		return c, err
+	}
+	if len(data) > 32768 {
+		return c, errors.New("wake configuration exceeds maximum size of 32KB")
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err = dec.Decode(&c); err != nil {
 		return c, err
@@ -96,8 +104,8 @@ func (UnitManager) active(ctx context.Context, id string) (bool, error) {
 	check, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	output, err := exec.CommandContext(check, "systemctl", "--user", "show", unitName(id), "--property=LoadState", "--property=ActiveState", "--property=ControlGroup").Output()
-	if err != nil {
-		return false, fmt.Errorf("inspect worker unit: %w", err)
+	if check.Err() != nil {
+		return false, fmt.Errorf("inspect worker unit: %w", check.Err())
 	}
 	fields := map[string]string{}
 	for _, line := range strings.Split(string(output), "\n") {
@@ -106,8 +114,14 @@ func (UnitManager) active(ctx context.Context, id string) (bool, error) {
 			fields[key] = value
 		}
 	}
-	if fields["LoadState"] == "not-found" {
-		return false, nil
+	var exitErr *exec.ExitError
+	if err == nil || errors.As(err, &exitErr) {
+		if fields["LoadState"] == "not-found" {
+			return false, nil
+		}
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect worker unit: %w", err)
 	}
 	if group := fields["ControlGroup"]; group != "" {
 		events, readErr := os.ReadFile(filepath.Join("/sys/fs/cgroup", strings.TrimPrefix(group, "/"), "cgroup.events"))
