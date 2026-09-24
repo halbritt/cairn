@@ -26,7 +26,9 @@ observer that reads `/proc` without consulting Cairn.
 - `observe LEDGER` reports each ledger process as alive or gone, matching on pid
   and start time so a reused pid counts as gone. It exits 1 if anything survives.
 - `cleanup LEDGER` sends SIGKILL to the survivors whose identity still matches,
-  for the explicit cleanup step.
+  for the explicit cleanup step. It opens a pidfd, rechecks the start time
+  through it and signals only that pinned process, so a pid reused mid-trial
+  is never signalled.
 
 ## Setup
 
@@ -44,13 +46,23 @@ observer that reads `/proc` without consulting Cairn.
 | Case | Workload | Pass when |
 | --- | --- | --- |
 | C1 targeted interruption | `tree` | The attempt was admitted with `turn_exclusive` and the tool is running. After `work-cancel`, the native turn reports a positive stop. `observe` shows no survivors. Cairn records `operator_cancelled` with `cancel_confirmed` and releases the hold only after its own clear scan. Late complete/renew gets `REQUEST_CANCELLED`. |
-| C2 queued owner work survives | `tree`, plus an owner prompt queued while the tool runs | As C1, and the queued owner prompt then runs in the same session. The owner turn is never cancelled or dropped. If the owner input joins the admitted turn, exclusivity is revoked (`exclusivity_revoked`) and `cancel_confirmed` stays unset. |
-| C3 failed termination, escapee | `escaped` | While `observe` reports the escapee, Cairn keeps `cancel_pending` and the hold. There is no `cancel_confirmed`, and no scan reports the host clear. After `cleanup`, a fresh host scan clears, and only then does reconciliation release the hold. |
+| C2 queued owner work survives | `tree`, plus an owner prompt queued while the tool runs | As C1, and the queued owner prompt runs in the same session only after the cancelled request's turn has ended. The owner turn is never cancelled or dropped. OpenCode's native admission makes owner input wait for the exclusive request, so owner input that joins the admitted turn **fails** the trial. If a join is observed, Cairn must still fail closed: revoke to `exclusivity_revoked` with `cancel_confirmed` unset. That correct revocation does not make the case pass. |
+| C3 failed termination, escapee | `escaped` | While `observe` reports the escapee, Cairn keeps `cancel_pending` and the hold. There is no `cancel_confirmed`, and no scan reports the host clear. After `cleanup`, the hold is released only once all three release conditions hold (below). |
 | C4 failed termination, SIGTERM ignored | `stubborn` | If the stop escalates to SIGKILL, it behaves as C1. If it does not, it behaves as C3: the hold is kept until `cleanup` and a fresh clear scan. |
-| C5 stop refused or uncertain | `tree`, with the native stop made to fail (bridge socket removed after admission) | Cancellation stays pending, the hold is kept, and nothing falls back to success. It recovers only through the explicit cleanup and fresh-scan path. |
+| C5 stop refused or uncertain | `tree`, with the native stop made to fail (bridge socket removed after admission) | Cancellation stays pending, the hold is kept, and nothing falls back to success. Process disappearance after `cleanup` does not release the hold alone: without a positive observed turn stop it stays held, and that is the passing outcome. |
+
+Release conditions (schema 049): Cairn releases a hold only when all three are
+observed:
+
+1. a positive native turn stop (`interrupted` or `ended`; `ambiguous` holds);
+2. terminal captures for the turn's tools;
+3. a fresh clear host scan after the cancellation decision and every later capture.
+
+C1, C3, C4 and C5 check each condition separately. Process disappearance
+never substitutes for a turn stop that is still running or unobserved.
 
 A run fails if Cairn confirms cancellation or releases the hold while `observe`
-reports any survivor. It also fails if the session as a whole is aborted or
+reports any survivor, or before all three conditions are observed. It also fails if the session as a whole is aborted or
 killed instead of the one request, or if queued owner work is lost.
 
 ## Record

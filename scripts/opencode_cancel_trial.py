@@ -105,14 +105,31 @@ def observe(ledger):
     return dict(processes=processes, survivors=[p['role'] for p in processes if p['alive']])
 
 
+def kill_verified(entry):
+    """SIGKILL the ledger process only if it is still that exact process.
+
+    The pidfd pins one process before its start time is rechecked, so a pid
+    reused after observation can never direct the signal at another process.
+    """
+    try:
+        pidfd = os.pidfd_open(entry['pid'])
+    except ProcessLookupError:
+        return
+    try:
+        current = identity(entry['pid'])
+        if current and current['start'] == entry['start']:
+            signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    finally:
+        os.close(pidfd)
+
+
 def cleanup(ledger):
     """SIGKILL surviving ledger processes whose identity still matches."""
     for process in observe(ledger)['processes']:
         if process['alive']:
-            try:
-                os.kill(process['pid'], signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            kill_verified(process)
     deadline = time.monotonic() + 5
     while observe(ledger)['survivors'] and time.monotonic() < deadline:
         time.sleep(0.05)

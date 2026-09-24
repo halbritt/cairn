@@ -24,7 +24,7 @@ class TrialWorkloads(unittest.TestCase):
                                  'workload', mode, str(ledger)],
                                 stdout=subprocess.DEVNULL, start_new_session=True)
         # Cleanups run last-in first-out: kill every survivor, then reap the tool.
-        self.addCleanup(tool.wait)
+        self.addCleanup(self.reap, tool)
         self.addCleanup(lambda: trial.cleanup(ledger) if ledger.exists() else None)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
@@ -34,6 +34,15 @@ class TrialWorkloads(unittest.TestCase):
         self.assertEqual(len(trial.entries(ledger)), EXPECTED[mode])
         self.assertEqual(len(trial.observe(ledger)['survivors']), EXPECTED[mode])
         return tool, ledger
+
+    @staticmethod
+    def reap(tool):
+        # Bounded even when setup failed before the ledger listed the tool.
+        try:
+            tool.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(tool.pid, signal.SIGKILL)
+            tool.wait(timeout=5)
 
     def settle(self, ledger, survivors):
         deadline = time.monotonic() + 5
@@ -69,6 +78,17 @@ class TrialWorkloads(unittest.TestCase):
             out.write('{"pid": %d, "start": %d, "role": "reused", "pgid": 0, "sid": 0}\n'
                       % (os.getpid(), stale['start'] - 1))
         self.assertNotIn('reused', trial.observe(ledger)['survivors'])
+
+    def test_cleanup_never_signals_a_process_with_a_reused_pid(self):
+        bystander = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        self.addCleanup(bystander.wait)
+        self.addCleanup(bystander.kill)
+        start = trial.identity(bystander.pid)['start']
+        trial.kill_verified(dict(pid=bystander.pid, start=start - 1))
+        time.sleep(0.2)
+        self.assertIsNone(bystander.poll())
+        trial.kill_verified(dict(pid=bystander.pid, start=start))
+        self.assertEqual(bystander.wait(timeout=5), -signal.SIGKILL)
 
     def test_unknown_mode_is_refused(self):
         result = subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/opencode_cancel_trial.py'),
