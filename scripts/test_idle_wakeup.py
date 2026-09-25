@@ -110,6 +110,44 @@ while True:
 '''
 
 
+class HerdrReplyTests(unittest.TestCase):
+    def test_oversized_host_replies_are_bounded_on_both_pipes(self):
+        with tempfile.TemporaryDirectory() as root:
+            host = Path(root) / 'host'
+            host.write_text('#!/usr/bin/env python3\nimport os,sys\n'
+                            'getattr(sys, os.environ["FLOOD_PIPE"]).write("x" * 1048577)\n')
+            host.chmod(0o700)
+            for pipe in ('stdout', 'stderr'):
+                for args, code in ((('agent', 'list'), 'HOST_UNAVAILABLE'),
+                                   (('agent', 'prompt', 'pane', 'wake'), 'WAKE_UNCERTAIN')):
+                    with self.subTest(pipe=pipe, args=args):
+                        with self.assertRaises(coordination.CoordinationError) as raised:
+                            coordination.herdr_call({'idle_wakeup': str(host)},
+                                                    dict(os.environ, FLOOD_PIPE=pipe), *args)
+                        self.assertEqual(raised.exception.code, code)
+                        self.assertIn('output exceeded limit', str(raised.exception))
+
+    def test_malformed_operation_results_are_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            host = Path(root) / 'host'
+            host.write_text('#!/usr/bin/env python3\nimport json,os\n'
+                            'print(json.dumps({"result": json.loads(os.environ["RESULT"]) }))\n')
+            host.chmod(0o700)
+            cases = [(('agent', 'list'), {'agents': 'bad'}, 'HOST_UNAVAILABLE'),
+                     (('agent', 'list'), {'agents': [{'pane_id': 'pane', 'agent_session': 'bad'}]}, 'HOST_UNAVAILABLE'),
+                     (('agent', 'get', 'pane'), {'agent': []}, 'HOST_UNAVAILABLE'),
+                     (('pane', 'process-info', '--pane', 'pane'),
+                      {'process_info': {'foreground_processes': [None], 'foreground_process_group_id': 1}},
+                      'HOST_UNAVAILABLE'),
+                     (('agent', 'prompt', 'pane', 'wake'), {'type': 'agent_prompted', 'agent': []}, 'WAKE_UNCERTAIN')]
+            for args, result, code in cases:
+                with self.subTest(args=args):
+                    with self.assertRaises(coordination.CoordinationError) as raised:
+                        coordination.herdr_call({'idle_wakeup': str(host)},
+                                                dict(os.environ, RESULT=json.dumps(result)), *args)
+                    self.assertEqual(raised.exception.code, code)
+
+
 class IdleWakeup(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -897,7 +935,7 @@ time.sleep(30)
         self.fixture['lost_reply']=True
         self.save_fixture()
         result=self.watch()
-        self.assertIn('HOST_UNAVAILABLE',result.stderr)
+        self.assertIn('WAKE_UNCERTAIN',result.stderr)
         self.assertEqual(json.loads(self.path.read_text())['idle_wake']['status'],'uncertain')
         self.watch()
         self.assertEqual(len(self.prompts()),1)

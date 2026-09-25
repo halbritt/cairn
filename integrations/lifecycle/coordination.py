@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import selectors
 from pathlib import Path
 import signal
 import shlex
@@ -31,6 +32,9 @@ class NativePromptRefused(CoordinationError):
 
     def __init__(self, message):
         super().__init__('NATIVE_PROMPT_REFUSED', message)
+
+
+HERDR_OUTPUT_BYTES = 1024 * 1024
 
 
 def process_reference(pid):
@@ -68,8 +72,14 @@ def herdr_environment(process):
 
 
 def herdr_call(config, environment, *args):
-    result = subprocess.run([config['idle_wakeup'], *args], env=environment,
-                            capture_output=True, text=True, timeout=4)
+    prompting = args[:2] == ('agent', 'prompt')
+    failure_code = 'WAKE_UNCERTAIN' if prompting else 'HOST_UNAVAILABLE'
+    try:
+        result = bounded_herdr_command([config['idle_wakeup'], *args], environment)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise CoordinationError(failure_code, 'Herdr command did not confirm the operation') from exc
+    except UnicodeError as exc:
+        raise CoordinationError(failure_code, 'Herdr returned an invalid response') from exc
     if result.returncode:
         try:
             code = json.loads(result.stderr).get('error', {}).get('code')
@@ -77,12 +87,75 @@ def herdr_call(config, environment, *args):
             code = None
         if code in ('pane_not_found', 'agent_not_found', 'agent_not_running'):
             raise CoordinationError('HOST_TARGET_GONE', 'Herdr target no longer exists')
-        raise CoordinationError('HOST_UNAVAILABLE', 'Herdr refused the host operation')
+        raise CoordinationError(failure_code, 'Herdr refused the host operation')
     try:
         response = json.loads(result.stdout)
-        return response['result']
+        value = response['result']
+        if not isinstance(value, dict):
+            raise ValueError('expected result object')
+        if args[:2] == ('agent', 'list'):
+            agents = value.get('agents')
+            if not isinstance(agents, list) or any(not isinstance(agent, dict) or
+                    not isinstance(agent.get('pane_id'), str) or not agent['pane_id'] or
+                    not isinstance(agent.get('agent_session'), (dict, type(None))) for agent in agents):
+                raise ValueError('invalid agent list')
+        elif args[:2] == ('agent', 'get'):
+            if not isinstance(value.get('agent'), dict):
+                raise ValueError('invalid agent')
+        elif args[:2] == ('pane', 'process-info'):
+            info = value.get('process_info')
+            if (not isinstance(info, dict) or type(info.get('foreground_process_group_id')) is not int or
+                    not isinstance(info.get('foreground_processes'), list) or
+                    any(not isinstance(item, dict) or type(item.get('pid')) is not int
+                        for item in info['foreground_processes'])):
+                raise ValueError('invalid process info')
+        elif prompting:
+            if value.get('type') != 'agent_prompted' or not isinstance(value.get('agent'), dict):
+                raise ValueError('invalid prompt result')
+        return value
     except (ValueError, KeyError, TypeError) as exc:
-        raise CoordinationError('HOST_UNAVAILABLE', 'Herdr returned an invalid response') from exc
+        raise CoordinationError(failure_code, 'Herdr returned an invalid response') from exc
+
+
+def bounded_herdr_command(command, environment):
+    """Drain both Herdr pipes while limiting retained bytes and elapsed time."""
+    process = subprocess.Popen(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    deadline = time.monotonic() + 4
+    output = {'stdout': bytearray(), 'stderr': bytearray()}
+    try:
+        with selectors.DefaultSelector() as selector:
+            for name in output:
+                stream = getattr(process, name)
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ, name)
+            while selector.get_map():
+                ready = selector.select(max(0, deadline - time.monotonic()))
+                if not ready:
+                    raise subprocess.TimeoutExpired(command, 4)
+                for key, _ in ready:
+                    name = key.data
+                    stream = key.fileobj
+                    chunk = os.read(stream.fileno(), min(65536, HERDR_OUTPUT_BYTES + 1 - len(output[name])))
+                    if not chunk:
+                        selector.unregister(stream)
+                        stream.close()
+                        continue
+                    output[name].extend(chunk)
+                    if len(output[name]) > HERDR_OUTPUT_BYTES:
+                        raise CoordinationError('WAKE_UNCERTAIN' if command[1:3] == ['agent', 'prompt']
+                                                else 'HOST_UNAVAILABLE', 'Herdr output exceeded limit')
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(command, 4)
+        return subprocess.CompletedProcess(command, process.wait(timeout=remaining),
+                                           output['stdout'].decode('utf-8'),
+                                           output['stderr'].decode('utf-8', errors='replace'))
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        for stream in (process.stdout, process.stderr):
+            stream.close()
 
 
 def host_matches(config, state, host, environment):
