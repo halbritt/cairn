@@ -33,6 +33,14 @@ host-owned hold until its process or native turn is reconciled. Paging uses
 `sessions.next_after` as `agents_after`, and `agents_limit` from 1 to 100.
 These are current observations; filtering a later scan can produce different
 results. Reissue rechecks the selected delivery and its holds atomically.
+The latest native attempt includes its turn stop state, cancellation request and
+confirmation timestamps, and the count of captured tools not yet reported
+terminal. These are selected host observations, not proof that external effects
+did not occur; inspect the hold and attempt before reissuing.
+`reported_task_outcome` and `assessment` come from the latest wake attempt's
+linked receipt only. An earlier wake receipt's assessment, or a delivery handled
+only by a native session, is not summarized there; `unknown` does not assert
+that no assessment exists elsewhere.
 
 ### What the evidence means
 

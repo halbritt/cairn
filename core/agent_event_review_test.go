@@ -2,10 +2,52 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
 )
+
+func TestEventReviewIncludesNativeCancellationAndOpenToolCount(t *testing.T) {
+	ctx := context.Background()
+	op, receiver, _, session, attemptID, dest := nativeCancelFixture(t)
+	captured, err := receiver.CaptureSessionTools(ctx, SessionToolCapture{
+		RequestID: uuid.NewString(), Session: session, AttemptID: attemptID,
+		Items: []SessionToolItem{{ItemID: "tool-one", ProcessID: "process-one", NativeTurnID: "turn-one"}},
+	}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = op.CancelWork(ctx, CancelWorkRequest{RequestID: uuid.NewString(), Repo: captured.Delivery.Event.Repo, DeliveryID: captured.Delivery.DeliveryID, Reason: "Review pending native cancellation"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = receiver.ReportSessionToolStop(ctx, SessionToolStopReport{RequestID: uuid.NewString(), Session: session, AttemptID: attemptID, TurnStop: "interrupted", Tools: []SessionToolStop{{ItemID: "tool-one", StopState: "stop_issued"}}}, dest); err != nil {
+		t.Fatal(err)
+	}
+	page, err := op.ReviewEvents(ctx, EventReviewRequest{Repo: captured.Delivery.Event.Repo, DeliveryID: captured.Delivery.DeliveryID})
+	if err != nil || len(page.Deliveries) != 1 || page.Deliveries[0].LatestNative == nil {
+		t.Fatalf("native review: %+v %v", page, err)
+	}
+	encoded, err := json.Marshal(page.Deliveries[0].LatestNative)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projection struct {
+		TurnStopState string `json:"turn_stop_state"`
+		OpenTools     int    `json:"open_tools"`
+		Cancel        struct {
+			RequestedAt string `json:"requested_at"`
+			ConfirmedAt string `json:"confirmed_at"`
+			Reason      string `json:"reason"`
+		} `json:"cancel"`
+	}
+	if err = json.Unmarshal(encoded, &projection); err != nil {
+		t.Fatal(err)
+	}
+	if projection.TurnStopState != "interrupted" || projection.OpenTools != 1 || projection.Cancel.RequestedAt == "" || projection.Cancel.ConfirmedAt != "" || projection.Cancel.Reason != "Review pending native cancellation" {
+		t.Fatalf("native review dropped selected cleanup state: %s", encoded)
+	}
+}
 
 func TestEventReviewSeparatesHoldExecutionAndHandling(t *testing.T) {
 	ctx := context.Background()

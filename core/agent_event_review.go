@@ -28,6 +28,9 @@ type ReviewAttempt struct {
 	ProviderFailure *ProviderFailure `json:"provider_failure,omitempty"`
 	Session         *AgentSessionRef `json:"session,omitempty"`
 	NativeTurnID    string           `json:"native_turn_id,omitempty"`
+	TurnStopState   string           `json:"turn_stop_state,omitempty"`
+	Cancel          *SessionCancel   `json:"cancel,omitempty"`
+	OpenTools       *int             `json:"open_tools,omitempty"`
 }
 
 type ReviewReissue struct {
