@@ -175,6 +175,38 @@ func TestRecoveryReapplyRollsBackRestrictionsOnLateScopeMismatch(t *testing.T) {
 	}
 }
 
+func TestRecoveryReapplyRejectsAbsentContextCustodyWithoutPartialWithdrawal(t *testing.T) {
+	ctx := context.Background()
+	s := restoreTestStore(t)
+	root := recoveryRoot(t, s)
+	repo := uuid.NewString()
+	grant, err := s.Grant(ctx, GrantRequest{RequestID: uuid.NewString(), ParentID: root.ID, Principal: "agent:recovery-context", Repo: repo, Capabilities: []string{"issue"}, Reason: "Grant absent-context rollback fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := uuid.NewString()
+	source := externalWithdrawals(t, s, RecoveryWithdrawal{"revoke_grant", grant.ID, repo, uuid.NewString()}, RecoveryWithdrawal{"forget", missing, repo, uuid.NewString()})
+	receipt := uuid.NewString()
+	source.Contexts = []RecoveryContext{{RecordID: missing, ManagedContext: ManagedContext{ReceiptID: receipt, OwnershipID: uuid.NewString(), Directory: "/tmp/cairn-recovery-context-test/" + receipt, DirectoryDevice: "1", DirectoryInode: "2", BodySHA256: strings.Repeat("a", 64)}}}
+	source.SHA256, err = recoveryDigest(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.ReapplyRecovery(ctx, RecoveryReapplyRequest{uuid.NewString(), source, "Refuse unowned external context without partial restrictions"})
+	requireCode(t, err, "INTEGRITY_FAILURE")
+	var revoked bool
+	var applications int
+	if err = s.pool.QueryRow(ctx, `SELECT revoked FROM cairn.authority_grant WHERE grant_id=$1`, grant.ID).Scan(&revoked); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.recovery_application`).Scan(&applications); err != nil {
+		t.Fatal(err)
+	}
+	if revoked || applications != 0 {
+		t.Fatalf("absent context committed partial recovery: revoked=%v applications=%d", revoked, applications)
+	}
+}
+
 func TestRecoveryReapplyRequiresLiveRootAndTrustedMatchingExpectations(t *testing.T) {
 	ctx := context.Background()
 	s := restoreTestStore(t)
