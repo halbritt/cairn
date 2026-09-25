@@ -51,15 +51,15 @@ def check(binary, root, environment, grant, claim, support):
     assert any(s['mandatory'] and s['record']['record_id'] == instruction['record_id'] for s in view['selected'])
     assert [{k: v for k, v in e.items() if k not in ('pull_command', 'pull_arguments')} for e in view['index']] == canonical['package']['semantic']['index']
     entry = next(e for e in view['index'] if e['record_id'] == claim['record_id'])
+    words = shlex.split(entry['pull_command'])
     def pull():
-        return json.loads(subprocess.run(entry['pull_command'], shell=True, env=client_env, capture_output=True,
+        return json.loads(subprocess.run(words, env=client_env, capture_output=True,
                                         text=True, check=True, timeout=15).stdout)['data']
     body = pull()
     assert body['selection']['record']['record_id'] == claim['record_id'] and body['credits_remaining'] == 3
     assert pull() == body  # Repeating the displayed command keeps its request ID.
     assert call([*agent, 'expand'], entry['pull_arguments'])['data'] == body
     assert call([*agent, 'pull'], entry['pull_arguments'])['data'] == body
-    words = shlex.split(entry['pull_command'])
     receipt, handle = words[-2:]
     evidence_args = [*agent, 'pull-evidence', '--request-id', str(uuid.uuid4()), receipt, handle,
                      support['evidence_id'], support['sha256']]

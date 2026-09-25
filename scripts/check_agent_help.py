@@ -26,16 +26,21 @@ def check_offline(binary):
         for operation in ('', *OPERATIONS, *FLAG_OPERATIONS):
             for option in ('--help', '-h'):
                 args = [binary, 'agent', *([operation] if operation else []), option]
-                # Keep stdin open: help must finish without asking for JSON input.
-                process = subprocess.Popen(args, cwd=directory, env=env, stdin=subprocess.PIPE,
-                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                try:
-                    assert process.wait(timeout=5) == 0, args
-                    output, error = process.communicate(timeout=5)
-                finally:
-                    if process.poll() is None:
-                        process.kill()
-                        process.communicate(timeout=5)
+                # Keep stdin open until exit; files drain output without a pipe deadlock.
+                with tempfile.TemporaryFile(mode='w+t', encoding='utf-8') as stdout, \
+                        tempfile.TemporaryFile(mode='w+t', encoding='utf-8') as stderr:
+                    process = subprocess.Popen(args, cwd=directory, env=env, stdin=subprocess.PIPE,
+                                               stdout=stdout, stderr=stderr, text=True)
+                    try:
+                        assert process.wait(timeout=5) == 0, args
+                        stdout.seek(0)
+                        stderr.seek(0)
+                        output, error = stdout.read(), stderr.read()
+                    finally:
+                        if process.poll() is None:
+                            process.kill()
+                            process.wait(timeout=5)
+                        process.stdin.close()
                 assert output.startswith('Usage: cairn agent') and not error, (args, output, error)
         for args in (['replace', '--help', 'extra'],
                      *([operation, '--help', 'extra'] for operation in FLAG_OPERATIONS),
