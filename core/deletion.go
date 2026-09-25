@@ -333,6 +333,11 @@ func (s *Store) purgeDatabaseEffect(ctx context.Context, id string, effect Delet
 }
 
 func (s *Store) recordPurgeFailure(ctx context.Context, id string, effect DeletionEffect, cause error) error {
+	// The failed purge may have exhausted its caller's deadline. Retain the
+	// attempt with a separate bounded budget while preserving context values
+	// such as the operator's recovery admission marker.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	tx, err := s.begin(ctx)
 	if err != nil {
 		return err

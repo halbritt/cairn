@@ -256,6 +256,52 @@ func TestPurgeFailureIsDurableAndResumesRemainingEffects(t *testing.T) {
 	}
 }
 
+func TestPurgeFailureObservationSurvivesCallerCancellation(t *testing.T) {
+	ctx := context.Background()
+	s, root := testOperator(t)
+	repo := uuid.NewString()
+	r, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := s.PreviewDeletion(ctx, r.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletion, err := s.Forget(ctx, ForgetRequest{uuid.NewString(), r.RecordID, r.Version, root.ID, preview.PreviewID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var effect DeletionEffect
+	for _, candidate := range deletion.Effects {
+		if candidate.TargetType == "db_record_bodies" {
+			effect = candidate
+			break
+		}
+	}
+	if effect.TargetType == "" {
+		t.Fatal("missing database purge effect")
+	}
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := s.recordPurgeFailure(cancelled, deletion.DeletionID, effect, context.Canceled); err != nil {
+		t.Fatalf("failure observation after cancellation: %v", err)
+	}
+	status, err := s.DeletionStatus(ctx, deletion.DeletionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range status.Effects {
+		if candidate.TargetType == effect.TargetType && candidate.TargetID == effect.TargetID {
+			if candidate.Status != "failed" || candidate.Attempts != 1 || candidate.LastError == "" {
+				t.Fatalf("cancelled purge attempt was not retained: %+v", candidate)
+			}
+			return
+		}
+	}
+	t.Fatal("missing observed purge effect")
+}
+
 func TestForgetPreviewAuthorityConflictAndExpansionBoundaries(t *testing.T) {
 	for _, mode := range []struct {
 		name string
