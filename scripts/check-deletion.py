@@ -22,7 +22,7 @@ def invoke(command, request=None, env=None, expected='OK'):
         args.append(request)
     elif request is not None:
         payload = json.dumps(request).encode()
-    result = subprocess.run(args, input=payload, env=env, capture_output=True, check=False)
+    result = subprocess.run(args, input=payload, env=env, capture_output=True, check=False, timeout=60)
     response = json.loads(result.stdout)
     assert response['status'] == expected, (command, response)
     assert (result.returncode == 0) == (expected == 'OK'), (command, result.returncode)
@@ -30,7 +30,7 @@ def invoke(command, request=None, env=None, expected='OK'):
 
 
 def sql(query):
-    return subprocess.check_output([str(pg_bin / 'psql'), os.environ['CAIRN_DATABASE_URL'], '-XAt', '-v', 'ON_ERROR_STOP=1', '-c', query], stderr=subprocess.PIPE).decode().strip()
+    return subprocess.check_output([str(pg_bin / 'psql'), os.environ['CAIRN_DATABASE_URL'], '-XAt', '-v', 'ON_ERROR_STOP=1', '-c', query], stderr=subprocess.PIPE, timeout=15).decode().strip()
 
 
 def crash_worker(deletion_id, table, column, condition, absent_path=None):
@@ -80,7 +80,7 @@ assert invoke('forget', delete)['deletion_id'] == deleted['deletion_id']
 # Take a backup while work is pending. Restoring it must preserve exclusion and
 # let the same durable effects resume, without replaying the forgetting command.
 backup = root / 'deletion-pending.dump'
-subprocess.run([str(pg_bin / 'pg_dump'), '--format=custom', '--file', str(backup), os.environ['CAIRN_DATABASE_URL']], check=True)
+subprocess.run([str(pg_bin / 'pg_dump'), '--format=custom', '--file', str(backup), os.environ['CAIRN_DATABASE_URL']], check=True, timeout=120)
 
 receipt = package['receipt_id']
 crash_worker(deleted['deletion_id'], 'retrieval_receipt', 'semantic_body', f"NEW.receipt_id='{receipt}'::uuid AND NEW.semantic_body IS NULL")
@@ -93,8 +93,8 @@ assert invoke('purge-deletion', deleted['deletion_id'])['state'] == 'limited'
 
 restored = 'cairn_deletion_restore'
 socket = root / 'store' / 'socket'
-subprocess.run([str(pg_bin / 'createdb'), '-h', str(socket), restored], check=True)
-subprocess.run([str(pg_bin / 'pg_restore'), '-h', str(socket), '--no-owner', '--no-privileges', '-d', restored, str(backup)], check=True)
+subprocess.run([str(pg_bin / 'createdb'), '-h', str(socket), restored], check=True, timeout=30)
+subprocess.run([str(pg_bin / 'pg_restore'), '-h', str(socket), '--no-owner', '--no-privileges', '-d', restored, str(backup)], check=True, timeout=120)
 restored_env = dict(os.environ, CAIRN_DATABASE_URL=f'host={socket} dbname={restored} sslmode=disable')
 invoke('get', record['record_id'], env=restored_env, expected='PAYLOAD_UNAVAILABLE')
 invoke('replay', receipt, env=restored_env, expected='PAYLOAD_UNAVAILABLE')
@@ -107,7 +107,7 @@ print('Abrupt worker death rolls back its active effect; retry and restored pend
 # back. The durable intent lets a new worker confirm absence and finish it.
 managed_repo = 'fixture:managed-context:' + uid()
 managed_record = invoke('create', dict(request_id=uid(), draft=dict(kind='note', body='managed file crash fixture', scope=dict(repo=managed_repo, task_id='*', run_id='*'), claim_type='self')))
-run = subprocess.run([binary, 'run', '--repo', managed_repo, '--prompt', 'Synthetic managed context fixture', '--', '/bin/cat'], capture_output=True, check=True)
+run = subprocess.run([binary, 'run', '--repo', managed_repo, '--prompt', 'Synthetic managed context fixture', '--', '/bin/cat'], capture_output=True, check=True, timeout=60)
 run_receipt = json.loads(run.stderr.splitlines()[-1])['data']
 context_file = Path(run_receipt['artifacts']) / 'context.txt'
 assert context_file.is_file()
@@ -115,7 +115,7 @@ preview = invoke('preview-delete', managed_record['record_id'])
 assert any(t['target_type']=='managed_context' for t in preview['deletion_targets'])
 managed_deletion = invoke('forget', dict(request_id=uid(), record_id=managed_record['record_id'], expected_version=managed_record['version'], grant_id=grant, preview_id=preview['preview_id']))
 managed_backup = root / 'managed-deletion-pending.dump'
-subprocess.run([str(pg_bin / 'pg_dump'), '--format=custom', '--file', str(managed_backup), os.environ['CAIRN_DATABASE_URL']], check=True)
+subprocess.run([str(pg_bin / 'pg_dump'), '--format=custom', '--file', str(managed_backup), os.environ['CAIRN_DATABASE_URL']], check=True, timeout=120)
 managed_id = managed_deletion['deletion_id']
 crash_worker(managed_id, 'deletion_effect', 'status', f"NEW.deletion_id='{managed_id}'::uuid AND NEW.target_type='managed_context' AND NEW.status='completed'", context_file)
 status = invoke('deletion-status', managed_id)
@@ -124,8 +124,8 @@ assert not context_file.exists()
 status = invoke('purge-deletion', managed_id)
 assert any(e['target_type']=='managed_context' and e['status']=='completed' for e in status['effects'])
 assert (context_file.parent / 'outcome.json').is_file()
-subprocess.run([str(pg_bin / 'createdb'), '-h', str(socket), 'cairn_managed_restore'], check=True)
-subprocess.run([str(pg_bin / 'pg_restore'), '-h', str(socket), '--no-owner', '--no-privileges', '-d', 'cairn_managed_restore', str(managed_backup)], check=True)
+subprocess.run([str(pg_bin / 'createdb'), '-h', str(socket), 'cairn_managed_restore'], check=True, timeout=30)
+subprocess.run([str(pg_bin / 'pg_restore'), '-h', str(socket), '--no-owner', '--no-privileges', '-d', 'cairn_managed_restore', str(managed_backup)], check=True, timeout=120)
 managed_env = dict(os.environ, CAIRN_DATABASE_URL=f'host={socket} dbname=cairn_managed_restore sslmode=disable')
 status = invoke('purge-deletion', managed_id, env=managed_env)
 assert any(e['target_type']=='managed_context' and e['status']=='completed' for e in status['effects'])

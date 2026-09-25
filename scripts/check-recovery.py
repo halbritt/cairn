@@ -23,8 +23,13 @@ def invoke(command, request=None, env=None, expected='OK'):
         args.append(str(request))
     elif request is not None:
         payload = json.dumps(request).encode()
-    result = subprocess.run(args, input=payload, env=env, capture_output=True, check=False)
-    response = json.loads(result.stdout)
+    result = subprocess.run(args, input=payload, env=env, capture_output=True, check=False, timeout=60)
+    try:
+        response = json.loads(result.stdout)
+    except ValueError as exc:
+        raise AssertionError(f'{command} exited {result.returncode} without a valid JSON response; stderr: {result.stderr.decode(errors="replace")[-2000:]}') from exc
+    if not isinstance(response, dict) or 'status' not in response:
+        raise AssertionError(f'{command} exited {result.returncode} with an invalid response envelope; stderr: {result.stderr.decode(errors="replace")[-2000:]}')
     assert response['status'] == expected, (command, response)
     assert (result.returncode == 0) == (expected == 'OK'), (command, result.returncode)
     return response.get('data')
@@ -41,10 +46,10 @@ invoke('create', dict(request_id=uid(), draft=dict(kind='note', body='Retained a
 fixture = invoke('compile', fixture_request)
 checkpoint = invoke('checkpoint', dict(request_id=uid(), export_id='before-withdrawals.dump'))
 backup = root / 'before-withdrawals.dump'
-subprocess.run([str(pg_bin / 'pg_dump'), '--format=custom', '--file', str(backup), os.environ['CAIRN_DATABASE_URL']], check=True)
+subprocess.run([str(pg_bin / 'pg_dump'), '--format=custom', '--file', str(backup), os.environ['CAIRN_DATABASE_URL']], check=True, timeout=120)
 
 # This run and its file custody did not exist in the backup.
-process = subprocess.run([binary, 'run', '--repo', repo, '--query', canary, '--prompt', 'Synthetic recovery fixture', '--', '/bin/cat'], capture_output=True, check=True)
+process = subprocess.run([binary, 'run', '--repo', repo, '--query', canary, '--prompt', 'Synthetic recovery fixture', '--', '/bin/cat'], capture_output=True, check=True, timeout=60)
 run = json.loads(process.stderr.splitlines()[-1])['data']
 context = Path(run['artifacts']) / 'context.txt'
 assert context.is_file() and canary in context.read_text()
@@ -60,13 +65,13 @@ assert canary not in external.read_text()
 current = invoke('recovery-inspect', external)
 assert current['consistent'] and current['outstanding_effects'] > 0
 original_bytes = external.read_bytes()
-repeat = subprocess.run([binary, 'recovery-export', str(external)], capture_output=True)
+repeat = subprocess.run([binary, 'recovery-export', str(external)], capture_output=True, timeout=60)
 assert repeat.returncode != 0 and external.read_bytes() == original_bytes
 
 socket = root / 'store' / 'socket'
 restored = 'cairn_recovery_restore'
-subprocess.run([str(pg_bin / 'createdb'), '-h', str(socket), restored], check=True)
-subprocess.run([str(pg_bin / 'pg_restore'), '-h', str(socket), '--no-owner', '--no-privileges', '-d', restored, str(backup)], check=True)
+subprocess.run([str(pg_bin / 'createdb'), '-h', str(socket), restored], check=True, timeout=30)
+subprocess.run([str(pg_bin / 'pg_restore'), '-h', str(socket), '--no-owner', '--no-privileges', '-d', restored, str(backup)], check=True, timeout=120)
 env = dict(os.environ, CAIRN_DATABASE_URL=f'host={socket} dbname={restored} sslmode=disable')
 report = invoke('recovery-inspect', external, env=env, expected='INTEGRITY_FAILURE')
 assert not report['consistent']
@@ -116,15 +121,16 @@ assert {g['event_id'] for g in new_report['gaps']} == {g['event_id'] for g in re
 # Each CLI call opens a fresh connection. The durable outbox survives the
 # application process exit; it purges a post-backup file without a fake receipt.
 query = "SELECT count(*) FROM cairn.retrieval_receipt WHERE receipt_id='" + run['receipt_id'] + "'"
-receipt_count = subprocess.run([str(pg_bin / 'psql'), env['CAIRN_DATABASE_URL'], '-Atc', query], capture_output=True, text=True, check=True).stdout.strip()
+receipt_count = subprocess.run([str(pg_bin / 'psql'), env['CAIRN_DATABASE_URL'], '-XAt', '-v', 'ON_ERROR_STOP=1', '-c', query], capture_output=True, text=True, check=True, timeout=15).stdout.strip()
 assert receipt_count == '0'
 recovered_deletion = by_subject[record['record_id']]['deletion_id']
 purged = invoke('purge-deletion', recovered_deletion, env=env)
 assert purged['state'] == 'limited' and not context.exists()
 assert invoke('purge-deletion', recovered_deletion, env=env) == purged
-pending_ids = subprocess.run([str(pg_bin / 'psql'), env['CAIRN_DATABASE_URL'], '-Atc',
-    "SELECT DISTINCT deletion_id FROM cairn.deletion_effect WHERE status IN ('pending','running','failed') ORDER BY deletion_id"], capture_output=True, text=True, check=True).stdout.splitlines()
+pending_ids = subprocess.run([str(pg_bin / 'psql'), env['CAIRN_DATABASE_URL'], '-XAt', '-v', 'ON_ERROR_STOP=1', '-c',
+    "SELECT DISTINCT deletion_id FROM cairn.deletion_effect WHERE status IN ('pending','running','failed') ORDER BY deletion_id"], capture_output=True, text=True, check=True, timeout=15).stdout.splitlines()
 for pending_id in pending_ids:
+    uuid.UUID(pending_id)
     invoke('purge-deletion', pending_id, env=env)
 rebuild_request = dict(request_id=uid(), session_id=session['session_id'])
 rebuilt = invoke('rebuild-restore', rebuild_request, env=env)

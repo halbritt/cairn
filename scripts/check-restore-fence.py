@@ -29,7 +29,7 @@ for path, content in [(token_file, token), (identities, json.dumps([dict(token_s
 
 def invoke(command, request, agent=False, expected='OK'):
     args = [binary, 'agent', '--socket', str(socket), '--token-file', str(token_file), command] if agent else [binary, command]
-    result = subprocess.run(args, input=json.dumps(request).encode(), env=env, capture_output=True, check=False)
+    result = subprocess.run(args, input=json.dumps(request).encode(), env=env, capture_output=True, check=False, timeout=60)
     response = json.loads(result.stdout)
     assert response['status'] == expected, (command, response)
     assert (result.returncode == 0) == (expected == 'OK'), (command, result.returncode)
@@ -68,9 +68,9 @@ try:
     assert status['binding_observed'] and not status['launch_claimed'] and status['outcome'] is None
     # An observable false claim on a restored receipt is never permission to run.
     invoke('claim-run', dict(receipt_id=old['receipt_id']), agent=True, expected='STALE_PACKAGE')
-    direct = json.loads(subprocess.check_output([binary, 'run-status', old['receipt_id']], env=env))['data']
+    direct = json.loads(subprocess.check_output([binary, 'run-status', old['receipt_id']], env=env, timeout=15))['data']
     assert {k: v for k, v in direct.items() if k != 'observed_at'} == {k: v for k, v in status.items() if k != 'observed_at'}
-    replay = json.loads(subprocess.check_output([binary, 'replay', old['receipt_id']], env=env))['data']['package']
+    replay = json.loads(subprocess.check_output([binary, 'replay', old['receipt_id']], env=env, timeout=15))['data']['package']
     assert replay['seal'] == old['seal'] and replay['semantic'] == old['semantic']
     linked = json.loads((root / 'host-attempt.json').read_text())
     rows = invoke('run-report', dict(repo='fixture:restore', limit=100), agent=True)['rows']
