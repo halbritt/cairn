@@ -126,7 +126,7 @@ func linkEvidence(ctx context.Context, tx pgx.Tx, r Record, ids []string, citati
 		if r.Sensitivity == "shareable" && sensitivity != "shareable" {
 			return failure("DESTINATION_PROHIBITED", "shareable claim cannot expose local evidence metadata")
 		}
-		if citation.ExpectedSHA256 != "" && citation.ExpectedSHA256 != hex.EncodeToString(digest) {
+		if citation.ExpectedSHA256 != "" && !strings.EqualFold(citation.ExpectedSHA256, hex.EncodeToString(digest)) {
 			return failure("EVIDENCE_UNAVAILABLE", "captured source differs from the expected citation digest")
 		}
 		for _, span := range citation.Spans {

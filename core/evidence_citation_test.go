@@ -79,7 +79,7 @@ func TestCitedPassageSurvivesCorrectionAndHistoricalRecompile(t *testing.T) {
 func TestCitationRefusalsAreAtomicAndIntentBound(t *testing.T) {
 	ctx := context.Background()
 	op, root, r, e, _, dest := evidenceExpansionFixtureWithBody(t, "local", "aéz")
-	good := EvidenceCitationRequest{EvidenceID: e.ID, ExpectedSHA256: e.Digest, Spans: []ByteSpanRequest{{Offset: 1, Length: 2}, {Offset: 3, Length: 1}}}
+	good := EvidenceCitationRequest{EvidenceID: e.ID, ExpectedSHA256: strings.ToUpper(e.Digest), Spans: []ByteSpanRequest{{Offset: 1, Length: 2}, {Offset: 3, Length: 1}}}
 	req := CorrectRequest{RequestID: uuid.NewString(), RecordID: r.RecordID, ExpectedVersion: r.Version, GrantID: root, Draft: r.Draft, Reason: "Correct the precise supporting passage", EvidenceCitations: []EvidenceCitationRequest{good}}
 	for _, tc := range []struct {
 		name      string
