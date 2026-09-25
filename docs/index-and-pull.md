@@ -176,8 +176,11 @@ An index contains mandatory instructions in full, plus optional pointers with
 record/version, class, kind, a summary of at most 160 UTF-8 bytes and a body digest.
 It uses the same currentness, authority, conflict, evidence and destination gates
 as ordinary compilation. It fits at most 100 pointers into the existing optional
-budget and reserves room for the handle envelope. Semantic formats v8 (unfiltered)
-and v9 (filtered) seal the index and bootstrap; opaque delivery handles stay outside that seal. Historical
+budget and reserves room for the handle envelope. Current index packages use
+semantic format v8 for the unfiltered base, v9 with kind filters, v10 with task
+phase, v11 with a ranked page offset, v12 with a failure signature, or v13 with
+entity hints; a later facet can select a later format. These formats seal the
+index and bootstrap; opaque delivery handles stay outside that seal. Historical
 recompilation reproduces the index without issuing new handles, including the
 prefix previews in older v4 packages.
 

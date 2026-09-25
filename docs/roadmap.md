@@ -1,6 +1,6 @@
 # Cairn roadmap
 
-Updated 2026-09-21. Original baseline: `e3b47c7` (local memory and task delivery loop).
+Updated 2026-09-25. Original baseline: `e3b47c7` (local memory and task delivery loop).
 
 ## Current coordination work
 
@@ -14,8 +14,9 @@ records installed identities and the remaining native-process reload boundary.
 
 Next acceptance work remains explicit in the
 [coordination v1 plan](plans/agent-coordination-v1.md): native exclusive admission
-and revocation, real-model interruption with confirmed cleanup, and live draft
-preservation/submission-race checks. Native cancellation enablement remains held. The
+and revocation across supported hosts, real-model interruption with confirmed
+cleanup, and the remaining draft/submission coverage. Native cancellation
+enablement remains held. The
 [release deployment](verification/coordination-deployment-2026-09-20.md) does not
 close the remaining operational acceptance work. Source-level fixture success does not satisfy these operational
 milestones or establish general memory usefulness.
@@ -34,6 +35,11 @@ native ownership and process-cleanup failures. Follow-up observation found and
 repaired a Claude delivery-latch bug that stopped the backlog after initial
 success; [sustained delivery evidence](verification/agent-delivery-delay-2026-09-21.md#follow-up-delivery-latch-stopped-the-backlog)
 is separate from channel activation.
+
+The [2026-09-24 disposable OpenCode trial](verification/opencode-cancel-trial-2026-09-24.md)
+reports C1–C5 passing on one owned session and an atomic-session-fence fork.
+The installed OpenCode binding still has cancellation disabled; that trial
+does not close coordination acceptance across hosts and accounts.
 
 ## Single-user operating assumptions
 

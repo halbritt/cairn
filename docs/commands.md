@@ -6,6 +6,9 @@ your own requests. CLI input is one JSON object, normally bounded to 128 KiB.
 Ordinary `create`, `edit` and `revise` allow 512 KiB of encoded JSON for their
 existing 64 KiB decoded body limit. The core library permits up to 1 MiB per
 inline evidence object; authenticated `agent evidence` allows an 8 MiB envelope.
+The encoded limits are defined in [RequestBodyLimit](../localapi/request_limit.go)
+and applied at the [agent CLI](../cmd/cairn/agent.go),
+[client](../localapi/client.go) and [API](../localapi/server.go) boundaries.
 
 Create an ordinary note:
 
