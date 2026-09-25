@@ -70,7 +70,9 @@ class HermesQueueTests(unittest.TestCase):
                             }
                         conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
                     elif method == 'session/abort':
-                        if behavior == 'request_mismatch':
+                        if response is not None:
+                            resp = response
+                        elif behavior == 'request_mismatch':
                             resp = {'id': req_id, 'error': {'code': -32001, 'message': 'REQUEST_MISMATCH: active turn belongs to request req_other; abort refused to protect owner turn'}}
                         elif behavior == 'dequeued':
                             resp = {'id': req_id, 'result': {'aborted': True, 'turn_stop': 'dequeued_before_admission', 'session_id': params.get('session_id'), 'request_id': params.get('expected_request_id'), 'tools': []}}
@@ -82,6 +84,7 @@ class HermesQueueTests(unittest.TestCase):
                                     'turn_stop': 'interrupted',
                                     'session_id': params.get('session_id'),
                                     'request_id': params.get('expected_request_id'),
+                                    'turn_id': params.get('expected_turn_id'),
                                     'tools': [{'item_id': 'proc_123', 'process_id': '4567', 'stop_state': 'terminated'}],
                                 }
                             }
@@ -207,6 +210,26 @@ class HermesQueueTests(unittest.TestCase):
         self.assertTrue(result.get('aborted'))
         self.assertEqual(result.get('turn_stop'), 'dequeued_before_admission')
         self.assertEqual(result.get('tools'), [])
+
+    def test_abort_response_must_match_request_identity(self):
+        result = dict(aborted=True, turn_stop='interrupted', session_id='ses_hermes123',
+                      request_id='req-1234', turn_id='turn-1234', tools=[])
+        cases = (
+            {'id': 3, 'result': result},
+            {'id': 2, 'result': dict(result, session_id='other')},
+            {'id': 2, 'result': dict(result, request_id='other')},
+            {'id': 2, 'result': dict(result, turn_id='other')},
+            {'id': 2, 'error': []},
+        )
+        for response in cases:
+            with self.subTest(response=response):
+                self.serve(response=response)
+                with self.assertRaises(hermes_queue.QueueError) as caught:
+                    hermes_queue.abort(self.path, self.process, 'ses_hermes123',
+                                       expected_request_id='req-1234', expected_turn_id='turn-1234')
+                self.assertNotIsInstance(caught.exception, hermes_queue.QueueUnavailable)
+                self.assertNotIsInstance(caught.exception, hermes_queue.RequestMismatchError)
+        self.join_workers()
 
     def test_tools_status(self):
         """9. tools_status returns process status for session."""
@@ -335,7 +358,8 @@ class HermesQueueTests(unittest.TestCase):
             with conn:
                 line = conn.makefile('r', encoding='utf-8').readline()
                 req = json.loads(line)
-                resp = {'id': req['id'], 'result': {'aborted': True}} # missing turn_stop
+                resp = {'id': req['id'], 'result': {'aborted': True, 'session_id': 'ses_hermes123',
+                                                    'request_id': 'req-1'}}  # missing turn_stop
                 conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
         t = threading.Thread(target=serve_malformed)
         self.threads.append(t)

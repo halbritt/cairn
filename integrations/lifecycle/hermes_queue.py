@@ -150,17 +150,28 @@ def abort(endpoint, process, native_id, expected_request_id=None, expected_turn_
         if not line:
             raise QueueError('native Hermes closed connection during abort; outcome uncertain; do not resend')
         msg = json.loads(line)
+        if not isinstance(msg, dict) or type(msg.get('id')) is not int or msg['id'] != req['id']:
+            raise QueueError('native Hermes abort outcome is uncertain; invalid bridge response identity')
         if 'error' in msg:
             err = msg['error']
+            if not isinstance(err, dict) or not isinstance(err.get('message'), str):
+                raise QueueError('native Hermes abort outcome is uncertain; invalid bridge error response')
             code = err.get('code')
             message = err.get('message', '')
             if code in (-32001, -32003, -32004) or 'REQUEST_MISMATCH' in message or 'TURN_MISMATCH' in message or 'UNSPECIFIED_ABORT' in message:
                 raise RequestMismatchError(f'abort refused: {message}')
             if code == -32002 or 'SESSION_MISMATCH' in message or 'SESSION_NOT_FOUND' in message:
                 raise QueueUnavailable(f'native session unavailable: {message}')
+            raise QueueError(f'native Hermes abort refused: {message}')
         result = msg.get('result')
         if not isinstance(result, dict):
             raise QueueError(f'invalid bridge abort response schema: expected dict result, got {type(result).__name__}')
+        if result.get('session_id') != native_id:
+            raise QueueError('native Hermes abort outcome is uncertain; session ID mismatch')
+        if expected_request_id and result.get('request_id') != expected_request_id:
+            raise QueueError('native Hermes abort outcome is uncertain; request ID mismatch')
+        if expected_turn_id and result.get('turn_id') != expected_turn_id:
+            raise QueueError('native Hermes abort outcome is uncertain; turn ID mismatch')
         if 'aborted' not in result or not isinstance(result['aborted'], bool):
             raise QueueError('invalid bridge abort response schema: missing or invalid boolean "aborted" field')
         if 'turn_stop' not in result or not isinstance(result['turn_stop'], str):
