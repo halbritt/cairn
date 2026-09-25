@@ -714,6 +714,27 @@ class OpenCodeBridgeFixtureTests(unittest.TestCase):
                 sock_path, process, 'ses_test', oversized, 'req_large', expected_session_id='ses_test'
             )
 
+    def test_fixture_preserves_utf8_split_across_socket_chunks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            capture = Path(tmp) / 'requests.jsonl'
+            _, endpoint, _ = self.start_fixture(extra_env={'OPENCODE_FIXTURE_CAPTURE': str(capture)})
+            prompt = 'wake with café ☕'
+            request = dict(id=1, method='session/prompt_idle', params=dict(
+                session_id='ses_test', expected_session_id='ses_test', text=prompt,
+                delivery_id='delivery_utf8', request_id='request_utf8'))
+            encoded = (json.dumps(request, ensure_ascii=False) + '\n').encode('utf-8')
+            split = encoded.index('☕'.encode('utf-8')) + 1
+            with socket.socket(socket.AF_UNIX) as conn:
+                conn.settimeout(3)
+                conn.connect(endpoint)
+                conn.sendall(encoded[:split])
+                time.sleep(0.05)
+                conn.sendall(encoded[split:])
+                response = json.loads(conn.makefile('r', encoding='utf-8').readline())
+            self.assertTrue(response['result']['queued'], response)
+            captured = json.loads(capture.read_text().splitlines()[0])
+            self.assertEqual(captured['body']['parts'][0]['text'], prompt)
+
     def test_fixture_null_and_malformed_envelope_rejection(self):
         """Fixture: null and non-object envelopes are rejected with -32600 without crashing."""
         proc, sock_path, process = self.start_fixture(mode='normal')

@@ -152,22 +152,20 @@ const plugin: Plugin = async ({ directory, client }) => {
         // Socket transmission error handled gracefully
       })
 
-      let buffer = ""
+      let buffer = Buffer.alloc(0)
       socket.on("data", async (chunk) => {
-        if (buffer.length + chunk.length > MAX_PAYLOAD_BYTES) {
-          try {
-            socket.write(JSON.stringify({ id: null, error: { code: -32600, message: "PAYLOAD_TOO_LARGE: exceeds 64KB limit" } }) + "\n")
-          } catch {}
-          socket.destroy()
-          return
-        }
-        buffer += chunk.toString("utf8")
+        buffer = Buffer.concat([buffer, chunk])
 
-        let lineEnd = buffer.indexOf("\n")
+        let lineEnd = buffer.indexOf(10)
         while (lineEnd !== -1) {
-          const line = buffer.slice(0, lineEnd).trim()
-          buffer = buffer.slice(lineEnd + 1)
-          lineEnd = buffer.indexOf("\n")
+          if (lineEnd > MAX_PAYLOAD_BYTES) {
+            socket.write(JSON.stringify({ id: null, error: { code: -32600, message: "PAYLOAD_TOO_LARGE: exceeds 64KB limit" } }) + "\n")
+            socket.destroy()
+            return
+          }
+          const line = buffer.subarray(0, lineEnd).toString("utf8").trim()
+          buffer = buffer.subarray(lineEnd + 1)
+          lineEnd = buffer.indexOf(10)
           if (!line) continue
 
           let request: any
@@ -411,6 +409,10 @@ const plugin: Plugin = async ({ directory, client }) => {
           } catch (err: any) {
             socket.write(JSON.stringify({ id, error: { code: -32000, message: err?.message || "Internal error" } }) + "\n")
           }
+        }
+        if (buffer.length > MAX_PAYLOAD_BYTES) {
+          socket.write(JSON.stringify({ id: null, error: { code: -32600, message: "PAYLOAD_TOO_LARGE: exceeds 64KB limit" } }) + "\n")
+          socket.destroy()
         }
       })
     })
