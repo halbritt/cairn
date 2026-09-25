@@ -136,7 +136,7 @@ are not automatically retried, and a lost response after connecting is not
 classified as a dial failure. Trusted Go callers can still inspect the original
 OS or cancellation cause with `errors.Is`/`errors.As`; rendered messages omit it.
 
-Encoded JSON limits are 512 KiB for ordinary `create`, `edit`, `revise` and `append`,
+Encoded JSON limits are 512 KiB for ordinary `create`, `edit`, `revise`, `append` and `event-complete`,
 1 MiB for `replace`, 8 MiB for `evidence`, and 128 KiB for other API operations. The larger envelopes
 accommodate the existing 64 KiB decoded note and 1 MiB decoded evidence limits,
 including JSON escaping and metadata. They do not increase stored source sizes

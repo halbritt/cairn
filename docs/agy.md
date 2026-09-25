@@ -55,7 +55,8 @@ were unverified at that checkpoint. No owner registration was made during that
 earlier check; the 2026-09-11 installation above supersedes that state.
 
 The expected tools are Cairn's existing `cairn_search`, `cairn_pull`,
-`cairn_pull_evidence`, `cairn_remember`, `cairn_edit` and `cairn_history`. Their
+`cairn_pull_evidence`, `cairn_remember`, `cairn_edit`, `cairn_history`,
+`cairn_assess` and `cairn_assessments`. Their
 [MCP contract](mcp.md#tools) retains ordinary testimony, explicit sharing,
 compare-and-swap editing, currentness checks and bounded pulls. The shared-memory
 installation above supplies the later native execution evidence.
