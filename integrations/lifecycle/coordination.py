@@ -811,6 +811,11 @@ def write_state(path, state):
             os.fsync(file.fileno())
             file.close()
             pending.replace(path)
+            directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
         finally:
             pending.unlink(missing_ok=True)
 
