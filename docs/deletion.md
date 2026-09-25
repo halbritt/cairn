@@ -51,6 +51,11 @@ links remain retained. A relation does not identify copied spans, so the workflo
 does not erase related records or separately captured evidence automatically.
 New citations to the tombstoned record refuse.
 
+`replace` preserves a note's existing relations, so it also refuses when one
+points to the forgotten record. Review the dependent note and use a full `edit`
+with that relation removed to create an independent version. Earlier versions
+keep their historical links and deletion exclusions.
+
 Use `cairn deletion-status DELETION_UUID` for current effects, then
 `cairn purge-deletion DELETION_UUID` to execute pending or failed database and [managed context-file purges](managed-context.md).
 Each effect and its completion commit together. A worker crash rolls back its
