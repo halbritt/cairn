@@ -129,7 +129,14 @@ versions, known transitive relation links and recorded exposures behind an
 affected-record count. It preserves historical citations after correction and
 does not infer authority or causal influence.
 
-`cairn evidence-checks EVIDENCE_UUID` inspects up to 1,000 check generations.
+`cairn evidence-checks EVIDENCE_UUID` inspects up to 1,000 check generations
+and explicitly refuses longer histories. For longer histories, use
+`cairn evidence-checks-page --after GENERATION --limit N EVIDENCE_UUID`.
+The first page starts after generation 0. Each page returns `checks`, `more`,
+and `next_after`; pass `next_after` as the next `--after` value while `more` is
+true. The default limit is 100 and the maximum is 1,000. Each page checks
+current repository access before reading history.
+
 `cairn evidence EVIDENCE_UUID` returns the current captured object and status.
 UTF-8 payloads use `body`. Explicit binary payloads use `body_base64` and leave
 `body` empty, so JSON encoding cannot silently alter the captured bytes. Expected

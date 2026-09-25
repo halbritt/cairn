@@ -6,8 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"github.com/jackc/pgx/v5"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type EvidenceCheckRequest struct {
@@ -24,6 +25,11 @@ type EvidenceCheck struct {
 	Method          string    `json:"method"`
 	CheckedAt       time.Time `json:"checked_at"`
 	AffectedRecords int       `json:"affected_records"`
+}
+type EvidenceCheckPage struct {
+	Checks    []EvidenceCheck `json:"checks"`
+	More      bool            `json:"more"`
+	NextAfter int             `json:"next_after,omitempty"`
 }
 
 // CheckEvidence verifies retained inline bytes, never the truth of the source
@@ -77,36 +83,58 @@ func (s *Store) CheckEvidence(ctx context.Context, req EvidenceCheckRequest) (Ev
 	})
 }
 func (s *Store) EvidenceChecks(ctx context.Context, id string) ([]EvidenceCheck, error) {
+	page, err := s.EvidenceChecksPage(ctx, id, 0, 1000)
+	if err != nil {
+		return nil, err
+	}
+	if page.More {
+		return nil, failure("BUDGET_REFUSED", "evidence check history exceeds 1000 observations; use a paged read")
+	}
+	return page.Checks, nil
+}
+
+// EvidenceChecksPage reads an append-only history with a generation cursor.
+// Each page repeats the current repository check; an earlier page is not access.
+func (s *Store) EvidenceChecksPage(ctx context.Context, id string, after, limit int) (EvidenceCheckPage, error) {
+	out := EvidenceCheckPage{Checks: []EvidenceCheck{}}
 	ctx = s.recoveryContext(ctx)
 	if err := validID(id); err != nil {
-		return nil, err
+		return out, err
+	}
+	if after < 0 || after > 2147483647 || limit < 1 || limit > 1000 {
+		return out, failure("INVALID_REQUEST", "evidence check page requires after generation 0-2147483647 and limit 1-1000")
 	}
 	tx, err := s.begin(ctx)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	defer tx.Rollback(ctx)
 	var repo string
 	err = tx.QueryRow(ctx, `SELECT repo FROM cairn.evidence WHERE evidence_id=$1`, id).Scan(&repo)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, failure("NOT_FOUND", "evidence not found")
+		return out, failure("NOT_FOUND", "evidence not found")
 	}
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	if err = s.checkRepo(repo); err != nil {
-		return nil, err
+		return out, err
 	}
-	rows, err := tx.Query(ctx, `SELECT detail FROM cairn.evidence_check WHERE evidence_id=$1 ORDER BY generation LIMIT 1001`, id)
+	rows, err := tx.Query(ctx, `SELECT detail FROM cairn.evidence_check WHERE evidence_id=$1 AND generation>$2 ORDER BY generation LIMIT $3`, id, after, limit+1)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	results, err := pgx.CollectRows(rows, pgx.RowTo[EvidenceCheck])
 	if err != nil {
-		return nil, err
+		return out, err
 	}
-	if len(results) > 1000 {
-		return nil, failure("BUDGET_REFUSED", "evidence check history exceeds 1000 observations")
+	if len(results) > limit {
+		out.More = true
+		results = results[:limit]
 	}
-	return results, tx.Commit(ctx)
+	out.Checks = results
+	if len(results) > 0 {
+		out.NextAfter = results[len(results)-1].Generation
+	}
+	return out, tx.Commit(ctx)
 }

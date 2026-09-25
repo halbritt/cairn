@@ -3,10 +3,56 @@ package core
 import (
 	"context"
 	"encoding/base64"
+	"testing"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"testing"
 )
+
+func TestEvidenceCheckHistoryPagesBeyondWholeHistoryLimit(t *testing.T) {
+	ctx := context.Background()
+	op, _ := testOperator(t)
+	repo := uuid.NewString()
+	evidence := testEvidence(t, op, repo)
+	for generation := 1; generation <= 1001; generation++ {
+		check, err := op.CheckEvidence(ctx, EvidenceCheckRequest{RequestID: uuid.NewString(), EvidenceID: evidence.ID})
+		if err != nil || check.Generation != generation {
+			t.Fatalf("check generation %d: %+v %v", generation, check, err)
+		}
+	}
+	_, err := op.EvidenceChecks(ctx, evidence.ID)
+	requireCode(t, err, "BUDGET_REFUSED")
+
+	after, seen := 0, 0
+	for {
+		page, err := op.EvidenceChecksPage(ctx, evidence.ID, after, 127)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Checks) == 0 || len(page.Checks) > 127 {
+			t.Fatalf("invalid page length %d after %d", len(page.Checks), after)
+		}
+		for _, check := range page.Checks {
+			seen++
+			if check.Generation != seen {
+				t.Fatalf("generation %d at position %d", check.Generation, seen)
+			}
+		}
+		if page.NextAfter != seen {
+			t.Fatalf("cursor %d after generation %d", page.NextAfter, seen)
+		}
+		if !page.More {
+			break
+		}
+		after = page.NextAfter
+	}
+	if seen != 1001 {
+		t.Fatalf("read %d of 1001 checks", seen)
+	}
+	outsider := testStore(t, Channel{Principal: "check-page-outsider", Repo: uuid.NewString()})
+	_, err = outsider.EvidenceChecksPage(ctx, evidence.ID, 0, 127)
+	requireCode(t, err, "AUTHORITY_DENIED")
+}
 
 func TestEvidenceRecheckInvalidatesMoreThanThousandCitingRecords(t *testing.T) {
 	ctx := context.Background()

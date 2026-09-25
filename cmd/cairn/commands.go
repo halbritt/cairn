@@ -49,6 +49,7 @@ Everyday commands:
   search [--repo PATH] [--purpose context] [--destination local] [--kind KIND ...] QUERY
   run [--repo PATH] [--kind KIND ...] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
+  evidence-checks-page [--after GENERATION] [--limit N] EVIDENCE_UUID
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
   proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST
   list [--limit N] [--offset N] REPO | get UUID | use-report [--record UUID] [--limit N] [--offset N] REPO | run-report [--limit N] [--offset N] REPO | report REPO | docket REPO | impact [--offset N] UUID | evidence-impact [--record-offset N] [--use-offset N] EVIDENCE_UUID | replay RECEIPT_UUID | explain RECEIPT_UUID | preview-retract RECORD_UUID
@@ -310,6 +311,17 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return store.InstructionPolicy(ctx, args[1])
 		}
 		return store.PolicyRevision(ctx, args[1])
+	case "evidence-checks-page":
+		f := flags("evidence-checks-page")
+		after := f.Int("after", 0, "last generation from the previous page")
+		limit := f.Int("limit", 100, "maximum checks (1-1000)")
+		if err := f.Parse(args[1:]); err != nil {
+			return nil, invalid(err.Error())
+		}
+		if f.NArg() != 1 {
+			return nil, invalid("evidence-checks-page requires one evidence UUID")
+		}
+		return store.EvidenceChecksPage(ctx, f.Arg(0), *after, *limit)
 	case "get", "replay", "report", "docket", "explain", "preview-retract", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict", "supersession", "scope-authorization":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")
