@@ -12,6 +12,29 @@ from check_note_transport import operator
 from test_claude_lifecycle import hook, installer
 
 
+EXPECTED_HOOKS = {
+    'startup': ['SessionStart:startup'],
+    'resume': ['SessionStart:resume'],
+    'fresh-session': ['SessionStart:startup'],
+    'progress': ['SessionStart:resume'],
+    'compact': ['SessionStart:resume', 'SessionStart:compact'],
+}
+
+
+def stream_events(label, output):
+    if not output.endswith('\n'):
+        raise AssertionError(f'{label}: native JSONL ended without a complete line')
+    try:
+        events = [json.loads(line) for line in output.splitlines()]
+    except json.JSONDecodeError as exc:
+        raise AssertionError(f'{label}: malformed native JSONL') from exc
+    if (not events or any(not isinstance(event, dict) for event in events) or
+            sum(event.get('type') == 'result' for event in events) != 1 or
+            events[-1].get('type') != 'result' or events[-1].get('subtype') != 'success'):
+        raise AssertionError(f'{label}: missing or invalid terminal native result')
+    return events
+
+
 def check(claude, binary, root, environment):
     output = Path(environment.get('CAIRN_CLAUDE_LIFECYCLE_REPORT', root / 'claude-lifecycle'))
     output.mkdir(mode=0o700)
@@ -128,9 +151,15 @@ def check(claude, binary, root, environment):
             (output / (label + '.stderr')).write_text(completed.stderr)
             assert completed.returncode == 0, (label, completed.returncode, completed.stderr[-1000:], completed.stdout[-1200:])
             assert not failures, failures
-            events = [json.loads(line) for line in completed.stdout.splitlines()]
-            hook_results = [event for event in events if event.get('subtype') == 'hook_response']
-            assert hook_results and all(event.get('exit_code') == 0 for event in hook_results), hook_results
+            events = stream_events(label, completed.stdout)
+            started = [event for event in events if event.get('subtype') == 'hook_started']
+            responses = [event for event in events if event.get('subtype') == 'hook_response']
+            expected = EXPECTED_HOOKS[label]
+            assert [event.get('hook_name') for event in started] == expected, f'{label}: unexpected hook starts'
+            assert [event.get('hook_name') for event in responses] == expected, f'{label}: unexpected hook responses'
+            assert all(event.get('hook_event') == 'SessionStart' and event.get('exit_code') == 0 and
+                       event.get('outcome') == 'success' and event.get('hook_id') == started[index].get('hook_id')
+                       for index, event in enumerate(responses)), f'{label}: hook response did not confirm its start'
             assert 'hook [' not in completed.stderr or 'failed:' not in completed.stderr, completed.stderr
             return completed
 
