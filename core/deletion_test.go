@@ -153,6 +153,28 @@ func TestForgetExcludesCachedRevisionAndSupersessionResponses(t *testing.T) {
 	} {
 		requireCode(t, retry(), "PAYLOAD_UNAVAILABLE")
 	}
+	snapshot, err := s.CaptureRecovery(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE cairn.mutation_request SET payload_deleted_by=NULL WHERE request_id=$1`, replace.RequestID); err != nil {
+		t.Fatal(err)
+	}
+	report, err := s.InspectRecovery(ctx, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unsafe := false
+	for _, gap := range report.Gaps {
+		unsafe = unsafe || gap.SubjectID == record.RecordID && gap.Reason == "PAYLOAD_EXCLUSION_MISSING"
+	}
+	if !unsafe || report.Consistent {
+		t.Fatalf("recovery accepted an unexcluded replacement response: %+v", report)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE cairn.mutation_request SET payload_deleted_by=$1 WHERE request_id=$2`,
+		deletion.DeletionID, replace.RequestID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.PurgeDeletion(ctx, deletion.DeletionID); err != nil {
 		t.Fatal(err)
 	}

@@ -210,7 +210,7 @@ func inspectWithdrawal(ctx context.Context, tx pgx.Tx, w RecoveryWithdrawal) (st
  NOT EXISTS(SELECT 1 FROM cairn.deletion_request WHERE record_id=$1)
  OR EXISTS(SELECT 1 FROM cairn.record_version WHERE record_id=$1 AND payload_deleted_by IS NULL)
  OR EXISTS(SELECT 1 FROM cairn.record_use u JOIN cairn.retrieval_receipt r USING(receipt_id) WHERE u.record_id=$1 AND r.payload_deleted_by IS NULL)
- OR EXISTS(SELECT 1 FROM cairn.mutation_request WHERE operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence') AND payload_deleted_by IS NULL AND jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$1::text)))`, w.SubjectID).Scan(&unsafe)
+ OR EXISTS(SELECT 1 FROM cairn.mutation_request WHERE operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence','replace','revise','append','cite','supersede') AND payload_deleted_by IS NULL AND jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$1::text)))`, w.SubjectID).Scan(&unsafe)
 	if err != nil {
 		return "", err
 	}
