@@ -280,10 +280,14 @@ func assignPool(ctx context.Context, tx pgx.Tx, w WorkerSlot, c poolCandidate) (
 	if _, err := tx.Exec(ctx, `INSERT INTO cairn.agent_delivery(delivery_id,event_id,consumer) VALUES($1,$2,$3)`, id, c.id, w.Consumer); err != nil {
 		return "", err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE cairn.agent_pool_request SET delivery_id=$2,assigned_at=clock_timestamp() WHERE event_id=$1 AND delivery_id IS NULL`, c.id, id); err != nil {
+	tag, err := tx.Exec(ctx, `UPDATE cairn.agent_pool_request SET delivery_id=$2,assigned_at=clock_timestamp() WHERE event_id=$1 AND delivery_id IS NULL`, c.id, id)
+	if err != nil {
 		return "", err
 	}
-	_, err := tx.Exec(ctx, `UPDATE cairn.agent_pool_publisher_service SET last_dispatch=nextval('cairn.agent_pool_dispatch_sequence') WHERE repo=$1 AND pool=$2 AND publisher=$3`, w.Repo, c.pool, c.publisher)
+	if tag.RowsAffected() != 1 {
+		return "", failure("INTEGRITY_FAILURE", "pool request assignment changed after candidate selection")
+	}
+	_, err = tx.Exec(ctx, `UPDATE cairn.agent_pool_publisher_service SET last_dispatch=nextval('cairn.agent_pool_dispatch_sequence') WHERE repo=$1 AND pool=$2 AND publisher=$3`, w.Repo, c.pool, c.publisher)
 	return id, err
 }
 func readPoolStatus(ctx context.Context, tx pgx.Tx, id string) (*PoolRequestStatus, error) {
