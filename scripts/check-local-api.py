@@ -96,7 +96,7 @@ try:
         kind='note', body='Synthetic socket lesson', claim_type='self',
         scope=dict(repo='fixture:socket', task_id='*', run_id='*')))
     result = subprocess.run([binary, 'agent', 'create'], input=json.dumps(request),
-                            env=env, capture_output=True, text=True, check=True)
+                            env=env, capture_output=True, text=True, check=True, timeout=10)
     record = json.loads(result.stdout)['data']
     assert record['observed_writer'] == 'agent:socket-fixture'
     assert record['witness'] == 'testimony'
@@ -213,10 +213,12 @@ try:
     request_id = str(uuid.uuid4())
     attempt_id = str(uuid.uuid4())
     # Synthetic host observation fixture; only the observing host can bind it.
-    subprocess.run([*host, 'spawn'], input=json.dumps(dict(request_id=str(uuid.uuid4()),
+    spawned = subprocess.run([*host, 'spawn'], input=json.dumps(dict(request_id=str(uuid.uuid4()),
                    attempt_id=attempt_id, dispatcher='fixture:dispatcher', delegate='fixture:delegate',
                    scope=dict(repo='fixture:socket', task_id='interactive', run_id='socket-host-run'))),
-                   env=client_env, capture_output=True, text=True, check=True)
+                   env=client_env, capture_output=True, text=True, check=True, timeout=10)
+    spawn_data = json.loads(spawned.stdout)['data']
+    assert spawn_data['attempt_id'] == attempt_id and spawn_data['state'] == 'running', spawn_data
     artifact_body = b'BINARY-ARTIFACT-' + uuid.uuid4().hex.encode() + b'\x00\xff'
     (root / 'artifact-source.bin').write_bytes(artifact_body)
     child = ('import os,sys,pathlib; body=sys.stdin.read(); '
@@ -224,6 +226,7 @@ try:
              'assert "SOCKET-HOST-PROMPT" in body; '
              'assert not any(k.startswith("CAIRN_") for k in os.environ); '
              'pathlib.Path("artifact-output.bin").write_bytes(pathlib.Path("artifact-source.bin").read_bytes()); '
+             'print("child-stderr-marker", file=sys.stderr); '
              'print("observed-host-ok")')
     command = [*host, 'run', '--repo', 'fixture:socket', '--request-id', request_id,
                '--run', 'socket-host-run', '--attempt-id', attempt_id, '--prompt', 'SOCKET-HOST-PROMPT',
@@ -231,7 +234,9 @@ try:
                '--', sys.executable, '-c', child]
     run = subprocess.run(command, env=client_env, capture_output=True, text=True, timeout=15)
     assert run.returncode == 0 and run.stdout.strip() == 'observed-host-ok', (run.stdout, run.stderr)
-    observed = json.loads(run.stderr)['data']
+    stderr_lines = run.stderr.splitlines()
+    assert stderr_lines[:-1] == ['child-stderr-marker'], stderr_lines
+    observed = json.loads(stderr_lines[-1])['data']
     assert observed['process_state'] == 'exited' and observed['outcome_id'] and observed['attempt_id'] == attempt_id
     assert observed['artifact_evidence']['witness'] == 'instrumented'
     captured = subprocess.run([binary, 'evidence', observed['artifact_evidence']['evidence_id']],
