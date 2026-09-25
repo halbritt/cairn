@@ -40,7 +40,7 @@ func (s *Store) ProposalHistory(ctx context.Context, req ProposalHistoryRequest)
 		return ProposalReviewHistory{}, err
 	}
 	if req.BeforeVersion < 0 || req.BeforeVersion > 2147483647 || req.Limit < 0 || req.Limit > 100 {
-		return ProposalReviewHistory{}, failure("INVALID_REQUEST", "proposal history requires limit 1-100 and a positive before_version when supplied")
+		return ProposalReviewHistory{}, failure("INVALID_REQUEST", "proposal history requires limit 0-100 (0 defaults to 20) and before_version 0-2147483647 (0 means no cursor)")
 	}
 	limit := req.Limit
 	if limit == 0 {
