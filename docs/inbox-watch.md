@@ -24,6 +24,10 @@ The cursor records **delivery arrival order**. Pool requests receive a delivery
 position when assigned, even when their publication predates other inbox work.
 Publication history from `cairn events --after` uses a different sequence and
 must not be used as an inbox watch cursor.
+Migration 043 assigned positions to deliveries that already existed when watch
+was introduced. Their first scan is retained inventory; those backfilled
+positions do not reconstruct historical arrival order. New deliveries use their
+assignment order.
 
 The CLI reads one page at a time. It polls every second when caught up, reads
 additional pages immediately while `more` is true, and retries transport failures
