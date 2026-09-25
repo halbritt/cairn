@@ -19,7 +19,11 @@ for command in ['replay', 'explain']:
     response = subprocess.run([binary, command, receipt], env=env,
                               text=True, capture_output=True, check=True)
     assert canary not in response.stdout, f'raw task retained in {command}'
-for artifact in Path(result['artifacts']).rglob('*'):
+    assert canary not in response.stderr, f'raw task retained in {command} stderr'
+artifact_root = Path(result['artifacts'])
+assert artifact_root.is_dir(), 'run did not retain the reported artifact directory'
+assert (artifact_root / 'outcome.json').is_file(), 'run did not retain an outcome artifact'
+for artifact in artifact_root.rglob('*'):
     if artifact.is_file():
         assert canary.encode() not in artifact.read_bytes(), f'raw task in {artifact.name}'
 print('Default task prompt reaches process and is absent from retained replay, explanation and run artifacts')
