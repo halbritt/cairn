@@ -36,7 +36,8 @@ same spelling consistently. Both kinds reject surrounding whitespace and control
 characters. Names can contain spaces and Unicode and compare case-sensitively.
 Invalid references return `INVALID_REQUEST`; correct the name and retry.
 The store sorts and deduplicates references before retaining ordinary mutations
-and search intent.
+and search intent. At most 16 distinct references are accepted per request;
+repeated references count once.
 
 Matching requires the same kind and exact name in the already eligible
 repository. `file:core/currentness.go` and a symbol named `core/currentness.go`

@@ -10,6 +10,23 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestNormalizeEntitiesCountsUniqueAssociations(t *testing.T) {
+	duplicates := make([]EntityRef, 17)
+	for i := range duplicates {
+		duplicates[i] = EntityRef{Kind: "file", Name: "core/entities.go"}
+	}
+	refs, err := NormalizeEntities(duplicates)
+	if err != nil || len(refs) != 1 || refs[0] != duplicates[0] {
+		t.Fatalf("duplicate entries exceeded the association limit: %+v %v", refs, err)
+	}
+	unique := make([]EntityRef, 17)
+	for i := range unique {
+		unique[i] = EntityRef{Kind: "symbol", Name: "symbol." + string(rune('a'+i))}
+	}
+	_, err = NormalizeEntities(unique)
+	requireCode(t, err, "INVALID_REQUEST")
+}
+
 func TestEntityAssociationsSurviveOrdinaryRevision(t *testing.T) {
 	ctx := context.Background()
 	s, _ := testOperator(t)

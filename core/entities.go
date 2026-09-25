@@ -23,9 +23,6 @@ type EntityRef struct {
 }
 
 func NormalizeEntities(refs []EntityRef) ([]EntityRef, error) {
-	if len(refs) > 16 {
-		return nil, failure("INVALID_REQUEST", "entities permits at most 16 file or symbol associations")
-	}
 	for _, ref := range refs {
 		if ref.Kind != "file" && ref.Kind != "symbol" {
 			return nil, failure("INVALID_REQUEST", "entity kind must be file or symbol")
@@ -47,7 +44,11 @@ func NormalizeEntities(refs []EntityRef) ([]EntityRef, error) {
 		}
 		return strings.Compare(a.Name, b.Name)
 	})
-	return slices.Compact(refs), nil
+	refs = slices.Compact(refs)
+	if len(refs) > 16 {
+		return nil, failure("INVALID_REQUEST", "entities permits at most 16 distinct file or symbol associations")
+	}
+	return refs, nil
 }
 
 func entitiesDigest(refs []EntityRef) string {
