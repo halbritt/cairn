@@ -197,7 +197,8 @@ about use and cannot grant authority or prove that memory caused success.
 Exit codes: 0 command success, 2 invalid request/policy refusal, 3 not found,
 4 conflict/stale request, 6 authority denial, 7 store or infrastructure failure.
 A wrapped process's nonzero exit gives CLI exit 1; timeout gives 124 and
-cancellation 130. The receipt records the observed child exit separately.
+cancellation 130. A child terminated by a signal gives 128 plus the signal
+number. The receipt records the observed child exit separately.
 
 
 ## Governed policy

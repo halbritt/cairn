@@ -6,15 +6,12 @@ changes by source-commit date; they are not numbered releases. The
 retains the complete chronology, including failed trials, corrections and
 superseded work.
 
-The previous binary installation, recorded on 2026-09-11, used clean CLI/MCP `75eb01e`,
-API `bb600c5`, native adapter from `2ef6e04`, and database migration 034. Declared native task
-scope and explicit native capture scope use the existing API; task/run report
-filters remain installed. The
-optional semantic worker is from `ed29cbc` for passage reuse across idle release.
-The 2026-09-13 review repair updates the CLI and API together; the native adapter
-and semantic worker are unchanged. Check an installation with `cairn version`; use
+Installed binaries change independently from this source history. Check an
+installation with `cairn version`; use
 `cairn agent --token-file TOKEN_FILE version` to compare the client and running API.
-See [build identity](docs/build-identity.md) for unstamped builds and MCP processes.
+See [implementation status](docs/implementation-status.md) for dated deployment
+observations and [build identity](docs/build-identity.md) for unstamped builds
+and MCP processes.
 
 ## 2026-09-24
 

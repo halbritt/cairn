@@ -35,9 +35,13 @@ observer that reads `/proc` without consulting Cairn.
   profile. Point the scratch binding at this API and profile. Do not use the
   existing production database for the trial or its cleanup.
 - An owned tmux session running the installed OpenCode build with the bridge
-  enabled and the Cairn binding installed with `--opencode-cancel-trial`, in a
-  scratch directory under `/tmp/cairn-draft-trial/`, registered
-  through the normal native path. Never a session someone else is using.
+  enabled, in a scratch directory under `/tmp/cairn-draft-trial/`, registered
+  through the normal native path. The installer requires `--native-delivery`
+  and `--idle-wakeup` with `--opencode-cancel-trial`; it cannot express this
+  isolated scratch binding. Set `idle_wakeup` and `opencode_cancel_enabled`
+  in the scratch binding by hand as described in the
+  [executed trial](opencode-cancel-trial-2026-09-24.md#setup). Never use a
+  session someone else is using.
 - The request is published to that session's inbox with an ordinary `request`
   event. The body asks the model to run exactly one fixture command. Nothing is
   typed into the session to start the work.

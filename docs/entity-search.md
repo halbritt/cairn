@@ -82,7 +82,8 @@ with record bodies. Existing backup and external-copy residuals still apply.
 
 Upgrade database writers and ordinary clients together before using associations:
 older writers can drop metadata they do not understand. Packages carrying entity
-intent or delivered associations use `cairn.semantic/13`; entity queries use
+intent or delivered associations use `cairn.semantic/13`, or
+`cairn.semantic/14` when advisory conflicts are enabled; entity queries use
 `lexical-scope-recency/7` or `semantic-scope-recency/4`. Consumers that reject
 unknown schemas need an update before receiving those packages. Existing receipts
 remain replayable, including receipts from older readers that ignored association

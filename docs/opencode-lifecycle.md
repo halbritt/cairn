@@ -13,8 +13,10 @@ and context settings, and installs `plugins/cairn-lifecycle.ts` plus
 `cairn-lifecycle.json`. The Python engine and session metadata live in
 `~/.local/share/cairn/opencode-hooks`. Existing tools, permissions and other
 plugins remain intact. Rerun after changing the native connection settings.
-`--config-dir` and `--destination` support a separate installation. The selector
-uses installed Claude with its existing provider credentials; `--claude` and
+If `cairn opencode-install --project "$PWD"` created a project-local
+`.opencode/cairn.json`, pass `--config-dir "$PWD/.opencode"` to read that
+connection instead. `--destination` supports a separate plugin installation.
+The selector uses installed Claude with its existing provider credentials; `--claude` and
 `--model` select that executable and model. The default model comes from the
 primary Claude profile at installation. This does not switch OpenCode's task model.
 Start a fresh OpenCode process after installation or update.

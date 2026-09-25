@@ -1,6 +1,19 @@
-# Implementation status — 2026-09-21
+# Implementation status — 2026-09-25
 
-The installed CLI/API, scheduler and seven worker supervisors now use clean
+On 2026-09-25, `cairn version` and authenticated `cairn agent version` both
+reported clean installed CLI/API revision `9d171afdb45d441d1d7ab6d2da764336064f98bd`.
+Current source includes migration 050 for signal-terminated workers; that
+revision contains the migration code, but a binary version alone does not
+establish the live database migration state. Validation now runs locally; the
+repository has no GitHub Actions workflow. The
+[2026-09-24 OpenCode cancellation trial](verification/opencode-cancel-trial-2026-09-24.md)
+used a disposable store and a fork, while the installed binding remains
+disabled for native cancellation. Full coordination-v1 acceptance remains open.
+
+## Earlier installed snapshot — 2026-09-21
+
+At this checkpoint, the installed CLI/API, scheduler and seven worker supervisors
+used clean
 `8f4fb501bc6d95394627f6fd7d32862c8d6ed367`, deployed after disposable integration
 and independent hash verification. Schema 049 is unchanged. The lifecycle
 adapter includes `ce17d4c`, deployed at 17:38 PDT to fix a completed-delivery flag
@@ -574,9 +587,9 @@ learning, fewer recurring failures or general task benefit. The
 [usefulness inventory](verification/usefulness-status-2026-09-08.md) preserves
 those distinctions and the negative evidence.
 
-## Current local installation
+## Historical local installation — 2026-09-10
 
-Live checks on 2026-09-10 found:
+Live checks at that checkpoint found:
 
 - Installed CLI and project `bin/cairn`: clean `670cf19`; native adapter and
   optional recent-file plugin match that build. API **3ff1fcd**, PID **3062046**,
@@ -601,8 +614,8 @@ Live checks on 2026-09-10 found:
   API/store processes were preserved. See [installed evidence](verification/recent-file-hints-2026-09-10.md#local-installation).
 
 Earlier deployment details remain in the dated verification reports and complete
-implementation history below. The summary above replaces the stale September 9
-installation summary; it does not revise that historical evidence.
+implementation history below. This September 10 summary replaced the September 9
+installation summary at the time; it does not revise that historical evidence.
 
 ## Verification coverage
 

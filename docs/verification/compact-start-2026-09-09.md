@@ -55,6 +55,10 @@ Unicode/quote and closed-stdin assertions. CI now includes the authenticated CLI
 suite after building; native OpenCode remains an explicit local check. Unsupported
 kernel and operating-system resource exhaustion were not fault-injected.
 
+This CI statement describes the 2026-09-09 workflow. The owner removed GitHub
+Actions workflows on 2026-09-16; current validation runs locally as described
+in the [README](../../README.md).
+
 ## Failed development checks and the resulting changes
 
 The first fixture incorrectly expected its whole source plus metadata to fit

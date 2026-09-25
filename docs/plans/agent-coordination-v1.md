@@ -38,9 +38,11 @@ and agent 65 channel activation gap are closed. This does not establish draft
 preservation across every harness/account or exclusive cancellation.
 
 Remaining acceptance work is to establish exclusive request ownership through
-native admission and revocation, then exercise real-model interruption and
-host-observed cleanup, including failed termination. OpenCode cancellation stays
-unavailable until atomic native turn fencing exists. Draft preservation and
+native admission and revocation across supported hosts, then exercise real-model
+interruption and host-observed cleanup, including failed termination. A
+[2026-09-24 disposable OpenCode trial](../verification/opencode-cancel-trial-2026-09-24.md)
+reports C1-C5 as passed on one owned session and an atomic-session-fence fork;
+the installed OpenCode binding still has cancellation disabled. Draft preservation and
 busy-owner submission races passed live on both Claude and both Codex accounts,
 Hermes and OpenCode on September 23; Agy's terminal route remains without an
 atomic guarantee ([trials](../verification/draft-preservation-2026-09-23.md)).
