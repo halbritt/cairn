@@ -10,7 +10,43 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func upgradeFixtureConfig(dsn, database string) (*pgxpool.Config, error) {
+	config, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	config.ConnConfig.Database = database
+	return config, nil
+}
+
+func openUpgradeFixtureStore(ctx context.Context, database string, channel Channel) (*Store, error) {
+	config, err := upgradeFixtureConfig(os.Getenv("CAIRN_TEST_DATABASE_URL"), database)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return &Store{pool: pool, channel: channel}, nil
+}
+
+func TestUpgradeFixturePreservesConnectionParameters(t *testing.T) {
+	config, err := upgradeFixtureConfig("postgres://fixture:secret@localhost/base?sslmode=disable&application_name=upgrade", "isolated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.ConnConfig.Database != "isolated" || config.ConnConfig.Password != "secret" || config.ConnConfig.RuntimeParams["application_name"] != "upgrade" {
+		t.Fatalf("upgrade fixture lost connection parameters: database=%q password_present=%t application_name=%q", config.ConnConfig.Database, config.ConnConfig.Password != "", config.ConnConfig.RuntimeParams["application_name"])
+	}
+}
 
 // Upgrading a 048-era store must preserve existing native attempts with
 // pinned turns: the new exclusivity column defaults to false and constrains
@@ -76,19 +112,7 @@ func TestUpgrade049PreservesPinnedNativeAttempts(t *testing.T) {
 	}
 	// Publish real events and register a session through the 048-era store,
 	// then attach two 048-shaped native attempts by direct insert.
-	parsed, err := pgx.ParseConfig(os.Getenv("CAIRN_TEST_DATABASE_URL"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	parsed.Database = database
-	storeDSN := "host=" + parsed.Host + " port=" + strconv.Itoa(int(parsed.Port)) + " dbname=" + parsed.Database
-	if user := parsed.User; user != "" {
-		storeDSN += " user=" + user
-	}
-	if mode := parsed.RuntimeParams["sslmode"]; mode != "" {
-		storeDSN += " sslmode=" + mode
-	}
-	store, err := Open(ctx, storeDSN, Channel{Principal: "upgrade-fixture", Repo: "upgrade-native"})
+	store, err := openUpgradeFixtureStore(ctx, database, Channel{Principal: "upgrade-fixture", Repo: "upgrade-native"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +162,7 @@ func TestUpgrade049PreservesPinnedNativeAttempts(t *testing.T) {
 	}
 	_ = ref
 	_ = old.Close(ctx)
-	upgraded, upgradeErr := Open(ctx, storeDSN, host.channel)
+	upgraded, upgradeErr := openUpgradeFixtureStore(ctx, database, host.channel)
 	if upgradeErr != nil {
 		t.Fatal(upgradeErr)
 	}
