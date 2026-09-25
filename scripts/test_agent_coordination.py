@@ -155,8 +155,17 @@ class CoordinationNormalization(unittest.TestCase):
         self.assertFalse(coordination.process_alive(ref))
 
     def test_declared_process_must_be_an_ancestor(self):
-        ref = coordination.owner_process(dict(process_names=[]), dict(host_pid=os.getppid()))
-        self.assertEqual(ref["pid"], os.getppid())
+        # In a container the test runner's parent can be PID 1, which is
+        # deliberately not an eligible native host. Give the check a real
+        # process parent by running it in a child of this test process.
+        check = subprocess.run([
+            sys.executable, '-c',
+            'import os; from integrations.lifecycle import coordination; '
+            'parent = os.getppid(); '
+            'ref = coordination.owner_process(dict(process_names=[]), dict(host_pid=parent)); '
+            'assert ref["pid"] == parent',
+        ], capture_output=True, text=True, timeout=5)
+        self.assertEqual(check.returncode, 0, check.stderr)
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
         try:
             with self.assertRaises(coordination.CoordinationError):
