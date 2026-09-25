@@ -335,6 +335,9 @@ func (s *Store) ChangeWake(ctx context.Context, req WakeChangeRequest, dest Dest
 			} else if req.Operation == "link" && w.State == "running" && w.ReceiptID == "" && req.ReceiptID != "" {
 				var sameRepo bool
 				err = tx.QueryRow(ctx, `SELECT scope->>'repo'=$2 FROM cairn.retrieval_receipt WHERE receipt_id=$1`, req.ReceiptID, w.Delivery.Event.Repo).Scan(&sameRepo)
+				if errors.Is(err, pgx.ErrNoRows) {
+					return w, failure("NOT_FOUND", "receipt not found")
+				}
 				if err == nil && !sameRepo {
 					return w, failure("AUTHORITY_DENIED", "receipt collection differs")
 				}

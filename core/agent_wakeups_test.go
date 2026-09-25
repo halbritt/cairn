@@ -76,6 +76,31 @@ func TestWakeupLaunchIsOneShotAndExitDoesNotAcknowledge(t *testing.T) {
 	}
 }
 
+func TestWakeLinkMissingReceiptIsNotFound(t *testing.T) {
+	ctx := context.Background()
+	a, b, r, dest := eventFixture(t)
+	publishFixture(t, a, b, r, dest)
+	claim, err := b.ClaimWake(ctx, WakeClaimRequest{RequestID: uuid.NewString()}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range []string{"start", "enter"} {
+		if _, err = b.ChangeWake(ctx, WakeChangeRequest{RequestID: uuid.NewString(), AttemptID: claim.Attempt.ID, Operation: op}, dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err = b.ChangeWake(ctx, WakeChangeRequest{RequestID: uuid.NewString(), AttemptID: claim.Attempt.ID, Operation: "link", ReceiptID: uuid.NewString()}, dest)
+	requireCode(t, err, "NOT_FOUND")
+	receipt, err := b.Compile(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{Repo: r.Scope.Repo, TaskID: "wake-link", RunID: "fixture"}, Query: "source", Purpose: "context", AvailableTokens: 64000}, Destination{Name: "local", AllowLocal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	linked, err := b.ChangeWake(ctx, WakeChangeRequest{RequestID: uuid.NewString(), AttemptID: claim.Attempt.ID, Operation: "link", ReceiptID: receipt.ReceiptID}, dest)
+	if err != nil || linked.State != "running" || linked.ReceiptID != receipt.ReceiptID {
+		t.Fatalf("valid link after missing receipt: %+v %v", linked, err)
+	}
+}
+
 func TestWakeupPrelaunchBackoffAndCompletionSurviveRecovery(t *testing.T) {
 	ctx := context.Background()
 	a, b, r, dest := eventFixture(t)
