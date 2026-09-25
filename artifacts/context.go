@@ -156,19 +156,25 @@ func PurgeDeletion(ctx context.Context, store *core.Store, id string) (core.Dele
 	if err != nil {
 		return core.Deletion{}, err
 	}
+	var purgeErr error
 	for _, effect := range status.Effects {
 		if effect.TargetType != "managed_context" || (effect.Status != "pending" && effect.Status != "failed") {
 			continue
 		}
 		target, err := store.ContextPurgeTarget(ctx, id, effect.TargetID)
 		if err != nil {
-			return status, err
+			purgeErr = errors.Join(purgeErr, err)
+			continue
 		}
 		if err = purgeContext(ctx, store, id, target); err != nil {
-			return status, err
+			purgeErr = errors.Join(purgeErr, err)
 		}
 	}
-	return store.DeletionStatus(ctx, id)
+	latest, statusErr := store.DeletionStatus(ctx, id)
+	if statusErr != nil {
+		return status, errors.Join(purgeErr, statusErr)
+	}
+	return latest, purgeErr
 }
 
 func purgeContext(ctx context.Context, store *core.Store, id string, target core.ContextPurgeTarget) (err error) {

@@ -29,6 +29,8 @@ A substituted final symlink is unlinked itself; its target is untouched. A
 substituted directory or ownership marker causes a retained failure instead of
 removing the replacement's data. The marker supplements device/inode identity,
 which alone can be reused after directory deletion.
+One failed context effect does not block attempts on other registered context
+files in the same deletion. The worker reports failures after those attempts.
 
 The reserved slot belongs to Cairn. Partial writes and changed bytes in that slot
 can still contain the selected content, so purge removes them without requiring

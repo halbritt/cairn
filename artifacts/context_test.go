@@ -67,6 +67,66 @@ func contextEffect(t *testing.T, d core.Deletion) core.DeletionEffect {
 	return core.DeletionEffect{}
 }
 
+func TestPurgeAttemptsLaterManagedContextsAfterOneFails(t *testing.T) {
+	ctx := context.Background()
+	s, root, record, firstPackage, parent := fixture(t)
+	secondPackage, err := s.Compile(ctx, core.CompileRequest{
+		RequestID: uuid.NewString(), Scope: core.Scope{Repo: record.Scope.Repo, TaskID: "task", RunID: "run"},
+		Purpose: "context", AvailableTokens: 64000,
+	}, core.Destination{Name: "local", AllowLocal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ClaimRun(ctx, secondPackage.ReceiptID); err != nil {
+		t.Fatal(err)
+	}
+	paths := map[string]string{}
+	for _, pkg := range []core.Package{firstPackage, secondPackage} {
+		path, err := WriteContext(ctx, s, pkg, parent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		paths[pkg.ReceiptID] = path
+	}
+	d := forget(t, s, root, record)
+	var effects []core.DeletionEffect
+	for _, effect := range d.Effects {
+		if effect.TargetType == "managed_context" {
+			effects = append(effects, effect)
+		}
+	}
+	if len(effects) != 2 {
+		t.Fatalf("expected two managed contexts: %+v", d.Effects)
+	}
+	badPath, goodPath := paths[effects[0].TargetID], paths[effects[1].TargetID]
+	if err = os.WriteFile(filepath.Join(badPath, ".cairn-context-owner"), []byte(uuid.NewString()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = PurgeDeletion(ctx, s, d.DeletionID)
+	if core.Code(err) != "ARTIFACT_CHANGED" {
+		t.Fatalf("first context failure lost: %v", err)
+	}
+	if _, err = os.Stat(filepath.Join(goodPath, "context.txt")); !os.IsNotExist(err) {
+		t.Fatalf("later context was not purged: %v", err)
+	}
+	status, err := s.DeletionStatus(ctx, d.DeletionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var failed, completed bool
+	for _, effect := range status.Effects {
+		if effect.TargetID == effects[0].TargetID {
+			failed = effect.Status == "failed" && effect.Attempts == 1
+		}
+		if effect.TargetID == effects[1].TargetID {
+			completed = effect.Status == "completed" && effect.Attempts == 1
+		}
+	}
+	if !failed || !completed {
+		t.Fatalf("independent purge outcomes missing: %+v", status.Effects)
+	}
+}
+
 func TestPurgeRefusesReplacedDirectoryAndRecovers(t *testing.T) {
 	ctx := context.Background()
 	s, root, record, pkg, parent := fixture(t)
