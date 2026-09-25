@@ -1,5 +1,10 @@
 # Historical recompilation requirement audit — 2026-09-10
 
+The authenticated-interface gap recorded below was closed later in the
+[authenticated reconstruction report](authenticated-recompile-2026-09-10.md).
+The original-incident evidence gap remains open. The table below preserves the
+state inspected by this audit.
+
 E3 remains partial. Its retained-receipt recompilation is implemented; the missing
 original-incident evidence should not be mistaken for an absent replay engine.
 The accepted design also requires real-history evaluation to exclude advice

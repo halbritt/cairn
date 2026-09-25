@@ -33,6 +33,10 @@ relay refusals. Providers could vary between calls; reported costs are telemetry
 not an invoice. The H0 run did not improve elapsed time or reported cost over
 the baseline in these observations.
 
+The table's M condition is trial `M2` in the JSON receipt. Its
+`executed-assessment.py` hash differs from N and O; that script assessed output
+after execution and was not one of the held-fixed model inputs above.
+
 The single lesson came from the reviewed regression in calibration L. It was
 captured as selected evidence by an authenticated collector and promoted by the
 delegated operator in each disposable store. It was available after that review,

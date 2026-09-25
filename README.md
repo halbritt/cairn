@@ -372,6 +372,9 @@ packages. `scope-authorization RECORD_UUID` inspects the latest scope decision.
 ## Verify changes
 
 Run validation locally; this repository does not use GitHub Actions CI.
+[Historical verification records](docs/verification/README.md) identify the
+original run and any limits of retained artifacts; they are not a live status
+page.
 
 ```sh
 make test-integration

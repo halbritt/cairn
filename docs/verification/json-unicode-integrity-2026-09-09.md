@@ -69,4 +69,6 @@ connection settings are unchanged. Synthetic captures remained in disposable tes
 
 The existing evidence guide was revised v6→v7, preserving its earlier body and
 metadata. Exact mutation retry and fresh ordinary pull verify the selected update.
-CI 34435235516 is in_progress. Companion metadata retains build, backup and guide identities.
+CI 34435235516 was `in_progress` when this receipt was written. That is an
+as-of observation, not current project validation status. Companion metadata
+retains build, backup and guide identities; current validation is local.

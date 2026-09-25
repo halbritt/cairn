@@ -68,4 +68,6 @@ capture remains verified in the disposable store.
 
 The existing evidence guide now has v6 with file commands and limits. Its earlier
 body and metadata remain, and exact retry plus fresh pull verify the revision.
-CI 34434364680 is in_progress. The companion metadata retains deployment and guide identities.
+CI 34434364680 was `in_progress` when this receipt was written. That is an
+as-of observation, not current project validation status. The companion
+metadata retains deployment and guide identities; current validation is local.

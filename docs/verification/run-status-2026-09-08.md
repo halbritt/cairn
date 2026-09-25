@@ -53,7 +53,8 @@ is unchanged. A cataloged backup was taken with the prior installed executable.
 
 The installed client inspected the existing authenticated repository-validation
 receipt through its observer profile with an unusable client database address.
-It returned the recorded binding and launch claim, original outcome ID, exited0,
+It returned the recorded binding and launch claim, original outcome ID, process
+state `exited` with exit code 0,
 and the fixed metadata-only shape. No new operational run or test fixture was
 created. Task acceptance remains unknown. Private local proof is retained at
 `/tmp/cairn-run-status-install-verification.json`.

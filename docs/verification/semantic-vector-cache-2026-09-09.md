@@ -1,5 +1,9 @@
 # Bounded note-vector reuse — 2026-09-09
 
+The process-lifetime statement below describes this build. The later
+[idle cache report](semantic-idle-cache-2026-09-10.md) adds an in-memory snapshot
+across streaming worker exits; it does not add a disk cache.
+
 Repeated semantic lookup now reuses exact note embeddings during the worker's
 existing lifetime. Three consecutive live hosted searches before this change took
 12.736, 12.745 and 12.911 seconds and returned identical candidate-score digests.

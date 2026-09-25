@@ -1,5 +1,10 @@
 # Lower-cost local semantic inference
 
+This is an as-of comparison of the one-shot worker. The current comparison
+script still gives the worker 20 seconds and its enclosing subprocess 25 seconds.
+Later streaming and in-memory cache behavior is documented in the
+[idle cache report](semantic-idle-cache-2026-09-10.md).
+
 The local CPU worker now embeds one query or passage per batch. It keeps the
 same model, chunking, cosine arithmetic, two-thread limit and one-shot process
 boundary. Batch size is now explicit in the scoring fingerprint. New requests

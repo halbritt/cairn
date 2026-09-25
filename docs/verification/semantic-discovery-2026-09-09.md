@@ -1,5 +1,9 @@
 # Integrated semantic discovery, 2026-09-09
 
+This report measures the one-shot worker used in this run. Later streaming and
+in-memory vector reuse are described in the [idle cache report](semantic-idle-cache-2026-09-10.md)
+and the [current operator guide](../semantic-discovery.md).
+
 Optional semantic discovery now runs through Cairn's actual eligibility, index
 packing and source-pull path. In a disposable store, all fifteen labelled answers
 in the existing documentation workload survived within three returned previews.

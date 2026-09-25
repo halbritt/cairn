@@ -44,6 +44,13 @@ Scratch logs and native request captures remain outside Git under
 retains artifact hashes and doctrine provenance. No operational memory bodies,
 tokens or raw harness sessions are committed.
 
+The three named green/API logs in that metadata have identical SHA-256 digests.
+Inspection on the review host found three separate files with identical suite
+summary text. Those summaries do not name individual assertions, so their
+matching hashes do not independently establish which added assertions ran in
+the final API-only rerun. The source checks above and a fresh local run are the
+reproducible route for that claim.
+
 ## Decision and limits
 
 The owner delegated implementation decisions toward useful cross-harness memory.
