@@ -62,9 +62,10 @@ func (s *Store) Delete(ctx context.Context, req DeleteRequest) (DeletedRecord, e
 				return DeletedRecord{}, err
 			}
 		}
-		// Keep request identity/digest so ambiguous create/edit retries cannot
-		// resurrect the note. Their cached bodies are removed in this transaction.
-		if _, err = tx.Exec(ctx, `UPDATE cairn.mutation_request SET response=NULL,ordinary_deleted=true WHERE operation IN ('create','edit') AND response->>'record_id'=$1`, req.RecordID); err != nil {
+		// Keep request identity/digest while excluding every cached response that
+		// refers to the deleted record. A revision retry must not report success
+		// for a record that no longer exists.
+		if _, err = tx.Exec(ctx, `UPDATE cairn.mutation_request SET response=NULL,ordinary_deleted=true WHERE jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$1::text))`, req.RecordID); err != nil {
 			return DeletedRecord{}, err
 		}
 		return DeletedRecord{req.RecordID, req.ExpectedVersion}, nil

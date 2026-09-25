@@ -60,6 +60,49 @@ func TestOrdinaryDeleteRemovesUnreferencedRevisionsWithoutResurrection(t *testin
 	}
 }
 
+func TestOrdinaryDeleteInvalidatesAllOrdinaryRevisionRetries(t *testing.T) {
+	ctx := context.Background()
+	repo := uuid.NewString()
+	s := testStore(t, Channel{Principal: "ordinary-revision-delete:" + repo, Repo: repo})
+	r, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	revise := ReviseRequest{uuid.NewString(), r.RecordID, r.Version, repo, "A revised ordinary note"}
+	if _, err = s.Revise(ctx, revise); err != nil {
+		t.Fatal(err)
+	}
+	appendReq := AppendRequest{uuid.NewString(), r.RecordID, 2, repo, " with an appended passage"}
+	if _, err = s.Append(ctx, appendReq); err != nil {
+		t.Fatal(err)
+	}
+	replacement := " with a replacement passage"
+	replace := ReplaceRequest{uuid.NewString(), r.RecordID, 3, repo, " with an appended passage", &replacement}
+	if _, err = s.Replace(ctx, replace); err != nil {
+		t.Fatal(err)
+	}
+	cite := CiteRequest{RequestID: uuid.NewString(), RecordID: r.RecordID, ExpectedVersion: 4, Repo: repo, EvidenceCitations: []EvidenceCitationRequest{}}
+	if _, err = s.Cite(ctx, cite); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Delete(ctx, DeleteRequest{uuid.NewString(), r.RecordID, 5}); err != nil {
+		t.Fatal(err)
+	}
+	for name, retry := range map[string]func() error{
+		"revise":  func() error { _, err := s.Revise(ctx, revise); return err },
+		"append":  func() error { _, err := s.Append(ctx, appendReq); return err },
+		"replace": func() error { _, err := s.Replace(ctx, replace); return err },
+		"cite":    func() error { _, err := s.Cite(ctx, cite); return err },
+	} {
+		t.Run(name, func(t *testing.T) {
+			requireCode(t, retry(), "PAYLOAD_UNAVAILABLE")
+		})
+	}
+	revise.Body = "Changed intent after deletion"
+	_, err = s.Revise(ctx, revise)
+	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
+}
+
 func TestOrdinaryDeletePreservesReferencedAndFormerlyPrivilegedRecords(t *testing.T) {
 	ctx := context.Background()
 	op, root := testOperator(t)
