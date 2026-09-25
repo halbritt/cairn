@@ -3,6 +3,10 @@ import json
 from pathlib import Path
 import socket
 import struct
+import time
+
+
+REPLY_TIMEOUT_SECONDS = 4
 
 
 class ChannelError(Exception):
@@ -48,8 +52,16 @@ def write(endpoint, bridge, parent, content, meta):
         attempted = True
         connection.sendall(line.encode() + b'\n')
         reply = b''
+        deadline = time.monotonic() + REPLY_TIMEOUT_SECONDS
         while b'\n' not in reply:
-            chunk = connection.recv(4096)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ChannelError('claude channel reply timed out; submission uncertain')
+            connection.settimeout(remaining)
+            try:
+                chunk = connection.recv(4096)
+            except socket.timeout as exc:
+                raise ChannelError('claude channel reply timed out; submission uncertain') from exc
             if not chunk:
                 raise ChannelError('claude channel closed before replying')
             reply += chunk

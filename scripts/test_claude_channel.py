@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('claude_channel', ROOT/'integrations/lifecycle/claude_channel.py')
@@ -73,6 +74,14 @@ class Bridge(threading.Thread):
                         except OSError:
                             pass  # The client may fail before any byte lands.
                         continue  # Close mid-write: the send may have been partial.
+                    if mode == 'drip':
+                        for _ in range(20):
+                            try:
+                                conn.sendall(b' ')
+                            except OSError:
+                                return
+                            time.sleep(0.05)
+                        continue
                     conn.sendall(json.dumps({'status': mode}).encode()+b'\n')
 
     def requests(self):
@@ -114,6 +123,13 @@ class ChannelClient(unittest.TestCase):
                     self.write(status)
                 self.assertNotIsInstance(caught.exception, channel.ChannelUnavailable)
         self.assertEqual(len(self.bridge.requests()), 2)
+
+    def test_drip_reply_has_one_overall_deadline(self):
+        with mock.patch.object(channel, 'REPLY_TIMEOUT_SECONDS', 0.2, create=True):
+            with self.assertRaisesRegex(channel.ChannelError, 'reply timed out') as caught:
+                self.write('drip')
+        self.assertNotIsInstance(caught.exception, channel.ChannelUnavailable)
+        self.assertEqual(len(self.bridge.requests()), 1)
 
     def test_wrong_bridge_socket_is_refused_before_sending(self):
         with self.assertRaisesRegex(channel.ChannelUnavailable, 'different process'):
