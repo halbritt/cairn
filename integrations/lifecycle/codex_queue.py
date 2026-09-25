@@ -31,10 +31,12 @@ class _Rpc:
         self.deadline = deadline
         self.sequence = 0
 
-    def _remaining(self):
+    def _remaining(self, sent=False):
         left = self.deadline - time.monotonic()
         if left <= 0:
-            raise QueueError('native queue response timed out')
+            if sent:
+                raise QueueError('native queue response timed out')
+            raise QueueUnavailable('native queue deadline expired before request send')
         self.connection.settimeout(left)
 
     def __call__(self, method, params, busy_ok=False):
@@ -42,10 +44,12 @@ class _Rpc:
         self._remaining()
         self.connection.send(json.dumps(dict(id=self.sequence, method=method, params=params)))
         while True:
-            self._remaining()
+            self._remaining(sent=True)
             message = json.loads(self.connection.recv())
             if not isinstance(message, dict):
                 raise QueueError('native Codex returned an invalid response')
+            if 'method' in message:
+                continue  # Server requests are not responses, even when ids collide.
             if message.get('id') != self.sequence:
                 continue
             if 'error' in message:

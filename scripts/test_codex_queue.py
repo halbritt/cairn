@@ -10,6 +10,7 @@ import struct
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -34,7 +35,8 @@ class NativeQueue(unittest.TestCase):
         self.errors = []
         self.threads = []
 
-    def serve(self, loaded=('native-one',), add='confirm', start='confirm', malformed_loaded=False):
+    def serve(self, loaded=('native-one',), add='confirm', start='confirm', malformed_loaded=False,
+              request_collision=False):
         """Serve exactly one connection with the requested fixture behavior.
 
         add: 'confirm' or 'refuse' (no acknowledgment; the add may have committed).
@@ -102,6 +104,9 @@ class NativeQueue(unittest.TestCase):
                         elif method == 'thread/queue/add':
                             if add == 'refuse':
                                 return  # Submission may have committed; no acknowledgment.
+                            if request_collision:
+                                connection.sendall(frame(json.dumps({'id': request['id'],
+                                    'method': 'server/notice', 'params': {}}).encode()))
                             result = {'queuedSubmission': {'id': 'queued-one', **request['params']}}
                         elif method == 'thread/queue/start':
                             if start in ('busy', 'busy_extra'):
@@ -248,6 +253,26 @@ class NativeQueue(unittest.TestCase):
         with self.assertRaises(self.queue.QueueError):
             self.enqueue()
         self.assertEqual(len([r for r in self.requests if r['method'] == 'thread/queue/add']), 1)
+
+    def test_deadline_before_add_send_is_retryable(self):
+        self.serve()
+        original = self.queue._Rpc
+
+        class ExpiringRpc(original):
+            def __call__(self, method, params, busy_ok=False):
+                if method == 'thread/queue/add':
+                    self.deadline = self.queue_time.monotonic() - 1
+                return super().__call__(method, params, busy_ok)
+
+        ExpiringRpc.queue_time = self.queue.time
+        with mock.patch.object(self.queue, '_Rpc', ExpiringRpc):
+            with self.assertRaises(self.queue.QueueUnavailable):
+                self.enqueue()
+        self.assertNotIn('thread/queue/add', self.methods())
+
+    def test_server_request_with_matching_id_is_not_a_response(self):
+        self.serve(request_collision=True)
+        self.assertEqual(self.enqueue(), ('queued-one', True))
 
 
 if __name__ == '__main__':
