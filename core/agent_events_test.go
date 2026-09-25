@@ -423,6 +423,10 @@ func TestAgentEventsLeaseConcurrencyRetryExpiryAndRollback(t *testing.T) {
 	if err != nil || !renewed.LeaseUntil.After(*d.LeaseUntil) {
 		t.Fatalf("renew: %+v %v", renewed, err)
 	}
+	defaultRenewed, err := b.ChangeEventLease(ctx, EventLeaseRequest{DeliveryID: d.DeliveryID, LeaseID: d.LeaseID}, true, dest)
+	if err != nil || defaultRenewed.LeaseUntil.Before(*renewed.LeaseUntil) {
+		t.Fatalf("default renewal shortened long lease: %+v %v", defaultRenewed, err)
+	}
 	if _, err = b.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, d.DeliveryID); err != nil {
 		t.Fatal(err)
 	}

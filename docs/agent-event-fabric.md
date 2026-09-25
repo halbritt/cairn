@@ -83,6 +83,8 @@ Losing a claim response delays that delivery until lease expiry. It does not
 lose work. A consumer may receive an event more than once and must not perform
 unguarded external side effects. `retry` releases a current lease for redelivery;
 `renew` extends it; both require its current token. Expired tokens refuse.
+Renewal never moves an existing lease deadline earlier, including when the
+caller omits `lease_seconds` and uses the five-minute default.
 
 `ack` records handled status with a stable request UUID. `complete` optionally
 creates one ordinary Class A result in the same transaction as handling. A result

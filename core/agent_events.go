@@ -611,7 +611,7 @@ func (s *Store) ChangeEventLease(ctx context.Context, req EventLeaseRequest, ren
 		return d, err
 	}
 	if renew {
-		_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()+make_interval(secs=>$2) WHERE delivery_id=$1`, d.DeliveryID, seconds)
+		_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=GREATEST(lease_until,clock_timestamp()+make_interval(secs=>$2)) WHERE delivery_id=$1`, d.DeliveryID, seconds)
 	} else {
 		_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state='pending',lease_id=NULL,lease_until=NULL WHERE delivery_id=$1`, d.DeliveryID)
 	}
