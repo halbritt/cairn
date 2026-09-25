@@ -98,3 +98,22 @@ func TestCheckpointClosedMembershipDoesNotAbsorbLaterEvents(t *testing.T) {
 		t.Fatal("new checkpoint failed to cover new event")
 	}
 }
+
+func TestAppendOnlyAuditTablesRejectTruncate(t *testing.T) {
+	ctx := context.Background()
+	s, _ := testOperator(t)
+	for _, table := range []string{
+		"authority_event", "audit_checkpoint", "restore_fence", "restore_session",
+		"restore_resume", "managed_context", "policy_revision", "recovery_application",
+		"recovery_context", "deletion_effect_event",
+	} {
+		var exists bool
+		err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid=$1::regclass AND tgname='immutable_truncate' AND NOT tgisinternal)`, "cairn."+table).Scan(&exists)
+		if err != nil || !exists {
+			t.Fatalf("missing TRUNCATE guard on %s: %v", table, err)
+		}
+	}
+	if _, err := s.pool.Exec(ctx, `TRUNCATE cairn.audit_checkpoint`); err == nil || !strings.Contains(err.Error(), "authority audit is append-only") {
+		t.Fatalf("append-only checkpoint accepted TRUNCATE: %v", err)
+	}
+}
