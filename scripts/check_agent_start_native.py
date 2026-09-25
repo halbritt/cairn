@@ -151,7 +151,7 @@ def check(binary, root, environment, opencode, fixture, observed=False):
         cases.append(dict(case=case, native_exit_code=result.returncode, main_requests=len(main),
                           tool_results=len(results), startup_bytes=len(text.encode()),
                           receipt_id=view['receipt_id'], scoped_mandatory_context_preserved=True))
-    report = dict(opencode_version=subprocess.check_output([opencode, '--version'], text=True).strip(),
+    report = dict(opencode_version=subprocess.check_output([opencode, '--version'], text=True, timeout=10).strip(),
                   model_inference_calls=0, observed_execution=observed, cases=cases)
     (output / 'report.json').write_text(json.dumps(report, indent=2)+'\n')
     print('Native OpenCode startup delivers the initial index, supports a direct body pull, preserves tool denial and refuses a stale source; no inference')

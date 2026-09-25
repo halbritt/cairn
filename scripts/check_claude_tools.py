@@ -175,7 +175,7 @@ def check(claude, binary, root, environment, claim, support):
     stored = operator(binary, environment, 'get', record_id=note_id)
     assert stored['body'] == revised_body and stored['version'] == 2
     assert stored['sensitivity'] == 'shareable' and stored['scope']['repo'] == 'fixture:socket'
-    report = dict(schema='cairn.claude-native-tools/1', claude_version=subprocess.check_output([claude, '--version'], text=True).strip(),
+    report = dict(schema='cairn.claude-native-tools/1', claude_version=subprocess.check_output([claude, '--version'], text=True, timeout=10).strip(),
                   completed_scripted_cases=len(results) + len(fresh), exact_capture_edit_pull=True, exact_evidence_span=True,
                   retries=True, textual_false_stays_local=True, malformed_capture_refused=True, stale_refusals=True, hosted_filtering=True, fresh_session=True,
                   denied_edit_has_no_effect=True, model_inference=False, operational_store_access=False)
