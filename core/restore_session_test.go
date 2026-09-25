@@ -153,6 +153,36 @@ func TestRestoreVerificationPagesEvidenceBeyondOldCeiling(t *testing.T) {
 	}
 }
 
+func TestRestoreResumeTriggerRejectsMissingVerificationSession(t *testing.T) {
+	ctx := context.Background()
+	s := restoreTestStore(t)
+	recoveryRoot(t, s)
+	session, err := s.BeginRestore(ctx, BeginRestoreRequest{uuid.NewString(), "fixture:missing-session", "Pause before checking direct restore resume invariant"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = s.recoveryContext(ctx)
+	tx, err := s.begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	resumeID, eventID := uuid.NewString(), uuid.NewString()
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.authority_event(event_id,event_type,subject_id,previous_version,resulting_version,basis,reason)
+ VALUES($1,'resume_restore',$2,0,1,'{}'::jsonb,'Synthetic restore resume event for constraint check')`, eventID, resumeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO cairn.restore_resume(resume_id,session_id,event_id,policy,verification)
+ VALUES($1,$2,$3,'local-restore/1','{"ready":true}'::jsonb)`, resumeID, session.SessionID, eventID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(ctx); err == nil || !strings.Contains(err.Error(), "restore resume requires matching atomic authority and verification") {
+		t.Fatalf("missing verification session was accepted: %v", err)
+	}
+}
+
 func TestRestoreSessionCannotWaiveUnknownMissingAudit(t *testing.T) {
 	ctx := context.Background()
 	s := restoreTestStore(t)
