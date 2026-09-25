@@ -79,8 +79,12 @@ def enqueue(endpoint, process, native_id, text, client_id, expected_session_id=N
         if not line:
             raise QueueError('native queue outcome is uncertain; Hermes closed connection without response; do not automatically resend')
         msg = json.loads(line)
+        if not isinstance(msg, dict) or type(msg.get('id')) is not int or msg['id'] != req['id']:
+            raise QueueError('native queue outcome is uncertain; invalid bridge response identity')
         if 'error' in msg:
             err = msg['error']
+            if not isinstance(err, dict) or not isinstance(err.get('message'), str):
+                raise QueueError('native queue outcome is uncertain; invalid bridge error response')
             code = err.get('code')
             message = err.get('message', '')
             if code in (-32001, -32002) or 'SESSION_NOT_FOUND' in message or 'SESSION_MISMATCH' in message:
@@ -90,7 +94,7 @@ def enqueue(endpoint, process, native_id, text, client_id, expected_session_id=N
         result = msg.get('result')
         if not isinstance(result, dict):
             raise QueueError(f'invalid bridge response schema: expected dict result, got {type(result).__name__}')
-        if not result.get('queued'):
+        if result.get('queued') is not True:
             raise QueueError('invalid bridge response schema: expected queued=True in result')
         if 'started' in result and isinstance(result['started'], bool):
             started = result['started']
@@ -98,15 +102,15 @@ def enqueue(endpoint, process, native_id, text, client_id, expected_session_id=N
             started = not result['busy']
         else:
             raise QueueError('invalid bridge response schema: missing started or busy boolean field')
-        if result.get('session_id') and result.get('session_id') != native_id:
+        if result.get('session_id') != native_id:
             raise QueueError(f"session ID mismatch in response: expected {native_id}, got {result.get('session_id')}")
-        if request_id and result.get('request_id') and result.get('request_id') != request_id:
+        if request_id and result.get('request_id') != request_id:
             raise QueueError(f"request ID mismatch in response: expected {request_id}, got {result.get('request_id')}")
-        if delivery_id and result.get('delivery_id') and result.get('delivery_id') != delivery_id:
+        if delivery_id and result.get('delivery_id') != delivery_id:
             raise QueueError(f"delivery ID mismatch in response: expected {delivery_id}, got {result.get('delivery_id')}")
-        queued_id = result.get('queued_id', client_id)
-        if not queued_id or not isinstance(queued_id, str):
-            queued_id = client_id
+        queued_id = result.get('queued_id')
+        if not isinstance(queued_id, str) or queued_id != client_id:
+            raise QueueError('native queue outcome is uncertain; queue submission ID mismatch')
         return queued_id, started
     except QueueUnavailable:
         raise

@@ -30,7 +30,7 @@ class HermesQueueTests(unittest.TestCase):
         self.errors = []
         self.threads = []
 
-    def serve(self, behavior='confirm', busy=False):
+    def serve(self, behavior='confirm', busy=False, response=None):
         def run():
             try:
                 conn, _ = self.listener.accept()
@@ -50,7 +50,9 @@ class HermesQueueTests(unittest.TestCase):
                         return
 
                     if method == 'session/queue_message':
-                        if behavior == 'not_found':
+                        if response is not None:
+                            resp = response
+                        elif behavior == 'not_found':
                             resp = {'id': req_id, 'error': {'code': -32002, 'message': 'SESSION_NOT_FOUND: session does not exist'}}
                         elif behavior == 'mismatch':
                             resp = {'id': req_id, 'error': {'code': -32001, 'message': 'SESSION_MISMATCH: session changed'}}
@@ -274,6 +276,27 @@ class HermesQueueTests(unittest.TestCase):
             )
         self.join_workers()
         self.assertIn('invalid bridge response schema', str(ctx.exception))
+
+    def test_enqueue_rejects_uncorrelated_or_malformed_acknowledgments(self):
+        result = dict(queued=True, queued_id='delivery_one', session_id='ses_hermes123',
+                      started=True, request_id='request_one', delivery_id='delivery_one')
+        cases = (
+            ('wrong RPC ID', {'id': 2, 'result': result}),
+            ('response array', [{'id': 1, 'result': result}]),
+            ('malformed error', {'id': 1, 'error': []}),
+            ('missing queue ID', {'id': 1, 'result': {key: value for key, value in result.items() if key != 'queued_id'}}),
+            ('missing session ID', {'id': 1, 'result': {key: value for key, value in result.items() if key != 'session_id'}}),
+            ('missing request ID', {'id': 1, 'result': {key: value for key, value in result.items() if key != 'request_id'}}),
+            ('wrong delivery ID', {'id': 1, 'result': dict(result, delivery_id='other')}),
+        )
+        for name, response in cases:
+            with self.subTest(name=name):
+                self.serve(response=response)
+                with self.assertRaises(hermes_queue.QueueError) as caught:
+                    hermes_queue.enqueue(self.path, self.process, 'ses_hermes123', 'wake text',
+                                         'delivery_one', request_id='request_one', delivery_id='delivery_one')
+                self.assertNotIsInstance(caught.exception, hermes_queue.QueueUnavailable)
+        self.join_workers()
 
     def test_abort_rejects_malformed_result(self):
         """13. Abort rejects response missing aborted or turn_stop fields."""
