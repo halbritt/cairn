@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -142,7 +143,7 @@ class LifecycleTests(unittest.TestCase):
 
     def test_search_timeout_is_labelled_and_does_not_inject_or_write(self):
         event = dict(self.event, hook_event_name="UserPromptSubmit", prompt="task")
-        with patch.object(hook.subprocess, "run", side_effect=subprocess.TimeoutExpired("cairn", 5)):
+        with patch.object(hook, "bounded_command", side_effect=subprocess.TimeoutExpired("cairn", 5)):
             with self.assertRaisesRegex(hook.HookError, "timed out"):
                 hook.handle(self.config, event)
 
@@ -406,12 +407,26 @@ class CourtesyCaptureTests(unittest.TestCase):
 class CandidateBudgetTests(unittest.TestCase):
     def test_only_explicit_budget_refusal_has_the_budget_type(self):
         for status, expected in [('BUDGET_REFUSED', hook.BudgetRefused), ('UNAUTHORIZED', hook.HookError)]:
-            response = subprocess.CompletedProcess([], 2, json.dumps(dict(ok=False, status=status)), 'private payload')
-            with patch.object(hook.subprocess, 'run', return_value=response):
-                with self.assertRaises(expected) as raised:
-                    hook.run_json(['cairn'])
-                self.assertNotIn('private', str(raised.exception))
-                self.assertIs(type(raised.exception), expected)
+            child = ['import json,sys',
+                     'print(json.dumps({"ok": False, "status": sys.argv[1]}))',
+                     'print("private payload", file=sys.stderr)', 'sys.exit(2)']
+            with self.assertRaises(expected) as raised:
+                hook.run_json([sys.executable, '-c', ';'.join(child), status])
+            self.assertNotIn('private', str(raised.exception))
+            self.assertIs(type(raised.exception), expected)
+
+    def test_memory_command_output_is_bounded_on_both_pipes(self):
+        for stream in ('stdout', 'stderr'):
+            child = ('import sys; sys.%s.write("x" * %d); sys.%s.flush()' %
+                     (stream, hook.COMMAND_OUTPUT_BYTES + 1, stream))
+            with self.assertRaisesRegex(hook.HookError, 'output exceeded limit'):
+                hook.run_json([sys.executable, '-c', child])
+
+    def test_memory_command_reads_input_while_child_writes_output(self):
+        child = ('import json,sys; sys.stdout.write(" " * 131072); '
+                 'data=json.load(sys.stdin); print(json.dumps(data))')
+        self.assertEqual(hook.run_json([sys.executable, '-c', child], body=json.dumps({'ok': True}) + ' ' * 131072),
+                         {'ok': True})
 
     def test_optional_candidate_budget_preserves_read_records_but_transport_failure_propagates(self):
         from unittest.mock import Mock

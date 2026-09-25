@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import re
+import selectors
 from pathlib import Path
 import subprocess
 import sys
@@ -20,6 +21,7 @@ TRANSCRIPT_BYTES = 2 * 1024 * 1024
 NOTE_BYTES = 6000
 CHECKPOINT_BYTES = 4500
 SEARCH_ROOM = 8000
+COMMAND_OUTPUT_BYTES = 1024 * 1024
 # Codex Stop fires after every turn and SessionEnd allows too little time for the
 # selector, so Stop offers capture only after this much new top-level dialogue.
 CODEX_STOP_MIN_MESSAGES = 6
@@ -123,10 +125,11 @@ def clip(text, limit):
 
 def run_json(command, *, body=None, timeout=5, env=None, cwd=None):
     try:
-        process = subprocess.run(command, input=body, capture_output=True, text=True,
-                                 encoding="utf-8", timeout=timeout, env=env, cwd=cwd)
+        process = bounded_command(command, body=body, timeout=timeout, env=env, cwd=cwd)
     except subprocess.TimeoutExpired as exc:
         raise HookError("command timed out; memory operation not confirmed") from exc
+    except UnicodeError as exc:
+        raise HookError("memory command returned invalid JSON") from exc
     except OSError as exc:
         raise HookError("could not start memory command") from exc
     if process.returncode:
@@ -145,6 +148,63 @@ def run_json(command, *, body=None, timeout=5, env=None, cwd=None):
         return result
     except ValueError as exc:
         raise HookError("memory command returned invalid JSON") from exc
+
+
+def bounded_command(command, *, body, timeout, env, cwd):
+    """Read both child pipes concurrently, stopping before either exceeds the cap."""
+    input_bytes = None if body is None else body.encode("utf-8")
+    deadline = time.monotonic() + timeout
+    process = subprocess.Popen(command, stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=cwd)
+    output = {"stdout": bytearray(), "stderr": bytearray()}
+    try:
+        with selectors.DefaultSelector() as selector:
+            for name in output:
+                stream = getattr(process, name)
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ, name)
+            if input_bytes is not None:
+                os.set_blocking(process.stdin.fileno(), False)
+                selector.register(process.stdin, selectors.EVENT_WRITE, "stdin")
+            sent = 0
+            while selector.get_map():
+                ready = selector.select(max(0, deadline - time.monotonic()))
+                if not ready:
+                    raise subprocess.TimeoutExpired(command, timeout)
+                for key, _ in ready:
+                    name = key.data
+                    stream = key.fileobj
+                    if name == "stdin":
+                        try:
+                            count = os.write(stream.fileno(), input_bytes[sent:sent + 65536])
+                        except BrokenPipeError:
+                            count = len(input_bytes) - sent
+                        sent += count
+                        if sent == len(input_bytes):
+                            selector.unregister(stream)
+                            stream.close()
+                        continue
+                    chunk = os.read(stream.fileno(), min(65536, COMMAND_OUTPUT_BYTES + 1 - len(output[name])))
+                    if not chunk:
+                        selector.unregister(stream)
+                        stream.close()
+                        continue
+                    output[name].extend(chunk)
+                    if len(output[name]) > COMMAND_OUTPUT_BYTES:
+                        raise HookError("memory command output exceeded limit; operation not confirmed")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(command, timeout)
+        returncode = process.wait(timeout=remaining)
+        return subprocess.CompletedProcess(command, returncode, output["stdout"].decode("utf-8"),
+                                           output["stderr"].decode("utf-8", errors="replace"))
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
 
 
 class Memory:
