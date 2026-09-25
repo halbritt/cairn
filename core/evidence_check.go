@@ -57,24 +57,16 @@ func (s *Store) CheckEvidence(ctx context.Context, req EvidenceCheckRequest) (Ev
 		if err = tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&result.CheckedAt); err != nil {
 			return result, err
 		}
-		// Retain the check and invalidate dependent impact previews atomically.
-		rows, err := tx.Query(ctx, `SELECT DISTINCT record_id::text FROM cairn.evidence_ref WHERE evidence_id=$1 ORDER BY record_id::text LIMIT 1001`, req.EvidenceID)
+		// Retain the check and invalidate every dependent impact preview in one
+		// transaction. PostgreSQL counts the set without materializing IDs in Go.
+		err = tx.QueryRow(ctx, `WITH invalidated AS (
+ UPDATE cairn.memory_record m SET use_generation=m.use_generation+1
+ WHERE EXISTS (SELECT 1 FROM cairn.evidence_ref r WHERE r.evidence_id=$1 AND r.record_id=m.record_id)
+ RETURNING 1
+) SELECT count(*) FROM invalidated`, req.EvidenceID).Scan(&result.AffectedRecords)
 		if err != nil {
 			return result, err
 		}
-		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
-		if err != nil {
-			return result, err
-		}
-		if len(ids) > 1000 {
-			return result, failure("BUDGET_REFUSED", "evidence invalidation exceeds 1000 directly citing records")
-		}
-		for _, id := range ids {
-			if _, err = tx.Exec(ctx, `UPDATE cairn.memory_record SET use_generation=use_generation+1 WHERE record_id=$1`, id); err != nil {
-				return result, err
-			}
-		}
-		result.AffectedRecords = len(ids)
 		if _, err = tx.Exec(ctx, `UPDATE cairn.evidence SET state=$2,check_generation=$3,checked_at=$4 WHERE evidence_id=$1`, req.EvidenceID, result.State, result.Generation, result.CheckedAt); err != nil {
 			return result, err
 		}

@@ -4,8 +4,51 @@ import (
 	"context"
 	"encoding/base64"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"testing"
 )
+
+func TestEvidenceRecheckInvalidatesMoreThanThousandCitingRecords(t *testing.T) {
+	ctx := context.Background()
+	op, _ := testOperator(t)
+	repo := uuid.NewString()
+	evidence := testEvidence(t, op, repo)
+	const citations = 1001
+	ids := make([]string, citations)
+	for i := range ids {
+		record, err := op.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[i] = record.RecordID
+	}
+	// Populate the large citation set directly to isolate the check boundary
+	// from the qualification workflow; all references name retained versions.
+	_, err := op.pool.CopyFrom(ctx, pgx.Identifier{"cairn", "evidence_ref"},
+		[]string{"record_id", "version", "evidence_id"},
+		pgx.CopyFromSlice(len(ids), func(i int) ([]any, error) {
+			return []any{ids[i], 1, evidence.ID}, nil
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := EvidenceCheckRequest{uuid.NewString(), evidence.ID}
+	check, err := op.CheckEvidence(ctx, req)
+	if err != nil || check.AffectedRecords != citations || check.Generation != 1 {
+		t.Fatalf("large evidence check: %+v %v", check, err)
+	}
+	retry, err := op.CheckEvidence(ctx, req)
+	if err != nil || retry.Generation != check.Generation || retry.AffectedRecords != citations {
+		t.Fatalf("large evidence check retry: %+v %v", retry, err)
+	}
+	var invalidated int
+	if err := op.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.memory_record m JOIN cairn.evidence_ref r USING(record_id) WHERE r.evidence_id=$1 AND m.use_generation=1`, evidence.ID).Scan(&invalidated); err != nil {
+		t.Fatal(err)
+	}
+	if invalidated != citations {
+		t.Fatalf("invalidated %d of %d citing records", invalidated, citations)
+	}
+}
 
 func TestEvidenceRefreshPersistsGenerationAndInvalidatesPreview(t *testing.T) {
 	ctx := context.Background()

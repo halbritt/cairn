@@ -116,8 +116,10 @@ observation.
 
 Status, check history and affected claim generations commit together. Refresh
 invalidates impact previews for directly evidence-linked records, which also
-changes fingerprints of known transitive relation previews. A check refuses
-rather than partially invalidating more than 1,000 directly citing records.
+changes fingerprints of known transitive relation previews. PostgreSQL updates
+all directly citing records in the same transaction and returns their count
+without collecting record IDs in the client. If the transaction fails or its
+caller deadline expires, the check and its invalidations roll back together.
 Ordinary retrieval still verifies bytes; it need not wait for a background job
 to detect changed data. Historical recompilation uses its retained earlier gate
 facts and does not rewrite the past from the latest check result.
