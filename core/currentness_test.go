@@ -8,6 +8,15 @@ import (
 	"time"
 )
 
+func TestSameApplicabilityTreatsEmptyAsOmitted(t *testing.T) {
+	if !sameApplicability(nil, &Applicability{}) || !sameApplicability(&Applicability{}, nil) {
+		t.Fatal("empty applicability should be equivalent to no constraints")
+	}
+	if sameApplicability(nil, &Applicability{TaskClass: "build"}) || sameApplicability(&Applicability{TaskClass: "build"}, nil) {
+		t.Fatal("constrained applicability should differ from no constraints")
+	}
+}
+
 func TestDeclaredCurrentnessGatesAndCannotBeBroadenedByEdit(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t, Channel{Principal: "currentness"})

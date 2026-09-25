@@ -67,8 +67,11 @@ func (p *Applicability) validate() error {
 	return nil
 }
 func sameApplicability(a, b *Applicability) bool {
-	if a == nil || b == nil {
-		return a == b
+	if a == nil {
+		a = &Applicability{}
+	}
+	if b == nil {
+		b = &Applicability{}
 	}
 	sameTime := func(x, y *time.Time) bool {
 		if x == nil || y == nil {

@@ -82,6 +82,29 @@ func TestRetryCASAndAuthorship(t *testing.T) {
 	requireCode(t, err, "AUTHORITY_DENIED")
 }
 
+func TestOrdinaryEditTreatsEmptyApplicabilityAsOmitted(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t, Channel{Principal: "agent:empty-applicability"})
+	for _, original := range []*Applicability{nil, {}} {
+		draft := note()
+		draft.Pins = original
+		created, err := s.Create(ctx, CreateRequest{uuid.NewString(), draft})
+		if err != nil {
+			t.Fatal(err)
+		}
+		draft.Body = "edited without applicability constraints"
+		if original == nil {
+			draft.Pins = &Applicability{}
+		} else {
+			draft.Pins = nil
+		}
+		updated, err := s.Edit(ctx, EditRequest{uuid.NewString(), created.RecordID, created.Version, draft})
+		if err != nil || updated.Version != created.Version+1 {
+			t.Fatalf("empty applicability edit: %+v %v", updated, err)
+		}
+	}
+}
+
 func TestConcurrentEditsAndDuplicateDelivery(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t, Channel{Principal: "agent:race"})
