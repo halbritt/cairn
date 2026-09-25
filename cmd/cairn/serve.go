@@ -105,6 +105,9 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	}
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: *socket, Net: "unix"})
 	if err != nil {
+		if errors.Is(err, syscall.EADDRINUSE) {
+			return invalid("API socket is already in use")
+		}
 		return err
 	}
 	defer listener.Close()

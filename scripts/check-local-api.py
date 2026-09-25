@@ -140,7 +140,9 @@ try:
     # A second listener must not remove or replace the active socket.
     collision = subprocess.run([binary, 'serve'], env=env, capture_output=True,
                                text=True, timeout=10)
-    assert collision.returncode != 0
+    assert collision.returncode == 2, collision
+    refusal = json.loads(collision.stdout)
+    assert refusal['status'] == 'INVALID_REQUEST' and refusal['message'] == 'INVALID_REQUEST: API socket is already in use', refusal
     result = subprocess.run([binary, 'agent', 'get'],
                             input=json.dumps(dict(record_id=record['record_id'])),
                             env=env, capture_output=True, text=True, check=True)

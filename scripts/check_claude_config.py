@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 
 
@@ -28,7 +29,7 @@ def check(claude, binary, root):
     added = run([claude, 'mcp', 'add-json', '--scope', 'local', 'cairn', json.dumps(server)])
     assert 'Added' in added, added
     inspected = run([claude, 'mcp', 'get', 'cairn'])
-    assert 'Connected' in inspected, inspected
+    assert re.search(r'^\s*Status:\s*(?:✔\s*)?Connected\s*$', inspected, re.MULTILINE), inspected
     assert server['command'] in inspected, inspected
     report = dict(claude_version=run([claude, '--version']).strip(),
                   registered=True, connected=True, scope='explicit task/run',

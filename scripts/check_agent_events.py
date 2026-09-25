@@ -12,6 +12,23 @@ import time
 import uuid
 
 
+def readiness_line(stream, *, timeout=5, limit=1024):
+    """Read one complete pipe line with a deadline and byte limit."""
+    deadline = time.monotonic() + timeout
+    line = bytearray()
+    while len(line) < limit:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([stream], [], [], remaining)[0]:
+            raise AssertionError("scheduler readiness timed out")
+        chunk = os.read(stream.fileno(), min(128, limit - len(line)))
+        if not chunk:
+            raise AssertionError("scheduler readiness ended before newline")
+        line.extend(chunk)
+        if b'\n' in chunk:
+            return bytes(line.split(b'\n', 1)[0]).decode('utf-8', 'replace').strip()
+    raise AssertionError("scheduler readiness line exceeds byte limit")
+
+
 def check(binary, directory):
     assert os.environ.get("CAIRN_TEST_DATABASE_URL")
     assert os.environ["CAIRN_DATABASE_URL"] == os.environ["CAIRN_TEST_DATABASE_URL"]
@@ -290,8 +307,7 @@ def check(binary, directory):
         scheduler_args = [binary, "schedule-serve", "--repo", repo]
         scheduler = subprocess.Popen(scheduler_args, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
-            assert select.select([scheduler.stderr], [], [], 5)[0], "scheduler readiness timed out"
-            assert scheduler.stderr.readline().strip() == "scheduler ready"
+            assert readiness_line(scheduler.stderr) == "scheduler ready"
         finally:
             scheduler.terminate()
             scheduler.communicate(timeout=5)
