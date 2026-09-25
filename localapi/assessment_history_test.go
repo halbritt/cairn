@@ -64,6 +64,13 @@ func TestAuthenticatedAssessmentHistoryPreservesNarrativeAndBoundaries(t *testin
 			if err = client.Call(ctx, "assessments", request, &repeated); err != nil || string(repeated) != string(first) {
 				t.Fatalf("read changed history: %s %v", repeated, err)
 			}
+			var page core.AssessmentPage
+			if err = client.Call(ctx, "assessments-page", map[string]any{"receipt_id": p.ReceiptID, "limit": 1}, &page); err != nil || len(page.Assessments) != 1 || page.Assessments[0].Version != 1 || !page.More || page.NextAfterVersion != 1 {
+				t.Fatalf("first authenticated page: %+v %v", page, err)
+			}
+			if err = client.Call(ctx, "assessments-page", map[string]any{"receipt_id": p.ReceiptID, "after_version": page.NextAfterVersion, "limit": 1}, &page); err != nil || len(page.Assessments) != 1 || page.Assessments[0].Version != 2 || page.More || page.NextAfterVersion != 2 {
+				t.Fatalf("second authenticated page: %+v %v", page, err)
+			}
 			if expected[0].Observer != "host:test" || expected[0].Version != 1 || expected[1].Version != 2 {
 				t.Fatal("assessment identity lost")
 			}
@@ -96,6 +103,10 @@ func TestAuthenticatedAssessmentHistoryPreservesNarrativeAndBoundaries(t *testin
 				err = client.Call(ctx, "assessments", map[string]string{"receipt_id": q.ReceiptID}, &history)
 				if core.Code(err) != "AUTHORITY_DENIED" {
 					t.Fatalf("disclosed other binding %+v: %v", other, err)
+				}
+				err = client.Call(ctx, "assessments-page", map[string]string{"receipt_id": q.ReceiptID}, &page)
+				if core.Code(err) != "AUTHORITY_DENIED" {
+					t.Fatalf("paged read disclosed other binding %+v: %v", other, err)
 				}
 			}
 			for id, code := range map[string]string{uuid.NewString(): "NOT_FOUND", "invalid": "INVALID_REQUEST"} {

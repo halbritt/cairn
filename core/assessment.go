@@ -102,6 +102,11 @@ type Assessment struct {
 	Observer       string    `json:"observer"`
 	ObservedAt     time.Time `json:"observed_at"`
 }
+type AssessmentPage struct {
+	Assessments      []Assessment `json:"assessments"`
+	More             bool         `json:"more"`
+	NextAfterVersion int          `json:"next_after_version,omitempty"`
+}
 
 func (s *Store) AssessRun(ctx context.Context, req AssessmentRequest) (Assessment, error) {
 	return s.assessRun(ctx, req, "")
@@ -225,56 +230,79 @@ func checkAssessmentEvidence(ctx context.Context, tx pgx.Tx, id, repo string) er
 	return nil
 }
 func (s *Store) Assessments(ctx context.Context, receiptID string) ([]Assessment, error) {
-	return s.assessments(ctx, receiptID, "")
+	page, err := s.AssessmentsPage(ctx, receiptID, 0, 1000)
+	if err != nil {
+		return nil, err
+	}
+	if page.More {
+		return nil, failure("BUDGET_REFUSED", "assessment history exceeds 1000 versions; use a paged read")
+	}
+	return page.Assessments, nil
 }
 
 // AssessmentHistory binds narrative disclosure to the authenticated destination.
 // The direct-store Assessments method retains its existing trusted-local contract.
 func (s *Store) AssessmentHistory(ctx context.Context, receiptID string, dest Destination) ([]Assessment, error) {
-	if (dest.Name != "local" && dest.Name != "hosted") || (dest.Name == "hosted" && dest.AllowLocal) {
-		return nil, failure("DESTINATION_PROHIBITED", "invalid assessment destination")
-	}
-	return s.assessments(ctx, receiptID, dest.Name)
-}
-
-func (s *Store) assessments(ctx context.Context, receiptID, destination string) ([]Assessment, error) {
-	tx, err := s.begin(ctx)
+	page, err := s.AssessmentHistoryPage(ctx, receiptID, dest, 0, 1000)
 	if err != nil {
 		return nil, err
 	}
+	if page.More {
+		return nil, failure("BUDGET_REFUSED", "assessment history exceeds 1000 versions; use a paged read")
+	}
+	return page.Assessments, nil
+}
+
+func (s *Store) AssessmentsPage(ctx context.Context, receiptID string, after, limit int) (AssessmentPage, error) {
+	return s.assessmentPage(ctx, receiptID, "", after, limit)
+}
+
+// AssessmentHistoryPage repeats the authenticated receipt and destination checks
+// on every page; an earlier read does not grant access to later reviews.
+func (s *Store) AssessmentHistoryPage(ctx context.Context, receiptID string, dest Destination, after, limit int) (AssessmentPage, error) {
+	if (dest.Name != "local" && dest.Name != "hosted") || (dest.Name == "hosted" && dest.AllowLocal) {
+		return AssessmentPage{}, failure("DESTINATION_PROHIBITED", "invalid assessment destination")
+	}
+	return s.assessmentPage(ctx, receiptID, dest.Name, after, limit)
+}
+
+func (s *Store) assessmentPage(ctx context.Context, receiptID, destination string, after, limit int) (AssessmentPage, error) {
+	out := AssessmentPage{Assessments: []Assessment{}}
+	if after < 0 || after > 2147483647 || limit < 1 || limit > 1000 {
+		return out, failure("INVALID_REQUEST", "assessment page requires after_version 0-2147483647 and limit 1-1000")
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return out, err
+	}
 	defer tx.Rollback(ctx)
 	if err = s.receiptAccess(ctx, tx, receiptID); err != nil {
-		return nil, err
+		return out, err
 	}
 	if destination != "" {
 		var recorded string
 		if err = tx.QueryRow(ctx, `SELECT destination FROM cairn.retrieval_receipt WHERE receipt_id=$1`, receiptID).Scan(&recorded); err != nil {
-			return nil, err
+			return out, err
 		}
 		if recorded != destination {
-			return nil, failure("AUTHORITY_DENIED", "assessment destination differs from the receipt destination")
+			return out, failure("AUTHORITY_DENIED", "assessment destination differs from the receipt destination")
 		}
 	}
-	rows, err := tx.Query(ctx, `SELECT detail FROM cairn.run_assessment WHERE receipt_id=$1 ORDER BY version LIMIT 1001`, receiptID)
+	rows, err := tx.Query(ctx, `SELECT detail FROM cairn.run_assessment WHERE receipt_id=$1 AND version>$2 ORDER BY version LIMIT $3`, receiptID, after, limit+1)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
-	results := []Assessment{}
-	for rows.Next() {
-		var a Assessment
-		if err = rows.Scan(&a); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		results = append(results, a)
-	}
-	err = rows.Err()
-	rows.Close()
+	results, err := pgx.CollectRows(rows, pgx.RowTo[Assessment])
 	if err != nil {
-		return nil, err
+		return out, err
 	}
-	if len(results) > 1000 {
-		return nil, failure("BUDGET_REFUSED", "assessment history exceeds 1000 versions")
+	if len(results) > limit {
+		out.More = true
+		results = results[:limit]
 	}
-	return results, tx.Commit(ctx)
+	out.Assessments = results
+	if len(results) > 0 {
+		out.NextAfterVersion = results[len(results)-1].Version
+	}
+	return out, tx.Commit(ctx)
 }

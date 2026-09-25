@@ -39,6 +39,7 @@ JSON operations (one request on stdin):
   cite         Replace an ordinary note's evidence citations
   history      Inspect retained versions of one note
   assessments  Read owned task-review history
+  assessments-page  Read owned task-review history in bounded pages
   assess-run   Append or correct a qualitative task review
   recompile    Reconstruct an owned historical receipt for inspection
 
@@ -155,6 +156,9 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	case "assessments":
 		detail = "Read retained task-review versions for an owned receipt, oldest first,\nincluding full reasons and evidence IDs. This is task-review history, not note\nhistory. Repository, owner and destination must still match the profile.\nNo request UUID is required.\n"
 		example = `{"receipt_id":"RECEIPT_UUID"}`
+	case "assessments-page":
+		detail = "Read retained task-review versions for an owned receipt in ascending\nversion order. Start after_version at 0; pass next_after_version from each\npage while more is true. Default limit 100, maximum 1000. Each page repeats\nrepository, owner and destination checks. No request UUID is required.\n"
+		example = `{"receipt_id":"RECEIPT_UUID","after_version":0,"limit":100}`
 	case "assess-run":
 		detail = "Append a review of an owned receipt. Read assessments first; expected_version\nis 0 for the initial review, otherwise the latest reviewed version. Agent\naccounts remain testimony. Qualitative benefit can be described while outcome\nis unknown; a successful process or tool call does not establish acceptance.\nAny non-unknown outcome requires selected evidence. Exact retries return the\noriginal review even after a later correction.\n"
 		example = `{"request_id":"NEW_UUID","receipt_id":"RECEIPT_UUID","expected_version":0,"task_outcome":"unknown","failure_domain":"unknown","failure_kind":"","method":"qualitative-review/1","evidence_ids":[],"reason":"Describe the task, recalled guidance, observed result, competing explanations and uncertainty."}`

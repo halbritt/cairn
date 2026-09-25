@@ -298,7 +298,14 @@ An invalid UUID returns `INVALID_REQUEST`; an absent receipt returns `NOT_FOUND`
 An owned receipt without assessments returns `[]`. Reads do not append a version
 or consume expansion credits, and they return evidence IDs without evidence bodies.
 The existing 1,000-version history bound and client response-size limit apply;
-there is no history pagination. The direct `Store.Assessments` contract is unchanged.
+the whole-history read refuses longer histories. Use
+`cairn assessments-page --after-version 0 --limit 100 RECEIPT_UUID` for
+direct-store paging, or
+`cairn agent assessments-page` with JSON
+`{"receipt_id":"RECEIPT_UUID","after_version":0,"limit":100}` through the
+authenticated Unix API. Advance
+`after_version` to each response's `next_after_version` while `more` is true.
+The maximum page size is 1,000. Every page checks the caller's current access.
 
 The aggregate `run-report` and `use-report` rows
 omit the narrative and evidence IDs. For a linked retrieval, inspect the

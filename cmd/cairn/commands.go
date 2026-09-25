@@ -49,6 +49,7 @@ Everyday commands:
   search [--repo PATH] [--purpose context] [--destination local] [--kind KIND ...] QUERY
   run [--repo PATH] [--kind KIND ...] [--prompt TEXT] [--carrier stdin|argv] [--destination local|hosted] -- COMMAND ARGS...
   preview-delete RECORD_UUID | deletion-status DELETION_UUID | purge-deletion DELETION_UUID
+  assessments-page [--after-version VERSION] [--limit N] RECEIPT_UUID
   evidence-checks-page [--after GENERATION] [--limit N] EVIDENCE_UUID
   conflicts [--record UUID] [--include-resolved] [--limit N] [--offset N] REPO | conflict UUID
   proposal-group [--limit N] [--offset N] REPO GROUP_DIGEST
@@ -322,6 +323,17 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return nil, invalid("evidence-checks-page requires one evidence UUID")
 		}
 		return store.EvidenceChecksPage(ctx, f.Arg(0), *after, *limit)
+	case "assessments-page":
+		f := flags("assessments-page")
+		after := f.Int("after-version", 0, "last version from the previous page")
+		limit := f.Int("limit", 100, "maximum assessments (1-1000)")
+		if err := f.Parse(args[1:]); err != nil {
+			return nil, invalid(err.Error())
+		}
+		if f.NArg() != 1 {
+			return nil, invalid("assessments-page requires one receipt UUID")
+		}
+		return store.AssessmentsPage(ctx, f.Arg(0), *after, *limit)
 	case "get", "replay", "report", "docket", "explain", "preview-retract", "assessments", "proposal", "evidence", "refusal", "evidence-checks", "preview-delete", "deletion-status", "purge-deletion", "conflict", "supersession", "scope-authorization":
 		if len(args) != 2 {
 			return nil, invalid("command requires one identifier or repository")

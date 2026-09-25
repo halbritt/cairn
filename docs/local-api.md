@@ -213,7 +213,7 @@ and needs no stdin request. [Build identity and limitations](build-identity.md).
 
 Operations: `create`, `edit`, `revise`, `append`, `replace`, `cite`, `delete`, ordinary `supersede`, `compile`, `recompile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
-`assess-run`, `assessments`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
+`assess-run`, `assessments`, `assessments-page`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `run-package`, `run-index`, `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. All use `POST /v1/OPERATION` with JSON
 matching the corresponding core request. `get` takes `record_id`.
 `history` lists bounded retained version metadata or reads one exact body (optionally
@@ -227,7 +227,12 @@ destination, subject to current privacy and forgetting checks. See
 `assessments` takes `receipt_id` and returns the owner's full assessment versions
 in ascending order, including reasons and evidence IDs. The profile's repository
 and destination must match the receipt. It returns no evidence or package bodies;
-an owned receipt with no assessments returns `[]`. See the
+an owned receipt with no assessments returns `[]`. It explicitly refuses more
+than 1,000 versions. `assessments-page` takes `receipt_id`, optional
+`after_version` (initially 0) and optional `limit` (default 100, maximum 1,000).
+Its response has `assessments`, `more` and `next_after_version`; pass the latter
+as `after_version` while `more` is true. Each page repeats the repository,
+owner and destination checks. See the
 [review path](use-outcome-loop.md#qualitative-and-cumulative-review) for use and limits.
 `assess-run` checks the same current repository and original destination before
 applying a write or replaying its cached response. Changing a principal's binding

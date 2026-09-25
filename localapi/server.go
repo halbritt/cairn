@@ -261,6 +261,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}) ([]core.Assessment, error) {
 			return c.store.AssessmentHistory(ctx, req.ReceiptID, c.destination)
 		})
+	case "/v1/assessments-page":
+		serveJSON(w, r, func(ctx context.Context, req struct {
+			ReceiptID    string `json:"receipt_id"`
+			AfterVersion int    `json:"after_version"`
+			Limit        int    `json:"limit"`
+		}) (core.AssessmentPage, error) {
+			if req.Limit == 0 {
+				req.Limit = 100
+			}
+			return c.store.AssessmentHistoryPage(ctx, req.ReceiptID, c.destination, req.AfterVersion, req.Limit)
+		})
 	case "/v1/refusal":
 		if !c.destination.AllowLocal {
 			writeError(w, 403, "AUTHORITY_DENIED", "protected refusal inspection requires a local profile")
