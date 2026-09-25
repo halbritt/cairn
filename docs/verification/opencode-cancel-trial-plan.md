@@ -1,6 +1,7 @@
 # OpenCode real-model cancellation trial (CAIRN-2): plan
 
-Status: **run on 2026-09-24; C1 to C5 passed** on one owned scratch session
+Status: **run on 2026-09-24; observed outcomes recorded for C1 to C5**, with
+some stated pass criteria not verified in the retained record
 ([record](opencode-cancel-trial-2026-09-24.md)). Native cancellation stays
 disabled in installed profiles until it is deliberately enabled; this trial
 does not establish general tool-process cleanup.

@@ -7,8 +7,9 @@ unadmitted wake for a later idle retry; conflict remains a retained refusal.
 An unknown outcome after submission is retained as uncertain. The plugin waits
 for admission before passing the exact request
 and delivery IDs with OpenCode's observed user-message ID to the lifecycle
-hook. That hook makes the native inbox claim with the exact delivery, turn ID
-and `turn_exclusive: true`. OpenCode owner prompts cannot claim this inbox
+hook. That hook makes the native inbox claim with the exact delivery and turn ID;
+it sets `turn_exclusive: true` only when the wake is `cancel_capable`.
+OpenCode owner prompts cannot claim this inbox
 while the native wake route is enabled.
 
 The watcher probes a peer-verified bridge for `prompt_idle` support before

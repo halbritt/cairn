@@ -1,11 +1,19 @@
 # OpenCode real-model cancellation trial, 2026-09-24 (CAIRN-2)
 
 Run by agent-100 following [the trial plan](opencode-cancel-trial-plan.md).
-**Result: C1 to C5 passed.** In no case did Cairn confirm cancellation or release a
+**Reported result: C1 to C5 passed for the observed behavior.** In no case did
+Cairn confirm cancellation or release a
 hold while the independent `/proc` observer reported a survivor. This covers
 one owned session, one real model and marker-preserving fixture workloads. It
 does not establish general tool-process cleanup, and it does not change any
 production profile: `opencode-one` keeps cancellation disabled.
+
+The retained record does not show the plan's late `complete` and `renew`
+requests receiving `REQUEST_CANCELLED` for C1 or C2. It records
+`turn_exclusive` for C2 but not C1, and includes `event-status` for C1 only.
+C4's planned "as C1" path has the same unrecorded late-call criterion. The
+table's pass labels describe observed interruption and containment; they do
+not establish every criterion in the [trial plan](opencode-cancel-trial-plan.md).
 
 ## Setup
 
