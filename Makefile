@@ -11,3 +11,4 @@ test-lifecycle: build
 check:
 	go vet ./...
 	test -z "$$(gofmt -l core cmd runner localapi artifacts mcpapi semantic integrations internal)"
+	python3 -B scripts/check_design_sources.py
