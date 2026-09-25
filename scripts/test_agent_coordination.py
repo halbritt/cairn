@@ -49,7 +49,7 @@ class CoordinationNormalization(unittest.TestCase):
         self.assertEqual(coordination.validate_config(named), named)
         self.assertNotIn('claude_channel_dir', coordination.claude_session_config(named, 'native-one', enabled))
         for sessions in (None, True, 'native-one', {}, [None], [1], [''], ['  '],
-                         ['bad\nname'], ['x' * 257], ['native-one', 'native-one']):
+                         ['bad\nname'], ['x' * 257], ['é' * 129], ['native-one', 'native-one']):
             with self.subTest(sessions=sessions), self.assertRaisesRegex(coordination.CoordinationError, 'INVALID_CONFIG'):
                 coordination.validate_config(dict(config, claude_channel_sessions=sessions))
         with self.assertRaisesRegex(coordination.CoordinationError, 'INVALID_CONFIG'):
@@ -141,6 +141,15 @@ class CoordinationNormalization(unittest.TestCase):
                 self.assertEqual(observed["workspace"], directory)
                 if harness != "claude":
                     self.assertEqual(observed["observed_model"], "native-model")
+
+    def test_native_session_id_uses_api_byte_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            event = dict(session_id='é' * 128, cwd=directory, hook_event_name='SessionStart')
+            observed = coordination.normalize(dict(harness='claude'), event)
+            self.assertEqual(observed['native_id'], event['session_id'])
+            for native in ('é' * 129, '\ud800'):
+                with self.subTest(native=native), self.assertRaisesRegex(coordination.CoordinationError, 'INVALID_HOST'):
+                    coordination.normalize(dict(harness='claude'), dict(event, session_id=native))
 
     def test_process_reference_does_not_survive_exit_or_pid_reuse(self):
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])

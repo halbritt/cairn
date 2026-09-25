@@ -752,6 +752,12 @@ def owner_process(config, event):
     raise CoordinationError("INVALID_HOST", "native process is not an observed ancestor")
 
 
+def valid_native_session_id(value):
+    return (isinstance(value, str) and bool(value.strip()) and
+            not any(ord(char) < 32 or 0xD800 <= ord(char) <= 0xDFFF for char in value) and
+            len(value.encode('utf-8')) <= 256)
+
+
 def normalize(config, event, event_name=None):
     harness = config["harness"]
     name = event_name or event.get("hook_event_name")
@@ -762,7 +768,7 @@ def normalize(config, event, event_name=None):
         model = event.get("modelName", "")
     else:
         native, cwd, model = event.get("session_id"), event.get("cwd"), event.get("model", "")
-    if not isinstance(native, str) or not native.strip() or len(native) > 256 or any(ord(c) < 32 for c in native):
+    if not valid_native_session_id(native):
         raise CoordinationError("INVALID_HOST", "native conversation ID required")
     if not isinstance(cwd, str) or not Path(cwd).is_absolute() or not Path(cwd).is_dir():
         raise CoordinationError("INVALID_HOST", "native workspace must be an existing absolute directory")
@@ -1552,8 +1558,7 @@ def validate_config(config):
         if not isinstance(directory, str) or not Path(directory).is_absolute():
             raise CoordinationError('INVALID_CONFIG', 'claude_channel_sessions requires an absolute claude_channel_dir')
         if (config['harness'] != 'claude' or not isinstance(sessions, list) or
-                any(not isinstance(native, str) or not native.strip() or len(native) > 256 or
-                    any(ord(c) < 32 for c in native) for native in sessions)):
+                any(not valid_native_session_id(native) for native in sessions)):
             raise CoordinationError('INVALID_CONFIG', 'claude_channel_sessions requires a Claude list of bounded native session IDs')
         if len(sessions) != len(set(sessions)):
             raise CoordinationError('INVALID_CONFIG', 'claude_channel_sessions must not contain duplicate native session IDs')
