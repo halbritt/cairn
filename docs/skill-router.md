@@ -68,6 +68,11 @@ logged. Each routed prompt adds one line to `state_dir/skill-router.jsonl`
 with the leg, winner, confidence, top three options, outcome and latency. The
 line holds no prompt text.
 
+The Kev fallback URL below uses HTTP without TLS. It receives the same prompt
+excerpt and catalog when TypeSafe fails or is unavailable. Configure `kev_url`
+with a transport appropriate to the deployment, or set `CAIRN_SKILL_ROUTER=0`
+to prevent routing.
+
 ## Configuration
 
 Installers copy `skill_router.py` beside the hook script and write
@@ -87,6 +92,10 @@ below inside that block to override its default.
 | `prompt_chars` | `1500` |
 | `context_chars` | `9500` |
 | `exclude_paths` | `["~/git/council"]` |
+
+The paths and Kev address in this table are defaults for the owner's current
+host installation. Other hosts should set their own values in `config.json` or
+install with `--no-skill-router`.
 
 `context_chars` is 9,500 because Claude Code delivers about 10,000 characters
 of hook `additionalContext` and drops the rest. Measured on 2026-09-24: 9,000
