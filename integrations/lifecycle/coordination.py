@@ -847,13 +847,21 @@ def call(config, operation, request, timeout=4, session=None):
     if session:
         command += ['--agent-id', session['agent_id'], '--execution-id', session['execution_id']]
     command.append(operation)
-    result = subprocess.run(command, input=json.dumps(request), capture_output=True, text=True, timeout=timeout)
+    try:
+        result = subprocess.run(command, input=json.dumps(request), capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise CoordinationError("API_UNAVAILABLE", "Cairn lifecycle command is unavailable") from exc
     try:
         response = json.loads(result.stdout)
     except ValueError as exc:
         raise CoordinationError("API_UNAVAILABLE", "Cairn did not return a JSON response") from exc
-    if result.returncode or not response.get("ok"):
-        raise CoordinationError(response.get("status", "API_UNAVAILABLE"), "Cairn refused the lifecycle operation")
+    if not isinstance(response, dict) or type(response.get('ok')) is not bool:
+        raise CoordinationError("API_UNAVAILABLE", "Cairn returned an invalid response")
+    if result.returncode or not response['ok']:
+        status = response.get('status')
+        if not isinstance(status, str) or not status or status == 'OK':
+            status = 'API_UNAVAILABLE'
+        raise CoordinationError(status, "Cairn refused the lifecycle operation")
     return response.get("data")
 
 

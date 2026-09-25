@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("coordination", ROOT / "integrations/lifecycle/coordination.py")
@@ -15,6 +16,30 @@ spec.loader.exec_module(coordination)
 
 
 class CoordinationNormalization(unittest.TestCase):
+    def test_cli_call_refuses_malformed_and_unavailable_responses(self):
+        config = dict(cairn='/fixture/cairn', socket='/fixture/api.sock', token_file='/fixture/token')
+        responses = (
+            subprocess.CompletedProcess([], 0, stdout='not-json'),
+            subprocess.CompletedProcess([], 0, stdout='[]'),
+            subprocess.CompletedProcess([], 0, stdout='{"ok":"true","data":{}}'),
+            subprocess.CompletedProcess([], 1, stdout='{"ok":true,"status":"OK"}'),
+        )
+        for response in responses:
+            with self.subTest(response=response.stdout), patch.object(coordination.subprocess, 'run', return_value=response):
+                with self.assertRaises(coordination.CoordinationError) as caught:
+                    coordination.call(config, 'agent-status', {})
+                self.assertEqual(caught.exception.code, 'API_UNAVAILABLE')
+        for failure in (FileNotFoundError(), subprocess.TimeoutExpired(['cairn'], 4)):
+            with self.subTest(failure=type(failure).__name__), patch.object(coordination.subprocess, 'run', side_effect=failure):
+                with self.assertRaises(coordination.CoordinationError) as caught:
+                    coordination.call(config, 'agent-status', {})
+                self.assertEqual(caught.exception.code, 'API_UNAVAILABLE')
+        with patch.object(coordination.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                [], 2, stdout='{"ok":false,"status":"STALE_SESSION"}')):
+            with self.assertRaises(coordination.CoordinationError) as caught:
+                coordination.call(config, 'agent-status', {})
+            self.assertEqual(caught.exception.code, 'STALE_SESSION')
+
     def test_claude_channel_session_selector_validation_and_defaults(self):
         config = dict(harness='claude', binding='account-one', repo='fixture',
                       cairn='/fixture/cairn', socket='/fixture/api.sock', token_file='/fixture/token',
