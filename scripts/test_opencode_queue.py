@@ -141,6 +141,9 @@ class OpenCodeQueueTests(unittest.TestCase):
                     elif method == 'session/abort':
                         resp = {'id': req_id, 'error': {'code': -32004, 'message': 'UNSUPPORTED_CONTROL: session abort disabled; atomic turn-fencing not yet supported upstream'}}
                         conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
+                    elif method == 'session/status':
+                        resp = {'id': req_id, 'result': {'session_id': params.get('session_id'), 'status': 'idle'}}
+                        conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
             except Exception as exc:
                 self.errors.append(exc)
 
@@ -153,6 +156,22 @@ class OpenCodeQueueTests(unittest.TestCase):
             worker.join(timeout=3)
             self.assertFalse(worker.is_alive())
         self.assertEqual(self.errors, [])
+
+    def test_status_response_must_match_request_and_session(self):
+        self.serve()
+        self.assertEqual(opencode_queue.status(self.path, self.process, 'ses_native123')['status'], 'idle')
+        cases = (
+            {'id': 4, 'result': {'session_id': 'ses_native123', 'status': 'idle'}},
+            {'id': 3, 'result': {'session_id': 'other', 'status': 'idle'}},
+            {'id': 3, 'result': None},
+            {'id': 3, 'result': {'session_id': 'ses_native123', 'status': []}},
+        )
+        for response in cases:
+            with self.subTest(response=response):
+                self.serve(behavior=response)
+                with self.assertRaises(opencode_queue.QueueError):
+                    opencode_queue.status(self.path, self.process, 'ses_native123')
+        self.join_workers()
 
     def test_unchanged_composer_direct_submission(self):
         """1. Submission calls prompt_idle without touching TUI composer."""

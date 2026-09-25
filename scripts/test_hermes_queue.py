@@ -87,10 +87,10 @@ class HermesQueueTests(unittest.TestCase):
                             }
                         conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
                     elif method == 'session/tools_status':
-                        resp = {'id': req_id, 'result': {'session_id': params.get('session_id'), 'tools': [{'session_id': 'proc_123', 'status': 'running'}]}}
+                        resp = response if response is not None else {'id': req_id, 'result': {'session_id': params.get('session_id'), 'tools': [{'session_id': 'proc_123', 'status': 'running'}]}}
                         conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
                     elif method == 'session/status':
-                        resp = {'id': req_id, 'result': {'session_id': params.get('session_id'), 'status': 'busy' if busy else 'idle'}}
+                        resp = response if response is not None else {'id': req_id, 'result': {'session_id': params.get('session_id'), 'status': 'busy' if busy else 'idle'}}
                         conn.sendall((json.dumps(resp) + '\n').encode('utf-8'))
             except Exception as exc:
                 self.errors.append(exc)
@@ -219,6 +219,36 @@ class HermesQueueTests(unittest.TestCase):
         self.assertEqual(len(tools), 1)
         self.assertEqual(tools[0]['session_id'], 'proc_123')
         self.assertEqual(tools[0]['status'], 'running')
+
+    def test_status_response_must_match_request_and_session(self):
+        self.serve()
+        self.assertEqual(hermes_queue.status(self.path, self.process, 'ses_hermes123')['status'], 'idle')
+        cases = (
+            {'id': 4, 'result': {'session_id': 'ses_hermes123', 'status': 'idle'}},
+            {'id': 3, 'result': {'session_id': 'other', 'status': 'idle'}},
+            {'id': 3, 'result': []},
+            {'id': 3, 'result': {'session_id': 'ses_hermes123', 'status': 1}},
+        )
+        for response in cases:
+            with self.subTest(response=response):
+                self.serve(response=response)
+                with self.assertRaises(hermes_queue.QueueError):
+                    hermes_queue.status(self.path, self.process, 'ses_hermes123')
+        self.join_workers()
+
+    def test_tools_status_response_must_match_request_and_session(self):
+        cases = (
+            {'id': 3, 'result': {'session_id': 'ses_hermes123', 'tools': []}},
+            {'id': 4, 'result': {'session_id': 'other', 'tools': []}},
+            {'id': 4, 'result': None},
+            {'id': 4, 'result': {'session_id': 'ses_hermes123', 'tools': {}}},
+        )
+        for response in cases:
+            with self.subTest(response=response):
+                self.serve(response=response)
+                with self.assertRaises(hermes_queue.QueueError):
+                    hermes_queue.tools_status(self.path, self.process, 'ses_hermes123')
+        self.join_workers()
 
     def test_abort_turn_mismatch_refused(self):
         """10. Abort with mismatched turn ID raises RequestMismatchError to protect active turn."""

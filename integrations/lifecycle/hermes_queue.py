@@ -191,9 +191,15 @@ def status(endpoint, process, native_id):
         if not line:
             raise QueueError('native Hermes closed connection without response')
         msg = json.loads(line)
+        if not isinstance(msg, dict) or type(msg.get('id')) is not int or msg['id'] != req['id']:
+            raise QueueError('invalid bridge status response identity')
         if 'error' in msg:
             raise QueueError(f"native Hermes status error: {msg['error']}")
-        return msg.get('result', {})
+        result = msg.get('result')
+        if (not isinstance(result, dict) or result.get('session_id') != native_id or
+                not isinstance(result.get('status'), str) or not result['status']):
+            raise QueueError('invalid bridge status response schema')
+        return result
     finally:
         _discard(transport)
 
@@ -216,8 +222,14 @@ def tools_status(endpoint, process, native_id, tool_ids=None):
         if not line:
             raise QueueError('native Hermes closed connection without response')
         msg = json.loads(line)
+        if not isinstance(msg, dict) or type(msg.get('id')) is not int or msg['id'] != req['id']:
+            raise QueueError('invalid bridge tools_status response identity')
         if 'error' in msg:
             raise QueueError(f"native Hermes tools_status error: {msg['error']}")
-        return msg.get('result', {})
+        result = msg.get('result')
+        if (not isinstance(result, dict) or result.get('session_id') != native_id or
+                not isinstance(result.get('tools'), list)):
+            raise QueueError('invalid bridge tools_status response schema')
+        return result
     finally:
         _discard(transport)

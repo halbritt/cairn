@@ -307,8 +307,14 @@ def status(endpoint, process, native_id):
         if not line:
             raise QueueError('native OpenCode closed connection without response')
         msg = json.loads(line)
+        if not isinstance(msg, dict) or type(msg.get('id')) is not int or msg['id'] != req['id']:
+            raise QueueError('invalid bridge status response identity')
         if 'error' in msg:
             raise QueueError(f"native OpenCode status error: {msg['error']}")
-        return msg.get('result', {})
+        result = msg.get('result')
+        if (not isinstance(result, dict) or result.get('session_id') != native_id or
+                not isinstance(result.get('status'), str) or not result['status']):
+            raise QueueError('invalid bridge status response schema')
+        return result
     finally:
         _discard(transport)
