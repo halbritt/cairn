@@ -153,7 +153,8 @@ empty polls. `end.json` adds `attempt_id` and a reason: `delivery_completed`,
 `turn_ended` or `process_exited`. These are trusted host observations, not new
 authentication or execution attestation. A profile can reconcile only its own
 registered session/attempt association. Collection and hosted/local restrictions
-continue to apply.
+continue to apply. A same-reason retry of a closed attempt returns its retained
+result; a different closure reason returns `VERSION_CONFLICT`.
 
 Tests use disposable PostgreSQL and the real API/CLI. Native Codex and Claude
 fixtures verify busy arrival, Stop continuation, source reading and explicit

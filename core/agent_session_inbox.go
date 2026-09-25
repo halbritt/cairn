@@ -272,8 +272,14 @@ func (s *Store) ReconcileSessionInbox(ctx context.Context, req SessionInboxRecon
 	}
 	return mutate(ctx, s, "session-inbox-reconcile", req.RequestID, req, func(tx pgx.Tx) (SessionInboxAttempt, error) {
 		attempt, err := s.lockedSessionAttempt(ctx, tx, req.AttemptID, req.Session, dest)
-		if err != nil || attempt.FinishedAt != nil {
+		if err != nil {
 			return attempt, err
+		}
+		if attempt.FinishedAt != nil {
+			if attempt.Reason != req.Reason {
+				return attempt, failure("VERSION_CONFLICT", "native inbox attempt already closed with a different reason")
+			}
+			return attempt, nil
 		}
 		if req.Reason == "exclusivity_revoked" && !(attempt.Cancel != nil && attempt.Cancel.ConfirmedAt == nil && !attempt.TurnExclusive) {
 			// Revocation reconciliation is valid only for a pending

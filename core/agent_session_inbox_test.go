@@ -259,6 +259,10 @@ func TestSessionInboxCrashRestoreAndOldReconciliation(t *testing.T) {
 	if err != nil || ended.FinishedAt == nil || ended.Delivery.State != "failed" {
 		t.Fatalf("crash reconciliation: %+v %v", ended, err)
 	}
+	conflicting := reconcile
+	conflicting.RequestID, conflicting.Reason = uuid.NewString(), "delivery_completed"
+	_, err = receiver.ReconcileSessionInbox(ctx, conflicting, dest)
+	requireCode(t, err, "VERSION_CONFLICT")
 	resumed, err := receiver.RegisterAgent(ctx, registration, dest)
 	if err != nil || resumed.AgentID != agent.AgentID || resumed.ExecutionID == agent.ExecutionID {
 		t.Fatalf("resume: %+v %v", resumed, err)
