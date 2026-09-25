@@ -88,6 +88,82 @@ func TestForgetExcludesCopiesBeforePurgeAndKeepsUseHistory(t *testing.T) {
 	}
 }
 
+func TestForgetExcludesCachedRevisionAndSupersessionResponses(t *testing.T) {
+	ctx := context.Background()
+	s, root := testOperator(t)
+	repo := uuid.NewString()
+	record, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := "corrected fixture"
+	replace := ReplaceRequest{uuid.NewString(), record.RecordID, 1, repo, "fixture_error", &text}
+	if _, err = s.Replace(ctx, replace); err != nil {
+		t.Fatal(err)
+	}
+	appendReq := AppendRequest{uuid.NewString(), record.RecordID, 2, repo, " with more detail"}
+	if _, err = s.Append(ctx, appendReq); err != nil {
+		t.Fatal(err)
+	}
+	evidence := testEvidence(t, s, repo)
+	cite := CiteRequest{RequestID: uuid.NewString(), RecordID: record.RecordID, ExpectedVersion: 3,
+		Repo: repo, EvidenceCitations: []EvidenceCitationRequest{{EvidenceID: evidence.ID, ExpectedSHA256: evidence.Digest}}}
+	if _, err = s.Cite(ctx, cite); err != nil {
+		t.Fatal(err)
+	}
+	revise := ReviseRequest{uuid.NewString(), record.RecordID, 4, repo, "Final retained wording."}
+	if _, err = s.Revise(ctx, revise); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := s.Create(ctx, CreateRequest{uuid.NewString(), projectNote(repo)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := s.PreviewRetraction(ctx, record.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supersede := SupersedeRequest{RequestID: uuid.NewString(), RecordID: record.RecordID,
+		ExpectedVersion: 5, Replacement: RecordVersionRef{replacement.RecordID, replacement.Version},
+		PreviewID: preview.PreviewID, Reason: "Replace the old ordinary fixture with an independent note"}
+	if _, err = s.Supersede(ctx, supersede); err != nil {
+		t.Fatal(err)
+	}
+	deletionPreview, err := s.PreviewDeletion(ctx, record.RecordID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletion, err := s.Forget(ctx, ForgetRequest{uuid.NewString(), record.RecordID, 6, root.ID, deletionPreview.PreviewID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, requestID := range []string{replace.RequestID, appendReq.RequestID, cite.RequestID, revise.RequestID, supersede.RequestID} {
+		var marked bool
+		if err = s.pool.QueryRow(ctx, `SELECT payload_deleted_by=$2 FROM cairn.mutation_request WHERE request_id=$1`,
+			requestID, deletion.DeletionID).Scan(&marked); err != nil || !marked {
+			t.Fatalf("cached response was not excluded for %s: %v %v", requestID, marked, err)
+		}
+	}
+	for _, retry := range []func() error{
+		func() error { _, err := s.Replace(ctx, replace); return err },
+		func() error { _, err := s.Append(ctx, appendReq); return err },
+		func() error { _, err := s.Cite(ctx, cite); return err },
+		func() error { _, err := s.Revise(ctx, revise); return err },
+		func() error { _, err := s.Supersede(ctx, supersede); return err },
+	} {
+		requireCode(t, retry(), "PAYLOAD_UNAVAILABLE")
+	}
+	if _, err = s.PurgeDeletion(ctx, deletion.DeletionID); err != nil {
+		t.Fatal(err)
+	}
+	for _, requestID := range []string{replace.RequestID, appendReq.RequestID, cite.RequestID, revise.RequestID, supersede.RequestID} {
+		var empty bool
+		if err = s.pool.QueryRow(ctx, `SELECT response IS NULL FROM cairn.mutation_request WHERE request_id=$1`, requestID).Scan(&empty); err != nil || !empty {
+			t.Fatalf("cached response survived purge for %s: %v %v", requestID, empty, err)
+		}
+	}
+}
+
 func TestForgetRefusesNewCitationsAndBlocksExistingDependents(t *testing.T) {
 	ctx := context.Background()
 	s, root := testOperator(t)

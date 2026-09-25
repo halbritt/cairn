@@ -189,7 +189,9 @@ func excludeDeletionPayloads(ctx context.Context, tx pgx.Tx, id, recordID string
 	if _, err := tx.Exec(ctx, `UPDATE cairn.retrieval_receipt r SET payload_deleted_by=COALESCE(payload_deleted_by,$1) WHERE EXISTS(SELECT 1 FROM cairn.record_use u WHERE u.receipt_id=r.receipt_id AND u.record_id=$2)`, id, recordID); err != nil {
 		return err
 	}
-	_, err := tx.Exec(ctx, `UPDATE cairn.mutation_request SET payload_deleted_by=COALESCE(payload_deleted_by,$1) WHERE operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence') AND jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$2::text))`, id, recordID)
+	// Include ordinary revision helpers and supersession: their cached results
+	// carry record IDs and must not survive a later forgetting of either record.
+	_, err := tx.Exec(ctx, `UPDATE cairn.mutation_request SET payload_deleted_by=COALESCE(payload_deleted_by,$1) WHERE operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence','replace','revise','append','cite','supersede') AND jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$2::text))`, id, recordID)
 	return err
 }
 
@@ -319,7 +321,7 @@ func (s *Store) purgeDatabaseEffect(ctx context.Context, id string, effect Delet
 	case "db_retrieval_package":
 		_, err = tx.Exec(ctx, `UPDATE cairn.retrieval_receipt SET semantic_body=NULL WHERE receipt_id=$1 AND payload_deleted_by IS NOT NULL`, effect.TargetID)
 	case "db_mutation_responses":
-		_, err = tx.Exec(ctx, `UPDATE cairn.mutation_request SET response=NULL WHERE payload_deleted_by IS NOT NULL AND operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence') AND jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$1::text))`, effect.TargetID)
+		_, err = tx.Exec(ctx, `UPDATE cairn.mutation_request SET response=NULL WHERE payload_deleted_by IS NOT NULL AND operation IN ('create','edit','promote','demote','issue','correct','retract','expand','expand-evidence','replace','revise','append','cite','supersede') AND jsonb_path_exists(response,'$.**.record_id ? (@ == $id)',jsonb_build_object('id',$1::text))`, effect.TargetID)
 	default:
 		return failure("INVALID_REQUEST", "no database purge handler for effect type")
 	}
