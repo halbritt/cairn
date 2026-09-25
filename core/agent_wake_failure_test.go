@@ -75,6 +75,34 @@ func TestWakeProviderFailureSuspendsOnlyOwningBindingAtomically(t *testing.T) {
 	}
 }
 
+func TestWakeProviderFailurePreservesOperatorPause(t *testing.T) {
+	ctx := context.Background()
+	_, a, b, r, d, w := poolFixture(t)
+	poolPublish(t, a, r, d, PoolRequirements{Workspace: w.Spec.Workspace})
+	claim := poolClaim(t, b, w, d)
+	if claim == nil {
+		t.Fatal("missing wake")
+	}
+	for _, op := range []string{"start", "enter"} {
+		if _, err := b.ChangeWake(ctx, WakeChangeRequest{RequestID: uuid.NewString(), AttemptID: claim.ID, Operation: op}, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paused, err := b.ChangeWorkerHealth(ctx, WorkerHealthRequest{RequestID: uuid.NewString(), SupervisorID: w.SupervisorID, ExpectedRevision: w.Revision, Health: "paused", Reason: "operator maintenance"}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reported, err := b.ChangeWake(ctx, WakeChangeRequest{RequestID: uuid.NewString(), AttemptID: claim.ID, Operation: "report", ProcessState: "exited", Reason: "provider_failed",
+		ProviderFailure: &ProviderFailure{Harness: "codex", Source: "native-event", Kind: "quota", Code: "usage_limit_reached"}}, d)
+	if err != nil || reported.ProviderFailure == nil {
+		t.Fatalf("provider observation: %+v %v", reported, err)
+	}
+	slot, err := b.HeartbeatWorker(ctx, WorkerHeartbeatRequest{SupervisorID: w.SupervisorID}, d)
+	if err != nil || slot.Health != "paused" || slot.Reason != "operator maintenance" || slot.Revision != paused.Revision {
+		t.Fatalf("provider report replaced operator pause: %+v %v", slot, err)
+	}
+}
+
 func TestProviderHealthRollsBackWithFailedWakeReport(t *testing.T) {
 	ctx := context.Background()
 	_, a, b, r, d, w := poolFixture(t)

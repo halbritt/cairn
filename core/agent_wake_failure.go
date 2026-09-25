@@ -51,6 +51,11 @@ func (s *Store) suspendWakeBinding(ctx context.Context, tx pgx.Tx, w WakeAttempt
 	if slot.Spec.Harness != f.Harness {
 		return failure("INVALID_REQUEST", "provider failure harness differs from configured launcher")
 	}
+	if slot.Health != "available" {
+		// Keep a selected pause or earlier suspension. The wake still records
+		// this observation, but it must not replace the operator's health state.
+		return nil
+	}
 	reason := fmt.Sprintf("%s observed by %s (%s) in wake %s", f.Kind, f.Harness, f.Code, w.ID)
 	_, err = tx.Exec(ctx, `UPDATE cairn.agent_worker_slot SET health='unavailable',reason=$3,retry_at=$4,health_at=clock_timestamp(),revision=revision+1 WHERE repo=$1 AND consumer=$2`, slot.Repo, slot.Consumer, reason, f.RetryAt)
 	return err

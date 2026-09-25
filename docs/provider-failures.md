@@ -78,6 +78,8 @@ cleanup can submit the same field with finish if the report was lost. Selected
 fields are `harness`, `source`, `kind`, `code`, optional HTTP `status` and optional
 `retry_at`. `wake-attempts` exposes the observation and `provider_failure_at`.
 Only registered, executed attempts can record it. A harness mismatch is refused.
+The observation suspends an available slot; it preserves a slot already paused
+or unavailable, including its selected reason and revision.
 An identical finish preserves the first observation without repeating the health
 change. A different observation after the first returns `VERSION_CONFLICT`.
 
