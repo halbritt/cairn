@@ -34,6 +34,15 @@ func testEvidence(t *testing.T, s *Store, repo string) Evidence {
 	return e
 }
 
+func TestRevokeGrantMissingTargetHasCodedError(t *testing.T) {
+	op, root := testOperator(t)
+	_, err := op.RevokeGrant(context.Background(), RevokeGrantRequest{
+		RequestID: uuid.NewString(), GrantID: uuid.NewString(), AuthorityID: root.ID,
+		ExpectedVersion: 1, Reason: "Missing synthetic grant target",
+	})
+	requireCode(t, err, "NOT_FOUND")
+}
+
 func TestPromotionAuthorityAndCorrection(t *testing.T) {
 	ctx := context.Background()
 	operator, root := testOperator(t)

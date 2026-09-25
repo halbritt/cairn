@@ -251,6 +251,9 @@ func lockRecord(ctx context.Context, tx pgx.Tx, id string, expected int) (Record
 func (s *Store) revokeGrant(ctx context.Context, tx pgx.Tx, req RevokeGrantRequest) (Grant, error) {
 	var repo string
 	if err := tx.QueryRow(ctx, `SELECT repo FROM cairn.authority_grant WHERE grant_id=$1`, req.GrantID).Scan(&repo); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Grant{}, failure("NOT_FOUND", "grant not found")
+		}
 		return Grant{}, err
 	}
 	chain, err := s.authorize(ctx, tx, req.AuthorityID, "revoke", repo)
