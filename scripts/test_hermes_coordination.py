@@ -96,7 +96,18 @@ if mode == 'saturated':
     os.unlink(path)
     raise SystemExit(0)
 print(json.dumps(dict(pid=os.getpid(), bound=os.path.exists(path))), flush=True)
-if mode == 'unload':
+if mode == 'pipelined':
+    with socket.socket(socket.AF_UNIX) as client:
+        client.settimeout(2)
+        client.connect(path)
+        requests = [dict(id=n, method='session/status', params=dict(session_id='owner')) for n in (1, 2)]
+        client.sendall((''.join(json.dumps(request) + '\n' for request in requests)).encode('utf-8'))
+        reader = client.makefile('r', encoding='utf-8')
+        responses = [json.loads(reader.readline()) for _ in requests]
+    print(json.dumps(dict(responses=responses)), flush=True)
+    for close in unload:
+        close()
+elif mode == 'unload':
     for close in unload:
         close()
     print(json.dumps(dict(after_unload=os.path.exists(path))), flush=True)
@@ -128,6 +139,13 @@ class HermesBridgeSocketLifetime(unittest.TestCase):
         lines, path = self.run_child('unload')
         self.assertTrue(lines[0]['bound'], 'bridge socket was not bound synchronously by register()')
         self.assertFalse(lines[1]['after_unload'], 'unload immediately after register left the socket')
+        self.assertFalse(path.exists())
+
+    def test_complete_requests_in_one_write_are_drained(self):
+        lines, path = self.run_child('pipelined')
+        self.assertEqual([response['id'] for response in lines[1]['responses']], [1, 2])
+        self.assertEqual([response['result']['session_id'] for response in lines[1]['responses']],
+                         ['owner', 'owner'])
         self.assertFalse(path.exists())
 
     def test_socket_is_removed_on_exit_without_unload(self):

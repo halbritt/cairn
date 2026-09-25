@@ -174,11 +174,11 @@ def register(ctx):
                     if not chunk:
                         break
                     buffer += chunk
-                    if len(buffer) > MAX_PAYLOAD_BYTES:
-                        conn.sendall(json.dumps({'id': None, 'error': {'code': -32600, 'message': 'PAYLOAD_TOO_LARGE: exceeds 64KB limit'}}).encode('utf-8') + b'\n')
-                        break
-                    if b'\n' in buffer:
+                    while b'\n' in buffer:
                         line, buffer = buffer.split(b'\n', 1)
+                        if len(line) > MAX_PAYLOAD_BYTES:
+                            conn.sendall(json.dumps({'id': None, 'error': {'code': -32600, 'message': 'PAYLOAD_TOO_LARGE: exceeds 64KB limit'}}).encode('utf-8') + b'\n')
+                            return
                         line = line.strip()
                         if not line:
                             continue
@@ -552,6 +552,9 @@ def register(ctx):
 
                         else:
                             conn.sendall(json.dumps({'id': req_id, 'error': {'code': -32601, 'message': f'Method {method} not found'}}).encode('utf-8') + b'\n')
+                    if len(buffer) > MAX_PAYLOAD_BYTES:
+                        conn.sendall(json.dumps({'id': None, 'error': {'code': -32600, 'message': 'PAYLOAD_TOO_LARGE: exceeds 64KB limit'}}).encode('utf-8') + b'\n')
+                        break
         except Exception as exc:
             try:
                 conn.sendall(json.dumps({'id': None, 'error': {'code': -32000, 'message': str(exc)}}).encode('utf-8') + b'\n')
