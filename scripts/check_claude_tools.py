@@ -48,20 +48,28 @@ def session(claude, binary, root, output, run_id, cases, allowed, repo='fixture:
 
         def do_POST(self):
             self.connection.settimeout(10)
-            size = int(self.headers.get('Content-Length', '0'))
-            if size <= 0 or size > 1024 * 1024 or len(requests) >= 2 * len(cases) + 4:
-                self.send_error(413)
-                return
-            request = json.loads(self.rfile.read(size))
-            if self.path.split('?')[0] != '/v1/messages':
-                self.send_error(404)
-                return
-            requests.append(request)
             try:
+                size = int(self.headers.get('Content-Length', '0'))
+                if size <= 0 or size > 1024 * 1024 or len(requests) >= 2 * len(cases) + 4:
+                    failures.append('invalid request size or scripted request budget exceeded')
+                    self.send_error(413)
+                    return
+                request = json.loads(self.rfile.read(size))
+                if not isinstance(request, dict):
+                    raise ValueError('request body must be a JSON object')
+                if self.path.split('?')[0] != '/v1/messages':
+                    failures.append(f'unexpected request path: {self.path.split("?")[0]}')
+                    self.send_error(404)
+                    return
+                requests.append(request)
                 for message in request['messages']:
+                    if not isinstance(message, dict):
+                        raise ValueError('message must be a JSON object')
                     content = message.get('content', [])
                     if isinstance(content, list):
                         for block in content:
+                            if not isinstance(block, dict):
+                                raise ValueError('message block must be a JSON object')
                             if block.get('type') == 'tool_result':
                                 results[block['tool_use_id']] = block
                 pending = next((case for case in cases if case[0] not in results), None)
@@ -73,7 +81,7 @@ def session(claude, binary, root, output, run_id, cases, allowed, repo='fixture:
                 else:
                     block = dict(type='text', text='Scripted fixture complete.')
                 encoded = response_events('msg_fixture_' + str(len(results)), request['model'], block)
-            except (KeyError, ValueError, AssertionError, StopIteration) as exc:
+            except (KeyError, ValueError, TypeError, OSError, AssertionError, StopIteration) as exc:
                 failures.append(repr(exc))
                 self.send_error(500)
                 return
