@@ -44,7 +44,7 @@ index b539063..52c8c0d 100644
      def _claim_active_session(self, surface: str = "cli", *, stderr: bool = False) -> bool:
          """Claim a global active-session slot for this CLI process."""
          if self._active_session_lease is not None:
-@@ -17343,6 +17355,414 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
+@@ -17343,6 +17355,415 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
              ] if item is not None
          ]
  
@@ -78,12 +78,17 @@ index b539063..52c8c0d 100644
 +            from hermes_cli.plugins import QueuedMessage
 +            if isinstance(user_input, QueuedMessage):
 +                current_sid = getattr(self, "session_id", None)
++                refusal_reason = None
 +                if user_input.expected_session_id and user_input.expected_session_id != current_sid:
-+                    user_input.status = "refused"
-+                    user_input.refusal_reason = (
++                    refusal_reason = (
 +                        f"Session mismatch: expected {user_input.expected_session_id!r}, "
 +                        f"current {current_sid!r}"
 +                    )
++                elif self._typed_voice_stop(user_input.text):
++                    refusal_reason = "Queued message consumed as voice stop control"
++                if refusal_reason is not None:
++                    user_input.status = "refused"
++                    user_input.refusal_reason = refusal_reason
 +                    user_input.consumed_session_id = current_sid
 +                    self._admission_state = "idle"
 +                    self._active_cancelled = False
@@ -100,11 +105,7 @@ index b539063..52c8c0d 100644
 +                                exc,
 +                                exc_info=True,
 +                            )
-+                    logger.warning(
-+                        "Discarding queued message for session %r (current session is %r)",
-+                        user_input.expected_session_id,
-+                        current_sid,
-+                    )
++                    logger.warning("Discarding queued message: %s", refusal_reason)
 +                    return None
 +
 +                user_input.status = "admitted"
@@ -867,7 +868,7 @@ new file mode 100644
 index 0000000..6862c2c
 --- /dev/null
 +++ b/tests/hermes_cli/test_cli_queue_message.py
-@@ -0,0 +1,400 @@
+@@ -0,0 +1,424 @@
 +"""Tests for Hermes CLI queued messages exercising production seams in cli.py."""
 +
 +from pathlib import Path
@@ -1126,6 +1127,30 @@ index 0000000..6862c2c
 +        # 3. User composer buffer was untouched throughout loop execution
 +        self.assertEqual(cli._app.current_buffer.text, "unsubmitted human draft typed in terminal")
 +        self.assertEqual(cli._app.current_buffer.cursor_position, len("unsubmitted human draft typed in terminal"))
++
++    def test_queued_voice_stop_is_refused_before_chat(self):
++        """A queued voice control must not be reported as chat admission."""
++        cli = _create_cli(session_id="session-stop")
++        cli._typed_voice_stop = MagicMock(side_effect=lambda text: text == "stop")
++        callback = MagicMock()
++        qm = QueuedMessage(text="stop", expected_session_id="session-stop", on_consumed=callback)
++        cli._pending_input.put(qm)
++        cli._pending_input.put("resume normal work")
++
++        dispatched = []
++
++        def mock_chat(user_input, images=None, voice_input=False):
++            dispatched.append(user_input)
++            cli._should_exit = True
++
++        cli.chat = mock_chat
++        cli._process_loop(cli._app)
++
++        self.assertEqual(dispatched, ["resume normal work"])
++        self.assertEqual(qm.status, "refused")
++        self.assertIn("voice stop control", qm.refusal_reason)
++        callback.assert_called_once_with("refused", "session-stop")
++        cli._typed_voice_stop.assert_any_call("stop")
 +
 +    def test_process_loop_mismatched_session_refused_without_chat_dispatch(self):
 +        """QueuedMessage with mismatched expected session is refused and skipped in _process_loop."""
