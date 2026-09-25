@@ -121,6 +121,38 @@ func TestRestoreSessionResumeRechecksEvidenceAndFencesOldDelivery(t *testing.T) 
 	requireCode(t, err, "STALE_RESTORE")
 }
 
+func TestRestoreVerificationPagesEvidenceBeyondOldCeiling(t *testing.T) {
+	ctx := context.Background()
+	s := restoreTestStore(t)
+	verify, record, _ := restoreVerificationFixture(t, s)
+	_, err := s.pool.Exec(ctx, `INSERT INTO cairn.evidence(evidence_id,repo,body,digest,source,witness,captured_by,sensitivity)
+ SELECT gen_random_uuid(),$1,convert_to('x','UTF8'),sha256(convert_to('x','UTF8')),
+ 'fixture:restore','testimony','fixture:restore','local' FROM generate_series(1,10001)`, record.Scope.Repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.pool.Exec(ctx, `UPDATE cairn.evidence SET digest=decode(repeat('0',64),'hex')
+	 WHERE evidence_id IN (SELECT evidence_id FROM cairn.evidence ORDER BY evidence_id LIMIT 100)
+	 OR evidence_id=(SELECT evidence_id FROM cairn.evidence ORDER BY evidence_id DESC LIMIT 1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad, err := s.VerifyRestore(ctx, verify)
+	if err != nil || bad.Ready || len(bad.Problems) != 101 || !strings.HasPrefix(bad.Problems[0], "EVIDENCE_DIVERGENCE_UNMARKED:") || bad.Problems[100] != "EVIDENCE_DIVERGENCE_UNMARKED_ADDITIONAL:1" {
+		t.Fatalf("large evidence set hid divergence: %+v %v", bad, err)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE cairn.evidence SET digest=sha256(body) WHERE digest=decode(repeat('0',64),'hex')`); err != nil {
+		t.Fatal(err)
+	}
+	ready, err := s.VerifyRestore(ctx, verify)
+	if err != nil || !ready.Ready {
+		t.Fatalf("large verified evidence set refused restore: %+v %v", ready, err)
+	}
+	if _, err = s.ResumeRestore(ctx, ResumeRestoreRequest{uuid.NewString(), verify, "local-restore/1", "Resume after complete paged evidence verification"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRestoreSessionCannotWaiveUnknownMissingAudit(t *testing.T) {
 	ctx := context.Background()
 	s := restoreTestStore(t)

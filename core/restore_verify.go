@@ -136,31 +136,51 @@ func (s *Store) verifyRestore(ctx context.Context, tx pgx.Tx, req VerifyRestoreR
 	}
 	// Inline evidence has actual bytes; validate them rather than treating a
 	// stored digest/state as an observation. Divergence must be marked first.
-	rows, err := tx.Query(ctx, `SELECT evidence_id::text,body,digest,state FROM cairn.evidence ORDER BY evidence_id LIMIT 10001`)
-	if err != nil {
-		return result, err
-	}
-	count := 0
-	for rows.Next() {
-		var id, state string
-		var body, digest []byte
-		if err = rows.Scan(&id, &body, &digest, &state); err != nil {
-			rows.Close()
+	// The repeatable-read snapshot stays fixed across keyset pages. Keep both
+	// scanned bytes and operator-facing problem details bounded per page.
+	after := ""
+	divergences := 0
+	for {
+		query := `SELECT evidence_id::text,body,digest,state FROM cairn.evidence ORDER BY evidence_id LIMIT 256`
+		var args []any
+		if after != "" {
+			query = `SELECT evidence_id::text,body,digest,state FROM cairn.evidence
+ WHERE evidence_id > $1::uuid ORDER BY evidence_id LIMIT 256`
+			args = append(args, after)
+		}
+		rows, err := tx.Query(ctx, query, args...)
+		if err != nil {
 			return result, err
 		}
-		count++
-		actual := sha256.Sum256(body)
-		if state == "resolvable" && !bytes.Equal(actual[:], digest) {
-			result.Problems = append(result.Problems, "EVIDENCE_DIVERGENCE_UNMARKED:"+id)
+		count := 0
+		for rows.Next() {
+			var id, state string
+			var body, digest []byte
+			if err = rows.Scan(&id, &body, &digest, &state); err != nil {
+				rows.Close()
+				return result, err
+			}
+			count++
+			after = id
+			actual := sha256.Sum256(body)
+			if state == "resolvable" && !bytes.Equal(actual[:], digest) {
+				divergences++
+				if divergences <= 100 {
+					result.Problems = append(result.Problems, "EVIDENCE_DIVERGENCE_UNMARKED:"+id)
+				}
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return result, err
+		}
+		if count < 256 {
+			break
 		}
 	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return result, err
-	}
-	if count > 10000 {
-		return result, failure("BUDGET_REFUSED", "restore evidence verification exceeds 10000 objects")
+	if divergences > 100 {
+		result.Problems = append(result.Problems, fmt.Sprintf("EVIDENCE_DIVERGENCE_UNMARKED_ADDITIONAL:%d", divergences-100))
 	}
 	checkpoint, err := verifyCheckpoint(ctx, tx, req.Checkpoint)
 	if err != nil {

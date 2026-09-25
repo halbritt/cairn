@@ -89,6 +89,10 @@ Verification checks migration membership/checksums, current version/class links,
 current and historical authority correspondence, grant parent/depth/capability/
 scope/expiry and revocation state, B evidence references, inline evidence bytes,
 known deletion exclusions, external checkpoint metadata and recovery expectations.
+Evidence bytes are scanned in bounded pages within one verification snapshot;
+there is no fixed evidence-object count ceiling. For widespread unmarked divergence,
+the report names the first 100 objects and counts the rest while still checking
+every object.
 Unmarked divergent evidence refuses; `check-evidence` records the actual observed
 state and invalidates affected previews. The supplied fixtures must reproduce
 their retained semantic seals through historical compilation.
