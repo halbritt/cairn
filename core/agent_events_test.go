@@ -58,6 +58,33 @@ func TestAgentEventsCompletionRollbackAndConcurrentCompletion(t *testing.T) {
 	}
 }
 
+func TestCompleteEventDefaultsResultToOwnedEventRepository(t *testing.T) {
+	ctx := context.Background()
+	a, b, r, dest := eventFixture(t)
+	publishFixture(t, a, b, r, dest)
+	unscoped := testStore(t, Channel{Principal: b.channel.Principal})
+	next, err := unscoped.NextEvent(ctx, NextEventRequest{Repo: r.Scope.Repo}, dest)
+	if err != nil || next.Delivery == nil {
+		t.Fatalf("claim from explicit event repository: %+v %v", next, err)
+	}
+	draft := projectNote(r.Scope.Repo)
+	draft.Scope.Repo = ""
+	draft.Sensitivity = "shareable"
+	req := CompleteEventRequest{RequestID: uuid.NewString(), DeliveryID: next.Delivery.DeliveryID, LeaseID: next.Delivery.LeaseID, Disposition: "handled", Draft: &draft}
+	completed, err := unscoped.CompleteEvent(ctx, req, dest)
+	if err != nil || completed.Result == nil {
+		t.Fatalf("complete with omitted draft repository: %+v %v", completed, err)
+	}
+	result, err := unscoped.Get(ctx, completed.Result.RecordID)
+	if err != nil || result.Scope.Repo != r.Scope.Repo {
+		t.Fatalf("result repository: %+v %v", result, err)
+	}
+	retried, err := unscoped.CompleteEvent(ctx, req, dest)
+	if err != nil || retried.Result == nil || *retried.Result != *completed.Result {
+		t.Fatalf("completion retry changed result: %+v %v", retried, err)
+	}
+}
+
 func TestAgentEventsForgettingAndSubscriptionPages(t *testing.T) {
 	ctx := context.Background()
 	a, b, r, dest := eventFixture(t)

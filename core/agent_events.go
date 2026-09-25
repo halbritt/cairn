@@ -641,9 +641,6 @@ func (s *Store) CompleteEvent(ctx context.Context, req CompleteEventRequest, des
 	if req.Draft != nil {
 		draft := *req.Draft
 		req.Draft = &draft
-		if req.Draft.Scope.Repo == "" {
-			req.Draft.Scope.Repo = s.channel.Repo
-		}
 		if req.Disposition != "handled" {
 			return AgentDelivery{}, failure("INVALID_REQUEST", "only handled events can create results")
 		}
@@ -652,9 +649,6 @@ func (s *Store) CompleteEvent(ctx context.Context, req CompleteEventRequest, des
 		}
 		if req.Draft.Sensitivity != "local" && req.Draft.Sensitivity != "shareable" {
 			return AgentDelivery{}, failure("INVALID_REQUEST", "invalid result sensitivity")
-		}
-		if err := req.Draft.validate(); err != nil {
-			return AgentDelivery{}, err
 		}
 	}
 	return mutate(ctx, s, "event-complete", req.RequestID, req, func(tx pgx.Tx) (AgentDelivery, error) {
@@ -668,6 +662,12 @@ func (s *Store) CompleteEvent(ctx context.Context, req CompleteEventRequest, des
 		var resultID *string
 		var resultVersion *int
 		if req.Draft != nil {
+			if req.Draft.Scope.Repo == "" {
+				req.Draft.Scope.Repo = d.Event.Repo
+			}
+			if err = req.Draft.validate(); err != nil {
+				return d, err
+			}
 			if req.Draft.Scope.Repo != d.Event.Repo {
 				return d, failure("AUTHORITY_DENIED", "result must use the event collection")
 			}
