@@ -40,7 +40,11 @@ func exportRecovery(ctx context.Context, store *core.Store, path string) (any, e
 
 // Exports are immutable files. A later capture needs a new path so an older
 // database cannot silently overwrite the separately retained expectation.
-func writeRecoveryFile(path string, body []byte) (err error) {
+func writeRecoveryFile(path string, body []byte) error {
+	return writeRecoveryFileWith(path, body, (*os.File).Write)
+}
+
+func writeRecoveryFileWith(path string, body []byte, write func(*os.File, []byte) (int, error)) (err error) {
 	directory, err := os.OpenRoot(filepath.Dir(path))
 	if err != nil {
 		return err
@@ -51,18 +55,30 @@ func writeRecoveryFile(path string, body []byte) (err error) {
 		return err
 	}
 	defer func() { err = errors.Join(err, parent.Close()) }()
-	file, err := directory.OpenFile(filepath.Base(path), os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
+	name := filepath.Base(path)
+	file, err := directory.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, file.Close()) }()
-	if _, err = file.Write(body); err != nil {
-		return err
+	written, writeErr := write(file, body)
+	if writeErr == nil && written != len(body) {
+		writeErr = io.ErrShortWrite
 	}
-	if err = file.Sync(); err != nil {
-		return err
+	if writeErr == nil {
+		writeErr = file.Sync()
 	}
-	return parent.Sync()
+	writeErr = errors.Join(writeErr, file.Close())
+	if writeErr == nil {
+		writeErr = parent.Sync()
+	}
+	if writeErr != nil {
+		cleanupErr := directory.Remove(name)
+		if cleanupErr == nil {
+			cleanupErr = parent.Sync()
+		}
+		return errors.Join(writeErr, cleanupErr)
+	}
+	return nil
 }
 
 func readRecoveryFile(path string) (record core.RecoveryRecord, err error) {

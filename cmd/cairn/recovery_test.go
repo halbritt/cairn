@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -56,5 +57,35 @@ func TestRecoveryFileRejectsUnsafeInputsAndNeverOverwrites(t *testing.T) {
 	}
 	if _, err := readRecoveryFile(path); err == nil {
 		t.Fatal("accepted oversized recovery record")
+	}
+}
+
+func TestRecoveryExportRemovesPartialFileBeforeExactPathRetry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "recovery.json")
+	content := []byte("complete recovery record")
+	failure := errors.New("injected partial write")
+	err := writeRecoveryFileWith(path, content, func(file *os.File, body []byte) (int, error) {
+		written, err := file.Write(body[:5])
+		return written, errors.Join(err, failure)
+	})
+	if !errors.Is(err, failure) {
+		t.Fatalf("lost write failure: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("partial export still occupies exact path: %v", err)
+	}
+	if err := writeRecoveryFile(path, content); err != nil {
+		t.Fatalf("exact-path retry: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != string(content) {
+		t.Fatalf("retry bytes: %q %v", got, err)
+	}
+	if err := writeRecoveryFile(path, []byte("replacement")); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("successful export was replaceable: %v", err)
+	}
+	got, err = os.ReadFile(path)
+	if err != nil || string(got) != string(content) {
+		t.Fatalf("immutable export changed: %q %v", got, err)
 	}
 }

@@ -15,6 +15,8 @@ cairn recovery-export /private/recovery/after-withdrawals-001.json
 
 The parent directory must already exist. The command creates a new mode-0600
 file, syncs it and its directory, and refuses to overwrite an existing path.
+If writing or syncing fails after creation, it removes the incomplete file and
+syncs the directory; any cleanup failure is reported with the original error.
 Exports have a content checksum, not a signature. The operator must retain the
 latest trusted file independently of the database being restored. Creating an
 export from the restored older database does not provide that expectation.
