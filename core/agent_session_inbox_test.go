@@ -49,11 +49,15 @@ func TestNativeWakeClaimBindsDeliveryAndTurnAcrossReadinessRace(t *testing.T) {
 	changed.NativeTurnID = "native-turn-two"
 	_, err = receiver.ClaimSessionInbox(ctx, changed, dest)
 	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
+	changed = claim
+	changed.TurnExclusive = true
+	_, err = receiver.ClaimSessionInbox(ctx, changed, dest)
+	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
 	empty, err = receiver.ClaimSessionInbox(ctx, claim, dest)
 	if err != nil || empty.Attempt != nil {
 		t.Fatalf("lost empty reply changed ownership: %+v %v", empty, err)
 	}
-	claim.RequestID, claim.DeliveryID, claim.NativeTurnID = uuid.NewString(), deliveries[1], "native-turn-two"
+	claim.RequestID, claim.DeliveryID, claim.NativeTurnID, claim.TurnExclusive = uuid.NewString(), deliveries[1], "native-turn-two", true
 	got, err := receiver.ClaimSessionInbox(ctx, claim, dest)
 	if err != nil || got.Attempt == nil || got.Attempt.NativeTurnID != claim.NativeTurnID || got.Attempt.Delivery.DeliveryID != deliveries[1] {
 		t.Fatalf("bound claim: %+v %v", got, err)
@@ -62,6 +66,10 @@ func TestNativeWakeClaimBindsDeliveryAndTurnAcrossReadinessRace(t *testing.T) {
 	if err != nil || again.Attempt == nil || again.Attempt.NativeTurnID != claim.NativeTurnID || again.Attempt.ID != got.Attempt.ID {
 		t.Fatalf("bound retry: %+v %v", again, err)
 	}
+	changed = claim
+	changed.TurnExclusive = false
+	_, err = receiver.ClaimSessionInbox(ctx, changed, dest)
+	requireCode(t, err, "IDEMPOTENCY_CONFLICT")
 	claim.RequestID, claim.DeliveryID = uuid.NewString(), ""
 	_, err = receiver.ClaimSessionInbox(ctx, claim, dest)
 	requireCode(t, err, "INVALID_REQUEST")

@@ -172,13 +172,14 @@ func (s *Store) ClaimSessionInbox(ctx context.Context, req SessionInboxClaim, de
 	}
 	var owner, agentID, executionID, requestedDelivery, nativeTurn string
 	var prior *string
-	err = tx.QueryRow(ctx, `SELECT owner,agent_id::text,execution_id::text,attempt_id::text,COALESCE(requested_delivery_id::text,''),native_turn_id FROM cairn.agent_session_poll WHERE request_id=$1`, req.RequestID).Scan(&owner, &agentID, &executionID, &prior, &requestedDelivery, &nativeTurn)
+	var priorExclusive *bool
+	err = tx.QueryRow(ctx, `SELECT owner,agent_id::text,execution_id::text,attempt_id::text,COALESCE(requested_delivery_id::text,''),native_turn_id,turn_exclusive FROM cairn.agent_session_poll WHERE request_id=$1`, req.RequestID).Scan(&owner, &agentID, &executionID, &prior, &requestedDelivery, &nativeTurn, &priorExclusive)
 	if err == nil {
 		if owner != s.channel.Principal || agentID != req.Session.AgentID || executionID != req.Session.ExecutionID {
 			return out, failure("IDEMPOTENCY_CONFLICT", "native poll UUID already belongs to another execution")
 		}
-		if requestedDelivery != req.DeliveryID || nativeTurn != req.NativeTurnID {
-			return out, failure("IDEMPOTENCY_CONFLICT", "native poll UUID already binds another delivery or turn")
+		if requestedDelivery != req.DeliveryID || nativeTurn != req.NativeTurnID || priorExclusive == nil || *priorExclusive != req.TurnExclusive {
+			return out, failure("IDEMPOTENCY_CONFLICT", "native poll UUID already binds another delivery, turn or exclusivity attestation")
 		}
 		if prior == nil {
 			return out, tx.Commit(ctx)
@@ -197,7 +198,7 @@ func (s *Store) ClaimSessionInbox(ctx context.Context, req SessionInboxClaim, de
 		if attempt != nil {
 			id = &attempt.ID
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_poll(request_id,agent_id,execution_id,attempt_id,requested_delivery_id,native_turn_id) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,$6)`, req.RequestID, req.Session.AgentID, req.Session.ExecutionID, id, req.DeliveryID, req.NativeTurnID); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO cairn.agent_session_poll(request_id,agent_id,execution_id,attempt_id,requested_delivery_id,native_turn_id,turn_exclusive) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,$6,$7)`, req.RequestID, req.Session.AgentID, req.Session.ExecutionID, id, req.DeliveryID, req.NativeTurnID, req.TurnExclusive); err != nil {
 			return out, err
 		}
 		return SessionInboxResult{attempt}, tx.Commit(ctx)
