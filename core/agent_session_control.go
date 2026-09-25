@@ -151,12 +151,12 @@ func (s *Store) CaptureSessionTools(ctx context.Context, req SessionToolCapture,
 				return attempt, err
 			}
 			if tag.RowsAffected() == 0 {
-				var processID, stopState string
-				if err = tx.QueryRow(ctx, `SELECT process_id,stop_state FROM cairn.agent_session_tool WHERE attempt_id=$1 AND item_id=$2`, req.AttemptID, item.ItemID).Scan(&processID, &stopState); err != nil {
+				var processID string
+				if err = tx.QueryRow(ctx, `SELECT process_id FROM cairn.agent_session_tool WHERE attempt_id=$1 AND item_id=$2`, req.AttemptID, item.ItemID).Scan(&processID); err != nil {
 					return attempt, err
 				}
 				if processID != item.ProcessID {
-					return attempt, failure("IDEMPOTENCY_CONFLICT", "tool item already holds a different process handle; report its stop state before recapturing")
+					return attempt, failure("IDEMPOTENCY_CONFLICT", "tool item already holds a different process handle; use a new item ID for the restarted process")
 				}
 			}
 		}
