@@ -17,6 +17,33 @@ class QueueUnavailable(QueueError):
 
 BUSY_CODE = -32600
 BUSY_MESSAGE = 'thread already has an active or pending turn'
+MAX_PEER_BYTES = 1024 * 1024
+
+
+class _BoundedPeerSocket:
+    """Limit reads by the supported preconnected-socket WebSocket path.
+
+    The WebSocket client may assemble a complete frame before recv() returns.
+    Capping its underlying socket reads stops that assembly at the byte budget,
+    including fragmented frames and unsolicited server notifications.
+    """
+    def __init__(self, transport):
+        self.transport = transport
+        self.received = 0
+
+    def recv(self, size, *args, **kwargs):
+        if self.received >= MAX_PEER_BYTES:
+            raise QueueError('native queue response exceeded byte limit')
+        chunk = self.transport.recv(min(size, MAX_PEER_BYTES + 1 - self.received), *args, **kwargs)
+        self.received += len(chunk)
+        if self.received > MAX_PEER_BYTES:
+            raise QueueError('native queue response exceeded byte limit')
+        return chunk
+
+    def __getattr__(self, name):
+        if name.startswith('recv') or name == 'makefile':
+            raise QueueError('native queue client requested an unbounded socket read')
+        return getattr(self.transport, name)
 
 
 def _busy(error):
@@ -50,12 +77,16 @@ class _Rpc:
                 raise QueueError('native Codex returned an invalid response')
             if 'method' in message:
                 continue  # Server requests are not responses, even when ids collide.
-            if message.get('id') != self.sequence:
+            if type(message.get('id')) is not int or message['id'] != self.sequence:
                 continue
             if 'error' in message:
+                if 'result' in message or not isinstance(message['error'], dict):
+                    raise QueueError('native Codex returned an invalid response')
                 if busy_ok and _busy(message['error']):
                     return None  # An existing turn keeps ownership; queued input waits.
                 raise QueueError(f'native Codex refused {method}')
+            if not isinstance(message.get('result'), dict):
+                raise QueueError('native Codex returned an invalid response')
             return message['result']
 
 
@@ -107,11 +138,14 @@ def _open(endpoint, process, owner='process'):
         peer_start = start if owner == 'process' else int(
             Path(f'/proc/{peer}/stat').read_text().rsplit(')', 1)[1].split()[19])
         identity = dict(pid=peer, start=peer_start, boot=peer_boot)
-        connection = websocket.create_connection('ws://localhost', socket=transport, timeout=4)
+        connection = websocket.create_connection('ws://localhost', socket=_BoundedPeerSocket(transport), timeout=4)
         return connection, websocket, identity
     except QueueUnavailable:
         _discard(transport, connection)
         raise
+    except QueueError as exc:
+        _discard(transport, connection)
+        raise QueueUnavailable('native queue handshake did not complete within byte limit') from exc
     except (OSError, websocket.WebSocketException) as exc:
         _discard(transport, connection)
         raise QueueUnavailable('native queue endpoint is unavailable') from exc

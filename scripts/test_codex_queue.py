@@ -36,7 +36,7 @@ class NativeQueue(unittest.TestCase):
         self.threads = []
 
     def serve(self, loaded=('native-one',), add='confirm', start='confirm', malformed_loaded=False,
-              request_collision=False):
+              request_collision=False, oversized_method=None, malformed_method=None):
         """Serve exactly one connection with the requested fixture behavior.
 
         add: 'confirm' or 'refuse' (no acknowledgment; the add may have committed).
@@ -52,7 +52,12 @@ class NativeQueue(unittest.TestCase):
             return result
 
         def frame(body):
-            header = bytes([129, len(body)]) if len(body) < 126 else bytes([129, 126])+struct.pack('!H', len(body))
+            if len(body) < 126:
+                header = bytes([129, len(body)])
+            elif len(body) < 65536:
+                header = bytes([129, 126]) + struct.pack('!H', len(body))
+            else:
+                header = bytes([129, 127]) + struct.pack('!Q', len(body))
             return header+body
 
         def refused(kind, request):
@@ -97,6 +102,10 @@ class NativeQueue(unittest.TestCase):
                         method = request['method']
                         if method == 'initialized':
                             continue
+                        if method == oversized_method:
+                            connection.sendall(frame(json.dumps({'id': request['id'], 'result':
+                                {'padding': 'x' * self.queue.MAX_PEER_BYTES}}).encode()))
+                            return
                         if method == 'initialize':
                             result = {'userAgent': 'fixture'}
                         elif method == 'thread/loaded/list':
@@ -120,9 +129,14 @@ class NativeQueue(unittest.TestCase):
                             result = {'turn': {'id': 'turn-one', 'status': 'inProgress'}}
                         else:
                             raise AssertionError(method)
+                        if method == malformed_method:
+                            result = []
                         connection.sendall(frame(json.dumps({'id': request['id'], 'result': result}).encode()))
             except EOFError:
                 pass
+            except (BrokenPipeError, ConnectionResetError):
+                if oversized_method is None:
+                    raise
             except Exception as exc:
                 self.errors.append(exc)
         for worker in self.threads:  # One waiter at a time keeps connections ordered.
@@ -223,6 +237,22 @@ class NativeQueue(unittest.TestCase):
         with self.assertRaises(self.queue.QueueUnavailable):
             self.enqueue()
         self.assertNotIn('thread/queue/add', [r['method'] for r in self.requests])
+
+    def test_oversized_response_is_bounded_before_and_after_queue_add(self):
+        self.serve(oversized_method='initialize')
+        with self.assertRaises(self.queue.QueueUnavailable):
+            self.enqueue()
+        self.assertNotIn('thread/queue/add', self.methods())
+        self.serve(oversized_method='thread/queue/add')
+        with self.assertRaisesRegex(self.queue.QueueError, 'byte limit'):
+            self.enqueue()
+        self.assertEqual(self.methods().count('thread/queue/add'), 1)
+
+    def test_malformed_queue_add_result_remains_uncertain(self):
+        self.serve(malformed_method='thread/queue/add')
+        with self.assertRaisesRegex(self.queue.QueueError, 'invalid response'):
+            self.enqueue()
+        self.assertEqual(self.methods().count('thread/queue/add'), 1)
 
     def test_shared_app_server_route_verifies_by_user_and_tui_identity(self):
         # A TUI sharing an app-server via --remote is not the socket peer;
