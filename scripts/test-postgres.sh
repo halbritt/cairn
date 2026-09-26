@@ -43,7 +43,11 @@ go run ./cmd/cairn migrate
 go run ./cmd/cairn create < fixtures/note.json
 go build -o "$test_root/cairn" ./cmd/cairn
 python3 scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
-python3 scripts/check_multi_machine.py "$test_root/cairn" "$test_root/multi-machine-home"
+"$pg_bin/createdb" -h "$test_root/socket" cairn_multi_machine
+multi_machine_dsn="host=$test_root/socket dbname=cairn_multi_machine sslmode=disable"
+CAIRN_DATABASE_URL="$multi_machine_dsn" "$test_root/cairn" migrate
+CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_TEST_DATABASE_URL="$multi_machine_dsn" CAIRN_DATABASE_URL="$multi_machine_dsn" \
+    python3 scripts/check_multi_machine.py "$test_root/cairn" "$test_root/multi-machine-home"
 python3 scripts/check_native_cancel.py "$test_root/cairn" "$test_root/native-cancel-home"
 if [[ -n "${XDG_RUNTIME_DIR:-}" ]] && systemctl --user show-environment >/dev/null 2>&1; then
     python3 scripts/check_wakeups.py "$test_root/cairn" "$test_root/wake-home"
