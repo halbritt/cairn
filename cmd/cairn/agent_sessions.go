@@ -24,7 +24,7 @@ No additional credentials are created. UUIDs select registered sessions/inboxes.
   agents heartbeat --agent-id UUID --execution-id UUID
   agents leave --agent-id UUID --execution-id UUID
   agents list [--harness NAME] [--project NAME] [--model MODEL] [--workspace PATH]
-    [--state idle|busy] [--delivery-mode MODE] [--agent-id UUID] [--include-offline]
+    [--state idle|busy] [--delivery-mode MODE] [--agent-id UUID] [--machine-id ID] [--include-offline]
     [--repo COLLECTION] [--after ORDINAL] [--limit N]
 
   agents resolve [same selectors as list; no paging/include-offline]
@@ -65,6 +65,7 @@ func agentsCommand(ctx context.Context, args []string) (any, error) {
 	state := f.String("state", "", "idle or busy")
 	mode := f.String("delivery-mode", "", "existing-session or fresh-worker")
 	all := f.Bool("include-offline", false, "include offline and stopped sessions")
+	machine := f.String("machine-id", "", "server-configured machine")
 	after := f.Int64("after", 0, "exclusive ordinal cursor")
 	limit := f.Int("limit", 0, "page size")
 	if err := f.Parse(args[1:]); err != nil {
@@ -82,9 +83,9 @@ func agentsCommand(ctx context.Context, args []string) (any, error) {
 	case "heartbeat", "leave":
 		allowed += "agent-id execution-id "
 	case "resolve":
-		allowed += "repo agent-id harness model project workspace state delivery-mode "
+		allowed += "repo agent-id harness model project workspace state delivery-mode machine-id "
 	case "list":
-		allowed += "repo agent-id harness model project workspace state delivery-mode include-offline after limit "
+		allowed += "repo agent-id harness model project workspace state delivery-mode machine-id include-offline after limit "
 	default:
 		return nil, invalid("agents requires register, context, heartbeat, leave, list or resolve")
 	}
@@ -121,7 +122,7 @@ func agentsCommand(ctx context.Context, args []string) (any, error) {
 		if op == "list" {
 			operation = "agent-directory"
 		}
-		req = core.AgentDirectoryQuery{Repo: *repo, AgentID: *agentID, Harness: *harness, Model: *model, Project: *project, Workspace: *workspace, State: *state, DeliveryMode: *mode, IncludeOffline: *all, After: *after, Limit: *limit}
+		req = core.AgentDirectoryQuery{Repo: *repo, MachineID: *machine, AgentID: *agentID, Harness: *harness, Model: *model, Project: *project, Workspace: *workspace, State: *state, DeliveryMode: *mode, IncludeOffline: *all, After: *after, Limit: *limit}
 	}
 	path, err := agentProfileToken(*profile, *token)
 	if err != nil {

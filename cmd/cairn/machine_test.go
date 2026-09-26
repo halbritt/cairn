@@ -239,7 +239,7 @@ func TestMachineRotateAndRevoke(t *testing.T) {
 
 func TestValidateIdentitiesRemoteShape(t *testing.T) {
 	entry := func(value configuredIdentity) identityEntry { return identityEntry{value: value} }
-	good := configuredIdentity{TokenSHA256: "a", Principal: "machine:box-b/agent", Repo: testCollection, Role: "agent", Destination: "hosted", Remote: true, MachineID: "box-b"}
+	good := configuredIdentity{TokenSHA256: tokenDigest("a"), Principal: "machine:box-b/agent", Repo: testCollection, Role: "agent", Destination: "hosted", Remote: true, MachineID: "box-b"}
 	if err := validateIdentities([]identityEntry{entry(good)}); err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestValidateIdentitiesRemoteShape(t *testing.T) {
 			t.Fatalf("%s accepted: %v", name, err)
 		}
 	}
-	reserved := configuredIdentity{TokenSHA256: "b", Principal: "machine:box-b/agent", Repo: testCollection, Role: "agent", Destination: "hosted"}
+	reserved := configuredIdentity{TokenSHA256: tokenDigest("b"), Principal: "machine:box-b/agent", Repo: testCollection, Role: "agent", Destination: "hosted"}
 	if err := validateIdentities([]identityEntry{entry(reserved)}); core.Code(err) != "INVALID_REQUEST" {
 		t.Fatalf("local machine: principal accepted: %v", err)
 	}

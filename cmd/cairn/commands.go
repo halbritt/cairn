@@ -21,6 +21,7 @@ const help = `Cairn: local memory for agents
 Everyday commands:
   agents --help (live session identity, presence and directory)
   machine --help (join another host to this Cairn: provision, enroll, rotate, revoke)
+  relay --upstream https://HOST[:PORT] [--socket PATH] (joining host's socket to the central API; use --help)
   wake --help (automatic request workers)
   publish --help | inbox --help (durable agent notifications)
   watch --help (read-only inbox arrivals with a saved cursor)
@@ -74,7 +75,7 @@ JSON commands (read one request from stdin):
 Administration: recovery-export FILE | recovery-inspect FILE
   recovery-reapply --request-id UUID --expected-sha256 DIGEST --reason TEXT FILE
   begin-restore | restore-status | rebuild-restore | verify-restore | resume-restore
-  migrate | fence-restore < request.json | invalidate-handles < request.json | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH]
+  migrate | fence-restore < request.json | invalidate-handles < request.json | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH] [--machine-id ID] [--listen ADDR (--tls-cert FILE --tls-key FILE | --tls-terminated-proxy)]
 Default store: ~/.local/share/cairn/socket, database cairn.
 Override with CAIRN_DATABASE_URL. Initialize with scripts/local-store.sh start.
 CLI is trusted operator administration. Agents use a host-established core Channel.
@@ -137,6 +138,12 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	}
 	if args[0] == "machine" {
 		return machineCommand(ctx, args[1:])
+	}
+	if args[0] == "relay" {
+		if len(args) == 2 && (args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
+			return commandHelp(relayHelp), nil
+		}
+		return nil, relayRemote(ctx, args[1:])
 	}
 	if args[0] == "opencode-install" {
 		executable, err := os.Executable()

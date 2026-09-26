@@ -7,11 +7,13 @@ joining machine keep using the socket and token files they already use; they
 never hold database credentials. The design and its accepted limits are in
 [the proposal](plans/multi-machine-cairn.md).
 
-Status: trial implementation. Enrollment and the central identity commands
-exist. The network listener and relay are agent-201's transport slice; this page
-names their flags as agreed and must be rechecked when that slice lands. No
-remote worker pools, conversation migration, offline memory, repository sync or
-automatic placement exist.
+Status: trial implementation, not yet deployed or accepted. The enrollment
+commands, the network listener (`cairn serve --listen`) and the relay exist. An
+isolated end-to-end test covers provisioning, the TLS listener, the relay,
+enrollment, shared notes, directory attribution, remote limits and revocation.
+Real harness delivery between two hosts is still unproven. No remote worker
+pools, conversation migration, offline memory, repository sync or automatic
+placement exist.
 
 ## What joining installs
 
@@ -44,13 +46,17 @@ shared files. Operator commands that open a local database are unaffected.
   loopback and let Tailscale terminate TLS:
 
   ```sh
-  # central host; the listener flags belong to the transport slice
+  # central host: add these flags to cairn-api.service's ExecStart
   cairn serve --listen 127.0.0.1:8787 --tls-terminated-proxy
   tailscale serve --bg --https=8443 http://127.0.0.1:8787
   tailscale serve status
   ```
 
-  The upstream is then `https://HOST.TAILNET.ts.net:8443`. Any local account on
+  Without a proxy, `--listen ADDR --tls-cert FILE --tls-key FILE` serves TLS
+  directly. Plain HTTP is accepted only on a literal loopback address with
+  `--tls-terminated-proxy`. `--machine-id` (default: the short hostname) names
+  the central host's own sessions in the directory. The upstream is then
+  `https://HOST.TAILNET.ts.net:8443`. Any local account on
   the central host can reach the loopback port, but every call still needs a
   bearer token, and the network listener admits only remote profiles.
 - systemd user services on the joining machine. Enable lingering
@@ -122,8 +128,13 @@ cairn claude-config --socket ~/.local/share/cairn/api.sock \
 Remote profiles use the hosted destination: local-only notes are not returned
 to them. The central API also refuses operations outside the remote allowlist:
 operator commands, worker and wake operations, managed-context registration,
-remote process wrapping, and cancellation capture. Directory output attributes
-each session to its server-configured machine.
+remote process wrapping, cancellation capture, exclusive turns, and use/outcome
+recording (`delivery`, `outcome`, `assess-run`, reports). Lifecycle hooks that
+record uses and outcomes therefore get `AUTHORITY_DENIED` on a joining machine.
+Memory search, notes, the directory, native inbox delivery, completion and
+replies work. Directory output attributes each session to its server-configured
+machine. Use `cairn agents list --machine-id ID` or `agents resolve --machine-id
+ID` to select agents on one host.
 
 ## Rotate, revoke, leave
 

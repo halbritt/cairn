@@ -25,6 +25,7 @@ import (
 
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
+	"github.com/halbritt/cairn/localapi"
 )
 
 const machineHelp = `Cairn machines (one central API shared by several hosts)
@@ -358,7 +359,7 @@ func machinePrincipal(machine, role string) string { return "machine:" + machine
 
 func normalizeUpstream(value string) (string, error) {
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+	if err != nil || localapi.ValidateUpstream(value) != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", invalid("--upstream must be an https://HOST[:PORT] origin without path, query or credentials")
 	}
 	return "https://" + parsed.Host, nil
@@ -425,8 +426,8 @@ func readIdentities(path string) ([]identityEntry, error) {
 	return entries, validateIdentities(entries)
 }
 
-// validateIdentities mirrors the API's startup checks plus the remote principal
-// shape, so a change is refused here rather than by a failed restart.
+// validateIdentities adds operator-facing explanations to the API's own
+// startup validation, so a change is refused here rather than by a failed restart.
 func validateIdentities(entries []identityEntry) error {
 	if len(entries) == 0 {
 		return invalid("identity configuration would be empty")
@@ -435,6 +436,7 @@ func validateIdentities(entries []identityEntry) error {
 		return invalid(fmt.Sprintf("the API accepts at most %d identities; revoke unused machines or profiles first", maxIdentities))
 	}
 	principals, digests := map[string]bool{}, map[string]bool{}
+	identities := make([]localapi.Identity, 0, len(entries))
 	for _, entry := range entries {
 		identity := entry.value
 		if principals[identity.Principal] {
@@ -453,6 +455,10 @@ func validateIdentities(entries []identityEntry) error {
 		if !identity.Remote && strings.HasPrefix(identity.Principal, "machine:") {
 			return invalid("machine:* principals are reserved for remote identities: " + identity.Principal)
 		}
+		identities = append(identities, localapi.Identity{TokenSHA256: identity.TokenSHA256, Principal: identity.Principal, Repo: identity.Repo, Role: identity.Role, Destination: identity.Destination, Remote: identity.Remote, MachineID: identity.MachineID})
+	}
+	if err := localapi.ValidateIdentities(identities); err != nil {
+		return invalid("identity configuration would not load: " + err.Error())
 	}
 	return nil
 }
