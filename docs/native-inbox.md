@@ -183,6 +183,16 @@ any `ending` marker. It retries on the next hook or watcher cycle. A turn that
 ends during a partition is remembered (`inbox_turn_ended`). After the replay
 settles, it is reconciled as `turn_ended`.
 
+Journals outlive their attempt. Each context adds its attempt to the
+conversation's persisted `inbox_journals` list before the agent can act. For
+example, the watcher may commit a completion and reconcile the attempt while the
+agent is still running; a reply the agent journals afterwards is still replayed
+under its original execution and request UUID. It is never re-claimed or
+rebuilt. Replay happens in every watcher cycle and hook, whether or not an
+attempt is active. An entry leaves the list once nothing in its journal is
+pending and no reply can follow. Presence finish does not leave while any
+journal of the execution is uncertain.
+
 A saved reconciliation request keeps its UUID and reason until the store
 answers. Only a definitive `DELIVERY_ACTIVE` refusal, which proves nothing
 committed, lets a different reason use a new UUID. A retried `turn_ended` that

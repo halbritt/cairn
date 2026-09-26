@@ -220,6 +220,98 @@ class InboxRecovery(unittest.TestCase):
         self.assertEqual(published[0], published[1])
         self.assertEqual(published[0][-3:], ['--version', '1', RESULT['record_id']])
 
+    def released_with_pending_reply(self):
+        """Root's live sequence: the host commits the completion and reconciles the
+        attempt before the still-running agent journals its reply, which then
+        cannot reach the API from the agent's sandbox."""
+        context = self.context()
+        self.replies({'complete': [LOST]})
+        self.run_context(context['completion'], 'Selected result')
+        self.replies({'complete': [HANDLED], 'session-inbox-reconcile': [dict(ok=True, status='OK', data={})]})
+        coordination.watch_inbox(self.config, self.state, self.path)
+        self.assertNotIn('inbox_intent', self.state)
+        self.assertIn(ATTEMPT, self.state['inbox_journals'])
+        self.replies({'publish': [LOST]})
+        self.run_context([*context['response'], '--version', '1', RESULT['record_id']])
+        self.assertEqual(self.journal()['response']['status'], 'pending')
+        (self.root / 'log.jsonl').unlink()
+        return context
+
+    def assert_reply_replayed(self, context):
+        published = [e['argv'] for e in self.log() if e['operation'] == 'publish']
+        self.assertEqual(len(published), 1)
+        argv = published[0]
+        # The exact journaled request: original execution, original request UUID.
+        self.assertEqual(argv[argv.index('--execution-id') + 1], EXECUTION)
+        self.assertEqual(argv[argv.index('--request-id') + 1], context['request_ids']['response'])
+        self.assertEqual(argv[-3:], ['--version', '1', RESULT['record_id']])
+        self.assertEqual(self.journal()['response']['status'], 'committed')
+        operations = [e['operation'] for e in self.log()]
+        self.assertNotIn('session-inbox-claim', operations)
+        self.assertNotIn('session-inbox-reconcile', operations)
+        self.assertNotIn(ATTEMPT, self.state['inbox_journals'])
+
+    def test_reply_journaled_after_reconciliation_is_replayed_by_the_watcher(self):
+        context = self.released_with_pending_reply()
+        self.replies({'publish': [dict(ok=True, status='OK', data={})]})
+        coordination.watch_inbox(self.config, self.state, self.path)
+        self.assert_reply_replayed(context)
+        self.assertNotIn(ATTEMPT, json.loads(self.path.read_text())['inbox_journals'])
+
+    def test_reply_journaled_after_reconciliation_is_replayed_at_stop(self):
+        context = self.released_with_pending_reply()
+        self.replies({'publish': [dict(ok=True, status='OK', data={})]})
+        self.state['delivered_since_idle'] = True
+        with unittest.mock.patch.object(coordination, 'recover_inbox'):
+            coordination.inbox_context(self.config, self.state, self.path,
+                                       dict(event='Stop', phase='idle', native_turn_id=''))
+        self.assert_reply_replayed(context)
+
+    def test_reply_journal_survives_a_watcher_restart_and_older_state(self):
+        context = self.released_with_pending_reply()
+        # A restarted watcher reads only the persisted state and journal files.
+        self.state = json.loads(self.path.read_text())
+        self.assertIn(ATTEMPT, self.state['inbox_journals'])
+        # A state written before the list existed seeds it from its journals,
+        # including a journal whose session was only named in its argv.
+        self.state.pop('inbox_journals')
+        target = coordination.intent_path(self.config['state_dir'], ATTEMPT)
+        journal = json.loads(target.read_text())
+        journal.pop('session')
+        target.write_text(json.dumps(journal))
+        self.replies({'publish': [LOST, dict(ok=True, status='OK', data={})]})
+        coordination.watch_inbox(self.config, self.state, self.path)
+        self.assertEqual(self.state['inbox_journals'], [ATTEMPT])
+        coordination.watch_inbox(self.config, self.state, self.path)
+        self.assertEqual(len([e for e in self.log() if e['operation'] == 'publish']), 2)
+        self.assertEqual(self.journal()['response']['status'], 'committed')
+        self.assertEqual(self.state['inbox_journals'], [])
+
+    def test_leave_waits_for_a_reply_journaled_after_reconciliation(self):
+        self.released_with_pending_reply()
+        self.replies({'publish': [LOST]})
+        with self.assertRaises(coordination.CoordinationError) as caught:
+            coordination.finish_presence(self.config, self.state, self.path)
+        self.assertEqual(caught.exception.code, 'INTENT_PENDING')
+        self.assertNotIn('agent-leave', [e['operation'] for e in self.log()])
+        self.replies({'publish': [dict(ok=True, status='OK', data={})], 'agent-leave': [dict(ok=True, status='OK', data={})]})
+        coordination.finish_presence(self.config, self.state, self.path)
+        operations = [e['operation'] for e in self.log()]
+        self.assertLess(len(operations) - 1 - operations[::-1].index('publish'), operations.index('agent-leave'))
+        self.assertTrue(self.state['retired'])
+
+    def test_journals_of_other_conversations_are_not_replayed(self):
+        other = coordination.intent_path(self.config['state_dir'], 'b1a2b3c4-d5e6-4f70-8a91-b2c3d4e5f607')
+        coordination.write_state(other, dict(schema='cairn.inbox-intent/1', attempt_id=other.stem, kind='request',
+            session=dict(agent_id='0a5d7b51-6f47-4e5e-9a55-2b0d6b3f2a11', execution_id=EXECUTION),
+            completion=dict(kind='complete', argv=[str(self.cairn), 'complete'], input='', status='pending')))
+        self.state.pop('inbox_journals', None)
+        self.replies({'session-inbox-reconcile': [dict(ok=False, status='DELIVERY_ACTIVE')],
+                      'event-renew': [dict(ok=True, status='OK', data=self.state['inbox_attempt']['delivery'])]})
+        coordination.watch_inbox(self.config, self.state, self.path)
+        self.assertEqual(self.state['inbox_journals'], [ATTEMPT])
+        self.assertNotIn('complete', [e['operation'] for e in self.log()])
+
     def test_leave_waits_for_an_uncertain_command(self):
         context = self.context()
         self.replies({'complete': [LOST]})

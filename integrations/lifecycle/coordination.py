@@ -1371,7 +1371,8 @@ def inbox_command(argv):
     name = INTENT_SLOTS[args.kind]
     with intent_lock(target, 30):
         journal = json.loads(target.read_text()) if target.exists() else dict(
-            schema='cairn.inbox-intent/1', attempt_id=context['attempt_id'], delivery_id=context['delivery_id'])
+            schema='cairn.inbox-intent/1', attempt_id=context['attempt_id'], delivery_id=context['delivery_id'],
+            kind=context['kind'], session=dict(agent_id=context['agent_id'], execution_id=context['execution_id']))
         if args.kind == 'respond':
             # A reply cites this attempt's own committed result, never another record.
             completion = journal.get('completion') or {}
@@ -1407,40 +1408,97 @@ def inbox_command(argv):
     return result.returncode
 
 
-def flush_inbox_intents(config, state):
-    """Replay journaled inbox commands before any reconciliation or leave.
+def session_journals(config, state):
+    """Attempt IDs whose journals this conversation must settle.
 
-    Returns False while an outcome is still uncertain or a command is running;
-    the caller then keeps the hold and retries later instead of recording a
-    ready result as failed.
+    The list is written with each native context, before the agent can run a
+    journaled command, and it outlives the attempt's reconciliation: a reply
+    journaled after the hold was released still belongs to this execution.
+    States from before the list existed are seeded once from the journal files.
     """
+    if 'inbox_journals' not in state:
+        seeded = []
+        directory = Path(config['state_dir']) / 'intents'
+        agent_id = state.get('agent', {}).get('agent_id')
+        for target in sorted(directory.glob('*.json')) if agent_id else ():
+            try:
+                journal = json.loads(target.read_text())
+            except (OSError, ValueError):
+                continue
+            slots = [journal.get(name) or {} for name in ('completion', 'response')]
+            owner = (journal.get('session') or {}).get('agent_id')
+            if owner == agent_id or (owner is None and any(agent_id in slot.get('argv', []) for slot in slots)):
+                seeded.append(journal['attempt_id'])
+        state['inbox_journals'] = seeded
     attempt = state.get('inbox_attempt')
-    if not attempt or not config.get('state_dir'):
-        return True
-    target = intent_path(config['state_dir'], attempt['attempt_id'])
+    if attempt and attempt['attempt_id'] not in state['inbox_journals']:
+        state['inbox_journals'].append(attempt['attempt_id'])
+    return state['inbox_journals']
+
+
+def flush_journal(config, attempt_id):
+    """Replay one attempt's pending journaled commands in order.
+
+    Returns the names of slots still pending, plus 'reply_possible' while a
+    committed request result may still get its reply and 'unused' before any
+    command was journaled, or None while a command for this attempt is running. A completion that has not committed never lets its
+    reply go out, since the reply requires the committed result.
+    """
+    target = intent_path(config['state_dir'], attempt_id)
     if not target.exists():
-        return True
+        return {'unused'}  # The agent may still journal a command for it.
     try:
         with intent_lock(target, 0):
             journal = json.loads(target.read_text())
+            pending = set()
             for name in ('completion', 'response'):
                 slot = journal.get(name)
                 if not slot or slot['status'] != 'pending':
                     continue
+                if name == 'response' and 'completion' in pending:
+                    pending.add(name)
+                    continue
                 send_intent(slot, 10)
                 write_state(target, journal)
                 if slot['status'] == 'pending':
+                    pending.add(name)
                     print(f"Cairn presence {config['binding']}: journaled {slot['kind']} for attempt "
-                          f"{attempt['attempt_id']} is still uncertain ({slot['code']}); the hold remains", file=sys.stderr)
-                    return False
-                if slot['status'] == 'refused':
+                          f"{attempt_id} is still uncertain ({slot['code']}); it will be replayed", file=sys.stderr)
+                elif slot['status'] == 'refused':
                     print(f"Cairn presence {config['binding']}: journaled {slot['kind']} for attempt "
-                          f"{attempt['attempt_id']} was refused ({slot['code']}); its result stays in {target}", file=sys.stderr)
+                          f"{attempt_id} was refused ({slot['code']}); its content stays in {target}", file=sys.stderr)
+            journal_open = (journal.get('kind') == 'request' and not journal.get('response') and
+                            (journal.get('completion') or {}).get('status') == 'committed' and
+                            (journal['completion'].get('result') is not None))
+            return pending | ({'reply_possible'} if journal_open else set())
     except CoordinationError as exc:
         if exc.code != 'SESSION_BUSY':
             raise
-        return False  # The agent's own command is in flight; reconcile after it finishes.
-    return True
+        return None  # The agent's own command is in flight; settle after it finishes.
+
+
+def flush_inbox_intents(config, state, scope='attempt'):
+    """Replay this conversation's journaled inbox commands.
+
+    Every journal the conversation received is replayed, including those of
+    attempts already reconciled. With scope 'attempt' the result gates
+    reconciliation: False while the active attempt's own command is uncertain
+    or running. With scope 'all' it gates leaving: False while any journal of
+    this execution is uncertain, because leaving would fence its replay.
+    """
+    if not config.get('state_dir') or not state.get('agent'):
+        return True
+    active = (state.get('inbox_attempt') or {}).get('attempt_id')
+    settled = True
+    for attempt_id in list(session_journals(config, state)):
+        pending = flush_journal(config, attempt_id)
+        uncertain = pending is None or bool(pending - {'reply_possible', 'unused'})
+        if uncertain and (scope == 'all' or attempt_id == active):
+            settled = False
+        if pending is not None and not pending and attempt_id != active:
+            # Nothing pending and no reply can follow: this journal is final.
+            state['inbox_journals'].remove(attempt_id)
+    return settled
 
 
 def renew_inbox(config, state, path, attempt):
@@ -1496,6 +1554,9 @@ def settle_inbox(config, state, path):
 
 def watch_inbox(config, state, path):
     if not state.get('inbox_intent'):
+        # A reply journaled after its attempt was reconciled still needs replay.
+        flush_inbox_intents(config, state)
+        write_state(path, state)
         return
     if config.get('harness') == 'opencode':
         attempt = opencode_inbox_control(config, state, path)
@@ -1629,6 +1690,8 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         if event.get('correlation_id'):
             commands['respond'] += ['--correlation-id', event['correlation_id']]
     target = Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')
+    session_journals(config, state)
+    write_state(path, state)  # The journal list names this attempt before the agent can act.
     # The agent runs these through the journal so a reply lost in transit is
     # replayed by the host before it reconciles or leaves.
     journaled = [sys.executable, str(Path(__file__).resolve()), 'inbox', '--context', str(target)]
@@ -1672,8 +1735,8 @@ def finish_presence(config, state, path, timeout=4, reason='process_exited'):
     if not state.get('agent'):
         state['agent'] = call(config, 'agent-register', state['registration'], timeout=timeout)
         write_state(path, state)
-    if not flush_inbox_intents(config, state):
-        # Leaving would strand a result that may still commit under this execution.
+    if not flush_inbox_intents(config, state, 'all'):
+        # Leaving would strand a result or reply that may still commit under this execution.
         raise CoordinationError('INTENT_PENDING', 'a journaled inbox command is still uncertain; the session stays until it settles')
     try:
         call(config, 'agent-leave', session_ref(state['agent']), timeout=timeout)
@@ -1762,7 +1825,7 @@ def handle(config, event, event_name=None):
                 if state.get('inbox_intent'):
                     if observation['phase'] != 'idle':
                         raise
-                    if not flush_inbox_intents(config, state):
+                    if not flush_inbox_intents(config, state, 'all'):
                         raise CoordinationError('INTENT_PENDING', 'a journaled inbox command is still uncertain')
                     release_inbox(config, state, path, 'turn_ended', fenced=True)
                 state["registration"] = registration(config, observation, current["metadata"])

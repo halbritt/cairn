@@ -183,9 +183,30 @@ def check(binary, root, repo, api_call):
         replayed = subprocess.run(parted_context['completion'], input='Selected result across a partition',
                                   text=True, capture_output=True, check=True, timeout=30)
         assert json.loads(replayed.stdout)['data']['result'] == settled['result']
-        parted_reply = subprocess.run([*parted_context['response'], '--version', str(settled['result']['version']),
-            settled['result']['record_id']], capture_output=True, text=True, check=True, timeout=30)
-        assert json.loads(parted_reply.stdout)['data']['causation_id'] == parted_message['event_id']
+        # The watcher already reconciled this attempt. A reply the agent journals
+        # afterwards, while it still cannot reach the API, is replayed too.
+        parted_state = next(json.loads(p.read_text()) for p in state.glob('*.json')
+                            if json.loads(p.read_text()).get('agent', {}).get('agent_id') == parted['agent_id'])
+        assert not parted_state.get('inbox_intent') and parted_context['attempt_id'] in parted_state['inbox_journals']
+        os.rename(socket, cut)
+        try:
+            lost_reply = subprocess.run([*parted_context['response'], '--version', str(settled['result']['version']),
+                settled['result']['record_id']], capture_output=True, text=True, timeout=30)
+            assert json.loads(lost_reply.stdout)['status'] == 'API_CONNECTION_FAILED', lost_reply.stdout
+        finally:
+            os.rename(cut, socket)
+        watch()
+        intents = json.loads((state / 'intents' / (parted_context['attempt_id'] + '.json')).read_text())
+        assert intents['response']['status'] == 'committed', intents['response']
+        replies, after = [], 0
+        while True:
+            page = api_call('alice', 'events', '--after', str(after), '--limit', '100')
+            replies += [e for e in page['events']
+                        if e.get('causation_id') == parted_message['event_id'] and e['kind'] == 'response']
+            if not page['more']:
+                break
+            after = page['next_after']
+        assert len(replies) == 1 and replies[0]['from'] == parted['inbox'], replies
         assert hook(second, dict(event, session_id='native-partition', hook_event_name='Stop')) == {}
         hook(second, dict(event, session_id='native-partition', hook_event_name='SessionEnd'))
         print('Partition across completion: journaled result replayed after the lease lapsed and accepted late under its hold')
