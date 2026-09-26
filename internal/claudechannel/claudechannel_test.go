@@ -522,7 +522,7 @@ func TestBlockedWriteReportsUncertainAndShutsDown(t *testing.T) {
 }
 
 func TestSessionlessClientFallsBackToLegacyHandshake(t *testing.T) {
-	// The SDK's own client, like Claude Code 2.1.283, first probes with the
+	// The SDK's own client, like current Claude Code, first probes with the
 	// sessionless server/discover protocol. Claude drops channel
 	// notifications on a sessionless connection, so the bridge must steer
 	// the client back to the legacy initialize handshake.

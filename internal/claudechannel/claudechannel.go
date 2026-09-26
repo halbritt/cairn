@@ -31,10 +31,11 @@ const (
 	notificationMethod = "notifications/claude/channel"
 	registrySchema     = "cairn.claude-channel/1"
 	// discoverMethod probes for the sessionless MCP revision (2026-07-28).
-	// Claude Code 2.1.283 negotiates that revision when offered and then skips
-	// every channel notification ("no unsolicited notification path") while
-	// the socket still reports the wake written. The bridge answers the probe
-	// as a pre-2026 server would, so the client uses legacy initialize.
+	// Since 2026-09-25 Claude Code (2.1.282+) negotiates that revision when
+	// offered and then skips every channel notification ("no unsolicited
+	// notification path") while the socket still reports the wake written.
+	// The bridge answers the probe as a pre-2026 server would, so the client
+	// uses legacy initialize.
 	discoverMethod = "server/discover"
 	// One JSON request line excluding its newline, and bounded socket waits.
 	maxLine        = 8192
