@@ -153,7 +153,7 @@ func TestMachineEnrollmentEndToEnd(t *testing.T) {
 	server.Close()
 	server = load()
 	status, err := machineStatus(ctx, nil)
-	if err != nil || len(status.Checks) != 2 || status.Checks[0].OK || status.Checks[0].Status != "AUTHORITY_DENIED" {
+	if core.Code(err) != "API_CONNECTION_FAILED" || len(status.Checks) != 2 || status.Checks[0].OK || status.Checks[0].Status != "AUTHORITY_DENIED" {
 		t.Fatalf("revoked machine status: %+v %v", status, err)
 	}
 	cancel()

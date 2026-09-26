@@ -272,16 +272,21 @@ func unenrollMachine(ctx context.Context, args []string) (machineUnenrollment, e
 }
 
 type machineStatusResult struct {
-	Enrolled bool           `json:"enrolled"`
-	Config   *machineConfig `json:"config,omitempty"`
-	Service  string         `json:"service"`
-	Linger   string         `json:"linger"`
-	Local    string         `json:"local_version"`
-	Checks   []roleCheck    `json:"checks"`
+	Enrolled    bool           `json:"enrolled"`
+	Config      *machineConfig `json:"config,omitempty"`
+	Service     string         `json:"service"`
+	Linger      string         `json:"linger"`
+	Local       string         `json:"local_version"`
+	Checks      []roleCheck    `json:"checks"`
+	Build       string         `json:"build"` // compatible, incompatible or unknown
+	BuildDetail string         `json:"build_detail,omitempty"`
 }
 
+// machineStatus reports connectivity per role and build compatibility
+// separately. It fails when this host is enrolled but either is not healthy,
+// so scripts can rely on its exit status; the report is still returned.
 func machineStatus(ctx context.Context, args []string) (machineStatusResult, error) {
-	result := machineStatusResult{Checks: []roleCheck{}, Local: localBuild().Label()}
+	result := machineStatusResult{Checks: []roleCheck{}, Local: localBuild().Label(), Build: "unknown"}
 	if len(args) != 0 {
 		return result, invalid("machine status takes no arguments")
 	}
@@ -298,12 +303,32 @@ func machineStatus(ctx context.Context, args []string) (machineStatusResult, err
 	for _, principal := range config.Principals {
 		role := principal[strings.LastIndexByte(principal, '/')+1:]
 		path := filepath.Join(directory, roleTokenFiles[role])
-		token, err := os.ReadFile(path)
+		token, err := readOwnedFile(path, path, true, 64*1024)
 		if err != nil {
-			result.Checks = append(result.Checks, roleCheck{Role: role, Status: "token file unreadable"})
+			result.Checks = append(result.Checks, roleCheck{Role: role, Status: "token file unusable: " + core.Code(err)})
 			continue
 		}
 		result.Checks = append(result.Checks, checkRoles(ctx, filepath.Join(directory, "api.sock"), []enrollmentProfile{{Role: role, Token: strings.TrimSpace(string(token))}}, 0)...)
+	}
+	connected := len(result.Checks) > 0
+	for _, check := range result.Checks {
+		if !check.OK {
+			connected = false
+			continue
+		}
+		state, err := buildCompatibility(localBuild(), check.server)
+		if result.Build != "incompatible" {
+			result.Build = state
+		}
+		if err != nil {
+			result.BuildDetail = err.Error()
+		}
+	}
+	if !connected {
+		return result, &core.Error{Code: "API_CONNECTION_FAILED", Message: "one or more enrolled profiles failed the connectivity check; see checks"}
+	}
+	if result.Build != "compatible" {
+		return result, &core.Error{Code: "INSTALL_FAILED", Message: "central and local builds are " + result.Build + ": " + result.BuildDetail}
 	}
 	return result, nil
 }
@@ -417,17 +442,23 @@ func readPrivateTarget(path string, ownerOnly bool) ([]byte, error) {
 
 var localBuild = buildinfo.Read
 
-// sameBuild requires clean, identical VCS revisions: the trial supports one
-// tested protocol version on every host, and missing stamps prove nothing.
+// buildCompatibility requires clean, identical VCS revisions: the trial
+// supports one tested protocol version on every host, and missing stamps
+// prove nothing. Missing or unknown stamps are "unknown"; a dirty or
+// different build is "incompatible".
+func buildCompatibility(local, server buildinfo.Info) (string, error) {
+	if local.Revision == "" || server.Revision == "" || local.Modified == nil || server.Modified == nil {
+		return "unknown", fmt.Errorf("cannot confirm the same build (central %s, this host %s); install Cairn built from one clean commit on both hosts", server.Label(), local.Label())
+	}
+	if *local.Modified || *server.Modified || local.Revision != server.Revision {
+		return "incompatible", fmt.Errorf("the central API runs %s and this host runs %s; install the same clean Cairn build on both hosts", server.Label(), local.Label())
+	}
+	return "compatible", nil
+}
+
 func sameBuild(local, server buildinfo.Info) error {
-	describe := func(info buildinfo.Info) string { return info.Label() }
-	if local.Revision == "" || server.Revision == "" || local.Modified == nil || server.Modified == nil || *local.Modified || *server.Modified {
-		return fmt.Errorf("cannot confirm the same build (central %s, this host %s); install Cairn built from one clean commit on both hosts", describe(server), describe(local))
-	}
-	if local.Revision != server.Revision {
-		return fmt.Errorf("the central API runs %s and this host runs %s; install the same Cairn build on both hosts", describe(server), describe(local))
-	}
-	return nil
+	_, err := buildCompatibility(local, server)
+	return err
 }
 
 func privateDataDirectory() (string, error) {

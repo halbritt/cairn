@@ -376,10 +376,21 @@ func TestMachineEnrollInstallsProfilesRelayAndCollection(t *testing.T) {
 		t.Fatalf("enrolled machine: %+v %v", enrolled, err)
 	}
 	status, err := machineStatus(context.Background(), nil)
-	if err != nil || !status.Enrolled || len(status.Checks) != 2 || !status.Checks[1].OK {
+	if err != nil || !status.Enrolled || len(status.Checks) != 2 || !status.Checks[1].OK || status.Build != "compatible" {
 		t.Fatalf("status: %+v %v", status, err)
 	}
 	assertNoTokens(t, status, issued)
+	for want, local := range map[string]buildinfo.Info{
+		"incompatible": stampedBuild("0000000000000000000000000000000000000000", false),
+		"unknown":      {Schema: "cairn.build/1"},
+	} {
+		useLocalBuild(t, local)
+		status, err := machineStatus(context.Background(), nil)
+		if core.Code(err) != "INSTALL_FAILED" || status.Build != want || !status.Checks[0].OK || status.BuildDetail == "" {
+			t.Fatalf("%s build status: %+v %v", want, status, err)
+		}
+	}
+	useLocalBuild(t, build)
 
 	// Rerunning the same file after deletion is refused; a rotated file for the
 	// same machine replaces its tokens without --replace.
@@ -672,7 +683,7 @@ func TestMachineEnrollRefusals(t *testing.T) {
 		useLocalBuild(t, stampedBuild("abc", false))
 		fakeRelay(t, home, map[string]bool{issued.Profiles[0].Token: true}, stampedBuild("def", false))
 		_, err := enrollMachine(context.Background(), []string{"--file", copy})
-		if core.Code(err) != "INSTALL_FAILED" || !strings.Contains(err.Error(), "same Cairn build") || !strings.Contains(err.Error(), "rerun cairn machine enroll") {
+		if core.Code(err) != "INSTALL_FAILED" || !strings.Contains(err.Error(), "same clean Cairn build") || !strings.Contains(err.Error(), "rerun cairn machine enroll") {
 			t.Fatal(err)
 		}
 		if _, statErr := os.Stat(copy); statErr != nil {

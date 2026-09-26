@@ -124,8 +124,11 @@ isolated trial), then run `cairn machine status` to check connectivity. The
 unit is written to the invoking user's `$XDG_CONFIG_HOME/systemd/user`. That
 directory must be the one the user's systemd manager reads.
 
-`cairn machine status` shows the enrollment, relay state, lingering and a
-per-role connectivity check. It never prints tokens.
+`cairn machine status` shows the enrollment, relay state and lingering. It
+reports a per-role connectivity check and, separately, `build`: `compatible`,
+`incompatible` (different or modified revisions) or `unknown` (unstamped
+builds). It exits nonzero on an enrolled host unless every role connects and
+the builds are compatible. It never prints tokens.
 
 ## Connect agents on the joining machine
 
