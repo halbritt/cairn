@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -14,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/halbritt/cairn/core"
@@ -119,7 +119,7 @@ func enrollMachine(ctx context.Context, args []string) (machineEnrollment, error
 	}
 	for _, profile := range issued.Profiles {
 		path := filepath.Join(directory, roleTokenFiles[profile.Role])
-		current, err := readPrivateTarget(path)
+		current, err := readPrivateTarget(path, true)
 		state := "created"
 		switch {
 		case errors.Is(err, os.ErrNotExist):
@@ -134,7 +134,7 @@ func enrollMachine(ctx context.Context, args []string) (machineEnrollment, error
 		}
 		result.Tokens = append(result.Tokens, installedToken{profile.Role, profile.Principal, path, state})
 	}
-	if _, err = readPrivateTarget(result.Config); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if _, err = readPrivateTarget(result.Config, true); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return result, err
 	}
 	var unitPath string
@@ -143,7 +143,7 @@ func enrollMachine(ctx context.Context, args []string) (machineEnrollment, error
 		if unitPath, unit, err = relayUnitFile(result.Socket, issued.Upstream); err != nil {
 			return result, err
 		}
-		current, err := readPrivateTarget(unitPath)
+		current, err := readPrivateTarget(unitPath, false)
 		if err == nil && existing == nil && !bytes.Equal(current, unit) {
 			return result, invalid(unitPath + " already exists and this host is not enrolled; remove it before enrolling")
 		}
@@ -304,20 +304,17 @@ func machineStatus(ctx context.Context, args []string) (machineStatusResult, err
 
 func readEnrollment(path string) (enrollment, error) {
 	var issued enrollment
-	if err := ownerOnlyFile(path, "enrollment file"); err != nil {
+	body, err := readOwnedFile(path, "enrollment file", true, 64*1024)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return issued, invalid("enrollment file not found: " + path)
+		}
 		return issued, err
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return issued, installationError("enrollment file", err)
+	if err = decodeOne(body, &issued); err != nil || issued.Schema != enrollmentSchema {
+		return issued, invalid("not a single " + enrollmentSchema + " object")
 	}
-	defer file.Close()
-	decoder := json.NewDecoder(io.LimitReader(file, 64*1024))
-	decoder.DisallowUnknownFields()
-	if err = decoder.Decode(&issued); err != nil || issued.Schema != enrollmentSchema {
-		return issued, invalid("not a " + enrollmentSchema + " enrollment file")
-	}
-	if !machineIDPattern.MatchString(issued.MachineID) || strings.TrimSpace(issued.Collection) == "" || issued.Collection == "*" || len(issued.Collection) > 256 {
+	if !machineIDPattern.MatchString(issued.MachineID) || !validCollection(issued.Collection) {
 		return issued, invalid("enrollment file has an invalid machine ID or collection")
 	}
 	if issued.Upstream, err = normalizeUpstream(issued.Upstream); err != nil {
@@ -336,14 +333,37 @@ func readEnrollment(path string) (enrollment, error) {
 	return issued, nil
 }
 
+func validCollection(collection string) bool {
+	return strings.TrimSpace(collection) != "" && collection != "*" && len(collection) <= 256
+}
+
+// readMachineConfig validates the whole stored enrollment, because enroll,
+// status and unenroll act on it.
 func readMachineConfig(path string) (machineConfig, error) {
 	var config machineConfig
-	body, err := os.ReadFile(path)
+	body, err := readOwnedFile(path, path, true, 64*1024)
 	if err != nil {
 		return config, err
 	}
-	if err = json.Unmarshal(body, &config); err != nil || config.Schema != machineConfigSchema || config.Collection == "" {
-		return config, invalid(path + " is not a valid machine configuration")
+	fail := func() (machineConfig, error) {
+		return machineConfig{}, invalid(path + " is not a valid machine configuration; inspect it, or remove it and enroll again")
+	}
+	if decodeOne(body, &config) != nil || config.Schema != machineConfigSchema || !machineIDPattern.MatchString(config.MachineID) || !validCollection(config.Collection) || config.EnrolledAt == "" {
+		return fail()
+	}
+	if upstream, err := normalizeUpstream(config.Upstream); err != nil || upstream != config.Upstream {
+		return fail()
+	}
+	seen := map[string]bool{}
+	for _, principal := range config.Principals {
+		role := principal[strings.LastIndexByte(principal, '/')+1:]
+		if _, known := roleTokenFiles[role]; !known || seen[role] || principal != machinePrincipal(config.MachineID, role) {
+			return fail()
+		}
+		seen[role] = true
+	}
+	if !seen["agent"] {
+		return fail()
 	}
 	return config, nil
 }
@@ -383,21 +403,10 @@ func principalsOf(issued enrollment) []string {
 	return principals
 }
 
-// readPrivateTarget reads a file enrollment may replace, refusing links and
-// other non-regular files so a write can never be redirected.
-func readPrivateTarget(path string) ([]byte, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() {
-		return nil, invalid(path + " is not a regular file; remove it before enrolling")
-	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return nil, installationError(path, err)
-	}
-	return body, nil
+// readPrivateTarget reads a file enrollment may replace. Links, other file
+// types and other owners are refused so a write can never be redirected.
+func readPrivateTarget(path string, ownerOnly bool) ([]byte, error) {
+	return readOwnedFile(path, path, ownerOnly, 64*1024)
 }
 
 var localBuild = buildinfo.Read
@@ -423,12 +432,13 @@ func privateDataDirectory() (string, error) {
 	if err = os.MkdirAll(directory, 0700); err != nil {
 		return "", installationError(directory, err)
 	}
-	info, err := os.Stat(directory)
+	info, err := os.Lstat(directory)
 	if err != nil {
 		return "", installationError(directory, err)
 	}
-	if info.Mode().Perm()&0077 != 0 {
-		return "", invalid(directory + " must be owner-only (chmod 700)")
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || !info.IsDir() || stat.Uid != uint32(os.Geteuid()) || info.Mode().Perm()&0077 != 0 {
+		return "", invalid(directory + " must be a real directory owned by the current user and owner-only (chmod 700)")
 	}
 	return directory, nil
 }

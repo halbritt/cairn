@@ -378,38 +378,95 @@ func tokenDigest(token string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-// lockIdentities shares scripts/provision-event-profiles.py's advisory lock.
+var identityLockWait = 10 * time.Second
+
+// lockIdentities shares scripts/provision-event-profiles.py's advisory lock,
+// waiting a bounded time for another provisioning run.
 func lockIdentities(directory string) (func(), error) {
-	file, err := os.OpenFile(filepath.Join(directory, ".identities.lock"), os.O_WRONLY|os.O_CREATE, 0600)
+	path := filepath.Join(directory, ".identities.lock")
+	fd, err := syscall.Open(path, syscall.O_WRONLY|syscall.O_CREAT|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0600)
 	if err != nil {
 		return nil, installationError("identity lock", err)
 	}
-	if err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+	file := os.NewFile(uintptr(fd), path)
+	var stat syscall.Stat_t
+	if err = syscall.Fstat(fd, &stat); err != nil || stat.Mode&syscall.S_IFMT != syscall.S_IFREG || stat.Uid != uint32(os.Geteuid()) {
 		file.Close()
-		return nil, installationError("identity lock", err)
+		return nil, invalid("identity lock must be a regular file owned by the current user")
 	}
-	return func() { file.Close() }, nil
+	deadline := time.Now().Add(identityLockWait)
+	for {
+		err = syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			return func() { file.Close() }, nil
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) || time.Now().After(deadline) {
+			file.Close()
+			return nil, &core.Error{Code: "INSTALL_FAILED", Message: "another identity change holds " + path + "; retry when it finishes"}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
-func ownerOnlyFile(path, label string) error {
-	info, err := os.Lstat(path)
+// readOwnedFile reads a credential or configuration file without following a
+// final symbolic link. It must be a regular file owned by the current user and,
+// when ownerOnly, carry no group or other permissions. A missing file returns
+// an error matching os.ErrNotExist.
+func readOwnedFile(path, label string, ownerOnly bool, limit int64) ([]byte, error) {
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
 	if err != nil {
-		return installationError(label, err)
+		if errors.Is(err, syscall.ENOENT) {
+			return nil, &os.PathError{Op: "open", Path: path, Err: err}
+		}
+		if errors.Is(err, syscall.ELOOP) {
+			return nil, invalid(label + " is a symbolic link; replace it with a regular file")
+		}
+		return nil, installationError(label, err)
+	}
+	file := os.NewFile(uintptr(fd), path)
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, installationError(label, err)
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || stat.Uid != uint32(os.Geteuid()) {
-		return invalid(label + " must be a regular owner-only file owned by the current user")
+	if !ok || !info.Mode().IsRegular() || stat.Uid != uint32(os.Geteuid()) || (ownerOnly && info.Mode().Perm()&0077 != 0) {
+		if ownerOnly {
+			return nil, invalid(label + " must be a regular owner-only (0600) file owned by the current user")
+		}
+		return nil, invalid(label + " must be a regular file owned by the current user")
+	}
+	body, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, installationError(label, err)
+	}
+	if int64(len(body)) > limit {
+		return nil, invalid(fmt.Sprintf("%s exceeds %d KiB", label, limit/1024))
+	}
+	return body, nil
+}
+
+// decodeOne decodes exactly one JSON value with no unknown fields or trailing data.
+func decodeOne(body []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return errors.New("trailing data")
 	}
 	return nil
 }
 
 func readIdentities(path string) ([]identityEntry, error) {
-	if err := ownerOnlyFile(path, "identity configuration"); err != nil {
-		return nil, err
-	}
-	body, err := os.ReadFile(path)
+	body, err := readOwnedFile(path, "identity configuration", true, 128*1024) // cairn serve's bound
 	if err != nil {
-		return nil, installationError("identity configuration", err)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, installationError("identity configuration", err)
+		}
+		return nil, err
 	}
 	var raws []json.RawMessage
 	if err = json.Unmarshal(body, &raws); err != nil {
@@ -561,7 +618,7 @@ func versionOverSocket(ctx context.Context, socket, token string, wait time.Dura
 		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	}}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 35 * time.Second}
+	client := &http.Client{Transport: transport, Timeout: 35 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	deadline := time.Now().Add(wait)
 	for {
 		err := func() error {
@@ -577,14 +634,18 @@ func versionOverSocket(ctx context.Context, socket, token string, wait time.Dura
 			}
 			defer reply.Body.Close()
 			var envelope struct {
+				Schema string         `json:"schema"`
 				OK     bool           `json:"ok"`
 				Status string         `json:"status"`
 				Data   buildinfo.Info `json:"data"`
 			}
-			if err = json.NewDecoder(io.LimitReader(reply.Body, 64*1024)).Decode(&envelope); err != nil {
-				return fmt.Errorf("unreadable API reply (HTTP %d)", reply.StatusCode)
+			if err = json.NewDecoder(io.LimitReader(reply.Body, 64*1024)).Decode(&envelope); err != nil || envelope.Schema != "cairn.response/1" {
+				return &core.Error{Code: "API_CONNECTION_FAILED", Message: fmt.Sprintf("not a Cairn API reply (HTTP %d)", reply.StatusCode)}
 			}
-			if !envelope.OK {
+			if reply.StatusCode != http.StatusOK || !envelope.OK {
+				if envelope.OK || envelope.Status == "" || envelope.Status == "OK" {
+					return &core.Error{Code: "API_CONNECTION_FAILED", Message: fmt.Sprintf("inconsistent API reply (HTTP %d)", reply.StatusCode)}
+				}
 				return &core.Error{Code: envelope.Status, Message: "version call refused: " + envelope.Status}
 			}
 			info = envelope.Data

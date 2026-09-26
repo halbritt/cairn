@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -414,12 +415,101 @@ func TestMachineEnrollInstallsProfilesRelayAndCollection(t *testing.T) {
 
 func TestEnrolledMachineRejectsMalformedConfig(t *testing.T) {
 	home := machineHome(t, "")
-	_ = os.WriteFile(filepath.Join(home, "machine.json"), []byte("{}"), 0600)
-	if _, err := enrolledMachine(); core.Code(err) != "INVALID_REQUEST" {
-		t.Fatalf("malformed machine.json: %v", err)
+	valid := `{"schema":"cairn.machine/1","machine_id":"box-b","upstream":"https://central","collection":"/c","principals":["machine:box-b/agent"],"enrolled_at":"2026-09-26T00:00:00Z"}`
+	_ = os.WriteFile(filepath.Join(home, "machine.json"), []byte(valid), 0600)
+	if config, err := enrolledMachine(); err != nil || config == nil {
+		t.Fatalf("valid machine.json: %v", err)
 	}
+	for name, body := range map[string]string{
+		"empty":         "{}",
+		"unknown field": strings.Replace(valid, `"schema"`, `"x":1,"schema"`, 1),
+		"trailing":      valid + "{}",
+		"bad machine":   strings.Replace(valid, `"box-b","upstream"`, `"Box_B","upstream"`, 1),
+		"foreign princ": strings.Replace(valid, "machine:box-b/agent", "agent/worker-01", 1),
+		"no agent":      strings.Replace(valid, "machine:box-b/agent", "machine:box-b/observer", 1),
+		"http upstream": strings.Replace(valid, "https://central", "http://central", 1),
+		"upstream path": strings.Replace(valid, "https://central", "https://central/x", 1),
+		"wildcard repo": strings.Replace(valid, `"/c"`, `"*"`, 1),
+	} {
+		_ = os.WriteFile(filepath.Join(home, "machine.json"), []byte(body), 0600)
+		if _, err := enrolledMachine(); core.Code(err) != "INVALID_REQUEST" {
+			t.Fatalf("%s machine.json accepted: %v", name, err)
+		}
+	}
+	_ = os.WriteFile(filepath.Join(home, "machine.json"), []byte(valid), 0600)
+	_ = os.Chmod(filepath.Join(home, "machine.json"), 0640)
+	if _, err := enrolledMachine(); core.Code(err) != "INVALID_REQUEST" {
+		t.Fatalf("group-readable machine.json accepted: %v", err)
+	}
+	_ = os.Chmod(filepath.Join(home, "machine.json"), 0600)
+	_ = os.WriteFile(filepath.Join(home, "machine.json"), []byte("{}"), 0600)
 	if _, err := agentRequest(context.Background(), []string{"version"}, strings.NewReader("{}")); core.Code(err) != "INVALID_REQUEST" {
 		t.Fatalf("agent route ignored malformed machine.json: %v", err)
+	}
+}
+
+func TestVersionOverSocketRequiresCairnReply(t *testing.T) {
+	home := machineHome(t, "")
+	socket := filepath.Join(home, "api.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reply atomic.Value
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		answer := reply.Load().([2]any)
+		if answer[0].(int)/100 == 3 {
+			w.Header().Set("Location", "/elsewhere")
+		}
+		w.WriteHeader(answer[0].(int))
+		_, _ = w.Write([]byte(answer[1].(string)))
+	})}
+	go server.Serve(listener)
+	defer server.Close()
+	ok := `{"schema":"cairn.response/1","ok":true,"status":"OK","data":{"schema":"cairn.build/1"}}`
+	for name, answer := range map[string][2]any{
+		"redirect":        {302, ok},
+		"wrong schema":    {200, `{"schema":"other/1","ok":true,"status":"OK"}`},
+		"not json":        {200, "hello"},
+		"error with ok":   {500, ok},
+		"refusal":         {403, `{"schema":"cairn.response/1","ok":false,"status":"AUTHORITY_DENIED"}`},
+		"refusal no code": {403, `{"schema":"cairn.response/1","ok":false}`},
+	} {
+		reply.Store(answer)
+		_, err := versionOverSocket(context.Background(), socket, "token", 0)
+		want := "API_CONNECTION_FAILED"
+		if name == "refusal" {
+			want = "AUTHORITY_DENIED"
+		}
+		if core.Code(err) != want {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	reply.Store([2]any{200, ok})
+	if _, err := versionOverSocket(context.Background(), socket, "token", 0); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIdentityLockIsBounded(t *testing.T) {
+	home := machineHome(t, existingIdentities)
+	previous := identityLockWait
+	identityLockWait = 300 * time.Millisecond
+	t.Cleanup(func() { identityLockWait = previous })
+	unlock, err := lockIdentities(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	started := time.Now()
+	if _, err := lockIdentities(home); core.Code(err) != "INSTALL_FAILED" || time.Since(started) > 5*time.Second {
+		t.Fatalf("contended lock: %v after %v", err, time.Since(started))
+	}
+	link := filepath.Join(t.TempDir(), "linked")
+	_ = os.Chmod(filepath.Dir(link), 0700)
+	_ = os.Symlink(filepath.Join(home, ".identities.lock"), filepath.Join(filepath.Dir(link), ".identities.lock"))
+	if _, err := lockIdentities(filepath.Dir(link)); err == nil {
+		t.Fatal("symlinked lock accepted")
 	}
 }
 
@@ -484,13 +574,13 @@ func TestMachineEnrollRefusals(t *testing.T) {
 		err := run(t, func(h, _ string) {
 			_ = os.Symlink(filepath.Join(h, "elsewhere"), filepath.Join(h, "hosted-agent.token"))
 		})
-		if core.Code(err) != "INVALID_REQUEST" || !strings.Contains(err.Error(), "not a regular file") {
+		if core.Code(err) != "INVALID_REQUEST" || !strings.Contains(err.Error(), "symbolic link") {
 			t.Fatal(err)
 		}
 	})
 	t.Run("other machine enrolled", func(t *testing.T) {
 		err := run(t, func(h, _ string) {
-			_ = os.WriteFile(filepath.Join(h, "machine.json"), []byte(`{"schema":"cairn.machine/1","machine_id":"box-c","upstream":"https://central","collection":"/c","principals":["machine:box-c/agent"]}`), 0600)
+			_ = os.WriteFile(filepath.Join(h, "machine.json"), []byte(`{"schema":"cairn.machine/1","machine_id":"box-c","upstream":"https://central","collection":"/c","principals":["machine:box-c/agent"],"enrolled_at":"2026-09-26T00:00:00Z"}`), 0600)
 		})
 		if core.Code(err) != "INVALID_REQUEST" || !strings.Contains(err.Error(), "unenroll") {
 			t.Fatal(err)
@@ -507,6 +597,18 @@ func TestMachineEnrollRefusals(t *testing.T) {
 		}
 		if kept, _ := os.ReadFile(filepath.Join(home, "hosted-agent.token")); string(kept) != "someone-elses-existing-token\n" {
 			t.Fatal("refused enrollment replaced a token")
+		}
+	})
+	t.Run("trailing object", func(t *testing.T) {
+		err := run(t, func(_, file string) { _ = os.WriteFile(file, append(append([]byte{}, body...), []byte("{}")...), 0600) })
+		if core.Code(err) != "INVALID_REQUEST" || !strings.Contains(err.Error(), "single") {
+			t.Fatal(err)
+		}
+	})
+	t.Run("foreign token file mode", func(t *testing.T) {
+		err := run(t, func(h, _ string) { _ = os.WriteFile(filepath.Join(h, "hosted-agent.token"), []byte("x\n"), 0644) })
+		if core.Code(err) != "INVALID_REQUEST" || !strings.Contains(err.Error(), "owner-only") {
+			t.Fatal(err)
 		}
 	})
 	t.Run("unknown field", func(t *testing.T) {
