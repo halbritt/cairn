@@ -18,7 +18,16 @@ import (
 func TestRemoteIdentityValidation(t *testing.T) {
 	digest := sha256.Sum256([]byte("test"))
 	base := Identity{TokenSHA256: hex.EncodeToString(digest[:]), Principal: "machine:box/agent", Repo: "/collection", Role: "agent", Destination: "hosted", Remote: true, MachineID: "box"}
-	for _, change := range []func(*Identity){func(i *Identity) { i.MachineID = "" }, func(i *Identity) { i.MachineID = "../box" }, func(i *Identity) { i.Destination = "local" }} {
+	for _, change := range []func(*Identity){
+		func(i *Identity) { i.MachineID = "" },
+		func(i *Identity) { i.MachineID = "../box" },
+		func(i *Identity) { i.Destination = "local" },
+		func(i *Identity) { i.Principal = "agent/worker-01" },
+		func(i *Identity) { i.Principal = "machine:other/agent" },
+		func(i *Identity) { i.Role = "operator" },
+		func(i *Identity) { i.Remote = false },
+		func(i *Identity) { i.Remote = false; i.MachineID = "" },
+	} {
 		identity := base
 		change(&identity)
 		if server, err := New(context.Background(), "not-a-dsn", []Identity{identity}); core.Code(err) != "INVALID_REQUEST" {
