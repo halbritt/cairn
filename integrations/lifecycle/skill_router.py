@@ -59,6 +59,9 @@ MACHINE_PREFIXES = (
     "# /loop — schedule a recurring or self-paced prompt",                          # /loop expansion
     "Your claude.ai usage limit has reset", "[Request interrupted by user",
     "This is a new live turn from the configured Cairn automatic inbox wakeup.",    # coordination.wake_message
+    # Fresh pool/wake worker prompt (internal/wakeup/wakeup.go). The request body follows
+    # about 1,100 characters of boilerplate, past what a routing call would read.
+    "Handle this Cairn request within the owner's authorized scope in the configured workspace.",
 )
 MAX_FILES = 10
 

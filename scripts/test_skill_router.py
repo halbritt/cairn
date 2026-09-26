@@ -187,6 +187,10 @@ class RouterTests(unittest.TestCase):
         wake = coordination.wake_message({"session": {"agent_id": "a", "execution_id": "e"}, "delivery_id": "d"})
         self.assertIsNone(router.start(self.config, dict(self.event, prompt=wake), {}), "Cairn native wake text")
         self.assertIsNone(router.start(self.config, dict(self.event, prompt="  \n" + wake), {}))
+        go = (ROOT / "internal/wakeup/wakeup.go").read_text()
+        worker = go.split("prompt := fmt.Sprintf(`", 1)[1].split("`", 1)[0]
+        self.assertTrue(worker.startswith(router.MACHINE_PREFIXES[-1]), "worker prompt drifted from the router constant")
+        self.assertIsNone(router.start(self.config, dict(self.event, prompt=worker.replace("%s", "x").replace("%d", "1")), {}))
         with patch.dict(os.environ, {"CAIRN_SKILL_ROUTER": "0"}):
             self.assertIsNone(router.start(self.config, self.event, {}))
         self.assertEqual(self.jev.requests + self.kev.requests, [])

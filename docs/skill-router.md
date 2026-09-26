@@ -62,7 +62,7 @@ or Cairn submits in the owner's place: Claude Code task and Monitor
 notifications, system reminders and channel wrappers, slash-command echoes,
 compaction summaries, skill-body loads, the `/loop` expansion, usage-limit and
 interrupt notices, and Cairn's own native wake text
-(`coordination.wake_message`). Only exact producer openings are listed, never
+(`coordination.wake_message`) and the fresh-worker prompt from `internal/wakeup`. Only exact producer openings are listed, never
 generic shapes such as a Markdown heading, and only the start of the text is
 checked, so a pasted example that contains notification markup still routes.
 This is a heuristic on known envelopes, not proof of who wrote the text.
