@@ -18,12 +18,12 @@ func listenPrivateUnix(socket string) (net.Listener, error) {
 	if err := os.MkdirAll(parent, 0700); err != nil {
 		return nil, err
 	}
-	info, err := os.Stat(parent)
+	info, err := os.Lstat(parent)
 	if err != nil {
 		return nil, err
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat.Uid != uint32(os.Geteuid()) || info.Mode().Perm()&0077 != 0 {
+	if !ok || !info.IsDir() || stat.Uid != uint32(os.Geteuid()) || info.Mode().Perm()&0077 != 0 {
 		return nil, invalid("socket directory must be owned by the current user and owner-only")
 	}
 

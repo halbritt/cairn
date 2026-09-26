@@ -139,3 +139,23 @@ func TestPrivateSocketRecoversStalePathWithoutReplacingLiveOwner(t *testing.T) {
 		t.Fatal("followed socket symlink")
 	}
 }
+
+func TestPrivateSocketRejectsLinkedParent(t *testing.T) {
+	parent := t.TempDir()
+	real := filepath.Join(parent, "real")
+	if err := os.Mkdir(real, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(parent, "linked")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if listener, err := listenPrivateUnix(filepath.Join(link, "api.sock")); err == nil {
+		_ = listener.Close()
+		t.Fatal("socket lock followed a parent symlink")
+	}
+	entries, err := os.ReadDir(real)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("refused setup changed linked directory: %v %v", entries, err)
+	}
+}
