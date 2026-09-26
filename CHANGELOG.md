@@ -13,6 +13,20 @@ See [implementation status](docs/implementation-status.md) for dated deployment
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
+## 2026-09-26
+
+- Claude channel wakes work again with Claude Code 2.1.283. That release
+  negotiates the sessionless MCP revision (2026-07-28) when a server offers
+  it, and on that revision it skips every channel notification. The bridge
+  still answered `written`, so from 2026-09-25 each wake to a flagged Claude
+  session was silently dropped. The flagged session also refuses ordinary
+  prompt claims, so its inbox stalled until someone restarted it. The
+  `cairn-events` bridge now refuses `server/discover` like a pre-2026 server,
+  so Claude falls back to the legacy handshake, and it registers only after
+  `notifications/initialized`. Running Claude sessions keep their old bridge
+  until they restart or reconnect `cairn-events`. See
+  [native inbox delivery](docs/native-inbox.md#claude-channel-activation-and-selection).
+
 ## 2026-09-24
 
 - The lifecycle context budget is now set per installation (`context_bytes`,

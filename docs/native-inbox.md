@@ -51,6 +51,17 @@ no channel wake, so enabling `claude_channel_dir` for an account never suppresse
 delivery to conversations that cannot receive channel wakes. Detection follows
 the process, so a resumed conversation is re-evaluated with its new launch.
 
+The bridge serves only the legacy MCP handshake. Claude Code 2.1.283 and
+later negotiate the sessionless revision (2026-07-28) when a server offers it,
+and then log "Channel notifications skipped: connection negotiated a modern
+protocol revision with no unsolicited notification path". The bridge still
+reported each wake `written`. The bridge therefore answers `server/discover`
+with "method not found", as a pre-2026 server does. Claude then falls back to
+`initialize`, and the bridge publishes its registry only after
+`notifications/initialized`. To check a session, look in Claude's
+`mcp-logs-cairn-events` log for `"protocolEra":"legacy"` and "Channel
+notifications registered".
+
 A binding may still set an optional `claude_channel_sessions` list of native
 conversation IDs. With the list present, a conversation must be listed *and*
 channel-enabled to use the channel; an empty list selects none. Without the
