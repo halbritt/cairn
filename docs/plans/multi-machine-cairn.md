@@ -81,6 +81,20 @@ this does not isolate hostile local processes under that same account.
 The first slice uses hosted-eligible memory only. Being another machine owned by
 the same person does not automatically permit delivery of local-only records.
 
+Implementation review adds these setup requirements:
+
+- Persist the canonical collection in non-secret machine metadata. Enrolled
+  agent CLI commands use it by default even outside the original checkout.
+  Invalid metadata must fail explicitly; it must not silently select cwd.
+- Reuse `hosted-agent.token` and the usual local `api.sock`; install the observer
+  token only when that role is provisioned.
+- Write enrollment secrets owner-only, refuse unsafe ownership, permissions and
+  symlinks, and preflight existing files before changing them. Replacement is for
+  rotation of the same machine identity, not conversion of an unrelated install.
+- Validate central identity configuration before publishing it and restarting.
+  Preserve a rollback copy, enforce profile capacity, and report partial setup
+  or restart failures with a concrete recovery action.
+
 ## Identity and collection scope
 
 Current registration is scoped by collection, authenticated profile owner,
@@ -120,6 +134,11 @@ Reconnect automatically at the transport layer. This is not automatic replay of
 work. Server or machine unavailability can leave work unresolved until the host
 returns or an operator reviews it. The proposal does not promise exactly-once
 external effects or automatic recovery of every partition.
+
+The relay must distinguish a failure before a connection is available from an
+uncertain result after the request might have been sent. It must not retry a
+mutation internally. Lost, truncated and oversized replies can conceal a
+committed operation and must not be reported as definite refusal.
 
 Cancellation stays limited to existing proven native capabilities. No remote
 success acknowledgment is inferred from a sent command or a missing heartbeat.
@@ -221,6 +240,17 @@ acceptance. Material open questions are the precise operation allowlist, recover
 of pending intents on restart, and whether routine use needs late completion.
 The trial must answer those before rollout. Hot reload, performance, broad host
 support and automatic failover remain outside the trial's acceptance claims.
+
+Agent-200 (Anthropic) reviewed the implementation proposal at `7019705`;
+agent-201 (Codex) reviewed the enrollment plan. Their setup and transport
+requirements above are accepted design requirements, not tested claims.
+Agent-204 proposed late completion under the same unreleased native hold and a
+central operator release for an abandoned hold (`ad71cd4`). Root approved this
+direction subject to agent-203's independent review, transaction race tests,
+and the full recovery acceptance checks. Offline presence alone does not prove
+that the original process stopped. The operator must explicitly accept uncertain
+external effects before releasing its hold. The baseline refusal table above
+describes the current source; acceptance requires the reviewed recovery contract.
 
 Alternatives considered: continuing local-only operation does not meet the owner
 request; separate Cairn servers with direct shared-DB access were declined in
