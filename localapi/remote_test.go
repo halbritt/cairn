@@ -66,6 +66,12 @@ func TestRemoteBoundariesAndMachineDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Close()
+	if err := server.SetLocalMachineID("a"); core.Code(err) != "INVALID_REQUEST" {
+		t.Fatal("local/remote machine label collision accepted")
+	}
+	if err := server.SetLocalMachineID("central"); err != nil {
+		t.Fatal(err)
+	}
 	call := func(handler http.Handler, token, operation string, body any) (int, json.RawMessage) {
 		t.Helper()
 		encoded, err := json.Marshal(body)
@@ -109,6 +115,15 @@ func TestRemoteBoundariesAndMachineDirectory(t *testing.T) {
 		if code, _ := call(remote, "a", "session-inbox-reconcile", core.SessionInboxReconcile{RequestID: uuid.NewString(), Reason: reason}); code != 403 {
 			t.Fatal("remote cancellation claim reached store")
 		}
+	}
+	if code, _ := call(remote, "observer", "version", struct{}{}); code != 200 {
+		t.Fatal("observer connectivity check refused")
+	}
+	if code, _ := call(remote, "a", "event-publish", map[string]any{"destination": map[string]any{"type": "pool", "name": "coding"}}); code != 403 {
+		t.Fatal("remote pool placement reached store")
+	}
+	if code, _ := call(remote, "a", "agent-register", map[string]any{"metadata": map[string]any{"delivery_mode": "fresh-worker"}}); code != 403 {
+		t.Fatal("remote fresh worker reached store")
 	}
 	metadata := core.AgentMetadata{Harness: "codex", Project: "test", Workspace: "/same/path", State: "idle", DeliveryMode: "existing-session"}
 	register := func(name string) core.AgentInstance {

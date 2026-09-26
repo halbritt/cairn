@@ -31,6 +31,7 @@ type Identity struct {
 type client struct {
 	store       *core.Store
 	remote      bool
+	role        string
 	principal   string
 	machineID   string
 	destination core.Destination
@@ -62,7 +63,7 @@ func NewWithSemanticRanker(ctx context.Context, dsn string, identities []Identit
 		if err != nil {
 			return fail(err)
 		}
-		s.clients[key] = client{store: store, destination: core.Destination{Name: identity.Destination, AllowLocal: identity.Destination == "local"}, remote: identity.Remote, principal: identity.Principal, machineID: identity.MachineID}
+		s.clients[key] = client{store: store, destination: core.Destination{Name: identity.Destination, AllowLocal: identity.Destination == "local"}, remote: identity.Remote, role: identity.Role, principal: identity.Principal, machineID: identity.MachineID}
 		if identity.Role == "agent" {
 			s.readers[identity.Principal] = expansionReader{identity.Repo, s.clients[key].destination}
 		}
@@ -93,7 +94,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 		writeError(w, 403, "AUTHORITY_DENIED", "network API requires a remote machine profile")
 		return
 	}
-	if c.remote && !remoteOperations[strings.TrimPrefix(r.URL.Path, "/v1/")] {
+	if c.remote && (!remoteOperations[strings.TrimPrefix(r.URL.Path, "/v1/")] || (c.role != "agent" && r.URL.Path != "/v1/version")) {
 		writeError(w, 403, "AUTHORITY_DENIED", "operation is unavailable to remote machine profiles")
 		return
 	}

@@ -56,6 +56,9 @@ func serveAgentEvents(w http.ResponseWriter, r *http.Request, c client) bool {
 		})
 	case "/v1/event-publish":
 		serveJSON(w, r, func(ctx context.Context, req core.PublishEventRequest) (core.AgentEvent, error) {
+			if c.remote && (req.Destination.Type == "pool" || req.Pool != nil) {
+				return core.AgentEvent{}, &core.Error{Code: "AUTHORITY_DENIED", Message: "remote worker pool placement is unavailable"}
+			}
 			return c.store.PublishEvent(ctx, req, c.destination)
 		})
 	case "/v1/event-next":

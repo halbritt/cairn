@@ -64,6 +64,11 @@ func (s *Server) SetLocalMachineID(machine string) error {
 	if !machineIDPattern.MatchString(machine) {
 		return &core.Error{Code: "INVALID_REQUEST", Message: "machine ID must match [a-z][a-z0-9-]{0,62}"}
 	}
+	for _, c := range s.clients {
+		if c.remote && c.machineID == machine {
+			return &core.Error{Code: "INVALID_REQUEST", Message: "local machine ID collides with a remote machine"}
+		}
+	}
 	for key, c := range s.clients {
 		if !c.remote {
 			c.machineID = machine

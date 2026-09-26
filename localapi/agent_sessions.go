@@ -41,12 +41,18 @@ func (s *Server) serveAgentSessions(w http.ResponseWriter, r *http.Request, c cl
 		})
 	case "/v1/agent-register":
 		serveJSON(w, r, func(ctx context.Context, req core.RegisterAgentRequest) (core.AgentInstance, error) {
+			if c.remote && req.Metadata.DeliveryMode != "existing-session" {
+				return core.AgentInstance{}, &core.Error{Code: "AUTHORITY_DENIED", Message: "remote registration supports existing sessions only"}
+			}
 			agent, err := c.store.RegisterAgent(ctx, req, c.destination)
 			agent.MachineID = c.machineID
 			return agent, err
 		})
 	case "/v1/agent-context":
 		serveJSON(w, r, func(ctx context.Context, req core.UpdateAgentRequest) (core.AgentInstance, error) {
+			if c.remote && req.Metadata.DeliveryMode != "existing-session" {
+				return core.AgentInstance{}, &core.Error{Code: "AUTHORITY_DENIED", Message: "remote registration supports existing sessions only"}
+			}
 			agent, err := c.store.UpdateAgent(ctx, req, c.destination)
 			agent.MachineID = c.machineID
 			return agent, err
