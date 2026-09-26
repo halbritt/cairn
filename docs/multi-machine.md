@@ -165,7 +165,10 @@ MCP and hooks were unaffected because they ran outside that sandbox. The
 isolated test agent explicitly enabled network access while retaining workspace
 write limits. This was a test setting, not a change to the default agent
 sandbox. Completion and response journals also let the host recover calls
-that could not reach the socket; source reads still need an accessible tool.
+that could not reach the socket; source reads still need an accessible tool. With the standard Cairn MCP
+configuration, `cairn_history` can read the exact `record_id` and `version` from
+the native context without an in-turn Unix socket call. Do not substitute a
+search preview or a different record version.
 
 Directory output attributes each session to its server-configured
 machine. Use `cairn agents list --machine-id ID` or `agents resolve --machine-id
