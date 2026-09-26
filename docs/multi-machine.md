@@ -45,8 +45,18 @@ shared files. Operator commands that open a local database are unaffected.
 
 - The same Cairn build on every host, from one clean commit. Enrollment compares
   VCS revisions through the relay and refuses unstamped, modified or different
-  builds. Build with `go build -o ~/.local/bin/cairn ./cmd/cairn` from a clean
-  checkout; `cairn version` shows the stamp.
+  builds. Go 1.25 stamps only in a checkout whose `.git` is a directory. A
+  linked `git worktree` (where `.git` is a file) produces an unknown stamp even
+  with `-buildvcs=true`, and enrollment refuses it. Build from a clean ordinary
+  clone:
+
+  ```sh
+  git clone --no-local ~/git/cairn /tmp/cairn-build && cd /tmp/cairn-build
+  git checkout COMMIT && go build -o cairn ./cmd/cairn
+  ./cairn version   # vcs_revision is COMMIT and vcs_modified is false
+  ```
+
+  Install that one binary on the central host and on every joining host.
 - An HTTPS route from each joining machine to the central API, verified with the
   system's ordinary certificate roots. On a tailnet, keep the API listener on
   loopback and let Tailscale terminate TLS:

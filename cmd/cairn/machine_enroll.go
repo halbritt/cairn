@@ -310,19 +310,24 @@ func machineStatus(ctx context.Context, args []string) (machineStatusResult, err
 		}
 		result.Checks = append(result.Checks, checkRoles(ctx, filepath.Join(directory, "api.sock"), []enrollmentProfile{{Role: role, Token: strings.TrimSpace(string(token))}}, 0)...)
 	}
-	connected := len(result.Checks) > 0
+	// The worst result across roles wins, independent of role order:
+	// incompatible > unknown > compatible. No successful check is unknown.
+	rank := map[string]int{"compatible": 0, "unknown": 1, "incompatible": 2}
+	connected, compared := len(result.Checks) > 0, false
 	for _, check := range result.Checks {
 		if !check.OK {
 			connected = false
 			continue
 		}
 		state, err := buildCompatibility(localBuild(), check.server)
-		if result.Build != "incompatible" {
+		if !compared || rank[state] > rank[result.Build] {
 			result.Build = state
+			result.BuildDetail = ""
+			if err != nil {
+				result.BuildDetail = err.Error()
+			}
 		}
-		if err != nil {
-			result.BuildDetail = err.Error()
-		}
+		compared = true
 	}
 	if !connected {
 		return result, &core.Error{Code: "API_CONNECTION_FAILED", Message: "one or more enrolled profiles failed the connectivity check; see checks"}

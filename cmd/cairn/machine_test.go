@@ -569,6 +569,37 @@ func TestIdentityLockIsBounded(t *testing.T) {
 	}
 }
 
+func TestMachineStatusBuildIsWorstAcrossRoles(t *testing.T) {
+	central := machineHome(t, existingIdentities)
+	_, issued := provisionForEnroll(t, central, true)
+	clean := stampedBuild("abc", false)
+	for _, order := range [][2]buildinfo.Info{{{Schema: "cairn.build/1"}, clean}, {clean, {Schema: "cairn.build/1"}}} {
+		home := machineHome(t, "")
+		config := `{"schema":"cairn.machine/1","machine_id":"box-b","upstream":"https://central:8443","collection":"` + testCollection + `","principals":["machine:box-b/agent","machine:box-b/observer"],"enrolled_at":"2026-09-26T00:00:00Z"}`
+		_ = os.WriteFile(filepath.Join(home, "machine.json"), []byte(config), 0600)
+		builds := map[string]buildinfo.Info{}
+		for i, profile := range issued.Profiles {
+			_ = os.WriteFile(filepath.Join(home, roleTokenFiles[profile.Role]), []byte(profile.Token+"\n"), 0600)
+			builds[profile.Token] = order[i]
+		}
+		listener, err := net.Listen("unix", filepath.Join(home, "api.sock"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+			_ = json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "status": "OK", "data": builds[token]})
+		})}
+		go server.Serve(listener)
+		useLocalBuild(t, clean)
+		status, err := machineStatus(context.Background(), nil)
+		server.Close()
+		if core.Code(err) != "INSTALL_FAILED" || status.Build != "unknown" || !status.Checks[0].OK || !status.Checks[1].OK {
+			t.Fatalf("mixed builds %v: %+v %v", order, status, err)
+		}
+	}
+}
+
 func TestSameBuild(t *testing.T) {
 	clean := stampedBuild("abc", false)
 	for name, pair := range map[string][2]buildinfo.Info{
