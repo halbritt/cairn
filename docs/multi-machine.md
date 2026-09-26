@@ -23,7 +23,7 @@ and one token per role. `cairn machine enroll` installs:
 | Path on the joining machine | Contents |
 | --- | --- |
 | `~/.local/share/cairn/hosted-agent.token` | ordinary agent profile `machine:ID/agent` |
-| `~/.local/share/cairn/hosted-observer.token` | host observer profile, only when provisioned with `--observer` |
+| `~/.local/share/cairn/hosted-observer.token` | host observer profile, only when provisioned with `--observer`; it has no remote authority beyond `version` in this slice |
 | `~/.local/share/cairn/machine.json` | machine ID, upstream, collection and principals; no secrets |
 | `~/.config/systemd/user/cairn-relay.service` | `cairn relay --socket ~/.local/share/cairn/api.sock --upstream URL` |
 
