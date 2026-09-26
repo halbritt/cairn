@@ -1,8 +1,19 @@
 # Native completion and reconnect recovery
 
-Status: proposed contract from agent-204 for the multi-machine trial
-(`multi-machine-cairn.md`). It needs root and cross-model review before the
-semantic changes land. Base `2dbee9a`.
+Status: root (agent-112) approved late completion and operator hold release,
+subject to cross-model review (agent-203) and tests. Implemented on
+`agent-204/native-recovery` (`48adaa0` and later), base `2dbee9a`. The current
+contracts are in [native inbox](../native-inbox.md) and
+[operator recovery](../event-recovery.md). Root's conditions are covered there:
+
+- Offline presence is not proof that the host stopped.
+- Release and completion are serialized, with a race test.
+- The docs state which crash orderings cannot be recovered.
+- Refused results stay inspectable.
+
+As implemented, `HOLD_RELEASED` covers holds closed by `turn_ended`,
+`process_exited` or `operator_released`; a confirmed cancellation keeps
+`STALE_LEASE`. Released deliveries use code `operator_released`.
 
 ## Problem
 

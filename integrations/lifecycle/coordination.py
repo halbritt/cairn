@@ -1304,26 +1304,35 @@ def intent_lock(path, wait):
 
 
 def send_intent(slot, timeout):
-    """Send one journaled command and classify its outcome without guessing."""
+    """Send one journaled command and classify its outcome without guessing.
+
+    A committed or refused slot keeps that recorded status; a later replay's
+    outcome is kept separately as ``replay_code``. Only a pending slot moves.
+    """
     try:
         result = subprocess.run(slot['argv'], input=slot['input'], capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired):
-        slot.update(status='pending', code='API_UNAVAILABLE')
-        return None
-    try:
-        response = json.loads(result.stdout)
-    except ValueError:
-        response = None
-    if not isinstance(response, dict) or type(response.get('ok')) is not bool:
-        slot.update(status='pending', code='API_UNAVAILABLE')
-    elif response['ok'] and not result.returncode:
-        data = response.get('data') if isinstance(response.get('data'), dict) else {}
-        slot.update(status='committed', code='OK', output=result.stdout,
-                    result=data.get('result') if slot['kind'] != 'respond' else None)
-    elif response.get('status') in INTENT_FINAL_REFUSALS:
-        slot.update(status='refused', code=response['status'])
+        result, response = None, None
     else:
-        slot.update(status='pending', code=str(response.get('status') or 'API_UNAVAILABLE')[:64])
+        try:
+            response = json.loads(result.stdout)
+        except ValueError:
+            response = None
+    if not isinstance(response, dict) or type(response.get('ok')) is not bool:
+        status, code = 'pending', 'API_UNAVAILABLE'
+    elif response['ok'] and not result.returncode:
+        status, code = 'committed', 'OK'
+    elif response.get('status') in INTENT_FINAL_REFUSALS:
+        status, code = 'refused', response['status']
+    else:
+        status, code = 'pending', str(response.get('status') or 'API_UNAVAILABLE')[:64]
+    if slot['status'] != 'pending':
+        slot['replay_code'] = code
+        return result
+    slot.update(status=status, code=code)
+    if status == 'committed':
+        data = response.get('data') if isinstance(response.get('data'), dict) else {}
+        slot['result'] = data.get('result') if slot['kind'] != 'respond' else None
     return result
 
 
@@ -1363,20 +1372,30 @@ def inbox_command(argv):
     with intent_lock(target, 30):
         journal = json.loads(target.read_text()) if target.exists() else dict(
             schema='cairn.inbox-intent/1', attempt_id=context['attempt_id'], delivery_id=context['delivery_id'])
+        if args.kind == 'respond':
+            # A reply cites this attempt's own committed result, never another record.
+            completion = journal.get('completion') or {}
+            result = completion.get('result') if completion.get('status') == 'committed' else None
+            if not result or [args.version[0], command[-1]] != [str(result['version']), result['record_id']]:
+                raise CoordinationError('INVALID_REQUEST', 'a reply requires this attempt\'s committed completion '
+                                        'and its exact result version; run completion through this context first')
         slot = journal.get(name)
-        if slot and slot['status'] != 'refused':
+        if slot:
+            # One request UUID names one immutable command, whatever its outcome.
             if slot['kind'] != args.kind or slot['argv'] != command or slot['input'] != body:
                 print(json.dumps(dict(schema='cairn.response/1', ok=False, status='IDEMPOTENCY_CONFLICT',
-                    message=f"IDEMPOTENCY_CONFLICT: this attempt already journaled a different {name}; "
-                            "its host replays that exact request")))
+                    message=f"IDEMPOTENCY_CONFLICT: this attempt already journaled a different {name} "
+                            f"({slot['status']}); its request cannot change. The host reconciles this attempt; "
+                            "further work needs a new request from its sender or the operator")))
                 return 4
-            if slot['status'] == 'committed':
-                sys.stdout.write(slot['output'])
-                return 0
-        slot = dict(kind=args.kind, request_id=context['request_ids'][name], argv=command, input=body,
-                    status='pending', recorded_at=time.time())
-        journal[name] = slot
-        write_state(target, journal)  # Durable before anything leaves this host.
+        else:
+            slot = dict(kind=args.kind, request_id=context['request_ids'][name], argv=command, input=body,
+                        status='pending', recorded_at=time.time())
+            journal[name] = slot
+            write_state(target, journal)  # Durable before anything leaves this host.
+        # Every run goes through the authenticated API, even for a committed
+        # slot: a restore or replaced execution must refuse there, never be
+        # masked by a local copy of an earlier success.
         result = send_intent(slot, 30)
         write_state(target, journal)
     if result is None:
@@ -1445,10 +1464,33 @@ def renew_inbox(config, state, path, attempt):
     return delivery
 
 
+def journal_committed(config, state):
+    """Whether this attempt's own journaled completion or acknowledgement committed."""
+    attempt = state.get('inbox_attempt')
+    if not attempt or not config.get('state_dir'):
+        return False
+    target = intent_path(config['state_dir'], attempt['attempt_id'])
+    try:
+        return json.loads(target.read_text()).get('completion', {}).get('status') == 'committed'
+    except FileNotFoundError:
+        return False
+
+
+def end_turn_inbox(config, state, path, fenced=False):
+    """Close an ended turn's attempt, naming completion when the journal proves it.
+
+    ``delivery_completed`` means the delivery was explicitly handled; ``turn_ended``
+    means the turn ended without it. A store refusal of the former falls back.
+    """
+    if journal_committed(config, state) and release_inbox(config, state, path, 'delivery_completed', fenced):
+        return True
+    return release_inbox(config, state, path, 'turn_ended', fenced)
+
+
 def settle_inbox(config, state, path):
     """After a flush, reconcile what the store and turn state now prove."""
     if state.get('inbox_turn_ended'):
-        return release_inbox(config, state, path, 'turn_ended')
+        return end_turn_inbox(config, state, path)
     return release_inbox(config, state, path, 'delivery_completed')
 
 
@@ -1511,7 +1553,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
                     write_state(path, state)
                 try:
                     if flush_inbox_intents(config, state):
-                        release_inbox(config, state, path, 'turn_ended')
+                        end_turn_inbox(config, state, path)
                 except CoordinationError as exc:
                     if config.get('harness') != 'opencode' or exc.code != 'CLEANUP_UNCONFIRMED':
                         raise

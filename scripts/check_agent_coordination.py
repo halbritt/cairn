@@ -148,6 +148,47 @@ def check(binary, root, repo, api_call):
         assert hook(second, dict(event, session_id='native-delivery', hook_event_name='Stop')) == {}
         assert api_call('alice', 'event-status', message['event_id'])['deliveries'][0]['state'] == 'handled'
         hook(second, dict(event, session_id='native-delivery', hook_event_name='SessionEnd'))
+        # A partition across completion that outlasts the lease: the journaled
+        # result is replayed after the link returns and accepted late under the
+        # same still-open hold. Nothing reconciles while its outcome is unknown.
+        hook(second, dict(event, session_id='native-partition'))
+        parted = next(a for a in api_call('bob', 'agents', 'list', '--harness', 'codex')['agents'] if a['native_session_id'] == 'native-partition')
+        parted_message = api_call('alice', 'publish', '--request-id', str(uuid.uuid4()), '--to', parted['inbox'],
+            '--kind', 'request', '--version', str(source['version']), source['record_id'])
+        assert hook(second, dict(event, session_id='native-partition', hook_event_name='Stop')).get('decision') == 'block'
+        parted_context = next(json.loads(p.read_text()) for p in (state / 'inbox').glob('*.json')
+                              if json.loads(p.read_text())['event_id'] == parted_message['event_id'])
+        socket, cut = root / 'api.sock', root / 'api.sock.partitioned'
+        os.rename(socket, cut)
+        try:
+            lost = subprocess.run(parted_context['completion'], input='Selected result across a partition',
+                                  text=True, capture_output=True, timeout=30)
+            assert lost.returncode == 7 and json.loads(lost.stdout)['status'] == 'API_CONNECTION_FAILED', lost.stdout
+            hook(second, dict(event, session_id='native-partition', hook_event_name='Stop'), code=1)
+            watch()
+            psql = Path(subprocess.run(['pg_config', '--bindir'], capture_output=True, text=True, check=True).stdout.strip()) / 'psql'
+            subprocess.run([str(psql), os.environ['CAIRN_TEST_DATABASE_URL'], '-qtAc',
+                "UPDATE cairn.agent_delivery d SET lease_until=clock_timestamp()-interval '1 second' FROM cairn.agent_event e "
+                "WHERE e.event_id=d.event_id AND e.event_id='" + parted_message['event_id'] + "'"], check=True, capture_output=True, timeout=15)
+        finally:
+            os.rename(cut, socket)
+        held = api_call('alice', 'event-status', parted_message['event_id'])['deliveries'][0]
+        assert held['state'] == 'leased' and held['attempts'] == 1 and not held.get('late'), held
+        watch()
+        settled = api_call('alice', 'event-status', parted_message['event_id'])['deliveries'][0]
+        assert settled['state'] == 'handled' and settled['late'] and settled['attempts'] == 1, settled
+        intents = json.loads((state / 'intents' / (parted_context['attempt_id'] + '.json')).read_text())
+        assert intents['completion']['status'] == 'committed' and intents['completion']['result'] == settled['result']
+        assert (state / 'intents' / (parted_context['attempt_id'] + '.json')).stat().st_mode & 0o777 == 0o600
+        replayed = subprocess.run(parted_context['completion'], input='Selected result across a partition',
+                                  text=True, capture_output=True, check=True, timeout=30)
+        assert json.loads(replayed.stdout)['data']['result'] == settled['result']
+        parted_reply = subprocess.run([*parted_context['response'], '--version', str(settled['result']['version']),
+            settled['result']['record_id']], capture_output=True, text=True, check=True, timeout=30)
+        assert json.loads(parted_reply.stdout)['data']['causation_id'] == parted_message['event_id']
+        assert hook(second, dict(event, session_id='native-partition', hook_event_name='Stop')) == {}
+        hook(second, dict(event, session_id='native-partition', hook_event_name='SessionEnd'))
+        print('Partition across completion: journaled result replayed after the lease lapsed and accepted late under its hold')
         from test_idle_wakeup import HOST
         idle_root = root/'idle-host'
         idle_root.mkdir()

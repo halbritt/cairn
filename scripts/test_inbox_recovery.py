@@ -150,21 +150,42 @@ class InboxRecovery(unittest.TestCase):
         self.assertLess(max(i for i, op in enumerate(operations) if op == 'complete'),
                         operations.index('session-inbox-reconcile'))
         reconcile = json.loads([entry for entry in self.log() if entry['operation'] == 'session-inbox-reconcile'][0]['input'])
-        self.assertEqual(reconcile['reason'], 'turn_ended')
+        # The journal proves explicit handling, so the ended turn is not reported as unhandled.
+        self.assertEqual(reconcile['reason'], 'delivery_completed')
         self.assertNotIn('inbox_intent', self.state)
         self.assertEqual(self.journal()['completion']['status'], 'committed')
 
-    def test_committed_command_returns_its_record_and_a_different_body_is_refused(self):
+    def test_committed_command_replays_through_the_api_and_a_different_body_is_refused(self):
         context = self.context()
-        self.replies({'complete': [HANDLED]})
+        self.replies({'complete': [HANDLED, HANDLED, LOST, dict(ok=False, status='STALE_SESSION')]})
         self.run_context(context['completion'], 'Selected result')
         again = self.run_context(context['completion'], 'Selected result')
         self.assertEqual(json.loads(again.stdout)['data']['result'], RESULT)
-        self.assertEqual(len([e for e in self.log() if e['operation'] == 'complete']), 1)
+        sent = [e for e in self.log() if e['operation'] == 'complete']
+        self.assertEqual(len(sent), 2)
+        self.assertEqual(sent[0]['argv'], sent[1]['argv'])
+        # A local copy of an earlier success never answers for the store.
+        cut = self.run_context(context['completion'], 'Selected result')
+        self.assertEqual(json.loads(cut.stdout)['status'], 'API_CONNECTION_FAILED')
+        restored = self.run_context(context['completion'], 'Selected result')
+        self.assertEqual(json.loads(restored.stdout)['status'], 'STALE_SESSION')
+        slot = self.journal()['completion']
+        self.assertEqual((slot['status'], slot['result'], slot['replay_code']), ('committed', RESULT, 'STALE_SESSION'))
         other = self.run_context(context['completion'], 'A different result')
         self.assertEqual(json.loads(other.stdout)['status'], 'IDEMPOTENCY_CONFLICT')
         ack = self.run_context(context['acknowledgement'])
         self.assertEqual(json.loads(ack.stdout)['status'], 'IDEMPOTENCY_CONFLICT')
+
+    def test_refused_command_keeps_its_identity(self):
+        context = self.context()
+        self.replies({'complete': [dict(ok=False, status='HOLD_RELEASED')]})
+        self.run_context(context['completion'], 'Selected result')
+        for argv, body in ((context['completion'], 'A corrected result'), (context['acknowledgement'], '')):
+            changed = self.run_context(argv, body)
+            self.assertEqual(json.loads(changed.stdout)['status'], 'IDEMPOTENCY_CONFLICT')
+        slot = self.journal()['completion']
+        self.assertEqual((slot['status'], slot['kind'], slot['input']), ('refused', 'complete', 'Selected result'))
+        self.assertEqual(len([e for e in self.log() if e['operation'] in ('complete', 'ack')]), 1)
 
     def test_definitive_refusal_is_final_and_reconciliation_proceeds(self):
         context = self.context()
@@ -175,12 +196,22 @@ class InboxRecovery(unittest.TestCase):
         self.assertTrue(coordination.flush_inbox_intents(self.config, self.state))
         self.assertEqual(len([e for e in self.log() if e['operation'] == 'complete']), 1)
 
-    def test_reply_needs_a_result_version_and_is_replayed_after_completion(self):
+    def test_reply_needs_the_committed_result_and_is_replayed_after_completion(self):
         context = self.context()
-        self.replies({'complete': [HANDLED], 'publish': [LOST, dict(ok=True, status='OK', data={})]})
+        self.replies({'complete': [LOST, HANDLED], 'publish': [LOST, dict(ok=True, status='OK', data={})]})
+        # No reply before this attempt's completion has committed.
+        early = self.run_context([*context['response'], '--version', '1', RESULT['record_id']])
+        self.assertEqual(json.loads(early.stdout)['status'], 'INVALID_REQUEST')
+        self.run_context(context['completion'], 'Selected result')
+        pending = self.run_context([*context['response'], '--version', '1', RESULT['record_id']])
+        self.assertEqual(json.loads(pending.stdout)['status'], 'INVALID_REQUEST')
         self.run_context(context['completion'], 'Selected result')
         missing = self.run_context(context['response'])
         self.assertEqual(json.loads(missing.stdout)['status'], 'INVALID_REQUEST')
+        for version, record in (('2', RESULT['record_id']), ('1', '0a2b3c4d-5e6f-4a70-8b91-c2d3e4f50617')):
+            other = self.run_context([*context['response'], '--version', version, record])
+            self.assertEqual(json.loads(other.stdout)['status'], 'INVALID_REQUEST')
+        self.assertNotIn('publish', [e['operation'] for e in self.log()])
         self.run_context([*context['response'], '--version', '1', RESULT['record_id']])
         self.assertEqual(self.journal()['response']['status'], 'pending')
         self.assertTrue(coordination.flush_inbox_intents(self.config, self.state))
