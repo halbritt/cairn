@@ -193,7 +193,13 @@ func enrollMachine(ctx context.Context, args []string) (machineEnrollment, error
 	if result.Linger != "yes" {
 		result.Notes = append(result.Notes, "user lingering is "+result.Linger+"; without it the relay stops at logout (loginctl enable-linger)")
 	}
-	result.Checks = checkRoles(ctx, result.Socket, issued.Profiles, 15*time.Second)
+	if *noService && !socketAnswers(result.Socket) {
+		// The operator runs the relay; nothing can be checked until it starts.
+		result.Checks = []roleCheck{}
+		result.Notes = append(result.Notes, "relay not managed by enrollment: start cairn relay --socket "+result.Socket+" --upstream "+issued.Upstream+", then run cairn machine status")
+	} else {
+		result.Checks = checkRoles(ctx, result.Socket, issued.Profiles, 15*time.Second)
+	}
 	for _, check := range result.Checks {
 		if !check.OK {
 			return result, incomplete(check.Role+" connectivity check", errors.New(check.Status))

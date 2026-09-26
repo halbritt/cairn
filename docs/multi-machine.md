@@ -112,6 +112,12 @@ already match are left unchanged. On success the enrollment file is deleted
 unless `--keep-file` is given. Nothing is registered: agent sessions register
 themselves as they do on the central host.
 
+With `--no-service`, enrollment writes only the tokens and `machine.json`.
+Start `cairn relay --socket ... --upstream ...` yourself (for example in an
+isolated trial), then run `cairn machine status` to check connectivity. The
+unit is written to the invoking user's `$XDG_CONFIG_HOME/systemd/user`. That
+directory must be the one the user's systemd manager reads.
+
 `cairn machine status` shows the enrollment, relay state, lingering and a
 per-role connectivity check. It never prints tokens.
 

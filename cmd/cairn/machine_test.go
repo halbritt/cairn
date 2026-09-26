@@ -413,6 +413,21 @@ func TestMachineEnrollInstallsProfilesRelayAndCollection(t *testing.T) {
 	}
 }
 
+func TestMachineEnrollWithoutServiceDefersChecks(t *testing.T) {
+	central := machineHome(t, existingIdentities)
+	file, _ := provisionForEnroll(t, central, false)
+	home := machineHome(t, "")
+	log := filepath.Join(home, "systemctl.log")
+	fakeSystemctl(t, home)
+	result, err := enrollMachine(context.Background(), []string{"--file", file, "--no-service"})
+	if err != nil || len(result.Checks) != 0 || result.Unit != "" || !strings.Contains(strings.Join(result.Notes, " "), "cairn machine status") || !result.FileRemoved {
+		t.Fatalf("enroll --no-service: %+v %v", result, err)
+	}
+	if calls, _ := os.ReadFile(log); strings.Contains(string(calls), "enable") || strings.Contains(string(calls), "restart") {
+		t.Fatalf("--no-service touched systemd: %s", calls)
+	}
+}
+
 func TestEnrolledMachineRejectsMalformedConfig(t *testing.T) {
 	home := machineHome(t, "")
 	valid := `{"schema":"cairn.machine/1","machine_id":"box-b","upstream":"https://central","collection":"/c","principals":["machine:box-b/agent"],"enrolled_at":"2026-09-26T00:00:00Z"}`
