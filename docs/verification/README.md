@@ -6,6 +6,8 @@ Use [implementation status](../implementation-status.md), the current source and
 a fresh local validation run to assess the present build. A later implementation
 can supersede one row in an earlier report without changing that report's other
 observations.
+Decision receipts under `docs/plans` follow the same rule; see
+[reading plans and decision receipts](../plans/README.md).
 
 ## Evidence locations
 
