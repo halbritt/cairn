@@ -89,7 +89,7 @@ Installed CLI **670cf19** and its matching adapter/plugin. The API stayed on
 No restart or migration was needed. Recorded connection, identity, host
 permission and semantic configuration hashes were preserved.
 
-A native OpenCode1.18.21 session in the actual Cairn repository read
+A native OpenCode 1.18.21 session in the actual Cairn repository read
 `core/currentness.go`, called `cairn_search` with no arguments and pulled the
 existing applicability guide **v2**. Its body SHA-256 remained
 `617555818bf48ce98cdfdfb3204c4cbf821685e6d718c1006c4ab96dd26374ca`.

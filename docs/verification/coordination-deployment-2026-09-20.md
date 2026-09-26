@@ -136,6 +136,11 @@ especially for account one: its current production processes have no explicit
 config directory and use `~/.claude.json`; staged registration is under the
 selected `~/.claude` home. Account two already selects `~/.claude-harm`.
 No existing process was restarted and organization policy is not bypassed.
+
+Later note (2026-09-25): pass the flag in its `=` form,
+`--dangerously-load-development-channels=server:cairn-events`. The
+[draft-preservation record](draft-preservation-2026-09-23.md) found that the
+space form consumes a following positional prompt as a second channel entry.
 Older isolated Claude probe channels are not production deployment evidence.
 
 Correction, 2026-09-23: use the `=` form,

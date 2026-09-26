@@ -71,3 +71,7 @@ ordinary search/pull verified its exact bytes. This retains useful instructions
 for future work; it does not establish a downstream task benefit. CI 34433568208
 was still running at deployment observation. Deployment and guidance identities
 are retained in the companion metadata.
+
+Later note (2026-09-25): GitHub reports that run 34433568208 (`test`, head
+`386eae1`) concluded `success`; the run was last updated at
+2026-09-10T03:33:04Z.

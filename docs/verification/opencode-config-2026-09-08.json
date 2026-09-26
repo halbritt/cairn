@@ -118,7 +118,7 @@
   "limits": [
     "Generates a configuration fragment; no task launch, automatic merge or host-run association.",
     "No model was required or invoked for this deterministic setup check.",
-    "Native output compatibility verified with installed OpenCode1.18.21."
+    "Native output compatibility verified with installed OpenCode 1.18.21."
   ],
   "installation": {
     "revision": "ea2324f2c8cd350c568cb7b7aede7157ff428e57",

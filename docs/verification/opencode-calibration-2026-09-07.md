@@ -22,6 +22,11 @@ session homes were removed afterward. Source snapshots, dumps, reports and
 executed controller copies remain in the private `/tmp/cairn-opencode-calibration-20260907-e`
 and `-f` directories.
 
+Later note (2026-09-25): the metadata has no `context_tokens` field for E.
+E's 65,536 figure is the model `limit.context` in its OpenCode configuration,
+which the metadata identifies by `config_sha256` `c8164c7d…`. That configuration
+is one of the private `/tmp` artifacts above.
+
 E changed only the per-request thinking setting relative to the earlier
 repository-only condition. An inspection during E observed three native
 compactions and repeated reads of the two target files. F additionally used the

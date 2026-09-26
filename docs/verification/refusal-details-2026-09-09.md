@@ -8,7 +8,8 @@ against potentially changed notes. It does not establish downstream task benefit
 
 ## Behavior and preservation
 
-New compiler refusals use explanation version 1. Budget and ranking context are
+New compiler refusals use explanation version 1 (Later note (2026-09-25):
+the [refusal gates change](refusal-gates-2026-09-10.md) moved them to version 2). Budget and ranking context are
 retained when initialized. Candidate observations exclude bodies, raw queries and
 frozen evidence/grant facts. Missing reasons become `EVALUATION_INCOMPLETE`.
 Considered references and candidates use the same sorted prefix of at most 1,000;

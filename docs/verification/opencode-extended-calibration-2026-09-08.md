@@ -16,6 +16,9 @@ relay. Reported usage totalled $0.060410; that is provider telemetry, not an
 independently verified invoice. The trace recorded 21 successful reads, eight
 grep calls, nine successful shell calls and 14 shell errors, with no edit event.
 There were 37 tool-call finishes, one output-length finish and one stop finish.
+(Later note (2026-09-25): the 40 requests are the relay's count and the
+finish reasons come from OpenCode's native events; this record does not identify
+which request has no recorded finish reason.)
 Normal process exit therefore did not establish completion of the repair.
 The output-length event remains a limit on interpretation even though the
 aggregate process/request budget was not exhausted.

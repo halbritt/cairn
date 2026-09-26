@@ -19,6 +19,9 @@ memory improved a model task or a claim that the full lifecycle is complete.
 The explicit array replaces current citations; `[]` clears them, while omission
 or null refuses. Existing full-source digest, byte-span, repository and sensitivity
 checks apply. The maximum remains 32 sources, each with up to 32 passages.
+(Later note (2026-09-25): both bounds are enforced by `linkEvidence` in
+`core/evidence.go`; `core/ordinary_citations.go` also refuses more than 32
+citations.)
 Successful retries preserve their original result; changed intent conflicts.
 CAS, record/attempt locks, source checks, version creation and request settlement
 share the existing serializable transaction.

@@ -70,6 +70,12 @@ The [API worker deadline](../../semantic/stream.go) is twenty seconds. This timi
 is consistent with deadline pressure; the specific cause of the live fallback
 was not captured and remains unconfirmed.
 
+Later note (2026-09-25): the linked file set this twenty-second deadline
+when this report was written. The
+[semantic deadline change](semantic-deadline-2026-09-10.md) (commit `a848e3c`)
+replaced it with a shared twenty-five-second `workerTimeout` in
+`semantic/command.go`.
+
 The existing `--semantic --kind procedure` route reduced the eligible input to
 seven procedures, 28,630 body bytes. Two sequential actual API calls returned
 `READY`, `discovery.state: ready`, identical score digests, and Codex first:

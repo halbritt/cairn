@@ -9,6 +9,9 @@ The [operator guide](../opencode-tools.md#install-in-a-project) covers setup,
 replacement and declared context.
 
 The command writes only `.opencode/cairn.json` and `.opencode/tools/cairn.ts`.
+(Later note (2026-09-25): the later opt-in `--recent-files` flag also writes
+`.opencode/plugins/cairn-recent-files.ts`; see
+[recent file hints](recent-file-hints-2026-09-10.md).)
 It preserves host permissions and requires no service, database, credentials or
 source checkout during installation. The token path is configuration; the token
 bytes are not read. Ordinary API authentication still happens when tools run.

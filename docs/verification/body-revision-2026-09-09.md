@@ -19,6 +19,13 @@ so this convenience operation does not disclose a stored body or its metadata.
 MCP and native OpenCode retain the same five tool names and full-draft edit form.
 An edit must supply exactly one of `body` and `draft`.
 
+Later note (2026-09-25): this describes the 2026-09-09 interface.
+[Ordinary citations](ordinary-citations-2026-09-09.md),
+[note append](note-append-2026-09-10.md) and
+[note replace](note-replace-2026-09-10.md) added edit forms; `cairn_edit` now
+requires exactly one of `body`, `append`, `replace`, `draft` or
+`evidence_citations` (`mcpapi/server.go`).
+
 A revision has its own stable intent and cached response under the existing
 mutation mechanism. Reading the current draft occurs inside that transaction,
 after checking for a committed retry. An identical retry returns the original

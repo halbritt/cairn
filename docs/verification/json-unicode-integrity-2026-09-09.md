@@ -57,7 +57,8 @@ memory benefit or crediting the guide with independent discovery. L4's broader
 lifecycle work and durable task value remain open.
 
 [Metadata](json-unicode-integrity-2026-09-09.json) retains failures, completed
-checks and decision provenance. Installation is recorded separately.
+checks and decision provenance. Installation is recorded in the next section and
+in the metadata's `installation` block.
 
 ## Local installation
 

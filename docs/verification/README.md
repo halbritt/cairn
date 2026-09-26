@@ -29,6 +29,22 @@ Read those statuses as part of their recorded review, not as the state of the
 current project. Check their companion reports and current source before
 relying on a completion claim.
 
+Identical digests are not always copying errors. Thirty-nine files here and ten
+decision receipts under `docs/plans` cite `c125b482…` for a `make check` log.
+Until commit `a3d23c5` (2026-09-25), `make check` ran only `go vet ./...` and
+the `gofmt` test, which print nothing when they pass, so every passing log held
+the same two echoed commands. That digest shows a passing log, not which run
+produced it. In the [startup-hook metadata](opencode-startup-hook-2026-09-09.json),
+`/tmp/cairn-startup-hook-probe-final.log` and
+`/tmp/cairn-startup-hook-probe-final/report.json` share `d9936d04…` because the
+log is a byte copy of the report; they are one piece of evidence.
+
+Records also commit Cairn record, request and receipt UUIDs and host paths. For
+example, record `82fcfec8…` appears in seven files under `docs`. A record's
+statement that identifiers "remain outside Git" describes that run's private
+output only. There is no repository-wide rule yet on which identifiers belong in
+committed records.
+
 When revisiting a historical claim, cite the exact retained source, test or
 artifact that can still be inspected. If the raw artifact is gone, label that
 limit and run a new check under a new date. The repository's normal validation

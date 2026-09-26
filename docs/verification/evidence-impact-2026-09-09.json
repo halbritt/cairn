@@ -44,7 +44,7 @@
     "Read-only inspection, not mutation authorization or qualification",
     "Explicit captured-reference and record-relation edges only",
     "Current snapshot per page; offsets may shift under mutation",
-    "Recursive work may exceed30second deadline",
+    "Recursive work may exceed 30-second deadline",
     "No production graph or downstream task-benefit qualification"
   ],
   "doctrine": {

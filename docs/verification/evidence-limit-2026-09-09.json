@@ -4,7 +4,7 @@
   "decoded_source_limit": 1048576,
   "evidence_encoded_limit": 8388608,
   "other_encoded_limit": 131072,
-  "baseline": "Valid1MiB escaped source refused by128KiB client cap",
+  "baseline": "Valid 1MiB escaped source refused by 128KiB client cap",
   "checks": {
     "exact_full_source_and_digest": "passed",
     "capture_retry": "passed",
