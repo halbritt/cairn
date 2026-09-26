@@ -28,10 +28,7 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	cert := f.String("tls-cert", "", "remote listener TLS certificate")
 	key := f.String("tls-key", "", "remote listener TLS private key")
 	proxy := f.Bool("tls-terminated-proxy", false, "explicit loopback backend for a deployment-managed HTTPS proxy")
-	hostname, err := os.Hostname()
-	if err != nil {
-		return err
-	}
+	hostname, _ := os.Hostname()
 	machine := f.String("machine-id", strings.ToLower(strings.SplitN(hostname, ".", 2)[0]), "local directory machine ID")
 	semanticCommand := f.String("semantic-command", "", "optional absolute local CPU scoring executable")
 	semanticStreamCommand := f.String("semantic-stream-command", "", "optional absolute reusable local CPU scoring executable")
@@ -46,7 +43,11 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 		return invalid("choose one semantic command mode")
 	}
 	idleConfigured := false
+	machineConfigured := false
 	f.Visit(func(option *flag.Flag) {
+		if option.Name == "machine-id" {
+			machineConfigured = true
+		}
 		if option.Name == "semantic-idle-timeout" {
 			idleConfigured = true
 		}
@@ -100,7 +101,9 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 		return err
 	}
 	defer handler.Close()
-	if err = handler.SetLocalMachineID(*machine); err != nil {
+	// A derived hostname is optional attribution, not a new startup requirement
+	// for existing installations. Explicit machine IDs remain strictly checked.
+	if err = handler.SetLocalMachineID(*machine); err != nil && machineConfigured {
 		return err
 	}
 	remote, err := listenRemote(*listen, *cert, *key, *proxy)

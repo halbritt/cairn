@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -25,18 +26,88 @@ func listenPrivateUnix(socket string) (net.Listener, error) {
 	if !ok || stat.Uid != uint32(os.Geteuid()) || info.Mode().Perm()&0077 != 0 {
 		return nil, invalid("socket directory must be owned by the current user and owner-only")
 	}
+
+	lock, err := os.OpenFile(socket+".lock", os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600)
+	if err != nil {
+		return nil, err
+	}
+	keepLock := false
+	defer func() {
+		if !keepLock {
+			_ = lock.Close()
+		}
+	}()
+	lockInfo, err := lock.Stat()
+	if err != nil {
+		return nil, err
+	}
+	lockStat, ok := lockInfo.Sys().(*syscall.Stat_t)
+	if !ok || !lockInfo.Mode().IsRegular() || lockInfo.Mode().Perm()&0077 != 0 || lockStat.Uid != uint32(os.Geteuid()) {
+		return nil, invalid("socket lock must be an owner-only regular file owned by the current user")
+	}
+	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, invalid("API socket is already in use")
+		}
+		return nil, err
+	}
+	if err = removeStaleSocket(socket); err != nil {
+		return nil, err
+	}
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
 	if err != nil {
-		if errors.Is(err, syscall.EADDRINUSE) {
-			return nil, invalid("API socket already exists; stop its owner or explicitly remove a confirmed stale socket")
-		}
 		return nil, err
 	}
 	if err = os.Chmod(socket, 0600); err != nil {
 		_ = listener.Close()
 		return nil, err
 	}
-	return listener, nil
+	keepLock = true
+	return &privateUnixListener{Listener: listener, lock: lock}, nil
+}
+
+// Retain the lock file: unlinking it would let concurrent starts lock distinct
+// inodes. A killed process releases the kernel lock while leaving the socket.
+type privateUnixListener struct {
+	net.Listener
+	lock     *os.File
+	once     sync.Once
+	closeErr error
+}
+
+func (l *privateUnixListener) Close() error {
+	l.once.Do(func() { l.closeErr = errors.Join(l.Listener.Close(), l.lock.Close()) })
+	return l.closeErr
+}
+
+func removeStaleSocket(socket string) error {
+	info, err := os.Lstat(socket)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || info.Mode()&os.ModeSocket == 0 || info.Mode().Perm()&0077 != 0 || stat.Uid != uint32(os.Geteuid()) {
+		return invalid("existing socket path is not an owner-only socket owned by the current user")
+	}
+	conn, err := net.DialTimeout("unix", socket, 250*time.Millisecond)
+	if err == nil {
+		_ = conn.Close()
+		return invalid("API socket is already in use")
+	}
+	if !errors.Is(err, syscall.ECONNREFUSED) {
+		return invalid("cannot establish that the existing socket is stale")
+	}
+	current, err := os.Lstat(socket)
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(info, current) {
+		return invalid("socket changed during stale listener inspection")
+	}
+	return os.Remove(socket)
 }
 
 func listenRemote(address, certFile, keyFile string, proxy bool) (net.Listener, error) {
