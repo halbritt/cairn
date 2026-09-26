@@ -7,11 +7,11 @@ joining machine keep using the socket and token files they already use; they
 never hold database credentials. The design and its accepted limits are in
 [the proposal](plans/multi-machine-cairn.md).
 
-Status: trial implementation, not yet deployed or accepted. The enrollment
-commands, the network listener (`cairn serve --listen`) and the relay exist. An
-isolated end-to-end test covers provisioning, the TLS listener, the relay,
-enrollment, shared notes, directory attribution, remote limits and revocation.
-Real harness delivery between two hosts is still unproven. No remote worker
+Status: implemented and verified in a disposable Proximal–Archon trial;
+production deployment and final acceptance are pending. The trial exercised
+enrollment, shared memory through MCP, native request delivery, explicit
+completion and a linked reply. See the [acceptance record](plans/multi-machine-acceptance.md)
+for the exact tested scope. No remote worker
 pools, conversation migration, offline memory, repository sync or automatic
 placement exist.
 
@@ -157,7 +157,15 @@ remote process wrapping, cancellation capture, exclusive turns, and use/outcome
 recording (`delivery`, `outcome`, `assess-run`, reports). Lifecycle hooks that
 record uses and outcomes therefore get `AUTHORITY_DENIED` on a joining machine.
 Memory search, notes, the directory, native inbox delivery, completion and
-replies work. Directory output attributes each session to its server-configured
+replies work.
+
+The harness must permit calls to the local Unix socket. In the live trial,
+Archon Codex 0.154.0 blocked CLI socket creation with networking disabled;
+MCP and hooks were unaffected because they ran outside that sandbox. The
+isolated test agent explicitly enabled network access while retaining workspace
+write limits. This was a test setting, not a change to the default agent
+sandbox. Completion and response journals also let the host recover calls
+that could not reach the socket; source reads still need an accessible tool. Directory output attributes each session to its server-configured
 machine. Use `cairn agents list --machine-id ID` or `agents resolve --machine-id
 ID` to select agents on one host.
 
