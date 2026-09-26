@@ -268,6 +268,8 @@ The [use/outcome loop](docs/use-outcome-loop.md) documents joined observations,
 versioned task assessments and completed-task delegate findings.
 [Authenticated local access](docs/local-api.md) gives agents and host observers
 scoped Unix-socket access without the operator CLI or database credentials.
+[Other machines](docs/multi-machine.md) join one central API with a single
+enrollment file and a local relay that serves the same socket.
 With a provisioned agent token, save notes and use
 [search and pull commands](docs/index-and-pull.md#agent-commands-without-request-json)
 without writing request JSON:

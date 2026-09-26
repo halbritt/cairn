@@ -105,6 +105,10 @@ func prepareWatch(args []string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	enrolled, err := enrolledMachine()
+	if err != nil {
+		return nil, err
+	}
 	if p.socket == "" || p.token == "" {
 		dir, err := dataDirectory()
 		if err != nil {
@@ -114,7 +118,7 @@ func prepareWatch(args []string) (any, error) {
 			p.socket = filepath.Join(dir, "api.sock")
 		}
 		if p.token == "" {
-			p.token = filepath.Join(dir, "agent.token")
+			p.token = filepath.Join(dir, defaultAgentToken(enrolled))
 		}
 	}
 	if provided["agent-id"] || provided["execution-id"] {

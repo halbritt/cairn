@@ -47,6 +47,13 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	}
 	socketPath := *socket
 	tokenPath := *tokenFile
+	enrolled, err := enrolledMachine()
+	if err != nil {
+		return nil, err
+	}
+	if enrolled != nil {
+		agentCollection = enrolled.Collection
+	}
 	if provided["socket"] && socketPath == "" {
 		return nil, invalid("empty agent socket path")
 	}
@@ -62,7 +69,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 			socketPath = filepath.Join(directory, "api.sock")
 		}
 		if !provided["token-file"] {
-			tokenPath = filepath.Join(directory, "agent.token")
+			tokenPath = filepath.Join(directory, defaultAgentToken(enrolled))
 		}
 	}
 	if f.NArg() < 1 {

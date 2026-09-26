@@ -21,7 +21,15 @@ func flags(name string) *flag.FlagSet {
 	f.SetOutput(io.Discard)
 	return f
 }
+
+// agentCollection is set only on authenticated agent routes of an enrolled
+// machine, where the canonical collection replaces the working directory.
+var agentCollection string
+
 func defaultRepo() string {
+	if agentCollection != "" {
+		return agentCollection
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return ""

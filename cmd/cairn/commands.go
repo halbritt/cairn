@@ -20,6 +20,7 @@ const help = `Cairn: local memory for agents
 
 Everyday commands:
   agents --help (live session identity, presence and directory)
+  machine --help (join another host to this Cairn: provision, enroll, rotate, revoke)
   wake --help (automatic request workers)
   publish --help | inbox --help (durable agent notifications)
   watch --help (read-only inbox arrivals with a saved cursor)
@@ -133,6 +134,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	}
 	if isEventCommand(args[0]) {
 		return eventCommand(ctx, args[0], args[1:], input, nil)
+	}
+	if args[0] == "machine" {
+		return machineCommand(ctx, args[1:])
 	}
 	if args[0] == "opencode-install" {
 		executable, err := os.Executable()
