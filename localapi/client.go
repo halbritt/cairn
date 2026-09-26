@@ -100,11 +100,11 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 		return err
 	}
 	defer result.Body.Close()
-	encoded, err := io.ReadAll(io.LimitReader(result.Body, 8*1024*1024+1))
+	encoded, err := io.ReadAll(io.LimitReader(result.Body, ResponseBodyLimit+1))
 	if err != nil {
 		return err
 	}
-	if len(encoded) > 8*1024*1024 {
+	if int64(len(encoded)) > ResponseBodyLimit {
 		return fmt.Errorf("API response exceeds 8 MiB")
 	}
 	var envelope struct {

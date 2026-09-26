@@ -39,7 +39,7 @@ func (s *Store) ResolveAgent(ctx context.Context, req AgentDirectoryQuery, dest 
 	if req.After != 0 || req.Limit != 0 || req.IncludeOffline {
 		return out, failure("INVALID_REQUEST", "resolve does not accept paging or include_offline; use directory to inspect candidates")
 	}
-	if req.AgentID == "" && req.Harness == "" && req.Project == "" && req.Model == "" && req.Workspace == "" && req.State == "" && req.DeliveryMode == "" {
+	if req.OwnerPrincipals == nil && req.AgentID == "" && req.Harness == "" && req.Project == "" && req.Model == "" && req.Workspace == "" && req.State == "" && req.DeliveryMode == "" {
 		return out, failure("INVALID_REQUEST", "resolve requires a selector")
 	}
 	req.Limit = 100

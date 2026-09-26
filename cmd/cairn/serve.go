@@ -9,10 +9,9 @@ import (
 	"github.com/halbritt/cairn/localapi"
 	"github.com/halbritt/cairn/semantic"
 	"io"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -25,6 +24,15 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	f := flags("serve")
 	config := f.String("identities", filepath.Join(directory, "identities.json"), "owner-only identity configuration")
 	socket := f.String("socket", filepath.Join(directory, "api.sock"), "private Unix socket")
+	listen := f.String("listen", "", "optional remote TCP listener")
+	cert := f.String("tls-cert", "", "remote listener TLS certificate")
+	key := f.String("tls-key", "", "remote listener TLS private key")
+	proxy := f.Bool("tls-terminated-proxy", false, "explicit loopback backend for a deployment-managed HTTPS proxy")
+	hostname, err := os.Hostname()
+	if err != nil {
+		return err
+	}
+	machine := f.String("machine-id", strings.ToLower(strings.SplitN(hostname, ".", 2)[0]), "local directory machine ID")
 	semanticCommand := f.String("semantic-command", "", "optional absolute local CPU scoring executable")
 	semanticStreamCommand := f.String("semantic-stream-command", "", "optional absolute reusable local CPU scoring executable")
 	semanticIdle := f.Duration("semantic-idle-timeout", 30*time.Second, "positive idle lifetime for the reusable semantic worker")
@@ -92,49 +100,24 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 		return err
 	}
 	defer handler.Close()
-	parent := filepath.Dir(*socket)
-	if err = os.MkdirAll(parent, 0700); err != nil {
+	if err = handler.SetLocalMachineID(*machine); err != nil {
 		return err
 	}
-	parentInfo, err := os.Stat(parent)
+	remote, err := listenRemote(*listen, *cert, *key, *proxy)
 	if err != nil {
 		return err
 	}
-	if parentInfo.Mode().Perm()&0077 != 0 {
-		return invalid("socket directory must be owner-only")
+	if remote != nil {
+		defer remote.Close()
 	}
-	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: *socket, Net: "unix"})
+	local, err := listenPrivateUnix(*socket)
 	if err != nil {
-		if errors.Is(err, syscall.EADDRINUSE) {
-			return invalid("API socket is already in use")
-		}
 		return err
 	}
-	defer listener.Close()
-	if err = os.Chmod(*socket, 0600); err != nil {
-		return err
+	defer local.Close()
+	endpoints := []apiEndpoint{{listener: local, handler: handler}}
+	if remote != nil {
+		endpoints = append(endpoints, apiEndpoint{listener: remote, handler: handler.RemoteHandler()})
 	}
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 35 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 60 * time.Second}
-	defer server.Close()
-	done := make(chan struct{})
-	stopped := make(chan struct{})
-	go func() {
-		defer close(stopped)
-		select {
-		case <-ctx.Done():
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := server.Shutdown(shutdownCtx); err != nil {
-				_ = server.Close()
-			}
-		case <-done:
-		}
-	}()
-	err = server.Serve(listener)
-	close(done)
-	<-stopped
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
-	}
-	return err
+	return serveAPIs(ctx, endpoints)
 }

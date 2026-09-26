@@ -26,6 +26,8 @@ type AgentMetadata struct {
 }
 
 type AgentInstance struct {
+	ProfileOwner       string        `json:"-"`
+	MachineID          string        `json:"machine_id,omitempty"`
 	AgentID            string        `json:"agent_id"`
 	Ordinal            int64         `json:"ordinal"`
 	DisplayName        string        `json:"display_name"`
@@ -90,17 +92,19 @@ type UpdateAgentRequest struct {
 }
 
 type AgentDirectoryQuery struct {
-	Repo           string `json:"repo,omitempty"`
-	AgentID        string `json:"agent_id,omitempty"`
-	Harness        string `json:"harness,omitempty"`
-	Project        string `json:"project,omitempty"`
-	Model          string `json:"model,omitempty"`
-	Workspace      string `json:"workspace,omitempty"`
-	State          string `json:"state,omitempty"`
-	DeliveryMode   string `json:"delivery_mode,omitempty"`
-	IncludeOffline bool   `json:"include_offline,omitempty"`
-	After          int64  `json:"after,omitempty"`
-	Limit          int    `json:"limit,omitempty"`
+	MachineID       string   `json:"machine_id,omitempty"`
+	OwnerPrincipals []string `json:"-"`
+	Repo            string   `json:"repo,omitempty"`
+	AgentID         string   `json:"agent_id,omitempty"`
+	Harness         string   `json:"harness,omitempty"`
+	Project         string   `json:"project,omitempty"`
+	Model           string   `json:"model,omitempty"`
+	Workspace       string   `json:"workspace,omitempty"`
+	State           string   `json:"state,omitempty"`
+	DeliveryMode    string   `json:"delivery_mode,omitempty"`
+	IncludeOffline  bool     `json:"include_offline,omitempty"`
+	After           int64    `json:"after,omitempty"`
+	Limit           int      `json:"limit,omitempty"`
 }
 
 type AgentDirectoryPage struct {
@@ -143,11 +147,11 @@ func (m AgentMetadata) validate() error {
 	return nil
 }
 
-const agentSessionColumns = `agent_id::text,ordinal,native_session_id,repo,execution_id::text,database_generation,context_revision,metadata,last_seen,expires_at,stopped,(NOT stopped AND expires_at>clock_timestamp() AND database_generation=(SELECT generation FROM cairn.retrieval_generation WHERE singleton))`
+const agentSessionColumns = `owner,agent_id::text,ordinal,native_session_id,repo,execution_id::text,database_generation,context_revision,metadata,last_seen,expires_at,stopped,(NOT stopped AND expires_at>clock_timestamp() AND database_generation=(SELECT generation FROM cairn.retrieval_generation WHERE singleton))`
 
 func scanAgentSession(row pgx.Row) (AgentInstance, error) {
 	var a AgentInstance
-	err := row.Scan(&a.AgentID, &a.Ordinal, &a.NativeSessionID, &a.Repo, &a.ExecutionID, &a.DatabaseGeneration, &a.ContextRevision, &a.Metadata, &a.LastSeen, &a.ExpiresAt, &a.Stopped, &a.Online)
+	err := row.Scan(&a.ProfileOwner, &a.AgentID, &a.Ordinal, &a.NativeSessionID, &a.Repo, &a.ExecutionID, &a.DatabaseGeneration, &a.ContextRevision, &a.Metadata, &a.LastSeen, &a.ExpiresAt, &a.Stopped, &a.Online)
 	if err == nil {
 		a.Inbox = "agent/" + a.AgentID
 		a.DisplayName = "agent-" + strconv.FormatInt(a.Ordinal, 10)
@@ -323,7 +327,7 @@ func (s *Store) AgentDirectory(ctx context.Context, req AgentDirectoryQuery, des
 	if err != nil {
 		return out, err
 	}
-	if req.After < 0 || (req.AgentID != "" && validID(req.AgentID) != nil) || (req.Harness != "" && !eventName.MatchString(req.Harness)) || (req.Workspace != "" && !filepath.IsAbs(req.Workspace)) || (req.State != "" && req.State != "idle" && req.State != "busy") || (req.DeliveryMode != "" && req.DeliveryMode != "existing-session" && req.DeliveryMode != "fresh-worker") {
+	if req.MachineID != "" || req.After < 0 || (req.AgentID != "" && validID(req.AgentID) != nil) || (req.Harness != "" && !eventName.MatchString(req.Harness)) || (req.Workspace != "" && !filepath.IsAbs(req.Workspace)) || (req.State != "" && req.State != "idle" && req.State != "busy") || (req.DeliveryMode != "" && req.DeliveryMode != "existing-session" && req.DeliveryMode != "fresh-worker") {
 		return out, failure("INVALID_REQUEST", "invalid agent directory selector")
 	}
 	for _, text := range []string{req.Project, req.Model, req.Workspace} {
@@ -350,7 +354,8 @@ func (s *Store) AgentDirectory(ctx context.Context, req AgentDirectoryQuery, des
 	 AND ($9='' OR metadata->>'workspace'=$9)
 	 AND ($10='' OR metadata->>'state'=$10)
 	 AND ($11='' OR metadata->>'delivery_mode'=$11)
-	 AND ordinal>$12 ORDER BY ordinal LIMIT $13`, repo, dest.AllowLocal, generation, req.IncludeOffline, req.AgentID, req.Harness, req.Project, req.Model, req.Workspace, req.State, req.DeliveryMode, req.After, limit+1)
+	 AND ($14::text[] IS NULL OR owner=ANY($14))
+	 AND ordinal>$12 ORDER BY ordinal LIMIT $13`, repo, dest.AllowLocal, generation, req.IncludeOffline, req.AgentID, req.Harness, req.Project, req.Model, req.Workspace, req.State, req.DeliveryMode, req.After, limit+1, req.OwnerPrincipals)
 	if err != nil {
 		return out, err
 	}

@@ -25,9 +25,14 @@ type Identity struct {
 	Repo        string `json:"repo"`
 	Role        string `json:"role"`
 	Destination string `json:"destination"`
+	Remote      bool   `json:"remote,omitempty"`
+	MachineID   string `json:"machine_id,omitempty"`
 }
 type client struct {
 	store       *core.Store
+	remote      bool
+	principal   string
+	machineID   string
 	destination core.Destination
 }
 type expansionReader struct {
@@ -35,8 +40,9 @@ type expansionReader struct {
 	destination core.Destination
 }
 type Server struct {
-	clients map[[32]byte]client
-	readers map[string]expansionReader
+	clients  map[[32]byte]client
+	readers  map[string]expansionReader
+	machines map[string]string
 }
 
 func New(ctx context.Context, dsn string, identities []Identity) (*Server, error) {
@@ -44,39 +50,23 @@ func New(ctx context.Context, dsn string, identities []Identity) (*Server, error
 }
 
 func NewWithSemanticRanker(ctx context.Context, dsn string, identities []Identity, ranker core.SemanticRanker) (*Server, error) {
-	s := &Server{clients: map[[32]byte]client{}, readers: map[string]expansionReader{}}
+	if err := ValidateIdentities(identities); err != nil {
+		return nil, err
+	}
+	s := &Server{clients: map[[32]byte]client{}, readers: map[string]expansionReader{}, machines: map[string]string{}}
 	fail := func(err error) (*Server, error) { s.Close(); return nil, err }
-	invalid := func() (*Server, error) {
-		return fail(&core.Error{Code: "INVALID_REQUEST", Message: "invalid or duplicate local API identity configuration"})
-	}
-	if len(identities) == 0 || len(identities) > 32 {
-		return invalid()
-	}
-	principals := map[string]bool{}
 	for _, identity := range identities {
-		digest, err := hex.DecodeString(identity.TokenSHA256)
-		if err != nil || len(digest) != 32 || strings.TrimSpace(identity.Principal) == "" || len(identity.Principal) > 256 || identity.Repo == "" || identity.Repo == "*" || len(identity.Repo) > 256 || principals[identity.Principal] {
-			return invalid()
-		}
-		if identity.Role != "agent" && identity.Role != "observer" {
-			return invalid()
-		}
-		if identity.Destination != "local" && identity.Destination != "hosted" {
-			return invalid()
-		}
+		digest, _ := hex.DecodeString(identity.TokenSHA256)
 		key := [32]byte(digest)
-		if _, exists := s.clients[key]; exists {
-			return invalid()
-		}
 		store, err := core.OpenWithSemanticRanker(ctx, dsn, core.Channel{Principal: identity.Principal, Repo: identity.Repo, Instrumented: identity.Role == "observer"}, ranker)
 		if err != nil {
 			return fail(err)
 		}
-		s.clients[key] = client{store, core.Destination{Name: identity.Destination, AllowLocal: identity.Destination == "local"}}
+		s.clients[key] = client{store: store, destination: core.Destination{Name: identity.Destination, AllowLocal: identity.Destination == "local"}, remote: identity.Remote, principal: identity.Principal, machineID: identity.MachineID}
 		if identity.Role == "agent" {
 			s.readers[identity.Principal] = expansionReader{identity.Repo, s.clients[key].destination}
 		}
-		principals[identity.Principal] = true
+		s.machines[identity.Principal] = identity.MachineID
 	}
 	return s, nil
 }
@@ -85,7 +75,9 @@ func (s *Server) Close() {
 		c.store.Close()
 	}
 }
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.serveHTTP(w, r, false) }
+
+func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bool) {
 	w.Header().Set("Content-Type", "application/json")
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || len(token) > 512 {
@@ -95,6 +87,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c, ok := s.clients[sha256.Sum256([]byte(token))]
 	if !ok {
 		writeError(w, 401, "AUTHORITY_DENIED", "authentication required")
+		return
+	}
+	if remoteOnly && !c.remote {
+		writeError(w, 403, "AUTHORITY_DENIED", "network API requires a remote machine profile")
+		return
+	}
+	if c.remote && !remoteOperations[strings.TrimPrefix(r.URL.Path, "/v1/")] {
+		writeError(w, 403, "AUTHORITY_DENIED", "operation is unavailable to remote machine profiles")
 		return
 	}
 	if r.Method != "POST" {
@@ -117,7 +117,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		c.store = store
 	}
-	if serveAgentSessions(w, r, c) {
+	if s.serveAgentSessions(w, r, c) {
 		return
 	}
 	if serveAgentEvents(w, r, c) {
