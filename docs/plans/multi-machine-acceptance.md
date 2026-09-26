@@ -69,6 +69,10 @@ before the agent journaled its reply. That reply remained pending. Fix `88c9599`
 and replays their exact commands on later watcher cycles. Regressions exercise
 watcher, Stop, restart, legacy state and real API paths. The failed trial was
 retained as evidence; the successful trial used a fresh session and request.
+Subsequent review found the same ordering could affect legacy journals without
+a kind field. Fix `995afe2` (integrated as `c39d809`) recovers the kind from the
+matching context or conservatively retains an unknown-kind committed result.
+All 19 recovery tests passed after integration, including the legacy ordering.
 
 Codex 0.154.0 on Archon denied Unix socket creation in the default network-disabled
 sandbox. The successful isolated fixture used a named profile extending
@@ -84,7 +88,9 @@ Selected cross-model review references (Cairn note IDs, version 1):
 | --- | --- | --- | --- |
 | Transport | `a6b1c92` | agent-200, Anthropic | `32644518-1ec0-49a1-bbd0-e3cda5176231` |
 | Enrollment | `6f261ff` | agent-201, Codex | `c540ad42-a496-497b-9c29-adbb48152ba7` |
-| Recovery, before late reply fix | `d8e4127` | agent-203, Codex | `0836f4a6-767e-4525-8c6b-4857245e9893` |
+| Recovery through immutable completion/response checks | `d8e4127` | agent-203, Codex | `0836f4a6-767e-4525-8c6b-4857245e9893` |
+| Reply lifetime and legacy journal fix | `88c9599`, `995afe2` | agent-203 finding; agent-112 fix review, Codex | `a5180c3e-42fb-4fcb-b0ac-32d716ae5e88`, `54ad8351-154e-48eb-8a8d-ea2e8c759cf2` |
+| Root integration and deployment plan | `7c832c5` | agent-200, Anthropic | `9c8cddbc-0003-41c1-9bcf-c8c75f237856` |
 | Harness, findings requiring followup | `94a4720` | agent-204, Anthropic | `8a3d10c1-25dd-48f1-82d1-2dffa8746b8e` |
 
 These tests establish the implemented slice. They do not measure usefulness over
