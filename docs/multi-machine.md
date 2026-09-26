@@ -165,7 +165,9 @@ MCP and hooks were unaffected because they ran outside that sandbox. The
 isolated test agent explicitly enabled network access while retaining workspace
 write limits. This was a test setting, not a change to the default agent
 sandbox. Completion and response journals also let the host recover calls
-that could not reach the socket; source reads still need an accessible tool. Directory output attributes each session to its server-configured
+that could not reach the socket; source reads still need an accessible tool.
+
+Directory output attributes each session to its server-configured
 machine. Use `cairn agents list --machine-id ID` or `agents resolve --machine-id
 ID` to select agents on one host.
 
@@ -204,6 +206,16 @@ systemctl --user restart cairn-api.service
 ```
 
 Rolling back after provisioning leaves an unused enrollment file. Delete it.
+
+To disable a deployed remote endpoint, stop the remote relay, remove only that
+endpoint's Tailscale Serve route, restore the saved identity configuration and
+remove the added listener flags while retaining existing API flags. Restart the
+API once. The current binary can keep serving local clients against schema 054.
+Do not restore a database backup merely to undo network setup: that would discard
+later writes. If restoring an older binary, do not run its migration command
+against schema 054; it refuses a database newer than its migration set. The
+store service runs migration on startup, so keep the store running during that
+binary-only rollback or retain the new binary.
 
 ## Errors through the relay
 
