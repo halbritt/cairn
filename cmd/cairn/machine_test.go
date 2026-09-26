@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -428,6 +429,22 @@ func TestMachineEnrollWithoutServiceDefersChecks(t *testing.T) {
 	}
 }
 
+func TestMachineEnrollTreatsStaleSocketAsAbsent(t *testing.T) {
+	central := machineHome(t, existingIdentities)
+	file, _ := provisionForEnroll(t, central, false)
+	home := machineHome(t, "")
+	fakeSystemctl(t, home)
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: filepath.Join(home, "api.sock"), Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener.SetUnlinkOnClose(false)
+	listener.Close() // a crashed relay leaves this path; the relay's lock reclaims it
+	if _, err := enrollMachine(context.Background(), []string{"--file", file, "--no-service"}); err != nil {
+		t.Fatalf("stale socket blocked enrollment: %v", err)
+	}
+}
+
 func TestEnrolledMachineRejectsMalformedConfig(t *testing.T) {
 	home := machineHome(t, "")
 	valid := `{"schema":"cairn.machine/1","machine_id":"box-b","upstream":"https://central","collection":"/c","principals":["machine:box-b/agent"],"enrolled_at":"2026-09-26T00:00:00Z"}`
@@ -489,6 +506,11 @@ func TestVersionOverSocketRequiresCairnReply(t *testing.T) {
 		"error with ok":   {500, ok},
 		"refusal":         {403, `{"schema":"cairn.response/1","ok":false,"status":"AUTHORITY_DENIED"}`},
 		"refusal no code": {403, `{"schema":"cairn.response/1","ok":false}`},
+		"ok with refusal": {200, `{"schema":"cairn.response/1","ok":true,"status":"AUTHORITY_DENIED","data":{}}`},
+		"ok no status":    {200, `{"schema":"cairn.response/1","ok":true,"data":{}}`},
+		"trailing value":  {200, ok + `{}`},
+		"truncated":       {200, ok[:len(ok)-5]},
+		"oversized":       {200, ok + strings.Repeat(" ", 64*1024)},
 	} {
 		reply.Store(answer)
 		_, err := versionOverSocket(context.Background(), socket, "token", 0)
@@ -519,6 +541,14 @@ func TestIdentityLockIsBounded(t *testing.T) {
 	started := time.Now()
 	if _, err := lockIdentities(home); core.Code(err) != "INSTALL_FAILED" || time.Since(started) > 5*time.Second {
 		t.Fatalf("contended lock: %v after %v", err, time.Since(started))
+	}
+	fifoHome := t.TempDir()
+	if err := syscall.Mkfifo(filepath.Join(fifoHome, ".identities.lock"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	fifoStarted := time.Now()
+	if _, err := lockIdentities(fifoHome); err == nil || time.Since(fifoStarted) > 5*time.Second {
+		t.Fatalf("FIFO lock: %v after %v", err, time.Since(fifoStarted))
 	}
 	link := filepath.Join(t.TempDir(), "linked")
 	_ = os.Chmod(filepath.Dir(link), 0700)

@@ -384,7 +384,8 @@ var identityLockWait = 10 * time.Second
 // waiting a bounded time for another provisioning run.
 func lockIdentities(directory string) (func(), error) {
 	path := filepath.Join(directory, ".identities.lock")
-	fd, err := syscall.Open(path, syscall.O_WRONLY|syscall.O_CREAT|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0600)
+	// O_NONBLOCK keeps a FIFO at this path from blocking the open.
+	fd, err := syscall.Open(path, syscall.O_WRONLY|syscall.O_CREAT|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0600)
 	if err != nil {
 		return nil, installationError("identity lock", err)
 	}
@@ -633,14 +634,22 @@ func versionOverSocket(ctx context.Context, socket, token string, wait time.Dura
 				return err
 			}
 			defer reply.Body.Close()
+			const limit = 64 * 1024
+			body, err := io.ReadAll(io.LimitReader(reply.Body, limit+1))
+			if err != nil || len(body) > limit {
+				return &core.Error{Code: "API_CONNECTION_FAILED", Message: fmt.Sprintf("unreadable or oversized API reply (HTTP %d)", reply.StatusCode)}
+			}
 			var envelope struct {
 				Schema string         `json:"schema"`
 				OK     bool           `json:"ok"`
 				Status string         `json:"status"`
 				Data   buildinfo.Info `json:"data"`
 			}
-			if err = json.NewDecoder(io.LimitReader(reply.Body, 64*1024)).Decode(&envelope); err != nil || envelope.Schema != "cairn.response/1" {
+			if err = json.Unmarshal(body, &envelope); err != nil || envelope.Schema != "cairn.response/1" {
 				return &core.Error{Code: "API_CONNECTION_FAILED", Message: fmt.Sprintf("not a Cairn API reply (HTTP %d)", reply.StatusCode)}
+			}
+			if envelope.OK && (reply.StatusCode != http.StatusOK || envelope.Status != "OK") {
+				return &core.Error{Code: "API_CONNECTION_FAILED", Message: fmt.Sprintf("inconsistent API reply (HTTP %d, status %q)", reply.StatusCode, envelope.Status)}
 			}
 			if reply.StatusCode != http.StatusOK || !envelope.OK {
 				if envelope.OK || envelope.Status == "" || envelope.Status == "OK" {
