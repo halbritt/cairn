@@ -59,7 +59,7 @@ Everyday commands:
 
 JSON commands (read one request from stdin):
   work-cancel request-control-sweep (local operator; see docs/request-controls.md)
-  coordination-review event-reissue (local operator recovery; see docs/event-recovery.md)
+  coordination-review event-reissue native-hold-release (local operator recovery; see docs/event-recovery.md)
   event-schedule schedule-list schedule-cancel schedule-tick schedule-serve (local operator; see docs/event-scheduling.md)
   create edit revise append replace delete history compile index expand expand-evidence bootstrap grant revoke-grant capture-evidence check-evidence
   promote demote issue correct supersede retract forget dispute resolve usage assess-run recompile generate-proposals review-proposal proposal-history
@@ -426,6 +426,8 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return coordinationReview(ctx, store, input)
 	case "event-reissue":
 		return invoke(ctx, input, store.ReissueEvent)
+	case "native-hold-release":
+		return invoke(ctx, input, store.ReleaseNativeHold)
 	case "work-cancel":
 		return invoke(ctx, input, store.CancelWork)
 	case "request-control-sweep":

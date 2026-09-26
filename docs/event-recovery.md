@@ -99,6 +99,43 @@ trace and operator reason. No automatic replay follows a failure or an account
 recovery. `cairn retry --lease ...` remains the separate operation for releasing a
 currently owned lease; it is not failed-request reissue.
 
+## Release a lost host's native hold
+
+A native attempt holds its delivery until the conversation's own host reconciles
+it. If that host never returns, for example a remote machine that was lost or
+retired, the hold would block the delivery indefinitely. After reviewing the
+attempt, the operator on the central host may release it:
+
+```sh
+cairn native-hold-release <<'JSON'
+{
+  "request_id":"NEW_UUID",
+  "repo":"/home/halbritt/git/cairn",
+  "attempt_id":"NATIVE_ATTEMPT_UUID",
+  "reason":"Archon was lost during the partition; its session never returned",
+  "accept_uncertain_effects":true
+}
+JSON
+```
+
+Take the attempt ID from `latest_native` in the review. The command refuses a
+session that is still present (`SESSION_LIVE`); a live host must reconcile its
+own attempt. Offline presence does **not** prove that the host or its agent
+stopped. The work may have run and may still be running, which is why
+`accept_uncertain_effects` is required.
+
+Release closes the attempt with reason `operator_released`, `released_by` and
+`release_reason`. A delivery still pending or leased becomes `failed` with code
+`operator_released` and the operator's control fields. A delivery already
+completed keeps its state and result; release then only closes the hold. It
+takes the same attempt lock as host reconciliation, and the delivery row lock
+that completion uses, so a completion and a release racing each other cannot
+both take effect. If the host returns later, its late completion is refused with
+`HOLD_RELEASED`. Its journaled result stays in its owner-only intent file for
+review, as described in [native inbox](native-inbox.md). Reissue the failed
+delivery afterwards as above if the work should run again. Reuse the exact
+request UUID and JSON after a lost response.
+
 ## Controlled requests
 
 [Request controls](request-controls.md) add expiry and cancellation decisions to

@@ -1228,6 +1228,22 @@ def release_inbox(config, state, path, reason, fenced=False):
         return True
     request = dict(session=intent['session'], attempt_id=intent['request_id'], reason=reason)
     saved = state.get('inbox_close', {})
+    if saved.get('attempt_id') == request['attempt_id'] and saved.get('reason') != reason:
+        # The saved reconciliation may have committed before its reply was lost.
+        # Finish it under its own UUID; a new reason never replaces it unless the
+        # store proved nothing committed.
+        try:
+            call(config, 'session-inbox-reconcile', saved)
+        except CoordinationError as exc:
+            if not (exc.code == 'DELIVERY_ACTIVE' and saved['reason'] == 'delivery_completed'):
+                if not (fenced and exc.code == 'NOT_FOUND'):
+                    raise
+            else:
+                saved = {}
+                state.pop('inbox_close')
+                write_state(path, state)
+        if saved:
+            return clear_inbox(state, path)
     if any(saved.get(k) != v for k, v in request.items()):
         state['inbox_close'] = dict(request_id=str(uuid.uuid4()), **request)
         write_state(path, state)
@@ -1235,18 +1251,205 @@ def release_inbox(config, state, path, reason, fenced=False):
         call(config, 'session-inbox-reconcile', state['inbox_close'])
     except CoordinationError as exc:
         if exc.code == 'DELIVERY_ACTIVE' and reason == 'delivery_completed':
+            # A refusal commits nothing, so a later reason may use a new UUID.
+            state.pop('inbox_close')
+            write_state(path, state)
             return False
         # Leaving or a restore fence prevents a delayed claim from committing
         # after an unknown attempt was found absent.
         if not (fenced and exc.code == 'NOT_FOUND'):
             raise
+    return clear_inbox(state, path)
+
+
+def clear_inbox(state, path):
     for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response',
-                'cancel_turn_end', 'cancel_submission', 'cancel_owner_join',
+                'inbox_turn_ended', 'cancel_turn_end', 'cancel_submission', 'cancel_owner_join',
                 'cancel_scan_report', 'cancel_final_report',
                 'tool_calls', 'opencode_turn_since', 'opencode_request_endpoint'):
         state.pop(key, None)
     write_state(path, state)
     return True
+
+
+# Refusals that prove this exact request did not commit and never will. Any
+# other outcome (transport failure, timeout, unknown status) may have committed,
+# so the journal keeps it pending and replays the identical request.
+INTENT_FINAL_REFUSALS = frozenset((
+    'STALE_LEASE', 'STALE_SESSION', 'HOLD_RELEASED', 'REQUEST_CANCELLED', 'DEADLINE_EXCEEDED',
+    'IDEMPOTENCY_CONFLICT', 'INVALID_REQUEST', 'NOT_FOUND', 'AUTHORITY_DENIED', 'PAYLOAD_UNAVAILABLE',
+    'DESTINATION_PROHIBITED', 'STALE_RESOLUTION'))
+INTENT_SLOTS = dict(complete='completion', ack='completion', respond='response')
+
+
+def intent_path(state_dir, attempt_id):
+    return Path(state_dir) / 'intents' / (attempt_id + '.json')
+
+
+@contextmanager
+def intent_lock(path, wait):
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(str(path.with_suffix('.lock')), os.O_CREAT | os.O_RDWR, 0o600)
+    with os.fdopen(fd, 'a') as file:
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError as exc:
+                if time.monotonic() >= deadline:
+                    raise CoordinationError('SESSION_BUSY', 'another inbox command for this attempt is active') from exc
+                time.sleep(0.1)
+        yield
+
+
+def send_intent(slot, timeout):
+    """Send one journaled command and classify its outcome without guessing."""
+    try:
+        result = subprocess.run(slot['argv'], input=slot['input'], capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        slot.update(status='pending', code='API_UNAVAILABLE')
+        return None
+    try:
+        response = json.loads(result.stdout)
+    except ValueError:
+        response = None
+    if not isinstance(response, dict) or type(response.get('ok')) is not bool:
+        slot.update(status='pending', code='API_UNAVAILABLE')
+    elif response['ok'] and not result.returncode:
+        data = response.get('data') if isinstance(response.get('data'), dict) else {}
+        slot.update(status='committed', code='OK', output=result.stdout,
+                    result=data.get('result') if slot['kind'] != 'respond' else None)
+    elif response.get('status') in INTENT_FINAL_REFUSALS:
+        slot.update(status='refused', code=response['status'])
+    else:
+        slot.update(status='pending', code=str(response.get('status') or 'API_UNAVAILABLE')[:64])
+    return result
+
+
+def inbox_command(argv):
+    """Journal, then send, one command named by the owner-only native context.
+
+    The native context lists the exact Cairn commands. The agent selects only
+    which one to run and supplies its stdin (and a result version for a reply),
+    so this helper never runs caller-chosen programs.
+    """
+    parser = argparse.ArgumentParser(prog='coordination.py inbox')
+    parser.add_argument('--context', type=Path, required=True)
+    parser.add_argument('kind', choices=tuple(INTENT_SLOTS))
+    parser.add_argument('--version', nargs=2, metavar=('VERSION', 'RECORD_UUID'))
+    args = parser.parse_args(argv)
+    info = args.context.stat()
+    if info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise CoordinationError('INVALID_HOST', 'native inbox context must be owner-only')
+    context = json.loads(args.context.read_text())
+    if not isinstance(context, dict) or context.get('schema') != 'cairn.session-inbox/1':
+        raise CoordinationError('INVALID_HOST', 'not a native inbox context')
+    command = context.get('commands', {}).get(args.kind)
+    if not command:
+        raise CoordinationError('INVALID_REQUEST', f'this inbox context has no {args.kind} command')
+    command = list(command)
+    if args.kind == 'respond':
+        if not args.version or not args.version[0].isdigit():
+            raise CoordinationError('INVALID_REQUEST', 'a reply requires --version RESULT_VERSION RESULT_RECORD_UUID')
+        command += ['--version', args.version[0], str(uuid.UUID(args.version[1]))]
+    elif args.version:
+        raise CoordinationError('INVALID_REQUEST', '--version applies only to a reply')
+    body = sys.stdin.read(1024 * 1024 + 1) if '--stdin' in command else ''
+    if len(body) > 1024 * 1024:
+        raise CoordinationError('INVALID_REQUEST', 'inbox command input exceeds limit')
+    target = intent_path(context['state_dir'], context['attempt_id'])
+    name = INTENT_SLOTS[args.kind]
+    with intent_lock(target, 30):
+        journal = json.loads(target.read_text()) if target.exists() else dict(
+            schema='cairn.inbox-intent/1', attempt_id=context['attempt_id'], delivery_id=context['delivery_id'])
+        slot = journal.get(name)
+        if slot and slot['status'] != 'refused':
+            if slot['kind'] != args.kind or slot['argv'] != command or slot['input'] != body:
+                print(json.dumps(dict(schema='cairn.response/1', ok=False, status='IDEMPOTENCY_CONFLICT',
+                    message=f"IDEMPOTENCY_CONFLICT: this attempt already journaled a different {name}; "
+                            "its host replays that exact request")))
+                return 4
+            if slot['status'] == 'committed':
+                sys.stdout.write(slot['output'])
+                return 0
+        slot = dict(kind=args.kind, request_id=context['request_ids'][name], argv=command, input=body,
+                    status='pending', recorded_at=time.time())
+        journal[name] = slot
+        write_state(target, journal)  # Durable before anything leaves this host.
+        result = send_intent(slot, 30)
+        write_state(target, journal)
+    if result is None:
+        print(json.dumps(dict(schema='cairn.response/1', ok=False, status='API_CONNECTION_FAILED',
+            message='API_CONNECTION_FAILED: the command is journaled; retry it unchanged or let the host replay it')))
+        return 7
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    return result.returncode
+
+
+def flush_inbox_intents(config, state):
+    """Replay journaled inbox commands before any reconciliation or leave.
+
+    Returns False while an outcome is still uncertain or a command is running;
+    the caller then keeps the hold and retries later instead of recording a
+    ready result as failed.
+    """
+    attempt = state.get('inbox_attempt')
+    if not attempt or not config.get('state_dir'):
+        return True
+    target = intent_path(config['state_dir'], attempt['attempt_id'])
+    if not target.exists():
+        return True
+    try:
+        with intent_lock(target, 0):
+            journal = json.loads(target.read_text())
+            for name in ('completion', 'response'):
+                slot = journal.get(name)
+                if not slot or slot['status'] != 'pending':
+                    continue
+                send_intent(slot, 10)
+                write_state(target, journal)
+                if slot['status'] == 'pending':
+                    print(f"Cairn presence {config['binding']}: journaled {slot['kind']} for attempt "
+                          f"{attempt['attempt_id']} is still uncertain ({slot['code']}); the hold remains", file=sys.stderr)
+                    return False
+                if slot['status'] == 'refused':
+                    print(f"Cairn presence {config['binding']}: journaled {slot['kind']} for attempt "
+                          f"{attempt['attempt_id']} was refused ({slot['code']}); its result stays in {target}", file=sys.stderr)
+    except CoordinationError as exc:
+        if exc.code != 'SESSION_BUSY':
+            raise
+        return False  # The agent's own command is in flight; reconcile after it finishes.
+    return True
+
+
+def renew_inbox(config, state, path, attempt):
+    """Renew a live lease. A lapsed lease leaves the durable hold in place."""
+    delivery = attempt['delivery']
+    if attempt.get('lease_lapsed'):
+        return delivery
+    try:
+        delivery = call(config, 'event-renew', dict(delivery_id=delivery['delivery_id'],
+            lease_id=delivery['lease_id'], lease_seconds=90), session=attempt['session'])
+    except CoordinationError as exc:
+        if exc.code != 'STALE_LEASE':
+            raise
+        # The hold still excludes every other consumer. Completion under this
+        # exact lease is either accepted late or refused explicitly.
+        attempt['lease_lapsed'] = True
+        print(f"Cairn presence {config['binding']}: lease lapsed for attempt {attempt['attempt_id']}; "
+              "the hold remains until completion or reconciliation", file=sys.stderr)
+    attempt['delivery'] = delivery
+    write_state(path, state)
+    return delivery
+
+
+def settle_inbox(config, state, path):
+    """After a flush, reconcile what the store and turn state now prove."""
+    if state.get('inbox_turn_ended'):
+        return release_inbox(config, state, path, 'turn_ended')
+    return release_inbox(config, state, path, 'delivery_completed')
 
 
 def watch_inbox(config, state, path):
@@ -1264,13 +1467,13 @@ def watch_inbox(config, state, path):
             if not state.get('inbox_intent'):
                 return
             return prepare_opencode_cancel(config, state, path, attempt)
-    if release_inbox(config, state, path, 'delivery_completed'):
+    if not flush_inbox_intents(config, state):
+        return  # Uncertain journaled command: keep the hold and retry next cycle.
+    if settle_inbox(config, state, path):
         return
-    attempt = state['inbox_attempt']
-    delivery = attempt['delivery']
-    attempt['delivery'] = call(config, 'event-renew', dict(delivery_id=delivery['delivery_id'],
-        lease_id=delivery['lease_id'], lease_seconds=90), session=attempt['session'])
-    write_state(path, state)
+    if state.get('inbox_turn_ended'):
+        return  # The turn ended; no lease is needed while reconciliation waits.
+    renew_inbox(config, state, path, state['inbox_attempt'])
 
 
 def inbox_context(config, state, path, observation, wake_binding=None):
@@ -1303,8 +1506,12 @@ def inbox_context(config, state, path, observation, wake_binding=None):
             elif attempt and attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
                 opencode_cancelled_turn_end(config, state, path, observation, attempt)
             else:
+                if state.get('inbox_intent') and not state.get('inbox_turn_ended'):
+                    state['inbox_turn_ended'] = True  # Survives an uncertain flush for the watcher.
+                    write_state(path, state)
                 try:
-                    release_inbox(config, state, path, 'turn_ended')
+                    if flush_inbox_intents(config, state):
+                        release_inbox(config, state, path, 'turn_ended')
                 except CoordinationError as exc:
                     if config.get('harness') != 'opencode' or exc.code != 'CLEANUP_UNCONFIRMED':
                         raise
@@ -1360,12 +1567,9 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         return ''
     # Reconcile a completed message before reinjecting context at another model
     # call in the same turn. Do not claim a second message until the next turn.
-    if release_inbox(config, state, path, 'delivery_completed'):
+    if flush_inbox_intents(config, state) and release_inbox(config, state, path, 'delivery_completed'):
         return ''
-    delivery = attempt['delivery']
-    delivery = call(config, 'event-renew', dict(delivery_id=delivery['delivery_id'],
-        lease_id=delivery['lease_id'], lease_seconds=90), session=attempt['session'])
-    attempt['delivery'] = delivery
+    delivery = renew_inbox(config, state, path, attempt)
     event = delivery['event']
     if not state.get('inbox_completion'):
         state['inbox_completion'] = str(uuid.uuid4())
@@ -1374,21 +1578,29 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     common = ['--socket', config['socket'], '--token-file', config['token_file'],
               '--agent-id', attempt['session']['agent_id'], '--execution-id', attempt['session']['execution_id'],
               '--request-id', state['inbox_completion'], '--lease', delivery['lease_id']]
+    commands = dict(complete=[config['cairn'], 'complete', *common, '--shareable', '--stdin', delivery['delivery_id']],
+                    ack=[config['cairn'], 'ack', *common, delivery['delivery_id']])
+    if event['kind'] == 'request':
+        commands['respond'] = [config['cairn'], 'publish', '--socket', config['socket'], '--token-file', config['token_file'],
+            '--agent-id', attempt['session']['agent_id'], '--execution-id', attempt['session']['execution_id'],
+            '--request-id', state['inbox_response'], '--to', event['from'], '--kind', 'response', '--causation-id', event['event_id']]
+        if event.get('correlation_id'):
+            commands['respond'] += ['--correlation-id', event['correlation_id']]
+    target = Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')
+    # The agent runs these through the journal so a reply lost in transit is
+    # replayed by the host before it reconciles or leaves.
+    journaled = [sys.executable, str(Path(__file__).resolve()), 'inbox', '--context', str(target)]
     context = dict(schema='cairn.session-inbox/1', **attempt['session'], attempt_id=attempt['attempt_id'],
         event_id=event['event_id'], kind=event['kind'], sender=event['from'], source=event['ref'],
         delivery_id=delivery['delivery_id'], lease_id=delivery['lease_id'],
         read=[config['cairn'], 'agent', '--socket', config['socket'], '--token-file', config['token_file'], 'history'],
-        read_input=event['ref'], completion=[config['cairn'], 'complete', *common, '--shareable', '--stdin', delivery['delivery_id']],
-        acknowledgement=[config['cairn'], 'ack', *common, delivery['delivery_id']])
+        read_input=event['ref'], completion=[*journaled, 'complete'], acknowledgement=[*journaled, 'ack'],
+        state_dir=config['state_dir'], commands=commands,
+        request_ids=dict(completion=state['inbox_completion'], response=state['inbox_response']))
     if attempt.get('native_turn_id'):
         context['native_turn_id'] = attempt['native_turn_id']
     if event['kind'] == 'request':
-        context['response'] = [config['cairn'], 'publish', '--socket', config['socket'], '--token-file', config['token_file'],
-            '--agent-id', attempt['session']['agent_id'], '--execution-id', attempt['session']['execution_id'],
-            '--request-id', state['inbox_response'], '--to', event['from'], '--kind', 'response', '--causation-id', event['event_id']]
-        if event.get('correlation_id'):
-            context['response'] += ['--correlation-id', event['correlation_id']]
-    target = Path(config['state_dir']) / 'inbox' / (attempt['attempt_id'] + '.json')
+        context['response'] = [*journaled, 'respond']
     write_state(target, context)
     state['delivered_since_idle'] = True
     wake = state.get('idle_wake', {})
@@ -1418,6 +1630,9 @@ def finish_presence(config, state, path, timeout=4, reason='process_exited'):
     if not state.get('agent'):
         state['agent'] = call(config, 'agent-register', state['registration'], timeout=timeout)
         write_state(path, state)
+    if not flush_inbox_intents(config, state):
+        # Leaving would strand a result that may still commit under this execution.
+        raise CoordinationError('INTENT_PENDING', 'a journaled inbox command is still uncertain; the session stays until it settles')
     try:
         call(config, 'agent-leave', session_ref(state['agent']), timeout=timeout)
     except CoordinationError as exc:
@@ -1505,6 +1720,8 @@ def handle(config, event, event_name=None):
                 if state.get('inbox_intent'):
                     if observation['phase'] != 'idle':
                         raise
+                    if not flush_inbox_intents(config, state):
+                        raise CoordinationError('INTENT_PENDING', 'a journaled inbox command is still uncertain')
                     release_inbox(config, state, path, 'turn_ended', fenced=True)
                 state["registration"] = registration(config, observation, current["metadata"])
                 state.pop("agent")
@@ -1658,6 +1875,16 @@ def load_config(path):
 
 
 def main():
+    if sys.argv[1:2] == ['inbox']:
+        try:
+            return inbox_command(sys.argv[2:])
+        except CoordinationError as exc:
+            print(json.dumps(dict(schema='cairn.response/1', ok=False, status=exc.code, message=str(exc))))
+            return 2 if exc.code == 'INVALID_REQUEST' else 7
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(json.dumps(dict(schema='cairn.response/1', ok=False, status='INVALID_HOST',
+                                  message=f'INVALID_HOST: {type(exc).__name__} reading the native inbox context')))
+            return 7
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("hook", "watch"))
     parser.add_argument("--config", type=Path)

@@ -147,11 +147,11 @@ func TestUpgrade049PreservesPinnedNativeAttempts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		status, err := store.AgentEventStatus(ctx, EventStatusRequest{EventID: event.EventID}, dest)
-		if err != nil || len(status.Deliveries) != 1 {
-			t.Fatalf("fixture delivery %d: %+v %v", i, status, err)
+		// Read the 048-era row directly: current read shapes may name later columns.
+		var delivery AgentDelivery
+		if err = store.pool.QueryRow(ctx, `SELECT delivery_id::text FROM cairn.agent_delivery WHERE event_id=$1`, event.EventID).Scan(&delivery.DeliveryID); err != nil {
+			t.Fatalf("fixture delivery %d: %v", i, err)
 		}
-		delivery := status.Deliveries[0]
 		if _, err = store.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET state='leased',lease_id=$2,lease_until=clock_timestamp()+interval '1 hour' WHERE delivery_id=$1`, delivery.DeliveryID, uuid.NewString()); err != nil {
 			t.Fatal(err)
 		}

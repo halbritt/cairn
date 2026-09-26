@@ -31,6 +31,8 @@ type ReviewAttempt struct {
 	TurnStopState   string           `json:"turn_stop_state,omitempty"`
 	Cancel          *SessionCancel   `json:"cancel,omitempty"`
 	OpenTools       *int             `json:"open_tools,omitempty"`
+	ReleasedBy      string           `json:"released_by,omitempty"`
+	ReleaseReason   string           `json:"release_reason,omitempty"`
 }
 
 type ReviewReissue struct {
@@ -54,6 +56,7 @@ type ReviewDelivery struct {
 	CompletedAt  *time.Time        `json:"completed_at,omitempty"`
 	Code         string            `json:"code,omitempty"`
 	Result       *RecordVersionRef `json:"result,omitempty"`
+	Late         bool              `json:"late,omitempty"`
 	Event        AgentEvent        `json:"event"`
 	Held         bool              `json:"held"`
 	Execution    string            `json:"execution"`
@@ -97,7 +100,7 @@ func (s *Store) ReviewEvents(ctx context.Context, req EventReviewRequest) (Event
 		return out, err
 	}
 	defer tx.Rollback(context.Background())
-	rows, err := tx.Query(ctx, `SELECT d.position,d.delivery_id::text,d.consumer,d.state,d.attempts,d.available_at,d.completed_at,d.code,d.result_id::text,d.result_version,`+eventColumns+`,
+	rows, err := tx.Query(ctx, `SELECT d.position,d.delivery_id::text,d.consumer,d.state,d.attempts,d.available_at,d.completed_at,d.code,d.result_id::text,d.result_version,d.completed_after_lease,`+eventColumns+`,
  flags.held,
  CASE WHEN d.attempts=0 OR (
   d.attempts=(SELECT count(*) FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id)
@@ -109,7 +112,7 @@ func (s *Store) ReviewEvents(ctx context.Context, req EventReviewRequest) (Event
  FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
  CROSS JOIN LATERAL (SELECT NOT (`+wakeHold+`) OR NOT (`+sessionInboxHold+`) AS held) flags
  LEFT JOIN LATERAL (SELECT w.receipt_id,jsonb_build_object('attempt_id',w.attempt_id,'state',w.state,'created_at',w.created_at,'finished_at',w.finished_at,'receipt_id',COALESCE(w.receipt_id::text,''),'process_state',w.process_state,'reason',w.reason,'provider_failure',w.provider_failure,'session',CASE WHEN w.agent_id IS NOT NULL THEN jsonb_build_object('agent_id',w.agent_id,'execution_id',w.execution_id) END) AS detail FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id ORDER BY w.created_at DESC,w.attempt_id DESC LIMIT 1) w ON true
- LEFT JOIN LATERAL (SELECT jsonb_build_object('attempt_id',n.attempt_id,'state',CASE WHEN n.finished_at IS NULL THEN 'running' ELSE 'finished' END,'created_at',n.created_at,'finished_at',n.finished_at,'reason',n.reason,'native_turn_id',n.native_turn_id,'turn_stop_state',n.turn_stop_state,'cancel',CASE WHEN n.cancel_requested_at IS NULL THEN NULL ELSE jsonb_build_object('requested_at',n.cancel_requested_at,'confirmed_at',n.cancel_confirmed_at,'by',n.cancel_by,'reason',n.cancel_reason) END,'open_tools',(SELECT count(*) FROM cairn.agent_session_tool t WHERE t.attempt_id=n.attempt_id AND t.stop_state NOT IN ('terminated','unavailable')),'session',jsonb_build_object('agent_id',n.agent_id,'execution_id',n.execution_id)) AS detail FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id ORDER BY n.created_at DESC,n.attempt_id DESC LIMIT 1) n ON true
+ LEFT JOIN LATERAL (SELECT jsonb_build_object('attempt_id',n.attempt_id,'state',CASE WHEN n.finished_at IS NULL THEN 'running' ELSE 'finished' END,'created_at',n.created_at,'finished_at',n.finished_at,'reason',n.reason,'native_turn_id',n.native_turn_id,'turn_stop_state',n.turn_stop_state,'cancel',CASE WHEN n.cancel_requested_at IS NULL THEN NULL ELSE jsonb_build_object('requested_at',n.cancel_requested_at,'confirmed_at',n.cancel_confirmed_at,'by',n.cancel_by,'reason',n.cancel_reason) END,'open_tools',(SELECT count(*) FROM cairn.agent_session_tool t WHERE t.attempt_id=n.attempt_id AND t.stop_state NOT IN ('terminated','unavailable')),'session',jsonb_build_object('agent_id',n.agent_id,'execution_id',n.execution_id),'released_by',n.released_by,'release_reason',n.release_reason) AS detail FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id ORDER BY n.created_at DESC,n.attempt_id DESC LIMIT 1) n ON true
  LEFT JOIN LATERAL (SELECT a.detail FROM cairn.run_assessment a WHERE a.receipt_id=w.receipt_id ORDER BY a.version DESC LIMIT 1) a ON true
  LEFT JOIN LATERAL (SELECT jsonb_build_object('original_delivery_id',r.delivery_id,'event_id',r.event_id,'operator',r.reissued_by,'at',r.reissued_at,'reason',r.reason) AS detail FROM cairn.agent_event_reissue r WHERE r.delivery_id=d.delivery_id) reissued ON true
  LEFT JOIN LATERAL (SELECT jsonb_build_object('original_delivery_id',r.delivery_id,'event_id',r.event_id,'operator',r.reissued_by,'at',r.reissued_at,'reason',r.reason) AS detail FROM cairn.agent_event_reissue r WHERE r.event_id=e.event_id) origin ON true
@@ -127,7 +130,7 @@ func (s *Store) ReviewEvents(ctx context.Context, req EventReviewRequest) (Event
 		var d ReviewDelivery
 		var resultID *string
 		var resultVersion *int
-		fields := []any{&d.Position, &d.DeliveryID, &d.Consumer, &d.State, &d.Attempts, &d.AvailableAt, &d.CompletedAt, &d.Code, &resultID, &resultVersion}
+		fields := []any{&d.Position, &d.DeliveryID, &d.Consumer, &d.State, &d.Attempts, &d.AvailableAt, &d.CompletedAt, &d.Code, &resultID, &resultVersion, &d.Late}
 		fields = append(fields, eventScanFields(&d.Event)...)
 		fields = append(fields, &d.Held, &d.Execution, &d.LatestWake, &d.LatestNative, &d.Assessment, &d.ReissuedAs, &d.ReissuedFrom, &d.Control)
 		if err = rows.Scan(fields...); err != nil {

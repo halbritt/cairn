@@ -88,7 +88,10 @@ type AgentDelivery struct {
 	CompletedAt *time.Time        `json:"completed_at,omitempty"`
 	Code        string            `json:"code,omitempty"`
 	Result      *RecordVersionRef `json:"result,omitempty"`
-	Event       AgentEvent        `json:"event"`
+	// Late marks a native completion accepted after its lease lapsed, under
+	// the same unreleased hold, execution and database generation.
+	Late  bool       `json:"late,omitempty"`
+	Event AgentEvent `json:"event"`
 }
 type NextEventResult struct {
 	Delivery *AgentDelivery `json:"delivery"`
@@ -481,13 +484,13 @@ func (s *Store) Events(ctx context.Context, req EventQuery, dest Destination) (E
 }
 
 const deliveryControl = `CASE WHEN d.control_at IS NULL THEN NULL ELSE jsonb_build_object('at',d.control_at,'by',d.control_by,'code',d.code) END`
-const deliveryColumns = `d.delivery_id::text,d.consumer,d.state,COALESCE(d.lease_id::text,''),d.lease_until,d.attempts,d.completed_at,d.code,d.result_id::text,d.result_version,` + deliveryControl
+const deliveryColumns = `d.delivery_id::text,d.consumer,d.state,COALESCE(d.lease_id::text,''),d.lease_until,d.attempts,d.completed_at,d.code,d.result_id::text,d.result_version,` + deliveryControl + `,d.completed_after_lease`
 
 func scanDelivery(row pgx.Row) (AgentDelivery, error) {
 	var d AgentDelivery
 	var id *string
 	var version *int
-	err := row.Scan(&d.DeliveryID, &d.Consumer, &d.State, &d.LeaseID, &d.LeaseUntil, &d.Attempts, &d.CompletedAt, &d.Code, &id, &version, &d.Control)
+	err := row.Scan(&d.DeliveryID, &d.Consumer, &d.State, &d.LeaseID, &d.LeaseUntil, &d.Attempts, &d.CompletedAt, &d.Code, &id, &version, &d.Control, &d.Late)
 	if id != nil && version != nil {
 		d.Result = &RecordVersionRef{RecordID: *id, Version: *version}
 	}
@@ -561,27 +564,60 @@ func (s *Store) NextEvent(ctx context.Context, req NextEventRequest, dest Destin
 }
 
 func checkEventLease(ctx context.Context, tx pgx.Tx, d AgentDelivery, lease string) error {
+	_, err := eventLease(ctx, tx, d, lease, nil)
+	return err
+}
+
+// The native attempt row names the exact claim: its lease, agent, execution
+// and base profile. Only that session's own attempt can carry a lapsed lease.
+const nativeLeaseHold = `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE delivery_id=$1 AND lease_id=$2 AND agent_id=$3 AND execution_id=$4 AND owner=$5 AND `
+
+// eventLease checks completion ownership. With a native session, an expired
+// lease is still accepted (late=true) while that session's unfinished attempt
+// holds the delivery under the same lease: the hold, not the lease, excludes
+// every other consumer. The caller's delivery row lock serializes this with
+// host reconciliation and operator release, which also lock that row.
+func eventLease(ctx context.Context, tx pgx.Tx, d AgentDelivery, lease string, hold *agentSessionChannel) (bool, error) {
 	var live, withinDeadline bool
 	if d.State != "leased" || d.LeaseID != lease {
-		return failure("STALE_LEASE", "delivery is not owned by this lease")
+		if hold != nil && d.State == "failed" {
+			var released bool
+			// Cancellation cleanup keeps its own STALE_LEASE contract; this names
+			// a hold closed without completion by its host or an operator.
+			if err := tx.QueryRow(ctx, nativeLeaseHold+`finished_at IS NOT NULL AND reason IN ('turn_ended','process_exited','operator_released'))`, d.DeliveryID, lease, hold.Ref.AgentID, hold.Ref.ExecutionID, hold.Profile).Scan(&released); err != nil {
+				return false, err
+			}
+			if released {
+				return false, failure("HOLD_RELEASED", "this native hold was reconciled or released before completion; the result was not accepted")
+			}
+		}
+		return false, failure("STALE_LEASE", "delivery is not owned by this lease")
 	}
 	if err := tx.QueryRow(ctx, `SELECT d.lease_until>clock_timestamp(),e.task_deadline IS NULL OR e.task_deadline>clock_timestamp() FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE d.delivery_id=$1`, d.DeliveryID).Scan(&live, &withinDeadline); err != nil {
-		return err
+		return false, err
 	}
+	late := false
 	if !live {
-		return failure("STALE_LEASE", "delivery lease expired")
+		if hold != nil {
+			if err := tx.QueryRow(ctx, nativeLeaseHold+`finished_at IS NULL)`, d.DeliveryID, lease, hold.Ref.AgentID, hold.Ref.ExecutionID, hold.Profile).Scan(&late); err != nil {
+				return false, err
+			}
+		}
+		if !late {
+			return false, failure("STALE_LEASE", "delivery lease expired")
+		}
 	}
 	if !withinDeadline {
-		return failure("DEADLINE_EXCEEDED", "request task deadline reached; its host must stop and reconcile the hold")
+		return false, failure("DEADLINE_EXCEEDED", "request task deadline reached; its host must stop and reconcile the hold")
 	}
 	var cancelled bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE delivery_id=$1 AND finished_at IS NULL AND cancel_requested_at IS NOT NULL)`, d.DeliveryID).Scan(&cancelled); err != nil {
-		return err
+		return false, err
 	}
 	if cancelled {
-		return failure("REQUEST_CANCELLED", "operator cancellation is pending; stop the native turn and confirm owned tool cleanup")
+		return false, failure("REQUEST_CANCELLED", "operator cancellation is pending; stop the native turn and confirm owned tool cleanup")
 	}
-	return nil
+	return late, nil
 }
 
 func (s *Store) ChangeEventLease(ctx context.Context, req EventLeaseRequest, renew bool, dest Destination) (AgentDelivery, error) {
@@ -656,7 +692,8 @@ func (s *Store) CompleteEvent(ctx context.Context, req CompleteEventRequest, des
 		if err != nil {
 			return d, err
 		}
-		if err = checkEventLease(ctx, tx, d, req.LeaseID); err != nil {
+		late, err := eventLease(ctx, tx, d, req.LeaseID, s.session)
+		if err != nil {
 			return d, err
 		}
 		var resultID *string
@@ -687,7 +724,7 @@ func (s *Store) CompleteEvent(ctx context.Context, req CompleteEventRequest, des
 			resultID = &r.RecordID
 			resultVersion = &r.Version
 		}
-		_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state=$2,lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code=$3,result_id=$4,result_version=$5 WHERE delivery_id=$1`, d.DeliveryID, req.Disposition, req.Code, resultID, resultVersion)
+		_, err = tx.Exec(ctx, `UPDATE cairn.agent_delivery SET state=$2,lease_id=NULL,lease_until=NULL,completed_at=clock_timestamp(),code=$3,result_id=$4,result_version=$5,completed_after_lease=$6 WHERE delivery_id=$1`, d.DeliveryID, req.Disposition, req.Code, resultID, resultVersion, late)
 		if err != nil {
 			return d, err
 		}
