@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import signal
 import socket
 import ssl
 import subprocess
@@ -76,7 +77,15 @@ def start_service(argv, socket_path, env, label):
         if process.poll() is not None:
             raise AssertionError(label + " exited: " + process.stderr.read())
         if socket_path.exists():
-            return process
+            # A killed relay leaves its socket pathname until the replacement
+            # takes ownership. Existence alone would mistake that for readiness.
+            try:
+                with socket.socket(socket.AF_UNIX) as probe:
+                    probe.settimeout(0.2)
+                    probe.connect(str(socket_path))
+                return process
+            except OSError:
+                pass
         time.sleep(0.02)
     process.terminate()
     process.wait(timeout=5)
@@ -87,6 +96,13 @@ def stop_service(process):
     process.terminate()
     _, stderr = process.communicate(timeout=10)
     assert process.returncode == 0, stderr
+
+
+def kill_service(process, socket_path):
+    process.kill()
+    process.communicate(timeout=10)
+    assert process.returncode == -signal.SIGKILL
+    assert socket_path.is_socket(), "abrupt death did not leave a stale socket"
 
 
 def certificate(root):
@@ -395,6 +411,13 @@ def check(binary, directory):
             request_id=uid(), session=reply_claim["session"],
             attempt_id=reply_attempt["attempt_id"], reason="delivery_completed")))
         assert a.event("event-status", send["event_id"], session=a_session)["deliveries"][0]["result"] == done["result"]
+
+        # A host crash leaves the Unix socket pathname behind. The replacement
+        # must reclaim it and restore access under the same registered session.
+        kill_service(b_relay, b_dir / "api.sock")
+        b_relay = start_relay(binary, b_dir, faults.port, cert)
+        assert b.event("event-status", send["event_id"],
+                       session=b_session)["deliveries"][0]["result"] == done["result"]
 
         # A partition after native delivery outlives the lease. The same
         # unreleased attempt must still accept its result when the relay returns.
