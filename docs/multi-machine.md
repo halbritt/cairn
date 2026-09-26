@@ -27,6 +27,12 @@ and one token per role. `cairn machine enroll` installs:
 | `~/.local/share/cairn/machine.json` | machine ID, upstream, collection and principals; no secrets |
 | `~/.config/systemd/user/cairn-relay.service` | `cairn relay --socket ~/.local/share/cairn/api.sock --upstream URL` |
 
+The relay and `cairn serve` hold a lock on `api.sock.lock` for as long as they
+listen. After a crash, SIGKILL or power loss, the next start takes the lock and
+removes the socket if it is a stale one owned by you (nothing answers). It never
+removes a socket that answers, a non-socket, or a link. Leave the lock file in
+place.
+
 The file names match the central host's, so existing skills, `AGENTS.md`
 instructions and coordination bindings work unchanged. On an enrolled machine,
 `cairn agent ...` and `cairn watch` default to `hosted-agent.token`. Agent routes
