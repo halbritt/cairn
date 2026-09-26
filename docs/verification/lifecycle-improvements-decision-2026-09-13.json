@@ -70,7 +70,7 @@
         },
         {
           "locator": "integrations/opencode/lifecycle.ts",
-          "method": "Read complete plugin and pinned host1.18.21 source"
+          "method": "Read complete plugin and pinned host 1.18.21 source"
         }
       ],
       "satisfies": [
@@ -97,7 +97,7 @@
         "preservation boundary and semantic authority"
       ],
       "schema_version": "evidence-record/1",
-      "summary": "Read shared Python engine, Claude installer and OpenCode plugin: explicit UTF-8 and JSON bounds; metadata-only state; 5-second CLI calls, 35-second selector, 150-second host budget; per-session lock/queue and disposal ownership. Core fields and PostgreSQL authority unchanged. Native SDK1.18.21 and Python3.12 repository conventions inspected."
+      "summary": "Read shared Python engine, Claude installer and OpenCode plugin: explicit UTF-8 and JSON bounds; metadata-only state; 5-second CLI calls, 35-second selector, 150-second host budget; per-session lock/queue and disposal ownership. Core fields and PostgreSQL authority unchanged. Native SDK 1.18.21 and Python 3.12 repository conventions inspected."
     },
     {
       "evidence_class": "evidence-tests",
@@ -109,7 +109,7 @@
         },
         {
           "locator": "scripts/check_opencode_lifecycle.mjs",
-          "method": "Node24 direct plugin execution with synthetic host and subprocess engine"
+          "method": "Node 24 direct plugin execution with synthetic host and subprocess engine"
         },
         {
           "locator": "scripts/check_claude_lifecycle.py; scripts/check_opencode_lifecycle.py",
@@ -136,7 +136,7 @@
         "tests, characterization, probes, or explicit residual risk"
       ],
       "schema_version": "evidence-record/1",
-      "summary": "74 Python tests, Node lifecycle and recent-file plugin checks pass. Native Claude2.1.270 and OpenCode1.18.21 scripted-provider fixture against disposable PostgreSQL passes cross-session/harness same-record continuation, real pull and idle capture. Configured real selector separates decision/checkpoint and skips lookup/exclusion. TypeScript checks against installed OpenCode SDK pass."
+      "summary": "74 Python tests, Node lifecycle and recent-file plugin checks pass. Native Claude 2.1.270 and OpenCode 1.18.21 scripted-provider fixture against disposable PostgreSQL passes cross-session/harness same-record continuation, real pull and idle capture. Configured real selector separates decision/checkpoint and skips lookup/exclusion. TypeScript checks against installed OpenCode SDK pass."
     }
   ],
   "assertions": [

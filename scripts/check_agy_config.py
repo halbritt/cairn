@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Check Agy 1.2.0's native MCP configuration in a new isolated home.
+"""Check Agy's native MCP configuration in a new isolated home.
+
+Tested with Agy 1.2.0 and 1.2.11; other versions are refused.
 
 No model call, owner configuration, API token or database is used. This verifies
 registration bytes and lifecycle, not native discovery or execution of tools.
@@ -11,6 +13,8 @@ import json
 import os
 from pathlib import Path
 import subprocess
+
+TESTED_VERSIONS = ("1.2.0", "1.2.11")
 
 
 def digest(path):
@@ -42,8 +46,8 @@ def main():
         return result.stdout.strip()
 
     version = invoke("version", "--version")
-    if version != "1.2.0":
-        raise ValueError("this configuration check covers Agy 1.2.0 only")
+    if version not in TESTED_VERSIONS:
+        raise ValueError("this configuration check covers Agy " + " and ".join(TESTED_VERSIONS) + " only")
     command = ["mcp", "--socket", str(root / "socket with spaces"), "--token-file",
                str(root / "synthetic-token-not-created"), "--repo", "fixture:agy",
                "--task", "explicit-task", "--run", "explicit-run", "--tokens", "32000",

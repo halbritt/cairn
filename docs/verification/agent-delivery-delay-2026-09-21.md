@@ -3,9 +3,9 @@
 ## Finding
 
 The original observed delay occurred between publication and native inbox claim.
-Agent87's messages were stored and published promptly, but agent65's existing Claude
+Agent 87's messages were stored and published promptly, but agent 65's existing Claude
 conversation had no active native channel. The watcher deployed at 21:17 PDT on
-September20 refuses the former terminal wake fallback for Claude. This incomplete
+September 20 refuses the former terminal wake fallback for Claude. This incomplete
 activation left the recipient dependent on ordinary native turn boundaries.
 The coordinator deployed that watcher before completing the account's channel
 activation. That backlog was a rollout gap, not a one-hour timer or slow message
@@ -14,24 +14,24 @@ described below.
 
 ## Evidence
 
-A read-only snapshot at 09:30:56 PDT covered 94 messages from agent87 to agent65.
+A read-only snapshot at 09:30:56 PDT covered 94 messages from agent 87 to agent 65.
 Seventy-six were handled; 18 remained pending with zero claims. Source storage to
-publication took at most54.3 seconds; delivery availability followed publication
-within3.1 milliseconds. No unfinished native hold blocked agent65.
+publication took at most 54.3 seconds; delivery availability followed publication
+within 3.1 milliseconds. No unfinished native hold blocked agent 65.
 
 | Publication, PDT | First native claim | Wait before claim | Completion after claim |
 | --- | --- | --- | --- |
-| Sep20 21:42:58 | Sep20 22:42:33 | 59m34s | 12s |
-| Sep21 01:42:15 | Sep21 04:54:25 | 3h12m10s | 9s |
-| Sep21 01:47:38 | Sep21 09:27:19 | 7h39m41s | 10s |
+| Sep 20 21:42:58 | Sep 20 22:42:33 | 59m34s | 12s |
+| Sep 21 01:42:15 | Sep 21 04:54:25 | 3h12m10s | 9s |
+| Sep 21 01:47:38 | Sep 21 09:27:19 | 7h39m41s | 10s |
 
-The oldest pending message was published at02:04:39 PDT, 7h26m before the
-snapshot. The pre-rollout claimed messages waited1.5 seconds to9m45s; afterward,
-observed waits grew to7h39m. Shorter delays existed before the rollout, so this
+The oldest pending message was published at 02:04:39 PDT, 7h26m before the
+snapshot. The pre-rollout claimed messages waited 1.5 seconds to 9m45s; afterward,
+observed waits grew to 7h39m. Shorter delays existed before the rollout, so this
 finding does not attribute every historical wait to the same cause.
 
 The coordinator independently inspected the recipient's live process/binding:
-Claude agent65, PID3424316, native session
+Claude agent 65, PID 3424316, native session
 `1ac9ed1b-7184-4551-87bf-fd853e6e05bf`, binding `claude-one`. The process remained
 alive, but the binding had no `claude_channel_dir` and no current inbox attempt
 or wake. `claude_channel_endpoint` therefore returns no endpoint;
@@ -57,8 +57,8 @@ before the channel exists: that would suppress ordinary boundary delivery too.
 The prepared configuration and activation limits are recorded in the
 [deployment report](coordination-deployment-2026-09-20.md).
 
-The owner's restart approval covered OpenCode agents24 and67. This diagnosis did
-not restart agent65 or alter its inbox. Fixing this route and observing successful
+The owner's restart approval covered OpenCode agents 24 and 67. This diagnosis did
+not restart agent 65 or alter its inbox. Fixing this route and observing successful
 queued delivery remain necessary; the delay has not been declared repaired.
 
 ## Repair verified at 14:18 PDT

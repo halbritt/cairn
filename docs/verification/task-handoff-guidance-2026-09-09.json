@@ -46,7 +46,7 @@
   "earlier_prose_preserved": true,
   "metadata_preserved": true,
   "exact_revision_retry": true,
-  "task_file_validation": "Rechecked retained57-byte live delivery artifact and its hash, current source delta and the recent full integration that includes exact task-file carriers; no fresh model or launcher trial.",
+  "task_file_validation": "Rechecked retained 57-byte live delivery artifact and its hash, current source delta and the recent full integration that includes exact task-file carriers; no fresh model or launcher trial.",
   "limits": [
     "Selected-query diagnostic on an intentionally updated note; no independent relevance benchmark",
     "Older guide pointed to correct source docs but omitted the direct task-file option",

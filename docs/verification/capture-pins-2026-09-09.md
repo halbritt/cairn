@@ -84,7 +84,7 @@ Evidence is retained under `empty_pins_repair` in the companion metadata.
 
 Installed clean CLI `397750b7ba886fc67dfb2159f8b2976e484bbc6b`, SHA-256
 `bf680a75cf5165fc76ca6b7c842a564b3df24b5b5c7e7684e1065a2952fdb7bc`.
-Both empty forms return exit2/`INVALID_REQUEST` using a synthetic owner-only token
+Both empty forms return exit 2/`INVALID_REQUEST` using a synthetic owner-only token
 and an absent isolated socket. The fixture token was removed afterward. API
 `8f6864a`/PID430775 and the `d633c68` semantic worker remain unchanged.
 [Repair CI](https://github.com/halbritt/cairn/actions/runs/34427884310) passed for exact source `397750b`.

@@ -199,6 +199,6 @@
     "pid": 2934859,
     "seconds_since_report_when_last_alive": 299.87218594551086,
     "seconds_since_report_when_absent": 300.87237095832825,
-    "note": "Report mtime approximates last response completion; poll interval1s, no semantic requests during observation"
+    "note": "Report mtime approximates last response completion; poll interval 1s, no semantic requests during observation"
   }
 }

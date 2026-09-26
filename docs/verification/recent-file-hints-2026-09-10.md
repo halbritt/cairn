@@ -85,7 +85,7 @@ selected. The manifest retains the packet identity and explicit limits.
 ## Local installation
 
 Installed CLI **670cf19** and its matching adapter/plugin. The API stayed on
-**3ff1fcd**, PID **3062046**, and PostgreSQL stayed at PID **163669**, schema034.
+**3ff1fcd**, PID **3062046**, and PostgreSQL stayed at PID **163669**, schema 034.
 No restart or migration was needed. Recorded connection, identity, host
 permission and semantic configuration hashes were preserved.
 

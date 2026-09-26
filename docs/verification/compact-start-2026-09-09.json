@@ -51,11 +51,11 @@
     "Final focused CLI/API/native checks including closed stdin and Unicode/quotes",
     "Go unit tests, 34 Python tests, vet and formatting",
     "Exact body/span identity, refused local destination and foreign caller, unchanged tool permission decisions",
-    "Literal argv, PID replacement, exit23 and SIGTERM, credential environment filtering"
+    "Literal argv, PID replacement, exit 23 and SIGTERM, credential environment filtering"
   ],
   "failed_development_checks": [
     "Initial whole-body pull expectation exceeded the small fixture allowance; final test explicitly checks refusal and a span",
-    "Initial native argv route added quotes/escaping; fixture HTTP500 errors led to native retries and timeout. Final native route uses stdin and fixture errors are retained with HTTP400."
+    "Initial native argv route added quotes/escaping; fixture HTTP 500 errors led to native retries and timeout. Final native route uses stdin and fixture errors are retained with HTTP 400."
   ],
   "artifacts": [
     {

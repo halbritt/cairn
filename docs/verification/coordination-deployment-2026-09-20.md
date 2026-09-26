@@ -57,10 +57,10 @@ An independent reviewer verified eight core checks with no failures:
 
 The coordinator also exercised an ordinary hosted search and pulled the current
 owner-correction note through the deployed API. A separate post-deployment
-read-only verification request to existing agent24 was queued as event
+read-only verification request to existing agent 24 was queued as event
 `1d862786-dcbe-4910-b345-444064e4272e`; publication alone is not successful delivery.
 
-The separate post-deployment Agy adapter audit completed in the existing agent2
+The separate post-deployment Agy adapter audit completed in the existing agent 2
 conversation at 21:23 PDT: event `41689dca-7bce-4c59-b1e9-80723550f06c`, delivery
 `139e7fd8-a208-4ced-9e05-afccb6a40eb2`, exactly one claim, explicit completion,
 and native attempt `644ba8d9-7759-40ea-ac72-22319f2b41a6` finished. The selected
@@ -117,7 +117,7 @@ both Claude homes, but configuration alone did not establish automatic delivery:
 | Codex one | New launcher and trusted hooks installed; inspected existing sessions had no native queue endpoint. | Same-session normal restart through the installed launcher. |
 | Codex two | An existing native queue endpoint was discoverable. | Its process predates the native binary update; current-version acceptance remains unverified. |
 | Claude one and two | Hooks installed; channel registration and activation configuration staged as described below. | Explicit channel-enabled native launch and live account-specific acceptance. |
-| OpenCode | Agents24/67 restarted with owner approval on September 21; same conversation IDs and fresh bridge sockets verified. | Post-restart delivery checks are recorded below. |
+| OpenCode | Agents 24/67 restarted with owner approval on September 21; same conversation IDs and fresh bridge sockets verified. | Post-restart delivery checks are recorded below. |
 | Hermes | Companion and plugin installed; fresh-process checks pass. | Older production processes still need normal restart. |
 | Agy | Existing native audit request completed once after rollout. | Client-only queue prototype remains unsupported. |
 
@@ -153,7 +153,7 @@ the launch flags, so a binding session list is not needed. See
 Read-only OpenCode source review found that SIGUSR2 reload and instance disposal
 lack a busy/admission guard; plain module imports can also reuse cached plugin
 code. Those operations are not a proven safe activation path. The coordinator
-requested approval specifically to close and resume agents24/67 in their existing
+requested approval specifically to close and resume agents 24/67 in their existing
 conversations because unsent drafts or newly started work could be lost. No such
 restart was performed before approval. The owner approved both restarts on
 September 21; the completed restart procedure is recorded below. The exact
@@ -177,7 +177,7 @@ verification are unresolved; the rollout is not a new full-v1 completion claim.
 
 ## Approved OpenCode restart — September 21
 
-The owner explicitly approved closing and resuming agents24 and67 in their
+The owner explicitly approved closing and resuming agents 24 and 67 in their
 existing conversations. The coordinator used each native command palette's
 **Exit the app**, confirmed the old process exited and the original shell was
 foreground, then resumed the existing session ID in the same pane and directory.
@@ -198,11 +198,11 @@ coordinator corrected it and confirmed exactly one new process per target.
 The plugin registers restored conversations on their first native turn. The
 coordinator submitted one ordinary post-restart verification turn to each
 existing conversation; native hooks handled registration and inbox admission.
-No registration or inbox claim was run manually. Agent24's existing verification
+No registration or inbox claim was run manually. Agent 24's existing verification
 delivery was handled at 09:28:33 PDT after exactly one claim; result
 `95ebc727-415c-40b9-8ce9-b1aca0476879/1` independently confirms deployed CLI/API
 `b5aab96` and healthy services. This admission occurred on the first ordinary
-post-restart turn, so it is not proof of automatic idle queue submission. Agent67 received
+post-restart turn, so it is not proof of automatic idle queue submission. Agent 67 received
 a durable deployment-correction notice, event
 `2a62e36e-52cb-4f00-8750-2c184dc3467f`, for explicit acknowledgement after its
 activation check. Its automatic queue submission was refused by native OpenCode:
@@ -214,6 +214,6 @@ not establish a functioning automatic submission path.
 
 Independent verification confirmed socket peer PID/UID and mode 0600 for both
 processes, preserved Cairn agent UUIDs, and new execution IDs:
-agent24 `77afb2af-a30e-4ff6-bdc0-74bc891bb640`, agent67
+agent 24 `77afb2af-a30e-4ff6-bdc0-74bc891bb640`, agent 67
 `0d77c315-246c-4614-b556-6469b0aa397d`. Private evidence is
 `independent-opencode-resume-verification.json` in the release directory.

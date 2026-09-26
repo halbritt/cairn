@@ -23,11 +23,11 @@ and decompressed historical bodies remain local under `/tmp`.
 | --- | --- |
 | `catalog/passes/knowledge-promotion.yaml` is marked accepted and consumes Exogenous Change Records to produce candidate Products. | A declared promotion contract exists despite RFC0015's parked index entry. |
 | `internal/backend/local/executors.go` implements promotion; driver producer resolution, admission and verification contain fleet-knowledge branches. | There is current source implementation, not merely a target description. |
-| Request10055 is recorded satisfied at Verified. | The graph records that claim; its meaning needs the underlying evidence. |
-| Accepted ChangeSet42451's audit explicitly identifies fixture mode and defers live delivery behind named dependencies. | The historical proof does not claim live recall service delivery. |
+| Request 10055 is recorded satisfied at Verified. | The graph records that claim; its meaning needs the underlying evidence. |
+| Accepted ChangeSet 42451's audit explicitly identifies fixture mode and defers live delivery behind named dependencies. | The historical proof does not claim live recall service delivery. |
 | Accepted ChangeSets contain `internal/store/recall_source.go` and an end-to-end recall test, but those files are absent from the inspected checkout. | Historical artifact acceptance is insufficient evidence that this checkout implements that path. The cause of the discrepancy was not established. |
-| The registered fleet-knowledge graph contains one Product admission, seq230; head movement234 accepts it. | A real admitted Product exists. It is about Python verification checks, contains no hippo mention, and is not the historical recall fixture element. |
-| That Product's request1 currently reports `migration_required`; initial verification runs237/240 closed abandoned. | Neither its accepted head nor those runs establishes a currently Verified live recall element. No migration was performed. |
+| The registered fleet-knowledge graph contains one Product admission, seq 230; head movement 234 accepts it. | A real admitted Product exists. It is about Python verification checks, contains no hippo mention, and is not the historical recall fixture element. |
+| That Product's request 1 currently reports `migration_required`; initial verification runs 237/240 closed abandoned. | Neither its accepted head nor those runs establishes a currently Verified live recall element. No migration was performed. |
 
 ## Reproduced checker limits
 
@@ -39,8 +39,8 @@ length and SHA256 independently checked before the probe.
 
 | Input | Current-source checker result |
 | --- | --- |
-| Exact Product230 body, SHA256 `27aba2ea4450e56926795272aa5640eab9f15590241e1d3d98fbfa5d902f8cda` | Exit1: no knowledge elements found. Its headings do not match the checker's element format. |
-| An explicit fictional element with two distinct repository strings and two non-hash citation strings | Exit0: reports two attestations across two independent sources. |
+| Exact Product 230 body, SHA256 `27aba2ea4450e56926795272aa5640eab9f15590241e1d3d98fbfa5d902f8cda` | Exit 1: no knowledge elements found. Its headings do not match the checker's element format. |
+| An explicit fictional element with two distinct repository strings and two non-hash citation strings | Exit 0: reports two attestations across two independent sources. |
 
 The checker counts distinct cited repository/hash strings. Its source explicitly
 states that resolving cited hashes against admitted evidence is a later

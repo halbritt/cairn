@@ -20,7 +20,7 @@
     "candidate": "Stable sort input passages by unpadded model-token length, embed batches of four, restore original order before existing score computation",
     "preservation": "All note chunks, identities, body hashes, versions and integer scores equal; fingerprint may differ because batch size is explicit",
     "hypothesis": "Current long-note lengths reduce the padding penalty observed on the earlier short-note corpus; batched inference may reduce cost",
-    "target": "At least 20 percent lower median paired whole-worker wall time, each candidate below20s, no lost source coverage or integer-score difference, peak RSS below1.5x baseline",
+    "target": "At least 20 percent lower median paired whole-worker wall time, each candidate below 20s, no lost source coverage or integer-score difference, peak RSS below 1.5x baseline",
     "method": "At most three alternating one-shot pairs on the fixed current request, 60s per process; stop on score mismatch or first pair with no wall-time reduction; no candidate tuning",
     "limits": "Shared host; one current twenty-note input and setup query, not service percentiles, all workload generalization or task benefit",
     "first_profile": {
@@ -175,19 +175,19 @@
         "requirement": "repeated raw results, variance, and environment stability",
         "required_by": "performance-benchmark-validity",
         "classification": "nonmaterial to this bounded availability adjustment",
-        "reason": "No generalized speedup, stationary environment, service distribution or optimal batching claim. The rejected candidate is screened on one retained corpus on a shared host; direct unchanged-model transport observations establish only that input completing within25s. Broader performance adoption would require stronger evidence."
+        "reason": "No generalized speedup, stationary environment, service distribution or optimal batching claim. The rejected candidate is screened on one retained corpus on a shared host; direct unchanged-model transport observations establish only that input completing within 25s. Broader performance adoption would require stronger evidence."
       },
       {
         "requirement": "representative input distribution and resource limits",
         "required_by": "performance-benchmark-validity",
         "classification": "nonmaterial to this bounded availability adjustment",
-        "reason": "No generalized speedup, stationary environment, service distribution or optimal batching claim. The rejected candidate is screened on one retained corpus on a shared host; direct unchanged-model transport observations establish only that input completing within25s. Broader performance adoption would require stronger evidence."
+        "reason": "No generalized speedup, stationary environment, service distribution or optimal batching claim. The rejected candidate is screened on one retained corpus on a shared host; direct unchanged-model transport observations establish only that input completing within 25s. Broader performance adoption would require stronger evidence."
       },
       {
         "requirement": "exact code, dependency, build, benchmark, data, and environment versions",
         "required_by": "performance-representative-baseline",
         "classification": "nonmaterial to this bounded availability adjustment",
-        "reason": "No generalized speedup, stationary environment, service distribution or optimal batching claim. The rejected candidate is screened on one retained corpus on a shared host; direct unchanged-model transport observations establish only that input completing within25s. Broader performance adoption would require stronger evidence."
+        "reason": "No generalized speedup, stationary environment, service distribution or optimal batching claim. The rejected candidate is screened on one retained corpus on a shared host; direct unchanged-model transport observations establish only that input completing within 25s. Broader performance adoption would require stronger evidence."
       }
     ]
   },

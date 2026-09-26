@@ -42,9 +42,11 @@ It requires Agy 1.2.0 and records executable and script hashes. `make check` als
 passed. No Cairn runtime/store code changed, so database and model-task suites were
 not repeated. The installed CLI/API, semantic worker and adapters remain unchanged.
 
-Later note (2026-09-25): the host's Agy now reports 1.2.11, so
-`scripts/check_agy_config.py` refuses to run there. This record and the check
-cover Agy 1.2.0 only; the check is not part of `make check`.
+Later note (2026-09-25): the host's Agy now reports 1.2.11. The unchanged
+check passed against it with a freshly built CLI (same report fields as above,
+no model calls), so `scripts/check_agy_config.py` now accepts 1.2.0 and 1.2.11.
+This record's observations still describe the 1.2.0 run. The check is not part
+of `make check`.
 
 ## Remaining work and decision
 

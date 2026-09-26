@@ -51,7 +51,7 @@ are not historical Cairn defects.
 
 Ordinary revoke, retract, forget and preview operations share private transaction
 helpers with recovery. Their public validation, refusal retention, request
-idempotency and isolation remain. Migration027 adds immutable application and
+idempotency and isolation remain. Migration 027 adds immutable application and
 imported-custody records plus a new audit event kind. Existing audit member JSON
 is unchanged; new application events commit the source digest and action mapping.
 No source actor, timestamp or transaction ID is reconstructed from a hash.
@@ -77,10 +77,10 @@ verification is separate from this implementation receipt.
 
 Code revision `0835e0c7a19ef94fbc0158dde6ab2d684443f330` passed
 [exact-commit CI](https://github.com/halbritt/cairn/actions/runs/34242253012).
-A clean ordinary clone produced the Go1.25.0 binary installed at
+A clean ordinary clone produced the Go 1.25.0 binary installed at
 `~/.local/bin/cairn`, SHA256
 `999bd3591273010319186a5f15f02fe45d03ed2c3221718ee49942c8607b6ef4`.
-The API was stopped for migration027 and restarted with that exact executable.
+The API was stopped for migration 027 and restarted with that exact executable.
 Both local services are active.
 
 The previous binary first made a recovery export and a catalog/hash-verified

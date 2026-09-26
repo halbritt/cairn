@@ -39,12 +39,6 @@ produced it. In the [startup-hook metadata](opencode-startup-hook-2026-09-09.jso
 `/tmp/cairn-startup-hook-probe-final/report.json` share `d9936d04…` because the
 log is a byte copy of the report; they are one piece of evidence.
 
-Records also commit Cairn record, request and receipt UUIDs and host paths. For
-example, record `82fcfec8…` appears in seven files under `docs`. A record's
-statement that identifiers "remain outside Git" describes that run's private
-output only. There is no repository-wide rule yet on which identifiers belong in
-committed records.
-
 When revisiting a historical claim, cite the exact retained source, test or
 artifact that can still be inspected. If the raw artifact is gone, label that
 limit and run a new check under a new date. The repository's normal validation
@@ -56,6 +50,17 @@ is local; see [Verify changes](../../README.md#verify-changes).
 | [Task-file runs](run-task-file-2026-09-09.md) | Report, [metadata](run-task-file-2026-09-09.json) and source checks | Three named `/tmp` logs were present on this host and matched the manifest digest. They contain the same suite summary, so their identical bytes do not independently prove that the final rerun included each later assertion. |
 | [File capture](file-evidence-capture-2026-09-09.md) and [Unicode integrity](json-unicode-integrity-2026-09-09.md) | Reports and JSON receipts | The receipts captured CI as `in_progress`. The companion reports state their local results; neither historical status is a current CI gate. |
 | [Reviewed recurrence](reviewed-recurrence-2026-09-08.md) | Report and [metadata](reviewed-recurrence-2026-09-08.json) | Raw model/session output is intentionally outside Git. M maps to receipt trial `M2`; the assessment script changed after M. The recorded outcome remains the historical claim. |
+
+### Identifiers in committed records
+
+Records may commit identifiers that locate evidence without disclosing it:
+Cairn record, version, request, receipt, event and delivery UUIDs; commit IDs;
+content digests; process IDs; and host paths such as `/tmp` locators. For
+example, record `82fcfec8…` appears in seven files under `docs`. Records must
+not commit API tokens or token file contents, credentials, private note bodies,
+raw model sessions or unpublished prompt text. A record's statement that
+identifiers "remain outside Git" describes that run's private output, not this
+rule.
 
 ## Selected supersessions
 

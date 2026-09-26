@@ -1,7 +1,7 @@
 # JSON Unicode integrity, 2026-09-09
 
 A real API reproduction submitted a JSON evidence body containing invalid UTF-8
-and received HTTP200/OK. Go's decoder replaces malformed Unicode while producing
+and received HTTP 200/OK. Go's decoder replaces malformed Unicode while producing
 a valid Go string, so the existing store-level UTF-8 check ran after source bytes
 had already changed. Lone Unicode surrogate escapes have the same problem.
 Operator decoding and agent forwarding reproduced the gap separately.

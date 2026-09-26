@@ -33,13 +33,13 @@ Local logs: `/tmp/cairn-attempt-link-reservation-integration.log` and
 
 ## Compatibility
 
-Migration025 adds a nullable attempt reference and lookup index. It neither
+Migration 025 adds a nullable attempt reference and lookup index. It neither
 backfills old attempts nor changes historical packages. Empty attempt fields are
 omitted from canonical binding requests, preserving old request hashes.
 
 An additional disposable upgrade used the clean installed b1eeb42444a2908f0530536f64b0d3dfa11999f6
-binary to create a real schema024 receipt, binding and claim through its API,
-then migrated to025 with this implementation. Original binding retries returned
+binary to create a real schema 024 receipt, binding and claim through its API,
+then migrated to 025 with this implementation. Original binding retries returned
 the same observation, repeated compilation preserved the seal and semantics,
 and run reporting/status retained the original claim with no invented attempt.
 Private proof: `/tmp/cairn-attempt-link-upgrade-verification.json`.
@@ -59,9 +59,9 @@ host result correctness or task acceptance.
 
 Code `b976ae7ae75d156bfb127decfba882e8babab3f7` passed
 [CI](https://github.com/halbritt/cairn/actions/runs/34223190908) and was built from
-a clean clone with Go1.25.0. The installed executable and running API share
+a clean clone with Go 1.25.0. The installed executable and running API share
 SHA-256 `8dab57688eaf612c803478d338c1a32f73387dcba7bca26018d27e3cef6467c4`.
-A cataloged backup preceded migration to025. Both services are active, and the
+A cataloged backup preceded migration to 025. Both services are active, and the
 existing observer receipt remains inspectable with an unusable client DSN.
 
 An actual Cairn `make build` then ran through the deployed observer wrapper. The
@@ -69,7 +69,7 @@ host started a real wrapper process behind a startup pipe, recorded its spawn,
 and only then released it to prepare and launch the build. The wrapper retained
 attempt `10f74049-45b1-4b40-9d9f-1f9c792f518a`, receipt
 `8446d37b-f15e-4f16-960b-62da91e958ce`, and outcome
-`bbbbee94-2722-405f-a7b1-4e2355d2870d`. Its process exited0.
+`bbbbee94-2722-405f-a7b1-4e2355d2870d`. Its process exited 0.
 
 The host checked the produced Go executable's clean source revision and recorded
 its digest as the corresponding terminal result. The API run report retained the

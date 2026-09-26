@@ -90,14 +90,14 @@ verification. Private receipts retain each obligation and its rationale.
 
 Code revision `c370481d99ec1354abaac75d45146d2e4fca3c36` passed
 [exact-revision CI](https://github.com/halbritt/cairn/actions/runs/34248263599).
-The installed executable was built with Go1.25.0 from a clean ordinary clone;
+The installed executable was built with Go 1.25.0 from a clean ordinary clone;
 its metadata records that revision with `vcs.modified=false`. Installed and
 running API binaries share SHA256
 `aa27cb05d19f9188fc1f4093e07d7ccb3387f8766a1388fd41b627593eb2b8cc`.
 
 Before installation, the previous binary exported a recovery record and produced
 a backup whose dump checksum, catalog and PostgreSQL archive listing verified.
-The API was stopped for migration028 and atomic executable replacement. After
+The API was stopped for migration 028 and atomic executable replacement. After
 restart, an existing authenticated observer status request succeeded with an
 unusable client database address. The running PID matched the installed binary.
 
@@ -105,7 +105,7 @@ Both the previous-binary recovery export and a new export inspect consistently.
 Existing record versions and proposals are unchanged, known deletion exclusions
 remain unchanged, and recovery application/imported custody tables remain empty.
 The new restore session/resume tables are empty; `restore-status` reports
-`paused: false`, generation0, with no session. Installation did not declare a
+`paused: false`, generation 0, with no session. Installation did not declare a
 restore, resume a recovery, add a memory fixture or run a new task. The backup
 adds checkpoint metadata, so this is not a claim that the entire database stayed
 unchanged. API and store services are active.

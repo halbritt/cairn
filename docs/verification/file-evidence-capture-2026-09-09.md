@@ -60,7 +60,7 @@ was changed or launched for this work.
 ## Local installation
 
 CLI `57164ce4f5f6782c1b115257afc1afc0a2ac8994` is installed, SHA-256
-`c9309a9eef2fa509ef2276e09240efc76909bc40313b5016ab7f4fe9a570130a`. The API remains `386eae1` at PID825681;
+`c9309a9eef2fa509ef2276e09240efc76909bc40313b5016ab7f4fe9a570130a`. The API remains `386eae1` at PID 825681;
 PostgreSQL, worker, native adapter and connection settings are unchanged. Separate
 client/server version output confirms the builds. No API restart or migration
 was performed. An empty selected file refuses before capture; successful byte
