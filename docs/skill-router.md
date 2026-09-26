@@ -57,13 +57,17 @@ Only these leave the box, and only after every refusal below has passed:
 - The basename of the working directory.
 - The catalog's skill names and descriptions.
 
-The router also skips text that the harness or another process submits in
-the owner's place: background-task and Monitor notifications, system
-reminders, Cairn inbox wakeups, compaction summaries, expanded slash commands
-and skill bodies, usage-limit notices and interrupt markers. It matches fixed
-prefixes, plus `<task-notification>` or `[SYSTEM NOTIFICATION` near the start
-of text that begins with `<`. Replayed over a looping striatum-next session's
-570 user-side turns, this left exactly the 22 prompts the owner typed.
+The router also skips text that opens with a known envelope that a harness
+or Cairn submits in the owner's place: Claude Code task and Monitor
+notifications, system reminders and channel wrappers, slash-command echoes,
+compaction summaries, skill-body loads, the `/loop` expansion, usage-limit and
+interrupt notices, and Cairn's own native wake text
+(`coordination.wake_message`). Only exact producer openings are listed, never
+generic shapes such as a Markdown heading, and only the start of the text is
+checked, so a pasted example that contains notification markup still routes.
+This is a heuristic on known envelopes, not proof of who wrote the text.
+Replayed over a looping striatum-next session's 570 user-side turns, it left
+exactly the 22 prompts the owner typed.
 
 The router makes no request when the installation did not enable it, when
 `CAIRN_SKILL_ROUTER=0`, when `.cairn-no-memory` applies, when the prompt is a

@@ -49,11 +49,17 @@ USER_AGENT = "cairn-skill-router/1"
 # echoes. Routing them spends a TypeSafe call on text nobody typed and injects skills
 # nobody asked for (measured 2026-09-25: 270 of 277 matched turns in one looping
 # session were notifications, and both of its injections came from them).
-MACHINE_PREFIXES = ("<task-notification>", "<system-reminder>", "<channel source=", "<local-command-", "<command-name>",
-                    "<command-message>", "This session is being continued from a previous conversation",
-                    "Base directory for this skill:", "# /", "Your claude.ai usage limit has reset",
-                    "[Request interrupted by user")
-MACHINE_MARKERS = ("<task-notification>", "[SYSTEM NOTIFICATION")
+# Matching is a heuristic on known envelopes, not proof of who submitted the text: only
+# exact producer openings are listed, never generic shapes such as a Markdown heading.
+MACHINE_PREFIXES = (
+    "<task-notification>", "<system-reminder>", "<channel source=",                # Claude Code
+    "<local-command-", "<command-name>", "<command-message>",                       # slash-command echoes
+    "This session is being continued from a previous conversation",                 # compaction summary
+    "Base directory for this skill:",                                               # skill body load
+    "# /loop — schedule a recurring or self-paced prompt",                          # /loop expansion
+    "Your claude.ai usage limit has reset", "[Request interrupted by user",
+    "This is a new live turn from the configured Cairn automatic inbox wakeup.",    # coordination.wake_message
+)
 MAX_FILES = 10
 
 
@@ -331,9 +337,8 @@ def log(config, record):
 
 
 def machine(prompt):
-    """True for text a harness or process submitted in the owner's place."""
-    head = prompt.lstrip()[:400]
-    return head.startswith(MACHINE_PREFIXES) or (head.startswith("<") and any(m in head for m in MACHINE_MARKERS))
+    """True for text that opens with a known harness or Cairn envelope (see MACHINE_PREFIXES)."""
+    return prompt.lstrip().startswith(MACHINE_PREFIXES)
 
 
 def start(config, event, state):
