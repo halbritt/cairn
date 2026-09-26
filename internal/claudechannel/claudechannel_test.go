@@ -164,7 +164,19 @@ func startBridge(t *testing.T, wrap func(mcp.Transport) mcp.Transport, directory
 	h := &harness{t: t, directory: directory, parent: parent, recording: recording,
 		runDone: done, cancel: cancel}
 	registry := filepath.Join(directory, fmt.Sprintf("%d.json", parent.PID))
-	h.waitFor(func() bool { _, err := os.Stat(registry); return err == nil }, "registry file")
+	// Readiness follows the client's initialized notification, which the
+	// server reads after Connect returns; a pre-seeded stale record must not
+	// count as this bridge's registry.
+	self, err := ProcessRefOf(os.Getpid())
+	if err != nil {
+		cancel()
+		t.Fatalf("self measurement failed: %v", err)
+	}
+	h.waitFor(func() bool {
+		data, err := os.ReadFile(registry)
+		var record registryRecord
+		return err == nil && json.Unmarshal(data, &record) == nil && record.Process == self
+	}, "registry file")
 	data, err := os.ReadFile(registry)
 	if err != nil {
 		t.Fatalf("registry unreadable: %v", err)
@@ -509,9 +521,11 @@ func TestBlockedWriteReportsUncertainAndShutsDown(t *testing.T) {
 	}
 }
 
-func TestSessionlessClientAlsoBecomesReady(t *testing.T) {
-	// The SDK's own client defaults to the sessionless server/discover
-	// protocol; that discovery must count as initialization too.
+func TestSessionlessClientFallsBackToLegacyHandshake(t *testing.T) {
+	// The SDK's own client, like current Claude Code, first probes with the
+	// sessionless server/discover protocol. Claude drops channel
+	// notifications on a sessionless connection, so the bridge must steer
+	// the client back to the legacy initialize handshake.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
@@ -525,6 +539,9 @@ func TestSessionlessClientAlsoBecomesReady(t *testing.T) {
 		t.Fatalf("client initialize failed: %v", err)
 	}
 	defer session.Close()
+	if version := session.InitializeResult().ProtocolVersion; version >= "2026-07-28" {
+		t.Fatalf("negotiated sessionless protocol %q; Claude would skip channel notifications", version)
+	}
 	parent, err := ProcessRefOf(os.Getppid())
 	if err != nil {
 		t.Fatal(err)
@@ -562,7 +579,54 @@ func TestSessionlessClientAlsoBecomesReady(t *testing.T) {
 	}
 	reply, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil || !strings.Contains(reply, "written") {
-		t.Fatalf("sessionless reply %q err %v", reply, err)
+		t.Fatalf("fallback reply %q err %v", reply, err)
+	}
+}
+
+func TestDiscoverIsRefusedAndIsNotReady(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	serverConn, clientConn := net.Pipe()
+	directory := t.TempDir()
+	go func() { _ = Run(ctx, directory, &rawTransport{conn: serverConn}) }()
+	raw := &rawConnection{conn: clientConn, reader: bufio.NewReader(clientConn)}
+	t.Cleanup(func() { _ = raw.Close() })
+	params, err := json.Marshal(map[string]any{"_meta": map[string]any{
+		"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+		"io.modelcontextprotocol/clientInfo":      map[string]string{"name": "claude-raw", "version": "1"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := jsonrpc.MakeID(float64(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Write(ctx, &jsonrpc.Request{ID: id, Method: "server/discover", Params: params}); err != nil {
+		t.Fatal(err)
+	}
+	message, err := raw.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, ok := message.(*jsonrpc.Response)
+	if !ok {
+		t.Fatalf("discover reply %T", message)
+	}
+	// Method not found is the pre-2026 answer that sends clients to initialize.
+	var refusal *jsonrpc.Error
+	if !errors.As(response.Error, &refusal) || refusal.Code != jsonrpc.CodeMethodNotFound {
+		t.Fatalf("discover reply %s err %v; want method not found", response.Result, response.Error)
+	}
+	// Discovery alone is not a channel-capable handshake: no registry, so the
+	// watcher reports the missing bridge instead of a silently dropped wake.
+	parent, err := ProcessRefOf(os.Getppid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if _, err := os.Stat(filepath.Join(directory, fmt.Sprintf("%d.json", parent.PID))); err == nil {
+		t.Fatal("discovery alone published a channel registry")
 	}
 }
 

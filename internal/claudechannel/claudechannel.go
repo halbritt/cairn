@@ -30,6 +30,13 @@ const (
 	capability         = "claude/channel"
 	notificationMethod = "notifications/claude/channel"
 	registrySchema     = "cairn.claude-channel/1"
+	// discoverMethod probes for the sessionless MCP revision (2026-07-28).
+	// Since 2026-09-25 Claude Code (2.1.282+) negotiates that revision when
+	// offered and then skips every channel notification ("no unsolicited
+	// notification path") while the socket still reports the wake written.
+	// The bridge answers the probe as a pre-2026 server would, so the client
+	// uses legacy initialize.
+	discoverMethod = "server/discover"
 	// One JSON request line excluding its newline, and bounded socket waits.
 	maxLine        = 8192
 	socketDeadline = 2 * time.Second
@@ -106,10 +113,11 @@ type registryRecord struct {
 
 // capturingTransport records the logical connection the SDK established so
 // notifications can be written outside the SDK's typed helpers. Its connection
-// also observes the first initialization message — the legacy
-// notifications/initialized handshake or a sessionless server/discover
-// request — because the SDK offers no custom-notification helper and both
-// handshake generations must count as "MCP initialized".
+// also observes the legacy notifications/initialized message, because the SDK
+// offers no custom-notification helper, and refuses server/discover itself:
+// the SDK server would otherwise negotiate the sessionless revision, on which
+// channel notifications are dropped, and would then reject the client's
+// fallback initialize as a duplicate.
 type capturingTransport struct {
 	transport mcp.Transport
 	ready     func()
@@ -140,14 +148,30 @@ func (t *capturingTransport) connection() mcp.Connection {
 }
 
 func (c *capturingConnection) Read(ctx context.Context) (jsonrpc.Message, error) {
-	message, err := c.Connection.Read(ctx)
-	if err == nil {
-		if request, ok := message.(*jsonrpc.Request); ok &&
-			(request.Method == "notifications/initialized" || request.Method == "server/discover") {
+	for {
+		message, err := c.Connection.Read(ctx)
+		if err != nil {
+			return message, err
+		}
+		request, ok := message.(*jsonrpc.Request)
+		if !ok {
+			return message, nil
+		}
+		if request.Method == discoverMethod && request.IsCall() {
+			// Method not found is a non-modern error: the client falls back to
+			// the legacy initialize handshake on this same connection.
+			refusal := &jsonrpc.Response{ID: request.ID,
+				Error: &jsonrpc.Error{Code: jsonrpc.CodeMethodNotFound, Message: "method not found"}}
+			if err := c.Connection.Write(ctx, refusal); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if request.Method == "notifications/initialized" {
 			c.transport.ready()
 		}
+		return message, nil
 	}
-	return message, err
 }
 
 type bridge struct {
