@@ -1436,6 +1436,23 @@ def session_journals(config, state):
     return state['inbox_journals']
 
 
+def journal_kind(config, attempt_id, journal):
+    """The event kind behind a journal, or None when it cannot be established.
+
+    Journals written before they recorded their kind take it from the attempt's
+    owner-only native context. An unknown kind is treated as a request by the
+    caller, so a committed result keeps its entry until a reply can no longer
+    arrive rather than being dropped before the agent journals that reply.
+    """
+    if journal.get('kind'):
+        return journal['kind']
+    try:
+        context = json.loads((Path(config['state_dir']) / 'inbox' / (attempt_id + '.json')).read_text())
+    except (OSError, ValueError):
+        return None
+    return context.get('kind') if isinstance(context, dict) and context.get('attempt_id') == attempt_id else None
+
+
 def flush_journal(config, attempt_id):
     """Replay one attempt's pending journaled commands in order.
 
@@ -1467,7 +1484,8 @@ def flush_journal(config, attempt_id):
                 elif slot['status'] == 'refused':
                     print(f"Cairn presence {config['binding']}: journaled {slot['kind']} for attempt "
                           f"{attempt_id} was refused ({slot['code']}); its content stays in {target}", file=sys.stderr)
-            journal_open = (journal.get('kind') == 'request' and not journal.get('response') and
+            journal_open = (journal_kind(config, attempt_id, journal) in ('request', None) and
+                            not journal.get('response') and
                             (journal.get('completion') or {}).get('status') == 'committed' and
                             (journal['completion'].get('result') is not None))
             return pending | ({'reply_possible'} if journal_open else set())

@@ -287,6 +287,54 @@ class InboxRecovery(unittest.TestCase):
         self.assertEqual(self.journal()['response']['status'], 'committed')
         self.assertEqual(self.state['inbox_journals'], [])
 
+    def legacy_reconciled_completion(self, kind='request', context_present=True):
+        """agent-203's ordering: a journal from before kind/session were recorded,
+        its completion committed, the attempt reconciled, and no reply yet."""
+        context = self.context()
+        if kind != 'request':
+            target = self.root / 'state' / 'inbox' / (ATTEMPT + '.json')
+            target.write_text(json.dumps(dict(context, kind=kind)))
+        self.replies({'complete': [HANDLED]})
+        self.run_context(context['completion'], 'Selected result')
+        path = coordination.intent_path(self.config['state_dir'], ATTEMPT)
+        journal = json.loads(path.read_text())
+        journal.pop('kind')
+        journal.pop('session')
+        path.write_text(json.dumps(journal))
+        if not context_present:
+            (self.root / 'state' / 'inbox' / (ATTEMPT + '.json')).rename(self.root / 'context.json')
+        for key in ('inbox_journals', 'inbox_intent', 'inbox_attempt'):
+            self.state.pop(key, None)
+        coordination.write_state(self.path, self.state)
+        return context
+
+    def test_legacy_committed_request_waits_for_its_reply(self):
+        context = self.legacy_reconciled_completion()
+        # The watcher scans before the agent has journaled its reply.
+        coordination.watch_inbox(self.config, self.state, self.path)
+        self.assertEqual(self.state['inbox_journals'], [ATTEMPT])
+        self.replies({'publish': [LOST]})
+        lost = self.run_context([*context['response'], '--version', '1', RESULT['record_id']])
+        self.assertEqual(json.loads(lost.stdout)['status'], 'API_CONNECTION_FAILED')
+        self.replies({'publish': [dict(ok=True, status='OK', data={})]})
+        coordination.watch_inbox(self.config, self.state, self.path)
+        published = [e['argv'] for e in self.log() if e['operation'] == 'publish']
+        self.assertEqual(len(published), 2)
+        self.assertEqual(published[0], published[1])
+        self.assertEqual(self.journal()['response']['status'], 'committed')
+        self.assertEqual(self.state['inbox_journals'], [])
+
+    def test_legacy_committed_journal_of_unknown_kind_is_kept(self):
+        self.legacy_reconciled_completion(context_present=False)
+        coordination.watch_inbox(self.config, self.state, self.path)
+        coordination.watch_inbox(self.config, self.state, self.path)
+        self.assertEqual(self.state['inbox_journals'], [ATTEMPT])
+
+    def test_legacy_notice_journal_is_final(self):
+        self.legacy_reconciled_completion(kind='notice')
+        coordination.watch_inbox(self.config, self.state, self.path)
+        self.assertEqual(self.state['inbox_journals'], [])
+
     def test_leave_waits_for_a_reply_journaled_after_reconciliation(self):
         self.released_with_pending_reply()
         self.replies({'publish': [LOST]})
