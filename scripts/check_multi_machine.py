@@ -374,6 +374,13 @@ def check(binary, directory):
         complete_args = ("--request-id", completion_id, "--lease", delivered["lease_id"],
                          "--shareable", "--stdin", delivered["delivery_id"])
         a.event("complete", *complete_args, body="Cross machine result", expected="NOT_FOUND")
+        a.event("complete", *complete_args, session=b_session,
+                body="Cross machine result", expected="NOT_FOUND")
+        a.event("renew", "--lease", delivered["lease_id"], delivered["delivery_id"],
+                session=b_session, expected="NOT_FOUND")
+        a.call("session-inbox-reconcile", body=json.dumps(dict(
+            request_id=uid(), session=claim["session"], attempt_id=attempt["attempt_id"],
+            reason="turn_ended")), expected="NOT_FOUND")
         faults.once("/v1/event-complete", "drop")
         b.event("complete", *complete_args, session=b_session,
                 body="Cross machine result", expected="UPSTREAM_UNCERTAIN")
@@ -442,6 +449,12 @@ def check(binary, directory):
         b_relay = start_relay(binary, b_dir, faults.port, cert)
         assert b.call("session-inbox-claim", body=json.dumps(dict(
             request_id=uid(), session=claim["session"])))["attempt"] is None
+        # Remote manual inbox-next is denied for both the session and base
+        # principal; neither can take the held delivery after lease expiry.
+        b.event("inbox", session=b_session, expected="AUTHORITY_DENIED")
+        b.event("inbox", expected="AUTHORITY_DENIED")
+        b.call("agents", "register", "--request-id", uid(), *registration,
+               str(b_dir), "--state", "busy", expected="AGENT_BUSY")
         wrong = ("--request-id", uid(), "--lease", uid(), "--shareable", "--stdin",
                  held["delivery_id"])
         b.event("complete", *wrong, session=b_session,
@@ -498,11 +511,12 @@ def check(binary, directory):
         assert lost_status["state"] == "failed" and lost_status["code"] == "operator_released"
         assert lost_status.get("result") is None
 
-        identities = identities[1:]
+        identities = [entry for entry in identities if entry.get("machine_id") != "host-a"]
         config.write_text(json.dumps(identities))
         stop_service(process)
         process = start_server(binary, root, env, port, cert, key)
         a.call("version", expected="AUTHORITY_DENIED")
+        observer.call("version", expected="AUTHORITY_DENIED")
         b.call("version")
 
         # Restore a real snapshot of the dedicated disposable database. A
