@@ -44,6 +44,16 @@ NONE_TEXT = "No listed skill fits; answer directly."
 INSTRUCTIONS = ("Which one skill (a packaged workflow the agent can load) should the agent use for "
                 "this owner prompt? Pick none if no skill clearly applies.")
 USER_AGENT = "cairn-skill-router/1"
+# Turns the harness or another process submits in the owner's place: background-task
+# and Monitor notifications, Cairn inbox wakeups, compaction summaries and slash-command
+# echoes. Routing them spends a TypeSafe call on text nobody typed and injects skills
+# nobody asked for (measured 2026-09-25: 270 of 277 matched turns in one looping
+# session were notifications, and both of its injections came from them).
+MACHINE_PREFIXES = ("<task-notification>", "<system-reminder>", "<channel source=", "<local-command-", "<command-name>",
+                    "<command-message>", "This session is being continued from a previous conversation",
+                    "Base directory for this skill:", "# /", "Your claude.ai usage limit has reset",
+                    "[Request interrupted by user")
+MACHINE_MARKERS = ("<task-notification>", "[SYSTEM NOTIFICATION")
 MAX_FILES = 10
 
 
@@ -320,13 +330,19 @@ def log(config, record):
         pass
 
 
+def machine(prompt):
+    """True for text a harness or process submitted in the owner's place."""
+    head = prompt.lstrip()[:400]
+    return head.startswith(MACHINE_PREFIXES) or (head.startswith("<") and any(m in head for m in MACHINE_MARKERS))
+
+
 def start(config, event, state):
     """A running Route for this event, or None when the router does not apply."""
     opts = settings(config)
     if opts is None or event.get("hook_event_name") not in ("SessionStart", "UserPromptSubmit"):
         return None
     prompt = event.get("prompt")
-    if not isinstance(prompt, str) or not prompt.strip() or prompt.lstrip().startswith("/"):
+    if not isinstance(prompt, str) or not prompt.strip() or prompt.lstrip().startswith("/") or machine(prompt):
         return None
     if excluded(event, opts):
         return None
