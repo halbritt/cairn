@@ -1,0 +1,10 @@
+{
+  "legacy/legacy/legacy": "OK",
+  "candidate/legacy/legacy": "OK",
+  "legacy/candidate/legacy": "OK",
+  "candidate/candidate/legacy": "OK",
+  "legacy/legacy/candidate": "OK",
+  "candidate/legacy/candidate": "OK",
+  "legacy/candidate/candidate": "OK",
+  "candidate/candidate/candidate": "OK"
+}

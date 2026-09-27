@@ -103,3 +103,25 @@ disposable PostgreSQL clusters. No GitHub Actions are required.
 
 Completion requires evidence for each section, not merely agent acknowledgment,
 schema generation or a passing current-version test suite.
+
+## Independent historical peer check
+
+`bash scripts/test-api-version-skew.sh --output /tmp/cairn-api-skew.json` builds
+the immutable baseline revision in a temporary local clone and this checkout's
+candidate binary. It tests all eight combinations of historical/candidate CLI,
+relay and central API over verified loopback TLS. Each API uses its own database
+in a runner-owned temporary PostgreSQL cluster. Clients and relays are given an
+unusable database address so they cannot bypass the API.
+
+The fixture `fixtures/api-compatibility/legacy-v1-matrix.json` explicitly names
+every combination as `client/relay/server`. Its initial all-OK expectation
+records the baseline behavior; review it against the declared compatibility
+policy when version enforcement lands. The probe checks creation, exact request
+replay, changed-intent rejection, append replay, current reads and durable
+request counts. Expected incompatibility must leave no mutation request row.
+
+The initial harness run passed all eight combinations before candidate runtime
+changes. This validates the harness against the baseline, not the next-stage
+version policy. Candidate builds from linked worktrees may have unknown VCS
+stamps; the report preserves that fact. The historical binary must report the
+exact clean pinned revision or the probe refuses to proceed.
