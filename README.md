@@ -270,6 +270,11 @@ versioned task assessments and completed-task delegate findings.
 scoped Unix-socket access without the operator CLI or database credentials.
 [Other machines](docs/multi-machine.md) join one central API with a single
 enrollment file and a local relay that serves the same socket.
+The [generated API contract](docs/api-contract.md) specifies operation shapes,
+authentication and retry semantics; the [compatibility policy](docs/api-compatibility.md)
+defines supported protocol versions. [Integrated verification](docs/verification/api-contract-stage.md)
+records compatibility tests, connection and notification measurements, and the
+decision to retain HTTP with connection reuse.
 With a provisioned agent token, save notes and use
 [search and pull commands](docs/index-and-pull.md#agent-commands-without-request-json)
 without writing request JSON:

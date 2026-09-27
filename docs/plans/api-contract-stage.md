@@ -1,7 +1,8 @@
 # Multi-machine API contract, compatibility and latency
 
-Status: implementation in progress. This document defines acceptance; it does
-not claim that the work below has passed. Baseline: `0fb09c3` (the deployed
+Status: implemented and locally accepted; see the
+[integrated verification record](../verification/api-contract-stage.md) for
+commands, results and measurement limits. Baseline: `0fb09c3` (the deployed
 runtime is `b46a0e1`; the later baseline commits document that release).
 
 ## Goal
