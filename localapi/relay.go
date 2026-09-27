@@ -46,10 +46,11 @@ func NewRelay(upstream string) (*Relay, error) {
 		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
 		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 30 * time.Second,
 		MaxResponseHeaderBytes: 16 * 1024, DisableCompression: true,
-		// Go may replay a request on a stale pooled connection. Each request gets
-		// one fresh HTTP/1.1 connection so even implicit transport replay is absent.
-		DisableKeepAlives: true,
-		TLSNextProto:      map[string]func(string, *tls.Conn) http.RoundTripper{},
+		// Pool only HTTP/1 connections. ServeHTTP makes every POST non-replayable,
+		// including empty bodies, before handing it to net/http.
+		MaxIdleConns: 16, MaxIdleConnsPerHost: 16, MaxConnsPerHost: 32,
+		IdleConnTimeout: 30 * time.Second,
+		TLSNextProto:    map[string]func(string, *tls.Conn) http.RoundTripper{},
 	}
 	return &Relay{upstream: origin, transport: transport, http: &http.Client{Transport: transport, Timeout: 32 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
@@ -70,11 +71,16 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, in *http.Request) {
 	}
 	target := *r.upstream
 	target.Path = in.URL.Path
-	out, err := http.NewRequestWithContext(in.Context(), "POST", target.String(), bytes.NewReader(body))
+	out, err := http.NewRequestWithContext(in.Context(), "POST", target.String(), io.NopCloser(bytes.NewReader(body)))
 	if err != nil {
 		writeError(w, 400, "INVALID_REQUEST", "invalid relay request")
 		return
 	}
+	// A nil/NoBody empty request permits net/http to retry a zero-byte write
+	// on a reused connection. Keep a non-nil, non-rewindable body even for
+	// empty input (ContentLength 0 then means unknown, sent chunked). POST,
+	// nil GetBody, and the header allowlist also prevent idempotent replay.
+	out.ContentLength = int64(len(body))
 	out.GetBody = nil
 	for _, header := range []string{"Authorization", "Content-Type", "Cairn-Agent-ID", "Cairn-Execution-ID"} {
 		if values := in.Header.Values(header); len(values) > 1 {

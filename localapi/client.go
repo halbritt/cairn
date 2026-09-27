@@ -89,6 +89,9 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 	if err != nil {
 		return err
 	}
+	// Disallow net/http replay on a stale pooled connection, even when the
+	// first write fails before any bytes leave. JSON bodies are always nonempty.
+	req.GetBody = nil
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
 	if c.session != nil {
