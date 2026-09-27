@@ -4,6 +4,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 legacy_revision=0fb09c3c6698d96ae62921d546e3263000e59732
+candidate_revision="$(git rev-parse HEAD)"
+# Test committed sources, including the harness itself, and stamp both binaries.
+# A dirty checkout must be committed first so the report identifies what ran.
+if [[ -n "$(git status --porcelain)" ]]; then
+    echo "Commit the candidate tree before running the historical peer check." >&2
+    exit 1
+fi
 pg_bin="${CAIRN_PG_BIN:-$(pg_config --bindir)}"
 test_root="$(mktemp -d /tmp/cairn-api-skew.XXXXXXXX)"
 cleanup() {
@@ -27,7 +34,9 @@ trap cleanup EXIT
 git clone --quiet --shared --no-checkout . "$test_root/legacy"
 git -C "$test_root/legacy" checkout --quiet --detach "$legacy_revision"
 (cd "$test_root/legacy" && go build -o "$test_root/legacy-cairn" ./cmd/cairn)
-go build -o "$test_root/candidate-cairn" ./cmd/cairn
+git clone --quiet --shared --no-checkout . "$test_root/candidate"
+git -C "$test_root/candidate" checkout --quiet --detach "$candidate_revision"
+(cd "$test_root/candidate" && go build -o "$test_root/candidate-cairn" ./cmd/cairn)
 "$pg_bin/initdb" -D "$test_root/data" --auth-local=trust --auth-host=reject --no-locale -E UTF8 >/dev/null
 mkdir "$test_root/socket"
 "$pg_bin/pg_ctl" -D "$test_root/data" -l "$test_root/postgres.log" \
@@ -38,4 +47,4 @@ done
 CAIRN_DISPOSABLE_TEST_ROOT="$test_root" CAIRN_PG_BIN="$pg_bin" \
     python3 -B scripts/check_api_version_skew.py \
     --legacy "$test_root/legacy-cairn" --candidate "$test_root/candidate-cairn" \
-    --root "$test_root" "$@"
+    --candidate-revision "$candidate_revision" --root "$test_root" "$@"

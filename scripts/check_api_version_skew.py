@@ -89,6 +89,8 @@ def check(args):
         versions[name] = json.loads(result.stdout)["data"]
     assert versions["legacy"]["vcs_revision"] == "0fb09c3c6698d96ae62921d546e3263000e59732"
     assert versions["legacy"]["vcs_modified"] is False
+    assert versions["candidate"]["vcs_revision"] == args.candidate_revision
+    assert versions["candidate"]["vcs_modified"] is False
     cert, key = certificate(root)
     rows = []
     for server_name, server_binary in peers.items():
@@ -149,6 +151,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--legacy", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
+    parser.add_argument("--candidate-revision", required=True)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--expectations", type=Path, default=Path(__file__).resolve().parents[1] /
                         "fixtures/api-compatibility/legacy-v1-matrix.json")

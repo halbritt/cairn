@@ -122,6 +122,8 @@ request counts. Expected incompatibility must leave no mutation request row.
 
 The initial harness run passed all eight combinations before candidate runtime
 changes. This validates the harness against the baseline, not the next-stage
-version policy. Candidate builds from linked worktrees may have unknown VCS
-stamps; the report preserves that fact. The historical binary must report the
-exact clean pinned revision or the probe refuses to proceed.
+version policy. The runner now requires a clean committed candidate checkout
+and builds both binaries in temporary clones with real `.git` directories, so
+Go can stamp the versions even on toolchains that overlook linked-worktree
+files. Both binaries must report their exact clean pinned revisions or the
+probe refuses to proceed.
