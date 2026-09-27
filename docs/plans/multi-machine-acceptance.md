@@ -29,16 +29,16 @@ establish. Store all credentials and raw runtime artifacts outside the repositor
 | Simple setup | One enrollment import installs required profiles/service and passes connectivity without per-agent registration secrets | Passed: one actual enrollment import on Archon |
 | Existing CLI/MCP and native hooks work remotely | Real agent on Archon retrieves a selected shareable note, receives work and publishes an explicit reply | Passed at `12bcb49`; Codex sandbox limitation below |
 | Collection independent of checkout path | Both machines share collection identity with different workspace metadata | Passed: Archon temporary workspace, canonical Proximal collection |
-| Machine and role isolation | Equal native IDs remain distinct; other-machine completion and ordinary-client observer calls refused | Pending |
-| Hosted privacy and remote operation limits | Local-only body retrieval and wrong-host managed-context registration refused | Pending |
+| Machine and role isolation | Equal native IDs remain distinct; other-machine completion and ordinary-client observer calls refused | Passed: cross-machine session borrowing refused; delivery unchanged |
+| Hosted privacy and remote operation limits | Local-only body retrieval and wrong-host managed-context registration refused | Passed: hosted history/pull refuse private bodies; remote allowlist enforced |
 | Durable request/reply behavior | Exact source version delivered, explicit completion retained, response linked to request; task result inspected separately | Passed: one handled delivery and one linked reply; result read back |
 | Lost response and duplicate retry | Repeat same request identity after dropped response; one committed event/completion and no repeated task execution | Passed: disposable two-relay and host journal fixtures |
 | Long network partition | Finish a task across lease expiry, recover its result through tested contract, preserve execution/hold/generation checks | Passed: lease-expired completion retained under exact hold; host replay regression |
 | Restarts | Surviving agent and pending completion reconciled after relay/service and central API restart without replacement execution bypass | Passed: SIGKILL relay/stale socket, API restart, persisted reply journal |
-| Revocation and rotation | Revoked profiles refused; replacing credentials preserves intended machine/session identity | Pending |
+| Revocation and rotation | Revoked profiles refused; replacing credentials preserves intended machine/session identity | Passed: both machine roles revoked; rotation preserves session identity |
 | Restore | Disposable restored DB refuses pre-restore execution/completion; explicit recovery permits fresh authorized work | Passed: real disposable dump/restore and generation fence |
 | Local compatibility | Existing Unix API and local host adapters pass required regression gates | Passed: integrated local and PostgreSQL gates at `12bcb49` |
-| Cross-model review | Plan and code review records from opposite family, all material findings resolved | Pending |
+| Cross-model review | Plan and code review records from opposite family, all material findings resolved | Passed: all material findings resolved; records below |
 | Build and store gates | Required local checks and disposable PostgreSQL integration tests pass on integrated revision | Passed at `12bcb49`: `make check`, `make test-integration`; final revision pending |
 | Deployment and usability | Services restart persistently, installed revision/config verified, operator setup/recovery instructions exercised | Pending |
 
@@ -91,8 +91,32 @@ Selected cross-model review references (Cairn note IDs, version 1):
 | Recovery through immutable completion/response checks | `d8e4127` | agent-203, Codex | `0836f4a6-767e-4525-8c6b-4857245e9893` |
 | Reply lifetime and legacy journal fix | `88c9599`, `995afe2` | agent-203 finding; agent-112 fix review, Codex | `a5180c3e-42fb-4fcb-b0ac-32d716ae5e88`, `54ad8351-154e-48eb-8a8d-ea2e8c759cf2` |
 | Root integration and deployment plan | `7c832c5` | agent-200, Anthropic | `9c8cddbc-0003-41c1-9bcf-c8c75f237856` |
-| Harness, findings requiring followup | `94a4720` | agent-204, Anthropic | `8a3d10c1-25dd-48f1-82d1-2dffa8746b8e` |
+| Harness final approval | `1efabd2`, integrated as `b46a0e1` | agent-204, Anthropic | `b9eebd2f-6f14-4f68-8cd5-3cbda680e4f5` |
+| Legacy recovery confirmation and harness disposition | `995afe2`, `1efabd2` | agent-203, Codex | `5cd9c1b3-776f-4250-aadc-10b7414da671` |
 
 These tests establish the implemented slice. They do not measure usefulness over
 long-running work, general network availability, or unimplemented remote worker,
 observer and cancellation features.
+
+## Reproducing the automated checks
+
+Run `make test`, `make check`, and `make test-integration` locally. The integration
+runner creates disposable PostgreSQL databases; do not substitute a production
+DSN. The release candidate is `b46a0e1`.
+
+- [Enrollment integration test](../../cmd/cairn/machine_integration_test.go):
+  actual provision/import, TLS handler, relay, shared collection, attribution,
+  role limits and revocation.
+- [Two-relay fixture](../../scripts/check_multi_machine.py): principal borrowing,
+  private history/pull refusal, pre-send failure, lost post-commit replies,
+  expired leases with retained holds, host journal replay, relay crash recovery,
+  token rotation, whole-machine revocation and actual dump/restore fencing.
+- [Native recovery store tests](../../core/agent_native_recovery_test.go): exact
+  unreleased hold, cancellation and release refusal, operator release and its
+  race with completion.
+- [Host journal tests](../../scripts/test_inbox_recovery.py): immutable retries,
+  committed-result matching, late response intent, restart and legacy journals.
+
+The local two-relay test simulates machines with separate profiles, sockets and
+host state. Its watcher case calls the real coordination module directly; the
+Archon trial separately establishes real hooks, MCP and host process behavior.
