@@ -64,6 +64,9 @@ are not captured by validation of an already-parsed JSON value:
 - keys match case-insensitively (`{"RECORD_ID": ...}` works);
 - duplicate keys are processed in wire order; later scalar values replace
   earlier ones, while nested struct/map values can merge;
+- raw invalid UTF-8 and unpaired Unicode surrogate escapes are refused before
+  decoding (`400 INVALID_REQUEST`). Validation of a parsed JSON string alone
+  does not establish this wire property; see the local API Unicode tests;
 - an absent field and `null` both decode as the Go zero value, and then fail or
   succeed on the operation's own validation.
 - Go integer fields require integer lexical syntax: `1.0` and `1e0` are
