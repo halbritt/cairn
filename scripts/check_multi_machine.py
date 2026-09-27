@@ -3,6 +3,7 @@
 import hashlib
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -14,11 +15,29 @@ import subprocess
 import sys
 import threading
 import time
+from unittest.mock import patch
 import uuid
 
 
 def uid():
     return str(uuid.uuid4())
+
+
+def native_coordination():
+    source = Path(__file__).resolve().parents[1] / "integrations/lifecycle/coordination.py"
+    spec = importlib.util.spec_from_file_location("multi_machine_coordination", source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def journal_command(argv, body, expected):
+    result = subprocess.run(argv, input=body, text=True, capture_output=True,
+                            timeout=40, env=client_env())
+    envelope = json.loads(result.stdout)
+    assert envelope["status"] == expected, (argv, envelope, result.stderr)
+    assert (result.returncode == 0) == (expected == "OK"), envelope
+    return envelope.get("data")
 
 
 def client_env():
@@ -37,7 +56,7 @@ class Host:
         self.token_file.write_text(token)
         self.token_file.chmod(0o600)
 
-    def call(self, command, *args, body=None, expected="OK"):
+    def call(self, command, *args, body=None, expected="OK", not_contain=None):
         if command == "agents":
             argv = [self.binary, "agents", args[0], "--socket", str(self.socket),
                     "--token-file", str(self.token_file), *args[1:]]
@@ -49,6 +68,8 @@ class Host:
         envelope = json.loads(result.stdout)
         assert envelope["status"] == expected, (command, args, envelope, result.stderr)
         assert (result.returncode == 0) == (expected == "OK"), envelope
+        if not_contain is not None:
+            assert not_contain not in result.stdout and not_contain not in result.stderr
         return envelope.get("data")
 
     def event(self, command, *args, body=None, expected="OK", session=None):
@@ -128,6 +149,14 @@ def disposable_sql(statement):
          "-c", statement],
         check=True, capture_output=True, text=True, timeout=10)
     assert "UPDATE 1" in result.stdout, result.stdout
+
+
+def disposable_count(statement):
+    result = subprocess.run(
+        ["psql", os.environ["CAIRN_TEST_DATABASE_URL"], "-X", "-A", "-t",
+         "-v", "ON_ERROR_STOP=1", "-c", statement],
+        check=True, capture_output=True, text=True, timeout=10)
+    return int(result.stdout.strip())
 
 
 def expire_delivery(delivery_id):
@@ -211,9 +240,11 @@ class FaultHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(encoded)
             return
-        headers = {name: self.headers[name] for name in
-                   ("Authorization", "Content-Type", "Cairn-Agent-ID", "Cairn-Execution-ID")
-                   if name in self.headers}
+        hop = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+               "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length"}
+        hop.update(item.strip().lower() for item in self.headers.get("Connection", "").split(","))
+        headers = {name: value for name, value in self.headers.items()
+                   if name.lower() not in hop}
         upstream = http.client.HTTPSConnection(
             "127.0.0.1", self.server.central_port,
             context=ssl.create_default_context(cafile=str(self.server.cert)), timeout=15)
@@ -283,7 +314,8 @@ def check(binary, directory):
     a_dir.mkdir(mode=0o700)
     b_dir.mkdir(mode=0o700)
     repo = "multi-machine-fixture:" + uid()
-    a_token, b_token, observer_token, central_token = (secrets.token_urlsafe(32) for _ in range(4))
+    a_token, b_token, observer_token, central_token, private_token = (
+        secrets.token_urlsafe(32) for _ in range(5))
 
     def identity(name, role, token):
         return dict(token_sha256=hashlib.sha256(token.encode()).hexdigest(),
@@ -295,7 +327,10 @@ def check(binary, directory):
                   identity("host-b", "agent", b_token),
                   dict(token_sha256=hashlib.sha256(central_token.encode()).hexdigest(),
                        principal="agent:central-fixture", repo=repo, role="agent",
-                       destination="hosted")]
+                       destination="hosted"),
+                  dict(token_sha256=hashlib.sha256(private_token.encode()).hexdigest(),
+                       principal="agent:private-fixture", repo=repo, role="agent",
+                       destination="local")]
     config = root / "identities.json"
     config.write_text(json.dumps(identities))
     config.chmod(0o600)
@@ -320,6 +355,9 @@ def check(binary, directory):
     b = Host(binary, b_dir, b_dir / "api.sock", b_token)
     observer = Host(binary, a_dir, a_dir / "api.sock", observer_token, "observer.token")
     central = Host(binary, root, root / "api.sock", central_token, "central.token")
+    # Remote identities are hosted-only; a local identity supplies an actual
+    # private pull receipt for the cross-machine refusal checks.
+    private_reader = Host(binary, a_dir, root / "api.sock", private_token, "private.token")
     try:
         a.call("version")
         b.call("version")
@@ -330,12 +368,21 @@ def check(binary, directory):
         observer.call("register-context", body="{}", expected="AUTHORITY_DENIED")
         shareable = a.call("remember", "--repo", repo, "--shareable", "--stdin",
                            body="Cross machine shared note " + uid())
-        private = a.call("remember", "--repo", repo, "--stdin",
-                         body="Cross machine private note " + uid())
+        private_body = "Cross machine private note " + uid()
+        private = private_reader.call("remember", "--repo", repo, "--stdin", body=private_body)
         search = b.call("search", "--repo", repo, "--task", "trial", "--run", uid(),
                         "Cross machine")
         ids = {item["record_id"] for item in search["index"]}
         assert shareable["record_id"] in ids and private["record_id"] not in ids
+        own_private = private_reader.call("search", "--repo", repo, "--task", "trial", "--run", uid(),
+                                          '"' + private_body + '"')
+        private_entry = next(item for item in own_private["index"]
+                             if item["record_id"] == private["record_id"])
+        assert private_reader.call("pull", body=json.dumps(private_entry["pull_arguments"]))["selection"]["record"]["body"] == private_body
+        b.call("history", body=json.dumps(dict(record_id=private["record_id"], version=1)),
+               expected="NOT_FOUND", not_contain=private_body)
+        b.call("pull", body=json.dumps(private_entry["pull_arguments"]),
+               expected="AUTHORITY_DENIED", not_contain=private_body)
 
         registration = ("--binding", "same-binding", "--native-session", "same-session",
                         "--harness", "codex", "--project", "cairn", "--workspace")
@@ -376,11 +423,23 @@ def check(binary, directory):
         a.event("complete", *complete_args, body="Cross machine result", expected="NOT_FOUND")
         a.event("complete", *complete_args, session=b_session,
                 body="Cross machine result", expected="NOT_FOUND")
+        a.event("ack", "--request-id", uid(), "--lease", delivered["lease_id"],
+                delivered["delivery_id"], session=b_session, expected="NOT_FOUND")
         a.event("renew", "--lease", delivered["lease_id"], delivered["delivery_id"],
                 session=b_session, expected="NOT_FOUND")
+        a.event("retry", "--lease", delivered["lease_id"], delivered["delivery_id"],
+                session=b_session, expected="AUTHORITY_DENIED")
+        a.event("publish", "--request-id", uid(), "--to", a_session["inbox"],
+                "--kind", "request", "--version", str(shareable["version"]),
+                shareable["record_id"], session=b_session, expected="NOT_FOUND")
         a.call("session-inbox-reconcile", body=json.dumps(dict(
             request_id=uid(), session=claim["session"], attempt_id=attempt["attempt_id"],
             reason="turn_ended")), expected="NOT_FOUND")
+        a.call("session-inbox-control", body=json.dumps(claim["session"]),
+               expected="NOT_FOUND")
+        unchanged = a.event("event-status", send["event_id"],
+                            session=a_session)["deliveries"][0]
+        assert unchanged["state"] == "leased" and unchanged.get("result") is None
         faults.once("/v1/event-complete", "drop")
         b.event("complete", *complete_args, session=b_session,
                 body="Cross machine result", expected="UPSTREAM_UNCERTAIN")
@@ -401,9 +460,13 @@ def check(binary, directory):
                       send["event_id"], done["result"]["record_id"])
         faults.once("/v1/event-publish", "reject")
         b.event("publish", *reply_args, session=b_session, expected="UPSTREAM_UNAVAILABLE")
+        faults.once("/v1/event-publish", "drop")
+        b.event("publish", *reply_args, session=b_session, expected="UPSTREAM_UNCERTAIN")
         reply = b.event("publish", *reply_args, session=b_session)
         assert b.event("publish", *reply_args, session=b_session) == reply
         assert reply["causation_id"] == send["event_id"]
+        assert disposable_count("SELECT count(*) FROM cairn.agent_event WHERE causation_id='" +
+                                str(uuid.UUID(send["event_id"])) + "'::uuid") == 1
         reply_delivery = b.event("event-status", reply["event_id"], session=b_session)["deliveries"][0]
         reply_claim = dict(request_id=uid(), session={key: a_session[key] for key in
                                                   ("agent_id", "execution_id")},
@@ -453,6 +516,8 @@ def check(binary, directory):
         # principal; neither can take the held delivery after lease expiry.
         b.event("inbox", session=b_session, expected="AUTHORITY_DENIED")
         b.event("inbox", expected="AUTHORITY_DENIED")
+        a.call("session-inbox-claim", body=json.dumps(dict(
+            request_id=uid(), session=claim["session"])), expected="NOT_FOUND")
         b.call("agents", "register", "--request-id", uid(), *registration,
                str(b_dir), "--state", "busy", expected="AGENT_BUSY")
         wrong = ("--request-id", uid(), "--lease", uid(), "--shareable", "--stdin",
@@ -471,6 +536,67 @@ def check(binary, directory):
         b.call("session-inbox-reconcile", body=json.dumps(dict(
             request_id=uid(), session=claim["session"],
             attempt_id=late_attempt["attempt_id"], reason="delivery_completed")))
+
+        # Run the native lifecycle's own durable journal and watcher across
+        # two relay outages. The first outage loses completion before send;
+        # the second loses the response after the attempt was reconciled.
+        coordination = native_coordination()
+        journal_request = a.event("publish", "--request-id", uid(), "--to", b_session["inbox"],
+                                  "--kind", "request", "--version", "1",
+                                  shareable["record_id"], session=a_session)
+        journal_delivery = a.event("event-status", journal_request["event_id"],
+                                   session=a_session)["deliveries"][0]
+        journal_claim = dict(request_id=uid(), session=claim["session"],
+                             delivery_id=journal_delivery["delivery_id"],
+                             native_turn_id="two-host-journal-turn")
+        journal_attempt = b.call("session-inbox-claim", body=json.dumps(journal_claim))["attempt"]
+        state_dir = b_dir / "native-state"
+        state_dir.mkdir(mode=0o700)
+        state_path = state_dir / "session.json"
+        native_config = dict(cairn=binary, socket=str(b.socket), token_file=str(b.token_file),
+                             state_dir=str(state_dir), binding="two-host-journal", harness="codex",
+                             repo=repo, native_delivery=True)
+        native_state = dict(agent=b_session, process=dict(pid=os.getpid()),
+                            inbox_intent=dict(request_id=journal_claim["request_id"],
+                                              session=journal_claim["session"],
+                                              native_turn_id=journal_claim["native_turn_id"]),
+                            inbox_attempt=journal_attempt)
+        coordination.write_state(state_path, native_state)
+        with patch.dict(os.environ, client_env(), clear=True):
+            prompt = coordination.inbox_context(native_config, native_state, state_path,
+                dict(event="UserPromptSubmit", phase="busy", native_turn_id="two-host-journal-turn"))
+        assert "Cairn has a request" in prompt
+        context_path = state_dir / "inbox" / (journal_attempt["attempt_id"] + ".json")
+        context = json.loads(context_path.read_text())
+        assert context["schema"] == "cairn.session-inbox/1"
+        stop_service(b_relay)
+        journal_command(context["completion"], "Journaled result across two relays",
+                        "API_CONNECTION_FAILED")
+        expire_delivery(journal_delivery["delivery_id"])
+        b_relay = start_relay(binary, b_dir, faults.port, cert)
+        with patch.dict(os.environ, client_env(), clear=True):
+            coordination.watch_inbox(native_config, native_state, state_path)
+        journal_status = a.event("event-status", journal_request["event_id"],
+                                 session=a_session)["deliveries"][0]
+        assert journal_status["state"] == "handled" and journal_status["late"]
+        assert "inbox_intent" not in native_state
+        intent = json.loads(coordination.intent_path(str(state_dir),
+                            journal_attempt["attempt_id"]).read_text())
+        assert intent["completion"]["status"] == "committed"
+        result_ref = intent["completion"]["result"]
+        assert journal_status["result"] == result_ref
+        stop_service(b_relay)
+        journal_command([*context["response"], "--version", str(result_ref["version"]),
+                         result_ref["record_id"]], "", "API_CONNECTION_FAILED")
+        b_relay = start_relay(binary, b_dir, faults.port, cert)
+        with patch.dict(os.environ, client_env(), clear=True):
+            coordination.watch_inbox(native_config, native_state, state_path)
+        intent = json.loads(coordination.intent_path(str(state_dir),
+                            journal_attempt["attempt_id"]).read_text())
+        assert intent["response"]["status"] == "committed"
+        assert disposable_count("SELECT count(*) FROM cairn.agent_event WHERE kind='response' "
+                                "AND causation_id='" + str(uuid.UUID(journal_request["event_id"])) +
+                                "'::uuid") == 1
 
         rotated_token = secrets.token_urlsafe(32)
         identities[2] = identity("host-b", "agent", rotated_token)
@@ -551,8 +677,13 @@ def check(binary, directory):
             request_id=uid(), reason="Fence restored disposable multi-machine fixture"))
         assert delivery_snapshot(restore_held["delivery_id"]) == "pending|"
         process = start_server(binary, root, env, port, cert, key)
+        b.call("version")  # The existing relay reconnects to the restored API.
         b.event("complete", *restore_args, session=before_restore,
                 body="Result whose commit is later restored away", expected="STALE_SESSION")
+        central.call("history", body=json.dumps(dict(
+            record_id=recorded["result"]["record_id"],
+            version=recorded["result"]["version"])), expected="NOT_FOUND",
+            not_contain="Result whose commit is later restored away")
         b.call("agents", "register", "--request-id", uid(), *registration,
                str(b_dir), "--state", "busy", expected="AGENT_BUSY")
         b.call("session-inbox-reconcile", body=json.dumps(dict(
