@@ -1,5 +1,10 @@
 # API contract stage: integrated acceptance
 
+Follow-up: the [September 27 live trial](live-latency-2026-09-27.md) measured
+actual Proximal–Archon calls and native provider wakes on deployed `b46a0e1`.
+The unmeasured boundaries below describe this earlier controlled-stage run;
+they remain unmeasured for the newer, undeployed connection-reuse build.
+
 Accepted 2026-09-26. Runtime and contract source tested at
 `16a255f845278d3d481b5e9eb5405aa7faad22b0`; subsequent `bd4679f` corrects test
 fixtures for the raised-minimum build, and `b90a3d1` documents Unicode decoding.

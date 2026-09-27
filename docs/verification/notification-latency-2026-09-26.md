@@ -115,4 +115,5 @@ run does not measure cross-machine network time, concurrent load, real host
 queueing, worker launch, provider/model wake, or time until an agent reads a
 notice. A production end-to-end trial would need correlated timestamps through
 the actual owner-configured host and model turn, with explicit clock handling
-across hosts.
+across hosts. The subsequent [live trial](live-latency-2026-09-27.md) supplies
+actual cross-machine and provider-output measurements for deployed `b46a0e1`.
