@@ -63,7 +63,12 @@ The scheduling fixtures put 30 arrivals at evenly spaced midpoints in one
 configured period. They do not wait, schedule a process, poll the API, or
 sample real arrivals. The periods come from the CLI event-watch loop (1 s),
 the `wake serve` empty-claim pause (2 s), and the coordination presence watcher
-loop (30 s). Their calculated values are:
+loop (30 s). The coordination watcher scans every configured session before
+waiting `max(1, 30 - scan_elapsed)` seconds; session count, scan time and lock
+contention can change the real cadence. The one-session `presence_watch_once`
+measurement is service time for that call, not an observed inter-poll interval.
+The fixture adds no sleeps inside any timed measured boundary. Its calculated
+phase values are:
 
 | Simulated phase only | Period | Min | p50 | p95 | Max |
 | --- | ---: | ---: | ---: | ---: | ---: |
