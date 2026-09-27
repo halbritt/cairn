@@ -50,7 +50,9 @@ func NewRelay(upstream string) (*Relay, error) {
 		// Pool only HTTP/1 connections. ServeHTTP makes every POST non-replayable,
 		// including empty bodies, before handing it to net/http.
 		MaxIdleConns: 16, MaxIdleConnsPerHost: 16, MaxConnsPerHost: 32,
-		IdleConnTimeout: 30 * time.Second,
+		// Span the watcher's 30-second scan cadence, while expiring before the
+		// central server's 60-second idle timeout.
+		IdleConnTimeout: 45 * time.Second,
 		TLSNextProto:    map[string]func(string, *tls.Conn) http.RoundTripper{},
 	}
 	return &Relay{upstream: origin, transport: transport, http: &http.Client{Transport: transport, Timeout: 32 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil

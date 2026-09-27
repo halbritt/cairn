@@ -8,12 +8,30 @@ integration, release acceptance and deployment.
 The baseline is main `0fb09c3` (deployed runtime `b46a0e1`). The relay previously
 opened a fresh TLS connection for every call. The candidate changes only the
 connection policy and non-replayable body construction: 16 idle connections,
-32 maximum connections per origin, 30-second idle expiry. `Close` discards idle
+32 maximum connections per origin, 45-second idle expiry. `Close` discards idle
 connections. Certificates, bearer forwarding, operation/path checks, body
 bounds, timeout, redirect refusal and error envelopes retain their contracts.
 The pooled Unix client also clears `GetBody`, fixing its existing mismatch with
 its documented no-retry guarantee. No production dependency or database schema
 is added. The gRPC dependencies live only in `experiments/transportbench`.
+
+Idle cadence follow-up: the measured candidate used a 30-second idle expiry,
+equal to the production watcher's 30-second scan interval. The tight-loop
+measurements below establish reuse within a burst, but do not establish reuse
+between scans: the original pool could expire by the next scan. The relay now
+uses 45 seconds, allowing 15 seconds of cadence slack while remaining below
+the central server's 60-second idle timeout. This retains the same connection
+count bounds and non-replayable POST construction. The experimental HTTP pool
+remains at the measured 30 seconds; the tables have not been remeasured after
+this cadence change.
+
+`TestRelayReuseAcrossWatcherCadence` uses real verified loopback TLS and a
+60-second server idle timeout. It checks that successful requests separated by
+31 seconds use one connection, then loses a reply on that retained connection
+and requires `UPSTREAM_UNCERTAIN` with no extra connection or handler call.
+This tests the timer boundary directly, not the production watcher itself.
+Longer scheduling gaps, shorter intermediary idle limits, and WAN behavior
+remain outside this result; discarded idle connections may require fresh TLS.
 
 ## Reproduce
 
@@ -201,6 +219,11 @@ polling and host scheduling are measured separately by agent-203.
 
 ## Validation
 
+- Idle cadence follow-up: `make check` and
+  `go test ./localapi -run 'TestRelay|TestClientReused' -race -count=1 -timeout=90s`
+  passed after the 45-second change, including the real 31-second idle-gap
+  test. The full PostgreSQL suite and timing matrix below were run on the
+  preceding 30-second candidate, not repeated for this timeout-only follow-up.
 - `make check`: passed on the completed runtime changes and benchmark source.
 - `make test-integration`: passed, including the new real-store response-loss
   test, existing two-relay durability/rotation/revocation/restore scenarios,

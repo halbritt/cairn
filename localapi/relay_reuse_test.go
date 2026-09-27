@@ -126,6 +126,51 @@ func TestRelayReuseAuthenticatesEachRequestAndClosesIdle(t *testing.T) {
 	}
 }
 
+// Exercise the actual timers: a tight-loop reuse test cannot detect a pool
+// expiring between the production watcher's 30-second scans.
+func TestRelayReuseAcrossWatcherCadence(t *testing.T) {
+	var calls, connections atomic.Int32
+	upstream := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		_, _ = io.Copy(io.Discard, r.Body)
+		if n <= 2 {
+			_, _ = io.WriteString(w, `{}`)
+			return
+		}
+		// Lose the reply after admission on the connection retained across
+		// scans. The transport must surface uncertainty without replay.
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	upstream.Config.IdleTimeout = 60 * time.Second
+	upstream.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			connections.Add(1)
+		}
+	}
+	upstream.StartTLS()
+	defer upstream.Close()
+	relay := trustedRelay(t, upstream)
+	if w := relayCall(relay, `{}`, "allowed"); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	time.Sleep(31 * time.Second)
+	if w := relayCall(relay, `{}`, "allowed"); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if calls.Load() != 2 || connections.Load() != 1 {
+		t.Fatalf("connection expired between scans: calls=%d conns=%d", calls.Load(), connections.Load())
+	}
+	w := relayCall(relay, `{"request_id":"fixed"}`, "allowed")
+	if w.Code != 504 || !strings.Contains(w.Body.String(), "UPSTREAM_UNCERTAIN") || calls.Load() != 3 || connections.Load() != 1 {
+		t.Fatalf("status=%d body=%s calls=%d conns=%d", w.Code, w.Body.String(), calls.Load(), connections.Load())
+	}
+}
+
 func TestRelayLostOrTruncatedReplyOnReusedConnection(t *testing.T) {
 	for _, mode := range []string{"lost", "truncated", "cancelled"} {
 		t.Run(mode, func(t *testing.T) {
