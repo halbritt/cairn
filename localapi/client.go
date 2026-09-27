@@ -80,7 +80,9 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 	if err != nil {
 		return err
 	}
-	body = guardBody(body)
+	if body, err = guardBody(body); err != nil {
+		return err
+	}
 	if limit := RequestBodyLimit(operation); int64(len(body)) > limit {
 		return &core.Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("request exceeds %d KiB", limit/1024)}
 	}

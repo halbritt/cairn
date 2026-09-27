@@ -84,9 +84,13 @@ since protocol 2 verify it before strict decoding and then remove it:
 Every older server refuses the unknown field under its existing strict decoding
 (`INVALID_REQUEST`) before executing. The client maps that reply, which carries
 no protocol range, to `PROTOCOL_UNSUPPORTED` ("the server predates protocol M").
-The body travels through every relay unchanged, so the guard also survives
-header stripping. Only the exact key is recognized; any other spelling stays an
-unknown field. This release's client minimum is 1, so it sends no guard and
+The body travels through The body travels through every relay unchanged, so the guard also survives
+header stripping. The guard is extracted token by token. Every other top-level
+member keeps its exact bytes and order, including duplicate or differently
+cased keys, so an admitted request decodes, and is digested for idempotency,
+exactly as it would without the guard. A duplicate guard, or a case-variant
+spelling of it, is refused with `400`. A client never lets a caller supply the
+reserved field. This release's client minimum is 1, so it sends no guard and
 legacy servers keep accepting its requests.
 
 **Relay**: forwards exactly one `Cairn-Protocol` value (duplicates are refused,

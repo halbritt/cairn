@@ -10,9 +10,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/halbritt/cairn/core"
 )
 
 func TestParseProtocolIsCanonicalAndAbsenceIsLegacy(t *testing.T) {
@@ -287,7 +290,11 @@ func TestServerVerifiesAndStripsTheBodyProtocolGuard(t *testing.T) {
 
 func TestClientGuardFollowsItsMinimum(t *testing.T) {
 	for _, body := range []string{`{}`, `{"request_id":"a"}`, `[]`} {
-		guarded := string(guardBody([]byte(body)))
+		raw, err := guardBody([]byte(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		guarded := string(raw)
 		if Protocol.Min <= 1 || body == `[]` {
 			if guarded != body {
 				t.Fatalf("minimum %d changed %s to %s", Protocol.Min, body, guarded)
@@ -298,5 +305,69 @@ func TestClientGuardFollowsItsMinimum(t *testing.T) {
 		if err := json.Unmarshal([]byte(guarded), &fields); err != nil || fields[BodyProtocolField] != float64(Protocol.Min) {
 			t.Fatalf("guard missing: %s", guarded)
 		}
+	}
+}
+
+// Removing the guard must not change how the rest of the request decodes:
+// duplicate members and differently cased keys keep their bytes and order.
+func TestBodyGuardRemovalPreservesEveryOtherMember(t *testing.T) {
+	version := strconv.Itoa(Protocol.Current)
+	for _, unguarded := range []string{
+		`{"request_id":"r","draft":{"body":"first"},"draft":{"kind":"note"}}`,
+		`{"request_id":"r","draft":{"body":"lower","BODY":"upper"}}`,
+		`{"request_id":"r","draft":{"BODY":"upper","body":"lower"}}`,
+		`{"request_id":"first","REQUEST_ID":"second"}`,
+		` { "request_id" : "spaced" , "draft" : { "body" : "x" } } `,
+		`{"draft":{"cairn_protocol":1},"note":"cairn_protocol"}`,
+	} {
+		trimmed := strings.TrimSpace(unguarded)
+		guarded := `{"cairn_protocol":` + version + `,` + trimmed[1:]
+		request := httptest.NewRequest("POST", "/v1/create", strings.NewReader(guarded))
+		response := httptest.NewRecorder()
+		stripped, ok := admitBodyProtocol(response, request, []byte(guarded))
+		if !ok {
+			t.Fatalf("%s refused: %s", guarded, response.Body)
+		}
+		var want, got core.CreateRequest
+		wantErr := json.Unmarshal([]byte(unguarded), &want)
+		gotErr := json.Unmarshal(stripped, &got)
+		if (wantErr == nil) != (gotErr == nil) || !reflect.DeepEqual(want, got) {
+			t.Fatalf("decoding changed:\n%s\n%s\n%+v %v\n%+v %v", unguarded, stripped, want, wantErr, got, gotErr)
+		}
+		members, _, _ := topLevelMembers([]byte(unguarded))
+		strippedMembers, _, _ := topLevelMembers(stripped)
+		if !reflect.DeepEqual(members, strippedMembers) {
+			t.Fatalf("member bytes or order changed: %s -> %s", unguarded, stripped)
+		}
+		// Without a guard the body passes through byte-for-byte.
+		plain, ok := admitBodyProtocol(httptest.NewRecorder(), httptest.NewRequest("POST", "/v1/create", nil), []byte(unguarded))
+		if Protocol.Min <= 1 && (!ok || string(plain) != unguarded) {
+			t.Fatalf("unguarded body changed: %s -> %s", unguarded, plain)
+		}
+	}
+	for _, refused := range []string{
+		`{"cairn_protocol":2,"cairn_protocol":2}`,
+		`{"cairn_protocol":2,"request_id":"r","cairn_protocol":1}`,
+		`{"cairn_protocol":2,"CAIRN_PROTOCOL":1}`,
+		`{"Cairn_Protocol":2,"cairn_protocol":2}`,
+	} {
+		response := httptest.NewRecorder()
+		if _, ok := admitBodyProtocol(response, httptest.NewRequest("POST", "/v1/create", nil), []byte(refused)); ok || response.Code != 400 {
+			t.Fatalf("%s: %d %s", refused, response.Code, response.Body)
+		}
+	}
+}
+
+func TestClientRefusesCallerSuppliedGuard(t *testing.T) {
+	for _, body := range []string{`{"cairn_protocol":1}`, `{"request_id":"r","CAIRN_PROTOCOL":1}`} {
+		if _, err := guardBody([]byte(body)); core.Code(err) != "INVALID_REQUEST" {
+			t.Fatalf("%s accepted: %v", body, err)
+		}
+	}
+	// A value that merely mentions the name is not a top-level key.
+	body := `{"draft":{"body":"cairn_protocol","cairn_protocol":1}}`
+	guarded, err := guardBody([]byte(body))
+	if err != nil || (Protocol.Min <= 1 && string(guarded) != body) {
+		t.Fatalf("%s: %s %v", body, guarded, err)
 	}
 }

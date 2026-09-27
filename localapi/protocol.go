@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
 )
 
@@ -94,23 +96,80 @@ func ParseProtocol(header http.Header, name string) (version int, present bool, 
 	return version, true, err == nil
 }
 
+// objectMember is one top-level member of a JSON object: its unescaped key and
+// its exact source text ("key":value), without the separating comma.
+type objectMember struct {
+	key  string
+	text []byte
+}
+
+// topLevelMembers splits a JSON object into its members, keeping every
+// member's raw bytes and order so that removing one never changes how the rest
+// decodes: duplicate or differently cased keys stay exactly as the caller sent
+// them. The tail after the object is returned unchanged for strict decoding.
+func topLevelMembers(body []byte) ([]objectMember, []byte, bool) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return nil, nil, false
+	}
+	members := []objectMember{}
+	for decoder.More() {
+		start := decoder.InputOffset()
+		token, err := decoder.Token()
+		key, isKey := token.(string)
+		if err != nil || !isKey {
+			return nil, nil, false
+		}
+		var value json.RawMessage
+		if err = decoder.Decode(&value); err != nil {
+			return nil, nil, false
+		}
+		text := bytes.TrimLeft(body[start:decoder.InputOffset()], " \t\r\n")
+		text = bytes.TrimLeft(bytes.TrimPrefix(text, []byte(",")), " \t\r\n")
+		members = append(members, objectMember{key: key, text: text})
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+		return nil, nil, false
+	}
+	return members, body[decoder.InputOffset():], true
+}
+
+// reservedKey reports an exact use of the guard, or any other spelling that
+// case-insensitive struct decoding could confuse with it.
+func reservedKey(key string) (exact, ambiguous bool) {
+	return key == BodyProtocolField, key != BodyProtocolField && strings.EqualFold(key, BodyProtocolField)
+}
+
 // guardBody adds the reserved minimum to a JSON object request when this
 // client's minimum exceeds 1. With minimum 1 the body is unchanged, so a
-// legacy server still accepts it.
-func guardBody(body []byte) []byte {
-	if Protocol.Min <= 1 || len(body) < 2 || body[0] != '{' {
-		return body
+// legacy server still accepts it. A caller may never supply the reserved field.
+func guardBody(body []byte) ([]byte, error) {
+	if !bytes.Contains(bytes.ToLower(body), []byte(BodyProtocolField)) && Protocol.Min <= 1 {
+		return body, nil
 	}
-	guard := `"` + BodyProtocolField + `":` + strconv.Itoa(Protocol.Min)
-	if bytes.Equal(bytes.TrimSpace(body[1:]), []byte("}")) {
-		return []byte("{" + guard + "}")
+	members, tail, ok := topLevelMembers(body)
+	if !ok {
+		return body, nil // Not an object: no guard; the server decides.
 	}
-	return append([]byte("{"+guard+","), body[1:]...)
+	for _, member := range members {
+		if exact, ambiguous := reservedKey(member.key); exact || ambiguous {
+			return nil, &core.Error{Code: "INVALID_REQUEST", Message: BodyProtocolField + " is reserved for the protocol guard"}
+		}
+	}
+	if Protocol.Min <= 1 {
+		return body, nil
+	}
+	guarded := []byte(`{"` + BodyProtocolField + `":` + strconv.Itoa(Protocol.Min))
+	for _, member := range members {
+		guarded = append(append(guarded, ','), member.text...)
+	}
+	return append(append(guarded, '}'), tail...), nil
 }
 
 // admitBodyProtocol verifies and removes the reserved body guard before the
-// request is strictly decoded. Only an exact top-level key is recognized; any
-// other spelling stays an unknown field and is refused by strict decoding.
+// request is strictly decoded. Every other member keeps its exact bytes and
+// order. A duplicate guard, or a differently cased spelling next to it, is
+// refused rather than reinterpreted.
 func admitBodyProtocol(w http.ResponseWriter, r *http.Request, body []byte) ([]byte, bool) {
 	legacy, _ := r.Context().Value(undeclaredProtocol{}).(string)
 	refuseLegacy := func() ([]byte, bool) {
@@ -120,18 +179,31 @@ func admitBodyProtocol(w http.ResponseWriter, r *http.Request, body []byte) ([]b
 		writeError(w, 426, "PROTOCOL_UNSUPPORTED", legacy)
 		return nil, false
 	}
-	if !bytes.Contains(body, []byte(`"`+BodyProtocolField+`"`)) {
+	if !bytes.Contains(bytes.ToLower(body), []byte(BodyProtocolField)) {
 		return refuseLegacy()
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(body, &fields); err != nil {
-		return refuseLegacy() // Not an object: no guard.
-	}
-	raw, ok := fields[BodyProtocolField]
+	members, tail, ok := topLevelMembers(body)
 	if !ok {
+		return refuseLegacy() // Not an object: strict decoding reports it.
+	}
+	var guard *objectMember
+	kept := make([]objectMember, 0, len(members))
+	for i, member := range members {
+		exact, ambiguous := reservedKey(member.key)
+		if ambiguous || (exact && guard != nil) {
+			writeError(w, 400, "INVALID_REQUEST", "duplicate or ambiguous "+BodyProtocolField)
+			return nil, false
+		}
+		if exact {
+			guard = &members[i]
+			continue
+		}
+		kept = append(kept, member)
+	}
+	if guard == nil {
 		return refuseLegacy()
 	}
-	text := string(raw)
+	text := string(bytes.TrimSpace(bytes.SplitN(guard.text, []byte(":"), 2)[1]))
 	version, err := strconv.Atoi(text)
 	if err != nil || text != strconv.Itoa(version) || version < 1 || version > 9999 {
 		writeError(w, 400, "INVALID_REQUEST", BodyProtocolField+" must be one positive integer protocol version")
@@ -146,13 +218,14 @@ func admitBodyProtocol(w http.ResponseWriter, r *http.Request, body []byte) ([]b
 			strconv.Itoa(Protocol.Min)+" to "+strconv.Itoa(Protocol.Current))
 		return nil, false
 	}
-	delete(fields, BodyProtocolField)
-	stripped, err := json.Marshal(fields)
-	if err != nil {
-		writeError(w, 400, "INVALID_REQUEST", "invalid bounded JSON request")
-		return nil, false
+	stripped := []byte("{")
+	for i, member := range kept {
+		if i > 0 {
+			stripped = append(stripped, ',')
+		}
+		stripped = append(stripped, member.text...)
 	}
-	return stripped, true
+	return append(append(stripped, '}'), tail...), true
 }
 
 // admitProtocol refuses an unsupported or malformed declaration before any
