@@ -48,8 +48,10 @@ safe. Absence of `Cairn-Protocol` means protocol 1.
 
 ## Enforcement
 
-Negotiation is not a handshake that changes later behavior. Each request is
-checked on its own, in both directions:
+There is no negotiation. A client declares its current protocol on every
+request and never falls back to an older one, so a declaring server either
+supports exactly that version or refuses. Each request is checked on its own,
+in both directions:
 
 - the server checks that it supports what the client declares;
 - the client, when its own minimum requires it, makes any server that cannot
@@ -74,7 +76,10 @@ decoding or dispatch:
 older server that ignores it. That includes a server rolled back behind the
 same relay after a successful `version` preflight: a time-of-check gap no
 preflight closes. So a client whose minimum `M > 1` adds the reserved
-top-level field `"cairn_protocol": M` to every JSON object request. Servers
+top-level field `"cairn_protocol": M` to every request. Such a client sends
+only JSON objects, so no request can bypass the guard. Keys are compared after
+JSON unescaping, on both the client and the server, so an escaped spelling is
+the guard, and an escaped case variant is refused as ambiguous. Servers
 since protocol 2 verify it before strict decoding and then remove it:
 
 - a canonical positive integer within range is accepted;
@@ -84,7 +89,7 @@ since protocol 2 verify it before strict decoding and then remove it:
 Every older server refuses the unknown field under its existing strict decoding
 (`INVALID_REQUEST`) before executing. The client maps that reply, which carries
 no protocol range, to `PROTOCOL_UNSUPPORTED` ("the server predates protocol M").
-The body travels through The body travels through every relay unchanged, so the guard also survives
+The body travels through every relay unchanged, so the guard also survives
 header stripping. The guard is extracted token by token. Every other top-level
 member keeps its exact bytes and order, including duplicate or differently
 cased keys, so an admitted request decodes, and is digested for idempotency,
@@ -110,7 +115,10 @@ range counts as `unknown` and fails closed.
 
 **Enrollment and `machine status`**: compatibility becomes a protocol result.
 
-- `compatible`: the ranges overlap.
+- `compatible`: a declaring server's range contains the protocol this host
+  declares (its current), or the server is legacy and this host's minimum is 1.
+  Overlapping ranges alone are not enough: there is no negotiation, and a
+  client never falls back to an older declaration.
 - `incompatible`: the ranges are disjoint, or the server refused the declared
   protocol.
 - `unknown`: no answer, or a malformed range.
@@ -186,7 +194,10 @@ Unit tests cover:
 
 - header parsing, including duplicate, signed, zero-padded, non-ASCII and
   oversized values;
-- range overlap;
+- the effective protocol without negotiation, including overlapping ranges
+  that still cannot talk;
+- escaped and case-variant spellings of the guard;
+- non-object requests refused by a client with a raised minimum;
 - admission before dispatch (a store route with no store attached);
 - the envelope and `version` fields;
 - relay forwarding, including overwriting a client-supplied

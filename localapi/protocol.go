@@ -47,14 +47,24 @@ var Protocol = ProtocolRange{Min: ProtocolMin, Current: ProtocolCurrent}
 
 func (p ProtocolRange) Supports(version int) bool { return version >= p.Min && version <= p.Current }
 
-// Overlap returns the newest version both ranges support, or 0.
-func (p ProtocolRange) Overlap(other ProtocolRange) int {
-	best := min(p.Current, other.Current)
-	if best < max(p.Min, other.Min) {
+// Effective is the protocol a request from this client is evaluated at by a
+// server declaring the given range: the client always declares its current
+// version, so a declaring server either supports exactly that or refuses. A
+// legacy server (declared=false) evaluates protocol 1, which this client may
+// use only while its minimum is 1. Zero means the pair cannot talk.
+func (p ProtocolRange) Effective(server ProtocolRange, declared bool) int {
+	if !declared {
+		if p.Min <= 1 {
+			return 1
+		}
 		return 0
 	}
-	return best
+	if server.Supports(p.Current) {
+		return p.Current
+	}
+	return 0
 }
+
 
 // VersionInfo is the version route's reply: the build identity, which is
 // diagnostic only, and the protocol range, which decides compatibility. A
@@ -144,12 +154,14 @@ func reservedKey(key string) (exact, ambiguous bool) {
 // client's minimum exceeds 1. With minimum 1 the body is unchanged, so a
 // legacy server still accepts it. A caller may never supply the reserved field.
 func guardBody(body []byte) ([]byte, error) {
-	if !bytes.Contains(bytes.ToLower(body), []byte(BodyProtocolField)) && Protocol.Min <= 1 {
-		return body, nil
-	}
 	members, tail, ok := topLevelMembers(body)
 	if !ok {
-		return body, nil // Not an object: no guard; the server decides.
+		if Protocol.Min > 1 {
+			// Only an object can carry the guard; sending anything else would
+			// bypass this client's minimum on a server that predates it.
+			return nil, &core.Error{Code: "INVALID_REQUEST", Message: "a client with a protocol minimum sends only JSON object requests"}
+		}
+		return body, nil
 	}
 	for _, member := range members {
 		if exact, ambiguous := reservedKey(member.key); exact || ambiguous {
@@ -179,9 +191,8 @@ func admitBodyProtocol(w http.ResponseWriter, r *http.Request, body []byte) ([]b
 		writeError(w, 426, "PROTOCOL_UNSUPPORTED", legacy)
 		return nil, false
 	}
-	if !bytes.Contains(bytes.ToLower(body), []byte(BodyProtocolField)) {
-		return refuseLegacy()
-	}
+	// Keys are compared after JSON unescaping, so an escaped spelling of the
+	// reserved name is the guard (or ambiguous), never an unnoticed field.
 	members, tail, ok := topLevelMembers(body)
 	if !ok {
 		return refuseLegacy() // Not an object: strict decoding reports it.

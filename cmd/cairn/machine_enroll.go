@@ -482,11 +482,14 @@ func protocolCompatibility(check roleCheck) (string, error) {
 	if server.Min < 1 || server.Current < server.Min || server.Current > 9999 {
 		return "unknown", fmt.Errorf("the central API declared a malformed protocol range %d to %d", server.Min, server.Current)
 	}
-	if localapi.Protocol.Overlap(server) == 0 || check.Status == "PROTOCOL_UNSUPPORTED" {
-		return "incompatible", fmt.Errorf("the central API supports protocols %d to %d and this host supports %d to %d; upgrade the older side",
-			server.Min, server.Current, localapi.Protocol.Min, localapi.Protocol.Current)
+	// There is no negotiation: this host always declares its current protocol.
+	// A declaring server must accept exactly that. A legacy server ignores the
+	// declaration and speaks protocol 1, which is safe only while this host's
+	// minimum is 1 (its bodies are then protocol 1 bodies).
+	if check.Status == "PROTOCOL_UNSUPPORTED" || (declared && !server.Supports(localapi.Protocol.Current)) || (!declared && localapi.Protocol.Min > 1) {
+		return "incompatible", fmt.Errorf("the central API supports protocols %d to %d and this host declares protocol %d (minimum %d); upgrade the older side",
+			server.Min, server.Current, localapi.Protocol.Current, localapi.Protocol.Min)
 	}
-	_ = declared // A legacy central API speaks protocol 1, whose bodies protocol 2 shares.
 	return "compatible", nil
 }
 

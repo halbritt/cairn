@@ -635,10 +635,12 @@ func TestProtocolCompatibilityDecision(t *testing.T) {
 		"newer overlapping":        {answered(&localapi.ProtocolRange{Min: 2, Current: 5}, "OK"), "compatible"},
 		"server raised minimum":    {answered(&localapi.ProtocolRange{Min: 3, Current: 4}, "PROTOCOL_UNSUPPORTED"), "incompatible"},
 		"disjoint without refusal": {answered(&localapi.ProtocolRange{Min: 3, Current: 4}, "OK"), "incompatible"},
-		"explicit refusal":         {answered(&localapi.ProtocolRange{Min: 1, Current: 2}, "PROTOCOL_UNSUPPORTED"), "incompatible"},
-		"malformed range":          {answered(&localapi.ProtocolRange{Min: 3, Current: 1}, "OK"), "unknown"},
-		"zero minimum":             {answered(&localapi.ProtocolRange{Min: 0, Current: 1}, "OK"), "unknown"},
-		"no answer":                {roleCheck{Role: "agent", Status: "API_CONNECTION_FAILED"}, "unknown"},
+		// Overlap is not negotiation: this host declares its current protocol.
+		"declaring server lacks current": {answered(&localapi.ProtocolRange{Min: 1, Current: 1}, "OK"), "incompatible"},
+		"explicit refusal":               {answered(&localapi.ProtocolRange{Min: 1, Current: 2}, "PROTOCOL_UNSUPPORTED"), "incompatible"},
+		"malformed range":                {answered(&localapi.ProtocolRange{Min: 3, Current: 1}, "OK"), "unknown"},
+		"zero minimum":                   {answered(&localapi.ProtocolRange{Min: 0, Current: 1}, "OK"), "unknown"},
+		"no answer":                      {roleCheck{Role: "agent", Status: "API_CONNECTION_FAILED"}, "unknown"},
 	} {
 		if state, _ := protocolCompatibility(tc.check); state != tc.want {
 			t.Fatalf("%s: got %s want %s", name, state, tc.want)

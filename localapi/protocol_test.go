@@ -49,18 +49,24 @@ func TestParseProtocolIsCanonicalAndAbsenceIsLegacy(t *testing.T) {
 	}
 }
 
-func TestProtocolRangeOverlap(t *testing.T) {
+// There is no negotiation: a client declares its current protocol, and
+// overlapping ranges alone do not let it talk to a declaring server.
+func TestEffectiveProtocolHasNoNegotiation(t *testing.T) {
 	for _, test := range []struct {
-		a, b ProtocolRange
-		want int
+		client, server ProtocolRange
+		declared       bool
+		want           int
 	}{
-		{ProtocolRange{1, 2}, ProtocolRange{1, 1}, 1},
-		{ProtocolRange{1, 2}, ProtocolRange{2, 5}, 2},
-		{ProtocolRange{1, 2}, ProtocolRange{3, 4}, 0},
-		{ProtocolRange{2, 3}, ProtocolRange{1, 1}, 0},
+		{ProtocolRange{1, 2}, ProtocolRange{1, 2}, true, 2},
+		{ProtocolRange{1, 2}, ProtocolRange{2, 5}, true, 2},
+		{ProtocolRange{1, 2}, ProtocolRange{1, 1}, true, 0}, // Overlaps at 1, but the client declares 2.
+		{ProtocolRange{2, 3}, ProtocolRange{1, 2}, true, 0}, // Overlaps at 2, but the client declares 3.
+		{ProtocolRange{1, 2}, ProtocolRange{3, 4}, true, 0},
+		{ProtocolRange{1, 2}, LegacyProtocol, false, 1},
+		{ProtocolRange{2, 3}, LegacyProtocol, false, 0},
 	} {
-		if got := test.a.Overlap(test.b); got != test.want || test.b.Overlap(test.a) != test.want {
-			t.Fatalf("%v with %v: %d want %d", test.a, test.b, got, test.want)
+		if got := test.client.Effective(test.server, test.declared); got != test.want {
+			t.Fatalf("client %v server %v declared %v: %d want %d", test.client, test.server, test.declared, got, test.want)
 		}
 	}
 }
@@ -289,13 +295,20 @@ func TestServerVerifiesAndStripsTheBodyProtocolGuard(t *testing.T) {
 }
 
 func TestClientGuardFollowsItsMinimum(t *testing.T) {
-	for _, body := range []string{`{}`, `{"request_id":"a"}`, `[]`} {
+	for _, body := range []string{`{}`, `{"request_id":"a"}`, `[]`, `null`} {
 		raw, err := guardBody([]byte(body))
+		if Protocol.Min > 1 && (body == `[]` || body == `null`) {
+			// A non-object cannot carry the guard, so it is never sent.
+			if core.Code(err) != "INVALID_REQUEST" {
+				t.Fatalf("%s sent without a guard: %v", body, err)
+			}
+			continue
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
 		guarded := string(raw)
-		if Protocol.Min <= 1 || body == `[]` {
+		if Protocol.Min <= 1 || body == `[]` || body == `null` {
 			if guarded != body {
 				t.Fatalf("minimum %d changed %s to %s", Protocol.Min, body, guarded)
 			}
@@ -345,7 +358,14 @@ func TestBodyGuardRemovalPreservesEveryOtherMember(t *testing.T) {
 			t.Fatalf("unguarded body changed: %s -> %s", unguarded, plain)
 		}
 	}
+	// Keys are compared after unescaping: an escaped exact name is the guard.
+	escaped := `{"cairn\u005fprotocol":` + version + `,"request_id":"r"}`
+	if stripped, ok := admitBodyProtocol(httptest.NewRecorder(), httptest.NewRequest("POST", "/v1/create", nil), []byte(escaped)); !ok || string(stripped) != `{"request_id":"r"}` {
+		t.Fatalf("escaped guard: %s %v", stripped, ok)
+	}
 	for _, refused := range []string{
+		`{"CAIRN\u005fPROTOCOL":2}`,
+		`{"cairn\u005fprotocol":2,"cairn_protocol":2}`,
 		`{"cairn_protocol":2,"cairn_protocol":2}`,
 		`{"cairn_protocol":2,"request_id":"r","cairn_protocol":1}`,
 		`{"cairn_protocol":2,"CAIRN_PROTOCOL":1}`,
@@ -359,7 +379,7 @@ func TestBodyGuardRemovalPreservesEveryOtherMember(t *testing.T) {
 }
 
 func TestClientRefusesCallerSuppliedGuard(t *testing.T) {
-	for _, body := range []string{`{"cairn_protocol":1}`, `{"request_id":"r","CAIRN_PROTOCOL":1}`} {
+	for _, body := range []string{`{"cairn_protocol":1}`, `{"request_id":"r","CAIRN_PROTOCOL":1}`, `{"cairn\u005fprotocol":1}`, `{"Cairn\u005FProtocol":1}`} {
 		if _, err := guardBody([]byte(body)); core.Code(err) != "INVALID_REQUEST" {
 			t.Fatalf("%s accepted: %v", body, err)
 		}

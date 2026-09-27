@@ -42,8 +42,9 @@ shared files. Operator commands that open a local database are unaffected.
 
 ## Prerequisites
 
-- Cairn builds whose [API protocol](api-compatibility.md) ranges overlap on
-  every host. Enrollment and every later request check the protocol, not the
+- Cairn builds where the central API supports the
+  [API protocol](api-compatibility.md) each joining host declares. A host
+  declares its current protocol, so overlapping ranges alone are not enough. Enrollment and every later request check the protocol, not the
   VCS build. A build older than protocol declaration (such as `b46a0e1`) speaks
   protocol 1. The build identity is still reported for diagnosis, and a clean,
   identical build on every host remains the simplest release practice. Go 1.25
