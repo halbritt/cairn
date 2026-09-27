@@ -3,6 +3,7 @@ package apicontract
 import (
 	"bytes"
 	"encoding/json"
+	"go/types"
 	"os"
 	"strings"
 	"testing"
@@ -139,6 +140,64 @@ func TestAcceptedAndCanonicalRequestViews(t *testing.T) {
 		}
 		if got := validator.Validate(canonicalSchema, []byte(body)) == nil; got != want[1] {
 			t.Errorf("canonical %s = %v", body, got)
+		}
+	}
+}
+
+func TestSuccessEnvelopeRequiresProtocolShape(t *testing.T) {
+	doc, raw := document(t)
+	validator, err := newSchemaValidator(raw, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, op := range operations(t, doc) {
+		schema := op["responses"].(map[string]any)["200"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+		// Isolate the shared envelope from each operation's independently tested data.
+		schema["properties"].(map[string]any)["data"] = map[string]any{}
+		for body, want := range map[string]bool{
+			`{"schema":"cairn.response/1","ok":true,"status":"OK","data":{},"protocol":{"min":1,"current":2}}`:   true,
+			`{"schema":"cairn.response/1","ok":true,"status":"OK","data":{}}`:                                    false,
+			`{"schema":"cairn.response/1","ok":true,"status":"OK","data":{},"protocol":{"min":"1","current":2}}`: false,
+			`{"schema":"cairn.response/1","ok":true,"status":"OK","data":{},"protocol":{"min":1}}`:               false,
+		} {
+			if got := validator.Validate(schema, []byte(body)) == nil; got != want {
+				t.Errorf("%s envelope validation = %v for %s", name, got, body)
+			}
+		}
+	}
+}
+
+func TestAcceptedCollectionElementsMatchGoDecoder(t *testing.T) {
+	fields := []*types.Var{
+		types.NewVar(0, nil, "Bytes", types.NewSlice(types.Typ[types.Byte])),
+		types.NewVar(0, nil, "List", types.NewSlice(types.Typ[types.String])),
+		types.NewVar(0, nil, "Map", types.NewMap(types.Typ[types.String], types.Typ[types.Int8])),
+		types.NewVar(0, nil, "Count", types.Typ[types.Int8]),
+		types.NewVar(0, nil, "Array", types.NewArray(types.Typ[types.Int8], 2)),
+	}
+	r := newReflector()
+	schema := r.schema(types.NewStruct(fields, []string{`json:"bytes"`, `json:"list"`, `json:"map"`, `json:"count"`, `json:"array"`}), accepted)
+	raw, _ := json.Marshal(map[string]any{"components": map[string]any{"schemas": r.schemas}})
+	validator, err := newSchemaValidator(raw, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{
+		`{"bytes":[null,1,255]}`, `{"bytes":[256]}`, `{"bytes":"AAH/"}`,
+		`{"list":[null,"x"]}`, `{"map":{"x":null,"y":127}}`,
+		`{"count":-128}`, `{"count":127}`, `{"count":128}`, `{"count":-129}`,
+		`{"array":[]}`, `{"array":[null]}`, `{"array":[1,2,"ignored"]}`, `{"array":[1,"bad"]}`,
+	} {
+		var target struct {
+			Bytes []byte          `json:"bytes"`
+			List  []string        `json:"list"`
+			Map   map[string]int8 `json:"map"`
+			Count int8            `json:"count"`
+			Array [2]int8         `json:"array"`
+		}
+		want := json.Unmarshal([]byte(body), &target) == nil
+		if got := validator.Validate(schema, []byte(body)) == nil; got != want {
+			t.Errorf("schema accepts=%v, Go decoder accepts=%v: %s", got, want, body)
 		}
 	}
 }

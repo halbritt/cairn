@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/types"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -107,17 +108,35 @@ func (r *reflector) schema(t types.Type, m mode) map[string]any {
 		return nullable(r.schema(t.Elem(), m))
 	case *types.Slice:
 		if basic, ok := t.Elem().Underlying().(*types.Basic); ok && basic.Kind() == types.Byte {
+			if m == accepted {
+				return map[string]any{"anyOf": []any{
+					nullable(map[string]any{"type": "string", "contentEncoding": "base64"}),
+					map[string]any{"type": "array", "items": r.elementSchema(t.Elem(), m)},
+				}}
+			}
 			return nullable(map[string]any{"type": "string", "contentEncoding": "base64"})
 		}
-		return nullable(map[string]any{"type": "array", "items": r.schema(t.Elem(), m)})
+		return nullable(map[string]any{"type": "array", "items": r.elementSchema(t.Elem(), m)})
 	case *types.Array:
+		if m == accepted {
+			// encoding/json zero-fills short arrays and skips surplus values.
+			schema := map[string]any{"type": "array"}
+			if t.Len() > 0 {
+				prefix := make([]any, t.Len())
+				for i := range prefix {
+					prefix[i] = r.elementSchema(t.Elem(), m)
+				}
+				schema["prefixItems"] = prefix
+			}
+			return schema
+		}
 		return map[string]any{"type": "array", "items": r.schema(t.Elem(), m), "minItems": t.Len(), "maxItems": t.Len()}
 	case *types.Map:
 		key, ok := t.Key().Underlying().(*types.Basic)
 		if !ok || key.Info()&(types.IsString|types.IsInteger) == 0 {
 			return r.fail("map key %s is not a JSON object key", t.Key())
 		}
-		schema := map[string]any{"type": "object", "additionalProperties": r.schema(t.Elem(), m)}
+		schema := map[string]any{"type": "object", "additionalProperties": r.elementSchema(t.Elem(), m)}
 		if key.Info()&types.IsInteger != 0 {
 			schema["propertyNames"] = map[string]any{"pattern": "^-?[0-9]+$"}
 		}
@@ -132,8 +151,13 @@ func (r *reflector) schema(t types.Type, m mode) map[string]any {
 			return map[string]any{"type": "boolean"}
 		case t.Info()&types.IsInteger != 0:
 			schema := map[string]any{"type": "integer"}
+			bits := uint(types.SizesFor("gc", runtime.GOARCH).Sizeof(t) * 8)
 			if t.Info()&types.IsUnsigned != 0 {
 				schema["minimum"] = 0
+				schema["maximum"] = ^uint64(0) >> (64 - bits)
+			} else {
+				maximum := int64(^uint64(0) >> (65 - bits))
+				schema["minimum"], schema["maximum"] = -maximum-1, maximum
 			}
 			return schema
 		case t.Info()&types.IsFloat != 0:
@@ -143,6 +167,14 @@ func (r *reflector) schema(t types.Type, m mode) map[string]any {
 		}
 	}
 	return r.fail("unsupported type %s", t)
+}
+
+func (r *reflector) elementSchema(t types.Type, m mode) map[string]any {
+	schema := r.schema(t, m)
+	if m == accepted {
+		return nullable(schema)
+	}
+	return schema
 }
 
 func hasMethod(t *types.Named, name string) bool {

@@ -55,16 +55,33 @@ hand-kept inventory is involved.
 
 ## Two request views
 
-The request body schema describes what the server actually **accepts**. Every
-field is optional and nullable. Unknown fields are refused, and a top-level
+The request body schema describes the decoder's **accepted structural view**.
+Every ordinary field is optional and nullable. Unknown fields are refused, and a top-level
 `null` decodes as an empty request. `x-cairn-canonical-request` is the
-**canonical** shape that clients should send. Three decoder behaviors are not
-expressible in the schema:
+**canonical** shape that clients should send. Some wire-level decoder behaviors
+are not captured by validation of an already-parsed JSON value:
 
 - keys match case-insensitively (`{"RECORD_ID": ...}` works);
-- if a key appears twice, the last value wins;
+- duplicate keys are processed in wire order; later scalar values replace
+  earlier ones, while nested struct/map values can merge;
 - an absent field and `null` both decode as the Go zero value, and then fail or
   succeed on the operation's own validation.
+- Go integer fields require integer lexical syntax: `1.0` and `1e0` are
+  refused even though JSON Schema treats them as integers. Generated bounds
+  reflect the Go integer width, including the generator host's `int` width
+  (64 bits on supported amd64/arm64 hosts). JSON validators using floating-point
+  numbers can lose precision near 64-bit limits; the Go decoder remains final.
+- The protocol guard additionally requires canonical positive decimal syntax
+  and is never nullable. Its lexical form and duplicate-key rules are checked
+  before the ordinary decoder.
+- Base64 content and date-time formats require validators with the respective
+  assertions enabled; annotations alone do not enforce Go decoding. Go byte
+  slices also accept numeric arrays, represented in the accepted view.
+
+Collection elements can be null as permitted by Go decoding. Fixed Go arrays
+accept short input (zero-filled) and ignore surplus elements; canonical output
+has the exact declared length. Clients should use canonical field spellings,
+unique keys and canonical number syntax.
 
 The schema describes structure. Domain constraints are not schema guarantees,
 and they are checked after decoding by core validators and store state. Examples
@@ -155,7 +172,7 @@ the domain constraints described above.
 the `Cairn-Protocol` and `Cairn-Relay-Protocol` headers and the reserved
 `cairn_protocol` body guard. Every envelope, success and error, carries the
 replying party's `protocol` range. The accepted request view of every operation
-includes the optional guard field (an integer of at least 1), because the server
+includes the optional guard field (an integer from 1 to 9999), because the server
 verifies and removes it before strict decoding. The canonical views omit it: only
 a client whose minimum protocol is above 1 sends it. [api-compatibility.md](api-compatibility.md)
 defines the compatibility policy and the change rules; this document does not

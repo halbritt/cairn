@@ -77,16 +77,7 @@ func Build(source *Source) (Document, error) {
 				"responses": map[string]any{
 					"200": map[string]any{
 						"description": "Success envelope",
-						"content": map[string]any{"application/json": map[string]any{"schema": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"schema": map[string]any{"const": EnvelopeSchema},
-								"ok":     map[string]any{"const": true},
-								"status": map[string]any{"const": "OK"},
-								"data":   responseSchema,
-							},
-							"required": []string{"data", "ok", "schema", "status"},
-						}}},
+						"content":     map[string]any{"application/json": map[string]any{"schema": successEnvelope(r, source.Envelope, responseSchema)}},
 					},
 					"default": map[string]any{"$ref": "#/components/responses/Error"},
 				},
@@ -211,7 +202,7 @@ func withProtocolGuard(r *reflector, schema map[string]any) map[string]any {
 	for key, value := range component {
 		copy[key] = value
 	}
-	properties := map[string]any{localapi.BodyProtocolField: map[string]any{"type": "integer", "minimum": 1, "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field."}}
+	properties := map[string]any{localapi.BodyProtocolField: map[string]any{"type": "integer", "minimum": 1, "maximum": 9999, "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field."}}
 	for name, property := range component["properties"].(map[string]any) {
 		properties[name] = property
 	}
@@ -225,6 +216,32 @@ func withError(schemas map[string]any, errorEnvelope map[string]any) map[string]
 		out[name] = schema
 	}
 	return out
+}
+
+// successEnvelope retains the real envelope's fields and requiredness, then
+// specializes the otherwise-untyped data field for this operation.
+func successEnvelope(r *reflector, envelope types.Type, data map[string]any) map[string]any {
+	schema := r.schema(envelope, canonical)
+	if ref, ok := schema["$ref"].(string); ok {
+		schema = r.schemas[strings.TrimPrefix(ref, "#/components/schemas/")].(map[string]any)
+	}
+	result := map[string]any{}
+	for key, value := range schema {
+		result[key] = value
+	}
+	properties := map[string]any{}
+	for key, value := range schema["properties"].(map[string]any) {
+		properties[key] = value
+	}
+	properties["schema"] = map[string]any{"const": EnvelopeSchema}
+	properties["ok"] = map[string]any{"const": true}
+	properties["status"] = map[string]any{"const": "OK"}
+	properties["data"] = data
+	required := append([]string{}, schema["required"].([]string)...)
+	required = append(required, "data")
+	sort.Strings(required)
+	result["properties"], result["required"] = properties, required
+	return result
 }
 
 // canonicalProperties lists the top-level JSON names of a request type.
