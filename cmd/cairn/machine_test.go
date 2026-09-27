@@ -267,6 +267,11 @@ func TestValidateIdentitiesRemoteShape(t *testing.T) {
 
 // fakeRelay answers version on the socket once the fake systemctl restarts the relay.
 func fakeRelay(t *testing.T, home string, tokens map[string]bool, version any) *sync.Mutex {
+	// Build-only fixtures exercise enrollment/build diagnostics, not legacy
+	// compatibility. Make their protocol explicit in both normal and min2 tests.
+	if build, ok := version.(buildinfo.Info); ok {
+		version = localapi.VersionInfo{Info: build, Protocol: &localapi.Protocol}
+	}
 	t.Helper()
 	var mu sync.Mutex
 	socket := filepath.Join(home, "api.sock")
@@ -378,12 +383,12 @@ func TestMachineEnrollInstallsProfilesRelayAndCollection(t *testing.T) {
 	}
 	status, err := machineStatus(context.Background(), nil)
 	if err != nil || !status.Enrolled || len(status.Checks) != 2 || !status.Checks[1].OK || status.Build != "compatible" ||
-		status.Protocol != "compatible" || status.LocalProtocol != localapi.Protocol || *status.Checks[0].ServerProtocol != localapi.LegacyProtocol {
+		status.Protocol != "compatible" || status.LocalProtocol != localapi.Protocol || *status.Checks[0].ServerProtocol != localapi.Protocol {
 		t.Fatalf("status: %+v %v", status, err)
 	}
 	assertNoTokens(t, status, issued)
 	// Build identity is diagnostic: a different or unstamped build against a
-	// protocol-compatible (here legacy) central API is reported, not refused.
+	// protocol-compatible central API is reported, not refused.
 	for want, local := range map[string]buildinfo.Info{
 		"incompatible": stampedBuild("0000000000000000000000000000000000000000", false),
 		"unknown":      {Schema: "cairn.build/1"},
@@ -592,7 +597,7 @@ func TestMachineStatusBuildIsDiagnosticWorstAcrossRoles(t *testing.T) {
 		}
 		server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-			_ = json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "status": "OK", "data": builds[token]})
+			_ = json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "status": "OK", "data": localapi.VersionInfo{Info: builds[token], Protocol: &localapi.Protocol}})
 		})}
 		go server.Serve(listener)
 		useLocalBuild(t, clean)
@@ -623,6 +628,10 @@ func TestBuildIdentityComparison(t *testing.T) {
 }
 
 func TestProtocolCompatibilityDecision(t *testing.T) {
+	legacyResult := "compatible"
+	if localapi.Protocol.Min > 1 {
+		legacyResult = "incompatible"
+	}
 	answered := func(protocol *localapi.ProtocolRange, status string) roleCheck {
 		return roleCheck{Role: "agent", answered: true, Status: status, server: localapi.VersionInfo{Protocol: protocol}}
 	}
@@ -630,7 +639,7 @@ func TestProtocolCompatibilityDecision(t *testing.T) {
 		check roleCheck
 		want  string
 	}{
-		"legacy server":            {answered(nil, "OK"), "compatible"},
+		"legacy server":            {answered(nil, "OK"), legacyResult},
 		"same range":               {answered(&localapi.ProtocolRange{Min: 1, Current: 2}, "OK"), "compatible"},
 		"newer overlapping":        {answered(&localapi.ProtocolRange{Min: 2, Current: 5}, "OK"), "compatible"},
 		"server raised minimum":    {answered(&localapi.ProtocolRange{Min: 3, Current: 4}, "PROTOCOL_UNSUPPORTED"), "incompatible"},
