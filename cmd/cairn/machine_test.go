@@ -16,6 +16,7 @@ import (
 
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
+	"github.com/halbritt/cairn/localapi"
 )
 
 const testCollection = "/home/owner/git/cairn"
@@ -265,7 +266,7 @@ func TestValidateIdentitiesRemoteShape(t *testing.T) {
 }
 
 // fakeRelay answers version on the socket once the fake systemctl restarts the relay.
-func fakeRelay(t *testing.T, home string, tokens map[string]bool, version buildinfo.Info) *sync.Mutex {
+func fakeRelay(t *testing.T, home string, tokens map[string]bool, version any) *sync.Mutex {
 	t.Helper()
 	var mu sync.Mutex
 	socket := filepath.Join(home, "api.sock")
@@ -376,17 +377,20 @@ func TestMachineEnrollInstallsProfilesRelayAndCollection(t *testing.T) {
 		t.Fatalf("enrolled machine: %+v %v", enrolled, err)
 	}
 	status, err := machineStatus(context.Background(), nil)
-	if err != nil || !status.Enrolled || len(status.Checks) != 2 || !status.Checks[1].OK || status.Build != "compatible" {
+	if err != nil || !status.Enrolled || len(status.Checks) != 2 || !status.Checks[1].OK || status.Build != "compatible" ||
+		status.Protocol != "compatible" || status.LocalProtocol != localapi.Protocol || *status.Checks[0].ServerProtocol != localapi.LegacyProtocol {
 		t.Fatalf("status: %+v %v", status, err)
 	}
 	assertNoTokens(t, status, issued)
+	// Build identity is diagnostic: a different or unstamped build against a
+	// protocol-compatible (here legacy) central API is reported, not refused.
 	for want, local := range map[string]buildinfo.Info{
 		"incompatible": stampedBuild("0000000000000000000000000000000000000000", false),
 		"unknown":      {Schema: "cairn.build/1"},
 	} {
 		useLocalBuild(t, local)
 		status, err := machineStatus(context.Background(), nil)
-		if core.Code(err) != "INSTALL_FAILED" || status.Build != want || !status.Checks[0].OK || status.BuildDetail == "" {
+		if err != nil || status.Build != want || status.Protocol != "compatible" || !status.Checks[0].OK || status.BuildDetail == "" {
 			t.Fatalf("%s build status: %+v %v", want, status, err)
 		}
 	}
@@ -569,7 +573,7 @@ func TestIdentityLockIsBounded(t *testing.T) {
 	}
 }
 
-func TestMachineStatusBuildIsWorstAcrossRoles(t *testing.T) {
+func TestMachineStatusBuildIsDiagnosticWorstAcrossRoles(t *testing.T) {
 	central := machineHome(t, existingIdentities)
 	_, issued := provisionForEnroll(t, central, true)
 	clean := stampedBuild("abc", false)
@@ -594,13 +598,13 @@ func TestMachineStatusBuildIsWorstAcrossRoles(t *testing.T) {
 		useLocalBuild(t, clean)
 		status, err := machineStatus(context.Background(), nil)
 		server.Close()
-		if core.Code(err) != "INSTALL_FAILED" || status.Build != "unknown" || !status.Checks[0].OK || !status.Checks[1].OK {
+		if err != nil || status.Build != "unknown" || status.Protocol != "compatible" || !status.Checks[0].OK || !status.Checks[1].OK {
 			t.Fatalf("mixed builds %v: %+v %v", order, status, err)
 		}
 	}
 }
 
-func TestSameBuild(t *testing.T) {
+func TestBuildIdentityComparison(t *testing.T) {
 	clean := stampedBuild("abc", false)
 	for name, pair := range map[string][2]buildinfo.Info{
 		"different revision": {clean, stampedBuild("def", false)},
@@ -609,12 +613,36 @@ func TestSameBuild(t *testing.T) {
 		"unstamped":          {{Schema: "cairn.build/1"}, {Schema: "cairn.build/1"}},
 		"unknown modified":   {{Revision: "abc"}, {Revision: "abc"}},
 	} {
-		if sameBuild(pair[0], pair[1]) == nil {
-			t.Fatalf("%s accepted", name)
+		if state, err := buildCompatibility(pair[0], pair[1]); state == "compatible" || err == nil {
+			t.Fatalf("%s reported the same build", name)
 		}
 	}
-	if err := sameBuild(clean, clean); err != nil {
-		t.Fatal(err)
+	if state, err := buildCompatibility(clean, clean); state != "compatible" || err != nil {
+		t.Fatal(state, err)
+	}
+}
+
+func TestProtocolCompatibilityDecision(t *testing.T) {
+	answered := func(protocol *localapi.ProtocolRange, status string) roleCheck {
+		return roleCheck{Role: "agent", answered: true, Status: status, server: localapi.VersionInfo{Protocol: protocol}}
+	}
+	for name, tc := range map[string]struct {
+		check roleCheck
+		want  string
+	}{
+		"legacy server":            {answered(nil, "OK"), "compatible"},
+		"same range":               {answered(&localapi.ProtocolRange{Min: 1, Current: 2}, "OK"), "compatible"},
+		"newer overlapping":        {answered(&localapi.ProtocolRange{Min: 2, Current: 5}, "OK"), "compatible"},
+		"server raised minimum":    {answered(&localapi.ProtocolRange{Min: 3, Current: 4}, "PROTOCOL_UNSUPPORTED"), "incompatible"},
+		"disjoint without refusal": {answered(&localapi.ProtocolRange{Min: 3, Current: 4}, "OK"), "incompatible"},
+		"explicit refusal":         {answered(&localapi.ProtocolRange{Min: 1, Current: 2}, "PROTOCOL_UNSUPPORTED"), "incompatible"},
+		"malformed range":          {answered(&localapi.ProtocolRange{Min: 3, Current: 1}, "OK"), "unknown"},
+		"zero minimum":             {answered(&localapi.ProtocolRange{Min: 0, Current: 1}, "OK"), "unknown"},
+		"no answer":                {roleCheck{Role: "agent", Status: "API_CONNECTION_FAILED"}, "unknown"},
+	} {
+		if state, _ := protocolCompatibility(tc.check); state != tc.want {
+			t.Fatalf("%s: got %s want %s", name, state, tc.want)
+		}
 	}
 }
 
@@ -706,19 +734,33 @@ func TestMachineEnrollRefusals(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	t.Run("version mismatch", func(t *testing.T) {
+	t.Run("protocol mismatch", func(t *testing.T) {
+		home := machineHome(t, "")
+		fakeSystemctl(t, home)
+		copy := filepath.Join(home, "enroll")
+		_ = os.WriteFile(copy, body, 0600)
+		useLocalBuild(t, stampedBuild("abc", false))
+		newer := localapi.VersionInfo{Info: stampedBuild("abc", false), Protocol: &localapi.ProtocolRange{Min: 7, Current: 9}}
+		fakeRelay(t, home, map[string]bool{issued.Profiles[0].Token: true}, newer)
+		_, err := enrollMachine(context.Background(), []string{"--file", copy})
+		if core.Code(err) != "INSTALL_FAILED" || !strings.Contains(err.Error(), "protocol check") ||
+			!strings.Contains(err.Error(), "supports protocols 7 to 9") || !strings.Contains(err.Error(), "rerun cairn machine enroll") {
+			t.Fatal(err)
+		}
+		if _, statErr := os.Stat(copy); statErr != nil {
+			t.Fatal("failed enrollment removed the enrollment file")
+		}
+	})
+	t.Run("different build is diagnostic", func(t *testing.T) {
 		home := machineHome(t, "")
 		fakeSystemctl(t, home)
 		copy := filepath.Join(home, "enroll")
 		_ = os.WriteFile(copy, body, 0600)
 		useLocalBuild(t, stampedBuild("abc", false))
 		fakeRelay(t, home, map[string]bool{issued.Profiles[0].Token: true}, stampedBuild("def", false))
-		_, err := enrollMachine(context.Background(), []string{"--file", copy})
-		if core.Code(err) != "INSTALL_FAILED" || !strings.Contains(err.Error(), "same clean Cairn build") || !strings.Contains(err.Error(), "rerun cairn machine enroll") {
-			t.Fatal(err)
-		}
-		if _, statErr := os.Stat(copy); statErr != nil {
-			t.Fatal("failed enrollment removed the enrollment file")
+		result, err := enrollMachine(context.Background(), []string{"--file", copy, "--keep-file"})
+		if err != nil || !strings.Contains(strings.Join(result.Notes, "\n"), "build identity differs or is unknown (diagnostic only)") {
+			t.Fatal(result.Notes, err)
 		}
 	})
 }

@@ -101,15 +101,21 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return eventCommand(ctx, operation, f.Args()[1:], input, client)
 	}
 	if operation == "version" {
-		var server buildinfo.Info
+		var server localapi.VersionInfo
 		if err := client.Call(ctx, "version", struct{}{}, &server); err != nil {
 			return nil, err
 		}
+		// Build identity stays diagnostic; the protocol ranges decide compatibility.
+		// A server without a protocol object is the legacy protocol 1.
+		serverProtocol, _ := server.ServerProtocol()
 		return struct {
-			Schema string         `json:"schema"`
-			Client buildinfo.Info `json:"client"`
-			Server buildinfo.Info `json:"server"`
-		}{"cairn.version/1", buildinfo.Read(), server}, nil
+			Schema         string                 `json:"schema"`
+			Client         buildinfo.Info         `json:"client"`
+			Server         buildinfo.Info         `json:"server"`
+			ClientProtocol localapi.ProtocolRange `json:"client_protocol"`
+			ServerProtocol localapi.ProtocolRange `json:"server_protocol"`
+			Protocol       int                    `json:"protocol"`
+		}{"cairn.version/1", buildinfo.Read(), server.Info, localapi.Protocol, serverProtocol, localapi.Protocol.Overlap(serverProtocol)}, nil
 	}
 	if operation == "evidence" && f.NArg() > 1 {
 		req, err := evidenceFileRequest(f.Args()[1:])

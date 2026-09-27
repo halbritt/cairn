@@ -42,12 +42,14 @@ shared files. Operator commands that open a local database are unaffected.
 
 ## Prerequisites
 
-- The same Cairn build on every host, from one clean commit. Enrollment compares
-  VCS revisions through the relay and refuses unstamped, modified or different
-  builds. Go 1.25 stamps only in a checkout whose `.git` is a directory. A
-  linked `git worktree` (where `.git` is a file) produces an unknown stamp even
-  with `-buildvcs=true`, and enrollment refuses it. Build from a clean ordinary
-  clone:
+- Cairn builds whose [API protocol](api-compatibility.md) ranges overlap on
+  every host. Enrollment and every later request check the protocol, not the
+  VCS build. A build older than protocol declaration (such as `b46a0e1`) speaks
+  protocol 1. The build identity is still reported for diagnosis, and a clean,
+  identical build on every host remains the simplest release practice. Go 1.25
+  stamps only in a checkout whose `.git` is a directory. A linked
+  `git worktree` (where `.git` is a file) produces an unknown stamp even with
+  `-buildvcs=true`. Build a release from a clean ordinary clone:
 
   ```sh
   git clone --no-local ~/git/cairn /tmp/cairn-build && cd /tmp/cairn-build
@@ -121,8 +123,8 @@ Enrollment checks every target before its first write. It refuses:
 
 It then writes tokens, `machine.json` and the unit, enables and restarts the
 relay, and calls `version` through the socket with each token. A failed
-connectivity or build check reports `INSTALL_FAILED` with the step reached and
-keeps the enrollment file. Fix the cause and rerun the same command; files that
+connectivity or protocol check reports `INSTALL_FAILED` with the step reached and
+keeps the enrollment file. A different or unstamped build is only noted. Fix the cause and rerun the same command; files that
 already match are left unchanged. On success the enrollment file is deleted
 unless `--keep-file` is given. Nothing is registered: agent sessions register
 themselves as they do on the central host.
@@ -134,10 +136,19 @@ unit is written to the invoking user's `$XDG_CONFIG_HOME/systemd/user`. That
 directory must be the one the user's systemd manager reads.
 
 `cairn machine status` shows the enrollment, relay state and lingering. It
-reports a per-role connectivity check and, separately, `build`: `compatible`,
-`incompatible` (different or modified revisions) or `unknown` (unstamped
-builds). It exits nonzero on an enrolled host unless every role connects and
-the builds are compatible. It never prints tokens.
+reports:
+
+- a per-role connectivity check with the central API's protocol range;
+- `protocol`: `compatible`, `incompatible` (disjoint ranges or a
+  `PROTOCOL_UNSUPPORTED` refusal) or `unknown`;
+- `build`, which is diagnostic only: `compatible` (the same clean revision),
+  `incompatible` (different or modified revisions) or `unknown` (unstamped).
+
+It exits nonzero on an enrolled host unless every role connects and the protocol
+is compatible. A build difference alone does not fail it. It never prints
+tokens. The central API also checks the protocol on every request, so an
+upgrade that drops this host's protocol is refused at the next call before
+anything executes, whether or not status has been run.
 
 ## Connect agents on the joining machine
 

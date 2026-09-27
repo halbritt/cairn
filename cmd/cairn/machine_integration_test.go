@@ -95,10 +95,10 @@ func TestMachineEnrollmentEndToEnd(t *testing.T) {
 		relayDone <- relayRemote(ctx, []string{"--socket", filepath.Join(home, "api.sock"), "--upstream", upstreamServer.URL})
 	}()
 	result, err := enrollMachine(ctx, []string{"--file", out})
-	// Test binaries carry no VCS stamp, so the build check must refuse after
-	// every connectivity check has passed through the real relay.
-	if core.Code(err) != "INSTALL_FAILED" || !strings.Contains(err.Error(), "cannot confirm the same build") {
-		t.Fatalf("enroll: %v", err)
+	// Test binaries carry no VCS stamp. Build identity is diagnostic only, so
+	// enrollment succeeds on the real relay's protocol check and notes the gap.
+	if err != nil || !strings.Contains(strings.Join(result.Notes, "\n"), "cannot confirm the same build") {
+		t.Fatalf("enroll: %+v %v", result, err)
 	}
 	if len(result.Checks) != 2 || !result.Checks[0].OK || !result.Checks[1].OK {
 		t.Fatalf("connectivity through relay: %+v", result.Checks)

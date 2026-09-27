@@ -110,7 +110,7 @@ func main() {
 		case "CLIENT_SETUP_FAILED", "API_CONNECTION_FAILED":
 			exitCode = 7
 			envelope.Message = refusal.Error()
-		case "INSTALL_FAILED":
+		case "INSTALL_FAILED", "PROTOCOL_UNSUPPORTED":
 			exitCode = 7
 		case "RESTORE_PAUSED", "RESTORE_INCOMPLETE", "PURGE_UNRECORDED", "REFUSAL_UNRECORDED", "INTEGRITY_FAILURE", "CHECKPOINT_MISMATCH":
 			exitCode = 7

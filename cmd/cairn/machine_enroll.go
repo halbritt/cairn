@@ -18,6 +18,7 @@ import (
 
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
+	"github.com/halbritt/cairn/localapi"
 )
 
 // Role token files keep the names existing hooks, skills and bindings already use.
@@ -44,11 +45,13 @@ type installedToken struct {
 }
 
 type roleCheck struct {
-	Role          string         `json:"role"`
-	OK            bool           `json:"ok"`
-	Status        string         `json:"status,omitempty"`
-	ServerVersion string         `json:"server_version,omitempty"`
-	server        buildinfo.Info // compared, not reported twice
+	Role           string                  `json:"role"`
+	OK             bool                    `json:"ok"`
+	Status         string                  `json:"status,omitempty"`
+	ServerVersion  string                  `json:"server_version,omitempty"`
+	ServerProtocol *localapi.ProtocolRange `json:"server_protocol,omitempty"`
+	server         localapi.VersionInfo    // compared, not reported twice
+	answered       bool                    // the server replied, possibly refusing the protocol
 }
 
 type machineEnrollment struct {
@@ -201,11 +204,18 @@ func enrollMachine(ctx context.Context, args []string) (machineEnrollment, error
 		result.Checks = checkRoles(ctx, result.Socket, issued.Profiles, 15*time.Second)
 	}
 	for _, check := range result.Checks {
+		if state, err := protocolCompatibility(check); state != "compatible" {
+			if !check.answered {
+				return result, incomplete(check.Role+" connectivity check", errors.New(check.Status))
+			}
+			return result, incomplete("protocol check", err)
+		}
 		if !check.OK {
 			return result, incomplete(check.Role+" connectivity check", errors.New(check.Status))
 		}
-		if err = sameBuild(local, check.server); err != nil {
-			return result, incomplete("build check", err)
+		// Build identity is diagnostic: different clean builds may interoperate.
+		if _, err = buildCompatibility(local, check.server.Info); err != nil {
+			result.Notes = append(result.Notes, "build identity differs or is unknown (diagnostic only): "+err.Error())
 		}
 	}
 	if !*keep {
@@ -272,21 +282,25 @@ func unenrollMachine(ctx context.Context, args []string) (machineUnenrollment, e
 }
 
 type machineStatusResult struct {
-	Enrolled    bool           `json:"enrolled"`
-	Config      *machineConfig `json:"config,omitempty"`
-	Service     string         `json:"service"`
-	Linger      string         `json:"linger"`
-	Local       string         `json:"local_version"`
-	Checks      []roleCheck    `json:"checks"`
-	Build       string         `json:"build"` // compatible, incompatible or unknown
-	BuildDetail string         `json:"build_detail,omitempty"`
+	Enrolled       bool                   `json:"enrolled"`
+	Config         *machineConfig         `json:"config,omitempty"`
+	Service        string                 `json:"service"`
+	Linger         string                 `json:"linger"`
+	Local          string                 `json:"local_version"`
+	LocalProtocol  localapi.ProtocolRange `json:"local_protocol"`
+	Checks         []roleCheck            `json:"checks"`
+	Protocol       string                 `json:"protocol"` // compatible, incompatible or unknown; this gates
+	ProtocolDetail string                 `json:"protocol_detail,omitempty"`
+	// Build compares VCS identity for diagnosis only; it no longer gates.
+	Build       string `json:"build"` // compatible (same clean build), incompatible (different) or unknown
+	BuildDetail string `json:"build_detail,omitempty"`
 }
 
 // machineStatus reports connectivity per role and build compatibility
 // separately. It fails when this host is enrolled but either is not healthy,
 // so scripts can rely on its exit status; the report is still returned.
 func machineStatus(ctx context.Context, args []string) (machineStatusResult, error) {
-	result := machineStatusResult{Checks: []roleCheck{}, Local: localBuild().Label(), Build: "unknown"}
+	result := machineStatusResult{Checks: []roleCheck{}, Local: localBuild().Label(), LocalProtocol: localapi.Protocol, Protocol: "unknown", Build: "unknown"}
 	if len(args) != 0 {
 		return result, invalid("machine status takes no arguments")
 	}
@@ -313,13 +327,23 @@ func machineStatus(ctx context.Context, args []string) (machineStatusResult, err
 	// The worst result across roles wins, independent of role order:
 	// incompatible > unknown > compatible. No successful check is unknown.
 	rank := map[string]int{"compatible": 0, "unknown": 1, "incompatible": 2}
-	connected, compared := len(result.Checks) > 0, false
+	connected, compared, protocolCompared := len(result.Checks) > 0, false, false
 	for _, check := range result.Checks {
+		if check.answered {
+			state, err := protocolCompatibility(check)
+			if !protocolCompared || rank[state] > rank[result.Protocol] {
+				result.Protocol, result.ProtocolDetail = state, ""
+				if err != nil {
+					result.ProtocolDetail = err.Error()
+				}
+			}
+			protocolCompared = true
+		}
 		if !check.OK {
 			connected = false
 			continue
 		}
-		state, err := buildCompatibility(localBuild(), check.server)
+		state, err := buildCompatibility(localBuild(), check.server.Info)
 		if !compared || rank[state] > rank[result.Build] {
 			result.Build = state
 			result.BuildDetail = ""
@@ -329,11 +353,11 @@ func machineStatus(ctx context.Context, args []string) (machineStatusResult, err
 		}
 		compared = true
 	}
+	if protocolCompared && result.Protocol != "compatible" {
+		return result, &core.Error{Code: "INSTALL_FAILED", Message: "central and local protocols are " + result.Protocol + ": " + result.ProtocolDetail}
+	}
 	if !connected {
 		return result, &core.Error{Code: "API_CONNECTION_FAILED", Message: "one or more enrolled profiles failed the connectivity check; see checks"}
-	}
-	if result.Build != "compatible" {
-		return result, &core.Error{Code: "INSTALL_FAILED", Message: "central and local builds are " + result.Build + ": " + result.BuildDetail}
 	}
 	return result, nil
 }
@@ -447,7 +471,26 @@ func readPrivateTarget(path string, ownerOnly bool) ([]byte, error) {
 
 var localBuild = buildinfo.Read
 
-// buildCompatibility requires clean, identical VCS revisions: the trial
+// protocolCompatibility decides whether this host's client and relay share a
+// protocol with the central server. A server that declares nothing is the
+// legacy protocol 1. The result never depends on VCS identity.
+func protocolCompatibility(check roleCheck) (string, error) {
+	if !check.answered {
+		return "unknown", fmt.Errorf("the central API did not answer the %s check", check.Role)
+	}
+	server, declared := check.server.ServerProtocol()
+	if server.Min < 1 || server.Current < server.Min || server.Current > 9999 {
+		return "unknown", fmt.Errorf("the central API declared a malformed protocol range %d to %d", server.Min, server.Current)
+	}
+	if localapi.Protocol.Overlap(server) == 0 || check.Status == "PROTOCOL_UNSUPPORTED" {
+		return "incompatible", fmt.Errorf("the central API supports protocols %d to %d and this host supports %d to %d; upgrade the older side",
+			server.Min, server.Current, localapi.Protocol.Min, localapi.Protocol.Current)
+	}
+	_ = declared // A legacy central API speaks protocol 1, whose bodies protocol 2 shares.
+	return "compatible", nil
+}
+
+// buildCompatibility compares clean VCS revisions for diagnosis only. The
 // supports one tested protocol version on every host, and missing stamps
 // prove nothing. Missing or unknown stamps are "unknown"; a dirty or
 // different build is "incompatible".
@@ -459,11 +502,6 @@ func buildCompatibility(local, server buildinfo.Info) (string, error) {
 		return "incompatible", fmt.Errorf("the central API runs %s and this host runs %s; install the same clean Cairn build on both hosts", server.Label(), local.Label())
 	}
 	return "compatible", nil
-}
-
-func sameBuild(local, server buildinfo.Info) error {
-	_, err := buildCompatibility(local, server)
-	return err
 }
 
 func privateDataDirectory() (string, error) {
@@ -567,11 +605,17 @@ func checkRoles(ctx context.Context, socket string, profiles []enrollmentProfile
 		check := roleCheck{Role: profile.Role}
 		info, err := versionOverSocket(ctx, socket, profile.Token, wait)
 		if err == nil {
-			check.OK, check.Status, check.ServerVersion, check.server = true, "OK", info.Label(), info
-		} else if code := core.Code(err); code != "" && code != "STORE_ERROR" {
+			check.OK, check.Status, check.ServerVersion, check.server, check.answered = true, "OK", info.Label(), info, true
+		} else if code := core.Code(err); code == "PROTOCOL_UNSUPPORTED" {
+			check.Status, check.server, check.answered = code, info, true
+		} else if code != "" && code != "STORE_ERROR" {
 			check.Status = code
 		} else {
 			check.Status = "API_CONNECTION_FAILED"
+		}
+		if check.answered {
+			declared, _ := check.server.ServerProtocol()
+			check.ServerProtocol = &declared
 		}
 		checks = append(checks, check)
 	}

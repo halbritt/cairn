@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -613,8 +614,8 @@ func restartAPI(ctx context.Context) error {
 
 // versionOverSocket proves a token authenticates without writing it to disk.
 // It retries only this read-only call while the listener starts.
-func versionOverSocket(ctx context.Context, socket, token string, wait time.Duration) (buildinfo.Info, error) {
-	var info buildinfo.Info
+func versionOverSocket(ctx context.Context, socket, token string, wait time.Duration) (localapi.VersionInfo, error) {
+	var info localapi.VersionInfo
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	}}
@@ -629,6 +630,7 @@ func versionOverSocket(ctx context.Context, socket, token string, wait time.Dura
 			}
 			req.Header.Set("Authorization", "Bearer "+token)
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set(localapi.ProtocolHeader, strconv.Itoa(localapi.Protocol.Current))
 			reply, err := client.Do(req)
 			if err != nil {
 				return err
@@ -640,10 +642,11 @@ func versionOverSocket(ctx context.Context, socket, token string, wait time.Dura
 				return &core.Error{Code: "API_CONNECTION_FAILED", Message: fmt.Sprintf("unreadable or oversized API reply (HTTP %d)", reply.StatusCode)}
 			}
 			var envelope struct {
-				Schema string         `json:"schema"`
-				OK     bool           `json:"ok"`
-				Status string         `json:"status"`
-				Data   buildinfo.Info `json:"data"`
+				Schema   string                  `json:"schema"`
+				OK       bool                    `json:"ok"`
+				Status   string                  `json:"status"`
+				Data     localapi.VersionInfo    `json:"data"`
+				Protocol *localapi.ProtocolRange `json:"protocol"`
 			}
 			if err = json.Unmarshal(body, &envelope); err != nil || envelope.Schema != "cairn.response/1" {
 				return &core.Error{Code: "API_CONNECTION_FAILED", Message: fmt.Sprintf("not a Cairn API reply (HTTP %d)", reply.StatusCode)}
@@ -654,6 +657,9 @@ func versionOverSocket(ctx context.Context, socket, token string, wait time.Dura
 			if reply.StatusCode != http.StatusOK || !envelope.OK {
 				if envelope.OK || envelope.Status == "" || envelope.Status == "OK" {
 					return &core.Error{Code: "API_CONNECTION_FAILED", Message: fmt.Sprintf("inconsistent API reply (HTTP %d)", reply.StatusCode)}
+				}
+				if envelope.Status == "PROTOCOL_UNSUPPORTED" {
+					info.Protocol = envelope.Protocol // The refusal still states the server's range.
 				}
 				return &core.Error{Code: envelope.Status, Message: "version call refused: " + envelope.Status}
 			}

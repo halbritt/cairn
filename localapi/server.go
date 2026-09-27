@@ -102,6 +102,9 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 		writeError(w, 405, "INVALID_REQUEST", "use POST with JSON")
 		return
 	}
+	if !admitProtocol(w, r, remoteOnly) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	r = r.WithContext(ctx)
@@ -126,8 +129,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 	}
 	switch r.URL.Path {
 	case "/v1/version":
-		serveJSON(w, r, func(context.Context, struct{}) (buildinfo.Info, error) {
-			return buildinfo.Read(), nil
+		serveJSON(w, r, func(context.Context, struct{}) (VersionInfo, error) {
+			return VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, nil
 		})
 	case "/v1/create":
 		serveJSON(w, r, c.store.Create)
@@ -349,6 +352,10 @@ type response struct {
 	Status    string `json:"status"`
 	Data      any    `json:"data,omitempty"`
 	Message   string `json:"message,omitempty"`
+	// Protocol is the replying party's supported range (server or relay). It
+	// is always present from this release; legacy clients ignore it, and its
+	// absence identifies a legacy peer.
+	Protocol ProtocolRange `json:"protocol"`
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string, refusalIDs ...string) {
@@ -357,13 +364,17 @@ func writeError(w http.ResponseWriter, status int, code, message string, refusal
 		id = refusalIDs[0]
 	}
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(response{Schema: "cairn.response/1", Status: code, Message: message, RefusalID: id})
+	_ = json.NewEncoder(w).Encode(response{Schema: "cairn.response/1", Status: code, Message: message, RefusalID: id, Protocol: Protocol})
 }
 func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(context.Context, Q) (R, error)) {
 	limit := RequestBodyLimit(strings.TrimPrefix(r.URL.Path, "/v1/"))
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil || jsontext.CheckUnicode(body) != nil {
 		writeError(w, 400, "INVALID_REQUEST", "invalid bounded JSON request")
+		return
+	}
+	body, admitted := admitBodyProtocol(w, r, body)
+	if !admitted {
 		return
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
@@ -408,5 +419,5 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 	}
 	// HTTP write errors mean the caller may not have received a committed result;
 	// the request's idempotency key remains its recovery mechanism. Never retry here.
-	_ = json.NewEncoder(w).Encode(response{Schema: "cairn.response/1", OK: true, Status: "OK", Data: result})
+	_ = json.NewEncoder(w).Encode(response{Schema: "cairn.response/1", OK: true, Status: "OK", Data: result, Protocol: Protocol})
 }

@@ -1,8 +1,10 @@
 # API protocol compatibility
 
-Status: proposed policy (agent-204) for the API contract stage
-(`docs/plans/api-contract-stage.md`). The base is `0fb09c3`; `b46a0e1` is
-deployed. Enforcement is not yet implemented.
+Status: implemented on `agent-204/api-compatibility` (base `0fb09c3`; the
+deployed release `b46a0e1` is protocol 1). Code: `localapi/protocol.go`,
+`localapi/relay.go`, `localapi/client.go`, and the enrollment/status checks in
+`cmd/cairn/machine_enroll.go`. Evidence: `localapi/protocol_test.go` and
+`scripts/check_protocol_skew.py`, which runs in `make test-integration`.
 
 ## Protocol versus build
 
@@ -46,51 +48,86 @@ safe. Absence of `Cairn-Protocol` means protocol 1.
 
 ## Enforcement
 
+Negotiation is not a handshake that changes later behavior. Each request is
+checked on its own, in both directions:
+
+- the server checks that it supports what the client declares;
+- the client, when its own minimum requires it, makes any server that cannot
+  meet that minimum refuse before executing.
+
 **Server, per request**, after authentication and before session binding,
 decoding or dispatch:
 
-- Several `Cairn-Protocol` values, or a value that is not a canonical decimal
+- A duplicate `Cairn-Protocol`, or a value that is not a canonical decimal
   integer (no sign, no leading zero, at most 4 digits): `400 INVALID_REQUEST`.
-- A value outside `[min, current]`, or an absent header while `min > 1`:
-  `426 PROTOCOL_UNSUPPORTED`. The message names the supported range, and the envelope `protocol` object carries it in structured form. When
-  `Cairn-Relay-Protocol` is absent on the network listener, the message says
-  the relay may be the legacy one that drops the header.
-- A protocol value never changes role, destination, principal, or which
-  operations are allowed; authentication and `remoteOperations` still decide
-  those. The check runs for `version` too, but it cannot lock a client out of
-  learning the range, because refusals carry the range.
+  The same rule applies to `Cairn-Relay-Protocol`.
+- A declared value outside `[min, current]`: `426 PROTOCOL_UNSUPPORTED`. The
+  message names the range, and the envelope `protocol` object carries it.
+- No header: the request is protocol 1 unless the body guard (below) says
+  otherwise. While `min > 1`, a request with neither is refused `426` before
+  decoding. On the network listener without `Cairn-Relay-Protocol`, the message
+  adds that the host's relay may be a legacy one that drops the header.
+- A protocol value never changes role, destination, principal or the
+  operation allowlist.
 
-**Relay**: forwards exactly one `Cairn-Protocol` value (duplicates are
-refused, as for the other protocol headers) and sets `Cairn-Relay-Protocol:
-<relay current>`, overwriting any client value. It still forwards only the
-response `Content-Type`; protocol information in responses therefore lives in
-the envelope body.
+**Body guard (client minimum).** A header cannot protect a client from an
+older server that ignores it. That includes a server rolled back behind the
+same relay after a successful `version` preflight: a time-of-check gap no
+preflight closes. So a client whose minimum `M > 1` adds the reserved
+top-level field `"cairn_protocol": M` to every JSON object request. Servers
+since protocol 2 verify it before strict decoding and then remove it:
 
-**Client**: sends `Cairn-Protocol: <client current>` on every call. It ignores
-unknown response and envelope fields, and refuses an unknown envelope schema.
-When the envelope has no `protocol` field, the server is legacy (protocol 1).
-The Go client records this for diagnostics; it does not refuse, since protocol 2
-has no body changes.
+- a canonical positive integer within range is accepted;
+- a malformed value, or a header below it, gets `400`;
+- a value above the server's range gets `426`.
+
+Every older server refuses the unknown field under its existing strict decoding
+(`INVALID_REQUEST`) before executing. The client maps that reply, which carries
+no protocol range, to `PROTOCOL_UNSUPPORTED` ("the server predates protocol M").
+The body travels through every relay unchanged, so the guard also survives
+header stripping. Only the exact key is recognized; any other spelling stays an
+unknown field. This release's client minimum is 1, so it sends no guard and
+legacy servers keep accepting its requests.
+
+**Relay**: forwards exactly one `Cairn-Protocol` value (duplicates are refused,
+as for the other protocol headers). It sets `Cairn-Relay-Protocol: <relay
+current>`, overwriting any client value. It forwards the body verbatim. It
+still returns only the response `Content-Type`, so protocol information in
+replies lives in the envelope body. The `protocol` object is always the
+replying party's range: the server's for forwarded replies, and the relay's
+for the relay's own `UPSTREAM_*` refusals.
+
+**Client**: sends `Cairn-Protocol: <client current>` on every call, and the
+body guard when its minimum exceeds 1. It ignores unknown response and envelope
+fields, and refuses an unknown envelope schema. A reply without a `protocol`
+object comes from a legacy server. That is treated as protocol 1 only because
+the retained `b46a0e1` fixture establishes protocol 1 semantics; a malformed
+range counts as `unknown` and fails closed.
 
 **Enrollment and `machine status`**: compatibility becomes a protocol result.
 
-- `compatible`: the ranges overlap and the checked path, this host's relay plus
-  the central server, speaks the chosen protocol.
-- `incompatible`: the ranges are disjoint.
-- `unknown`: the reply is malformed.
+- `compatible`: the ranges overlap.
+- `incompatible`: the ranges are disjoint, or the server refused the declared
+  protocol.
+- `unknown`: no answer, or a malformed range.
 
-A server with no `protocol` object is legacy `[1,1]`. Build identity is
-reported separately as `same`, `different` or `unknown`. It is no longer a gate:
-the gate was the stand-in for the missing protocol check. Enrollment refuses
-`incompatible` and `unknown`. Status exits nonzero on them, but not on a build
-difference.
+A server with no `protocol` object is legacy `[1,1]`. Enrollment refuses
+`incompatible` and `unknown`, and status exits nonzero on them. Build identity
+is reported separately and never gates.
 
-**After enrollment**: every normal request is checked by the server. If the
-server is upgraded so that its `min` exceeds a host's protocol, that host's next
-call is refused before execution with `PROTOCOL_UNSUPPORTED`; nothing depends on
-running `machine status`. A newer client against an older server stays safe
-through strict request decoding and the no-changed-semantics rule. The older
-server executes only requests whose bodies it fully understands.
+"Compatible" is conditional, and it is a statement about protocol-2 bodies.
+Using an optional request field that a given server predates is still refused
+by that server's strict decoder (`INVALID_REQUEST`) at the time of use. That
+is safe, but a status of `compatible` does not promise every newer optional
+field. It also does not re-check a server that changes afterwards. The per-request checks
+cover that: the server's header check, and the body guard for clients that
+require a minimum.
+
+**After enrollment**: if the central server is upgraded so that its minimum
+exceeds a host's protocol, that host's next request is refused before
+execution, whether or not status has run. If the server is rolled back below
+a client's minimum, the body guard refuses. A client with minimum 1 needs no
+guard, because protocol 1 and 2 bodies and semantics are identical.
 
 ## Transition from the deployed release
 
@@ -101,26 +138,74 @@ server executes only requests whose bodies it fully understands.
 - A protocol 2 relay or client against a legacy server: the server ignores the
   header and the response has no `protocol` field. It keeps working, and
   diagnostics report a legacy server.
-- `min` rises to 2 only in a later release, after `machine status` on every
-  enrolled host reports protocol 2 relays and clients. The server can observe
-  this from the headers.
+- `min` rises to 2 only in a later release, after every enrolled host runs
+  protocol 2 clients and relays. The server can observe this from the headers.
+  Once raised, a legacy relay that strips the header is refused unless the
+  client sends the body guard.
+- Future semantics must never rely on a stripped header. A change whose absence
+  would be unsafe travels in the body (a new field, or the body guard), so any
+  server that cannot honor it refuses the request.
 
-## Test plan
+## Evidence and limits
 
-Independent old-version fixtures: the deployed `b46a0e1` binary, built from a
-clean clone of that revision. Each combination is a separate case:
+`scripts/check_protocol_skew.py` runs real `serve`, `relay` and CLI binaries
+over HTTPS against a disposable database. It uses three binaries:
 
-- a new client through a new relay to a new server;
-- a legacy client and legacy relay to a new server;
-- a new client through a legacy relay to a new server (the header is stripped,
-  so protocol 1 is accepted);
-- a new client and new relay to a legacy server;
-- a legacy client to a legacy server as a baseline;
-- malformed, duplicate and out-of-range headers;
-- a new server built for tests with `min=2` (a test-only build tag, not a
-  runtime flag), refusing legacy and header-stripped requests before execution;
-- the enrollment and status results for each;
-- no effect is committed on any refusal.
+- **legacy**: `b46a0e1`, built from a clean `git clone --no-local` at that
+  revision, or the independently retained binary named by
+  `CAIRN_LEGACY_BINARY`. The suite verifies its clean stamp.
+- **current**: the build under test.
+- **raised**: the build under test with the test-only `cairn_protocol_min2`
+  tag, standing in for a future server that has raised its minimum.
 
-Unit tests cover header parsing, range checks, the envelope field, client
-tolerance of unknown response fields, and relay header forwarding.
+It covers:
+
+- legacy-only as a baseline;
+- both skew directions, and a current client behind a legacy relay that strips
+  the header;
+- a raised server refusing a legacy client, a current client behind a legacy
+  relay, and a fully legacy path, each with `PROTOCOL_UNSUPPORTED` and no store
+  change;
+- the other incompatible direction: a raised client refused by a legacy server
+  (directly, and behind a legacy relay), with no store change. The raised
+  client's guard survives a legacy relay to current and raised servers. After a
+  successful `version` preflight against a current server, the server is rolled
+  back to legacy behind the same relay; the next mutation is refused and nothing
+  is written;
+- a current client through a current relay to the raised server, which
+  succeeds;
+- malformed and out-of-range declarations and body guards sent straight to the
+  TLS listener, including a header contradicting the guard;
+- `machine status` against current, legacy and raised servers.
+
+Unit tests cover:
+
+- header parsing, including duplicate, signed, zero-padded, non-ASCII and
+  oversized values;
+- range overlap;
+- admission before dispatch (a store route with no store attached);
+- the envelope and `version` fields;
+- relay forwarding, including overwriting a client-supplied
+  `Cairn-Relay-Protocol`;
+- client tolerance of unknown response fields;
+- the enrollment and status decisions.
+
+Limits:
+
+- The deployed CLI replaces messages of statuses it does not know with a
+  generic text. A legacy client refused by a raised server sees the
+  `PROTOCOL_UNSUPPORTED` status and exit code but not the explanation. Current
+  clients show the full message.
+- A newer client with minimum 1 talking to an older server is protected by
+  strict request decoding and the no-changed-semantics rule, not by a server
+  check. A client with a higher minimum is protected by the body guard, which
+  depends on strict decoding. A hypothetical older server that ignored unknown
+  fields would not be protected; no such Cairn release exists.
+- The full client, relay and server matrix with retry deduplication belongs to
+  root's independent harness (`scripts/check_api_version_skew.py`). This suite
+  targets refusals, raised minimums and status.
+- The protocol claim is declaration metadata. A client that lies about its
+  protocol gains nothing: authorization is unchanged, and a request body the
+  server does not understand is refused.
+- Python lifecycle adapters call the CLI, so they declare the CLI's protocol.
+  They do not parse the envelope's `protocol` object.

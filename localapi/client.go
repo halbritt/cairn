@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -79,6 +80,7 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 	if err != nil {
 		return err
 	}
+	body = guardBody(body)
 	if limit := RequestBodyLimit(operation); int64(len(body)) > limit {
 		return &core.Error{Code: "INVALID_REQUEST", Message: fmt.Sprintf("request exceeds %d KiB", limit/1024)}
 	}
@@ -94,6 +96,7 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 	req.GetBody = nil
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ProtocolHeader, strconv.Itoa(Protocol.Current))
 	if c.session != nil {
 		req.Header.Set("Cairn-Agent-ID", c.session.AgentID)
 		req.Header.Set("Cairn-Execution-ID", c.session.ExecutionID)
@@ -110,6 +113,7 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 	if int64(len(encoded)) > ResponseBodyLimit {
 		return fmt.Errorf("API response exceeds 8 MiB")
 	}
+	// Responses are decoded tolerantly: a newer server may add fields.
 	var envelope struct {
 		Schema    string          `json:"schema"`
 		RefusalID string          `json:"refusal_id"`
@@ -117,6 +121,7 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 		Status    string          `json:"status"`
 		Message   string          `json:"message"`
 		Data      json.RawMessage `json:"data"`
+		Protocol  *ProtocolRange  `json:"protocol"`
 	}
 	if err = json.Unmarshal(encoded, &envelope); err != nil {
 		return err
@@ -125,6 +130,12 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 		return fmt.Errorf("unsupported API response schema")
 	}
 	if result.StatusCode != http.StatusOK || !envelope.OK {
+		if Protocol.Min > 1 && envelope.Protocol == nil && envelope.Status == "INVALID_REQUEST" {
+			// A server predating protocol declaration refused the body guard as
+			// an unknown field; nothing executed.
+			return &core.Error{Code: "PROTOCOL_UNSUPPORTED", Message: "the server predates protocol " +
+				strconv.Itoa(Protocol.Min) + ", this client's minimum; upgrade the server"}
+		}
 		return &core.Error{Code: envelope.Status, Message: envelope.Message, RefusalID: envelope.RefusalID}
 	}
 	return json.Unmarshal(envelope.Data, response)

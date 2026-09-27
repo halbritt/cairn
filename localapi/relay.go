@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -82,7 +83,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, in *http.Request) {
 	// nil GetBody, and the header allowlist also prevent idempotent replay.
 	out.ContentLength = int64(len(body))
 	out.GetBody = nil
-	for _, header := range []string{"Authorization", "Content-Type", "Cairn-Agent-ID", "Cairn-Execution-ID"} {
+	for _, header := range []string{"Authorization", "Content-Type", "Cairn-Agent-ID", "Cairn-Execution-ID", ProtocolHeader} {
 		if values := in.Header.Values(header); len(values) > 1 {
 			writeError(w, 400, "INVALID_REQUEST", "duplicate protocol header")
 			return
@@ -90,6 +91,8 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, in *http.Request) {
 			out.Header.Set(header, values[0])
 		}
 	}
+	// The relay states its own protocol; a client value is never forwarded.
+	out.Header.Set(RelayProtocolHeader, strconv.Itoa(Protocol.Current))
 	// A connection handed to net/http might have received request bytes even if
 	// no response arrives. Only failure before that point is known to be unsent.
 	var connected atomic.Bool
