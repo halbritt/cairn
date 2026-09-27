@@ -3,8 +3,9 @@
 Status: implementation authorized by the owner after agent-183 review.
 The owner requires a functional, robust implementation, cross-model review of
 plans and builds, and permits deployment and agent testing on Archon. The
-implementation and a real Proximal–Archon trial are complete; final review and
-production rollout are tracked in the [acceptance record](multi-machine-acceptance.md).
+implementation, cross-model reviews and Proximal–Archon deployment are complete.
+The [acceptance record](multi-machine-acceptance.md) identifies the deployed
+release, checks and limits.
 The original runtime source review used `ddb01a6`; implementation started from
 `2dbee9a`.
 

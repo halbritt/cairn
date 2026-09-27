@@ -7,13 +7,12 @@ joining machine keep using the socket and token files they already use; they
 never hold database credentials. The design and its accepted limits are in
 [the proposal](plans/multi-machine-cairn.md).
 
-Status: implemented and verified in a disposable Proximal–Archon trial;
-production deployment and final acceptance are pending. The trial exercised
-enrollment, shared memory through MCP, native request delivery, explicit
-completion and a linked reply. See the [acceptance record](plans/multi-machine-acceptance.md)
-for the exact tested scope. No remote worker
-pools, conversation migration, offline memory, repository sync or automatic
-placement exist.
+Status: deployed on Proximal and Archon at release `b46a0e1`. The live
+verification exercised enrollment, shared memory through MCP, native request
+delivery, explicit completion and a linked reply. See the
+[acceptance record](plans/multi-machine-acceptance.md) for tested claims and
+limits. No remote worker pools, conversation migration, offline memory,
+repository sync or automatic placement exist.
 
 ## What joining installs
 

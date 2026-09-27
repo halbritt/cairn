@@ -1,8 +1,8 @@
 # Multi-machine implementation acceptance
 
-Status: live Proximal–Archon request/reply verified; final review and production
-deployment remain in progress. Evidence below distinguishes the disposable
-trial from deployment.
+Status: implemented, reviewed and deployed on Proximal and Archon. Release
+`b46a0e1` passed the required local checks and the production smoke test.
+Evidence below distinguishes the disposable failure tests from deployment.
 The owner authorized implementation and Archon deployment, with different model
 families reviewing both plans and builds. The [proposal](multi-machine-cairn.md)
 defines the intended behavior and preserved contracts.
@@ -25,9 +25,9 @@ establish. Store all credentials and raw runtime artifacts outside the repositor
 
 | Requirement | Evidence needed | Current result |
 | --- | --- | --- |
-| One central API/store, local service on each machine | Installed configuration and observed requests from Proximal and Archon; remote clients hold no DB credentials | Passed in disposable trial; production pending |
-| Simple setup | One enrollment import installs required profiles/service and passes connectivity without per-agent registration secrets | Passed: one actual enrollment import on Archon |
-| Existing CLI/MCP and native hooks work remotely | Real agent on Archon retrieves a selected shareable note, receives work and publishes an explicit reply | Passed at `12bcb49`; Codex sandbox limitation below |
+| One central API/store, local service on each machine | Installed configuration and observed requests from Proximal and Archon; remote clients hold no DB credentials | Passed: Proximal API/store and Archon relay deployed |
+| Simple setup | One enrollment import installs required profiles/service and passes connectivity without per-agent registration secrets | Passed: actual trial and production single-file enrollment on Archon |
+| Existing CLI/MCP and native hooks work remotely | Real agent on Archon retrieves a selected shareable note, receives work and publishes an explicit reply | Passed: trial and production native exchange; sandbox limit below |
 | Collection independent of checkout path | Both machines share collection identity with different workspace metadata | Passed: Archon temporary workspace, canonical Proximal collection |
 | Machine and role isolation | Equal native IDs remain distinct; other-machine completion and ordinary-client observer calls refused | Passed: cross-machine session borrowing refused; delivery unchanged |
 | Hosted privacy and remote operation limits | Local-only body retrieval and wrong-host managed-context registration refused | Passed: hosted history/pull refuse private bodies; remote allowlist enforced |
@@ -37,10 +37,10 @@ establish. Store all credentials and raw runtime artifacts outside the repositor
 | Restarts | Surviving agent and pending completion reconciled after relay/service and central API restart without replacement execution bypass | Passed: SIGKILL relay/stale socket, API restart, persisted reply journal |
 | Revocation and rotation | Revoked profiles refused; replacing credentials preserves intended machine/session identity | Passed: both machine roles revoked; rotation preserves session identity |
 | Restore | Disposable restored DB refuses pre-restore execution/completion; explicit recovery permits fresh authorized work | Passed: real disposable dump/restore and generation fence |
-| Local compatibility | Existing Unix API and local host adapters pass required regression gates | Passed: integrated local and PostgreSQL gates at `12bcb49` |
+| Local compatibility | Existing Unix API and local host adapters pass required regression gates | Passed: required gates and existing local presence plus seven wake services active |
 | Cross-model review | Plan and code review records from opposite family, all material findings resolved | Passed: all material findings resolved; records below |
-| Build and store gates | Required local checks and disposable PostgreSQL integration tests pass on integrated revision | Passed at `12bcb49`: `make check`, `make test-integration`; final revision pending |
-| Deployment and usability | Services restart persistently, installed revision/config verified, operator setup/recovery instructions exercised | Pending |
+| Build and store gates | Required local checks and disposable PostgreSQL integration tests pass on integrated revision | Passed: `make check` and `make test-integration` at `b46a0e1`; unit receipt below |
+| Deployment and usability | Services restart persistently, installed revision/config verified, operator setup/recovery instructions exercised | Passed: matching clean builds, enabled relay/watcher, linger=yes, production smoke |
 
 Network interruptions and database restores run against disposable trial state.
 The existing production memory store is never a test or cleanup target. Production
@@ -120,3 +120,58 @@ DSN. The release candidate is `b46a0e1`.
 The local two-relay test simulates machines with separate profiles, sockets and
 host state. Its watcher case calls the real coordination module directly; the
 Archon trial separately establishes real hooks, MCP and host process behavior.
+
+## Deployment and production verification
+
+Both hosts run the clean stamped binary
+`b46a0e1bc7d9b767e32346cc9a2b42c20dc2fcc4`. Later acceptance-document commits do
+not change that runtime. `make check` and `make test-integration` passed on the
+integrated release. `make test` passed at `c39d809` (the same runtime code,
+before later documentation and acceptance-fixture changes): 418 Python tests,
+15 skipped, plus the Go unit suite. The PostgreSQL integration gate separately
+ran database coverage and the full two-relay scenario.
+
+Proximal's existing API and semantic worker flags were preserved, with a
+loopback listener on port 18889 behind tailnet-only HTTPS port 8789. Tailscale
+Funnel remains off. Schema 054 was applied after a checkpointed database backup
+whose digest was verified. Existing profiles were preserved and the new
+`machine:archon/agent` profile was provisioned. The API restarted once. The
+local presence service and all seven wake services were active afterwards;
+agent-112 retained its existing agent/execution identity and reported Proximal
+attribution through the updated watcher.
+
+Archon imported one production enrollment file after removing its trial
+enrollment. Its `machine status` returned `build=compatible`, `service=active`
+and `linger=yes`. The relay and presence units are enabled. Codex MCP and native
+hooks are installed without widening default permissions. The coordinated
+interactive launcher calls a stable wrapper around the mise shim, so it does
+not pin one version's install path; a Bash alias routes `codex` to that launcher
+because mise activation otherwise takes precedence. Noninteractive callers can
+use `~/.local/bin/codex` explicitly.
+
+The production smoke used a fresh isolated test harness configuration with the
+same reviewed network permission exception as the disposable trial. It made
+only selected memory, completion and response writes. It did not inject faults
+or restore the production database.
+
+| Production check | Observed identity |
+| --- | --- |
+| Archon agent | `53c5d185-8ff5-4b76-a3a2-f376f9e15ab2` (agent-206) |
+| Native Codex session | `01a0e032-ef59-7d91-aed4-7a7dbcb7012a` |
+| Proximal note fully pulled on Archon | `b5e3e085-a832-4c10-bd79-b9d010464af4`, version 1 |
+| Request | `1d1c4d5b-32e8-4655-9be3-eeab99bb55b7` |
+| Exact request source read through MCP history | `39f81b05-784b-41b4-98cc-f64ceb8e44a3`, version 1 |
+| Handled delivery, one attempt | `5acabe9d-4b04-4b6b-96ee-1c038f8defe8` |
+| Completion result read back by controller | `f1d92644-6725-4fda-a461-49ffa98e8a26`, version 1 |
+| Single response with original request causation | `d5dd2149-1f70-49ec-a392-30649b8cedd0` |
+
+The controller checked the stored result, writer, machine attribution, exact
+source MCP call, delivery state, attempt count and response reference. The test
+agent finished normally. Its temporary authentication link was removed.
+
+The disposable API, HTTPS port 8788 and PostgreSQL cluster were stopped. Trial
+enrollment secrets and the finished trial agents' authentication links were
+removed. Selected evidence and rollback backups remain owner-only outside Git.
+Failure injection and test cleanup touched only disposable state. Production
+verification used only the explicitly selected note, request, completion and
+response described above.
