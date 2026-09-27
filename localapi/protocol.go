@@ -65,7 +65,6 @@ func (p ProtocolRange) Effective(server ProtocolRange, declared bool) int {
 	return 0
 }
 
-
 // VersionInfo is the version route's reply: the build identity, which is
 // diagnostic only, and the protocol range, which decides compatibility. A
 // legacy server replies with the build fields alone.
