@@ -1,0 +1,18 @@
+syntax = "proto3";
+package transportbench;
+option go_package = "github.com/halbritt/cairn/experiments/transportbench/proto;benchpb";
+
+// Synthetic selected-text read/verification; no Cairn storage or authority API.
+service TransportBench {
+  rpc Exchange(ExchangeRequest) returns (ExchangeReply);
+}
+message ExchangeRequest {
+  string request_id = 1;
+  string collection = 2;
+  string body = 3;
+}
+message ExchangeReply {
+  string request_id = 1;
+  string body = 2;
+  string sha256 = 3;
+}
