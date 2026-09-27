@@ -6,12 +6,17 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/halbritt/cairn/localapi"
 )
 
 var generated []byte
 
 func document(t *testing.T) (map[string]any, []byte) {
 	t.Helper()
+	if localapi.Protocol.Min != 1 {
+		t.Skip("the committed contract describes the default build, not test-only protocol builds")
+	}
 	if generated == nil {
 		var err error
 		if generated, err = Generate("../../localapi"); err != nil {
@@ -114,7 +119,7 @@ func jsonString(value any) string {
 
 func TestAcceptedAndCanonicalRequestViews(t *testing.T) {
 	doc, raw := document(t)
-	validator, err := NewValidator(raw)
+	validator, err := newSchemaValidator(raw, false)
 	if err != nil {
 		t.Fatal(err)
 	}

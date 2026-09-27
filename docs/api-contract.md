@@ -16,8 +16,10 @@ conformance tests against real handlers.
 
 ## How it is generated
 
-`internal/apicontract` parses the non-test files of `localapi` and type-checks
-them with `go/types`. No hand-kept inventory is involved.
+`internal/apicontract` parses the non-test files of `localapi` that the default
+build selects (`go/build` file matching, so build-tagged variants such as
+`cairn_protocol_min2` are excluded). It type-checks them with `go/types`. No
+hand-kept inventory is involved.
 
 - **Routes.** Every `case "/v1/OPERATION"` clause must contain exactly one
   `serveJSON` call. The operation's request type is the handler's second
@@ -46,6 +48,10 @@ them with `go/types`. No hand-kept inventory is involved.
     forbidden.
   - `x-cairn-request-limit-bytes`: the value of `localapi.RequestBodyLimit`.
   - `x-cairn-retry`: the retry class; see below.
+- **Headers.** `x-cairn-request-headers` lists every header the server reads
+  from an incoming request, whether by literal or constant name, including
+  names passed to helpers with `r.Header`. Generation fails if one of them is
+  not documented as a parameter or as the bearer scheme.
 
 ## Two request views
 
@@ -123,7 +129,9 @@ remote, retry and limit classification. They also pin decisions that matter for
 retry safety and check the two request views on sample messages.
 
 With a disposable database, `conformance_test.go` checks the contract against
-the real handlers:
+the real handlers. It also checks the protocol header, relay header and body
+guard cases against both the server and the contract, and confirms that the
+same `request_id` sent with and without protocol metadata commits one record.
 
 - It validates real success and error replies from representative operations
   strictly against the generated schemas; the error code must also be in the
@@ -141,7 +149,28 @@ The tests do not establish that every field of every response type occurs in
 practice, or that every documented error is reachable. They also do not model
 the domain constraints described above.
 
+## Protocol version
+
+`x-cairn-protocol` records the default build's supported range (`min`, `current`),
+the `Cairn-Protocol` and `Cairn-Relay-Protocol` headers and the reserved
+`cairn_protocol` body guard. Every envelope, success and error, carries the
+replying party's `protocol` range. The accepted request view of every operation
+includes the optional guard field (an integer of at least 1), because the server
+verifies and removes it before strict decoding. The canonical views omit it: only
+a client whose minimum protocol is above 1 sends it. [api-compatibility.md](api-compatibility.md)
+defines the compatibility policy and the change rules; this document does not
+repeat them.
+
+A test-only protocol build (`-tags cairn_protocol_min2`) serves a different
+range, so the contract tests skip under it rather than describe it.
+
+## Validation
+
+The tests validate with `github.com/google/jsonschema-go` (draft 2020-12), not a
+validator written for this generator. They pass the component schemas as `$defs`.
+Conformance tests close generated struct schemas (`additionalProperties: false`)
+so a reply field the contract does not describe fails. The published contract
+keeps responses open.
+
 Compatibility and versioning rules are defined in
-[api-compatibility.md](api-compatibility.md). Protocol headers and the envelope
-protocol field appear in this contract automatically once the server emits
-them.
+[api-compatibility.md](api-compatibility.md).

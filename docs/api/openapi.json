@@ -20,6 +20,26 @@
           "format": "uuid",
           "type": "string"
         }
+      },
+      "Protocol": {
+        "description": "Wire protocol the client speaks: one canonical decimal value. Absent means protocol 1, or defers to the body guard. Malformed or duplicate: 400 INVALID_REQUEST. Outside the server's range: 426 PROTOCOL_UNSUPPORTED. Checked after authentication and before any effect; never affects authority.",
+        "in": "header",
+        "name": "Cairn-Protocol",
+        "required": false,
+        "schema": {
+          "pattern": "^[1-9][0-9]{0,3}$",
+          "type": "string"
+        }
+      },
+      "RelayProtocol": {
+        "description": "Set by the relay to its own protocol, overwriting any client value; diagnostic only. Malformed: 400 INVALID_REQUEST.",
+        "in": "header",
+        "name": "Cairn-Relay-Protocol",
+        "required": false,
+        "schema": {
+          "pattern": "^[1-9][0-9]{0,3}$",
+          "type": "string"
+        }
       }
     },
     "responses": {
@@ -60,41 +80,6 @@
             }
           }
         ]
-      },
-      "buildinfo.Info": {
-        "properties": {
-          "go_version": {
-            "type": "string"
-          },
-          "module_version": {
-            "type": "string"
-          },
-          "schema": {
-            "type": "string"
-          },
-          "vcs": {
-            "type": "string"
-          },
-          "vcs_modified": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "vcs_revision": {
-            "type": "string"
-          },
-          "vcs_time": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "go_version",
-          "schema",
-          "vcs_modified"
-        ],
-        "type": "object",
-        "x-go-type": "github.com/halbritt/cairn/internal/buildinfo.Info"
       },
       "core.AdvisoryConflict": {
         "properties": {
@@ -9042,6 +9027,67 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.WorkerSpec"
       },
+      "localapi.ProtocolRange": {
+        "properties": {
+          "current": {
+            "type": "integer"
+          },
+          "min": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "current",
+          "min"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.ProtocolRange"
+      },
+      "localapi.VersionInfo": {
+        "properties": {
+          "go_version": {
+            "type": "string"
+          },
+          "module_version": {
+            "type": "string"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/localapi.ProtocolRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema": {
+            "type": "string"
+          },
+          "vcs": {
+            "type": "string"
+          },
+          "vcs_modified": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "vcs_revision": {
+            "type": "string"
+          },
+          "vcs_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "go_version",
+          "schema",
+          "vcs_modified"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.VersionInfo"
+      },
       "localapi.recordRequest": {
         "properties": {
           "record_id": {
@@ -9076,6 +9122,9 @@
           "ok": {
             "type": "boolean"
           },
+          "protocol": {
+            "$ref": "#/components/schemas/localapi.ProtocolRange"
+          },
           "refusal_id": {
             "type": "string"
           },
@@ -9088,6 +9137,7 @@
         },
         "required": [
           "ok",
+          "protocol",
           "schema",
           "status"
         ],
@@ -9120,6 +9170,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -9128,7 +9184,48 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.UpdateAgentRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "expected_revision": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "metadata": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.AgentMetadata.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "session": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.UpdateAgentRequest"
                   },
                   {
                     "type": "null"
@@ -9206,6 +9303,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -9214,7 +9317,88 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.AgentDirectoryQuery.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "agent_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "delivery_mode": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "harness": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "include_offline": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "machine_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "model": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "project": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "state": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "workspace": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.AgentDirectoryQuery"
                   },
                   {
                     "type": "null"
@@ -9292,6 +9476,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -9300,7 +9490,28 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "agent_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "execution_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.AgentSessionRef"
                   },
                   {
                     "type": "null"
@@ -9378,6 +9589,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -9386,7 +9603,28 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "agent_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "execution_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.AgentSessionRef"
                   },
                   {
                     "type": "null"
@@ -9464,6 +9702,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -9472,7 +9716,50 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.RegisterAgentRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "binding": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "metadata": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.AgentMetadata.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "native_session_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.RegisterAgentRequest"
                   },
                   {
                     "type": "null"
@@ -9550,6 +9837,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -9558,7 +9851,88 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.AgentDirectoryQuery.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "agent_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "delivery_mode": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "harness": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "include_offline": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "machine_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "model": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "project": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "state": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "workspace": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.AgentDirectoryQuery"
                   },
                   {
                     "type": "null"
@@ -9636,6 +10010,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -9644,7 +10024,46 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.AppendRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "body": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "expected_version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.AppendRequest"
                   },
                   {
                     "type": "null"
@@ -9722,6 +10141,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -9730,7 +10155,79 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.AssessmentRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "error_signature_sha256": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "evidence_ids": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "expected_version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "failure_domain": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "failure_kind": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "method": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "task_outcome": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.AssessmentRequest"
                   },
                   {
                     "type": "null"
@@ -9806,6 +10303,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -9814,6 +10317,11 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "cairn_protocol": {
+                    "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "receipt_id": {
                     "type": [
                       "string",
@@ -9909,6 +10417,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -9922,6 +10436,11 @@
                       "integer",
                       "null"
                     ]
+                  },
+                  "cairn_protocol": {
+                    "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                    "minimum": 1,
+                    "type": "integer"
                   },
                   "limit": {
                     "type": [
@@ -10026,6 +10545,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -10034,7 +10559,70 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.RunBindingRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "binding_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "capability_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "command_sha256": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "revision": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "task_class": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "workspace_sha256": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.RunBindingRequest"
                   },
                   {
                     "type": "null"
@@ -10110,6 +10698,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -10118,7 +10712,28 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.EvidenceCheckRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "evidence_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.EvidenceCheckRequest"
                   },
                   {
                     "type": "null"
@@ -10194,6 +10809,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -10202,7 +10823,49 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.CiteRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "evidence_citations": {
+                        "items": {
+                          "$ref": "#/components/schemas/core.EvidenceCitationRequest.accepted"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "expected_version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.CiteRequest"
                   },
                   {
                     "type": "null"
@@ -10280,6 +10943,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -10288,6 +10957,11 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "cairn_protocol": {
+                    "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "receipt_id": {
                     "type": [
                       "string",
@@ -10378,6 +11052,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -10386,7 +11066,127 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.CompileRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "advisory_conflicts": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "available_tokens": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "browse_offset": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "context": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.ContextPins.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "entities": {
+                        "items": {
+                          "$ref": "#/components/schemas/core.EntityRef.accepted"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "error_signature_sha256": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "expansion_reader": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "kinds": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "mode": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "page_offset": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "purpose": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "query": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "scope": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.Scope.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "semantic": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.CompileRequest"
                   },
                   {
                     "type": "null"
@@ -10464,6 +11264,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -10472,6 +11278,11 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "cairn_protocol": {
+                    "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "conflict_id": {
                     "type": [
                       "string",
@@ -10561,6 +11372,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -10569,7 +11386,46 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.ConflictsRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "include_resolved": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "offset": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.ConflictsRequest"
                   },
                   {
                     "type": "null"
@@ -10645,6 +11501,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -10653,7 +11515,32 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.CreateRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "draft": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.Draft.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.CreateRequest"
                   },
                   {
                     "type": "null"
@@ -10731,6 +11618,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -10739,7 +11632,34 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.DeleteRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "expected_version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.DeleteRequest"
                   },
                   {
                     "type": "null"
@@ -10817,6 +11737,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -10825,7 +11751,58 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.DeliveryRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "adapter": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "assurance": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "blind_spots": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "carrier": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "rendered_sha256": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.DeliveryRequest"
                   },
                   {
                     "type": "null"
@@ -10901,6 +11878,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -10909,7 +11892,44 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.EditRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "draft": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.Draft.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "expected_version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.EditRequest"
                   },
                   {
                     "type": "null"
@@ -10987,6 +12007,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -10995,7 +12021,63 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.CompleteEventRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "code": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "delivery_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "disposition": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "draft": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.Draft.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "lease_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.CompleteEventRequest"
                   },
                   {
                     "type": "null"
@@ -11073,6 +12155,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -11081,7 +12169,34 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.ResponseGroupQuery.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "event_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.ResponseGroupQuery"
                   },
                   {
                     "type": "null"
@@ -11159,6 +12274,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -11167,7 +12288,40 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.ResponseGroupListRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "state": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.ResponseGroupListRequest"
                   },
                   {
                     "type": "null"
@@ -11245,6 +12399,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -11253,7 +12413,34 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.EventStatusRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "event_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.EventStatusRequest"
                   },
                   {
                     "type": "null"
@@ -11331,6 +12518,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -11339,7 +12532,46 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.EventQuery.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "agent": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "topic": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.EventQuery"
                   },
                   {
                     "type": "null"
@@ -11417,6 +12649,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -11425,7 +12663,46 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.EventQuery.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "agent": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "topic": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.EventQuery"
                   },
                   {
                     "type": "null"
@@ -11501,6 +12778,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -11509,7 +12792,34 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.NextEventRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "agent": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "lease_seconds": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.NextEventRequest"
                   },
                   {
                     "type": "null"
@@ -11585,6 +12895,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -11593,7 +12909,131 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.PublishEventRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "admission_expires_at": {
+                        "format": "date-time",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "causation_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "correlation_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "destination": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.EventDestination.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "kind": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "pool": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.PoolRequirements.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ref": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.RecordVersionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "resolution": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.AgentResolution.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "response_group": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.ResponseGroupSpec.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "task_deadline": {
+                        "format": "date-time",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.PublishEventRequest"
                   },
                   {
                     "type": "null"
@@ -11671,6 +13111,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -11679,7 +13125,34 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.EventLeaseRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "delivery_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "lease_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "lease_seconds": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.EventLeaseRequest"
                   },
                   {
                     "type": "null"
@@ -11757,6 +13230,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -11765,7 +13244,34 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.EventLeaseRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "delivery_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "lease_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "lease_seconds": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.EventLeaseRequest"
                   },
                   {
                     "type": "null"
@@ -11841,6 +13347,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -11849,7 +13361,46 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.SubscriptionRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "active": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "agent": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "topic": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.SubscriptionRequest"
                   },
                   {
                     "type": "null"
@@ -11927,6 +13478,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -11935,7 +13492,46 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.EventQuery.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "after": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "agent": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "topic": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.EventQuery"
                   },
                   {
                     "type": "null"
@@ -12013,6 +13609,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -12021,7 +13623,46 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.InboxWatchRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "agent": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "cursor": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "topic": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.InboxWatchRequest"
                   },
                   {
                     "type": "null"
@@ -12099,6 +13740,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -12107,7 +13754,52 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.EvidenceRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "body": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "body_base64": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "sensitivity": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "source": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.EvidenceRequest"
                   },
                   {
                     "type": "null"
@@ -12185,6 +13877,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -12193,7 +13891,34 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.EvidenceImpactRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "evidence_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "record_offset": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "use_offset": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.EvidenceImpactRequest"
                   },
                   {
                     "type": "null"
@@ -12269,6 +13994,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -12277,7 +14008,51 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.ExpandRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "handle": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "span": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.ByteSpanRequest.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.ExpandRequest"
                   },
                   {
                     "type": "null"
@@ -12355,6 +14130,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -12363,7 +14144,63 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.ExpandEvidenceRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "evidence_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "expected_sha256": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "handle": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "span": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.ByteSpanRequest.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.ExpandEvidenceRequest"
                   },
                   {
                     "type": "null"
@@ -12441,6 +14278,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -12449,7 +14292,22 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/localapi.recordRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/localapi.recordRequest"
                   },
                   {
                     "type": "null"
@@ -12527,6 +14385,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -12535,7 +14399,63 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.RecordHistoryRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "before_version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "span": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.ByteSpanRequest.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.RecordHistoryRequest"
                   },
                   {
                     "type": "null"
@@ -12613,6 +14533,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -12621,7 +14547,127 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.CompileRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "advisory_conflicts": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "available_tokens": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "browse_offset": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "context": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.ContextPins.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "entities": {
+                        "items": {
+                          "$ref": "#/components/schemas/core.EntityRef.accepted"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "error_signature_sha256": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "expansion_reader": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "kinds": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "mode": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "page_offset": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "purpose": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "query": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "scope": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.Scope.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "semantic": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.CompileRequest"
                   },
                   {
                     "type": "null"
@@ -12699,6 +14745,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -12707,7 +14759,46 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.RunRetrievalRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "expected_reader": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "method": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "retrieval_receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "run_receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.RunRetrievalRequest"
                   },
                   {
                     "type": "null"
@@ -12783,6 +14874,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -12791,7 +14888,64 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.OutcomeRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "duration_ms": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "exit_code": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "process_state": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "signal": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "stderr_sha256": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "stdout_sha256": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.OutcomeRequest"
                   },
                   {
                     "type": "null"
@@ -12867,6 +15021,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -12875,7 +15035,22 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.WorkerListRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.WorkerListRequest"
                   },
                   {
                     "type": "null"
@@ -12951,6 +15126,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -12959,7 +15140,22 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/localapi.recordRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/localapi.recordRequest"
                   },
                   {
                     "type": "null"
@@ -13035,6 +15231,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -13043,7 +15245,37 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.RecompileRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "entities": {
+                        "items": {
+                          "$ref": "#/components/schemas/core.EntityRef.accepted"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "query": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.RecompileRequest"
                   },
                   {
                     "type": "null"
@@ -13133,6 +15365,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -13141,6 +15379,11 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "cairn_protocol": {
+                    "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "refusal_id": {
                     "type": [
                       "string",
@@ -13230,6 +15473,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -13238,7 +15487,52 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.ManagedContextRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "directory": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "directory_device": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "directory_inode": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "ownership_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.ManagedContextRequest"
                   },
                   {
                     "type": "null"
@@ -13314,6 +15608,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -13322,7 +15622,52 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.ReplaceRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "expected_version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "new_text": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "old_text": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.ReplaceRequest"
                   },
                   {
                     "type": "null"
@@ -13400,6 +15745,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -13408,7 +15759,46 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.ReviseRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "body": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "expected_version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.ReviseRequest"
                   },
                   {
                     "type": "null"
@@ -13486,6 +15876,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -13494,7 +15890,28 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.RunPackageRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "seal": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.RunPackageRequest"
                   },
                   {
                     "type": "null"
@@ -13570,6 +15987,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -13578,7 +16001,28 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.RunPackageRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "seal": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.RunPackageRequest"
                   },
                   {
                     "type": "null"
@@ -13654,6 +16098,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -13662,7 +16112,52 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.RunReportRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "offset": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "policy_revision": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "run_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "task_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.RunReportRequest"
                   },
                   {
                     "type": "null"
@@ -13738,6 +16233,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -13746,6 +16247,11 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "cairn_protocol": {
+                    "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "receipt_id": {
                     "type": [
                       "string",
@@ -13835,6 +16341,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -13843,7 +16355,50 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.SessionInboxClaim.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "delivery_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "native_turn_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "session": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "turn_exclusive": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.SessionInboxClaim"
                   },
                   {
                     "type": "null"
@@ -13921,6 +16476,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -13929,7 +16490,28 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "agent_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "execution_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.AgentSessionRef"
                   },
                   {
                     "type": "null"
@@ -14007,6 +16589,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -14015,7 +16603,28 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "agent_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "execution_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.AgentSessionRef"
                   },
                   {
                     "type": "null"
@@ -14093,6 +16702,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -14101,7 +16716,44 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.SessionInboxReconcile.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "session": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.SessionInboxReconcile"
                   },
                   {
                     "type": "null"
@@ -14179,6 +16831,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -14187,7 +16845,47 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.SessionToolCapture.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "items": {
+                        "items": {
+                          "$ref": "#/components/schemas/core.SessionToolItem.accepted"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "session": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.SessionToolCapture"
                   },
                   {
                     "type": "null"
@@ -14263,6 +16961,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -14271,7 +16975,71 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.SessionToolStopReport.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "capture_state": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "owner_join": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "session": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "terminal_scan": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "tools": {
+                        "items": {
+                          "$ref": "#/components/schemas/core.SessionToolStop.accepted"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "turn_stop": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.SessionToolStopReport"
                   },
                   {
                     "type": "null"
@@ -14347,6 +17115,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -14355,7 +17129,50 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.SpawnRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "delegate": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "dispatcher": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "scope": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.Scope.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.SpawnRequest"
                   },
                   {
                     "type": "null"
@@ -14431,6 +17248,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -14439,7 +17262,62 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.SupersedeRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "expected_version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "grant_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "preview_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "replacement": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.RecordVersionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.SupersedeRequest"
                   },
                   {
                     "type": "null"
@@ -14517,6 +17395,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -14525,7 +17409,22 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/localapi.recordRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/localapi.recordRequest"
                   },
                   {
                     "type": "null"
@@ -14601,6 +17500,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -14609,7 +17514,50 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.TaskStateRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "expected_version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "method": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "scope": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.Scope.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "state": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.TaskStateRequest"
                   },
                   {
                     "type": "null"
@@ -14685,6 +17633,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -14693,7 +17647,40 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.TerminalRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "result_ref": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "state": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.TerminalRequest"
                   },
                   {
                     "type": "null"
@@ -14769,6 +17756,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -14777,7 +17770,52 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.UsageRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "method": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "signal": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.UsageRequest"
                   },
                   {
                     "type": "null"
@@ -14855,6 +17893,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -14863,7 +17907,40 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.UsageCoverageRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "coverage": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "method": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.UsageCoverageRequest"
                   },
                   {
                     "type": "null"
@@ -14941,6 +18018,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -14949,7 +18032,52 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.UseReportRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "offset": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "run_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "task_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.UseReportRequest"
                   },
                   {
                     "type": "null"
@@ -15025,6 +18153,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -15032,7 +18166,13 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
-                "properties": {},
+                "properties": {
+                  "cairn_protocol": {
+                    "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
                 "type": [
                   "object",
                   "null"
@@ -15050,7 +18190,7 @@
                 "schema": {
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/buildinfo.Info"
+                      "$ref": "#/components/schemas/localapi.VersionInfo"
                     },
                     "ok": {
                       "const": true
@@ -15084,7 +18224,7 @@
         },
         "x-cairn-go-types": {
           "request": "struct{}",
-          "response": "github.com/halbritt/cairn/internal/buildinfo.Info"
+          "response": "github.com/halbritt/cairn/localapi.VersionInfo"
         },
         "x-cairn-local-roles": [
           "agent",
@@ -15111,6 +18251,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -15119,7 +18265,46 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.WakeQuery.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "active": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "after": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "limit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.WakeQuery"
                   },
                   {
                     "type": "null"
@@ -15195,6 +18380,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -15203,7 +18394,86 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.WakeChangeRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "operation": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "process_state": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "provider_failure": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.ProviderFailure.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "session": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.WakeChangeRequest"
                   },
                   {
                     "type": "null"
@@ -15279,6 +18549,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -15287,7 +18563,34 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.WakeClaimRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "worker_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.WakeClaimRequest"
                   },
                   {
                     "type": "null"
@@ -15363,6 +18666,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -15371,7 +18680,22 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.WakeControlRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.WakeControlRequest"
                   },
                   {
                     "type": "null"
@@ -15447,6 +18771,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -15455,7 +18785,59 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.WorkerHealthRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "expected_revision": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "health": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "retry_at": {
+                        "format": "date-time",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "supervisor_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.WorkerHealthRequest"
                   },
                   {
                     "type": "null"
@@ -15531,6 +18913,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -15539,7 +18927,28 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.WorkerHeartbeatRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "supervisor_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.WorkerHeartbeatRequest"
                   },
                   {
                     "type": "null"
@@ -15615,6 +19024,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -15623,7 +19038,22 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.WorkerListRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.WorkerListRequest"
                   },
                   {
                     "type": "null"
@@ -15699,6 +19129,12 @@
           },
           {
             "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
           }
         ],
         "requestBody": {
@@ -15707,7 +19143,38 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/core.WorkerRegisterRequest.accepted"
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "repo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "request_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "spec": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.WorkerSpec.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.WorkerRegisterRequest"
                   },
                   {
                     "type": "null"
@@ -15845,6 +19312,11 @@
     {
       "http_status": 400,
       "code": "INVALID_REQUEST",
+      "source": "protocol.go"
+    },
+    {
+      "http_status": 400,
+      "code": "INVALID_REQUEST",
       "source": "relay.go"
     },
     {
@@ -15891,6 +19363,11 @@
       "http_status": 409,
       "code": "POOL_PAUSED",
       "source": "serveJSON"
+    },
+    {
+      "http_status": 426,
+      "code": "PROTOCOL_UNSUPPORTED",
+      "source": "protocol.go"
     },
     {
       "http_status": 500,
@@ -15974,10 +19451,20 @@
     "request-timeout-seconds": 30,
     "response-body-bytes": 8388608
   },
+  "x-cairn-protocol": {
+    "body-field": "cairn_protocol",
+    "current": 2,
+    "header": "Cairn-Protocol",
+    "min": 1,
+    "policy": "docs/api-compatibility.md",
+    "relay-header": "Cairn-Relay-Protocol"
+  },
   "x-cairn-request-headers": [
     "Authorization",
     "Cairn-Agent-ID",
-    "Cairn-Execution-ID"
+    "Cairn-Execution-ID",
+    "Cairn-Protocol",
+    "Cairn-Relay-Protocol"
   ],
   "x-cairn-retry-classes": {
     "idempotent": "Repeating has the same effect as one call (presence refresh, leave, lease extension). Safe to repeat with the same arguments.",
@@ -16017,6 +19504,7 @@
     "POLICY_UNENFORCEABLE",
     "POOL_FULL",
     "POOL_PAUSED",
+    "PROTOCOL_UNSUPPORTED",
     "PURGE_UNRECORDED",
     "RECOVERY_UNINITIALIZED",
     "REFUSAL_UNRECORDED",

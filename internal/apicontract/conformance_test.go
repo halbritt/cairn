@@ -23,7 +23,7 @@ type conformance struct {
 	t         *testing.T
 	server    *localapi.Server
 	remote    http.Handler
-	validator *Validator
+	validator *schemaValidator
 	ops       map[string]map[string]any
 	errors    map[string]bool
 	repo      string
@@ -46,11 +46,10 @@ func newConformance(t *testing.T) *conformance {
 	}
 	fixture.Close()
 	doc, raw := document(t)
-	validator, err := NewValidator(raw)
+	validator, err := newSchemaValidator(raw, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	validator.Strict = true
 	c := &conformance{t: t, validator: validator, ops: operations(t, doc), errors: map[string]bool{}, repo: "/contract/" + uuid.NewString(), tokens: map[string]string{}}
 	// Store codes serveJSON does not map use the default status.
 	for _, code := range doc["x-cairn-store-codes"].([]any) {
@@ -256,5 +255,53 @@ func TestRemoteAndDestinationClassificationMatchesServer(t *testing.T) {
 				t.Errorf("%s: session headers are documented as forbidden but got %d", operation, with.status)
 			}
 		}
+	}
+}
+
+// TestProtocolSurfaceMatchesContract checks the documented protocol header,
+// relay header and body guard against the real handlers, including that the
+// guard and header do not change a request's idempotency identity.
+func TestProtocolSurfaceMatchesContract(t *testing.T) {
+	c := newConformance(t)
+	for header, want := range map[string]int{"1": 200, "2": 200, "3": 426, "02": 400, "two": 400, "-1": 400} {
+		out := c.call(c.server, "local", "version", `{}`, map[string]string{"Cairn-Protocol": header})
+		if out.status != want {
+			t.Errorf("Cairn-Protocol %q: HTTP %d, want %d (%s)", header, out.status, want, out.body)
+		}
+	}
+	if out := c.call(c.server, "local", "version", `{}`, map[string]string{"Cairn-Relay-Protocol": "x"}); out.status != 400 {
+		t.Errorf("malformed Cairn-Relay-Protocol: HTTP %d", out.status)
+	}
+	accepted := c.ops["version"]["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"]
+	for body, want := range map[string]bool{`{"cairn_protocol":1}`: true, `{"cairn_protocol":0}`: false, `{"cairn_protocol":"1"}`: false} {
+		out := c.call(c.server, "local", "version", body, nil)
+		if server := out.status == 200; server != want {
+			t.Errorf("body %s: server accepted=%v, want %v (%s)", body, server, want, out.body)
+		}
+		if schema := c.validator.Validate(accepted, []byte(body)) == nil; schema != want {
+			t.Errorf("body %s: contract accepted=%v, want %v", body, schema, want)
+		}
+	}
+	id := uuid.NewString()
+	body := `"request_id":"` + id + `","draft":{"kind":"note","body":"protocol dedupe","scope":{"repo":"` + c.repo + `","task_id":"t","run_id":"r"},"claim_type":"self","sensitivity":"shareable"}`
+	var records []string
+	for _, variant := range []struct {
+		body    string
+		headers map[string]string
+	}{
+		{`{` + body + `}`, nil},
+		{`{` + body + `}`, map[string]string{"Cairn-Protocol": "2"}},
+		{`{"cairn_protocol":1,` + body + `}`, map[string]string{"Cairn-Protocol": "1"}},
+	} {
+		out := c.call(c.server, "local", "create", variant.body, variant.headers)
+		if out.status != 200 {
+			t.Fatalf("create variant: HTTP %d %s", out.status, out.body)
+		}
+		var record core.Record
+		_ = json.Unmarshal(out.parsed.Data, &record)
+		records = append(records, record.RecordID)
+	}
+	if records[0] != records[1] || records[1] != records[2] {
+		t.Fatalf("protocol metadata changed the request identity: %v", records)
 	}
 }

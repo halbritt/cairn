@@ -24,8 +24,10 @@ func Build(source *Source) (Document, error) {
 	var unclassified []string
 	served := map[string]bool{}
 	for _, route := range source.Routes {
-		// encoding/json also accepts a top-level null as the zero request.
-		requestSchema := nullable(r.schema(route.Request, accepted))
+		// encoding/json also accepts a top-level null as the zero request. The
+		// reserved protocol guard is verified and stripped before decoding, so
+		// only the top-level accepted view carries it.
+		requestSchema := nullable(withProtocolGuard(r, r.schema(route.Request, accepted)))
 		canonicalRequest := r.schema(route.Request, canonical)
 		responseSchema := r.schema(route.Response, canonical)
 		for _, operation := range route.Operations {
@@ -69,6 +71,8 @@ func Build(source *Source) (Document, error) {
 				"parameters": []any{
 					map[string]any{"$ref": "#/components/parameters/AgentID"},
 					map[string]any{"$ref": "#/components/parameters/ExecutionID"},
+					map[string]any{"$ref": "#/components/parameters/Protocol"},
+					map[string]any{"$ref": "#/components/parameters/RelayProtocol"},
 				},
 				"responses": map[string]any{
 					"200": map[string]any{
@@ -113,6 +117,12 @@ func Build(source *Source) (Document, error) {
 			return nil, fmt.Errorf("%s has no remote allowlist decision", path)
 		}
 	}
+	documented := map[string]bool{"Authorization": true, "Cairn-Agent-ID": true, "Cairn-Execution-ID": true, localapi.ProtocolHeader: true, localapi.RelayProtocolHeader: true}
+	for _, header := range source.Headers {
+		if !documented[header] {
+			return nil, fmt.Errorf("request header %s is read by the server but not documented", header)
+		}
+	}
 	envelope := r.schema(source.Envelope, canonical)
 	if r.err != nil {
 		return nil, r.err
@@ -155,8 +165,10 @@ func Build(source *Source) (Document, error) {
 				"description": "Authorization: Bearer <profile token>, at most 512 bytes. The token's configured profile fixes principal, collection, role (agent|observer) and destination (local|hosted); no request field can change them.",
 			}},
 			"parameters": map[string]any{
-				"AgentID":     map[string]any{"name": "Cairn-Agent-ID", "in": "header", "required": false, "schema": map[string]any{"type": "string", "format": "uuid"}, "description": "Registered session UUID. Send together with Cairn-Execution-ID to act as that session's inbox; forbidden on agent-* directory operations."},
-				"ExecutionID": map[string]any{"name": "Cairn-Execution-ID", "in": "header", "required": false, "schema": map[string]any{"type": "string", "format": "uuid"}, "description": "Current execution UUID of the session named by Cairn-Agent-ID. A replaced or restored execution is refused with STALE_SESSION."},
+				"AgentID":       map[string]any{"name": "Cairn-Agent-ID", "in": "header", "required": false, "schema": map[string]any{"type": "string", "format": "uuid"}, "description": "Registered session UUID. Send together with Cairn-Execution-ID to act as that session's inbox; forbidden on agent-* directory operations."},
+				"Protocol":      map[string]any{"name": localapi.ProtocolHeader, "in": "header", "required": false, "schema": map[string]any{"type": "string", "pattern": "^[1-9][0-9]{0,3}$"}, "description": "Wire protocol the client speaks: one canonical decimal value. Absent means protocol 1, or defers to the body guard. Malformed or duplicate: 400 INVALID_REQUEST. Outside the server's range: 426 PROTOCOL_UNSUPPORTED. Checked after authentication and before any effect; never affects authority."},
+				"RelayProtocol": map[string]any{"name": localapi.RelayProtocolHeader, "in": "header", "required": false, "schema": map[string]any{"type": "string", "pattern": "^[1-9][0-9]{0,3}$"}, "description": "Set by the relay to its own protocol, overwriting any client value; diagnostic only. Malformed: 400 INVALID_REQUEST."},
+				"ExecutionID":   map[string]any{"name": "Cairn-Execution-ID", "in": "header", "required": false, "schema": map[string]any{"type": "string", "format": "uuid"}, "description": "Current execution UUID of the session named by Cairn-Agent-ID. A replaced or restored execution is refused with STALE_SESSION."},
 			},
 			"responses": map[string]any{"Error": map[string]any{
 				"description": "Error envelope. HTTP status and code pairs are listed in x-cairn-errors.",
@@ -175,8 +187,36 @@ func Build(source *Source) (Document, error) {
 			"request-timeout-seconds":   30,
 		},
 		"x-cairn-retry-classes": retryClasses,
+		"x-cairn-protocol": map[string]any{
+			"min": localapi.Protocol.Min, "current": localapi.Protocol.Current,
+			"header": localapi.ProtocolHeader, "relay-header": localapi.RelayProtocolHeader,
+			"body-field": localapi.BodyProtocolField,
+			"policy":     "docs/api-compatibility.md",
+		},
 	}
 	return document, nil
+}
+
+// withProtocolGuard returns the top-level accepted request with the reserved
+// protocol guard field, which serveJSON verifies and strips before decoding.
+func withProtocolGuard(r *reflector, schema map[string]any) map[string]any {
+	component := schema
+	if ref, ok := schema["$ref"].(string); ok {
+		component, _ = r.schemas[strings.TrimPrefix(ref, "#/components/schemas/")].(map[string]any)
+	}
+	if component == nil || component["type"] != "object" {
+		return schema
+	}
+	copy := map[string]any{}
+	for key, value := range component {
+		copy[key] = value
+	}
+	properties := map[string]any{localapi.BodyProtocolField: map[string]any{"type": "integer", "minimum": 1, "description": "Reserved client minimum protocol guard; verified and removed before decoding. Older servers refuse it as an unknown field."}}
+	for name, property := range component["properties"].(map[string]any) {
+		properties[name] = property
+	}
+	copy["properties"] = properties
+	return copy
 }
 
 func withError(schemas map[string]any, errorEnvelope map[string]any) map[string]any {

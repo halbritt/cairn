@@ -7,6 +7,8 @@ package apicontract
 import (
 	"fmt"
 	"go/ast"
+	"go/build"
+	"go/constant"
 	"go/importer"
 	"go/parser"
 	"go/token"
@@ -79,6 +81,9 @@ func scanCodes(dir string, codes map[string]bool) error {
 		if strings.HasSuffix(name, "_test.go") {
 			continue
 		}
+		if match, err := build.Default.MatchFile(filepath.Dir(name), filepath.Base(name)); err != nil || !match {
+			continue
+		}
 		file, err := parser.ParseFile(fset, name, nil, 0)
 		if err != nil {
 			return err
@@ -116,7 +121,14 @@ func load(dir string) (*Source, error) {
 		if strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		file, err := parser.ParseFile(fset, name, nil, 0)
+		// Select files exactly as the default build does (build tags, GOOS).
+		if match, err := build.Default.MatchFile(filepath.Dir(name), filepath.Base(name)); err != nil || !match {
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, parser.ParseComments)
 		if err != nil {
 			return nil, err
 		}
@@ -206,7 +218,7 @@ func (s *Source) scanFile(file *ast.File, info *types.Info, headers map[string]b
 			}
 		case *ast.CallExpr:
 			s.scanWriteError(node)
-			s.scanHeader(node, headers)
+			s.scanHeader(node, headers, info)
 		case *ast.CaseClause:
 			var operations []string
 			for _, expr := range node.List {
@@ -223,8 +235,26 @@ func (s *Source) scanFile(file *ast.File, info *types.Info, headers map[string]b
 	return failure
 }
 
-// scanHeader records header names read from requests.
-func (s *Source) scanHeader(call *ast.CallExpr, headers map[string]bool) {
+// scanHeader records header names read from incoming requests, whether the
+// name is a literal or a constant.
+func (s *Source) scanHeader(call *ast.CallExpr, headers map[string]bool, info *types.Info) {
+	// Helpers such as ParseProtocol(r.Header, ProtocolHeader) receive the
+	// request's headers and the name separately.
+	passesRequestHeader := false
+	for _, arg := range call.Args {
+		if field, ok := arg.(*ast.SelectorExpr); ok && field.Sel.Name == "Header" {
+			if receiver := info.Types[field.X].Type; receiver != nil && receiver.String() == "*net/http.Request" {
+				passesRequestHeader = true
+			}
+		}
+	}
+	if passesRequestHeader {
+		for _, arg := range call.Args {
+			if value := info.Types[arg].Value; value != nil && value.Kind() == constant.String {
+				headers[constant.StringVal(value)] = true
+			}
+		}
+	}
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || (selector.Sel.Name != "Get" && selector.Sel.Name != "Values") || len(call.Args) != 1 {
 		return
@@ -233,11 +263,11 @@ func (s *Source) scanHeader(call *ast.CallExpr, headers map[string]bool) {
 	if !ok || inner.Sel.Name != "Header" {
 		return
 	}
-	if request, ok := inner.X.(*ast.Ident); !ok || request.Name != "r" {
-		return // only the incoming request, not relay replies
+	if receiver := info.Types[inner.X].Type; receiver == nil || receiver.String() != "*net/http.Request" {
+		return // replies read by the relay are not request headers
 	}
-	if name, ok := stringLiteral(call.Args[0]); ok {
-		headers[name] = true
+	if value := info.Types[call.Args[0]].Value; value != nil && value.Kind() == constant.String {
+		headers[constant.StringVal(value)] = true
 	}
 }
 
