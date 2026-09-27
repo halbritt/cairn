@@ -16,6 +16,7 @@ import secrets
 import socket
 import statistics
 import subprocess
+import threading
 import time
 from unittest.mock import patch
 import uuid
@@ -111,6 +112,26 @@ def publish(socket_path, token, source, destination):
                    ref=dict(record_id=source, version=1),
                    destination=dict(type="agent", name=destination))
     return api(socket_path, token, "event-publish", request)
+
+
+def sleep_until(target_ns):
+    remaining = target_ns - time.monotonic_ns()
+    if remaining > 0:
+        time.sleep(remaining / 1_000_000_000)
+
+
+def settle_native(coordination, config, state, state_path, state_dir, event, turn):
+    attempt = state["inbox_attempt"]
+    context_path = state_dir / "inbox" / (attempt["attempt_id"] + ".json")
+    context = json.loads(context_path.read_text())
+    assert context["event_id"] == event["event_id"]
+    ack = subprocess.run(context["acknowledgement"], capture_output=True,
+                         text=True, timeout=30, check=True)
+    assert json.loads(ack.stdout)["status"] == "OK"
+    coordination.watch_inbox(config, state, state_path)
+    assert "inbox_intent" not in state
+    coordination.inbox_context(config, state, state_path,
+        dict(event="Stop", phase="idle", native_turn_id=turn))
 
 
 def coordination_module():
@@ -225,7 +246,7 @@ def run(args):
         state_path = state_dir / "session.json"
         registration = dict(request_id=str(uuid.uuid4()), binding="bench-native",
             native_session_id="notification-bench-native", metadata=dict(harness="codex",
-            project="cairn", workspace=str(root), state="busy",
+            project="cairn", workspace=str(root), state="idle",
             delivery_mode="existing-session"))
         session, _ = api(relay, recv_token, "agent-register", registration)
         native_config = dict(cairn=str(args.binary), socket=str(relay),
@@ -253,20 +274,82 @@ def run(args):
                     dict(event="UserPromptSubmit", phase="busy", native_turn_id=turn))
                 elapsed = time.monotonic_ns() - start
                 assert "Cairn has a notice" in prompt
-                attempt = state["inbox_attempt"]
-                context_path = state_dir / "inbox" / (attempt["attempt_id"] + ".json")
-                context = json.loads(context_path.read_text())
-                assert context["event_id"] == event["event_id"]
-                ack = subprocess.run(context["acknowledgement"], capture_output=True,
-                                     text=True, timeout=30, check=True)
-                assert json.loads(ack.stdout)["status"] == "OK"
-                coordination.watch_inbox(native_config, state, state_path)
-                assert "inbox_intent" not in state
-                coordination.inbox_context(native_config, state, state_path,
-                    dict(event="Stop", phase="idle", native_turn_id=turn))
+                settle_native(coordination, native_config, state, state_path,
+                              state_dir, event, turn)
                 if i >= args.warmup:
                     native_boundary.append(elapsed)
         samples["native_context_boundary"] = native_boundary
+
+        interval_ns = args.scheduler_interval_ms * 1_000_000
+        scheduler_trials = []
+        scheduler_samples = {key: [] for key in (
+            "publish_timer_overshoot", "poll_timer_overshoot",
+            "publish_ack_to_poll_start", "poll_start_to_ready_return",
+            "ready_return_to_context_return", "poll_start_to_context_return",
+            "publish_ack_to_context_return")}
+        reference = dict(agent_id=session["agent_id"], execution_id=session["execution_id"])
+        with no_client_database():
+            for i in range(args.warmup + args.samples):
+                # Publication is scheduled in the first 55% of a real timer
+                # interval, leaving a deliberate commit margin before poll.
+                phase = 0.15 + 0.40 * ((i % args.samples) + 0.5) / args.samples
+                start_ns = time.monotonic_ns() + 20_000_000
+                publish_target = start_ns + round(interval_ns * phase)
+                poll_target = start_ns + interval_ns
+                published = {}
+
+                def publish_at_target():
+                    sleep_until(publish_target)
+                    published["start"] = time.monotonic_ns()
+                    try:
+                        published["event"], _ = publish(central, pub_token, source_id, session["inbox"])
+                        published["ack"] = time.monotonic_ns()
+                    except Exception as exc:
+                        published["error"] = exc
+
+                worker = threading.Thread(target=publish_at_target)
+                worker.start()
+                try:
+                    sleep_until(poll_target)
+                    poll_start = time.monotonic_ns()
+                    ready, _ = api(relay, recv_token, "session-inbox-ready", reference)
+                    ready_return = time.monotonic_ns()
+                finally:
+                    worker.join(timeout=15)
+                assert not worker.is_alive(), "scheduled publisher did not finish"
+                if "error" in published:
+                    raise published["error"]
+                assert published["ack"] <= poll_start, "publication missed the scheduled poll"
+                assert ready.get("delivery_id"), "scheduled poll did not observe the notice"
+                turn = "bench-scheduled-turn-" + str(i)
+                prompt = coordination.inbox_context(native_config, state, state_path,
+                    dict(event="UserPromptSubmit", phase="busy", native_turn_id=turn))
+                context_return = time.monotonic_ns()
+                assert "Cairn has a notice" in prompt
+                assert state["inbox_attempt"]["delivery"]["delivery_id"] == ready["delivery_id"]
+                settle_native(coordination, native_config, state, state_path,
+                              state_dir, published["event"], turn)
+                if i >= args.warmup:
+                    points = dict(publish_target=publish_target, publish_start=published["start"],
+                        publish_ack=published["ack"], poll_target=poll_target,
+                        poll_start=poll_start, ready_return=ready_return,
+                        context_return=context_return)
+                    intervals = dict(
+                        publish_timer_overshoot=published["start"] - publish_target,
+                        poll_timer_overshoot=poll_start - poll_target,
+                        publish_ack_to_poll_start=poll_start - published["ack"],
+                        poll_start_to_ready_return=ready_return - poll_start,
+                        ready_return_to_context_return=context_return - ready_return,
+                        poll_start_to_context_return=context_return - poll_start,
+                        publish_ack_to_context_return=context_return - published["ack"])
+                    for key, value in intervals.items():
+                        scheduler_samples[key].append(value)
+                    scheduler_trials.append(dict(index=i - args.warmup,
+                        target_phase=round(phase, 6),
+                        points_ms={key: round((value - start_ns) / 1_000_000, 3)
+                                   for key, value in points.items()},
+                        segments_ms={key: round(value / 1_000_000, 3)
+                                     for key, value in intervals.items()}))
     finally:
         stop_service(bridge)
         stop_service(server)
@@ -286,12 +369,19 @@ def run(args):
             postgres="disposable local socket, fsync=on, synchronous_commit=on",
             presence_period_ms=30000, watch_cli_period_ms=1000,
             wake_serve_period_ms=2000,
-            scheduler_fixture="evenly spaced midpoint phases, no OS or model scheduling"),
+            controlled_scheduler_interval_ms=args.scheduler_interval_ms,
+            controlled_publish_phase="0.15 to 0.55 of interval, evenly spaced; 20 ms fixture startup guard",
+            simulated_phase_fixture="arithmetic midpoint phases only; no OS or model scheduling"),
         measured={key: distribution(values) for key, values in samples.items()
                   if not key.startswith("simulated_")},
         simulated={key: distribution(values) for key, values in samples.items()
                    if key.startswith("simulated_")},
+        controlled_real_timer=dict(path="relay session-inbox-ready poll, then native inbox_context claim and context",
+            trial_count=len(scheduler_trials),
+            measured={key: distribution(values) for key, values in scheduler_samples.items()},
+            trials=scheduler_trials),
         not_measured=["actual provider/model wake", "cross-machine tailnet scheduling",
+                      "production 30-second host scheduling under multiple sessions",
                       "concurrent producer load", "persistence-to-client commit instant"])
     encoded = json.dumps(report, indent=2) + "\n"
     if args.output:
@@ -306,7 +396,9 @@ if __name__ == "__main__":
     parser.add_argument("--store-probe", type=Path, required=True)
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--warmup", type=int, default=5)
+    parser.add_argument("--scheduler-interval-ms", type=int, default=120)
     parser.add_argument("--output", type=Path)
     options = parser.parse_args()
     assert 1 <= options.samples <= 200 and 0 <= options.warmup <= 50
+    assert 80 <= options.scheduler_interval_ms <= 1000
     run(options)
