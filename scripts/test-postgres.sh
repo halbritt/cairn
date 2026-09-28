@@ -43,6 +43,7 @@ go run ./cmd/cairn migrate
 go run ./cmd/cairn create < fixtures/note.json
 go build -o "$test_root/cairn" ./cmd/cairn
 python3 scripts/check_agent_events.py "$test_root/cairn" "$test_root/event-home"
+python3 scripts/check_delivery_health.py "$test_root/cairn" "$test_root/delivery-health-home"
 "$pg_bin/createdb" -h "$test_root/socket" cairn_multi_machine
 multi_machine_dsn="host=$test_root/socket dbname=cairn_multi_machine sslmode=disable"
 CAIRN_DATABASE_URL="$multi_machine_dsn" "$test_root/cairn" migrate

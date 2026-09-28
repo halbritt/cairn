@@ -33,6 +33,10 @@ host-owned hold until its process or native turn is reconciled. Paging uses
 `sessions.next_after` as `agents_after`, and `agents_limit` from 1 to 100.
 These are current observations; filtering a later scan can produce different
 results. Reissue rechecks the selected delivery and its holds atomically.
+The optional `attention` request object adds a bounded summary of aged pending
+session requests, with changed-condition suppression when given a local state
+file. See [delivery health](delivery-health.md) for the invocation, coverage and
+freshness rules. This is presentation only; it performs no recovery action.
 The latest native attempt includes its turn stop state, cancellation request and
 confirmation timestamps, and the count of captured tools not yet reported
 terminal. These are selected host observations, not proof that external effects
