@@ -100,13 +100,15 @@ func attentionCandidate(d attentionDelivery, cutoff int64, now time.Time) (atten
 			g.Condition = h.Condition
 		}
 	}
-	if g.Condition == "busy" || g.Condition == "automatic_available" {
+	if g.Condition == "busy" {
 		return attentionGroup{}, false
 	}
 	if g.Condition == "none" || g.Condition == "" {
 		g.Condition = "unknown"
 	}
 	switch g.Condition {
+	case "automatic_available":
+		g.NextCheck = "A route was observed available, but no claim followed; inspect the native wake and claim path."
 	case "wake_retained", "native_admission_retained":
 		g.NextCheck = "Inspect this delivery's retained wake and native handling; no new claim observed."
 	case "owner_turn_required":

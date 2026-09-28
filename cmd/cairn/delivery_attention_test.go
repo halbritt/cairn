@@ -65,7 +65,7 @@ func TestAttentionPartialAbsenceCannotClearButProgressCan(t *testing.T) {
 
 func TestAttentionQuietForIntentionalWaiting(t *testing.T) {
 	now := time.Now()
-	for _, mode := range []string{"busy", "scheduled", "available", "young", "notice", "response", "non-session"} {
+	for _, mode := range []string{"busy", "scheduled", "young", "notice", "response", "non-session"} {
 		t.Run(mode, func(t *testing.T) {
 			d := attentionFixture("one", "request", "native_transport_unavailable")
 			switch mode {
@@ -73,8 +73,6 @@ func TestAttentionQuietForIntentionalWaiting(t *testing.T) {
 				d.Diagnosis.Recipient.State = "busy"
 			case "scheduled":
 				d.AvailableAt = now.Add(time.Minute)
-			case "available":
-				d.Diagnosis.Host.Condition = "automatic_available"
 			case "young":
 				d.Diagnosis.WaitingSeconds = 5
 			case "notice", "response":
@@ -87,6 +85,14 @@ func TestAttentionQuietForIntentionalWaiting(t *testing.T) {
 				t.Fatalf("unexpected attention: %+v %v", result, err)
 			}
 		})
+	}
+}
+
+func TestAttentionAvailableRouteDoesNotProveProgress(t *testing.T) {
+	d := attentionFixture("one", "request", "automatic_available")
+	result, _, err := summarizeAttention([]attentionDelivery{d}, true, attentionOptions{}, emptyAttentionCache(), time.Now())
+	if err != nil || len(result.Changed) != 1 || !strings.Contains(result.Changed[0].NextCheck, "no claim") {
+		t.Fatalf("available route hid aged pending request: %+v %v", result, err)
 	}
 }
 

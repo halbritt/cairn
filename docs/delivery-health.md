@@ -58,8 +58,10 @@ poller and triggers no agent turn.
 Groups show recipient, cause, freshness, applicability, oldest waiting age and
 a sample delivery. Request, response and notice counts remain separate. A new
 notice or an increasing age alone does not produce a changed request condition.
-Busy recipients, scheduled availability, and currently available automatic
-delivery routes do not produce attention items. An aged request with missing,
+Busy recipients and scheduled availability do not produce attention items.
+A route reported as available still warrants attention if the request remains
+unclaimed beyond the cutoff: route availability does not prove progress.
+An aged request with missing,
 stale or inapplicable host information is labelled `unknown`, not healthy.
 The cutoff defaults to 300 seconds and accepts 1 through 604800 seconds.
 
