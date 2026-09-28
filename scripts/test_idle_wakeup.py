@@ -592,6 +592,19 @@ time.sleep(30)
             coordination.report_delivery_observation(self.config, state, None, {})
         self.assertEqual(api.call_args.args[2]['condition'], 'none')
 
+    def test_ready_lookup_alone_does_not_reaffirm_old_refusal(self):
+        state = json.loads(self.path.read_text())
+        state['wake_refusal'] = dict(delivery_id='delivery-one', reason='old pane count',
+                                     condition='terminal_target_ambiguous')
+        cycle = {'ready_delivery': 'delivery-one'}  # Later host recheck returned without a refusal.
+        self.assertEqual(coordination.delivery_observation(self.config, state, None, cycle)['condition'],
+                         'unknown')
+        with mock.patch.object(coordination, 'call', return_value={}) as api:
+            coordination.note_wake_refusal(self.config, state, 'delivery-one', 'old pane count',
+                'terminal_target_ambiguous', cycle)
+            coordination.report_delivery_observation(self.config, state, None, cycle)
+        self.assertEqual(api.call_args.args[2]['condition'], 'terminal_target_ambiguous')
+
     def test_slow_diagnostics_cannot_block_native_wake(self):
         self.fixture['slow_diagnostics'] = True
         self.save_fixture()

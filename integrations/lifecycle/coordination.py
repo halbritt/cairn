@@ -282,7 +282,7 @@ def claude_session_config(config, native_id, process):
     return claude_channel_admission(config, native_id, process)[0]
 
 
-def note_wake_refusal(config, state, delivery, reason, condition='unknown'):
+def note_wake_refusal(config, state, delivery, reason, condition='unknown', cycle=None):
     """Log once per (delivery, reason) why a ready delivery gets no automatic wake.
 
     The watcher used to return silently here, which hid a whole account's
@@ -290,6 +290,8 @@ def note_wake_refusal(config, state, delivery, reason, condition='unknown'):
     30-second cycle does not repeat the line; a new delivery or a changed
     reason logs again. Returns None so callers can ``return`` it directly.
     """
+    if cycle is not None:
+        cycle['refusal_delivery'] = delivery
     record = dict(delivery_id=delivery, reason=reason, condition=condition)
     if state.get('wake_refusal') == record:
         return None
@@ -336,7 +338,8 @@ def delivery_observation(config, state, prepared, cycle=None):
             wake = selected
     else:
         refusal = state.get('wake_refusal') or {}
-        if refusal.get('delivery_id') and refusal['delivery_id'] == cycle.get('ready_delivery'):
+        if (refusal.get('delivery_id') and refusal['delivery_id'] == cycle.get('ready_delivery') and
+                refusal['delivery_id'] == cycle.get('refusal_delivery')):
             delivery_id = refusal['delivery_id']
             condition = refusal.get('condition') or 'unknown'
             if condition == 'wake_retained':
@@ -424,7 +427,7 @@ def prepare_idle_wake(config, state, path, cycle=None):
     if replay.get('delivery_id') == delivery and replay.get('session') == session_ref(agent):
         return note_wake_refusal(config, state, delivery,
             'native OpenCode already admitted this request; the next owner prompt can recover pending delivery',
-            'native_admission_retained')
+            'native_admission_retained', cycle)
     state.pop('opencode_replay', None)
     endpoint = codex_queue_endpoint(config, state['process'])
     prior = state.get('idle_wake', {})
@@ -437,7 +440,7 @@ def prepare_idle_wake(config, state, path, cycle=None):
         return note_wake_refusal(config, state, delivery,
             f"a {prior.get('transport') or 'terminal'} wake for this delivery is already {prior.get('status')}; "
             "only native handling of that wake permits another",
-            'wake_retained' if prior.get('status') in ('submitted', 'uncertain', 'queued', 'refused') else 'unknown')
+            'wake_retained' if prior.get('status') in ('submitted', 'uncertain', 'queued', 'refused') else 'unknown', cycle)
     request_id = ready.get('request_id') or str(uuid.uuid4())
     if endpoint:
         state.pop('wake_refusal', None)
@@ -497,17 +500,17 @@ def prepare_idle_wake(config, state, path, cycle=None):
             'opencode': 'no verified OpenCode prompt_idle bridge for this process; owner prompts remain eligible',
             'hermes': 'no Hermes queue endpoint for this process',
         }.get(config['harness'], 'no native wake transport for this process'),
-            refusal_condition or 'native_transport_unavailable')
+            refusal_condition or 'native_transport_unavailable', cycle)
     environment = herdr_environment(state['process'])
     if environment is None:
         return note_wake_refusal(config, state, delivery, 'native process has no Herdr host environment',
-                                'terminal_host_unavailable')
+                                'terminal_host_unavailable', cycle)
     candidates = herdr_call(config, environment, 'agent', 'list')['agents']
     matches = [h for h in candidates if host_matches(config, state, h, environment)]
     if len(matches) != 1:
         return note_wake_refusal(config, state, delivery,
             f'{len(matches)} idle Herdr panes match this session; exactly one is required',
-            'terminal_target_ambiguous')
+            'terminal_target_ambiguous', cycle)
     host = matches[0]
     current = herdr_call(config, environment, 'agent', 'get', host['pane_id'])['agent']
     keys = ('pane_id', 'terminal_id', 'revision', 'state_change_seq')
