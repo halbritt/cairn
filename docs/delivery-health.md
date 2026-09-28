@@ -116,3 +116,7 @@ acceptable attention cost. Synthetic tests establish the mechanics only.
 
 Complete-and-reply, automatic recovery, and changes to team structure are outside
 this change.
+
+The [verification report](verification/delivery-health-2026-09-27.md) records
+the inspected commits, executed checks, cross-review corrections and rollout
+limits.
