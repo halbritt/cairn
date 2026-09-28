@@ -216,7 +216,7 @@ func TestDeliveryDiagnosisApplicabilityAndFreshness(t *testing.T) {
 		t.Fatalf("exact: %+v", diag.Host)
 	}
 	diag = f.diagnosis(t, second.EventID)
-	if diag.Host.Applies != "other_delivery" || diag.Host.DeliveryID != d1 {
+	if diag.Host.Applies != "other_delivery" || diag.Host.DeliveryID != d1 || diag.Host.Condition != "unknown" || diag.Host.Reported != "wake_retained" {
 		t.Fatalf("other delivery inherited: %+v", diag.Host)
 	}
 	// A session-scope observation applies to the session's other waiting work.
@@ -229,20 +229,20 @@ func TestDeliveryDiagnosisApplicabilityAndFreshness(t *testing.T) {
 	if _, err := f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session_delivery_observation SET received_at=received_at-interval '5 minutes' WHERE agent_id=$1`, f.agent.AgentID); err != nil {
 		t.Fatal(err)
 	}
-	if diag = f.diagnosis(t, second.EventID); diag.Host.Freshness != "stale" || diag.Host.Condition != "channel_not_launched" {
+	if diag = f.diagnosis(t, second.EventID); diag.Host.Freshness != "stale" || diag.Host.Condition != "unknown" || diag.Host.Reported != "channel_not_launched" {
 		t.Fatalf("stale receipt: %+v", diag.Host)
 	}
 	if _, err := f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session_delivery_observation SET received_at=clock_timestamp(),observed_at=observed_at-interval '5 minutes' WHERE agent_id=$1`, f.agent.AgentID); err != nil {
 		t.Fatal(err)
 	}
-	if diag = f.diagnosis(t, second.EventID); diag.Host.Freshness != "stale" {
+	if diag = f.diagnosis(t, second.EventID); diag.Host.Freshness != "stale" || diag.Host.Condition != "unknown" {
 		t.Fatalf("stale host time: %+v", diag.Host)
 	}
 	// A changed generation fences the observation.
 	if _, err := f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session_delivery_observation SET observed_at=clock_timestamp(),database_generation=database_generation-1 WHERE agent_id=$1`, f.agent.AgentID); err != nil {
 		t.Fatal(err)
 	}
-	if diag = f.diagnosis(t, second.EventID); diag.Host.Freshness != "replaced" {
+	if diag = f.diagnosis(t, second.EventID); diag.Host.Freshness != "replaced" || diag.Host.Condition != "unknown" {
 		t.Fatalf("generation: %+v", diag.Host)
 	}
 	// Expired presence makes it offline.
@@ -252,7 +252,7 @@ func TestDeliveryDiagnosisApplicabilityAndFreshness(t *testing.T) {
 	if _, err := f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session SET expires_at=clock_timestamp()-interval '1 second' WHERE agent_id=$1`, f.agent.AgentID); err != nil {
 		t.Fatal(err)
 	}
-	if diag = f.diagnosis(t, second.EventID); diag.Recipient.Presence != "offline" || diag.Host.Freshness != "offline" {
+	if diag = f.diagnosis(t, second.EventID); diag.Recipient.Presence != "offline" || diag.Host.Freshness != "offline" || diag.Host.Condition != "unknown" {
 		t.Fatalf("offline: %+v %+v", diag.Recipient, diag.Host)
 	}
 	// A resumed execution replaces the earlier execution's observation.
@@ -351,4 +351,79 @@ func TestDeliveryDiagnosisVisibility(t *testing.T) {
 	}
 	_, err = f.sender.ReviewEvents(ctx, EventReviewRequest{Repo: f.source.Scope.Repo})
 	requireCode(t, err, "AUTHORITY_DENIED")
+}
+
+func TestDeliveryDiagnosisIgnoresPreClaimCauseAfterExpiredLease(t *testing.T) {
+	ctx := context.Background()
+	f := newHealthFixture(t)
+	event, delivery := f.publish(t, "request", f.agent.Inbox)
+	f.observe(t, SessionDeliveryObservation{DeliveryID: delivery, Condition: "wake_retained", Wake: &ObservedWake{Transport: "terminal", Status: "submitted"}, ObservedAt: dbNow(t, f.receiver)})
+	view, err := f.receiver.ForAgentSession(f.ref, f.dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := view.NextEvent(ctx, NextEventRequest{}, f.dest)
+	if err != nil || next.Delivery == nil || next.Delivery.DeliveryID != delivery {
+		t.Fatalf("ordinary claim: %+v %v", next, err)
+	}
+	if diag := f.diagnosis(t, event.EventID); diag.Stage != "leased" || diag.Host != nil {
+		t.Fatalf("leased: %+v", diag)
+	}
+	// The ordinary lease lapses without a hold: the delivery waits again, but
+	// the earlier pre-claim wake no longer explains it. The observation stays
+	// within its TTL but precedes the claim, as a real lapsed lease would.
+	if _, err = f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_session_delivery_observation SET observed_at=observed_at-interval '30 seconds',received_at=received_at-interval '30 seconds' WHERE agent_id=$1`, f.agent.AgentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.receiver.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 millisecond' WHERE delivery_id=$1`, delivery); err != nil {
+		t.Fatal(err)
+	}
+	diag := f.diagnosis(t, event.EventID)
+	if diag.Stage != "waiting" || diag.Host == nil || diag.Host.Freshness != "superseded" || diag.Host.Condition != "unknown" || diag.Host.Reported != "wake_retained" || diag.Host.Applies != "none" {
+		t.Fatalf("pre-claim cause reattached: %+v %+v", diag, diag.Host)
+	}
+	// A fresh observation after that progress applies again.
+	f.observe(t, SessionDeliveryObservation{DeliveryID: delivery, Condition: "native_transport_unavailable", ObservedAt: dbNow(t, f.receiver)})
+	if diag = f.diagnosis(t, event.EventID); diag.Host.Freshness != "current" || diag.Host.Condition != "native_transport_unavailable" || diag.Host.Applies != "exact" {
+		t.Fatalf("post-progress observation: %+v", diag.Host)
+	}
+}
+
+func TestDeliveryDiagnosisWithholdsLocalOnlyObservation(t *testing.T) {
+	ctx := context.Background()
+	f := newHealthFixture(t)
+	local := Destination{"local", true}
+	draft := projectNote(f.source.Scope.Repo)
+	draft.Sensitivity, draft.Body = "local", "local-only request"
+	private, err := f.sender.Create(ctx, CreateRequest{uuid.NewString(), draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateEvent, err := f.sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{private.RecordID, private.Version}, Destination: EventDestination{Type: "agent", Name: f.agent.Inbox}}, local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := f.sender.AgentEventStatus(ctx, EventStatusRequest{EventID: privateEvent.EventID}, local)
+	if err != nil || len(status.Deliveries) != 1 {
+		t.Fatalf("private status: %+v %v", status, err)
+	}
+	privateDelivery := status.Deliveries[0].DeliveryID
+	shared, _ := f.publish(t, "request", f.agent.Inbox)
+	if _, err = f.receiver.ObserveSessionDelivery(ctx, SessionDeliveryObservation{Session: f.ref, DeliveryID: privateDelivery, Condition: "channel_not_launched", ObservedAt: dbNow(t, f.receiver)}, local); err != nil {
+		t.Fatal(err)
+	}
+	// A hosted reader of the shareable request learns neither the local-only
+	// delivery nor its cause.
+	diag := f.diagnosis(t, shared.EventID)
+	if diag.Host == nil || diag.Host.Freshness != "withheld" || diag.Host.Condition != "unknown" || diag.Host.DeliveryID != "" || diag.Host.Reported != "" || diag.Host.ObservedAt != nil {
+		t.Fatalf("local-only observation crossed destination: %+v", diag.Host)
+	}
+	// A local reader sees the session-scope cause.
+	local2, err := f.sender.AgentEventStatus(ctx, EventStatusRequest{EventID: shared.EventID}, local)
+	if err != nil || local2.Deliveries[0].Diagnosis.Host.Condition != "channel_not_launched" || local2.Deliveries[0].Diagnosis.Host.Applies != "session" {
+		t.Fatalf("local reader: %+v %v", local2.Deliveries[0].Diagnosis.Host, err)
+	}
+	// Hosted hosts cannot report on work their destination cannot see.
+	_, err = f.receiver.ObserveSessionDelivery(ctx, SessionDeliveryObservation{Session: f.ref, DeliveryID: privateDelivery, Condition: "channel_not_launched", ObservedAt: dbNow(t, f.receiver)}, f.dest)
+	requireCode(t, err, "NOT_FOUND")
 }

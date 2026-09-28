@@ -252,7 +252,12 @@ type DiagnosisRecipient struct {
 }
 
 // DiagnosisHost is the applicable host observation, labelled host_reported.
-// Condition "unknown" means no current usable explanation, never healthy.
+// Condition names a cause only for a current observation that applies to this
+// delivery (exact) or its session; otherwise it is "unknown" and Reported keeps
+// the host's code as context. Unknown is never healthy. Freshness is current,
+// stale, replaced, offline, absent, superseded (the delivery was claimed after
+// the observation) or withheld (the observation concerns work this reader's
+// destination cannot see).
 type DiagnosisHost struct {
 	Source     string        `json:"source"`
 	Condition  string        `json:"condition"`
@@ -265,7 +270,14 @@ type DiagnosisHost struct {
 	ReceivedAt *time.Time    `json:"received_at,omitempty"`
 }
 
-const diagnosisQuery = `SELECT d.delivery_id::text,d.state,d.lease_until,d.available_at,clock_timestamp(),
+// progress_at bounds the latest claim: a lease grant sets lease_until after
+// its claim time, and native or wake attempts record when they ran. A claimed
+// delivery that later waits again inherits no pre-claim host observation.
+const diagnosisQuery = `SELECT d.delivery_id::text,d.state,d.lease_until,d.available_at,clock_timestamp(),d.attempts,
+ GREATEST(d.lease_until,
+  (SELECT max(GREATEST(n.created_at,n.finished_at)) FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id),
+  (SELECT max(GREATEST(w.created_at,w.finished_at)) FROM cairn.agent_wake_attempt w WHERE w.delivery_id=d.delivery_id)),
+ COALESCE(oe.sensitivity='shareable',true),
  NOT (` + wakeHold + `) OR NOT (` + sessionInboxHold + `),
  (SELECT generation FROM cairn.retrieval_generation WHERE singleton),
  s.agent_id::text,s.execution_id::text,s.database_generation,s.stopped,s.expires_at,s.metadata->>'state',
@@ -273,6 +285,8 @@ const diagnosisQuery = `SELECT d.delivery_id::text,d.state,d.lease_until,d.avail
  FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id)
  LEFT JOIN cairn.agent_session s ON d.consumer='agent/'||s.agent_id::text AND s.repo=e.repo AND (s.visibility='hosted' OR $2)
  LEFT JOIN cairn.agent_session_delivery_observation o ON o.agent_id=s.agent_id
+ LEFT JOIN cairn.agent_delivery od ON od.delivery_id=o.delivery_id
+ LEFT JOIN cairn.agent_event oe ON oe.event_id=od.event_id
  WHERE d.delivery_id=ANY($1::uuid[])`
 
 // deliveryDiagnoses reads diagnoses for already-authorized delivery IDs in the
@@ -292,13 +306,15 @@ func deliveryDiagnoses(ctx context.Context, tx pgx.Tx, ids []string, allowLocal 
 		var id, state string
 		var leaseUntil *time.Time
 		var available, now time.Time
-		var held bool
+		var held, observedShareable bool
+		var attempts int
+		var progress *time.Time
 		var generation int64
 		var agentID, execution, sessionState, obsExecution, obsDelivery, condition, scope, transport, status *string
 		var sessionGeneration, obsGeneration *int64
 		var stopped *bool
 		var expires, attempted, observed, received *time.Time
-		if err = rows.Scan(&id, &state, &leaseUntil, &available, &now, &held, &generation,
+		if err = rows.Scan(&id, &state, &leaseUntil, &available, &now, &attempts, &progress, &observedShareable, &held, &generation,
 			&agentID, &execution, &sessionGeneration, &stopped, &expires, &sessionState,
 			&obsExecution, &obsGeneration, &obsDelivery, &condition, &scope, &transport, &status, &attempted, &observed, &received); err != nil {
 			return nil, err
@@ -332,7 +348,20 @@ func deliveryDiagnoses(ctx context.Context, tx pgx.Tx, ids []string, allowLocal 
 			}
 		}
 		if d.Stage == "waiting" && agentID != nil {
-			d.Host = diagnoseHost(id, now, generation, d.Recipient, obsExecution, obsGeneration, obsDelivery, condition, scope, transport, status, attempted, observed, received)
+			switch {
+			case condition != nil && !allowLocal && !observedShareable:
+				// The observed delivery is local-only: reveal neither it nor its cause.
+				d.Host = &DiagnosisHost{Source: "host_reported", Condition: "unknown", Applies: "none", Freshness: "withheld"}
+			default:
+				d.Host = diagnoseHost(id, now, generation, d.Recipient, obsExecution, obsGeneration, obsDelivery, condition, scope, transport, status, attempted, observed, received)
+				if condition != nil && attempts > 0 && (progress == nil || !observed.After(*progress) || !received.After(*progress)) {
+					// Claimed after (or at an unknown time relative to) this observation.
+					d.Host.Freshness, d.Host.Applies = "superseded", "none"
+					if d.Host.Condition != "unknown" {
+						d.Host.Reported, d.Host.Condition = d.Host.Condition, "unknown"
+					}
+				}
+			}
 		}
 		out[id] = d
 	}
@@ -378,6 +407,10 @@ func diagnoseHost(delivery string, now time.Time, generation int64, recipient Di
 	default:
 		h.Applies = "other_delivery"
 	}
-	h.Condition = *condition
+	if h.Freshness == "current" && h.Applies != "other_delivery" {
+		h.Condition = *condition
+	} else {
+		h.Reported = *condition
+	}
 	return h
 }
