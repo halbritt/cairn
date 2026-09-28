@@ -26,15 +26,7 @@ def write_json(path, value):
             temporary.unlink(missing_ok=True)
 
 
-def install_router(destination, config, enabled=False):
-    """Copy the optional skill router beside the hook script; enable it in the engine config."""
-    shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/lifecycle/skill_router.py",
-                    destination / "skill_router.py")
-    (destination / "skill_router.py").chmod(0o600)
-    return dict(config, skill_router={"enabled": True}) if enabled else {k: v for k, v in config.items() if k != "skill_router"}
-
-
-def install(settings_path, destination, config, skill_router=False):
+def install(settings_path, destination, config):
     settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
     hooks = settings.setdefault("hooks", {})
     script = destination / "lifecycle.py"
@@ -52,9 +44,8 @@ def install(settings_path, destination, config, skill_router=False):
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
     shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/lifecycle/memory.py", script)
     script.chmod(0o700)
-    config = install_router(destination, config, skill_router)
     # Claude Code keeps only about 10,000 characters of hook additionalContext
-    # (measured 2026-09-24); keep injected memory and skills under it.
+    # (measured 2026-09-24); keep injected memory under it.
     write_json(config_path, dict(config, state_dir=str(destination / "state"),
                                  context_bytes=config.get("context_bytes", CLAUDE_CONTEXT_BYTES)))
     backup = settings_path.with_name(settings_path.name + ".before-cairn-lifecycle")
@@ -75,8 +66,6 @@ def main():
     parser.add_argument("--socket", type=Path, default=home / ".local/share/cairn/api.sock")
     parser.add_argument("--token-file", type=Path, default=home / ".local/share/cairn/hosted-agent.token")
     parser.add_argument("--repo", default=str(home / "git/cairn"))
-    parser.add_argument("--skill-router", action="store_true",
-                        help="enable prompt-time skill routing (off by default; docs/skill-router.md)")
     args = parser.parse_args()
     if not args.cairn or not args.claude:
         parser.error("installed cairn and claude executables are required")
@@ -85,7 +74,7 @@ def main():
                   socket=str(args.socket.absolute()), token_file=str(args.token_file.absolute()), repo=args.repo)
     if settings.get("model"):
         config["model"] = settings["model"]
-    install(args.settings.absolute(), args.destination.absolute(), config, skill_router=args.skill_router)
+    install(args.settings.absolute(), args.destination.absolute(), config)
     print(f"Installed Cairn lifecycle hooks in {args.settings}. Start a fresh Claude session.")
 
 

@@ -13,13 +13,22 @@ See [implementation status](docs/implementation-status.md) for dated deployment
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
+
+## 2026-09-28
+
+- Removed the skill router (owner decision after ending the router-only
+  skills trial on 2026-09-27). The lifecycle engine no longer loads or calls
+  `skill_router.py`; the OpenCode plugin no longer carries routed skills; the
+  Claude Code, Codex, OpenCode and Hermes installers no longer copy or
+  configure it; `docs/skill-router.md`, its tests and its live check are gone.
+  The per-installation `context_bytes` budget stays; it belongs to memory.
 ## 2026-09-27
 
 - The skill router is now opt-in: the Claude Code, Codex and OpenCode
   lifecycle installers copy it but leave it off unless run with
   `--skill-router` (replacing `--no-skill-router`). On the owner's host it is
   installed and off, after the owner ended the router-only skills trial. See
-  [skill router](docs/skill-router.md).
+  the skill router notes (removed 2026-09-28).
 - Request status and operator review include delivery-health diagnoses, separate
   from session presence. The lifecycle watcher reports bounded current host
   observations tied to a session execution; missing or stale data stays unknown.
@@ -63,7 +72,7 @@ and MCP processes.
   at least 0.70. Visible skills stay with the model. Claude Code, Codex and
   OpenCode installers enable it by default; `--no-skill-router` leaves it
   off. Council paths, slash commands and `.cairn-no-memory` are refused before
-  any request. See [skill router](docs/skill-router.md).
+  any request. See the skill router notes (removed 2026-09-28).
 - Claude Code delivers about 10,000 characters of hook context and drops the
   rest, below memory's 12,000-byte budget. The router keeps its own
   injection under 9,500 characters with memory included.
