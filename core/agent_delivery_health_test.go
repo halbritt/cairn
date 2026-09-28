@@ -193,6 +193,23 @@ func TestSessionDeliveryObservationOrderingAndTombstone(t *testing.T) {
 	}
 }
 
+func TestSessionDeliveryObservationNanosecondRetryCannotRefresh(t *testing.T) {
+	f := newHealthFixture(t)
+	_, delivery := f.publish(t, "request", f.agent.Inbox)
+	stamp := dbNow(t, f.receiver).Add(123 * time.Nanosecond)
+	attempted := stamp.Add(-time.Second)
+	req := SessionDeliveryObservation{DeliveryID: delivery, Condition: "wake_retained", ObservedAt: stamp,
+		Wake: &ObservedWake{Transport: "terminal", Status: "submitted", AttemptedAt: &attempted}}
+	first := f.observe(t, req)
+	second := f.observe(t, req)
+	if !first.Applied || second.Applied || !first.Observation.ReceivedAt.Equal(second.Observation.ReceivedAt) {
+		t.Fatalf("nanosecond retry refreshed: first=%+v second=%+v", first, second)
+	}
+	if !req.Wake.AttemptedAt.Equal(attempted) || req.Wake.AttemptedAt.Nanosecond()%1000 != 123 {
+		t.Fatal("normalization mutated caller-owned wake")
+	}
+}
+
 func TestDeliveryDiagnosisApplicabilityAndFreshness(t *testing.T) {
 	ctx := context.Background()
 	f := newHealthFixture(t)
@@ -216,7 +233,7 @@ func TestDeliveryDiagnosisApplicabilityAndFreshness(t *testing.T) {
 		t.Fatalf("exact: %+v", diag.Host)
 	}
 	diag = f.diagnosis(t, second.EventID)
-	if diag.Host.Applies != "other_delivery" || diag.Host.DeliveryID != d1 || diag.Host.Condition != "unknown" || diag.Host.Reported != "wake_retained" {
+	if diag.Host.Applies != "other_delivery" || diag.Host.DeliveryID != "" || diag.Host.Condition != "unknown" || diag.Host.Reported != "wake_retained" {
 		t.Fatalf("other delivery inherited: %+v", diag.Host)
 	}
 	// A session-scope observation applies to the session's other waiting work.

@@ -797,6 +797,11 @@ func (s *Store) AgentEventStatus(ctx context.Context, req EventStatusRequest, de
 	}
 	for i := range out.Deliveries {
 		out.Deliveries[i].Diagnosis = diagnoses[out.Deliveries[i].DeliveryID]
+		if host := out.Deliveries[i].Diagnosis.Host; host != nil && host.DeliveryID != out.Deliveries[i].DeliveryID {
+			// A session-level explanation may help this request, but another
+			// publisher's delivery identifier is not part of its read scope.
+			host.DeliveryID = ""
+		}
 	}
 	return out, nil
 }

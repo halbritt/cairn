@@ -88,7 +88,7 @@ func attentionKey(g attentionGroup) string {
 
 func attentionCandidate(d attentionDelivery, cutoff int64, now time.Time) (attentionGroup, bool) {
 	diag := d.Diagnosis
-	if d.State != "pending" || d.AvailableAt.After(now) || diag == nil || diag.Stage != "waiting" || diag.Recipient.Kind != "session" || diag.Recipient.State == "busy" || diag.WaitingSeconds < float64(cutoff) {
+	if (d.State != "pending" && d.State != "leased") || d.AvailableAt.After(now) || diag == nil || diag.Stage != "waiting" || diag.Recipient.Kind != "session" || diag.Recipient.State == "busy" || diag.WaitingSeconds < float64(cutoff) {
 		return attentionGroup{}, false
 	}
 	g := attentionGroup{Recipient: d.Consumer, Condition: "unknown", Freshness: "absent", Applies: "none", OldestWaitingSeconds: diag.WaitingSeconds, SampleDeliveryID: d.DeliveryID}

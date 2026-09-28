@@ -96,6 +96,20 @@ func TestAttentionAvailableRouteDoesNotProveProgress(t *testing.T) {
 	}
 }
 
+func TestAttentionIncludesExpiredLeaseWhenStoreSaysWaiting(t *testing.T) {
+	d := attentionFixture("one", "request", "unknown")
+	d.State = "leased"
+	result, _, err := summarizeAttention([]attentionDelivery{d}, true, attentionOptions{}, emptyAttentionCache(), time.Now())
+	if err != nil || len(result.Changed) != 1 {
+		t.Fatalf("expired lease disappeared: %+v %v", result, err)
+	}
+	d.Diagnosis.Stage = "leased"
+	result, _, err = summarizeAttention([]attentionDelivery{d}, true, attentionOptions{}, emptyAttentionCache(), time.Now())
+	if err != nil || len(result.Changed) != 0 {
+		t.Fatalf("live lease alerted: %+v %v", result, err)
+	}
+}
+
 func TestAttentionUnknownDoesNotRepeatOldCauseAsCurrent(t *testing.T) {
 	for _, mode := range []string{"stale", "replaced", "offline", "absent", "other_delivery"} {
 		t.Run(mode, func(t *testing.T) {

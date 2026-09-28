@@ -13,7 +13,6 @@ See [implementation status](docs/implementation-status.md) for dated deployment
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
-
 ## 2026-09-27
 
 - The skill router is now opt-in: the Claude Code, Codex and OpenCode
@@ -21,6 +20,15 @@ and MCP processes.
   `--skill-router` (replacing `--no-skill-router`). On the owner's host it is
   installed and off, after the owner ended the router-only skills trial. See
   [skill router](docs/skill-router.md).
+- Request status and operator review include delivery-health diagnoses, separate
+  from session presence. The lifecycle watcher reports bounded current host
+  observations tied to a session execution; missing or stale data stays unknown.
+  Operator review accepts an opt-in attention summary with changed-condition
+  suppression and explicit partial-page coverage. This performs no recovery or
+  replay. Migration 055 stores current observations; installation and owner
+  noticeability remain separate from source validation. See
+  [delivery health](docs/delivery-health.md).
+
 ## 2026-09-26
 
 - Claude channel wakes work again. Since 2026-09-25, Claude Code (observed on

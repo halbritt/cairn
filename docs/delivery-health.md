@@ -11,6 +11,27 @@ The host uses the existing authenticated profile and session association. The
 profile may also be available to the agent, so the report is not independent host
 attestation. Ordinary session metadata remains reported context.
 
+## Host reporting
+
+The lifecycle watcher calls `session-delivery-observe` through its existing
+profile. The store checks profile ownership, session execution and database
+generation. An observation names a closed condition, its observation time,
+and the delivery it covers when applicable; the store adds the receipt time.
+One current row per session is retained, without a mutation receipt per poll.
+
+Persisting observations refresh within 60 seconds on the usual 30-second
+watcher cadence. They become stale after 120 seconds measured against either
+the host observation time or store receipt time. Expired session presence,
+replacement execution and restore fencing also invalidate applicability.
+Retries of the same observation cannot renew its freshness; clearing retains
+an ordering marker so a delayed older report cannot resurrect the old cause.
+
+The reporting call has a short timeout and fails soft if the installed CLI or
+API lacks the route. Ordinary delivery still uses its existing wake, claim and
+reconciliation rules. An empty readiness hint records unknown rather than
+available. No journal text, request body, native process ID or credential is
+included in the observation.
+
 ## Reading a diagnosis
 
 Check the delivery state first. A claim is progress; explicit handling is

@@ -152,6 +152,15 @@ func (s *Store) ObserveSessionDelivery(ctx context.Context, req SessionDeliveryO
 	if err := req.validate(); err != nil {
 		return out, err
 	}
+	// PostgreSQL retains microseconds. Compare the same representation that
+	// will round-trip through storage so a nanosecond retry cannot renew age.
+	req.ObservedAt = req.ObservedAt.Truncate(time.Microsecond)
+	if req.Wake != nil && req.Wake.AttemptedAt != nil {
+		wake := *req.Wake
+		attempted := wake.AttemptedAt.Truncate(time.Microsecond)
+		wake.AttemptedAt = &attempted
+		req.Wake = &wake
+	}
 	tx, err := s.begin(ctx)
 	if err != nil {
 		return out, err
