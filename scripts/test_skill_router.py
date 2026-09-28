@@ -433,6 +433,8 @@ class InstallerTests(unittest.TestCase):
             destination = self.root / f"claude-{enabled}"
             claude.install(self.root / f"settings-{enabled}.json", destination, self.base, skill_router=enabled)
             self.assert_installed(destination, enabled)
+        claude.install(self.root / "settings-default.json", self.root / "claude-default", self.base)
+        self.assert_installed(self.root / "claude-default", False)  # opt-in: off unless asked
 
     def test_opencode_installer_copies_and_enables_the_router(self):
         opencode = module("install_opencode_for_router", ROOT / "scripts/install-opencode-hooks.py")
@@ -440,14 +442,18 @@ class InstallerTests(unittest.TestCase):
         config_dir.mkdir()
         (config_dir / "cairn.json").write_text(json.dumps(dict(executable="cairn", socket="socket", token_file="token", repo="shared")))
         opencode.install(config_dir, self.root / "opencode-hooks", "claude")
-        self.assert_installed(self.root / "opencode-hooks", True)
+        self.assert_installed(self.root / "opencode-hooks", False)  # opt-in: off unless asked
+        opencode.install(config_dir, self.root / "opencode-on", "claude", skill_router=True)
+        self.assert_installed(self.root / "opencode-on", True)
         self.assertEqual(json.loads((self.root / "opencode-hooks/config.json").read_text())["harness"], "opencode")
 
     def test_codex_installer_copies_and_enables_the_router(self):
         codex = module("install_codex_for_router", ROOT / "scripts/install-codex-hooks.py")
         with patch.object(codex, "trust"):
             codex.install(self.root / "hooks.json", self.root / "codex-hooks", self.base)
-        self.assert_installed(self.root / "codex-hooks", True)
+            codex.install(self.root / "hooks-on.json", self.root / "codex-on", self.base, skill_router=True)
+        self.assert_installed(self.root / "codex-hooks", False)  # opt-in: off unless asked
+        self.assert_installed(self.root / "codex-on", True)
 
 
 if __name__ == "__main__":

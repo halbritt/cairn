@@ -13,6 +13,14 @@ See [implementation status](docs/implementation-status.md) for dated deployment
 observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
+
+## 2026-09-27
+
+- The skill router is now opt-in: the Claude Code, Codex and OpenCode
+  lifecycle installers copy it but leave it off unless run with
+  `--skill-router` (replacing `--no-skill-router`). On the owner's host it is
+  installed and off, after the owner ended the router-only skills trial. See
+  [skill router](docs/skill-router.md).
 ## 2026-09-26
 
 - Claude channel wakes work again. Since 2026-09-25, Claude Code (observed on

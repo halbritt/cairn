@@ -26,7 +26,7 @@ def write_json(path, value):
             temporary.unlink(missing_ok=True)
 
 
-def install_router(destination, config, enabled=True):
+def install_router(destination, config, enabled=False):
     """Copy the optional skill router beside the hook script; enable it in the engine config."""
     shutil.copyfile(Path(__file__).resolve().parents[1] / "integrations/lifecycle/skill_router.py",
                     destination / "skill_router.py")
@@ -34,7 +34,7 @@ def install_router(destination, config, enabled=True):
     return dict(config, skill_router={"enabled": True}) if enabled else {k: v for k, v in config.items() if k != "skill_router"}
 
 
-def install(settings_path, destination, config, skill_router=True):
+def install(settings_path, destination, config, skill_router=False):
     settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
     hooks = settings.setdefault("hooks", {})
     script = destination / "lifecycle.py"
@@ -75,7 +75,8 @@ def main():
     parser.add_argument("--socket", type=Path, default=home / ".local/share/cairn/api.sock")
     parser.add_argument("--token-file", type=Path, default=home / ".local/share/cairn/hosted-agent.token")
     parser.add_argument("--repo", default=str(home / "git/cairn"))
-    parser.add_argument("--no-skill-router", action="store_true", help="install without prompt-time skill routing")
+    parser.add_argument("--skill-router", action="store_true",
+                        help="enable prompt-time skill routing (off by default; docs/skill-router.md)")
     args = parser.parse_args()
     if not args.cairn or not args.claude:
         parser.error("installed cairn and claude executables are required")
@@ -84,7 +85,7 @@ def main():
                   socket=str(args.socket.absolute()), token_file=str(args.token_file.absolute()), repo=args.repo)
     if settings.get("model"):
         config["model"] = settings["model"]
-    install(args.settings.absolute(), args.destination.absolute(), config, skill_router=not args.no_skill_router)
+    install(args.settings.absolute(), args.destination.absolute(), config, skill_router=args.skill_router)
     print(f"Installed Cairn lifecycle hooks in {args.settings}. Start a fresh Claude session.")
 
 

@@ -1,5 +1,11 @@
 # Skill router
 
+Status 2026-09-27: installed but off on the owner's host. The owner ended the
+router-only skills trial: with a small, regularly reviewed skill set, hiding
+skills saved about 1,500 tokens per session but lost the skills models pull in
+mid-task, added 1.2 to 1.6 seconds per prompt, and sent every prompt to
+TypeSafe. The code stays for a much larger skill catalog.
+
 The lifecycle hook can route each owner prompt to one skill and inject that
 skill's instructions. It exists for skills that skillpack hides from the model
 with `disable-model-invocation: true`. Hidden skills cost no standing context,
@@ -87,10 +93,10 @@ to prevent routing.
 
 ## Configuration
 
-Installers copy `skill_router.py` beside the hook script and write
-`"skill_router": {"enabled": true}` into the engine's `config.json`. Pass
-`--no-skill-router` to any lifecycle installer to leave it off. Set any key
-below inside that block to override its default.
+Installers always copy `skill_router.py` beside the hook script, but the
+router is off unless the installer is run with `--skill-router`, which writes
+`"skill_router": {"enabled": true}` into the engine's `config.json`. Set any
+key below inside that block to override its default.
 
 | key | default |
 |---|---|
@@ -106,8 +112,8 @@ below inside that block to override its default.
 | `exclude_paths` | `["~/git/council"]` |
 
 The paths and Kev address in this table are defaults for the owner's current
-host installation. Other hosts should set their own values in `config.json` or
-install with `--no-skill-router`.
+host installation. Other hosts that enable the router with `--skill-router`
+should set their own values in `config.json`.
 
 `context_chars` is 9,500 because Claude Code delivers about 10,000 characters
 of hook `additionalContext` and drops the rest. Measured on 2026-09-24: 9,000
@@ -118,7 +124,7 @@ cannot be cut off either.
 ## Rollback
 
 Set `"enabled": false` in the installed `config.json`, set
-`CAIRN_SKILL_ROUTER=0`, or reinstall with `--no-skill-router`. A missing or
+`CAIRN_SKILL_ROUTER=0`, or reinstall without `--skill-router`. A missing or
 broken `skill_router.py` leaves memory recall unchanged and records
 `router unavailable` as `last_route` in the session's state file. The Hermes
 installer copies the module but leaves it disabled.
