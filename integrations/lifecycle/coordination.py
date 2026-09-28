@@ -2,6 +2,7 @@
 """Associate native sessions with Cairn UUIDs; watch their host process liveness."""
 import argparse
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
@@ -281,7 +282,7 @@ def claude_session_config(config, native_id, process):
     return claude_channel_admission(config, native_id, process)[0]
 
 
-def note_wake_refusal(config, state, delivery, reason):
+def note_wake_refusal(config, state, delivery, reason, condition='unknown'):
     """Log once per (delivery, reason) why a ready delivery gets no automatic wake.
 
     The watcher used to return silently here, which hid a whole account's
@@ -289,7 +290,7 @@ def note_wake_refusal(config, state, delivery, reason):
     30-second cycle does not repeat the line; a new delivery or a changed
     reason logs again. Returns None so callers can ``return`` it directly.
     """
-    record = dict(delivery_id=delivery, reason=reason)
+    record = dict(delivery_id=delivery, reason=reason, condition=condition)
     if state.get('wake_refusal') == record:
         return None
     state['wake_refusal'] = record
@@ -300,8 +301,100 @@ def note_wake_refusal(config, state, delivery, reason):
     return None
 
 
+def utc_timestamp(seconds):
+    return datetime.fromtimestamp(seconds, timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def delivery_observation(config, state, prepared):
+    """Describe only this host's current session and ready-head observation.
+
+    In particular, an empty ready lookup does not establish an empty inbox,
+    and an old wake marker is not evidence about another delivery.
+    """
+    agent = state['agent']
+    if (not config.get('native_delivery') or agent['metadata'].get('delivery_mode') != 'existing-session'):
+        return None
+    condition = 'unknown'
+    delivery_id = None
+    wake = None
+    if agent['metadata'].get('state') == 'busy':
+        condition = 'busy'
+    elif agent['metadata'].get('state') != 'idle':
+        condition = 'unknown'
+    elif not config.get('idle_wakeup'):
+        condition = 'owner_turn_required'
+    elif prepared and prepared.get('wake'):
+        selected = prepared['wake']
+        delivery_id = selected.get('delivery_id')
+        condition = 'wake_retained' if selected.get('status') == 'queued' else 'automatic_available'
+        if condition == 'wake_retained':
+            wake = selected
+    else:
+        refusal = state.get('wake_refusal') or {}
+        if refusal.get('delivery_id'):
+            delivery_id = refusal['delivery_id']
+            condition = refusal.get('condition') or 'unknown'
+            if condition == 'wake_retained':
+                selected = state.get('idle_wake') or {}
+                if (selected.get('delivery_id') == delivery_id and
+                        selected.get('status') in ('submitted', 'uncertain', 'queued', 'refused')):
+                    wake = selected
+                else:
+                    condition = 'unknown'
+    if condition == 'unknown':
+        delivery_id = None
+    observation = dict(session=session_ref(agent), condition=condition)
+    if delivery_id:
+        observation['delivery_id'] = delivery_id
+    if wake is not None:
+        detail = dict(transport=wake.get('transport') or 'terminal', status=wake['status'])
+        if isinstance(wake.get('attempted_at'), (float, int)):
+            detail['attempted_at'] = utc_timestamp(wake['attempted_at'])
+        observation['wake'] = detail
+    return observation
+
+
+def report_delivery_observation(config, state, prepared):
+    """Best-effort, bounded current-state diagnostic; never a wake dependency."""
+    desired = delivery_observation(config, state, prepared)
+    if desired is None:
+        return
+    previous = state.get('delivery_observation') or {}
+    previous_value = previous.get('value')
+    # Explicitly clear an old exact-delivery diagnosis before recording a new
+    # no-head state. The store retains this as an ordered unknown tombstone.
+    if (desired['condition'] == 'unknown' and 'delivery_id' not in desired and
+            previous_value and previous_value.get('delivery_id') and
+            previous_value.get('condition') not in ('none', 'unknown')):
+        desired = dict(session=desired['session'], delivery_id=previous_value['delivery_id'], condition='none')
+    now = time.time()
+    if desired == previous_value and now - previous.get('sent_at', 0) < 45:
+        return
+    request = dict(desired, observed_at=utc_timestamp(now))
+    try:
+        call(config, 'session-delivery-observe', request)
+    except CoordinationError as exc:
+        if state.get('delivery_observation_error') != exc.code:
+            print(f"Cairn presence {config['binding']}: delivery diagnostics unavailable ({exc.code}); "
+                  "ordinary inbox delivery continues", file=sys.stderr)
+            state['delivery_observation_error'] = exc.code
+        return
+    state.pop('delivery_observation_error', None)
+    state['delivery_observation'] = dict(value=desired, sent_at=now)
+
+
 def prepare_idle_wake(config, state, path):
-    config, refusal = claude_channel_admission(config, state.get('agent', {}).get('native_session_id'), state['process'])
+    native_id = state.get('agent', {}).get('native_session_id')
+    original_config = config
+    config, refusal = claude_channel_admission(config, native_id, state['process'])
+    refusal_condition = None
+    if refusal:
+        if not original_config.get('claude_channel_dir'):
+            refusal_condition = 'channel_unconfigured'
+        elif 'claude_channel_sessions' in original_config and native_id not in original_config['claude_channel_sessions']:
+            refusal_condition = 'channel_not_selected'
+        else:
+            refusal_condition = 'channel_not_launched'
     if (not config.get('idle_wakeup') or not config.get('native_delivery') or
             state.get('inbox_intent') or state.get('ending') or state.get('retired')):
         return None
@@ -319,7 +412,8 @@ def prepare_idle_wake(config, state, path):
     replay = state.get('opencode_replay', {})
     if replay.get('delivery_id') == delivery and replay.get('session') == session_ref(agent):
         return note_wake_refusal(config, state, delivery,
-            'native OpenCode already admitted this request; the next owner prompt can recover pending delivery')
+            'native OpenCode already admitted this request; the next owner prompt can recover pending delivery',
+            'native_admission_retained')
     state.pop('opencode_replay', None)
     endpoint = codex_queue_endpoint(config, state['process'])
     prior = state.get('idle_wake', {})
@@ -331,7 +425,8 @@ def prepare_idle_wake(config, state, path):
         # Submitted or uncertain; only native handling permits a new nudge.
         return note_wake_refusal(config, state, delivery,
             f"a {prior.get('transport') or 'terminal'} wake for this delivery is already {prior.get('status')}; "
-            "only native handling of that wake permits another")
+            "only native handling of that wake permits another",
+            'wake_retained' if prior.get('status') in ('submitted', 'uncertain', 'queued', 'refused') else 'unknown')
     request_id = ready.get('request_id') or str(uuid.uuid4())
     if endpoint:
         state.pop('wake_refusal', None)
@@ -390,15 +485,18 @@ def prepare_idle_wake(config, state, path):
             'codex': 'no native Codex queue endpoint (explicit Unix listener) for this process',
             'opencode': 'no verified OpenCode prompt_idle bridge for this process; owner prompts remain eligible',
             'hermes': 'no Hermes queue endpoint for this process',
-        }.get(config['harness'], 'no native wake transport for this process'))
+        }.get(config['harness'], 'no native wake transport for this process'),
+            refusal_condition or 'native_transport_unavailable')
     environment = herdr_environment(state['process'])
     if environment is None:
-        return note_wake_refusal(config, state, delivery, 'native process has no Herdr host environment')
+        return note_wake_refusal(config, state, delivery, 'native process has no Herdr host environment',
+                                'terminal_host_unavailable')
     candidates = herdr_call(config, environment, 'agent', 'list')['agents']
     matches = [h for h in candidates if host_matches(config, state, h, environment)]
     if len(matches) != 1:
         return note_wake_refusal(config, state, delivery,
-            f'{len(matches)} idle Herdr panes match this session; exactly one is required')
+            f'{len(matches)} idle Herdr panes match this session; exactly one is required',
+            'terminal_target_ambiguous')
     host = matches[0]
     current = herdr_call(config, environment, 'agent', 'get', host['pane_id'])['agent']
     keys = ('pane_id', 'terminal_id', 'revision', 'state_change_seq')
@@ -1941,6 +2039,7 @@ def watch_once(config):
                         state["agent"] = heartbeat(config, state)
                         cancel_prepared = watch_inbox(config, state, path)
                         prepared = prepare_idle_wake(config, state, path)
+                        report_delivery_observation(config, state, prepared)
                 elif not state.get("agent"):
                     # An uncertain registration may have committed; without an
                     # observed response it expires naturally within 90 seconds.

@@ -49,6 +49,12 @@ elif operation=='session-inbox-ready':
     count=int(count_path.read_text()) if count_path.exists() else 0
     count_path.write_text(str(count+1))
     data={'delivery_id':'' if fixture.get('vanish_on_recheck') and count else fixture['delivery']}
+elif operation=='session-delivery-observe':
+    if fixture.get('old_diagnostics'):
+        print(json.dumps({'ok':False,'status':'INVALID_REQUEST'}))
+        raise SystemExit(2)
+    with (root/'observations.jsonl').open('a') as f: f.write(json.dumps(request)+'\n')
+    data=request
 else: raise SystemExit('unexpected API operation '+operation)
 print(json.dumps({'ok':True,'data':data}))
 '''
@@ -194,6 +200,10 @@ class IdleWakeup(unittest.TestCase):
 
     def prompts(self):
         path=self.root/'prompts.jsonl'
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+    def observations(self):
+        path=self.root/'observations.jsonl'
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
     def spawn_queue_child(self, rounds, gate=False, remote=False):
@@ -475,6 +485,97 @@ time.sleep(30)
                 self.assertEqual(api.call_args.args[1], 'session-inbox-claim')
                 self.assertEqual(api.call_args.args[2]['session'], coordination.session_ref(self.agent))
         self.assertEqual(self.config, original)
+
+    def test_delivery_diagnostic_is_exact_and_clears_to_unknown(self):
+        self.config.update(harness='claude', claude_channel_dir=str(self.root/'channels'),
+                           claude_channel_sessions=['another-session'])
+        self.assertEqual(self.watch().returncode, 0)
+        first = self.observations()
+        self.assertEqual(len(first), 1)
+        self.assertEqual(first[0]['condition'], 'channel_not_selected')
+        self.assertEqual(first[0]['delivery_id'], 'delivery-one')
+        self.assertEqual(first[0]['session'], coordination.session_ref(self.agent))
+        self.assertTrue(first[0]['observed_at'].endswith('Z'))
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertEqual(len(self.observations()), 1, 'unchanged observation was re-sent on next poll')
+        self.fixture['delivery'] = ''
+        self.save_fixture()
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertEqual(self.observations()[-1]['condition'], 'none')
+        self.assertEqual(self.observations()[-1]['delivery_id'], 'delivery-one')
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertEqual(self.observations()[-1]['condition'], 'unknown')
+        self.assertNotIn('delivery_id', self.observations()[-1],
+                         'no ready head is not evidence that the backlog is empty')
+
+    def test_retained_wake_is_a_host_report_not_native_admission(self):
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertEqual(self.observations()[-1]['condition'], 'automatic_available')
+        self.assertEqual(self.watch().returncode, 0)
+        retained = self.observations()[-1]
+        self.assertEqual(retained['condition'], 'wake_retained')
+        self.assertEqual(retained['wake']['status'], 'submitted')
+        self.assertEqual(retained['wake']['transport'], 'terminal')
+        self.assertTrue(retained['wake']['attempted_at'].endswith('Z'))
+        self.assertEqual(len(self.prompts()), 1, 'diagnostics caused an extra native wake')
+
+    def test_busy_report_has_no_ready_head_or_wake(self):
+        self.agent['metadata']['state'] = 'busy'
+        state = json.loads(self.path.read_text())
+        state['agent'] = self.agent
+        coordination.write_state(self.path, state)
+        self.save_fixture()
+        self.assertEqual(self.watch().returncode, 0)
+        observed = self.observations()[-1]
+        self.assertEqual(observed['condition'], 'busy')
+        self.assertNotIn('delivery_id', observed)
+        self.assertEqual(self.prompts(), [])
+
+    def test_owner_turn_required_does_not_claim_automatic_availability(self):
+        self.config.pop('idle_wakeup')
+        self.assertEqual(self.watch().returncode, 0)
+        observed = self.observations()[-1]
+        self.assertEqual(observed['condition'], 'owner_turn_required')
+        self.assertNotIn('delivery_id', observed)
+        self.assertEqual(self.prompts(), [])
+
+    def test_old_diagnostic_api_fails_soft_without_repeating_warning(self):
+        self.fixture['old_diagnostics'] = True
+        self.save_fixture()
+        first = self.watch()
+        self.assertEqual(first.returncode, 0)
+        self.assertIn('delivery diagnostics unavailable (INVALID_REQUEST)', first.stderr)
+        self.assertEqual(len(self.prompts()), 1, 'ordinary wake was blocked by old diagnostic API')
+        second = self.watch()
+        self.assertEqual(second.returncode, 0)
+        self.assertNotIn('delivery diagnostics unavailable', second.stderr)
+        self.assertEqual(len(self.prompts()), 1)
+        self.fixture['old_diagnostics'] = False
+        self.save_fixture()
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertEqual(self.observations()[-1]['condition'], 'wake_retained')
+
+    def test_unchanged_diagnostic_refreshes_before_stale_threshold(self):
+        self.config.update(harness='claude', claude_channel_dir=str(self.root/'channels'),
+                           claude_channel_sessions=['another-session'])
+        self.assertEqual(self.watch().returncode, 0)
+        state = json.loads(self.path.read_text())
+        state['delivery_observation']['sent_at'] -= 46
+        coordination.write_state(self.path, state)
+        self.assertEqual(self.watch().returncode, 0)
+        observed = self.observations()
+        self.assertEqual(len(observed), 2)
+        self.assertEqual(observed[0]['condition'], observed[1]['condition'])
+        self.assertNotEqual(observed[0]['observed_at'], observed[1]['observed_at'])
+
+    def test_terminal_host_unavailable_is_a_closed_condition(self):
+        state = json.loads(self.path.read_text())
+        with mock.patch.object(coordination, 'call', return_value={'delivery_id': 'delivery-one'}), \
+                mock.patch.object(coordination, 'herdr_environment', return_value=None):
+            self.assertIsNone(coordination.prepare_idle_wake(self.config, state, self.path))
+        self.assertEqual(state['wake_refusal']['condition'], 'terminal_host_unavailable')
+        self.assertEqual(coordination.delivery_observation(self.config, state, None)['condition'],
+                         'terminal_host_unavailable')
 
     def test_claude_selected_session_missing_channel_remains_closed(self):
         self.config.update(harness='claude', claude_channel_dir=str(self.root/'absent'), claude_channel_sessions=['native-one'])
