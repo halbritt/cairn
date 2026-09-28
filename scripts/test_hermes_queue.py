@@ -6,6 +6,7 @@ import socket
 import struct
 import tempfile
 import threading
+import time
 import unittest
 
 from integrations.lifecycle import hermes_queue
@@ -45,6 +46,9 @@ class HermesQueueTests(unittest.TestCase):
                     req_id = req.get('id')
                     method = req.get('method')
                     params = req.get('params', {})
+
+                    if behavior == 'slow_abort':
+                        time.sleep(4.2)
 
                     if behavior == 'drop':
                         return
@@ -189,6 +193,14 @@ class HermesQueueTests(unittest.TestCase):
         self.assertEqual(len(tools), 1)
         self.assertEqual(tools[0]['item_id'], 'proc_123')
         self.assertEqual(tools[0]['stop_state'], 'terminated')
+
+    def test_abort_waits_for_native_tree_cleanup_without_resubmitting(self):
+        self.serve(behavior='slow_abort')
+        result = hermes_queue.abort(self.path, self.process, 'ses_hermes123',
+                                    expected_request_id='request-slow')
+        self.join_workers()
+        self.assertTrue(result['aborted'])
+        self.assertEqual(len(self.requests), 1)
 
     def test_abort_mismatched_request_refused(self):
         """7. Abort with mismatched request ID raises RequestMismatchError to protect owner turn."""

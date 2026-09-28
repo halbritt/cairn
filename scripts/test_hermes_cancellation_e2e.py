@@ -26,7 +26,7 @@ if str(REPO_ROOT) not in sys.path:
 _hermes_root = Path(os.environ.get('HERMES_ROOT', Path.home() / '.hermes' / 'hermes-agent'))
 if str(_hermes_root) not in sys.path:
     sys.path.insert(0, str(_hermes_root))
-_venv_site = Path.home() / '.hermes' / 'hermes-agent' / 'venv/lib'
+_venv_site = _hermes_root / '.venv/lib'
 if not _venv_site.exists() and (_hermes_root / 'venv/lib').exists():
     _venv_site = _hermes_root / 'venv/lib'
 if _venv_site.exists():
@@ -36,6 +36,8 @@ if _venv_site.exists():
 
 # Set up isolated HERMES_HOME before importing ANY Hermes module (P1 B3 requirement)
 import shutil
+_old_temp_env = {name: os.environ.get(name) for name in ('TMPDIR', 'TMP', 'TEMP')}
+_old_tempdir = tempfile.tempdir
 _isolated_tmp = tempfile.TemporaryDirectory(prefix='cairn-hermes-test-')
 _hermes_home = Path(_isolated_tmp.name) / '.hermes'
 _hermes_home.mkdir(parents=True, mode=0o700)
@@ -70,7 +72,7 @@ def _cleanup_fixture_logging():
     if logs is None:
         return
     with logs._queue_state_lock:
-        owned = [h for h in logs.rotating_file_handlers()
+        owned = [h for h in list(logs._queued_file_handlers)
                  if Path(h.baseFilename).resolve().is_relative_to(_hermes_home.resolve())]
         if not owned:
             return
@@ -179,6 +181,17 @@ class HermesCancellationE2ETests(unittest.TestCase):
             except OSError:
                 pass
         _cleanup_fixture_logging()
+        # New Hermes routes subprocess scratch files into HERMES_HOME at import.
+        # Restore only fixture-owned routing before removing that directory.
+        for name, old_value in _old_temp_env.items():
+            current = os.environ.get(name)
+            if current and Path(current).is_relative_to(_hermes_home):
+                if old_value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = old_value
+        if tempfile.tempdir and Path(tempfile.tempdir).is_relative_to(_hermes_home):
+            tempfile.tempdir = _old_tempdir
         old_env = getattr(cls, 'old_hermes_home', _old_hermes_home)
         if old_env is not None:
             os.environ['HERMES_HOME'] = old_env
@@ -729,7 +742,8 @@ class HermesCancellationE2ETests(unittest.TestCase):
                 cancelled.set()
 
         worker = threading.Thread(
-            target=self.cli._process_loop, args=(self.cli._app,), daemon=True
+            target=(self.cli._tui_process_loop if hasattr(self.cli, "_tui_process_loop")
+                    else self.cli._process_loop), daemon=True
         )
         worker.start()
         self.assertTrue(removed.wait(4))
@@ -1198,7 +1212,7 @@ with tempfile.TemporaryDirectory(prefix="cairn-log-owner-") as foreign_home:
     if foreign == "before":
         logs._register_queued_handler(other)
     from scripts import test_hermes_cancellation_e2e as t
-    owned = [h for h in logs.rotating_file_handlers()
+    owned = [h for h in list(logs._queued_file_handlers)
              if Path(h.baseFilename).is_relative_to(t._hermes_home)]
     assert owned, "native CLI logging was not exercised"
     t.HermesCancellationE2ETests.setUpClass()
@@ -1218,12 +1232,14 @@ with tempfile.TemporaryDirectory(prefix="cairn-log-owner-") as foreign_home:
             logs.flush_log_queue()
     assert not listener_thread.is_alive(), "fixture listener survived teardown"
     assert not t._hermes_home.exists()
+    with tempfile.TemporaryDirectory() as subsequent:
+        assert Path(subsequent).is_dir()
     assert not stderr.getvalue(), stderr.getvalue()
-    assert all(h not in logs.rotating_file_handlers() and h._closed for h in owned)
+    assert all(h not in list(logs._queued_file_handlers) and h._closed for h in owned)
     assert ordinary in logging.getLogger().handlers and not ordinary._closed
     assert "after fixture teardown 2" in ordinary_stream.getvalue()
     if foreign != "none":
-        assert other in logs.rotating_file_handlers() and not other._closed
+        assert other in list(logs._queued_file_handlers) and not other._closed
         assert "after fixture teardown 2" in Path(other.baseFilename).read_text()
         logs._reset_queued_handlers()  # Remaining queue resources belong to this subprocess.
     else:

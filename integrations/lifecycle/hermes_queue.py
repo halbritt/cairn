@@ -131,6 +131,10 @@ def abort(endpoint, process, native_id, expected_request_id=None, expected_turn_
     """
     transport = _open(endpoint, process)
     try:
+        # Native process-tree shutdown includes two grace windows and exit
+        # verification per tool. Keep a bounded wait without replaying an abort
+        # whose response is late; ordinary admission/status stays at four seconds.
+        transport.settimeout(30)
         params = {
             'session_id': native_id,
         }

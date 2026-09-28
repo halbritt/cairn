@@ -16,6 +16,12 @@ and MCP processes.
 
 ## 2026-09-28
 
+- Hermes cancellation waits up to 30 seconds for native process-tree cleanup.
+  The previous four-second response window could expire during Hermes's two
+  shutdown grace periods; uncertain outcomes still must not be resent.
+  Integration fixtures now select the requested checkout's dependencies and
+  exercise either the current TUI loop or the older loop, preserving both lanes.
+
 - Removed the skill router (owner decision after ending the router-only
   skills trial on 2026-09-27). The lifecycle engine no longer loads or calls
   `skill_router.py`; the OpenCode plugin no longer carries routed skills; the
