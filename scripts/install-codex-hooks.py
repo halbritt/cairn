@@ -66,8 +66,9 @@ def install(hooks_path, destination, config, skill_router=False):
     script.chmod(0o700)
     shutil.copyfile(ROOT / "integrations/lifecycle/skill_router.py", destination / "skill_router.py")
     (destination / "skill_router.py").chmod(0o600)
-    if skill_router:
-        config = dict(config, skill_router={"enabled": True})
+    # Opt-in, as in the Claude and OpenCode installers: without it, drop any supplied block.
+    config = ({**config, "skill_router": {"enabled": True}} if skill_router
+              else {k: v for k, v in config.items() if k != "skill_router"})
     write_json(config_path, dict(config, harness="codex", state_dir=str(destination / "state")))
     backup = hooks_path.with_name(hooks_path.name + ".before-cairn-lifecycle")
     if original is not None and not backup.exists():

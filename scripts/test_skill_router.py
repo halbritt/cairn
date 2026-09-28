@@ -453,6 +453,11 @@ class InstallerTests(unittest.TestCase):
             codex.install(self.root / "hooks.json", self.root / "codex-hooks", self.base)
             codex.install(self.root / "hooks-on.json", self.root / "codex-on", self.base, skill_router=True)
         self.assert_installed(self.root / "codex-hooks", False)  # opt-in: off unless asked
+        supplied = dict(self.base, skill_router={"enabled": True})
+        for name, kwargs in (("codex-supplied-omitted", {}), ("codex-supplied-false", {"skill_router": False})):
+            with patch.object(codex, "trust"):
+                codex.install(self.root / (name + ".json"), self.root / name, supplied, **kwargs)
+            self.assert_installed(self.root / name, False)  # a supplied enabled block does not survive
         self.assert_installed(self.root / "codex-on", True)
 
 
