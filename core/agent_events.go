@@ -92,6 +92,9 @@ type AgentDelivery struct {
 	// the same unreleased hold, execution and database generation.
 	Late  bool       `json:"late,omitempty"`
 	Event AgentEvent `json:"event"`
+	// Diagnosis is added only by event-status for request events and by
+	// operator review. Other delivery responses omit it.
+	Diagnosis *DeliveryDiagnosis `json:"diagnosis,omitempty"`
 }
 type NextEventResult struct {
 	Delivery *AgentDelivery `json:"delivery"`
@@ -780,7 +783,22 @@ func (s *Store) AgentEventStatus(ctx context.Context, req EventStatusRequest, de
 		out.Deliveries = append(out.Deliveries, d)
 		out.NextAfter = d.DeliveryID
 	}
-	return out, rows.Err()
+	if err = rows.Err(); err != nil || out.Event.Kind != "request" {
+		return out, err
+	}
+	rows.Close()
+	ids := make([]string, len(out.Deliveries))
+	for i, d := range out.Deliveries {
+		ids[i] = d.DeliveryID
+	}
+	diagnoses, err := deliveryDiagnoses(ctx, tx, ids, dest.AllowLocal)
+	if err != nil {
+		return out, err
+	}
+	for i := range out.Deliveries {
+		out.Deliveries[i].Diagnosis = diagnoses[out.Deliveries[i].DeliveryID]
+	}
+	return out, nil
 }
 
 func (s *Store) AgentEventStats(ctx context.Context, req EventQuery, dest Destination) (EventStats, error) {

@@ -27,6 +27,10 @@ func (s *Server) serveAgentSessions(w http.ResponseWriter, r *http.Request, c cl
 			}
 			return c.store.ReconcileSessionInbox(ctx, req, c.destination)
 		})
+	case "/v1/session-delivery-observe":
+		serveJSON(w, r, func(ctx context.Context, req core.SessionDeliveryObservation) (core.SessionDeliveryObservationResult, error) {
+			return c.store.ObserveSessionDelivery(ctx, req, c.destination)
+		})
 	case "/v1/session-inbox-control":
 		serveJSON(w, r, func(ctx context.Context, req core.AgentSessionRef) (core.SessionInboxControlStatus, error) {
 			return c.store.SessionInboxControl(ctx, req, c.destination)

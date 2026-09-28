@@ -64,6 +64,9 @@ type ReviewDelivery struct {
 	Assessment   *Assessment       `json:"assessment,omitempty"`
 	LatestWake   *ReviewAttempt    `json:"latest_wake,omitempty"`
 	LatestNative *ReviewAttempt    `json:"latest_native,omitempty"`
+	// Diagnosis is the store-computed stage plus any applicable host-reported
+	// observation, for every event kind. It is diagnostic, not authority.
+	Diagnosis *DeliveryDiagnosis `json:"diagnosis,omitempty"`
 }
 
 type EventReviewPage struct {
@@ -146,7 +149,23 @@ func (s *Store) ReviewEvents(ctx context.Context, req EventReviewRequest) (Event
 		out.Deliveries = append(out.Deliveries, d)
 		out.NextAfter = d.Position
 	}
-	return out, rows.Err()
+	if err = rows.Err(); err != nil {
+		return out, err
+	}
+	rows.Close()
+	ids := make([]string, len(out.Deliveries))
+	for i, d := range out.Deliveries {
+		ids[i] = d.DeliveryID
+	}
+	// The unscoped operator sees every session, as the rest of this review does.
+	diagnoses, err := deliveryDiagnoses(ctx, tx, ids, true)
+	if err != nil {
+		return out, err
+	}
+	for i := range out.Deliveries {
+		out.Deliveries[i].Diagnosis = diagnoses[out.Deliveries[i].DeliveryID]
+	}
+	return out, nil
 }
 
 // ReviewQueuedEvents covers accepted pool work that has no delivery yet.

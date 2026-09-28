@@ -142,6 +142,16 @@
           "delivery_id": {
             "type": "string"
           },
+          "diagnosis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.DeliveryDiagnosis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "event": {
             "$ref": "#/components/schemas/core.AgentEvent"
           },
@@ -2307,6 +2317,45 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.DeletionTarget"
       },
+      "core.DeliveryDiagnosis": {
+        "properties": {
+          "computed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.DiagnosisHost"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/core.DiagnosisRecipient"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "waiting_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "computed_at",
+          "recipient",
+          "stage"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.DeliveryDiagnosis"
+      },
       "core.DeliveryRequest": {
         "properties": {
           "adapter": {
@@ -2407,6 +2456,84 @@
         ],
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.Destination"
+      },
+      "core.DiagnosisHost": {
+        "properties": {
+          "applies": {
+            "type": "string"
+          },
+          "condition": {
+            "type": "string"
+          },
+          "delivery_id": {
+            "type": "string"
+          },
+          "freshness": {
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "received_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reported": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "wake": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.ObservedWake"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "applies",
+          "condition",
+          "freshness",
+          "source"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.DiagnosisHost"
+      },
+      "core.DiagnosisRecipient": {
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "execution_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "presence": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.DiagnosisRecipient"
       },
       "core.DiscoveryRanking": {
         "properties": {
@@ -4556,6 +4683,55 @@
         ],
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.Observation"
+      },
+      "core.ObservedWake": {
+        "properties": {
+          "attempted_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "transport"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.ObservedWake"
+      },
+      "core.ObservedWake.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "attempted_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transport": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.ObservedWake"
       },
       "core.OutcomeRequest": {
         "properties": {
@@ -7249,6 +7425,116 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.SessionCancel"
       },
+      "core.SessionDeliveryObservation": {
+        "properties": {
+          "condition": {
+            "type": "string"
+          },
+          "delivery_id": {
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/core.AgentSessionRef"
+          },
+          "wake": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.ObservedWake"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "condition",
+          "observed_at",
+          "session"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionDeliveryObservation"
+      },
+      "core.SessionDeliveryObservation.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "condition": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delivery_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "wake": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/core.ObservedWake.accepted"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionDeliveryObservation"
+      },
+      "core.SessionDeliveryObservationResult": {
+        "properties": {
+          "applied": {
+            "type": "boolean"
+          },
+          "observation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.StoredDeliveryObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "applied",
+          "observation"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionDeliveryObservationResult"
+      },
       "core.SessionInboxAttempt": {
         "properties": {
           "attempt_id": {
@@ -7865,6 +8151,53 @@
         },
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.SpawnRequest"
+      },
+      "core.StoredDeliveryObservation": {
+        "properties": {
+          "condition": {
+            "type": "string"
+          },
+          "delivery_id": {
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/core.AgentSessionRef"
+          },
+          "source": {
+            "type": "string"
+          },
+          "wake": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.ObservedWake"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "condition",
+          "observed_at",
+          "received_at",
+          "scope",
+          "session",
+          "source"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.StoredDeliveryObservation"
       },
       "core.SubscriptionRequest": {
         "properties": {
@@ -17627,6 +17960,165 @@
         "x-cairn-source": "server.go"
       }
     },
+    "/v1/session-delivery-observe": {
+      "post": {
+        "operationId": "session-delivery-observe",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "condition": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "delivery_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "observed_at": {
+                        "format": "date-time",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "session": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.AgentSessionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "wake": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/core.ObservedWake.accepted"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.SessionDeliveryObservation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/core.SessionDeliveryObservationResult"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.SessionDeliveryObservation"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.SessionDeliveryObservation",
+          "response": "github.com/halbritt/cairn/core.SessionDeliveryObservationResult"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "idempotent",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "agent_sessions.go"
+      }
+    },
     "/v1/session-inbox-claim": {
       "post": {
         "operationId": "session-inbox-claim",
@@ -21066,7 +21558,7 @@
     "Cairn-Relay-Protocol"
   ],
   "x-cairn-retry-classes": {
-    "idempotent": "Repeating has the same effect as one call (presence refresh, leave, lease extension). Safe to repeat with the same arguments.",
+    "idempotent": "Repeating has the same effect as one call (presence refresh, leave, lease extension, current-state host observation). Safe to repeat with the same arguments; a repeated observation does not refresh its freshness.",
     "lease": "Keyed by delivery_id and lease_id. A repeat after an earlier success is refused with STALE_LEASE, which does not by itself prove the first call failed: inspect event status.",
     "no-key": "May have a durable effect and has no retry key. After an uncertain outcome do not repeat automatically; inspect state first.",
     "read": "No durable effect. Safe to repeat after any failure.",

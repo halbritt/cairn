@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
@@ -179,6 +180,14 @@ func TestRealRepliesConformToContract(t *testing.T) {
 		t.Fatalf("session-inbox-ready: %d %s", out.status, out.body)
 	}
 	c.call(c.server, "remote", "event-watch", `{}`, session)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	c.ok("remote", "session-delivery-observe", `{"session":{"agent_id":"`+agent.AgentID+`","execution_id":"`+agent.ExecutionID+`"},"condition":"busy","observed_at":"`+now+`"}`)
+	requested := c.ok("local", "event-publish", `{"request_id":"`+uuid.NewString()+`","destination":{"type":"agent","name":"agent/`+agent.AgentID+`"},"kind":"request","ref":{"record_id":"`+record.RecordID+`","version":1}}`)
+	var request core.AgentEvent
+	if err := json.Unmarshal(requested, &request); err != nil {
+		t.Fatal(err)
+	}
+	c.ok("local", "event-inspect", `{"event_id":"`+request.EventID+`"}`)
 	c.ok("local", "preview-retract", `{"record_id":"`+record.RecordID+`"}`)
 	// Representative refusals must also match the error envelope and inventory.
 	c.call(c.server, "local", "get", `{"record_id":"`+uuid.NewString()+`"}`, nil)

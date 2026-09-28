@@ -88,7 +88,7 @@ var remoteOperations = map[string]bool{
 	"index": true, "expand": true, "expand-evidence": true, "compile": true, "recompile": true,
 	"evidence": true, "history": true, "get": true, "usage": true, "usage-coverage": true,
 	"agent-register": true, "agent-context": true, "agent-heartbeat": true, "agent-leave": true, "agent-resolve": true, "agent-directory": true,
-	"session-inbox-ready": true, "session-inbox-claim": true, "session-inbox-reconcile": true, "session-inbox-control": true,
+	"session-inbox-ready": true, "session-inbox-claim": true, "session-inbox-reconcile": true, "session-inbox-control": true, "session-delivery-observe": true,
 	"event-publish": true, "event-complete": true, "event-renew": true, "event-subscribe": true, "event-subscriptions": true, "event-list": true, "event-watch": true, "event-inspect": true, "event-group": true, "event-groups": true,
 	"register-context": false, "event-next": false, "event-retry": false,
 	"worker-register": false, "worker-heartbeat": false, "worker-health": false, "worker-list": false, "pool-list": false,
