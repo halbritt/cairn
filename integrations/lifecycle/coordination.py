@@ -305,25 +305,30 @@ def utc_timestamp(seconds):
     return datetime.fromtimestamp(seconds, timezone.utc).isoformat().replace('+00:00', 'Z')
 
 
-def delivery_observation(config, state, prepared):
+def delivery_observation(config, state, prepared, cycle=None):
     """Describe only this host's current session and ready-head observation.
 
     In particular, an empty ready lookup does not establish an empty inbox,
     and an old wake marker is not evidence about another delivery.
     """
     agent = state['agent']
-    if (not config.get('native_delivery') or agent['metadata'].get('delivery_mode') != 'existing-session'):
+    if agent['metadata'].get('delivery_mode') != 'existing-session':
         return None
+    if not config.get('native_delivery') and not state.get('delivery_observation'):
+        return None
+    cycle = cycle or {}
     condition = 'unknown'
     delivery_id = None
     wake = None
-    if agent['metadata'].get('state') == 'busy':
+    if not config.get('native_delivery') or state.get('inbox_intent') or state.get('ending') or state.get('retired'):
+        condition = 'unknown'
+    elif agent['metadata'].get('state') == 'busy':
         condition = 'busy'
     elif agent['metadata'].get('state') != 'idle':
         condition = 'unknown'
     elif not config.get('idle_wakeup'):
         condition = 'owner_turn_required'
-    elif prepared and prepared.get('wake'):
+    elif prepared and prepared.get('wake') and cycle.get('ready_delivery') == prepared['wake'].get('delivery_id'):
         selected = prepared['wake']
         delivery_id = selected.get('delivery_id')
         condition = 'wake_retained' if selected.get('status') == 'queued' else 'automatic_available'
@@ -331,7 +336,7 @@ def delivery_observation(config, state, prepared):
             wake = selected
     else:
         refusal = state.get('wake_refusal') or {}
-        if refusal.get('delivery_id'):
+        if refusal.get('delivery_id') and refusal['delivery_id'] == cycle.get('ready_delivery'):
             delivery_id = refusal['delivery_id']
             condition = refusal.get('condition') or 'unknown'
             if condition == 'wake_retained':
@@ -354,36 +359,40 @@ def delivery_observation(config, state, prepared):
     return observation
 
 
-def report_delivery_observation(config, state, prepared):
+def report_delivery_observation(config, state, prepared, cycle=None):
     """Best-effort, bounded current-state diagnostic; never a wake dependency."""
-    desired = delivery_observation(config, state, prepared)
-    if desired is None:
-        return
-    previous = state.get('delivery_observation') or {}
-    previous_value = previous.get('value')
-    # Explicitly clear an old exact-delivery diagnosis before recording a new
-    # no-head state. The store retains this as an ordered unknown tombstone.
-    if (desired['condition'] == 'unknown' and 'delivery_id' not in desired and
-            previous_value and previous_value.get('delivery_id') and
-            previous_value.get('condition') not in ('none', 'unknown')):
-        desired = dict(session=desired['session'], delivery_id=previous_value['delivery_id'], condition='none')
-    now = time.time()
-    if desired == previous_value and now - previous.get('sent_at', 0) < 45:
-        return
-    request = dict(desired, observed_at=utc_timestamp(now))
     try:
-        call(config, 'session-delivery-observe', request)
+        desired = delivery_observation(config, state, prepared, cycle)
+        if desired is None:
+            return
+        previous = state.get('delivery_observation') or {}
+        previous_value = previous.get('value')
+        # Explicitly clear an old exact-delivery diagnosis before recording a
+        # new no-head state. The store retains this as an ordered unknown tombstone.
+        if (desired['condition'] == 'unknown' and 'delivery_id' not in desired and
+                previous_value and previous_value.get('delivery_id') and
+                previous_value.get('condition') not in ('none', 'unknown')):
+            desired = dict(session=desired['session'], delivery_id=previous_value['delivery_id'], condition='none')
+        now = time.time()
+        if desired == previous_value and now - previous.get('sent_at', 0) < 45:
+            return
+        request = dict(desired, observed_at=utc_timestamp(now))
+        call(config, 'session-delivery-observe', request, timeout=0.5)
     except CoordinationError as exc:
-        if state.get('delivery_observation_error') != exc.code:
-            print(f"Cairn presence {config['binding']}: delivery diagnostics unavailable ({exc.code}); "
-                  "ordinary inbox delivery continues", file=sys.stderr)
-            state['delivery_observation_error'] = exc.code
+        diagnostic_error = exc.code
+    except (OSError, ValueError, KeyError, TypeError, OverflowError) as exc:
+        diagnostic_error = type(exc).__name__
+    else:
+        state.pop('delivery_observation_error', None)
+        state['delivery_observation'] = dict(value=desired, sent_at=now)
         return
-    state.pop('delivery_observation_error', None)
-    state['delivery_observation'] = dict(value=desired, sent_at=now)
+    if state.get('delivery_observation_error') != diagnostic_error:
+        print(f"Cairn presence {config['binding']}: delivery diagnostics unavailable ({diagnostic_error}); "
+              "ordinary inbox delivery continues", file=sys.stderr)
+        state['delivery_observation_error'] = diagnostic_error
 
 
-def prepare_idle_wake(config, state, path):
+def prepare_idle_wake(config, state, path, cycle=None):
     native_id = state.get('agent', {}).get('native_session_id')
     original_config = config
     config, refusal = claude_channel_admission(config, native_id, state['process'])
@@ -405,6 +414,8 @@ def prepare_idle_wake(config, state, path):
         return None
     ready = call(config, 'session-inbox-ready', session_ref(agent))
     delivery = ready.get('delivery_id')
+    if cycle is not None:
+        cycle['ready_delivery'] = delivery
     if not delivery:
         state.pop('wake_refusal', None)
         state.pop('opencode_replay', None)
@@ -2038,8 +2049,9 @@ def watch_once(config):
                     else:
                         state["agent"] = heartbeat(config, state)
                         cancel_prepared = watch_inbox(config, state, path)
-                        prepared = prepare_idle_wake(config, state, path)
-                        report_delivery_observation(config, state, prepared)
+                        cycle = {}
+                        prepared = prepare_idle_wake(config, state, path, cycle)
+                        report_delivery_observation(config, state, prepared, cycle)
                 elif not state.get("agent"):
                     # An uncertain registration may have committed; without an
                     # observed response it expires naturally within 90 seconds.

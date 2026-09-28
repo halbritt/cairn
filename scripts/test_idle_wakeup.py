@@ -50,6 +50,9 @@ elif operation=='session-inbox-ready':
     count_path.write_text(str(count+1))
     data={'delivery_id':'' if fixture.get('vanish_on_recheck') and count else fixture['delivery']}
 elif operation=='session-delivery-observe':
+    if fixture.get('slow_diagnostics'):
+        import time
+        time.sleep(2)
     if fixture.get('old_diagnostics'):
         print(json.dumps({'ok':False,'status':'INVALID_REQUEST'}))
         raise SystemExit(2)
@@ -570,12 +573,44 @@ time.sleep(30)
 
     def test_terminal_host_unavailable_is_a_closed_condition(self):
         state = json.loads(self.path.read_text())
+        cycle = {}
         with mock.patch.object(coordination, 'call', return_value={'delivery_id': 'delivery-one'}), \
                 mock.patch.object(coordination, 'herdr_environment', return_value=None):
-            self.assertIsNone(coordination.prepare_idle_wake(self.config, state, self.path))
+            self.assertIsNone(coordination.prepare_idle_wake(self.config, state, self.path, cycle))
         self.assertEqual(state['wake_refusal']['condition'], 'terminal_host_unavailable')
-        self.assertEqual(coordination.delivery_observation(self.config, state, None)['condition'],
+        self.assertEqual(coordination.delivery_observation(self.config, state, None, cycle)['condition'],
                          'terminal_host_unavailable')
+
+    def test_old_refusal_is_not_restamped_without_a_ready_lookup(self):
+        state = json.loads(self.path.read_text())
+        state['wake_refusal'] = dict(delivery_id='delivery-one', reason='old refusal',
+                                     condition='native_transport_unavailable')
+        self.assertEqual(coordination.delivery_observation(self.config, state, None, {})['condition'], 'unknown')
+        state['delivery_observation'] = dict(value=dict(session=coordination.session_ref(self.agent),
+            condition='native_transport_unavailable', delivery_id='delivery-one'), sent_at=time.time()-30)
+        with mock.patch.object(coordination, 'call', return_value={}) as api:
+            coordination.report_delivery_observation(self.config, state, None, {})
+        self.assertEqual(api.call_args.args[2]['condition'], 'none')
+
+    def test_slow_diagnostics_cannot_block_native_wake(self):
+        self.fixture['slow_diagnostics'] = True
+        self.save_fixture()
+        started = time.monotonic()
+        result = self.watch()
+        self.assertEqual(result.returncode, 0)
+        self.assertLess(time.monotonic()-started, 1.8)
+        self.assertEqual(len(self.prompts()), 1)
+        self.assertIn('delivery diagnostics unavailable (API_UNAVAILABLE)', result.stderr)
+
+    def test_disabling_native_delivery_retires_prior_diagnosis(self):
+        self.config.update(harness='claude', claude_channel_dir=str(self.root/'channels'),
+                           claude_channel_sessions=['another-session'])
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertEqual(self.observations()[-1]['condition'], 'channel_not_selected')
+        self.config['native_delivery'] = False
+        self.config.pop('idle_wakeup')
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertEqual(self.observations()[-1]['condition'], 'none')
 
     def test_claude_selected_session_missing_channel_remains_closed(self):
         self.config.update(harness='claude', claude_channel_dir=str(self.root/'absent'), claude_channel_sessions=['native-one'])
