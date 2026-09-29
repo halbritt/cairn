@@ -16,6 +16,11 @@ and MCP processes.
 
 ## 2026-09-28
 
+- Lifecycle semantic discovery can inspect later ranked pages before choosing
+  bodies to verify. It retains the recall deadline, input/output bounds and
+  independent receipt credits; paging expands candidate reach, not authority
+  or a claim of task success.
+
 - New persistent semantic searches interleave bounded lexical and dense ranks,
   so a strong match from either channel can surface without an overlap bonus.
   Versioned packages preserve historical reciprocal-rank replay and the existing

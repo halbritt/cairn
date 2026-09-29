@@ -24,6 +24,9 @@ RECALL_SEARCH_ROOM = 32000
 RECALL_SECONDS = 11
 RECALL_CANDIDATES = 6
 PREVIEW_CANDIDATES = 10
+SEMANTIC_PREVIEW_LIMIT = 32
+SEMANTIC_PAGE_LIMIT = 4
+SEMANTIC_SEARCH_ROOM = 64000
 MAX_PULLED_CANDIDATES = 8
 PREVIEW_MODEL_SECONDS = 3
 SEMANTIC_MODEL_SECONDS = 8
@@ -235,8 +238,10 @@ class Memory:
             raise HookError("Cairn did not confirm the operation")
         return result["data"]
 
-    def search(self, query, room=SEARCH_ROOM, entities=(), kinds=(), semantic=False, timeout=5):
+    def search(self, query, room=SEARCH_ROOM, entities=(), kinds=(), semantic=False, timeout=5, offset=None):
         hints = ["--semantic"] if semantic else []
+        if offset is not None:
+            hints += ["--offset", str(offset)]
         hints += [flag for entity in entities for flag in ("--entity-file", entity)]
         hints += [flag for kind in kinds for flag in ("--kind", kind)]
         for key, value in self.config.get("context", {}).items():
@@ -590,7 +595,7 @@ def admit_previews(memory, event, intent, sources, status, deadline):
     """Choose bounded body reads from all available previews, without trusting them."""
     previews = [(channel, entry) for channel, found in sources
                 if found.get("credits_remaining", 4) > 0
-                for entry in found.get("index", [])[:PREVIEW_CANDIDATES]]
+                for entry in found.get("index", [])[:PREVIEW_CANDIDATES if channel == "lexical" else SEMANTIC_PREVIEW_LIMIT]]
     status["preview_count"] = len(previews)
     if (len(previews) <= MAX_PULLED_CANDIDATES
             and all(sum(candidate_channel == channel for candidate_channel, _ in previews)
@@ -642,12 +647,15 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
     selected = list(result.get("selected", []))
     sources = [("lexical", result)]
     if len(intent["words"]) >= 2 and not intent["startup"]:
-        try:
-            found = memory.search(intent["query"], room=RECALL_SEARCH_ROOM, semantic=True,
-                                  timeout=recall_timeout(deadline, 3))
-        except HookError:
-            status["discovery"] = "failed"
-        else:
+        offset, preview_count = 0, 0
+        for page_number in range(SEMANTIC_PAGE_LIMIT):
+            try:
+                found = memory.search(intent["query"], room=SEMANTIC_SEARCH_ROOM, semantic=True,
+                                      entities=intent["files"], offset=offset,
+                                      timeout=recall_timeout(deadline, 3))
+            except HookError:
+                status["rejected"]["discovery_page_unavailable"] = 1
+                break
             status["discovery"] = found.get("discovery", {}).get("state", "unknown")
             result["discovery"] = {key: found.get("discovery", {}).get(key)
                                    for key in ("state", "coverage") if key in found.get("discovery", {})}
@@ -655,8 +663,24 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
             for item in found.get("selected", []):
                 if item not in selected:
                     selected.append(item)
-            if status["discovery"] == "ready":
-                sources.append(("semantic", found))
+            if status["discovery"] != "ready":
+                break
+            entries = found.get("index", [])[:SEMANTIC_PREVIEW_LIMIT - preview_count]
+            sources.append(("semantic" if page_number == 0 else "semantic:" + str(offset), dict(found, index=entries)))
+            preview_count += len(entries)
+            status["semantic_pages"] = page_number + 1
+            status["semantic_previews"] = preview_count
+            page = found.get("page") or {}
+            if not isinstance(page, dict):
+                status["rejected"]["invalid_page_cursor"] = 1
+                break
+            next_offset = page.get("next_offset")
+            if next_offset is None or preview_count >= SEMANTIC_PREVIEW_LIMIT:
+                break
+            if type(next_offset) is not int or next_offset <= offset:
+                status["rejected"]["invalid_page_cursor"] = 1
+                break
+            offset = next_offset
     result["selected"] = selected
     if len(render_recall(selected, [], discovery=result.get("discovery")).encode()) > budget:
         raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")

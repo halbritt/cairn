@@ -81,8 +81,12 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
 
 ## Bounds and failures
 
-- Each retrieval requests 32,000 bytes of Cairn search room to inspect more
-  previews; the server's packing rules still determine how many fit. Delivered context text,
+- Lexical discovery requests 32,000 bytes of Cairn search room. Semantic
+  discovery requests 64,000 per page and follows at most four ranked pages,
+  inspecting at most 32 semantic previews in total. Search room is inspection
+  capacity; the server's packing rules still determine how many previews fit.
+  Query, scope and entity hints remain the same across pages. Pages are current
+  reads, not a snapshot cursor; changed notes can shift positions. Delivered context text,
   including guidance and the optional body, is capped by the installation's
   `context_bytes`: 9,500 UTF-8 bytes for Claude Code, whose hooks keep only about
   10,000 characters of `additionalContext`, and 12,000 bytes by default elsewhere.
@@ -93,8 +97,8 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   later candidate when one fits. Bounded preview entries retain their pull
   handles when they fit.
   With the installed `semantic_fallback` default, the tested sorted hook query
-  feeds lexical and semantic discovery. The hook inspects up to ten ranked
-  previews from each search. When previews exceed pull credits, a bounded
+  feeds lexical and semantic discovery. The hook inspects up to ten lexical
+  previews and the semantic pages within the total bound above. When previews exceed pull credits, a bounded
   tool-free call chooses which current bodies to read; each receipt retains its
   own four-credit limit. A separate body-based model decision checks
   applicability before injection. Shared words, a file association,

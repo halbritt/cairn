@@ -156,7 +156,11 @@ for tested revisions, remaining limits and deployment evidence.
 
 Hermes enables bounded semantic discovery alongside lexical discovery. A weak
 lexical hit or precise file request does not suppress semantic candidates.
-The hook inspects up to ten previews from each search. If previews exceed a
+The hook inspects up to ten lexical previews and up to 32 semantic previews
+across at most four ranked pages, using 64,000 bytes of search room per semantic
+page. Pages retain the query, scope and entity hints; they are current reads,
+not snapshot cursors. Final context and the total deadline remain bounded.
+If previews exceed a
 receipt's available credits, a bounded tool-free call admits body reads while
 keeping each receipt's four-credit cap. A separate body-based applicability
 decision chooses which current source helps the request; uncertain or unavailable
