@@ -16,6 +16,12 @@ and MCP processes.
 
 ## 2026-09-28
 
+- Lifecycle recall now inspects a bounded shortlist of current optional bodies
+  before injecting one, so a stale, irrelevant or oversized first candidate does
+  not hide a later usable note. Search inspection room is larger while final
+  per-installation context limits and required instructions remain unchanged.
+  Semantic fallback can check later candidates within one time allowance.
+
 - Hermes cancellation waits up to 30 seconds for native process-tree cleanup.
   The previous four-second response window could expire during Hermes's two
   shutdown grace periods; uncertain outcomes still must not be resent.

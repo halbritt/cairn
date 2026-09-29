@@ -154,11 +154,13 @@ outside the repository. Passing these mechanics does not measure long-term
 selection quality or task benefit. See the [verification report](verification/hermes-integration-2026-09-13.md)
 for tested revisions, remaining limits and deployment evidence.
 
-Hermes also enables bounded semantic fallback after an optional lexical miss.
+Hermes also enables bounded semantic fallback when lexical inspection delivers no
+optional body.
 Precise file, quoted and diagnostic requests retain lexical retrieval. Fallback
-performs one semantic search and one full pull, then asks the existing tool-free
-selector whether that note directly helps this project/request. The relevance
-check has an eight-second deadline and adds latency only on that fallback path.
+performs one semantic search and inspects up to three current bodies, asking the
+existing tool-free selector whether each deliverable note directly helps this
+project/request. Those checks share an eight-second model-time allowance within
+the recall deadline and add latency only on that fallback path.
 Worker unavailability and rejected/failed checks appear in memory status; they
 do not inject an unverified optional candidate. Required context from both
 searches and any delivered body share the same 12000-byte ceiling. Other

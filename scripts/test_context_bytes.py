@@ -40,7 +40,8 @@ class BudgetTests(unittest.TestCase):
         memory = hook.Memory(config, SESSION)
         search = dict(status="READY", destination=dict(name="hosted"), selected=[],
                       index=[dict(record_id="r1", version=1, summary=summary, pull_arguments={"handle": "h"})])
-        pulled = {"selection": {"record": {"body": "x" * body_bytes}}}
+        pulled = {"selection": {"record": {"record_id": "r1", "version": 1,
+                                             "body": "retry policy uploader fix\n" + "x" * body_bytes}}}
         with patch.object(memory, "call", side_effect=[search, pulled]):
             return hook.recall(memory, dict(self.event), {})
 
@@ -59,9 +60,10 @@ class BudgetTests(unittest.TestCase):
         self.assertLessEqual(len(capped.encode()), 9500)
         self.assertIn('"handle":"h"', capped, "the index must still offer the pull handle")
 
-    def test_index_beyond_the_configured_budget_refuses_instead_of_truncating(self):
-        with self.assertRaises(hook.HookError):
-            self.recall(dict(self.config, context_bytes=1000), 100, summary="retry policy uploader fix " + "y" * 2000)
+    def test_index_beyond_the_configured_budget_is_omitted_without_partial_entry(self):
+        result = self.recall(dict(self.config, context_bytes=1000), 100,
+                             summary="retry policy uploader fix " + "y" * 2000)
+        self.assertEqual(result, {})
 
 
 class InstallerTests(unittest.TestCase):

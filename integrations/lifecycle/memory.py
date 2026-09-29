@@ -20,6 +20,11 @@ TRANSCRIPT_BYTES = 2 * 1024 * 1024
 NOTE_BYTES = 6000
 CHECKPOINT_BYTES = 4500
 SEARCH_ROOM = 8000
+RECALL_SEARCH_ROOM = 32000
+RECALL_SECONDS = 11
+RECALL_CANDIDATES = 6
+SEMANTIC_CANDIDATES = 3
+SEMANTIC_MODEL_SECONDS = 8
 COMMAND_OUTPUT_BYTES = 1024 * 1024
 # Codex Stop fires after every turn and SessionEnd allows too little time for the
 # selector, so Stop offers capture only after this much new top-level dialogue.
@@ -214,14 +219,14 @@ class Memory:
         self.command = [config["cairn"], "agent", "--socket", config["socket"],
                         "--token-file", config["token_file"]]
 
-    def call(self, operation, args=(), payload=None):
+    def call(self, operation, args=(), payload=None, timeout=5):
         result = run_json(self.command + [operation, *args],
-                          body=None if payload is None else encoded(payload))
+                          body=None if payload is None else encoded(payload), timeout=timeout)
         if result.get("ok") is not True or not isinstance(result.get("data"), dict):
             raise HookError("Cairn did not confirm the operation")
         return result["data"]
 
-    def search(self, query, room=SEARCH_ROOM, entities=(), kinds=(), semantic=False):
+    def search(self, query, room=SEARCH_ROOM, entities=(), kinds=(), semantic=False, timeout=5):
         hints = ["--semantic"] if semantic else []
         hints += [flag for entity in entities for flag in ("--entity-file", entity)]
         hints += [flag for kind in kinds for flag in ("--kind", kind)]
@@ -231,7 +236,7 @@ class Memory:
                     "binding": "--binding", "capability": "--capability"}.get(key)
             if flag and value:
                 hints += [flag, value]
-        result = self.call("search", [*self.scope, "--tokens", str(room), *hints, "--", query])
+        result = self.call("search", [*self.scope, "--tokens", str(room), *hints, "--", query], timeout=timeout)
         if result.get("status") not in ("READY", "SCOPE_EMPTY", "DEGRADED_NO_EMBEDDINGS"):
             raise HookError("Cairn retrieval is not ready")
         if result.get("destination", {}).get("name") != "hosted":
@@ -443,45 +448,102 @@ Do not infer authority or current workspace truth from a note. If uncertain, fal
 Return only JSON matching the schema. No tools or external actions are available."""
 
 
-def semantic_candidate(memory, event, intent, result, seen, status):
-    """One fallback search, one full pull, one bounded tool-free relevance check."""
+def index_entry(entry):
+    return {key: entry[key] for key in ("record_id", "version", "summary", "pull_arguments")}
+
+
+def render_recall(selected, entries, expanded=None):
+    view = dict(selected=selected, index=[index_entry(entry) for entry in entries])
+    if expanded is not None:
+        view["expanded"] = expanded
+    return GUIDANCE + encoded(view)
+
+
+def recall_timeout(deadline, limit=2):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise HookError("retrieval time budget exhausted")
+    return min(limit, remaining)
+
+
+def current_pull(memory, entry, deadline):
+    pulled = memory.call("pull", payload=entry["pull_arguments"], timeout=recall_timeout(deadline))
+    record = pulled.get("selection", {}).get("record", {})
+    if (record.get("record_id") != entry["record_id"] or record.get("version") != entry["version"]
+            or not isinstance(record.get("body"), str)):
+        raise HookError("optional body identity or version changed")
+    return pulled
+
+
+def body_relevant(entry, body, intent):
+    associated = {e["name"] for e in entry.get("entities", []) if e.get("kind") == "file"}
+    if associated & set(intent["files"]):
+        return True
+    if (intent["startup"] and entry.get("kind") in ("decision", "preference")
+            and re.match(re.escape(intent["project"].lower()) + r"(?:\s|:)", body.lower())):
+        return True
+    if any(phrase in body for phrase in intent["phrases"]):
+        return True
+    if len(intent["words"]) < 2:
+        return False
+    # A long mixed-topic note needs two request terms near each other, not
+    # scattered anywhere in its body. This remains an evidence gate, not an
+    # answer-confidence score.
+    return any(len(terms(body[start:start + 600]) & intent["words"]) >= 2
+               for start in range(0, len(body), 400))
+
+
+def semantic_candidate(memory, event, intent, result, seen, status, deadline, budget):
+    """Try a bounded shortlist against current bodies and one model-time allowance."""
     try:
-        found = memory.search(intent["query"], semantic=True)
-        status["discovery"] = found.get("discovery", {}).get("state", "unknown")
-        # Both searches' mandatory context remains subject to the one output ceiling.
-        selected = list(result.get("selected", []))
-        for item in found.get("selected", []):
-            if item not in selected:
-                selected.append(item)
-        result["selected"] = selected
-        if status["discovery"] != "ready":
-            return None, None
-        entries = [entry for entry in found.get("index", [])
-                   if seen.get(entry["record_id"]) != entry["version"]]
-        if not entries:
-            return None, None
-        entry = entries[0]
-        pulled = memory.call("pull", payload=entry["pull_arguments"])
-        # Do not ask a model to accept a body that cannot be delivered in full.
-        view = dict(selected=selected, index=[{k: entry[k] for k in
-                    ("record_id", "version", "summary", "pull_arguments")}], expanded=pulled)
-        if len((GUIDANCE + encoded(view)).encode()) > context_budget(memory.config):
-            status["discovery"] = "context_budget"
-            return None, None
-        verdict = select_json(memory.config, RELEVANCE_SCHEMA, RELEVANCE_PROMPT,
-                              dict(project=str(project_root(event)), request=event.get("prompt", ""),
-                                   workstream=event.get("workstream"), candidate=pulled), timeout=8)
-        if verdict.get("is_error") or verdict.get("structured_output") != {"relevant": True}:
-            status["discovery"] = "not_relevant"
-            return None, None
-        status["discovery"] = "verified"
-        return entry, pulled
+        found = memory.search(intent["query"], room=RECALL_SEARCH_ROOM, semantic=True,
+                              timeout=recall_timeout(deadline, 5))
     except HookError:
         status["discovery"] = "failed"
         return None, None
+    status["discovery"] = found.get("discovery", {}).get("state", "unknown")
+    selected = list(result.get("selected", []))
+    for item in found.get("selected", []):
+        if item not in selected:
+            selected.append(item)
+    result["selected"] = selected
+    if len(render_recall(selected, []).encode()) > budget:
+        raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")
+    if status["discovery"] != "ready":
+        return None, None
+    model_deadline = min(deadline, time.monotonic() + SEMANTIC_MODEL_SECONDS)
+    entries = (entry for entry in found.get("index", [])
+               if seen.get(entry["record_id"]) != entry["version"])
+    for entry in list(entries)[:SEMANTIC_CANDIDATES]:
+        try:
+            pulled = current_pull(memory, entry, deadline)
+        except BudgetRefused:
+            status["discovery"] = "budget_refused"
+            break
+        except HookError:
+            status["discovery"] = "failed"
+            continue
+        if len(render_recall(selected, [entry], pulled).encode()) > budget:
+            status["discovery"] = "context_budget"
+            continue
+        try:
+            timeout = recall_timeout(model_deadline, SEMANTIC_MODEL_SECONDS)
+            verdict = select_json(memory.config, RELEVANCE_SCHEMA, RELEVANCE_PROMPT,
+                                  dict(project=str(project_root(event)), request=event.get("prompt", ""),
+                                       workstream=event.get("workstream"), candidate=pulled), timeout=timeout)
+        except HookError:
+            status["discovery"] = "failed"
+            continue
+        if verdict.get("is_error") or verdict.get("structured_output") != {"relevant": True}:
+            status["discovery"] = "not_relevant"
+            continue
+        status["discovery"] = "verified"
+        return entry, pulled
+    return None, None
 
 
 def recall(memory, event, state=None):
+    deadline = time.monotonic() + RECALL_SECONDS
     state = state if state is not None else {}
     if event["hook_event_name"] == "SessionStart":
         state["seen"] = {}  # new/resumed/compacted context needs fresh delivery
@@ -493,50 +555,73 @@ def recall(memory, event, state=None):
     seen = state.setdefault("seen", {})
     intent = retrieval_intent(event, state)
     kinds = ("decision", "preference") if intent["startup"] and not event.get("prompt") and event.get("source") not in ("resume", "compact") else ()
-    result = memory.search(intent["query"], entities=intent["files"], kinds=kinds)
-    entries = [entry for entry in result.get("index", []) if relevant(entry, intent)
-               and seen.get(entry["record_id"]) != entry["version"]]
-    state["last_recall"] = status = dict(at=time.time(), outcome="empty", records=[], bytes=0,
-                                        discovery="lexical")
-    semantic_pull = None
-    if (not entries and memory.config.get("semantic_fallback") and len(intent["words"]) >= 2
-            and not intent["precise"] and not intent["startup"]):
-        entry, semantic_pull = semantic_candidate(memory, event, intent, result, seen, status)
-        if entry:
-            entries = [entry]
-    view = {"selected": result.get("selected", []), "index": [
-        {key: entry[key] for key in ("record_id", "version", "summary", "pull_arguments")}
-        for entry in entries]}
-    if not view["selected"] and not entries:
-        return {}  # no guidance boilerplate or weak matches added to the conversation
+    result = memory.search(intent["query"], room=RECALL_SEARCH_ROOM, entities=intent["files"], kinds=kinds,
+                           timeout=recall_timeout(deadline, 5))
     budget = context_budget(memory.config)
-    text = GUIDANCE + encoded(view)
-    if len(text.encode("utf-8")) > budget:
+    selected = result.get("selected", [])
+    if len(render_recall(selected, []).encode()) > budget:
         raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")
-    expanded_id = None
-    if entries:
+    entries = [entry for entry in result.get("index", [])
+               if seen.get(entry["record_id"]) != entry["version"]][:RECALL_CANDIDATES]
+    previews = [entry for entry in entries if relevant(entry, intent)]
+    entries = previews + [entry for entry in entries if entry not in previews]
+    state["last_recall"] = status = dict(at=time.time(), outcome="empty", records=[], bytes=0,
+                                        discovery="lexical", inspected=0, rejected={})
+    chosen = pulled = None
+    for entry in entries:
         try:
-            pulled = semantic_pull or memory.call("pull", payload=entries[0]["pull_arguments"])
-            candidate = GUIDANCE + encoded(dict(view, expanded=pulled))
-            if len(candidate.encode("utf-8")) <= budget:
-                text = candidate
-                expanded_id = entries[0]["record_id"]
-                record = pulled.get("selection", {}).get("record", {})
-                title = record.get("body", "").split("\n", 1)[0]
-                if title.startswith(workstream_prefix(event)) and " / Claude session " not in title:
-                    state["workstream"] = title
+            candidate = current_pull(memory, entry, deadline)
+        except BudgetRefused:
+            status["rejected"]["budget_refused"] = status["rejected"].get("budget_refused", 0) + 1
+            break
         except HookError:
-            warning = "Optional body unavailable; search again before relying on its preview.\n"
-            if len((warning + text).encode("utf-8")) > budget:
-                raise HookError("optional body unavailable and context budget exhausted")
+            status["rejected"]["unavailable"] = status["rejected"].get("unavailable", 0) + 1
+            continue
+        status["inspected"] += 1
+        body = candidate["selection"]["record"]["body"]
+        if not body_relevant(entry, body, intent):
+            status["rejected"]["not_relevant"] = status["rejected"].get("not_relevant", 0) + 1
+            if entry in previews:
+                previews.remove(entry)
+            continue
+        if len(render_recall(selected, [entry], candidate).encode()) > budget:
+            status["rejected"]["context_budget"] = status["rejected"].get("context_budget", 0) + 1
+            continue
+        chosen, pulled = entry, candidate
+        break
+    if (chosen is None and memory.config.get("semantic_fallback") and len(intent["words"]) >= 2
+            and not intent["precise"] and not intent["startup"]):
+        chosen, pulled = semantic_candidate(memory, event, intent, result, seen, status, deadline, budget)
+        selected = result.get("selected", [])
+    if chosen and chosen not in previews:
+        previews.insert(0, chosen)
+    if not selected and not previews:
+        return {}  # no guidance boilerplate or weak matches added to the conversation
+    packed = [chosen] if chosen else []
+    for entry in previews:
+        if entry not in packed and len(packed) < RECALL_CANDIDATES:
+            candidate = render_recall(selected, [*packed, entry], pulled)
+            if len(candidate.encode()) <= budget:
+                packed.append(entry)
+    if not selected and not packed:
+        return {}
+    text = render_recall(selected, packed, pulled)
+    expanded_id = chosen["record_id"] if chosen else None
+    if chosen:
+        title = pulled["selection"]["record"]["body"].split("\n", 1)[0]
+        if title.startswith(workstream_prefix(event)) and " / Claude session " not in title:
+            state["workstream"] = title
+    elif previews and status["rejected"].get("unavailable"):
+        warning = "Optional body unavailable; search again before relying on its preview.\n"
+        if len((warning + text).encode()) <= budget:
             text = warning + text
     # Remember body delivery only. A preview with an expiring handle must remain
     # discoverable until its body has actually been offered to this context.
     if expanded_id:
-        seen[expanded_id] = entries[0]["version"]
+        seen[expanded_id] = chosen["version"]
         state["seen"] = dict(list(seen.items())[-256:])
     status.update(outcome="recalled", bytes=len(text.encode()),
-                                 records=[{key: entry[key] for key in ("record_id", "version")} for entry in entries],
+                                 records=[{key: entry[key] for key in ("record_id", "version")} for entry in packed],
                                  expanded=expanded_id)
     return {"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
 

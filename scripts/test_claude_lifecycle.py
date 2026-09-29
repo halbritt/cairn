@@ -64,7 +64,8 @@ class LifecycleTests(unittest.TestCase):
         result = dict(status="READY", destination=dict(name="hosted"), selected=[{"mandatory": True}],
                       index=[dict(record_id="record", version=1, summary="fix startup failure", pull_arguments={"handle": "exact"},
                                   pull_command="private paths")])
-        with patch.object(memory, "call", side_effect=[result, {"selection": {"record": {"body": "useful body"}}}]) as call:
+        with patch.object(memory, "call", side_effect=[result, {"selection": {"record": {
+                "record_id": "record", "version": 1, "body": "fix startup failure: useful body"}}}]) as call:
             output = hook.recall(memory, dict(self.event, hook_event_name="UserPromptSubmit", prompt="fix startup"))
         text = output["hookSpecificOutput"]["additionalContext"]
         self.assertIn('"handle":"exact"', text)
@@ -199,11 +200,13 @@ class LifecycleTests(unittest.TestCase):
         state = {}
         event = dict(self.event, hook_event_name="UserPromptSubmit", prompt="startup failure")
         with patch.object(memory, "search", return_value=dict(index=[entry])), \
-             patch.object(memory, "call", return_value=dict(selection=dict(record=dict(body="saved fix")))):
+             patch.object(memory, "call", return_value=dict(selection=dict(record=dict(
+                 record_id="r", version=1, body="startup failure saved fix")))) as pull:
             self.assertEqual(hook.recall(memory, dict(event, prompt="unrelated layout"), state), {})
             self.assertIn("saved fix", str(hook.recall(memory, event, state)))
             self.assertEqual(hook.recall(memory, event, state), {})
             entry["version"] = 2
+            pull.return_value["selection"]["record"]["version"] = 2
             self.assertIn("saved fix", str(hook.recall(memory, event, state)))
             self.assertIn("saved fix", str(hook.recall(memory,
                 dict(event, hook_event_name="SessionStart", source="compact"), state)))
@@ -315,7 +318,7 @@ class LifecycleTests(unittest.TestCase):
     def test_retrieved_handoff_binds_resume_to_workstream(self):
         memory = hook.Memory(self.config, "session")
         title = hook.workstream_prefix(self.event) + "Storage migration"
-        record = dict(body=title + "\n\nTests pending.", kind="note")
+        record = dict(record_id="handoff", version=1, body=title + "\n\nTests pending.", kind="note")
         entry = dict(record_id="handoff", version=1, summary=record["body"], pull_arguments={})
         state = {}
         with patch.object(memory, "search", return_value=dict(index=[entry])) as search, \
@@ -362,7 +365,8 @@ class LifecycleTests(unittest.TestCase):
                      entities=[dict(kind="file", name="core/store.go")])
         event = dict(self.event, hook_event_name="UserPromptSubmit", prompt="core/store.go")
         with patch.object(memory, "search", return_value=dict(selected=["required"], index=[entry])) as search, \
-             patch.object(memory, "call", return_value=dict(selection=dict(record=dict(body="file guidance")))):
+             patch.object(memory, "call", return_value=dict(selection=dict(record=dict(
+                 record_id="r", version=1, body="file guidance")))):
             state = {}
             self.assertIn("file guidance", str(hook.recall(memory, event, state)))
             self.assertEqual(search.call_args.kwargs["entities"], ["core/store.go"])
@@ -477,7 +481,8 @@ class SemanticFallbackTests(unittest.TestCase):
                          pull_arguments=dict(handle='current'))
             lexical = dict(index=[], selected=[dict(body='mandatory first')])
             semantic = dict(index=[entry], selected=[dict(body='mandatory second')], discovery=dict(state='ready'))
-            pulled = dict(selection=dict(record=dict(body='Use PostgreSQL for this project.')))
+            pulled = dict(selection=dict(record=dict(record_id='saved', version=2,
+                                                     body='Use PostgreSQL for this project.')))
             for verdict in (True, False):
                 state = {}
                 with patch.object(memory, 'search', side_effect=[dict(lexical), semantic]) as search, \
@@ -490,7 +495,8 @@ class SemanticFallbackTests(unittest.TestCase):
                 self.assertEqual('Use PostgreSQL' in text, verdict)
                 self.assertEqual(pull.call_count, 1)
                 self.assertTrue(search.call_args.kwargs['semantic'])
-                self.assertEqual(model.call_args.kwargs['timeout'], 8)
+                self.assertGreater(model.call_args.kwargs['timeout'], 0)
+                self.assertLessEqual(model.call_args.kwargs['timeout'], 8)
                 self.assertLessEqual(len(text.encode()), hook.CONTEXT_BYTES)
                 self.assertEqual(state['last_recall']['discovery'], 'verified' if verdict else 'not_relevant')
 
@@ -516,6 +522,100 @@ class SemanticFallbackTests(unittest.TestCase):
                     dict(selected=['a'*6500]), dict(selected=['b'*6500], discovery=dict(state='unavailable'))]):
                 with self.assertRaises(hook.HookError):
                     hook.recall(memory, dict(hook_event_name='UserPromptSubmit', cwd=tmp, prompt='durable backend'), {})
+
+    def test_semantic_shortlist_tries_later_current_body_after_irrelevant_first(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = hook.Memory(dict(semantic_fallback=True, cairn='unused', socket='unused',
+                                      token_file='unused', repo='fixture'), 'semantic')
+            event = dict(hook_event_name='UserPromptSubmit', cwd=tmp, prompt='Which durable backend is used here?')
+            entries = [dict(record_id=name, version=1, summary='opaque', pull_arguments=dict(handle=name))
+                       for name in ('first', 'second')]
+            lexical = dict(index=[], selected=[dict(body='required')])
+            semantic = dict(index=entries, discovery=dict(state='ready'))
+            bodies = [dict(selection=dict(record=dict(record_id=name, version=1, body=body)))
+                      for name, body in [('first', 'Unrelated note.'), ('second', 'Use PostgreSQL for durable storage.')]]
+            with patch.object(memory, 'search', side_effect=[lexical, semantic]) as search, \
+                 patch.object(memory, 'call', side_effect=bodies) as pull, \
+                 patch.object(hook, 'select_json', side_effect=[
+                     dict(structured_output=dict(relevant=False)), dict(structured_output=dict(relevant=True))]) as model:
+                state = {}
+                result = hook.recall(memory, event, state)
+            text = result['hookSpecificOutput']['additionalContext']
+            self.assertIn('PostgreSQL', text)
+            self.assertIn('required', text)
+            self.assertNotIn('Unrelated note.', text)
+            self.assertEqual(state['seen'], {'second': 1})
+            self.assertEqual(state['last_recall']['discovery'], 'verified')
+            self.assertEqual((search.call_count, pull.call_count, model.call_count), (2, 2, 2))
+
+
+class RecallCandidateTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / '.git').mkdir()
+        self.memory = hook.Memory(dict(cairn='unused', socket='unused', token_file='unused',
+                                       repo='fixture', context_bytes=9500), 'candidates')
+        self.event = dict(hook_event_name='UserPromptSubmit', cwd=str(self.root),
+                          prompt='recover lease expiry')
+
+    def entry(self, name, summary='unrelated preview'):
+        return dict(record_id=name, version=1, summary=summary, pull_arguments=dict(handle=name))
+
+    def pulled(self, name, body, version=1):
+        return dict(selection=dict(record=dict(record_id=name, version=version, body=body)))
+
+    def test_buried_body_is_inspected_despite_irrelevant_preview(self):
+        entries = [self.entry('weak'), self.entry('useful')]
+        bodies = [self.pulled('weak', 'Unrelated topic.'),
+                  self.pulled('useful', 'x' * 700 + '\nRecover lease expiry by renewing the original claim.')]
+        with patch.object(self.memory, 'search', return_value=dict(index=entries)) as search, \
+             patch.object(self.memory, 'call', side_effect=bodies):
+            state = {}
+            result = hook.recall(self.memory, self.event, state)
+        text = result['hookSpecificOutput']['additionalContext']
+        self.assertIn('renewing the original claim', text)
+        self.assertNotIn('Unrelated topic.', text)
+        self.assertEqual(state['seen'], {'useful': 1})
+        self.assertEqual(state['last_recall']['inspected'], 2)
+        self.assertEqual(search.call_args.kwargs['room'], hook.RECALL_SEARCH_ROOM)
+        self.assertLessEqual(len(text.encode()), 9500)
+
+    def test_oversized_and_changed_first_bodies_do_not_hide_later_candidate(self):
+        entries = [self.entry('first', 'recover lease expiry'), self.entry('second', 'recover lease expiry')]
+        for first in (self.pulled('first', 'recover lease expiry ' + 'x' * 12000),
+                      self.pulled('first', 'recover lease expiry', version=2)):
+            with self.subTest(first=first['selection']['record']['version'], size=len(first['selection']['record']['body'])):
+                with patch.object(self.memory, 'search', return_value=dict(index=entries)), \
+                     patch.object(self.memory, 'call', side_effect=[first, self.pulled('second', 'Recover lease expiry safely.')]):
+                    state = {}
+                    result = hook.recall(self.memory, self.event, state)
+                text = result['hookSpecificOutput']['additionalContext']
+                self.assertIn('Recover lease expiry safely.', text)
+                self.assertNotIn('x' * 100, text)
+                self.assertEqual(state['seen'], {'second': 1})
+                self.assertLessEqual(len(text.encode()), 9500)
+
+    def test_no_answer_neighbor_is_omitted_and_does_not_mark_seen(self):
+        entry = self.entry('neighbor')
+        state = {}
+        with patch.object(self.memory, 'search', return_value=dict(index=[entry])), \
+             patch.object(self.memory, 'call', return_value=self.pulled('neighbor', 'An unrelated topic.')):
+            self.assertEqual(hook.recall(self.memory, self.event, state), {})
+        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['last_recall']['rejected']['not_relevant'], 1)
+
+    def test_elapsed_recall_deadline_prevents_late_optional_pull(self):
+        entry = self.entry('candidate', 'recover lease expiry')
+        with patch.object(hook.time, 'monotonic', side_effect=[0, 0, hook.RECALL_SECONDS + 1]), \
+             patch.object(self.memory, 'search', return_value=dict(index=[entry])), \
+             patch.object(self.memory, 'call') as pull:
+            state = {}
+            result = hook.recall(self.memory, self.event, state)
+        pull.assert_not_called()
+        self.assertIn('search again', result['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(state['seen'], {})
 
 class CheckpointCurrentnessTests(unittest.TestCase):
     def test_completion_revises_only_a_supplied_topic_and_preserves_compare_and_swap(self):

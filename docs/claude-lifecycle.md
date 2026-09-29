@@ -13,7 +13,16 @@ normal sessions in other projects use the same shared collection.
 | `SessionEnd` | Select remaining useful context before normal exit, clear, or switching sessions. |
 
 Retrieval delivers required selected context, optional previews with native pull
-arguments, and the first optional source's full body when it fits. Optional matches must share a file association, quoted phrase or at least two task terms. At startup, project-labelled decisions and preferences also qualify. Hints expire after 15 minutes. A delivered body is suppressed at the same version until startup, resume or compaction resets the context; required selected context is always retained. Empty or weak results add no boilerplate. These lexical heuristics can miss relevant notes, so explicit search remains available. The agent can
+arguments, and one current optional body when it fits. The hook inspects up to six
+unseen candidates, including candidates whose short preview misses relevant body
+text. It tries later candidates when an earlier body is stale, irrelevant or too
+large. A file association, quoted phrase or at least two nearby task terms must
+support lexical body delivery; at startup, project-labelled decisions and
+preferences also qualify. Hints expire after 15 minutes. A delivered body is
+suppressed at the same version until startup, resume or compaction resets the
+context; required selected context is always retained. Empty or weak results add
+no boilerplate. The bounded shortlist can still miss relevant notes, so explicit
+search remains available. The agent can
 pull other sources through its existing Cairn MCP tools. The hook and tools must
 use the same authenticated principal for those handles. Session labels identify
 host conversations; shared captures remain repository-scoped.
@@ -72,14 +81,17 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
 
 ## Bounds and failures
 
-- Each retrieval reserves 8,000 bytes of Cairn memory room. Delivered context text,
+- Each retrieval requests 32,000 bytes of Cairn search room to inspect more
+  previews; the server's packing rules still determine how many fit. Delivered context text,
   including guidance and the optional body, is capped by the installation's
   `context_bytes`: 9,500 UTF-8 bytes for Claude Code, whose hooks keep only about
   10,000 characters of `additionalContext`, and 12,000 bytes by default elsewhere.
-  An oversized optional body is left out while its index entry and pull handle stay.
+  An oversized optional body is skipped in favor of a later candidate when one
+  fits. Bounded preview entries retain their pull handles when they fit.
   Mandatory context is never truncated. Retrieval runs on lifecycle events, not
   on every model or tool request; it does not enforce the whole conversation's
-  context budget.
+  context budget. Recall has an 11-second local deadline and at most six lexical
+  candidate inspections.
 - Capture examines at most the final 2 MiB of transcript bytes and supplies at
   most 24,000 bytes of serialized dialogue. A clipped boundary message is labelled.
   Older context can be missing; the previous saved checkpoint helps continuity.
