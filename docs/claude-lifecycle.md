@@ -92,6 +92,16 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   require a whole-body pull. Other oversized bodies are skipped in favor of a
   later candidate when one fits. Bounded preview entries retain their pull
   handles when they fit.
+  With the installed `semantic_fallback` default, lexical search uses anchors
+  while semantic search uses the bounded natural owner request. Both contribute
+  contribute a bounded shortlist of current bodies. One tool-free model decision
+  checks applicability across that shortlist; shared words, a file association,
+  or a project label alone cannot inject an optional body. An unavailable model
+  omits optional guidance, while required context remains. The semantic route
+  also runs after an unhelpful exact-file result. Setting `semantic_fallback`
+  explicitly to `false` keeps the earlier lexical-only route. The hook records
+  the shortlist size, selector duration and provider-reported cost in recall
+  status. Reinstall hooks to apply the new default; no running copy is changed.
   Mandatory context is never truncated. Retrieval runs on lifecycle events, not
   on every model or tool request; it does not enforce the whole conversation's
   context budget. Recall has an 11-second local deadline and at most six lexical

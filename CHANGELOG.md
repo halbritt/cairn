@@ -16,6 +16,12 @@ and MCP processes.
 
 ## 2026-09-28
 
+- Lifecycle installers now enable semantic candidate discovery by default and
+  check a bounded lexical/semantic shortlist with one applicability decision.
+  Weak shared vocabulary, file hints and project labels alone no longer inject
+  optional bodies on that route; an unavailable verifier omits them. Reinstall
+  hooks to activate the new default. Live task benefit remains unmeasured.
+
 - Lifecycle recall now inspects a bounded shortlist of current optional bodies
   before injecting one, so a stale, irrelevant or oversized first candidate does
   not hide a later usable note. Search inspection room is larger while final

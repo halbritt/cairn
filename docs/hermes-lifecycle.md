@@ -154,20 +154,20 @@ outside the repository. Passing these mechanics does not measure long-term
 selection quality or task benefit. See the [verification report](verification/hermes-integration-2026-09-13.md)
 for tested revisions, remaining limits and deployment evidence.
 
-Hermes also enables bounded semantic fallback when lexical inspection delivers no
-optional body.
-Precise file, quoted and diagnostic requests retain lexical retrieval. Fallback
-performs one semantic search and inspects up to three current sources, asking the
-existing tool-free selector whether each deliverable note directly helps this
-project/request. An oversized whole note may use a checked `match_span` for an
+Hermes enables bounded semantic discovery alongside lexical discovery. A weak
+lexical hit or precise file request does not suppress semantic candidates.
+The hook inspects at most six lexical and eight semantic candidates and asks the
+tool-free selector once which current body directly helps this request; uncertain
+or unavailable verification omits optional guidance. An oversized whole note may use a checked `match_span` for an
 optional class A/B passage; that excerpt is labelled partial and leaves the whole
 note eligible for later recall. Discovery coverage is preserved in injected context
-and status. Those checks share an eight-second model-time allowance within
-the recall deadline and add latency only on that fallback path.
+and status. The selector has one eight-second allowance within the 11-second
+recall deadline; this adds latency when optional candidates need verification.
 Worker unavailability and rejected/failed checks appear in memory status; they
 do not inject an unverified optional candidate. Required context from both
 searches and any delivered body share the same 12000-byte ceiling. Other
-harnesses retain lexical defaults unless configured with `semantic_fallback`.
+Claude, Codex and OpenCode installers also enable this route by default after
+reinstallation; explicit `semantic_fallback: false` retains lexical-only recall.
 
 Current checkpoint replacements are limited to 4500 UTF-8 bytes. The selector
 removes completed next steps and keeps open work and relevant constraints. An

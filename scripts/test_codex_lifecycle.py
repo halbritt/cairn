@@ -284,6 +284,7 @@ class CodexInstallerTests(unittest.TestCase):
             self.assertTrue(installer.EVENTS["Stop"]["async"])
             installed = json.loads((home / "dest" / "config.json").read_text())
             self.assertEqual(installed["harness"], "codex")
+            self.assertTrue(installed["semantic_fallback"])
             self.assertTrue((home / "dest" / "lifecycle.py").exists())
             self.assertTrue((home / "hooks.json.before-cairn-lifecycle").exists())
 

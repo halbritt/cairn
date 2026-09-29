@@ -194,6 +194,9 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(updated["permissions"], original["permissions"])
         self.assertEqual(updated["hooks"]["SessionStart"][0], original["hooks"]["SessionStart"][0])
         self.assertEqual(json.loads(settings.with_name("settings.json.before-cairn-lifecycle").read_text()), original)
+        self.assertTrue(json.loads((destination / "config.json").read_text())["semantic_fallback"])
+        installer.install(settings, destination, dict(self.config, semantic_fallback=False))
+        self.assertFalse(json.loads((destination / "config.json").read_text())["semantic_fallback"])
 
     def test_weak_matches_omitted_and_delivered_versions_reset_with_context(self):
         memory = hook.Memory(self.config, "session-one")
@@ -522,7 +525,7 @@ class SemanticFallbackTests(unittest.TestCase):
             semantic = dict(index=[entry], discovery=dict(state='ready', coverage=dict(indexed=1, eligible=2)))
             with patch.object(memory, 'search', side_effect=[lexical, semantic]), \
                  patch.object(memory, 'call', side_effect=[whole, span]) as pull, \
-                 patch.object(hook, 'select_json', return_value=dict(structured_output=dict(relevant=True))) as model:
+                 patch.object(hook, 'select_json', return_value=dict(structured_output=dict(index=0))) as model:
                 state = {}
                 output = hook.recall(memory, event, state)
             text = output['hookSpecificOutput']['additionalContext']
@@ -557,7 +560,7 @@ class SemanticFallbackTests(unittest.TestCase):
                 state = {}
                 with patch.object(memory, 'search', side_effect=[dict(lexical), semantic]) as search, \
                      patch.object(memory, 'call', return_value=pulled) as pull, \
-                     patch.object(hook, 'select_json', return_value=dict(structured_output=dict(relevant=verdict))) as model:
+                     patch.object(hook, 'select_json', return_value=dict(structured_output=dict(index=0 if verdict else -1))) as model:
                     result = hook.recall(memory, event, state)
                 text = result['hookSpecificOutput']['additionalContext']
                 self.assertIn('mandatory first', text)
@@ -570,19 +573,19 @@ class SemanticFallbackTests(unittest.TestCase):
                 self.assertLessEqual(len(text.encode()), hook.CONTEXT_BYTES)
                 self.assertEqual(state['last_recall']['discovery'], 'verified' if verdict else 'not_relevant')
 
-    def test_worker_fallback_and_precise_requests_do_not_invoke_relevance_model(self):
+    def test_unavailable_worker_and_precise_requests_do_not_invoke_relevance_model(self):
         with tempfile.TemporaryDirectory() as tmp:
             memory = hook.Memory(dict(semantic_fallback=True, cairn='unused', socket='unused',
                                       token_file='unused', repo='fixture'), 'semantic')
-            for prompt, calls in [('Which durable backend is used?', 2), ('repair core/store.go', 1), ('repair "ExactError"', 1)]:
+            for prompt in ('Which durable backend is used?', 'repair core/store.go', 'repair "ExactError"'):
                 state = dict(hints=dict(errors=['ExpiredError'], error_at=0))
                 with patch.object(memory, 'search', return_value=dict(index=[], discovery=dict(state='unavailable'))) as search, \
                      patch.object(hook, 'select_json') as model:
                     result = hook.recall(memory, dict(hook_event_name='UserPromptSubmit', cwd=tmp, prompt=prompt), state)
                 self.assertEqual(result, {})
-                self.assertEqual(search.call_count, calls)
+                self.assertEqual(search.call_count, 2)
                 model.assert_not_called()
-                self.assertEqual(state['last_recall']['discovery'], 'unavailable' if calls == 2 else 'lexical')
+                self.assertEqual(state['last_recall']['discovery'], 'unavailable')
 
     def test_oversized_combined_mandatory_context_refuses_delivery(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -606,8 +609,7 @@ class SemanticFallbackTests(unittest.TestCase):
                       for name, body in [('first', 'Unrelated note.'), ('second', 'Use PostgreSQL for durable storage.')]]
             with patch.object(memory, 'search', side_effect=[lexical, semantic]) as search, \
                  patch.object(memory, 'call', side_effect=bodies) as pull, \
-                 patch.object(hook, 'select_json', side_effect=[
-                     dict(structured_output=dict(relevant=False)), dict(structured_output=dict(relevant=True))]) as model:
+                 patch.object(hook, 'select_json', return_value=dict(structured_output=dict(index=1))) as model:
                 state = {}
                 result = hook.recall(memory, event, state)
             text = result['hookSpecificOutput']['additionalContext']
@@ -616,7 +618,7 @@ class SemanticFallbackTests(unittest.TestCase):
             self.assertNotIn('Unrelated note.', text)
             self.assertEqual(state['seen'], {'second': 1})
             self.assertEqual(state['last_recall']['discovery'], 'verified')
-            self.assertEqual((search.call_count, pull.call_count, model.call_count), (2, 2, 2))
+            self.assertEqual((search.call_count, pull.call_count, model.call_count), (2, 2, 1))
 
 
 class RecallCandidateTests(unittest.TestCase):
@@ -635,6 +637,77 @@ class RecallCandidateTests(unittest.TestCase):
 
     def pulled(self, name, body, version=1):
         return dict(selection=dict(record=dict(record_id=name, version=version, body=body)))
+
+    def test_verified_shortlist_skips_overlapping_status_and_recovers_semantic_guidance(self):
+        self.memory.config['semantic_fallback'] = True
+        noise = self.entry('noise', 'nightly review status')
+        useful = self.entry('useful', 'opaque preview')
+        for prompt in ('Improve nightly review of bin records',
+                       'Improve nightly review of bin records in core/store.go'):
+            with self.subTest(prompt=prompt):
+                lexical = dict(index=[noise], selected=[dict(body='required instruction')])
+                semantic = dict(index=[noise, useful], discovery=dict(state='ready'))
+                bodies = [self.pulled('noise', 'Nightly inbox review status. No bin-content guidance.'),
+                          self.pulled('useful', 'Keep nightly bin review additions-only; do not propose removals.')]
+                with patch.object(self.memory, 'search', side_effect=[lexical, semantic]) as search, \
+                     patch.object(self.memory, 'call', side_effect=bodies) as pull, \
+                     patch.object(hook, 'select_json', return_value=dict(structured_output=dict(index=1))) as model:
+                    state = {}
+                    result = hook.recall(self.memory, dict(self.event, prompt=prompt), state)
+                output = result['hookSpecificOutput']['additionalContext']
+                self.assertIn('additions-only', output)
+                self.assertIn('required instruction', output)
+                self.assertNotIn('Nightly inbox review status', output)
+                self.assertNotIn('"record_id":"noise"', output)
+                self.assertEqual(state['seen'], {'useful': 1})
+                self.assertEqual((search.call_count, pull.call_count, model.call_count), (2, 2, 1))
+                self.assertTrue(search.call_args.kwargs['semantic'])
+                self.assertTrue(search.call_args.args[0].startswith(self.root.name + ': Improve nightly'))
+
+    def test_verified_shortlist_abstains_when_model_unavailable(self):
+        self.memory.config['semantic_fallback'] = True
+        entry = self.entry('noise', 'nightly review status')
+        with patch.object(self.memory, 'search', side_effect=[dict(index=[entry]),
+                 dict(index=[], discovery=dict(state='unavailable'))]), \
+             patch.object(self.memory, 'call', return_value=self.pulled('noise', 'Nightly review status only.')), \
+             patch.object(hook, 'select_json', side_effect=hook.HookError('model unavailable')):
+            state = {}
+            self.assertEqual(hook.recall(self.memory, dict(self.event, prompt='nightly review bin records'), state), {})
+        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['last_recall']['discovery'], 'verification_unavailable')
+
+    def test_semantic_rank_eight_is_in_one_bounded_decision(self):
+        self.memory.config['semantic_fallback'] = True
+        entries = [self.entry(str(i)) for i in range(8)]
+        with patch.object(self.memory, 'search', side_effect=[dict(index=[]),
+                 dict(index=entries, discovery=dict(state='ready'))]), \
+             patch.object(self.memory, 'call', side_effect=[self.pulled(str(i), f'Candidate {i}') for i in range(8)]), \
+             patch.object(hook, 'select_json', return_value=dict(structured_output=dict(index=7))) as model:
+            state = {}
+            result = hook.recall(self.memory, self.event, state)
+        self.assertIn('Candidate 7', result['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(state['seen'], {'7': 1})
+        self.assertEqual(state['last_recall']['shortlist_candidates'], 8)
+        self.assertEqual(model.call_count, 1)
+
+    def test_startup_status_noise_needs_applicability_verification(self):
+        self.memory.config['semantic_fallback'] = True
+        entries = [self.entry('status', 'fixture: release status') | {'kind': 'decision'},
+                   self.entry('direction', 'fixture: durable direction') | {'kind': 'decision'}]
+        event = dict(self.event, hook_event_name='SessionStart', prompt='')
+        with patch.object(self.memory, 'search', return_value=dict(index=entries)) as search, \
+             patch.object(self.memory, 'call', side_effect=[
+                 self.pulled('status', 'fixture: release status only'),
+                 self.pulled('direction', 'fixture: use disposable databases for tests')]), \
+             patch.object(hook, 'select_json', return_value=dict(structured_output=dict(index=1))) as model:
+            state = {}
+            result = hook.recall(self.memory, event, state)
+        output = result['hookSpecificOutput']['additionalContext']
+        self.assertIn('disposable databases', output)
+        self.assertNotIn('release status only', output)
+        self.assertEqual(state['seen'], {'direction': 1})
+        self.assertEqual(search.call_count, 1)
+        self.assertTrue(model.call_args.args[3]['startup'])
 
     def test_span_rejects_stale_version_changed_bytes_and_ineligible_class(self):
         body = 'Recover lease expiry.'
@@ -664,6 +737,12 @@ class RecallCandidateTests(unittest.TestCase):
                 with self.assertRaises(hook.HookError):
                     hook.current_span_pull(self.memory, blocked, time.monotonic() + 2)
                 call.assert_not_called()
+
+    def test_full_body_hash_must_match_preview(self):
+        entry = self.entry('saved') | {'body_sha256': hashlib.sha256(b'original').hexdigest()}
+        with patch.object(self.memory, 'call', return_value=self.pulled('saved', 'changed')):
+            with self.assertRaisesRegex(hook.HookError, 'hash changed'):
+                hook.current_pull(self.memory, entry, time.monotonic() + 2)
 
     def test_partial_span_that_exceeds_context_budget_is_not_injected(self):
         self.memory.config['context_bytes'] = 1000

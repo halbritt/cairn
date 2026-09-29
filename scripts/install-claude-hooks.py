@@ -47,6 +47,7 @@ def install(settings_path, destination, config):
     # Claude Code keeps only about 10,000 characters of hook additionalContext
     # (measured 2026-09-24); keep injected memory under it.
     write_json(config_path, dict(config, state_dir=str(destination / "state"),
+                                 semantic_fallback=config.get("semantic_fallback", True),
                                  context_bytes=config.get("context_bytes", CLAUDE_CONTEXT_BYTES)))
     backup = settings_path.with_name(settings_path.name + ".before-cairn-lifecycle")
     if original is not None and not backup.exists():

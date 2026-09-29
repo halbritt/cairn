@@ -17,7 +17,7 @@ def install(config_dir, destination, claude, model=None):
     native = json.loads((config_dir / "cairn.json").read_text())
     config = {"cairn": native["executable"], "socket": native["socket"], "token_file": native["token_file"],
               "repo": native["repo"], "harness": "opencode", "claude": claude,
-              "state_dir": str(destination / "state")}
+              "state_dir": str(destination / "state"), "semantic_fallback": True}
     for key in ("task_id", "run_id", "context"):
         if key in native:
             config[key] = native[key]
