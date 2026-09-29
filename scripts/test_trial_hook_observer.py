@@ -31,6 +31,34 @@ if __name__ == '__main__':
 
 
 class HookObserverTest(unittest.TestCase):
+    def test_actual_engine_search_failure_records_final_failed_status_without_payloads(self):
+        engine = OBSERVER.parent.parent / 'integrations/lifecycle/memory.py'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cli = root / 'cairn'
+            cli.write_text('#!' + sys.executable + '\nimport sys\nsys.exit(1)\n')
+            cli.chmod(0o700)
+            config = root / 'config.json'
+            config.write_text(json.dumps(dict(cairn=str(cli), socket='unused', token_file='unused',
+                repo='trial', state_dir=str(root / 'state'))))
+            observations = root / 'observations.jsonl'
+            event = json.dumps(dict(hook_event_name='UserPromptSubmit', cwd=str(root),
+                session_id='da3fddc4-431d-4c40-acdd-d4323d73a2db', prompt='private task'))
+            direct = subprocess.run([sys.executable, str(engine), '--config', str(config)],
+                                    input=event, text=True, capture_output=True)
+            observed = subprocess.run([sys.executable, str(OBSERVER), '--engine', str(engine),
+                '--config', str(config), '--observations', str(observations)],
+                input=event, text=True, capture_output=True)
+            self.assertEqual(direct.returncode, 1)
+            self.assertEqual((observed.returncode, observed.stdout, observed.stderr),
+                             (direct.returncode, direct.stdout, direct.stderr))
+            row = json.loads(observations.read_text())
+            self.assertEqual(row['recall']['outcome'], 'failed')
+            self.assertEqual(row['recall']['error_type'], 'HookError')
+            self.assertGreaterEqual(row['recall']['duration_ms'], 0)
+            self.assertEqual(row['exit_code'], 1)
+            self.assertNotIn('private', observations.read_text())
+
     def test_actual_engine_empty_search_preserves_output(self):
         engine = OBSERVER.parent.parent / 'integrations/lifecycle/memory.py'
         with tempfile.TemporaryDirectory() as directory:

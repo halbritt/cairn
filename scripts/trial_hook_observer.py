@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Run a pinned evaluation hook unchanged, retaining metadata for each invocation.
 
-The evaluated engines expose main, handle and recall. The observer snapshots
-recall status before handle releases its session lock; it never reads a later
-state file and attributes that state to an earlier invocation.
+The evaluated engines expose main, handle and recall. The observer retains this
+invocation's status object and snapshots it after handle finishes updating it;
+it never reads a later state file and attributes it to an earlier invocation.
 """
 import argparse
 import copy
@@ -23,6 +23,7 @@ RECALL_FIELDS = (
     'selector_input_bytes', 'shortlist_candidates', 'shortlist_source_extents',
     'model_seconds', 'model_reported_cost_usd', 'source_extent', 'elapsed_seconds',
     'preview_process', 'model_process',
+    'duration_ms', 'error_type',
 )
 
 
@@ -40,15 +41,21 @@ def main():
     handle, recall = engine.handle, engine.recall
     record = dict(schema='cairn.task-hook-observation/1', event=None, source=None,
                   recall_attempted=False, recall=None, exit_code=None)
+    recall_status = None
 
     def observed_handle(config, event):
         name, source = event.get('hook_event_name'), event.get('source')
         record.update(event=name if name in ('SessionStart', 'UserPromptSubmit', 'PostToolUse',
                                             'PostToolUseFailure', 'PreCompact', 'SessionEnd', 'Stop') else 'unknown',
                       source=source if source in (None, 'startup', 'resume', 'compact', 'clear') else 'other')
-        return handle(config, event)
+        try:
+            return handle(config, event)
+        finally:
+            if recall_status is not None:
+                record['recall'] = copy.deepcopy({k: recall_status[k] for k in RECALL_FIELDS if k in recall_status})
 
     def observed_recall(memory, event, state=None):
+        nonlocal recall_status
         record['recall_attempted'] = True
         before = state.get('last_recall') if state is not None else None
         before_value = copy.deepcopy(before)
@@ -59,7 +66,7 @@ def main():
             record['recall_seconds'] = time.monotonic() - recall_started
             after = state.get('last_recall') if state is not None else None
             if after is not None and (after is not before or after != before_value):
-                record['recall'] = copy.deepcopy({k: after[k] for k in RECALL_FIELDS if k in after})
+                recall_status = after
 
     engine.handle, engine.recall = observed_handle, observed_recall
     sys.argv = [str(args.engine), '--config', str(args.config)]
