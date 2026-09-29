@@ -762,10 +762,22 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 			return Package{}, err
 		}
 	}
+	candidates := make([]*CandidateEvaluation, 0, len(evaluations))
 	for _, e := range evaluations {
-		if _, err = tx.Exec(ctx, `INSERT INTO cairn.retrieval_candidate(receipt_id,record_id,version,reason,escalation_blocked,detail) VALUES($1,$2,$3,$4,$5,$6)`, id, e.RecordID, e.Version, e.Reason, e.EscalationBlocked, e); err != nil {
-			return Package{}, err
-		}
+		candidates = append(candidates, e)
+	}
+	_, err = tx.CopyFrom(ctx, pgx.Identifier{"cairn", "retrieval_candidate"},
+		[]string{"receipt_id", "record_id", "version", "reason", "escalation_blocked", "detail"},
+		pgx.CopyFromSlice(len(candidates), func(i int) ([]any, error) {
+			e := candidates[i]
+			detail, err := json.Marshal(e)
+			if err != nil {
+				return nil, err
+			}
+			return []any{id, e.RecordID, e.Version, e.Reason, e.EscalationBlocked, detail}, nil
+		}))
+	if err != nil {
+		return Package{}, err
 	}
 	// Lock exposure generations in stable ID order, independent of query rank.
 	uses := slices.Clone(semantic.Selected)
