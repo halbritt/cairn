@@ -17,12 +17,14 @@ def retain_model_overrides(config, existing_path, preview_model=None, recall_mod
     existing = json.loads(existing_path.read_text()) if existing_path.exists() else {}
     result = dict(config)
     for key, supplied in (("preview_model", preview_model), ("recall_model", recall_model)):
+        if supplied is None and key not in existing:
+            continue
         value = supplied if supplied is not None else existing.get(key)
-        if value is not None:
-            if (not isinstance(value, str) or not value or value != value.strip()
-                    or len(value) > 256 or any(ord(char) < 33 or ord(char) == 127 for char in value)):
-                raise ValueError(f"invalid lifecycle {key}: expected a nonempty model name without whitespace or controls")
-            result[key] = value
+        if (not isinstance(value, str) or not value or value != value.strip()
+                or len(value) > 256
+                or any(char.isspace() or ord(char) < 32 or 127 <= ord(char) <= 159 for char in value)):
+            raise ValueError(f"invalid lifecycle {key}: expected a nonempty model name without whitespace or controls")
+        result[key] = value
     return result
 
 

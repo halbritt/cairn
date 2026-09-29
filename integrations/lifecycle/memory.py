@@ -1078,7 +1078,8 @@ def selector_model(config, stage):
         if key in config:
             value = config[key]
             if (not isinstance(value, str) or not value or value != value.strip()
-                    or len(value) > 256 or any(ord(char) < 33 or ord(char) == 127 for char in value)):
+                    or len(value) > 256
+                    or any(char.isspace() or ord(char) < 32 or 127 <= ord(char) <= 159 for char in value)):
                 raise HookError(f"invalid lifecycle {key}: expected a nonempty model name without whitespace or controls")
     for key in (("preview_model", "recall_model", "model") if stage == "preview"
                 else ("recall_model", "model") if stage == "recall" else ("model",)):

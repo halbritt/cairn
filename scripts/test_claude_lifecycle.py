@@ -89,6 +89,24 @@ class LifecycleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "preview_model"):
             installer.install(settings, destination, self.config, preview_model=" ")
 
+    def test_invalid_model_overrides_fail_before_selector_or_installer_writes(self):
+        settings = self.root / "settings.json"
+        destination = self.root / "installed"
+        installer.install(settings, destination, self.config)
+        config_path = destination / "config.json"
+        for key in ("preview_model", "recall_model"):
+            for value in (None, "haiku\u00a0extra", "haiku\u0085extra", "haiku\u0080extra"):
+                with self.subTest(key=key, value=value):
+                    invalid = dict(self.config, **{key: value})
+                    with patch.object(hook, "run_json") as call, self.assertRaisesRegex(hook.HookError, key):
+                        hook.select_json(invalid, {}, "prompt", {}, stage="preview")
+                    call.assert_not_called()
+                    config_path.write_text(json.dumps(invalid))
+                    before = {p: p.read_bytes() for p in (settings, config_path, destination / "lifecycle.py")}
+                    with self.assertRaisesRegex(ValueError, key):
+                        installer.install(settings, destination, self.config)
+                    self.assertEqual({p: p.read_bytes() for p in before}, before)
+
     def test_excerpt_omits_tools_reasoning_and_sidechains_and_bounds_unicode(self):
         self.write_dialogue([
             dict(type="user", message=dict(content="Use PostgreSQL.")),
