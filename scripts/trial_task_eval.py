@@ -405,7 +405,7 @@ def cmd_retrieval(args):
     hook_path = Path(args.hook).resolve()
     hook = load_hook(hook_path)
     store.seed_corpus(corpus)
-    names = dict(store.names)
+    names = store.names  # live: distractors are added as the collection grows
     store.start()
     size, rows = 0, []
     try:
@@ -413,7 +413,9 @@ def cmd_retrieval(args):
             size = store.grow(target, size)
             for case in cases:
                 workdir = out / "cwd" / case["id"] / case["cwd"]
-                workdir.mkdir(parents=True, exist_ok=True)
+                if not workdir.exists():
+                    # The real fixture, so the hook sees the same project root and files as agent runs.
+                    prepare_workspace(case, out / "cwd" / case["id"])
                 for wording, prompt in case["wordings"].items():
                     session = str(uuid.uuid4())
                     state_dir = out / "hook-state" / session
@@ -423,8 +425,10 @@ def cmd_retrieval(args):
                     event = dict(session_id=session, cwd=str(workdir), hook_event_name="UserPromptSubmit", prompt=prompt)
                     injection = invoke_hook(hook_path, config_path, event)
                     query = hook.retrieval_intent(event, {})["query"]
+                    if not query.startswith(Path(case["cwd"]).name):
+                        raise SystemExit(f"hook query for {case['id']} does not start with the project name: {query[:60]!r}")
                     lexical, _ = ranked(store, query)
-                    row = dict(case=case["id"], category=case["category"], wording=wording, distractors=size,
+                    row = dict(case=case["id"], category=case["category"], wording=wording, distractors=size, query=query,
                                lexical=funnel(case, names, lexical, injection))
                     if args.semantic_worker:
                         semantic, state = ranked(store, query, semantic=True)
