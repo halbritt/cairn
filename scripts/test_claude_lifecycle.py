@@ -622,6 +622,69 @@ class SemanticFallbackTests(unittest.TestCase):
 
 
 class RecallCandidateTests(unittest.TestCase):
+    def test_later_page_guidance_is_verified_before_injection(self):
+        self.memory.config['semantic_fallback'] = True
+        noise = [self.entry('noise-' + str(i), 'Routine status') for i in range(10)]
+        useful = self.entry('useful', 'Keep overnight proposals additions-only')
+        pages = [dict(index=[], selected=[]),
+                 dict(index=noise, receipt_id='page0', credits_remaining=4, discovery=dict(state='ready'),
+                      page=dict(offset=0, next_offset=10)),
+                 dict(index=[useful], receipt_id='page1', credits_remaining=4, discovery=dict(state='ready'),
+                      page=dict(offset=10, next_offset=None))]
+        def select(config, schema, prompt, request, **kwargs):
+            if 'previews' in request:
+                indices = [p['index'] for p in request['previews'] if 'additions-only' in p['summary']]
+                return dict(structured_output=dict(indices=indices))
+            return dict(structured_output=dict(index=0))
+        with patch.object(self.memory, 'search', side_effect=pages) as search, \
+             patch.object(self.memory, 'call', return_value=self.pulled('useful', 'Keep overnight proposals additions-only.')) as pull, \
+             patch.object(hook, 'select_json', side_effect=select):
+            result = hook.recall(self.memory, self.event, {})
+        self.assertIn('additions-only', result['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(pull.call_count, 1)
+        self.assertEqual([c.kwargs.get('offset') for c in search.call_args_list], [None, 0, 10])
+        self.assertEqual(search.call_args_list[1].args, search.call_args_list[2].args)
+        self.assertEqual(search.call_args_list[1].kwargs['entities'], search.call_args_list[2].kwargs['entities'])
+
+    def test_paging_stops_at_resource_bound_and_preserves_required_context(self):
+        self.memory.config['semantic_fallback'] = True
+        required = dict(body='Required project instruction')
+        def search(query, **kwargs):
+            if not kwargs.get('semantic'):
+                return dict(index=[], selected=[required])
+            offset = kwargs['offset']
+            return dict(index=[self.entry(str(i)) for i in range(offset, offset + 10)],
+                        receipt_id=str(offset), credits_remaining=4, discovery=dict(state='ready'),
+                        page=dict(offset=offset, next_offset=offset + 10))
+        with patch.object(self.memory, 'search', side_effect=search) as searched, \
+             patch.object(hook, 'select_json', return_value=dict(structured_output=dict(indices=[]))):
+            state = {}
+            result = hook.recall(self.memory, self.event, state)
+        self.assertIn('Required project instruction', result['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(searched.call_count, 5)
+        self.assertEqual(state['last_recall']['semantic_previews'], 32)
+
+    def test_whole_server_page_is_inspected_within_total_preview_bound(self):
+        self.memory.config['semantic_fallback'] = True
+        entries = [self.entry(str(i)) for i in range(10)] + [self.entry('useful', 'Concrete guidance')]
+        with patch.object(self.memory, 'search', side_effect=[dict(index=[]),
+                 dict(index=entries, discovery=dict(state='ready'), page=dict(next_offset=None))]), \
+             patch.object(self.memory, 'call', return_value=self.pulled('useful', 'Concrete guidance')), \
+             patch.object(hook, 'select_json', side_effect=[dict(structured_output=dict(indices=[10])),
+                                                          dict(structured_output=dict(index=0))]):
+            result = hook.recall(self.memory, self.event, {})
+        self.assertIn('Concrete guidance', result['hookSpecificOutput']['additionalContext'])
+
+    def test_invalid_page_cursor_does_not_repeat_search_or_drop_required_context(self):
+        self.memory.config['semantic_fallback'] = True
+        with patch.object(self.memory, 'search', side_effect=[dict(index=[], selected=[dict(body='Required')]),
+                 dict(index=[], discovery=dict(state='ready'), page=dict(next_offset=0))]) as search:
+            state = {}
+            result = hook.recall(self.memory, self.event, state)
+        self.assertIn('Required', result['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(search.call_count, 2)
+        self.assertEqual(state['last_recall']['rejected']['invalid_page_cursor'], 1)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
