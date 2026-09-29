@@ -213,6 +213,41 @@ pathlib.Path('result.txt').write_text('isolated')
 
 
 class InjectionTest(unittest.TestCase):
+    def test_bad_hook_observations_fail_instead_of_becoming_zero_cost(self):
+        bodies = ['truncated{', '{"schema":"unknown","recall_attempted":false}', '[]']
+        bodies += [json.dumps(dict(schema='cairn.task-hook-observation/1', event='SessionStart',
+                                   recall_attempted=True, recall=value))
+                   for value in ([], '', [['model_reported_cost_usd', 999]])]
+        bodies.append(json.dumps(dict(schema='cairn.task-hook-observation/1', event='PostToolUse',
+                                      recall_attempted=False, recall=dict(model_reported_cost_usd=999))))
+        for body in bodies:
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as directory:
+                Path(directory, 'observations.jsonl').write_text(body + '\n')
+                with self.assertRaises(ValueError):
+                    te.hook_observations(directory, Mock(names={}))
+
+    def test_hook_report_keeps_each_invocation_and_unknown_timeout_cost(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, 'session.json').write_text(json.dumps(dict(last_recall=dict(
+                outcome='recalled', model_reported_cost_usd=999))))
+            rows = [
+                dict(schema='cairn.task-hook-observation/1', event='SessionStart', recall_attempted=True,
+                     recall=dict(outcome='recalled', preview_seconds=2, preview_reported_cost_usd=.01,
+                                 model_seconds=2, model_reported_cost_usd=.02)),
+                dict(schema='cairn.task-hook-observation/1', event='UserPromptSubmit', recall_attempted=True,
+                     recall=dict(outcome='empty', preview_seconds=5, rejected=dict(preview_timeout=4))),
+                dict(schema='cairn.task-hook-observation/1', event='PostToolUse', recall_attempted=False, recall=None),
+            ]
+            Path(directory, 'observations.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
+            observed = te.hook_observations(directory, Mock(names={}))
+        self.assertEqual(observed['recall_observation'], 'per_invocation')
+        self.assertEqual(len(observed['recalls']), 2)
+        self.assertEqual(observed['recalls'][0]['preview_reported_cost_usd'], .01)
+        self.assertEqual(observed['recalls'][0]['model_reported_cost_usd'], .02)
+        self.assertNotIn('preview_reported_cost_usd', observed['recalls'][1])
+        self.assertEqual(observed['outcomes'], ['recalled', 'empty'])
+        self.assertEqual(len(observed['hook_invocations']), 3)
+
     def test_hook_report_retains_selector_failure_and_cost(self):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "session.json").write_text(json.dumps(dict(last_recall=dict(

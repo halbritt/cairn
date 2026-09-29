@@ -871,7 +871,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
             if args.harness == "codex":
                 binds.append((Path(args.selector_auth_file).resolve(), home / ".claude/.credentials.json", "ro"))
         (base / "hook-config.json").write_text(json.dumps(config))
-        hook_cmd = "bash -o pipefail -c 'python3 -B /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json | tee -a /tmp/trial/hookstate/calls.jsonl'"
+        hook_cmd = "bash -o pipefail -c 'python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl | tee -a /tmp/trial/hookstate/calls.jsonl'"
         settings = dict(hooks={event: [dict(hooks=[dict(type="command", command=hook_cmd, timeout=13)])] for event in HOOK_EVENTS})
         (base / "settings.json").write_text(json.dumps(settings))
         mcp = dict(mcpServers=dict(cairn=dict(type="stdio", command=str(trial / "cairn"), args=[
@@ -880,6 +880,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
         (base / "mcp.json").write_text(json.dumps(mcp))
         binds += [(store["store"].binary, trial / "cairn", "ro"), (store["store"].sockdir, trial / "sock", "rw"),
                   (store["store"].token_file, trial / "agent.token", "ro"), (Path(store["hook"]).parent, "/tmp/trial/hook", "ro"),
+                  (ROOT / "scripts/trial_hook_observer.py", "/tmp/trial/hook-observer.py", "ro"),
                   (base / "hook-config.json", "/tmp/trial/hookconfig.json", "ro"), (session_state, "/tmp/trial/hookstate", "rw"),
                   (base / "settings.json", "/tmp/trial/settings.json", "ro"), (base / "mcp.json", "/tmp/trial/mcp.json", "ro")]
         if args.harness == "claude":
@@ -936,7 +937,7 @@ def names_for(store, call):
 
 
 def hook_observations(state_dir, store):
-    """Delivered records per hook call, from the lifecycle state files (last_recall is overwritten per call)."""
+    """Read delivered context and per-invocation metrics; label legacy state-only evidence."""
     if store is None or not Path(state_dir).is_dir():
         return {}
     delivered, size, outcomes, recalls = [], 0, [], []
@@ -957,12 +958,32 @@ def hook_observations(state_dir, store):
         recall = state.get("last_recall") or {}
         outcomes.append(recall.get("outcome"))
         recalls.append({key: recall[key] for key in ("outcome", "discovery", "coverage", "inspected", "rejected",
-                                                    "shortlist_candidates", "model_seconds", "model_reported_cost_usd")
+                                                    "shortlist_candidates", "model_seconds", "model_reported_cost_usd",
+                                                    "preview_seconds", "preview_reported_cost_usd", "pull_seconds",
+                                                    "elapsed_seconds", "bytes", "preview_input_bytes", "selector_input_bytes")
                         if key in recall})
         delivered += [store.names.get(r["record_id"], "?") for r in recall.get("records", [])]
         delivered += [store.names.get(r, "?") for r in state.get("seen", {})]
+    observation_path = Path(state_dir) / "observations.jsonl"
+    invocations = []
+    if observation_path.exists():
+        for line in observation_path.read_text().splitlines():
+            row = json.loads(line)
+            if (not isinstance(row, dict) or row.get("schema") != "cairn.task-hook-observation/1"
+                    or type(row.get("recall_attempted")) is not bool
+                    or "recall" not in row or "event" not in row
+                    or (row["recall"] is not None and not isinstance(row["recall"], dict))
+                    or (not row["recall_attempted"] and row["recall"] is not None)):
+                raise ValueError("unsupported hook observation")
+            invocations.append(row)
+        recalls = [dict(row["recall"] or {}, event=row["event"],
+                        metrics_available=row["recall"] is not None,
+                        observed_seconds=row.get("recall_seconds"))
+                   for row in invocations if row["recall_attempted"]]
+        outcomes = [r.get("outcome") for r in recalls]
     return dict(delivered=sorted(set(delivered)), injected_bytes=size, injections=injections, outcomes=outcomes,
-                recalls=recalls)
+                recalls=recalls, hook_invocations=invocations,
+                recall_observation="per_invocation" if observation_path.exists() else "last_state_only")
 
 
 def cmd_agent(args):
@@ -991,6 +1012,7 @@ def cmd_agent(args):
         raise SystemExit("paired baseline plans do not cover exactly the candidate case/seed pairs")
     execution = dict(harness=args.harness, reasoning_effort=args.reasoning_effort if args.harness == "codex" else None,
                      evaluator_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                     hook_observer_sha256=hashlib.sha256((ROOT / "scripts/trial_hook_observer.py").read_bytes()).hexdigest(),
                      harness_version=run([str(Path(args.codex_install) / "codex/bin/codex.js") if args.harness == "codex" else "claude", "--version"]).stdout.decode().strip())
     out = Path(args.output)
     out.mkdir(mode=0o700)
