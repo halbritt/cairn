@@ -238,3 +238,32 @@ evaluator for each comparison; existing campaigns are not changed retroactively.
   labelled cases from future genuine failures are the intended growth path.
 - It does not measure the delayed or cumulative value named in the owner's
   2026-09-09 evaluation decision, such as continuity across long work.
+
+### Stop admitting tasks after confirmed provider failure
+
+The evaluator keeps at most `--parallel` tasks admitted at a time. A confirmed
+provider authentication or account-cap failure stops replacement admissions;
+already admitted tasks finish and retain their own outcomes. It does not retry,
+restart, cancel in-flight work, or create replacement attempts.
+
+The current classifier recognizes Claude's terminal `is_error=true`,
+`terminal_reason=api_error`, HTTP401 authentication failure. For HTTP429 it also
+requires the native assistant `error=rate_limit`, the same terminal message,
+and the explicit weekly-limit/reset format observed in the retained incident.
+A bare429, retry event, quoted/tool-output error, ordinary task failure, or
+success after a transient failure does not stop admission. Other provider error
+shapes, including Codex errors, remain recorded execution failures without an
+inferred account-wide stop. Extending classification requires native evidence
+and tests; reset text never schedules a retry.
+
+On a confirmed stop, stdout emits `admission_stop`. After admitted work drains,
+`agent.json` retains the usual actual-attempt records and summary, plus an
+`admission` section containing the stop reason, planned/admitted counts and
+`not_started` plan rows. Unstarted tasks are not fake failed attempts and are not
+included in outcome or latency denominators. The evaluator exits2, including
+when the failure happened on the last admitted task. Existing per-attempt failure
+grades and costs are preserved. A later grading exception still permits the
+controller to inspect the already retained native stream for the stop signal;
+unreadable or malformed evidence is reported, not treated as a confirmed cap.
+The complete pre-run plan remains unchanged. Reports describe a partial campaign,
+not a completed paired comparison. Store cleanup retains its existing owner.

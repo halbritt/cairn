@@ -756,16 +756,36 @@ def parse_codex_stream(text):
                 cache_creation_tokens=usage.get("cache_write_input_tokens"), output_tokens=usage.get("output_tokens"))
 
 
+def claude_admission_failure(result, assistant_error):
+    """Only terminal provider metadata can stop admission, never tool/answer text."""
+    if result.get("is_error") is not True or result.get("terminal_reason") != "api_error":
+        return None
+    status = result.get("api_error_status")
+    if type(status) is not int:
+        return None
+    if status == 401:
+        return dict(provider="claude", reason="authentication_failed", api_error_status=status)
+    error, message = assistant_error
+    if (status == 429 and error == "rate_limit" and result.get("result") == message
+            and re.fullmatch(r"You've hit your weekly limit · resets [^\r\n]+", message)):
+        return dict(provider="claude", reason="capacity_exhausted", api_error_status=status)
+    return None
+
+
 def parse_claude_stream(text):
     """Summarise Claude Code stream-json output: commands, file writes, memory tool calls, answer, usage."""
     commands, writes, memory, answer, result = [], [], [], "", {}
+    assistant_error = (None, "")
     for line in text.splitlines():
         try:
             event = json.loads(line)
         except ValueError:
             continue
         if event.get("type") == "assistant":
-            for part in (event.get("message") or {}).get("content", []):
+            content = (event.get("message") or {}).get("content", [])
+            assistant_error = (event.get("error"), "".join(
+                part.get("text", "") for part in content if part.get("type") == "text"))
+            for part in content:
                 if part.get("type") == "tool_use":
                     name, data = part.get("name", ""), part.get("input") or {}
                     if name == "Bash":
@@ -783,6 +803,7 @@ def parse_claude_stream(text):
     return dict(commands=commands, writes=writes, memory_calls=memory, answer=answer,
                 turns=result.get("num_turns"), duration_ms=result.get("duration_ms"), cost_usd=result.get("total_cost_usd"),
                 is_error=result.get("is_error"), subtype=result.get("subtype"), completed=bool(result),
+                admission_failure=claude_admission_failure(result, assistant_error),
                 turn_unit="claude_num_turns",
                 input_tokens=usage.get("input_tokens"), cache_read_tokens=usage.get("cache_read_input_tokens"),
                 cache_creation_tokens=usage.get("cache_creation_input_tokens"), output_tokens=usage.get("output_tokens"))
@@ -1056,27 +1077,56 @@ def cmd_agent(args):
                                                        limits=dict(max_turns=args.max_turns, timeout=args.timeout,
                                                                    parallel=args.parallel),
                                                        runs=[(c["id"], a, s, p) for c, a, s, p in plan]), indent=2))
-        records = []
+        records, next_run, stop = [], 0, None
         with concurrent.futures.ThreadPoolExecutor(args.parallel) as pool:
-            futures = {pool.submit(run_agent, c, a, s, p, args, stores, out): (c["id"], a, s) for c, a, s, p in plan}
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    record = future.result()
-                except Exception as error:  # keep failed runs in the record
-                    cid, arm, seed = futures[future]
-                    record = dict(run_id=f"{cid}.{arm}.s{seed}", case=cid, arm=arm, seed=seed, outcome="harness_error", error=str(error)[-600:])
-                records.append(record)
-                print(json.dumps({k: record.get(k) for k in ("run_id", "outcome", "seconds")}), flush=True)
+            futures = {}
+            while futures or (stop is None and next_run < len(plan)):
+                # Keep no queued backlog: after a confirmed failure only the
+                # already admitted window may finish. Never cancel its evidence.
+                while stop is None and len(futures) < args.parallel and next_run < len(plan):
+                    c, a, s, p = plan[next_run]
+                    futures[pool.submit(run_agent, c, a, s, p, args, stores, out)] = next_run
+                    next_run += 1
+                done, _ = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_COMPLETED)
+                # Inspect every completed result before admitting replacements.
+                for future in sorted(done, key=lambda f: futures[f]):
+                    c, arm, seed, _ = plan[futures.pop(future)]
+                    try:
+                        record = future.result()
+                    except Exception as error:  # keep failed runs in the record
+                        cid = c["id"]
+                        record = dict(run_id=f"{cid}.{arm}.s{seed}", case=cid, arm=arm, seed=seed,
+                                      outcome="harness_error", error=str(error)[-600:])
+                        # run_agent persists the native stream before grading.
+                        # A later grading failure must not hide a provider stop.
+                        stream = out / "runs" / record["run_id"] / "stream.jsonl"
+                        if stream.is_file():
+                            try:
+                                trace = parse_stream(stream.read_text(), args.harness)
+                                record["trace"] = {k: v for k, v in trace.items() if k not in ("answer", "commands")}
+                            except (OSError, ValueError, TypeError, AttributeError) as parse_error:
+                                record["trace_parse_error"] = str(parse_error)[-600:]
+                    records.append(record)
+                    failure = (record.get("trace") or {}).get("admission_failure")
+                    if stop is None and failure:
+                        stop = dict(run_id=record["run_id"], **failure)
+                        print(json.dumps(dict(admission_stop=stop)), flush=True)
+                    print(json.dumps({k: record.get(k) for k in ("run_id", "outcome", "seconds")}), flush=True)
+        admission = dict(state="stopped_provider_failure" if stop else "complete", stop=stop,
+                         planned=len(plan), admitted=next_run,
+                         not_started=[dict(run_id=f"{c['id']}.{a}.s{s}", case=c["id"], arm=a, seed=s, order=p)
+                                      for c, a, s, p in plan[next_run:]])
         report = dict(schema="cairn.task-eval.agent/1", frozen=frozen, arms=arms, model=args.model, wording=args.wording, **execution,
                       distractors=args.distractors, memory={k: dict(cairn=str(v["store"].binary), hook=v["hook"],
                       hook_sha256=hashlib.sha256(Path(v["hook"]).read_bytes()).hexdigest(),
                       backend=v["store"].backend, readiness=v["store"].readiness,
                       cairn_version=cairn_json(v["store"].binary, ["version"], v["store"].env)) for k, v in stores.items()},
-                      paired_plans=paired_plans,
+                      paired_plans=paired_plans, admission=admission,
                       records=sorted(records, key=lambda r: r["run_id"]))
         report["summary"] = summarise_agent(report["records"], arms)
         (out / "agent.json").write_text(json.dumps(report, indent=2))
         print(json.dumps(report["summary"], indent=2))
+        return 2 if stop else 0
 
 
 def summarise_agent(records, arms):
@@ -1256,7 +1306,7 @@ def main(argv=None):
     if args.command == "retrieval":
         cmd_retrieval(args)
     elif args.command == "agent":
-        cmd_agent(args)
+        return cmd_agent(args)
     elif args.command == "regrade":
         cmd_regrade(args)
     else:
