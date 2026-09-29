@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import trial_task_eval as te  # noqa: E402
@@ -120,6 +121,25 @@ class FixtureTest(unittest.TestCase):
         for version in range(1, te.latest_version() + 1):
             if te.frozen_path(version).exists():
                 te.verify_frozen(version)
+
+    def test_candidate_readiness_waits_for_full_eligible_coverage(self):
+        store = object.__new__(te.TrialStore)
+        store.embedding_worker = "/fixture/worker"
+        store.backend = "embedding-command"
+        store.root = Path("/tmp/fixture")
+        store.server = Mock()
+        store.server.poll.return_value = None
+        store.started = te.time.monotonic()
+        store.agent = Mock(side_effect=[
+            dict(discovery=dict(state="unavailable")),
+            dict(discovery=dict(state="ready", coverage=dict(indexed=3, eligible=4))),
+            dict(discovery=dict(state="ready", coverage=dict(indexed=4, eligible=4))),
+        ])
+        with patch.object(te.time, "sleep"):
+            store.wait_for_full_coverage(timeout=10)
+        self.assertEqual(store.agent.call_count, 3)
+        self.assertEqual(store.readiness["state"], "full_eligible_coverage")
+        self.assertEqual(store.readiness["coverage"], dict(state="ready", indexed=4, eligible=4))
 
 
 class InjectionTest(unittest.TestCase):

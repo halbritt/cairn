@@ -221,11 +221,16 @@ def disposable_pg():
 class TrialStore:
     """One disposable database, one API server and one hosted agent token."""
 
-    def __init__(self, root, binary, label, worker=None):
+    def __init__(self, root, binary, label, worker=None, embedding_worker=None):
+        if worker and embedding_worker:
+            raise ValueError("select one semantic backend")
         self.root = Path(root)
         self.root.mkdir(mode=0o700, parents=True)
         self.binary = Path(binary).resolve()
         self.worker = worker
+        self.embedding_worker = embedding_worker
+        self.backend = "embedding-command" if embedding_worker else "semantic-stream-command" if worker else "lexical"
+        self.readiness = None
         pg = disposable_pg()
         database = "task_eval_" + re.sub(r"[^a-z0-9]", "_", label.lower())
         run([Path(os.environ["CAIRN_TASK_EVAL_PG_BIN"]) / "createdb", "-h", pg, database])
@@ -289,13 +294,48 @@ class TrialStore:
         command = [self.binary, "serve", "--socket", self.socket]
         if self.worker:
             command += ["--semantic-stream-command", str(Path(self.worker).resolve())]
+        if self.embedding_worker:
+            command += ["--embedding-command", str(Path(self.embedding_worker).resolve())]
         self.log = (self.root / "api.log").open("wb")
+        self.started = time.monotonic()
         self.server = subprocess.Popen([str(c) for c in command], env=self.env, stdout=self.log, stderr=self.log)
         deadline = time.time() + 30
         while not self.socket.exists():
             if self.server.poll() is not None or time.time() > deadline:
                 raise RuntimeError("API did not start; see " + str(self.root / "api.log"))
             time.sleep(0.1)
+
+    def wait_for_full_coverage(self, timeout=1800):
+        """Separate cold backfill from warm agent timing for the passage index."""
+        if not self.embedding_worker:
+            return
+        deadline = time.monotonic() + timeout
+        polls, last = 0, None
+        while time.monotonic() < deadline:
+            if self.server.poll() is not None:
+                raise RuntimeError("candidate API exited during index backfill; see " + str(self.root / "api.log"))
+            polls += 1
+            try:
+                data = self.agent("search", "--repo", TRIAL_REPO, "--task", "task-eval", "--run", "readiness",
+                                  "--tokens", "64000", "--semantic", "--", "readiness probe")
+                discovery = data.get("discovery") or {}
+                coverage = discovery.get("coverage") or {}
+                last = dict(state=discovery.get("state"), indexed=coverage.get("indexed"),
+                            eligible=coverage.get("eligible"))
+                if (last["state"] == "ready" and type(last["indexed"]) is int
+                        and type(last["eligible"]) is int and last["eligible"] > 0
+                        and last["indexed"] == last["eligible"]):
+                    self.readiness = dict(backend=self.backend, state="full_eligible_coverage", coverage=last,
+                                          cold_seconds=round(time.monotonic() - self.started, 3), polls=polls)
+                    print(json.dumps(dict(index_readiness=self.readiness)), flush=True)
+                    return
+            except (RuntimeError, subprocess.TimeoutExpired):
+                last = dict(state="search_unavailable")
+            if polls == 1 or polls % 6 == 0:
+                print(json.dumps(dict(index_progress=last, polls=polls,
+                                      cold_seconds=round(time.monotonic() - self.started, 1))), flush=True)
+            time.sleep(min(5, max(0, deadline - time.monotonic())))
+        raise RuntimeError(f"candidate index did not reach full eligible coverage in {timeout}s; last={last}")
 
     def stop(self):
         if self.server and self.server.poll() is None:
@@ -728,6 +768,23 @@ def hook_observations(state_dir, store):
 def cmd_agent(args):
     frozen = verify_frozen()
     cases = [c for c in load_cases() if not args.cases or c["id"] in args.cases]
+    expected_pairs = {(c["id"], seed) for c in cases for seed in range(args.first_seed, args.first_seed + args.seeds)}
+    paired_plans, baseline_pairs = [], set()
+    for path in args.paired_plan:
+        baseline = load_json(path)
+        if (baseline["model"] != args.model or baseline["wording"] != args.wording
+                or baseline["distractors"] != args.distractors
+                or baseline["frozen"]["cases_sha256"] != frozen["cases_sha256"]
+                or baseline["frozen"]["corpus_sha256"] != frozen["corpus_sha256"]):
+            raise SystemExit("paired baseline plan differs in model, wording, distractors or base fixtures: " + path)
+        pairs = {(case, seed) for case, arm, seed, _ in baseline["runs"] if arm == "baseline"}
+        baseline_pairs |= pairs
+        paired_plans.append(dict(path=str(Path(path).resolve()), sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+                                 frozen_labels_sha256=baseline["frozen"]["labels_sha256"],
+                                 label_version=baseline["frozen"].get("label_version", 1),
+                                 baseline_pairs=len(pairs)))
+    if paired_plans and baseline_pairs != expected_pairs:
+        raise SystemExit("paired baseline plans do not cover exactly the candidate case/seed pairs")
     out = Path(args.output)
     out.mkdir(mode=0o700)
     stores = {}
@@ -735,10 +792,16 @@ def cmd_agent(args):
     arms = list(args.arms)
     for spec in args.memory:
         label, binary, hook = spec.split(":", 2)
-        store = TrialStore(out / "stores" / label, binary, label, worker=args.semantic_worker)
+        store = TrialStore(out / "stores" / label, binary, label, worker=args.semantic_worker,
+                           embedding_worker=args.embedding_worker)
         store.seed_corpus(corpus)
         store.grow(args.distractors, 0)
         store.start()
+        try:
+            store.wait_for_full_coverage()
+        except Exception:
+            store.stop()
+            raise
         stores[label] = dict(store=store, hook=str(Path(hook).resolve()))
         arms.append(label)
     plan = []
@@ -748,7 +811,13 @@ def cmd_agent(args):
             random.Random(f"{seed}:{case['id']}").shuffle(order)
             plan += [(case, arm, seed, position) for position, arm in enumerate(order)]
     (out / "plan.json").write_text(json.dumps(dict(frozen=frozen, arms=arms, model=args.model, wording=args.wording,
-                                                   distractors=args.distractors, runs=[(c["id"], a, s, p) for c, a, s, p in plan]), indent=2))
+                                                   distractors=args.distractors, paired_plans=paired_plans,
+                                                   memory_backends={k: dict(backend=v["store"].backend,
+                                                                            readiness=v["store"].readiness)
+                                                                    for k, v in stores.items()},
+                                                   limits=dict(max_turns=args.max_turns, timeout=args.timeout,
+                                                               parallel=args.parallel),
+                                                   runs=[(c["id"], a, s, p) for c, a, s, p in plan]), indent=2))
     records = []
     try:
         with concurrent.futures.ThreadPoolExecutor(args.parallel) as pool:
@@ -767,7 +836,9 @@ def cmd_agent(args):
     report = dict(schema="cairn.task-eval.agent/1", frozen=frozen, arms=arms, model=args.model, wording=args.wording,
                   distractors=args.distractors, memory={k: dict(cairn=str(v["store"].binary), hook=v["hook"],
                   hook_sha256=hashlib.sha256(Path(v["hook"]).read_bytes()).hexdigest(),
+                  backend=v["store"].backend, readiness=v["store"].readiness,
                   cairn_version=cairn_json(v["store"].binary, ["version"], v["store"].env)) for k, v in stores.items()},
+                  paired_plans=paired_plans,
                   records=sorted(records, key=lambda r: r["run_id"]))
     report["summary"] = summarise_agent(report["records"], arms)
     (out / "agent.json").write_text(json.dumps(report, indent=2))
@@ -864,6 +935,8 @@ def main(argv=None):
     a.add_argument("--wording", default="task", choices=["task", "paraphrase", "direct"])
     a.add_argument("--distractors", type=int, default=1900)
     a.add_argument("--semantic-worker")
+    a.add_argument("--embedding-worker", help="persistent passage backend; waits for full eligible coverage")
+    a.add_argument("--paired-plan", action="append", default=[], help="captured baseline plan for case/seed matching")
     a.add_argument("--max-turns", type=int, default=40)
     a.add_argument("--timeout", type=int, default=900)
     a.add_argument("--parallel", type=int, default=3)
