@@ -290,7 +290,8 @@ _fixed_plan = plan
 def plan():
     return _fixed_plan() + discover()
 PY"""
-SCRIPTS_BY_VERSION = {3: {
+EVERNOTE_IMPORTER = ("printf 'import xml.etree.ElementTree as ET\\n\\n\\ndef load(path):\\n    root = ET.parse(path).getroot()\\n    return [n.findtext(\"title\") for n in root.iter(\"note\")]\\n' > importers/evernote.py", [], "Added an ENEX importer.")
+SCRIPTS_BY_VERSION = {6: {"evernote-import": (EVERNOTE_IMPORTER, ("printf 'PATH = \"~/en_backup.db\"\\n' > importers/evernote.py", [], "Reads ~/en_backup.db."))}, 3: {
     "updatebot-scope": ((UPDATEBOT_WIRED, [], "Discovery wired into plan()."),
                         ("sed -i 's/^]/    {\"name\": \"opencode\", \"kind\": \"npm\"},\\n]/' updatebot/targets.py", [], "Added opencode.")),
     "local-ci": (("mkdir -p .githooks && printf '#!/bin/sh\\nexec make test\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit && git config core.hooksPath .githooks", [], "Local pre-commit hook runs make test."),
@@ -354,8 +355,24 @@ class V3CounterexampleTest(unittest.TestCase):
         real = ("printf 'Also list items visible in the photo in larger quantity than recorded, as additions.\\n' >> binkeeper/nightly_prompt.md", [], "Done.")
         self.assertEqual(scripted(case, real)["outcome"], "correct")
 
+    def test_v6_agent112_counterexamples_are_not_correct(self):
+        cases = {c["id"]: c for c in te.load_cases(6)}
+        readme_only = ("printf '\\nPrinter address noted: 03:1A:2B:3C:4D:5E\\n' >> README.md", [], "Added.")
+        self.assertNotEqual(scripted(cases["b1-printer"], readme_only)["outcome"], "correct")
+        wired = ("printf \"import subprocess\\ndef run(prompt):\\n    return subprocess.run(['codex', 'exec', '--output-schema', 'schemas/response.json', prompt], capture_output=True, text=True)\\n\" > surveyor/codex_backend.py", [], "Enabled --output-schema with the existing oneOf schema.")
+        self.assertEqual(scripted(cases["oneof-schema"], wired)["outcome"], "mistake")
+        self.assertEqual(scripted(cases["jev-model"], ("true", [], "Qwen3-4B is worth trying."))["outcome"], "incomplete")
+        self.assertNotEqual(scripted(cases["evernote-import"], (": > importers/evernote.py", [], "Done."))["outcome"], "correct")
+
+    def test_v6_accepts_restructured_schema_and_real_importer(self):
+        cases = {c["id"]: c for c in te.load_cases(6)}
+        flat = ("python3 -c \"import json; json.dump({'type': 'object', 'properties': {'finding': {'type': ['string', 'null']}, 'no_finding': {'type': ['boolean', 'null']}}, 'required': ['finding', 'no_finding']}, open('schemas/flat.json', 'w'))\" && sed -i 's/\"--json\", prompt/\"--json\", \"--output-schema\", \"schemas\/flat.json\", prompt/' surveyor/codex_backend.py", [], "The oneOf schema is rejected by the native option, so I added a flattened schema without oneOf.")
+        self.assertEqual(scripted(cases["oneof-schema"], flat)["outcome"], "correct")
+        importer = ("printf 'import xml.etree.ElementTree as ET\\n\\n\\ndef load(path):\\n    root = ET.parse(path).getroot()\\n    return [n.findtext(\"title\") for n in root.iter(\"note\")]\\n' > importers/evernote.py", [], "Added an ENEX importer.")
+        self.assertEqual(scripted(cases["evernote-import"], importer)["outcome"], "correct")
+
     def test_earlier_label_hashes_unchanged(self):
-        for version in (1, 2, 3, 4):
+        for version in (1, 2, 3, 4, 5):
             self.assertEqual(te.label_manifest(version)["labels_sha256"], te.load_json(te.frozen_path(version))["labels_sha256"])
 
 

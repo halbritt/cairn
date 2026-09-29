@@ -159,3 +159,42 @@ and hook `d08bba3` (`task-comparison-baseline/manifest.json`). It does not use
 the historical d08bba3 core. The harness already supports this pairing with
 `--memory LABEL:BIN:HOOK`. Every arm still needs its server argv and backend
 recorded.
+
+## v6 addendum: agent-112 grader counterexamples
+
+agent-112's synthetic controls (`/tmp/cairn-retrieval-goal/additional-grader-controls/`)
+showed four checks that accept incomplete work. v3 already fixed jev-model,
+which now requires an output mode. v6 (`c8abef6f…`) grades the other three by
+behaviour:
+
+- **b1-printer:** `choose()` must default to CUPS, and another configured
+  printer must be selectable and carry the B1 address. A README-only address
+  mention is not correct.
+- **oneof-schema:** the grader imports the backend with `subprocess`
+  intercepted and calls `run()` (or `command()`). It is a mistake if the argv
+  Codex actually receives passes a `oneOf` schema to `--output-schema`. It is
+  correct if no such argv is sent, or the schema has been restructured without
+  `oneOf`, and the answer flags `oneOf`.
+- **evernote-import:** the importer needs a function and at least 4 code
+  lines, so an empty file is not correct. The inaccessible-note leak remains the
+  separate control result.
+
+Calibration covers all four counterexamples, plus a legitimate restructured
+schema and a real importer. There are now 30 tests, all passing.
+
+Regrading retained runs under v6 changes one grade.
+`oneof-schema.none.s1` goes from correct to **mistake**: it passes the
+unchanged `oneOf` schema through `--output-schema`, and v2 accepted it only
+because the answer mentioned `oneOf`.
+
+Primary counts under v6:
+
+| arm | correct | mistake | incomplete |
+|---|---|---|---|
+| none | 37 | 17 | 3 |
+| direct | 57 | 0 | 0 |
+| baseline | 54 | 3 | 0 |
+| candidate | 50 | 5 | 0 (plus 2 provider errors) |
+
+None → baseline is now +17 / −0, adding oneof-schema s1. Baseline → candidate
+is unchanged at +0 / −2 (local-ci s1 and s2).
