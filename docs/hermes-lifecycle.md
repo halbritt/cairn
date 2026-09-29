@@ -157,9 +157,12 @@ for tested revisions, remaining limits and deployment evidence.
 Hermes also enables bounded semantic fallback when lexical inspection delivers no
 optional body.
 Precise file, quoted and diagnostic requests retain lexical retrieval. Fallback
-performs one semantic search and inspects up to three current bodies, asking the
+performs one semantic search and inspects up to three current sources, asking the
 existing tool-free selector whether each deliverable note directly helps this
-project/request. Those checks share an eight-second model-time allowance within
+project/request. An oversized whole note may use a checked `match_span` for an
+optional class A/B passage; that excerpt is labelled partial and leaves the whole
+note eligible for later recall. Discovery coverage is preserved in injected context
+and status. Those checks share an eight-second model-time allowance within
 the recall deadline and add latency only on that fallback path.
 Worker unavailability and rejected/failed checks appear in memory status; they
 do not inject an unverified optional candidate. Required context from both

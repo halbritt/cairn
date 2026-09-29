@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -472,6 +473,75 @@ class CandidateBudgetTests(unittest.TestCase):
 
 
 class SemanticFallbackTests(unittest.TestCase):
+    def test_semantic_passage_over_context_budget_never_reaches_selector(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = hook.Memory(dict(semantic_fallback=True, cairn='unused', socket='unused',
+                                      token_file='unused', repo='fixture', context_bytes=1000), 'semantic')
+            event = dict(hook_event_name='UserPromptSubmit', cwd=tmp, prompt='recover lease expiry')
+            body = 'recover lease expiry ' + 'x' * 3500
+            entry = dict(record_id='saved', version=1, summary='opaque',
+                         match_span=dict(offset=0, length=3500), pull_arguments=dict(handle='saved'))
+            whole = dict(selection=dict(record=dict(record_id='saved', version=1, body=body)))
+            excerpt = body[:3500]
+            span = dict(selection=dict(record=dict(record_id='saved', version=1, body='', **{'class': 'A'})),
+                        span=dict(offset=0, end=3500, total_bytes=len(body), body=excerpt,
+                                  sha256=hashlib.sha256(excerpt.encode()).hexdigest(),
+                                  source_sha256=hashlib.sha256(body.encode()).hexdigest()))
+            with patch.object(memory, 'search', side_effect=[dict(index=[]),
+                     dict(index=[entry], discovery=dict(state='ready'))]), \
+                 patch.object(memory, 'call', side_effect=[whole, span]), \
+                 patch.object(hook, 'select_json') as model:
+                state = {}
+                result = hook.recall(memory, event, state)
+            self.assertEqual(result, {})
+            self.assertEqual(state['seen'], {})
+            self.assertEqual(state['last_recall']['discovery'], 'context_budget')
+            model.assert_not_called()
+
+    def test_long_hit_uses_current_span_and_preserves_coverage_without_marking_full_seen(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = hook.Memory(dict(semantic_fallback=True, cairn='unused', socket='unused',
+                                      token_file='unused', repo='fixture', context_bytes=9500), 'semantic')
+            event = dict(hook_event_name='UserPromptSubmit', cwd=tmp, prompt='recover lease expiry')
+            body = 'Unrelated prefix. ' * 700 + 'Recover lease expiry by renewing the original claim.'
+            passage = 'Recover lease expiry by renewing the original claim.'
+            offset = len(body.encode()) - len(passage.encode())
+            digest = hashlib.sha256(body.encode()).hexdigest()
+            entry = dict(record_id='saved', version=2, class_='A', summary='unrelated prefix',
+                         body_sha256=digest, match_span=dict(offset=offset, length=len(passage.encode())),
+                         pull_arguments=dict(request_id='original', receipt_id='receipt', handle='handle'))
+            entry['class'] = entry.pop('class_')
+            whole = dict(selection=dict(record=dict(record_id='saved', version=2, class_='A', body=body)))
+            span = dict(selection=dict(record=dict(record_id='saved', version=2, class_='A', body='')),
+                        span=dict(offset=offset, end=len(body.encode()), total_bytes=len(body.encode()),
+                                  body=passage, sha256=hashlib.sha256(passage.encode()).hexdigest(),
+                                  source_sha256=digest))
+            whole['selection']['record']['class'] = whole['selection']['record'].pop('class_')
+            span['selection']['record']['class'] = span['selection']['record'].pop('class_')
+            lexical = dict(index=[], selected=[dict(body='mandatory instruction')])
+            semantic = dict(index=[entry], discovery=dict(state='ready', coverage=dict(indexed=1, eligible=2)))
+            with patch.object(memory, 'search', side_effect=[lexical, semantic]), \
+                 patch.object(memory, 'call', side_effect=[whole, span]) as pull, \
+                 patch.object(hook, 'select_json', return_value=dict(structured_output=dict(relevant=True))) as model:
+                state = {}
+                output = hook.recall(memory, event, state)
+            text = output['hookSpecificOutput']['additionalContext']
+            self.assertIn(passage, text)
+            self.assertIn('mandatory instruction', text)
+            self.assertNotIn('Unrelated prefix. ' * 10, text)
+            self.assertIn('"source_extent":"partial_span"', text)
+            self.assertIn('"coverage":{"indexed":1,"eligible":2}', text)
+            self.assertIn('"match_span"', text)
+            self.assertEqual(state['seen'], {})
+            self.assertEqual(state['last_recall']['source_extent'], 'partial_span')
+            self.assertEqual(state['last_recall']['partial_record'], 'saved')
+            self.assertIsNone(state['last_recall']['expanded'])
+            self.assertEqual(state['last_recall']['coverage'], dict(indexed=1, eligible=2))
+            self.assertEqual(pull.call_args_list[1].kwargs['payload']['span'], entry['match_span'])
+            self.assertNotEqual(pull.call_args_list[1].kwargs['payload']['request_id'], 'original')
+            self.assertTrue(model.called)
+            self.assertLessEqual(len(text.encode()), 9500)
+
     def test_paraphrase_requires_full_body_verification_and_preserves_required_context(self):
         with tempfile.TemporaryDirectory() as tmp:
             memory = hook.Memory(dict(semantic_fallback=True, cairn='unused', socket='unused',
@@ -565,6 +635,53 @@ class RecallCandidateTests(unittest.TestCase):
 
     def pulled(self, name, body, version=1):
         return dict(selection=dict(record=dict(record_id=name, version=version, body=body)))
+
+    def test_span_rejects_stale_version_changed_bytes_and_ineligible_class(self):
+        body = 'Recover lease expiry.'
+        entry = self.entry('saved') | dict(class_='A', body_sha256=hashlib.sha256(body.encode()).hexdigest(),
+                                          match_span=dict(offset=0, length=len(body)))
+        entry['class'] = entry.pop('class_')
+        valid = dict(selection=dict(record=dict(record_id='saved', version=1, body='', **{'class': 'A'})),
+                     span=dict(offset=0, end=len(body), total_bytes=len(body), body=body,
+                               sha256=hashlib.sha256(body.encode()).hexdigest(),
+                               source_sha256=entry['body_sha256']))
+        with patch.object(self.memory, 'call', return_value=valid):
+            self.assertEqual(hook.current_span_pull(self.memory, entry, time.monotonic() + 2)['source_extent'],
+                             'partial_span')
+        stale = json.loads(json.dumps(valid))
+        stale['selection']['record']['version'] = 2
+        changed = json.loads(json.dumps(valid))
+        changed['span']['body'] = 'Changed lease expiry.'
+        wrong_source = json.loads(json.dumps(valid))
+        wrong_source['span']['source_sha256'] = '0' * 64
+        for response in (stale, changed, wrong_source):
+            with self.subTest(response=response), patch.object(self.memory, 'call', return_value=response):
+                with self.assertRaises(hook.HookError):
+                    hook.current_span_pull(self.memory, entry, time.monotonic() + 2)
+        for blocked in (entry | {'class': 'C'}, entry | {'conflicts': [dict(position='other')]},
+                        entry | {'match_span': dict(offset=0, length=5000)}):
+            with self.subTest(blocked=blocked), patch.object(self.memory, 'call') as call:
+                with self.assertRaises(hook.HookError):
+                    hook.current_span_pull(self.memory, blocked, time.monotonic() + 2)
+                call.assert_not_called()
+
+    def test_partial_span_that_exceeds_context_budget_is_not_injected(self):
+        self.memory.config['context_bytes'] = 1000
+        entry = self.entry('saved', 'recover lease expiry') | dict(match_span=dict(offset=0, length=3500))
+        prefix = 'recover lease expiry '
+        body = prefix + 'x' * (3500 - len(prefix))
+        whole = self.pulled('saved', body + 'y' * 10000)
+        span = dict(selection=dict(record=dict(record_id='saved', version=1, body='', **{'class': 'A'})),
+                    span=dict(offset=0, end=len(body), total_bytes=len(body) + 10000, body=body,
+                              sha256=hashlib.sha256(body.encode()).hexdigest(),
+                              source_sha256=hashlib.sha256((body + 'y' * 10000).encode()).hexdigest()))
+        with patch.object(self.memory, 'search', return_value=dict(index=[entry])), \
+             patch.object(self.memory, 'call', side_effect=[whole, span]):
+            state = {}
+            result = hook.recall(self.memory, self.event, state)
+        self.assertNotIn('source_extent', result.get('hookSpecificOutput', {}).get('additionalContext', ''))
+        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['last_recall']['rejected']['context_budget'], 1)
 
     def test_buried_body_is_inspected_despite_irrelevant_preview(self):
         entries = [self.entry('weak'), self.entry('useful')]

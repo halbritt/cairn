@@ -86,8 +86,12 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   including guidance and the optional body, is capped by the installation's
   `context_bytes`: 9,500 UTF-8 bytes for Claude Code, whose hooks keep only about
   10,000 characters of `additionalContext`, and 12,000 bytes by default elsewhere.
-  An oversized optional body is skipped in favor of a later candidate when one
-  fits. Bounded preview entries retain their pull handles when they fit.
+  An oversized optional body can use a current, checked `match_span` for class
+  A/B notes when that scored passage fits. It is labelled `partial_span` and
+  does not mark the whole note as seen. Class C and competing positions still
+  require a whole-body pull. Other oversized bodies are skipped in favor of a
+  later candidate when one fits. Bounded preview entries retain their pull
+  handles when they fit.
   Mandatory context is never truncated. Retrieval runs on lifecycle events, not
   on every model or tool request; it does not enforce the whole conversation's
   context budget. Recall has an 11-second local deadline and at most six lexical
