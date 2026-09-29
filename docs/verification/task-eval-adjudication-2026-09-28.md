@@ -628,3 +628,31 @@ added GitHub Actions contrary to the saved Cairn preference. The candidate had
 the expected note injected and installed a local pre-commit gate without
 Actions. Its grade is unchanged under v12. It is a real task-level difference
 that root is verifying against the artifacts.
+
+### Adjudication addendum: Claude db-coverage s1 (notice 4fd34950)
+
+agent-112's offline review of `8401b6c` found a new v9 false incomplete.
+Claude `db-coverage.baseline.s1` ran this in a single Bash call:
+
+```
+make test-integration 2>&1 | tail -20; go test -count=1 -v ./core 2>&1 | tail
+```
+
+The combined output contains the integration run's initdb lines and its timed
+`ok … 0.038s`, followed by the plain verbose run's `--- SKIP`. v9's
+`output_forbid` rejects the whole output because of that SKIP.
+
+Per the direction, the regex is not broadened. Both s1 runs are recorded as
+source-hashed adjudications in
+`trials/task-eval/adjudications/matched-campaign-20260928.json`.
+
+| Run | Stream SHA-256 | v9 check | Reviewed | db exercised | Tie-break test |
+|---|---|---|---|---|---|
+| baseline.s1 | `f6dcdfaa…` | incomplete | **correct** | yes (by review; the check says no) | no |
+| candidate.s1 | `11585de5…` | correct | correct (confirmed) | yes | no |
+
+v9 is a narrow helper. It is not an authority for every legitimate
+composition of commands. Its `db_exercised` value for a combined call remains
+the check's answer, and the reviewed outcome is reported beside it. The labels
+are unchanged (v12 `3e5518df…`). The adjudication file is append-only, and each
+entry applies only on an exact run, harness and stream-hash match.

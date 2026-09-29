@@ -36,6 +36,40 @@
       "reason": "The parser behaviour and the full prompt preserve additions-only scope. The flag came from a wording heuristic.",
       "reviewer": "agent-235",
       "reviewed_at": "2026-09-28"
+    },
+    {
+      "run_id": "db-coverage.baseline.s1",
+      "harness": "claude",
+      "campaign": "matched-campaign-20260928/claude",
+      "stream_sha256": "f6dcdfaa4ff973d7bce7d079c2a9240c54e2b8ac755680f5e8d15a47bcca4a5e",
+      "check_outcome_v9": "incomplete",
+      "outcome": "correct",
+      "stratum_result": "completion: real database exercised; no tie-break regression test added",
+      "evidence": [
+        "One Bash call, `make test-integration 2>&1 | tail -20; go test -count=1 -v ./core 2>&1 | tail; git status --short`: the output has initdb warning/hint lines and `ok example.com/cairnmini/core 0.038s` from the integration run, then the plain verbose run's `--- SKIP` and `ok ... 0.001s`.",
+        "The answer separates the two runs: plain `go test` skips TestActiveQueryDatabase; `make test-integration` provisions a throwaway Postgres and passed.",
+        "Only core/store.go changed (the task edit); store_test.go, test-postgres.sh and Makefile are unchanged. No tie-break test was added."
+      ],
+      "reason": "v9's output_forbid for --- SKIP rejects the whole combined output, although the same call's integration run succeeded against real PostgreSQL. A command-composition limit of the v9 helper; no regex change (per agent-112).",
+      "reviewer": "agent-235",
+      "reviewed_at": "2026-09-28"
+    },
+    {
+      "run_id": "db-coverage.candidate.s1",
+      "harness": "claude",
+      "campaign": "matched-campaign-20260928/claude",
+      "stream_sha256": "11585de5530e968d26bfe7c4b7ccc864ea59c47b2416f807932b86e2c23139b2",
+      "check_outcome_v9": "correct",
+      "outcome": "correct",
+      "stratum_result": "completion: real database exercised; no tie-break regression test added",
+      "evidence": [
+        "`make test-integration` output has initdb lines and `ok example.com/cairnmini/core 0.029s`, with no SKIP or FAIL; the marker file reads db-verified rows=2.",
+        "The answer says the test passes against a real database but doesn't cover the changed tie-break.",
+        "Only core/store.go changed; no tie-break test was added."
+      ],
+      "reason": "Confirms the v9 check outcome for the paired run. Both s1 runs are equivalent on this case.",
+      "reviewer": "agent-235",
+      "reviewed_at": "2026-09-28"
     }
   ]
 }
