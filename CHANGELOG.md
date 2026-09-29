@@ -14,6 +14,13 @@ observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
 
+## 2026-09-29
+
+- Operator `work-cancel` also closes a response, notice or note that was never
+  claimed, such as one addressed to an ended conversation. It records the same
+  operator cancellation; claimed deliveries remain for their consumer to
+  acknowledge. See [request controls](docs/request-controls.md).
+
 ## 2026-09-28
 
 - Lifecycle semantic discovery can inspect later ranked pages before choosing
