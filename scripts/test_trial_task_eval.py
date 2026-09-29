@@ -3,6 +3,7 @@ import argparse
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -179,6 +180,64 @@ class FixtureTest(unittest.TestCase):
 
 
 class SandboxTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("bwrap"), "bubblewrap is required")
+    def test_host_files_and_service_socket_are_absent_but_trial_socket_works(self):
+        # A synthetic service under /var/tmp reproduces the exposed host socket
+        # without contacting D-Bus, Bluetooth, or any production service.
+        with tempfile.TemporaryDirectory(dir="/var/tmp", prefix="eval-host-") as directory:
+            base = Path(directory)
+            host_file = base / "installed-source.py"
+            host_file.write_text("host application source")
+            host_socket = base / "service.sock"
+            owned_socket = base / "trial.sock"
+            work = base / "work"
+            work.mkdir()
+            with socket.socket(socket.AF_UNIX) as host, socket.socket(socket.AF_UNIX) as trial:
+                host.bind(str(host_socket))
+                host.listen()
+                trial.bind(str(owned_socket))
+                trial.listen()
+                code = """import pathlib, socket, sys
+for name in sys.argv[1:]:
+    assert not pathlib.Path(name).exists(), name
+for name in ['/opt/binkeeper', '/etc/systemd/system', '/run/dbus/system_bus_socket',
+             '/var/run/dbus/system_bus_socket', '/sys/class/bluetooth']:
+    assert not pathlib.Path(name).exists(), name
+with socket.socket(socket.AF_UNIX) as s:
+    s.connect('/tmp/trial-api.sock')
+    s.sendall(b'fixture')
+pathlib.Path('result.txt').write_text('owned workspace')
+"""
+                command = te.sandbox_command(work, ".", [(owned_socket, "/tmp/trial-api.sock", "ro")],
+                                             dict(HOME=str(Path.home()), PATH="/usr/bin:/bin"),
+                                             ["python3", "-c", code, str(host_file), str(host_socket)], harness="codex")
+                result = subprocess.run(command, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                trial.settimeout(1)
+                connection, _ = trial.accept()
+                with connection:
+                    self.assertEqual(connection.recv(20), b"fixture")
+            self.assertEqual((work / "result.txt").read_text(), "owned workspace")
+
+    @unittest.skipUnless(shutil.which("bwrap"), "bubblewrap is required")
+    def test_grader_cannot_read_host_file_or_inherit_secret_environment(self):
+        with tempfile.TemporaryDirectory(dir="/var/tmp", prefix="eval-grader-") as directory:
+            base = Path(directory)
+            sentinel = base / "host-secret"
+            sentinel.write_text("synthetic sentinel")
+            work = base / "work"
+            cwd = work / "project"
+            cwd.mkdir(parents=True)
+            code = ("import os,pathlib; "
+                    f"assert not pathlib.Path({str(sentinel)!r}).exists(); "
+                    "assert 'EVAL_HOST_SECRET' not in os.environ; "
+                    "pathlib.Path('checked').write_text('ok')")
+            import shlex
+            with patch.dict(os.environ, EVAL_HOST_SECRET="synthetic"):
+                result = te.evaluate(dict(type="shell", run="python3 -c " + shlex.quote(code)), dict(cwd=cwd))
+            self.assertIs(result, True)
+            self.assertEqual((cwd / "checked").read_text(), "ok")
+
     @unittest.skipUnless(shutil.which("bwrap"), "bubblewrap is required")
     def test_codex_sandbox_hides_host_profiles_and_only_exposes_supplied_auth(self):
         with tempfile.TemporaryDirectory(prefix="task-eval-isolation-") as directory:

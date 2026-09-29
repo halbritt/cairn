@@ -607,13 +607,16 @@ def evaluate(check, ctx):
         path = cwd / check["path"]
         return path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == ctx["snapshot"].get(check["path"])
     if kind == "shell":
-        # Checks can execute agent-written code: read-only host, writable workspace, private /tmp, no network.
+        # Checks execute agent-written code with only runtime and fixture paths.
         workdir = Path(cwd).resolve()
-        sandbox = ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
-                   "--bind", str(workdir.parent), str(workdir.parent), "--chdir", str(workdir),
-                   "--unshare-net", "--unshare-pid", "--die-with-parent"]
-        env = dict(os.environ, GOTOOLCHAIN="local", GOFLAGS="-mod=mod", GOCACHE="/tmp/go-cache", GOPATH="/tmp/go",
+        sandbox = runtime_sandbox() + [
+            "--bind", str(workdir.parent), str(workdir.parent), "--chdir", str(workdir),
+            "--ro-bind", str(TRIAL / "revisions"), str(TRIAL / "revisions"), "--unshare-net"]
+        env = dict(HOME=str(Path.home()), PATH=f"{Path.home()}/.local/go/bin:/usr/bin:/bin",
+                   LANG="C.UTF-8", GOTOOLCHAIN="local", GOFLAGS="-mod=mod", GOCACHE="/tmp/go-cache", GOPATH="/tmp/go",
                    TASK_EVAL_REVISIONS=str(TRIAL / "revisions"))
+        for key, value in env.items():
+            sandbox += ["--setenv", key, value]
         started = time.monotonic()
         log = ctx.setdefault("check_log", [])
         try:
@@ -821,20 +824,46 @@ def execution_failure(trace, code):
     return None
 
 
-def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="claude"):
-    """Private /tmp and HOME; bind only the chosen provider and owned trial paths."""
+def runtime_sandbox():
+    """Mount system runtimes, not the host root or its application/service data.
+
+    Network isolation is selected by the caller. Provider processes still need
+    host networking; this filesystem/IPC boundary is not an egress policy.
+    """
     home = Path.home()
-    command = ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--tmpfs", str(home)]
+    command = ["bwrap", "--unshare-pid", "--unshare-ipc", "--unshare-uts",
+               "--die-with-parent", "--cap-drop", "ALL", "--clearenv",
+               "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--dir", str(home)]
+    for name in ("/usr/bin", "/usr/sbin", "/usr/lib", "/usr/lib64",
+                 "/usr/share/git-core", "/usr/share/ca-certificates", "/etc/ssl/certs",
+                 "/etc/resolv.conf", "/etc/hosts", "/etc/nsswitch.conf", "/etc/ld.so.cache"):
+        path = Path(name)
+        if path.exists():
+            command += ["--ro-bind", str(path.resolve()), name]
+    for name in ("/bin", "/sbin", "/lib", "/lib64"):
+        path = Path(name)
+        if path.is_symlink():
+            command += ["--symlink", os.readlink(path), name]
+        elif path.exists():
+            command += ["--ro-bind", name, name]
+    go = home / ".local/go"
+    if go.exists():
+        command += ["--ro-bind", str(go.resolve()), str(go)]
+    return command
+
+
+def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="claude"):
+    """Add the chosen provider and owned trial paths to the runtime filesystem."""
+    home = Path.home()
+    command = runtime_sandbox()
     if harness == "claude":
-        command += ["--ro-bind", str(home / ".local/share/claude"), str(home / ".local/share/claude"),
-                    "--ro-bind", str(home / ".local/bin"), str(home / ".local/bin"),
+        claude = home / ".local/bin/claude"
+        command += ["--ro-bind", str(claude.resolve(strict=True)), str(claude),
                     "--dir", str(home / ".claude"),
                     "--bind", str(home / ".claude/.credentials.json"), str(home / ".claude/.credentials.json")]
     elif harness != "codex":
         raise ValueError("unknown harness " + harness)
-    command += ["--ro-bind", str(home / ".local/go"), str(home / ".local/go"),
-               "--bind", str(root), str(root), "--chdir", str(Path(root) / cwd_name),  # worktrees record absolute gitdirs
-               "--unshare-pid", "--die-with-parent", "--clearenv"]
+    command += ["--bind", str(root), str(root), "--chdir", str(Path(root) / cwd_name)]  # absolute gitdirs
     for source, target, mode in extra_binds:
         command += ["--ro-bind" if mode == "ro" else "--bind", str(source), str(target)]
     for key, value in env.items():

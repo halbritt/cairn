@@ -71,12 +71,17 @@ The baseline is `d08bba3`, built from a clean clone (`vcs.modified=false`) with
 that commit's `integrations/lifecycle/memory.py`. A candidate is any commit
 built the same way.
 
-Claude Code runs under `bwrap`. The host filesystem is read-only, and HOME and
-/tmp are private. Only the Claude install, its credential file, Go, the
-workspace and the trial store's socket, token and hook are bound. The owner's
-settings, hooks, MCP servers, CLAUDE.md and production Cairn socket are not
-visible. A probe confirmed that no instructions and no `cairn` tools reach the
-agent.
+Providers run under `bwrap` with an explicit runtime filesystem. System
+binaries/libraries, Git templates, CA certificates and resolver files are
+read-only. HOME and /tmp are private. The chosen provider executable/install,
+its credential file, Go, the workspace and the trial store's socket, token and
+hook are bound separately. Host application directories, service configuration,
+service socket directories and sysfs are absent. Claude receives its resolved
+executable rather than the host's entire `~/.local/bin` directory.
+
+Shell graders use the same runtime filesystem, a selected environment, their
+fixture workspace and grader sources, with networking disabled. They execute
+agent-written code and therefore require the same filesystem restrictions.
 
 ### Native Codex
 
@@ -122,8 +127,11 @@ comparison of the complete recall configuration rather than an accidental
 disabled-selector run. Selector failures remain visible through hook outcomes;
 they do not mean that the task provider itself failed.
 
-The sandbox isolates the owner's HOME and /tmp, not every readable host file or
-network destination. Fixtures must remain reviewed, nonsensitive tasks.
+Provider networking remains shared with the host for model access. This is not
+complete host-service isolation: loopback/private TCP services and abstract Unix
+sockets are not excluded by the filesystem mounts. Fixtures must remain reviewed,
+nonsensitive tasks. Historical runs made with the earlier read-only host-root
+mount do not gain these restrictions retroactively.
 
 Nonzero process exits, provider errors, timeouts and unterminated streams are
 reported as `harness_error`, even when partial answers satisfy a check. Their
