@@ -199,8 +199,14 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   Missing or invalid values remain absent, including cost after a timeout.
   If the enclosing deadline expires before launch, process measurements remain
   absent; an empty observation does not mean a zero-duration call.
-  A completed process is not a valid applicability verdict. An attempted preview
-  selector failure reports `discovery: verification_unavailable`. Invalid verdicts
+  A completed process is not a valid applicability verdict. Preview and body
+  selectors must return the CLI's `structured_output` field. Their prompts permit
+  only the schema-generated `StructuredOutput` response tool; ordinary tools
+  and MCP remain disabled. This response tool was verified in Claude Code
+  2.1.285; its name is a CLI compatibility dependency. JSON written as response
+  text is not accepted as a substitute for that field. See the
+  [CLI output contract](https://code.claude.com/docs/en/headless).
+  An attempted preview selector failure reports `discovery: verification_unavailable`. Invalid verdicts
   retain the aggregate rejection in `rejected` and a fixed `validation_error`
   code in that selector's process observation: `reported_error`,
   `structured_output_missing`, `structured_output_type`, `indices_missing`,
