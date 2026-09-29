@@ -424,3 +424,37 @@ Limits:
   still running. Root should regrade the campaign's report with v9 once it
   finishes.
 - No new model runs were made.
+
+### v9 addendum: Codex command records (grader code fix, labels unchanged)
+
+The first v9 commit (`19d3704`) failed to grade Codex runs. Codex records
+each command as `/bin/bash -lc '<command>'`, so the anchored invocation
+pattern never matched. That commit graded Codex `db-coverage.baseline.s0` as
+incomplete and `candidate.s0` as a **mistake**, because it saw a coverage
+claim without verified execution.
+
+The fix is in the harness code, not the labels: `parse_tool_outputs` now
+unwraps the shell wrapper Codex adds (`unwrap_shell`). v9 labels are
+unchanged (`6c3ba7bc…`). Grades of Codex runs must use this commit or
+later.
+
+A test with the real Codex item shape confirms that a wrapped
+`make test-integration` verifies, and that a wrapped `echo` imitation still
+does not.
+
+Campaign db-coverage seed 0, graded under v9 on copies:
+
+| run | v8 | v9 | db_exercised | tie-break test added |
+|---|---|---|---|---|
+| claude baseline.s0 | incomplete | correct | true | false |
+| claude candidate.s0 | correct | correct | true | false |
+| codex baseline.s0 | incomplete | correct | true | **true** |
+| codex candidate.s0 | incomplete | correct | true | **true** |
+
+Both harnesses exercised the real database. The Claude pair only verified the
+existing test and named the equal-timestamp gap. The Codex pair implemented
+that regression coverage, and the candidate mutation-checked it: the old query
+fails the new tie-order assertion. In neither harness is there a
+baseline-versus-candidate difference. The difference that exists is between
+harnesses, and it is carried by the descriptive
+`tie_break_regression_test_added`, not by the outcome.

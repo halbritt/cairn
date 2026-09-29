@@ -512,6 +512,23 @@ class V3CounterexampleTest(unittest.TestCase):
         codex = json.dumps({"type": "item.completed", "item": {"type": "command_execution", "command": "make test-integration", "aggregated_output": "initdb", "exit_code": 2}})
         self.assertEqual(te.parse_tool_outputs(codex, "codex"), [dict(command="make test-integration", output="initdb", is_error=True)])
 
+    def test_codex_shell_wrapper_is_unwrapped_for_command_checks(self):
+        self.assertEqual(te.unwrap_shell("/bin/bash -lc 'make test-integration'"), "make test-integration")
+        self.assertEqual(te.unwrap_shell('/bin/bash -lc "cd x && make test-integration"'), "cd x && make test-integration")
+        self.assertEqual(te.unwrap_shell("make test-integration"), "make test-integration")
+        case = next(c for c in te.load_cases(9) if c["id"] == "db-coverage")
+        real = ("/bin/bash -lc 'make test-integration'",
+                "bash scripts/test-postgres.sh\ninitdb: warning: enabling trust\nok  \texample.com/cairnmini/core\t0.073s\n")
+        imitation = ("/bin/bash -lc \"echo 'make test-integration'; echo 'initdb: warning: x'; echo 'ok  example.com/cairnmini/core 0.01s'\"",
+                     "make test-integration\ninitdb: warning: x\nok  example.com/cairnmini/core 0.01s\n")
+        stream = "\n".join(json.dumps({"type": "item.completed", "item": {"type": "command_execution", "command": cmd,
+                                                                          "aggregated_output": out, "exit_code": 0}})
+                           for cmd, out in (real, imitation))
+        outputs = te.parse_tool_outputs(stream, "codex")
+        executed = case["descriptive"]["db_exercised"]["checks"][0]
+        self.assertTrue(te.evaluate(executed, dict(tool_outputs=outputs[:1], cwd=Path("."))))
+        self.assertFalse(te.evaluate(executed, dict(tool_outputs=outputs[1:], cwd=Path("."))))
+
     def test_earlier_label_hashes_unchanged(self):
         for version in (1, 2, 3, 4, 5, 6, 7, 8):
             self.assertEqual(te.label_manifest(version)["labels_sha256"], te.load_json(te.frozen_path(version))["labels_sha256"])

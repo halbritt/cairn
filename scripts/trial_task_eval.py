@@ -677,6 +677,18 @@ def parse_stream(text, harness="claude"):
     return parse_claude_stream(text)
 
 
+SHELL_WRAPPER = re.compile(r"""^\s*(?:/usr)?(?:/bin/)?(?:ba|z)?sh\s+-l?c\s+(['"])(.*)\1\s*$""", re.S)
+
+
+def unwrap_shell(command):
+    """Codex records `/bin/bash -lc '<command>'`; checks should see the command the agent ran."""
+    match = SHELL_WRAPPER.match(command)
+    if not match:
+        return command
+    inner = match.group(2)
+    return inner.replace("'\\''", "'") if match.group(1) == "'" else inner.replace('\\"', '"')
+
+
 def parse_tool_outputs(text, harness="claude"):
     """Commands with the output and error status the harness recorded for them (not model-written text)."""
     outputs, pending = [], {}
@@ -688,7 +700,7 @@ def parse_tool_outputs(text, harness="claude"):
         if harness == "codex":
             item = event.get("item") or {}
             if event.get("type") == "item.completed" and item.get("type") == "command_execution":
-                outputs.append(dict(command=item.get("command", ""), output=item.get("aggregated_output") or "",
+                outputs.append(dict(command=unwrap_shell(item.get("command", "")), output=item.get("aggregated_output") or "",
                                     is_error=item.get("exit_code") not in (0, None)))
             continue
         content = (event.get("message") or {}).get("content")
