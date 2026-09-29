@@ -196,6 +196,29 @@ directory and is not committed.
 
 ## Limits
 
+### Hook measurements
+
+New task runs use `scripts/trial_hook_observer.py` around the pinned engine.
+The observer keeps hook stdout unchanged and records metadata for each completed
+invocation in `hook-state/observations.jsonl`. It snapshots a recall's status
+while the engine still holds the session lock. Startup measurements therefore
+survive a later prompt recall, and tool hooks do not repeat old recall costs.
+The report records the observer's source hash and separates invocation timing
+from model-reported timing and cost. No prompt, note body, token or transcript
+is written to this metadata log.
+
+`memory.recall_observation` is `per_invocation` for these records. Reports from
+older runs are explicitly labelled `last_state_only`; their overwritten startup
+measurements cannot be recovered. Missing timeout costs remain absent, not zero.
+A failed invocation may have no fresh recall metrics. Killing the process before
+its observer finalizer runs can also lose a measurement, so these records do not
+establish complete provider billing. Invalid JSON, unsupported schemas and invalid
+recall payload shapes fail analysis instead of being silently discarded.
+Freeze the observer together with the
+evaluator for each comparison; existing campaigns are not changed retroactively.
+
+### Evaluation scope
+
 - Claude Code (Sonnet by default) and native Codex are supported. A passing
   provider smoke test establishes harness operation, not retrieval usefulness.
   OpenCode and Hermes task outcomes are not covered.
