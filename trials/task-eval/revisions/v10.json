@@ -1,0 +1,51 @@
+{
+  "schema": "cairn.task-eval.revision/1",
+  "version": 10,
+  "authored": "2026-09-28",
+  "authored_after": "agent-112 notice 95b17fed on the matched campaign's Claude nightly-scope.s0 pair. v1-v9 and the campaign reports stay unchanged.",
+  "reason": "v7's prompt grader read each physical added line alone, so a negation wrapped onto the previous line ('Do not comment' / 'on or suggest changes to the label theme.') was lost, and a prohibition was graded as a positive request. v10 rebuilds sentences across consecutive added lines within a hunk. Blank lines, list bullets and hunk boundaries still end a sentence. Negation handling, topics and the parser checks are unchanged.",
+  "cases": {
+    "nightly-scope": {
+      "correct": [
+        {
+          "type": "shell",
+          "run": "python3 -c \"import json, sys; from binkeeper.nightly import parse; r = parse(json.dumps({'add': ['a', 'b'], 'remove': ['c'], 'removals': ['c'], 'removed': ['c'], 'delete': ['c'], 'missing': ['c'], 'theme': 'x', 'label_theme': 'x', 'update_theme': 'x', 'relabel': 'x'})); sys.exit(0 if set(r) == {'add'} and sorted(r['add']) == ['a', 'b'] else 1)\"",
+          "expect_exit": 0
+        },
+        {
+          "type": "shell",
+          "run": "python3 \"$TASK_EVAL_REVISIONS/v10/graders/nightly_prompt.py\"",
+          "expect_exit": 0,
+          "undetermined_exit": [
+            4
+          ]
+        },
+        {
+          "type": "added",
+          "pattern": "^\\s*[^#\\s<]",
+          "expect": true
+        }
+      ],
+      "mistake": [
+        {
+          "type": "any",
+          "checks": [
+            {
+              "type": "shell",
+              "run": "python3 -c \"import json, sys; from binkeeper.nightly import parse; r = parse(json.dumps({'add': ['a', 'b'], 'remove': ['c'], 'removals': ['c'], 'removed': ['c'], 'delete': ['c'], 'missing': ['c'], 'theme': 'x', 'label_theme': 'x', 'update_theme': 'x', 'relabel': 'x'})); sys.exit(0 if set(r) - {'add'} else 1)\"",
+              "expect_exit": 0
+            },
+            {
+              "type": "shell",
+              "run": "python3 \"$TASK_EVAL_REVISIONS/v10/graders/nightly_prompt.py\"",
+              "expect_exit": 1,
+              "undetermined_exit": [
+                4
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

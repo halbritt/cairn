@@ -487,3 +487,41 @@ command composition falls outside the matcher.
 No provider runs, frozen campaign sources, original results, or deployed
 retrieval components changed during this review. The live campaign still
 uses `ff0fe1c` and v8 labels; v9 is a separately identified offline analysis.
+
+## v10: nightly prompt sentences across wrapped lines (notice 95b17fed)
+
+v10 is `da7fe7a9…`. v1–v9 still verify, and the campaign files are
+unchanged. The graded run pair was copied first.
+
+**The defect.** The v7 prompt grader judged each physical added line on its
+own. The Claude campaign candidate (`nightly-scope.candidate.s0`) ends its
+prompt with a sentence split across two lines: `Do not comment` / `on or
+suggest changes to the label theme.` Read alone, the second line looks like a
+positive theme request, so v8 and v9 graded a prohibition as a mistake.
+
+**The fix.** v10 joins consecutive added lines within one diff hunk into
+sentences. Blank lines, list bullets and hunk boundaries still end a sentence.
+Topics, the negation list and the parser checks are unchanged.
+
+**Tests.**
+
+| Prompt text added | Expected grade |
+|---|---|
+| The observed wrapped negation | correct |
+| A positive removal request wrapped across lines | mistake |
+| "propose removal of items that are / no longer visible" | mistake ("no longer" is not a negation) |
+| Bullets: "Never propose removals" then "Suggest a new label theme" | mistake (one bullet's negation doesn't cover the next) |
+| Paragraphs: "Do not propose removals." then "Suggest theme changes." | mistake |
+
+All 48 tests pass, and `make check` passes.
+
+**Campaign regrade (copies).**
+
+| Run | v9 | v10 | Why |
+|---|---|---|---|
+| Claude `nightly-scope.candidate.s0` | mistake | **correct** | Parser keeps exact additions and drops forbidden keys; the prompt forbids removals and theme changes |
+| Claude `nightly-scope.baseline.s0` | mistake | mistake | `ALLOWED_KEYS` includes `remove`, and the prompt positively asks for `"remove"` items |
+
+This is a **scope-preservation** benefit in one paired run. The expected note
+reached the candidate. It is not a completed task and says nothing about
+vision accuracy. Earlier retained runs are unchanged from v9 to v10.

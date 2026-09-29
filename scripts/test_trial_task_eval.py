@@ -623,8 +623,23 @@ class V3CounterexampleTest(unittest.TestCase):
         self.assertTrue(te.evaluate(executed, dict(tool_outputs=outputs[:1], cwd=Path("."))))
         self.assertFalse(te.evaluate(executed, dict(tool_outputs=outputs[1:], cwd=Path("."))))
 
+    def test_v10_nightly_prompt_reads_sentences_across_wrapped_lines(self):
+        case = next(c for c in te.load_cases(10) if c["id"] == "nightly-scope")
+        def prompt(text):
+            return ("printf '%s' >> binkeeper/nightly_prompt.md" % text.replace("\n", "\\n"), [], "Done.")
+        observed = "\nOnly propose additions. Never propose removals: an item that is recorded but\nnot visible in the photo may simply be hidden or out of frame. Do not comment\non or suggest changes to the label theme.\n"
+        self.assertEqual(scripted(case, prompt(observed))["outcome"], "correct")
+        wrapped_request = "\nFor bins where an item is gone, propose the\nremoval of that item.\n"
+        self.assertEqual(scripted(case, wrapped_request and prompt(wrapped_request))["outcome"], "mistake")
+        no_longer = "\nAlso propose removal of items that are\nno longer visible.\n"
+        self.assertEqual(scripted(case, prompt(no_longer))["outcome"], "mistake")
+        bullets = "\n- Never propose removals.\n- Suggest a new label theme when it looks wrong\n"
+        self.assertEqual(scripted(case, prompt(bullets))["outcome"], "mistake")
+        paragraphs = "\nDo not propose removals.\n\nSuggest theme changes when needed.\n"
+        self.assertEqual(scripted(case, prompt(paragraphs))["outcome"], "mistake")
+
     def test_earlier_label_hashes_unchanged(self):
-        for version in (1, 2, 3, 4, 5, 6, 7, 8):
+        for version in (1, 2, 3, 4, 5, 6, 7, 8, 9):
             self.assertEqual(te.label_manifest(version)["labels_sha256"], te.load_json(te.frozen_path(version))["labels_sha256"])
 
 
