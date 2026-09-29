@@ -4156,62 +4156,6 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.HistoricalVersion"
       },
-      "core.IDFSnapshot": {
-        "properties": {
-          "algorithm": {
-            "type": "string"
-          },
-          "cohort_sha256": {
-            "type": "string"
-          },
-          "n": {
-            "maximum": 9223372036854775807,
-            "minimum": -9223372036854775808,
-            "type": "integer"
-          },
-          "terms": {
-            "items": {
-              "$ref": "#/components/schemas/core.IDFTerm"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "algorithm",
-          "cohort_sha256",
-          "n",
-          "terms"
-        ],
-        "type": "object",
-        "x-go-type": "github.com/halbritt/cairn/core.IDFSnapshot"
-      },
-      "core.IDFTerm": {
-        "properties": {
-          "df": {
-            "maximum": 9223372036854775807,
-            "minimum": -9223372036854775808,
-            "type": "integer"
-          },
-          "digest": {
-            "type": "string"
-          },
-          "weight": {
-            "maximum": 9223372036854775807,
-            "minimum": -9223372036854775808,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "df",
-          "digest",
-          "weight"
-        ],
-        "type": "object",
-        "x-go-type": "github.com/halbritt/cairn/core.IDFTerm"
-      },
       "core.Impact": {
         "properties": {
           "purpose": {
@@ -7401,16 +7345,6 @@
           },
           "error_signature_sha256": {
             "type": "string"
-          },
-          "idf": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/core.IDFSnapshot"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "index": {
             "items": {

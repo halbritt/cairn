@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -10,6 +12,69 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/google/uuid"
 )
+
+func TestIDFSnapshotRetainedWithoutSpendingSearchRoom(t *testing.T) {
+	ctx := context.Background()
+	s, _ := testOperator(t)
+	repo := uuid.NewString()
+	draft := projectNote(repo)
+	draft.Sensitivity = "shareable"
+	draft.Body = "anchor guidance"
+	record, err := s.Create(ctx, CreateRequest{RequestID: uuid.NewString(), Draft: draft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := func(count int) string {
+		words := []string{"anchor"}
+		for i := 0; i < count; i++ {
+			words = append(words, fmt.Sprintf("w%04d", i))
+		}
+		return strings.Join(words, " ")
+	}
+	for _, tc := range []struct {
+		count, room int
+		preview     bool
+	}{
+		{3, 8000, true}, {60, 8000, true}, {60, 32000, true},
+		{60, 2000, false}, {519, 16000, true},
+	} {
+		req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: query(tc.count), Purpose: "context", AvailableTokens: tc.room}
+		result, err := s.Index(ctx, req, Destination{Name: "hosted"})
+		if err != nil {
+			t.Fatalf("%d terms/%d room: %v", tc.count, tc.room, err)
+		}
+		if tc.preview && (len(result.Package.Semantic.Index) != 1 || result.Package.Semantic.Index[0].RecordID != record.RecordID) {
+			t.Fatalf("%d terms/%d room lost preview: %+v", tc.count, tc.room, result.Package.Semantic.Index)
+		}
+		if result.Package.Semantic.IDF == nil || len(result.Package.Semantic.IDF.Terms) != tc.count+1 {
+			t.Fatalf("lost retained statistics: %d/%d", tc.count, tc.room)
+		}
+		rendered, err := result.Package.Render()
+		if err != nil || len(rendered) >= tc.room || strings.Contains(rendered, `"idf"`) {
+			t.Fatalf("public rendering consumed sealed metadata: %d/%d %v", tc.count, tc.room, err)
+		}
+		t.Logf("terms=%d room=%d previews=%d rendered_bytes=%d pull_bytes_remaining=%d", tc.count+1, tc.room, len(result.Package.Semantic.Index), len(rendered), result.BytesRemaining)
+		public, err := json.Marshal(result.Package)
+		if err != nil || strings.Contains(string(public), `"idf"`) {
+			t.Fatalf("public package exposes sealed metadata: %v", err)
+		}
+		replayed, err := s.Recompile(ctx, RecompileRequest{ReceiptID: result.Package.ReceiptID, Query: req.Query})
+		if err != nil || replayed.Seal != result.Package.Seal || replayed.Semantic.IDF == nil || len(replayed.Semantic.IDF.Terms) != tc.count+1 {
+			t.Fatalf("sealed replay: %d/%d %v", tc.count, tc.room, err)
+		}
+		if tc.count == 60 && tc.room == 8000 {
+			if result.BytesRemaining <= 0 || len(result.Handles) != 1 {
+				t.Fatalf("search left no source pull budget: %+v", result)
+			}
+			pulled, err := s.Expand(ctx, ExpandRequest{RequestID: uuid.NewString(), ReceiptID: result.Package.ReceiptID, Handle: result.Handles[0].Handle}, Destination{Name: "hosted"})
+			if err != nil || pulled.Selection.Record.RecordID != record.RecordID || pulled.CreditsRemaining != result.CreditsRemaining-1 || pulled.BytesRemaining >= result.BytesRemaining {
+				t.Fatalf("source pull budget or credit changed: %+v %v", pulled, err)
+			}
+		}
+	}
+	_, err = s.Index(ctx, CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: query(60), Purpose: "context", AvailableTokens: 256}, Destination{Name: "hosted"})
+	requireCode(t, err, "BUDGET_REFUSED")
+}
 
 func TestIDFWeightBoundsAndBinaryTerms(t *testing.T) {
 	for _, tc := range []struct {

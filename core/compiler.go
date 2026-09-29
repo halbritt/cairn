@@ -59,26 +59,27 @@ type SemanticPackage struct {
 	ErrorSignature    string            `json:"error_signature_sha256,omitempty" cbor:"error_signature_sha256,omitempty"`
 	Kinds             []string          `json:"kinds,omitempty" cbor:"kinds,omitempty"`
 	Discovery         *DiscoveryRanking `json:"discovery,omitempty" cbor:"discovery,omitempty"`
-	IDF               *IDFSnapshot      `json:"idf,omitempty" cbor:"idf,omitempty"`
-	Page              *BrowsePage       `json:"page,omitempty" cbor:"page,omitempty"`
-	Browse            *BrowsePage       `json:"browse,omitempty" cbor:"browse,omitempty"`
-	Mode              string            `json:"mode,omitempty"`
-	Index             []IndexEntry      `json:"index,omitempty"`
-	Context           *ContextPins      `json:"context,omitempty"`
-	Schema            string            `json:"schema"`
-	Status            string            `json:"status"`
-	Scope             Scope             `json:"scope"`
-	Query             string            `json:"query"` // v1: legacy text; v2: SHA-256 digest only.
-	Purpose           string            `json:"purpose"`
-	Destination       Destination       `json:"destination"`
-	Policy            string            `json:"policy"`
-	PolicyRevision    *PolicySnapshot   `json:"policy_revision,omitempty" cbor:"policy_revision,omitempty"`
-	Ranking           string            `json:"ranking"`
-	Tokenizer         string            `json:"tokenizer"`
-	AvailableTokens   int               `json:"available_tokens"`
-	OptionalLimit     int               `json:"optional_limit"`
-	Selected          []Selection       `json:"selected"`
-	Omitted           map[string]int    `json:"omitted"`
+	// The full scoring snapshot stays sealed for replay without spending public search room.
+	IDF             *IDFSnapshot    `json:"-" cbor:"idf,omitempty"`
+	Page            *BrowsePage     `json:"page,omitempty" cbor:"page,omitempty"`
+	Browse          *BrowsePage     `json:"browse,omitempty" cbor:"browse,omitempty"`
+	Mode            string          `json:"mode,omitempty"`
+	Index           []IndexEntry    `json:"index,omitempty"`
+	Context         *ContextPins    `json:"context,omitempty"`
+	Schema          string          `json:"schema"`
+	Status          string          `json:"status"`
+	Scope           Scope           `json:"scope"`
+	Query           string          `json:"query"` // v1: legacy text; v2: SHA-256 digest only.
+	Purpose         string          `json:"purpose"`
+	Destination     Destination     `json:"destination"`
+	Policy          string          `json:"policy"`
+	PolicyRevision  *PolicySnapshot `json:"policy_revision,omitempty" cbor:"policy_revision,omitempty"`
+	Ranking         string          `json:"ranking"`
+	Tokenizer       string          `json:"tokenizer"`
+	AvailableTokens int             `json:"available_tokens"`
+	OptionalLimit   int             `json:"optional_limit"`
+	Selected        []Selection     `json:"selected"`
+	Omitted         map[string]int  `json:"omitted"`
 }
 type Package struct {
 	ReceiptID string          `json:"receipt_id"`

@@ -104,6 +104,18 @@ try:
     result = subprocess.run([binary,'agent','index'],input=json.dumps(index_request),env=env,capture_output=True,text=True,check=True)
     index = json.loads(result.stdout)['data']
     assert len(index['package']['semantic']['index']) == 1
+    # Long-query scoring statistics remain in the sealed receipt, not the CLI/API input room.
+    for terms, room in ((3, 8000), (60, 8000), (60, 32000), (519, 16000)):
+        query = 'socket ' + ' '.join(f'w{i:04d}' for i in range(terms))
+        long_request = dict(index_request, request_id=str(uuid.uuid4()), query=query,
+                            available_tokens=room)
+        long_result = subprocess.run([binary, 'agent', 'index'], input=json.dumps(long_request),
+                                     env=env, capture_output=True, text=True, check=True, timeout=10)
+        long_index = json.loads(long_result.stdout)['data']
+        assert len(long_index['package']['semantic']['index']) == 1, (terms, room)
+        assert 'idf' not in long_index['package']['semantic']
+        assert len(long_result.stdout.encode()) < room, (terms, room, len(long_result.stdout))
+    print('Authenticated CLI keeps short and long query index views within input room')
     pull = dict(request_id=str(uuid.uuid4()),receipt_id=index['package']['receipt_id'],handle=index['handles'][0]['handle'])
     result = subprocess.run([binary,'agent','expand'],input=json.dumps(pull),env=env,capture_output=True,text=True,check=True)
     expansion=json.loads(result.stdout)['data']
