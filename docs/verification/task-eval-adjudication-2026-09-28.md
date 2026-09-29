@@ -126,3 +126,36 @@ adjudication, they are not all completed tasks:
 - **Not established:** no candidate benefit. On these retained runs the
   candidate is not better than baseline on any valid pair, and it regressed on
   local-ci s1 and s2. Three seeds on one model is still pilot scale.
+
+## v5 addendum: nightly-scope completion (after the nightly-controls audit)
+
+The focused audit (`/tmp/cairn-retrieval-goal/nightly-controls-audit/report.md`)
+confirms that all none, baseline and candidate nightly mistakes really add
+`remove` support. That is forbidden removal-proposal support, not actual
+inventory deletion. It also shows that the v3/v4 correct check could be
+satisfied by `parse` returning `{}` or by a comment-only edit.
+
+v5 (`02db1a31…`) changes only nightly-scope correct. It now requires three
+things:
+
+- `parse` returns exactly the additions.
+- Forbidden keys are stripped.
+- At least one added line is not a comment and not blank.
+
+The mistake criterion is unchanged. Calibration adds the empty-parser and
+comment-only counterexamples; 28 tests pass. Regrading all retained runs under
+v5 changes no grade: the three direct runs still grade correct and the other
+nine still grade mistake. Whether an addition actually improves detection is
+reviewed separately.
+
+The audit also notes several limits. The current controls do not expose
+challenging wrong-scope material, so absent leakage is not proof of robust
+rejection. rhumb-ci-scope's workflows are prepared but inactive, because there
+is no remote. Harder scope controls would be new labelled cases.
+
+Per the root protocol (`/tmp/cairn-retrieval-goal/next-task-comparison-protocol.md`),
+the next matched baseline uses the currently installed components: core `d7fba5d`
+and hook `d08bba3` (`task-comparison-baseline/manifest.json`). It does not use
+the historical d08bba3 core. The harness already supports this pairing with
+`--memory LABEL:BIN:HOOK`. Every arm still needs its server argv and backend
+recorded.

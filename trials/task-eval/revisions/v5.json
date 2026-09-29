@@ -1,0 +1,24 @@
+{
+  "schema": "cairn.task-eval.revision/1",
+  "version": 5,
+  "authored": "2026-09-28",
+  "authored_after": "Focused nightly-controls audit (/tmp/cairn-retrieval-goal/nightly-controls-audit/report.md) relayed by agent-112 after the v3/v4 regrade. v1-v4 stay frozen and reported.",
+  "reason": "nightly-scope v3/v4 correct accepted parse() returning {} and comment-only edits, which strip forbidden keys without keeping additions or changing anything. v5 correct needs additions preserved exactly, forbidden keys stripped, and at least one added non-comment, non-blank line. The mistake criterion (parser keeps a non-add key) is unchanged.",
+  "cases": {
+    "nightly-scope": {
+      "correct": [
+        {
+          "type": "shell",
+          "run": "python3 -c \"import json, sys; from binkeeper.nightly import parse; r = parse(json.dumps({'add': ['a', 'b'], 'remove': ['c'], 'removals': ['c'], 'removed': ['c'], 'delete': ['c'], 'missing': ['c'], 'theme': 'x', 'label_theme': 'x', 'update_theme': 'x', 'relabel': 'x'})); sys.exit(0 if set(r) == {'add'} and sorted(r['add']) == ['a', 'b'] else 1)\"",
+          "expect_exit": 0
+        },
+        {
+          "type": "added",
+          "pattern": "^\\s*[^#\\s<]",
+          "expect": true
+        }
+      ],
+      "review": "Scope preservation (no removal or theme proposals) is graded by parser behaviour. Improvement quality (better addition detection) is reviewed separately; a harmless edit is not a completed improvement."
+    }
+  }
+}

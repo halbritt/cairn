@@ -345,8 +345,17 @@ class V3CounterexampleTest(unittest.TestCase):
         old = next(n for n in te.load_corpus(2) if n["id"] == "T-hermes-sigterm")["body"]
         self.assertNotIn("Restart= plays no part", old)
 
+    def test_v5_nightly_rejects_empty_parser_and_comment_only(self):
+        case = next(c for c in te.load_cases(5) if c["id"] == "nightly-scope")
+        empty = ("sed -i 's/    return {k: v for k, v in data.items() if k in ALLOWED_KEYS}/    return {}/' binkeeper/nightly.py", [], "Done.")
+        self.assertNotEqual(scripted(case, empty)["outcome"], "correct")
+        comment = ("printf '# keep bins accurate\\n' >> binkeeper/nightly.py", [], "Done.")
+        self.assertNotEqual(scripted(case, comment)["outcome"], "correct")
+        real = ("printf 'Also list items visible in the photo in larger quantity than recorded, as additions.\\n' >> binkeeper/nightly_prompt.md", [], "Done.")
+        self.assertEqual(scripted(case, real)["outcome"], "correct")
+
     def test_earlier_label_hashes_unchanged(self):
-        for version in (1, 2):
+        for version in (1, 2, 3, 4):
             self.assertEqual(te.label_manifest(version)["labels_sha256"], te.load_json(te.frozen_path(version))["labels_sha256"])
 
 
