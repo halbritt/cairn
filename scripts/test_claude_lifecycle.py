@@ -662,7 +662,8 @@ class RecallCandidateTests(unittest.TestCase):
                 self.assertEqual(state['seen'], {'useful': 1})
                 self.assertEqual((search.call_count, pull.call_count, model.call_count), (2, 2, 1))
                 self.assertTrue(search.call_args.kwargs['semantic'])
-                self.assertTrue(search.call_args.args[0].startswith(self.root.name + ': Improve nightly'))
+                self.assertEqual(search.call_args.args[0],
+                                 hook.retrieval_intent(dict(self.event, prompt=prompt), {})['query'])
 
     def test_verified_shortlist_abstains_when_model_unavailable(self):
         self.memory.config['semantic_fallback'] = True
@@ -708,6 +709,91 @@ class RecallCandidateTests(unittest.TestCase):
         self.assertEqual(state['seen'], {'direction': 1})
         self.assertEqual(search.call_count, 1)
         self.assertTrue(model.call_args.args[3]['startup'])
+
+    def test_selector_input_budget_omits_whole_candidates_and_reports_extent(self):
+        self.memory.config['semantic_fallback'] = True
+        entries = [self.entry('first'), self.entry('second')]
+        prompt = 'recover lease expiry'
+        first_body = 'Renew the original lease claim. ' * 30
+        second_body = 'A different lease status note. ' * 30
+        event = dict(self.event, prompt=prompt)
+        base = dict(project=str(self.root), request=prompt, workstream=None, startup=False, candidates=[])
+        first_view = dict(index=0, body=first_body, source_extent='full_body')
+        cap = len(hook.encoded(dict(base, candidates=[first_view])).encode())
+        with patch.object(hook, 'SELECTOR_INPUT_BYTES', cap), \
+             patch.object(self.memory, 'search', side_effect=[dict(index=entries, selected=[dict(body='required')]),
+                 dict(index=[], discovery=dict(state='unavailable'))]), \
+             patch.object(self.memory, 'call', side_effect=[self.pulled('first', first_body),
+                                                         self.pulled('second', second_body)]), \
+             patch.object(hook, 'select_json', return_value=dict(structured_output=dict(index=0))) as model:
+            state = {}
+            result = hook.recall(self.memory, event, state)
+        output = result['hookSpecificOutput']['additionalContext']
+        self.assertIn(first_body, output)
+        self.assertIn('required', output)
+        self.assertNotIn(second_body, output)
+        self.assertEqual(state['seen'], {'first': 1})
+        self.assertEqual(state['last_recall']['rejected']['selector_input_budget'], 1)
+        self.assertEqual(state['last_recall']['selector_input_bytes'], cap)
+        self.assertEqual(state['last_recall']['shortlist_source_extents'], dict(full_body=1, partial_span=0))
+        self.assertEqual(len(model.call_args.args[3]['candidates']), 1)
+
+    def test_selector_allowance_starts_after_pulls_but_never_extends_hook_deadline(self):
+        self.memory.config['semantic_fallback'] = True
+        entry = self.entry('candidate')
+        lexical = dict(index=[entry], selected=[dict(body='required')])
+        semantic = dict(index=[], discovery=dict(state='unavailable'))
+        clock = [0.0]
+        def slow_pull(*args):
+            clock[0] += 6.0
+            return self.pulled('candidate', 'Renew the original lease claim.')
+        with patch.object(hook.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(self.memory, 'search', side_effect=[lexical, semantic]), \
+             patch.object(hook, 'fitting_candidate', side_effect=slow_pull), \
+             patch.object(hook, 'select_json', return_value=dict(structured_output=dict(index=0))) as model:
+            state = {}
+            hook.recall(self.memory, self.event, state)
+        self.assertEqual(model.call_args.kwargs['timeout'], 5.0)
+        self.assertEqual(state['last_recall']['pull_seconds'], 6.0)
+        self.assertEqual(state['last_recall']['elapsed_seconds'], 6.0)
+
+        clock[0] = 0.0
+        def exhausted_pull(*args):
+            clock[0] += hook.RECALL_SECONDS + 0.1
+            return self.pulled('candidate', 'Renew the original lease claim.')
+        with patch.object(hook.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(self.memory, 'search', side_effect=[lexical, semantic]), \
+             patch.object(hook, 'fitting_candidate', side_effect=exhausted_pull), \
+             patch.object(hook, 'select_json') as model:
+            state = {}
+            result = hook.recall(self.memory, self.event, state)
+        self.assertIn('required', result['hookSpecificOutput']['additionalContext'])
+        self.assertNotIn('Renew the original lease', result['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['last_recall']['discovery'], 'verification_unavailable')
+        model.assert_not_called()
+
+    def test_real_selector_timeout_keeps_required_context(self):
+        self.memory.config['semantic_fallback'] = True
+        with tempfile.TemporaryDirectory() as tmp:
+            sleeper = Path(tmp) / 'sleeping-selector'
+            sleeper.write_text('#!/usr/bin/env python3\nimport time\ntime.sleep(2)\n')
+            sleeper.chmod(0o700)
+            self.memory.config['claude'] = str(sleeper)
+            entry = self.entry('candidate')
+            with patch.object(hook, 'SEMANTIC_MODEL_SECONDS', 0.05), \
+                 patch.object(self.memory, 'search', side_effect=[
+                     dict(index=[entry], selected=[dict(body='required instruction')]),
+                     dict(index=[], discovery=dict(state='unavailable'))]), \
+                 patch.object(self.memory, 'call', return_value=self.pulled('candidate', 'Renew the original lease claim.')):
+                state = {}
+                result = hook.recall(self.memory, self.event, state)
+        output = result['hookSpecificOutput']['additionalContext']
+        self.assertIn('required instruction', output)
+        self.assertNotIn('Renew the original lease', output)
+        self.assertEqual(state['seen'], {})
+        self.assertEqual(state['last_recall']['discovery'], 'verification_unavailable')
+        self.assertEqual(state['last_recall']['rejected']['verification_timeout'], 1)
 
     def test_span_rejects_stale_version_changed_bytes_and_ineligible_class(self):
         body = 'Recover lease expiry.'
@@ -804,7 +890,8 @@ class RecallCandidateTests(unittest.TestCase):
 
     def test_elapsed_recall_deadline_prevents_late_optional_pull(self):
         entry = self.entry('candidate', 'recover lease expiry')
-        with patch.object(hook.time, 'monotonic', side_effect=[0, 0, hook.RECALL_SECONDS + 1]), \
+        with patch.object(hook.time, 'monotonic', side_effect=[0, 0, hook.RECALL_SECONDS + 1,
+                                                              hook.RECALL_SECONDS + 1]), \
              patch.object(self.memory, 'search', return_value=dict(index=[entry])), \
              patch.object(self.memory, 'call') as pull:
             state = {}

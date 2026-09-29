@@ -158,14 +158,17 @@ Hermes enables bounded semantic discovery alongside lexical discovery. A weak
 lexical hit or precise file request does not suppress semantic candidates.
 The hook inspects at most six lexical and eight semantic candidates and asks the
 tool-free selector once which current body directly helps this request; uncertain
-or unavailable verification omits optional guidance. An oversized whole note may use a checked `match_span` for an
+or unavailable verification omits optional guidance. Its aggregate input is
+capped at 24,000 UTF-8 bytes with whole-candidate omission reported in status.
+An oversized whole note may use a checked `match_span` for an
 optional class A/B passage; that excerpt is labelled partial and leaves the whole
 note eligible for later recall. Discovery coverage is preserved in injected context
-and status. The selector has one eight-second allowance within the 11-second
-recall deadline; this adds latency when optional candidates need verification.
+and status. The selector has one eight-second allowance after bounded pulls,
+within the 11-second recall deadline; this adds latency when optional candidates
+need verification.
 Worker unavailability and rejected/failed checks appear in memory status; they
 do not inject an unverified optional candidate. Required context from both
-searches and any delivered body share the same 12000-byte ceiling. Other
+searches and any delivered body share the same 12000-byte ceiling.
 Claude, Codex and OpenCode installers also enable this route by default after
 reinstallation; explicit `semantic_fallback: false` retains lexical-only recall.
 

@@ -20,7 +20,10 @@ and MCP processes.
   check a bounded lexical/semantic shortlist with one applicability decision.
   Weak shared vocabulary, file hints and project labels alone no longer inject
   optional bodies on that route; an unavailable verifier omits them. Reinstall
-  hooks to activate the new default. Live task benefit remains unmeasured.
+  hooks to activate the new default. A follow-up caps aggregate selector input,
+  starts its allowance after bounded pulls without extending the recall deadline,
+  and restores the tested sorted query after ranking diagnostics rejected the
+  natural rewrite. Live task benefit remains unmeasured.
 
 - Lifecycle recall now inspects a bounded shortlist of current optional bodies
   before injecting one, so a stale, irrelevant or oversized first candidate does

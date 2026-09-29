@@ -25,6 +25,7 @@ RECALL_SECONDS = 11
 RECALL_CANDIDATES = 6
 SEMANTIC_CANDIDATES = 8
 SEMANTIC_MODEL_SECONDS = 8
+SELECTOR_INPUT_BYTES = 24000
 COMMAND_OUTPUT_BYTES = 1024 * 1024
 # Codex Stop fires after every turn and SessionEnd allows too little time for the
 # selector, so Stop offers capture only after this much new top-level dialogue.
@@ -582,10 +583,7 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
     semantic = []
     if len(intent["words"]) >= 2 and not intent["startup"]:
         try:
-            # Embeddings need the owner's natural request, not the lexical
-            # keyword/quoted-anchor syntax used by the first search.
-            semantic_query = clip(f"{intent['project']}: {event.get('prompt', '').strip()}", 4000)
-            found = memory.search(semantic_query, room=RECALL_SEARCH_ROOM, semantic=True,
+            found = memory.search(intent["query"], room=RECALL_SEARCH_ROOM, semantic=True,
                                   timeout=recall_timeout(deadline, 3))
         except HookError:
             status["discovery"] = "failed"
@@ -607,7 +605,9 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
     # coverage even when a weak lexical hit exists. Deduplicate before pulling.
     entries = list({entry["record_id"]: entry for entry in [*lexical, *semantic]}.values())
     candidates = []
-    model_deadline = min(deadline, time.monotonic() + SEMANTIC_MODEL_SECONDS)
+    selector_request = dict(project=str(project_root(event)), request=event.get("prompt", ""),
+                            workstream=event.get("workstream"), startup=intent["startup"], candidates=[])
+    pull_started = time.monotonic()
     for entry in entries:
         try:
             pulled = fitting_candidate(memory, entry, deadline, selected, budget, result.get("discovery"))
@@ -624,20 +624,32 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
         status["inspected"] += 1
         body = (pulled["span"]["body"] if pulled.get("source_extent") == "partial_span"
                 else pulled["selection"]["record"]["body"])
+        selector_view = dict(index=len(candidates), body=body,
+                             source_extent=pulled.get("source_extent", "full_body"))
+        proposed = dict(selector_request, candidates=[*selector_request["candidates"], selector_view])
+        if len(encoded(proposed).encode()) > SELECTOR_INPUT_BYTES:
+            status["rejected"]["selector_input_budget"] = status["rejected"].get("selector_input_budget", 0) + 1
+            continue
         candidates.append((entry, pulled, body))
+        selector_request["candidates"].append(selector_view)
+    status["pull_seconds"] = round(time.monotonic() - pull_started, 3)
+    status["selector_input_bytes"] = len(encoded(selector_request).encode())
+    status["shortlist_candidates"] = len(candidates)
     if not candidates:
         return None, None
-    status["shortlist_candidates"] = len(candidates)
+    status["shortlist_source_extents"] = dict(
+        full_body=sum(pulled.get("source_extent") != "partial_span" for _, pulled, _ in candidates),
+        partial_span=sum(pulled.get("source_extent") == "partial_span" for _, pulled, _ in candidates))
+    model_deadline = min(deadline, time.monotonic() + SEMANTIC_MODEL_SECONDS)
+    model_started = time.monotonic()
     try:
-        model_started = time.monotonic()
-        verdict = select_json(memory.config, SHORTLIST_SCHEMA, SHORTLIST_PROMPT,
-                              dict(project=str(project_root(event)), request=event.get("prompt", ""),
-                                   workstream=event.get("workstream"), startup=intent["startup"],
-                                   candidates=[dict(index=i, body=body, source_extent=pulled.get("source_extent", "full_body"))
-                                               for i, (_, pulled, body) in enumerate(candidates)]),
+        verdict = select_json(memory.config, SHORTLIST_SCHEMA, SHORTLIST_PROMPT, selector_request,
                               timeout=recall_timeout(model_deadline, SEMANTIC_MODEL_SECONDS))
-    except HookError:
+    except HookError as exc:
+        status["model_seconds"] = round(time.monotonic() - model_started, 3)
         status["discovery"] = "verification_unavailable"
+        reason = "verification_timeout" if "timed out" in str(exc) else "verification_unavailable"
+        status["rejected"][reason] = len(candidates)
         return None, None
     status["model_seconds"] = round(time.monotonic() - model_started, 3)
     reported_cost = verdict.get("total_cost_usd")
@@ -645,15 +657,21 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
         status["model_reported_cost_usd"] = reported_cost
     structured = verdict.get("structured_output")
     choice = structured.get("index") if isinstance(structured, dict) else None
-    if verdict.get("is_error") or type(choice) is not int or not 0 <= choice < len(candidates):
+    if verdict.get("is_error") or type(choice) is not int or choice < -1 or choice >= len(candidates):
+        status["discovery"] = "verification_unavailable"
+        status["rejected"]["invalid_verdict"] = len(candidates)
+        return None, None
+    if choice == -1:
         status["discovery"] = "not_relevant"
+        status["rejected"]["selector_not_relevant"] = len(candidates)
         return None, None
     status["discovery"] = "verified"
     return candidates[choice][:2]
 
 
 def recall(memory, event, state=None):
-    deadline = time.monotonic() + RECALL_SECONDS
+    started = time.monotonic()
+    deadline = started + RECALL_SECONDS
     state = state if state is not None else {}
     if event["hook_event_name"] == "SessionStart":
         state["seen"] = {}  # new/resumed/compacted context needs fresh delivery
@@ -723,6 +741,7 @@ def recall(memory, event, state=None):
     if chosen and chosen not in previews:
         previews.insert(0, chosen)
     if not selected and not previews:
+        status["elapsed_seconds"] = round(time.monotonic() - started, 3)
         return {}  # no guidance boilerplate or weak matches added to the conversation
     packed = [chosen] if chosen else []
     for entry in previews:
@@ -731,6 +750,7 @@ def recall(memory, event, state=None):
             if len(candidate.encode()) <= budget:
                 packed.append(entry)
     if not selected and not packed:
+        status["elapsed_seconds"] = round(time.monotonic() - started, 3)
         return {}
     text = render_recall(selected, packed, pulled, result.get("discovery"))
     expanded_id = chosen["record_id"] if chosen else None
@@ -753,6 +773,7 @@ def recall(memory, event, state=None):
                                  expanded=expanded_id if not partial else None,
                                  partial_record=expanded_id if partial else None,
                                  source_extent=pulled.get("source_extent", "full_body") if pulled else None)
+    status["elapsed_seconds"] = round(time.monotonic() - started, 3)
     return {"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
 
 
