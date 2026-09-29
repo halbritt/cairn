@@ -124,7 +124,7 @@ class HookError(Exception):
 
 
 class BudgetRefused(HookError):
-    """The receipt cannot expand another optional candidate."""
+    """This expansion exceeds the receipt's remaining credits or bytes."""
 
 
 class ContextRefused(HookError):
@@ -226,16 +226,30 @@ def bounded_command(command, *, body, timeout, env, cwd):
 class Memory:
     def __init__(self, config, session):
         self.config = config
+        self.receipt_credits = {}
+        self.pull_calls = {}
         self.scope = ["--repo", config["repo"], "--task", config.get("task_id", config.get("harness", "claude") + "/" + session),
                       "--run", config.get("run_id", session)]
         self.command = [config["cairn"], "agent", "--socket", config["socket"],
                         "--token-file", config["token_file"]]
 
     def call(self, operation, args=(), payload=None, timeout=5):
+        receipt = payload.get("receipt_id") if operation == "pull" and payload else None
+        if receipt:
+            if self.receipt_credits.get(receipt) == 0:
+                raise BudgetRefused("receipt expansion credits exhausted")
+            self.pull_calls[receipt] = self.pull_calls.get(receipt, 0) + 1
         result = run_json(self.command + [operation, *args],
                           body=None if payload is None else encoded(payload), timeout=timeout)
         if result.get("ok") is not True or not isinstance(result.get("data"), dict):
             raise HookError("Cairn did not confirm the operation")
+        if receipt:
+            remaining = result["data"].get("credits_remaining")
+            previous = self.receipt_credits.get(receipt, 4)
+            # Account before body/span validation or context fitting can reject
+            # a successfully consumed pull. Replayed responses cannot add credit.
+            self.receipt_credits[receipt] = (min(previous, remaining)
+                if type(remaining) is int and 0 <= remaining <= 4 else max(0, previous - 1))
         return result["data"]
 
     def search(self, query, room=SEARCH_ROOM, entities=(), kinds=(), semantic=False, timeout=5, offset=None):
@@ -686,11 +700,11 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
         raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")
     admitted = admit_previews(memory, event, intent, sources, status, deadline)
     receipt_keys = {channel: found.get("receipt_id", channel) for channel, found in sources}
-    receipt_credits = {}
+    pull_counts_before = dict(memory.pull_calls)
     for channel, found in sources:
         key = receipt_keys[channel]
         available = min(4, max(0, found.get("credits_remaining", 4)))
-        receipt_credits[key] = min(receipt_credits.get(key, 4), available)
+        memory.receipt_credits[key] = min(memory.receipt_credits.get(key, 4), available)
     candidates = []
     pulled_ids = set()
     selector_request = dict(project=str(project_root(event)), request=event.get("prompt", ""),
@@ -700,7 +714,7 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
         receipt = receipt_keys[channel]
         if seen.get(entry["record_id"]) == entry["version"] or entry["record_id"] in pulled_ids:
             continue
-        if receipt_credits[receipt] == 0:
+        if memory.receipt_credits[receipt] == 0:
             status["rejected"]["receipt_exhausted"] = status["rejected"].get("receipt_exhausted", 0) + 1
             continue
         status.setdefault("receipt_attempts", {}).setdefault(channel, 0)
@@ -709,7 +723,6 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
             pulled = fitting_candidate(memory, entry, deadline, selected, budget, result.get("discovery"))
         except BudgetRefused:
             status["rejected"]["budget_refused"] = status["rejected"].get("budget_refused", 0) + 1
-            receipt_credits[receipt] = 0
             continue
         except ContextRefused:
             status["rejected"]["context_budget"] = status["rejected"].get("context_budget", 0) + 1
@@ -718,7 +731,6 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
         except HookError:
             status["rejected"]["unavailable"] = status["rejected"].get("unavailable", 0) + 1
             continue
-        receipt_credits[receipt] = min(receipt_credits[receipt] - 1, pulled.get("credits_remaining", 4))
         pulled_ids.add(entry["record_id"])
         status["inspected"] += 1
         body = (pulled["span"]["body"] if pulled.get("source_extent") == "partial_span"
@@ -731,6 +743,9 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
             continue
         candidates.append((entry, pulled, body))
         selector_request["candidates"].append(selector_view)
+    status["receipt_pull_calls"] = {
+        channel: memory.pull_calls.get(receipt, 0) - pull_counts_before.get(receipt, 0)
+        for channel, receipt in receipt_keys.items()}
     status["pull_seconds"] = round(time.monotonic() - pull_started, 3)
     status["selector_input_bytes"] = status["preview_input_bytes"] + len(encoded(selector_request).encode())
     status["shortlist_candidates"] = len(candidates)
