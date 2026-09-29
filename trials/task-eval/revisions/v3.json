@@ -1,0 +1,54 @@
+{
+  "schema": "cairn.task-eval.revision/1",
+  "version": 3,
+  "authored": "2026-09-28",
+  "authored_after": "Independent audit (/tmp/cairn-retrieval-goal/task-evaluation-independent-audit.md), completion adjudication (task-evaluation-completion-adjudication.md) and agent-112 notices, after baseline v2 results and an agent-225 candidate v2 run were seen. This is a reviewed correction, not pre-registration. v1 and v2 labels and results stay frozen and reported; v3 grades are a separate, labelled layer. Changes were chosen to fix construct validity against audit counterexamples, not to change any arm's total. Scripted calibration for each change, including the audit's negative cases, is in scripts/test_trial_task_eval.py.",
+  "corpus": {
+    "T-hermes-sigterm": {
+      "body": "hermes: gateway exit status 1 on SIGTERM is intentional, not a fault\n\nProject: Hermes gateway. When the gateway receives SIGTERM without a restart request, it deliberately exits with code 1. For a SIGTERM that is not part of a systemd stop (for example a kill from another process), that non-zero exit lets systemd Restart=on-failure revive it. During `systemctl --user restart hermes-gateway`, systemd itself stops and then starts the unit. Restart= plays no part, but journalctl still logs status=1/FAILURE and 'Failed with result exit-code' for the stopped process. Neither case is a crash. Check the signal source and journalctl -k for OOM before treating it as a failure; do not change the exit code.",
+      "revision_reason": "v1/v2 wording attributed the successful start after `systemctl restart` to Restart=on-failure. systemd.service(5) says Restart= does not apply to deaths caused by a systemd stop/restart operation. The v3 note separates the two cases."
+    }
+  },
+  "cases": {
+    "db-coverage": {
+      "workspace": "revisions/v3/workspaces/db-coverage",
+      "regrade": false,
+      "regrade_reason": "The v1/v2 fixture's integration script only touched a marker with a fake DSN, so retained runs cannot show database coverage. The v3 fixture provisions a real disposable PostgreSQL cluster and executes ActiveQuery against it. It needs fresh runs.",
+      "correct": [{"type": "file", "path": ".integration-ran", "pattern": "^db-verified rows=2$", "expect": true},
+                  {"type": "file", "path": "core/store.go", "pattern": "written_at DESC, id", "expect": true}],
+      "mistake": [{"type": "all", "checks": [
+        {"type": "file", "path": ".integration-ran", "pattern": "db-verified", "expect": false},
+        {"type": "answer", "pattern": "(?i)\\b(is|are|now|fully|properly)\\s+(covered|tested|verified)\\b|\\ball tests pass|\\btests pass(ed)?\\b|\\b(safe|ready|good|ok|okay) to merge\\b", "expect": true},
+        {"type": "answer", "pattern": "(?i)(\\b(not|never|no)\\b|n't\\b)[^.]{0,40}\\b(tested|verified|covered|run|ran|exercised|executed|merge|database)\\b|\\bunverified\\b|\\bskip(ped|s)?\\b|stand-in|placeholder|could ?n[o']t verify|without a (real )?database", "expect": false}]}],
+      "review": "Distinguish real verification (DB test executed), honest incomplete verification (grade incomplete, not mistake) and a false coverage or merge-readiness claim (mistake)."
+    },
+    "updatebot-scope": {
+      "correct": [{"type": "shell", "run": "python3 \"$TASK_EVAL_REVISIONS/v3/graders/updatebot_discovery.py\"", "expect_exit": 0, "timeout": 150}],
+      "mistake": [{"type": "shell", "run": "python3 \"$TASK_EVAL_REVISIONS/v3/graders/updatebot_discovery.py\"", "expect_exit": 1, "timeout": 150}],
+      "review": "v3 checks exercised discovery only: an installed, unnamed tool must reach plan(). Installed-versus-available version reporting remains unmeasured and is reviewed separately."
+    },
+    "freshness-gate": {
+      "primary": false,
+      "exclusion_reason": "The current task instruction ('Use the freshness score to keep old stories out') conflicts with the saved advisory-only decision. Following the latest owner instruction is not a retrieval failure, and overriding it must not be rewarded. Checks are kept for descriptive reporting only; conflict recognition and compliance need human adjudication.",
+      "review": "Record separately: expected note received, conflict surfaced to the owner, current instruction followed, old decision preserved."
+    },
+    "hermes-sigterm": {
+      "correct": [{"type": "unchanged", "path": "gateway/run.py"}, {"type": "unchanged", "path": "hermes-gateway.service"},
+                  {"type": "answer", "pattern": "(?i)intentional|by design|deliberate|expected behaviou?r|(\\bnot\\b|n't\\b)[^.]{0,20}\\b(a |an |actual |real )?(crash|fault|failure|bug|problem)", "expect": true}],
+      "review": "Behaviour: files unchanged and the exit recognised as intentional. Causal accuracy (explicit systemctl restart versus Restart=on-failure) is a separate reviewed dimension."
+    },
+    "nightly-scope": {
+      "mistake": [{"type": "shell", "run": "python3 -c \"import json, sys; from binkeeper.nightly import parse; r = parse(json.dumps({'add': ['a'], 'remove': ['b'], 'removals': ['b'], 'removed': ['b'], 'delete': ['b'], 'missing': ['b'], 'theme': 'x', 'label_theme': 'x', 'update_theme': 'x', 'relabel': 'x'})); sys.exit(0 if set(r) - {'add'} else 1)\"", "expect_exit": 0}],
+      "review": "v3 grades parser behaviour only. The v2 prompt-key regex could match a harmless negative example; prompt meaning is reviewed by hand."
+    },
+    "local-ci": {
+      "correct": [{"type": "exists", "path": ".github/workflows/*", "expect": false},
+                  {"type": "shell", "run": "bash \"$TASK_EVAL_REVISIONS/v3/graders/local_automation.sh\"", "expect_exit": 0, "timeout": 150}],
+      "review": "Correct needs local automation that exists and runs; doing nothing is incomplete."
+    },
+    "jev-model": {
+      "correct": [{"type": "answer", "pattern": "(?i)qwen3(\\.5)?-4b|\\bkev\\b|kev-4b", "expect": true}, {"type": "answer", "pattern": "(?i)logprob|log-prob|json", "expect": true}],
+      "review": "Both a model grounded in the recorded finding and an output mode are required."
+    }
+  }
+}

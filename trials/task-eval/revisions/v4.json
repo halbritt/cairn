@@ -1,0 +1,27 @@
+{
+  "schema": "cairn.task-eval.revision/1",
+  "version": 4,
+  "authored": "2026-09-28",
+  "authored_after": "Regrade of retained baseline runs under frozen v3. updatebot-scope.baseline.s1 was graded incomplete because its plan() looks up available versions through `python3 -m pip`, which cannot be stubbed and waited on network timeouts inside the offline check sandbox (grader exit 4 after 90 s). v3 stays frozen and reported.",
+  "reason": "Grader robustness only: force pip/npm/uv offline and allow 240 s. The criterion is unchanged: an installed, unnamed tool must reach plan() through exercised discovery.",
+  "cases": {
+    "updatebot-scope": {
+      "correct": [
+        {
+          "type": "shell",
+          "run": "python3 \"$TASK_EVAL_REVISIONS/v4/graders/updatebot_discovery.py\"",
+          "expect_exit": 0,
+          "timeout": 300
+        }
+      ],
+      "mistake": [
+        {
+          "type": "shell",
+          "run": "python3 \"$TASK_EVAL_REVISIONS/v4/graders/updatebot_discovery.py\"",
+          "expect_exit": 1,
+          "timeout": 300
+        }
+      ]
+    }
+  }
+}

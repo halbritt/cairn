@@ -1,0 +1,10 @@
+{
+  "schema": "cairn.task-eval.frozen/1",
+  "labels_sha256": "db9ea78f33487bab327b0a098f7922b6f5473e78a58bf689866601e41bfd6318",
+  "files": 114,
+  "cases_sha256": "383f70fb16dc72ce7a02941eafb65747a007c47da08de27f3ed3dffeedbaf446",
+  "corpus_sha256": "b9332fd89f7847bce6114f6180d4e756db9ce2ceaadcef489037cf453d4c19a1",
+  "baseline_commit": "d08bba3f77d74dea6e83509c6c49cf064cdfd65d",
+  "label_version": 4,
+  "frozen_at": "2026-09-28T20:12:55-0700"
+}
