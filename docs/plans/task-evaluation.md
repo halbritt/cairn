@@ -207,6 +207,11 @@ The report records the observer's source hash and separates invocation timing
 from model-reported timing and cost. No prompt, note body, token or transcript
 is written to this metadata log.
 
+`process_seconds` starts after argument parsing and ends before the observation
+file is locked and written. It includes engine loading but excludes final logging
+overhead; it is not the complete native hook wall time. `recall_seconds` measures
+the wrapped recall call before the metadata snapshot is copied.
+
 `memory.recall_observation` is `per_invocation` for these records. Reports from
 older runs are explicitly labelled `last_state_only`; their overwritten startup
 measurements cannot be recovered. Missing timeout costs remain absent, not zero.
