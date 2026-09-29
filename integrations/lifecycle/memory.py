@@ -1288,7 +1288,9 @@ def handle(config, event):
         if topic:
             state["workstream"] = workstream_prefix(event) + topic
         if event_name in ("SessionStart", "UserPromptSubmit"):
+            recall_started = time.monotonic()
             result = recall(memory, event, state)
+            state["last_recall"]["duration_ms"] = round((time.monotonic() - recall_started) * 1000, 3)
         elif event_name in ("PostToolUse", "PostToolUseFailure"):
             result = observe(event, state)
         elif event_name == "Stop" and codex_new_messages(event, state) < CODEX_STOP_MIN_MESSAGES:

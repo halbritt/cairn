@@ -1,5 +1,10 @@
 # Ambient memory in Claude Code
 
+The session state records `last_recall.duration_ms` for successful recall calls,
+including empty results. This measures search and optional expansion with a
+monotonic clock. It excludes process startup, session-lock acquisition and failed
+calls, and is not a measurement of the model's response time.
+
 The engine config supports optional `preview_model` and `recall_model` fields.
 Preview admission selects `preview_model`, then `recall_model`, then the existing
 `model`; recall body applicability selects `recall_model`, then `model`.
