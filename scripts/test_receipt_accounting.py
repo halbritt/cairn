@@ -57,6 +57,78 @@ class ReceiptCLI:
 
 
 class ReceiptAccountingTests(unittest.TestCase):
+    def test_delivered_notes_do_not_hide_fresh_guidance_or_consume_pull_slots(self):
+        for count in (4, 10):
+            with self.subTest(delivered=count), tempfile.TemporaryDirectory() as directory:
+                Path(directory, '.git').mkdir()
+                bodies = {str(i): 'Already delivered guidance' for i in range(count)}
+                bodies['fresh'] = 'Use fresh guidance for this repair.'
+                cli = ReceiptCLI(bodies)
+                memory = hook.Memory(dict(cairn='fixture', socket='fixture', token_file='fixture',
+                                          repo='fixture', semantic_fallback=True, context_bytes=9500),
+                                     'unseen-guidance')
+                event = dict(hook_event_name='UserPromptSubmit', cwd=directory, prompt='repair')
+                state = dict(seen={str(i): 1 for i in range(count)})
+
+                def selector(config, schema, prompt, request, timeout, stage='capture'):
+                    if schema is hook.PREVIEW_SCHEMA:
+                        return dict(structured_output=dict(indices=list(range(min(4, len(request['previews']))))))
+                    return dict(structured_output=dict(index=0))
+
+                with patch.object(hook, 'bounded_command', side_effect=cli), \
+                     patch.object(hook, 'select_json', side_effect=selector):
+                    result = hook.recall(memory, event, state)
+                self.assertIn('Use fresh guidance', result.get('hookSpecificOutput', {}).get('additionalContext', ''))
+                self.assertEqual(cli.pulls, [('fresh', 'full')])
+                self.assertEqual(cli.credits, 3)
+                self.assertEqual(state['seen']['fresh'], 1)
+
+    def test_seen_semantic_page_does_not_hide_later_revised_guidance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, '.git').mkdir()
+            cli = ReceiptCLI({**{str(i): 'Already delivered guidance' for i in range(32)},
+                              'revised': 'Renew the original lease before it expires.'})
+            cli.entries[-1]['version'] = 2
+            offsets = []
+
+            def command(args, *, body, **kwargs):
+                response = cli(args, body=body, **kwargs)
+                envelope = json.loads(response.stdout)
+                data = envelope['data']
+                if args[6] == 'search':
+                    data['index'] = []
+                    if '--semantic' in args:
+                        offset = int(args[args.index('--offset') + 1])
+                        offsets.append(offset)
+                        data.update(index=cli.entries[offset:offset + 32],
+                                    discovery=dict(state='ready'),
+                                    page=dict(next_offset=32) if offset == 0 else {})
+                        data['selected'] = [dict(record=dict(body='Keep required context intact.'), mandatory=True)]
+                else:
+                    data['selection']['record']['version'] = 2
+                return subprocess.CompletedProcess(args, response.returncode, json.dumps(envelope), response.stderr)
+
+            def selector(config, schema, prompt, request, timeout, stage='capture'):
+                if schema is hook.PREVIEW_SCHEMA:
+                    return dict(structured_output=dict(indices=list(range(min(4, len(request['previews']))))))
+                return dict(structured_output=dict(index=0))
+
+            memory = hook.Memory(dict(cairn='fixture', socket='fixture', token_file='fixture',
+                                      repo='fixture', semantic_fallback=True, context_bytes=9500),
+                                 'unseen-semantic-guidance')
+            event = dict(hook_event_name='UserPromptSubmit', cwd=directory, prompt='repair lease')
+            state = dict(seen={**{str(i): 1 for i in range(32)}, 'revised': 1})
+            with patch.object(hook, 'bounded_command', side_effect=command), \
+                 patch.object(hook, 'select_json', side_effect=selector):
+                result = hook.recall(memory, event, state)
+            text = result.get('hookSpecificOutput', {}).get('additionalContext', '')
+            self.assertIn('Renew the original lease', text)
+            self.assertIn('Keep required context intact.', text)
+            self.assertEqual(offsets, [0, 32])
+            self.assertEqual(cli.pulls, [('revised', 'full')])
+            self.assertEqual(cli.credits, 3)
+            self.assertEqual(state['seen']['revised'], 2)
+
     def recall(self, cli, budget=9500):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, '.git').mkdir()

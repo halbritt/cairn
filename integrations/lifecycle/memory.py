@@ -711,7 +711,8 @@ def admit_previews(memory, event, intent, sources, status, deadline):
 def verified_candidate(memory, event, intent, result, seen, status, deadline, budget):
     """Inspect a bounded union of lexical and semantic bodies, then decide once."""
     selected = list(result.get("selected", []))
-    sources = [("lexical", result)]
+    sources = [("lexical", dict(result, index=[entry for entry in result.get("index", [])
+                                             if seen.get(entry["record_id"]) != entry["version"]]))]
     if len(intent["words"]) >= 2 and not intent["startup"]:
         offset, preview_count = 0, 0
         for page_number in range(SEMANTIC_PAGE_LIMIT):
@@ -731,7 +732,8 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
                     selected.append(item)
             if status["discovery"] != "ready":
                 break
-            entries = found.get("index", [])[:SEMANTIC_PREVIEW_LIMIT - preview_count]
+            entries = [entry for entry in found.get("index", [])
+                       if seen.get(entry["record_id"]) != entry["version"]][:SEMANTIC_PREVIEW_LIMIT - preview_count]
             sources.append(("semantic" if page_number == 0 else "semantic:" + str(offset), dict(found, index=entries)))
             preview_count += len(entries)
             status["semantic_pages"] = page_number + 1
