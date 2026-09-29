@@ -677,19 +677,96 @@ class RecallCandidateTests(unittest.TestCase):
         self.assertEqual(state['seen'], {})
         self.assertEqual(state['last_recall']['discovery'], 'verification_unavailable')
 
-    def test_semantic_rank_eight_is_in_one_bounded_decision(self):
+    def test_semantic_rank_eight_can_be_admitted_from_previews(self):
         self.memory.config['semantic_fallback'] = True
         entries = [self.entry(str(i)) for i in range(8)]
         with patch.object(self.memory, 'search', side_effect=[dict(index=[]),
                  dict(index=entries, discovery=dict(state='ready'))]), \
-             patch.object(self.memory, 'call', side_effect=[self.pulled(str(i), f'Candidate {i}') for i in range(8)]), \
-             patch.object(hook, 'select_json', return_value=dict(structured_output=dict(index=7))) as model:
+             patch.object(self.memory, 'call', return_value=self.pulled('7', 'Candidate 7')), \
+             patch.object(hook, 'select_json', side_effect=[dict(structured_output=dict(indices=[7])),
+                 dict(structured_output=dict(index=0))]) as model:
             state = {}
             result = hook.recall(self.memory, self.event, state)
         self.assertIn('Candidate 7', result['hookSpecificOutput']['additionalContext'])
         self.assertEqual(state['seen'], {'7': 1})
-        self.assertEqual(state['last_recall']['shortlist_candidates'], 8)
-        self.assertEqual(model.call_count, 1)
+        self.assertEqual(state['last_recall']['shortlist_candidates'], 1)
+        self.assertEqual(model.call_count, 2)
+
+    def test_exhausted_lexical_receipt_does_not_stop_semantic_receipt(self):
+        self.memory.config['semantic_fallback'] = True
+        lexical = [self.entry(f'lex-{i}') for i in range(5)]
+        useful = self.entry('semantic')
+        with patch.object(self.memory, 'search', side_effect=[
+                 dict(index=lexical, receipt_id='lex', credits_remaining=4),
+                 dict(index=[useful], receipt_id='sem', credits_remaining=4, discovery=dict(state='ready'))]), \
+             patch.object(self.memory, 'call', side_effect=[hook.BudgetRefused('lexical receipt exhausted'),
+                                                           self.pulled('semantic', 'Renew the original lease claim.')]) as pull, \
+             patch.object(hook, 'select_json', side_effect=[dict(structured_output=dict(indices=[0, 5])),
+                 dict(structured_output=dict(index=0))]) as model:
+            state = {}
+            result = hook.recall(self.memory, self.event, state)
+        self.assertIn('Renew the original lease claim.', result['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(state['seen'], {'semantic': 1})
+        self.assertEqual(state['last_recall']['rejected']['budget_refused'], 1)
+        self.assertEqual((pull.call_count, model.call_count), (2, 2))
+
+    def test_admitted_bodies_respect_each_receipts_four_credits(self):
+        self.memory.config['semantic_fallback'] = True
+        lexical = [self.entry(f'lex-{i}') for i in range(6)]
+        semantic = [self.entry(f'sem-{i}') for i in range(6)]
+        for entry in lexical:
+            entry['pull_arguments']['receipt_id'] = 'lex-receipt'
+        for entry in semantic:
+            entry['pull_arguments']['receipt_id'] = 'sem-receipt'
+        counts = dict(lexical=0, semantic=0)
+        def current_body(operation, *, payload, timeout):
+            channel = 'lexical' if payload['receipt_id'] == 'lex-receipt' else 'semantic'
+            counts[channel] += 1
+            self.assertLessEqual(counts[channel], 4)
+            return dict(self.pulled(payload['handle'], f'Guidance from {payload["handle"]}'),
+                        credits_remaining=4-counts[channel])
+        with patch.object(self.memory, 'search', side_effect=[
+                 dict(index=lexical, receipt_id='lex-receipt', credits_remaining=4),
+                 dict(index=semantic, receipt_id='sem-receipt', credits_remaining=4,
+                      discovery=dict(state='ready'))]), \
+             patch.object(self.memory, 'call', side_effect=current_body), \
+             patch.object(hook, 'select_json', side_effect=[
+                 dict(structured_output=dict(indices=[0, 1, 2, 3, 6, 7, 8, 9])),
+                 dict(structured_output=dict(index=7))]):
+            state = {}
+            result = hook.recall(self.memory, self.event, state)
+        self.assertIn('Guidance from sem-3', result['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(counts, dict(lexical=4, semantic=4))
+        self.assertEqual(state['last_recall']['receipt_attempts'], dict(lexical=4, semantic=4))
+        self.assertEqual(state['seen'], {'sem-3': 1})
+
+    def test_preview_and_body_calls_share_aggregate_input_budget(self):
+        self.memory.config['semantic_fallback'] = True
+        lexical = [self.entry(f'lex-{i}') for i in range(5)]
+        semantic = self.entry('semantic')
+        body = 'Renew the original lease claim.'
+        cap = []
+        def select(config, schema, prompt, request, timeout=8):
+            if schema is hook.PREVIEW_SCHEMA:
+                first_body_request = dict(project=str(self.root), request=self.event['prompt'],
+                                          workstream=None, startup=False,
+                                          candidates=[dict(index=0, body=body, source_extent='full_body')])
+                cap.append(len(hook.encoded(request).encode()) + len(hook.encoded(first_body_request).encode()))
+                hook.SELECTOR_INPUT_BYTES = cap[0]
+                return dict(structured_output=dict(indices=[0, 5]))
+            return dict(structured_output=dict(index=0))
+        with patch.object(hook, 'SELECTOR_INPUT_BYTES', 24000), \
+             patch.object(self.memory, 'search', side_effect=[dict(index=lexical, credits_remaining=4),
+                 dict(index=[semantic], credits_remaining=4, discovery=dict(state='ready'))]), \
+             patch.object(self.memory, 'call', side_effect=[self.pulled('lex-0', body),
+                                                         self.pulled('semantic', body)]), \
+             patch.object(hook, 'select_json', side_effect=select):
+            state = {}
+            result = hook.recall(self.memory, self.event, state)
+        self.assertIn(body, result['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(state['last_recall']['selector_input_bytes'], cap[0])
+        self.assertEqual(state['last_recall']['rejected']['selector_input_budget'], 1)
+        self.assertEqual(state['last_recall']['shortlist_candidates'], 1)
 
     def test_startup_status_noise_needs_applicability_verification(self):
         self.memory.config['semantic_fallback'] = True

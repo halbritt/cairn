@@ -29,7 +29,10 @@ and MCP processes.
   hooks to activate the new default. A follow-up caps aggregate selector input,
   starts its allowance after bounded pulls without extending the recall deadline,
   and restores the tested sorted query after ranking diagnostics rejected the
-  natural rewrite. Live task benefit remains unmeasured.
+  natural rewrite. A second follow-up admits bodies from up to ten previews per
+  search while enforcing each receipt's four pull credits independently; an
+  exhausted lexical receipt cannot suppress a fresh semantic receipt. Live task
+  benefit remains unmeasured.
 
 - Lifecycle recall now inspects a bounded shortlist of current optional bodies
   before injecting one, so a stale, irrelevant or oversized first candidate does
