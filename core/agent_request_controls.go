@@ -155,15 +155,13 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 		}
 		var eventID, state, kind string
 		var leased bool
-		err := tx.QueryRow(ctx, `SELECT d.event_id::text,d.state,e.kind,COALESCE(d.state='leased' AND d.lease_until>clock_timestamp(),false) FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE d.delivery_id=$1 AND e.repo=$2 FOR UPDATE OF d`, delivery, req.Repo).Scan(&eventID, &state, &kind, &leased)
+		var attempts int
+		err := tx.QueryRow(ctx, `SELECT d.event_id::text,d.state,e.kind,COALESCE(d.state='leased' AND d.lease_until>clock_timestamp(),false),d.attempts FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE d.delivery_id=$1 AND e.repo=$2 FOR UPDATE OF d`, delivery, req.Repo).Scan(&eventID, &state, &kind, &leased, &attempts)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return zero, failure("NOT_FOUND", "delivery not found")
 		}
 		if err != nil {
 			return zero, err
-		}
-		if kind != "request" {
-			return zero, failure("INVALID_REQUEST", "only requests can be cancelled")
 		}
 		if state != "pending" && state != "leased" {
 			return zero, failure("VERSION_CONFLICT", "delivery already terminal")
@@ -171,6 +169,20 @@ func (s *Store) CancelWork(ctx context.Context, req CancelWorkRequest) (WorkCanc
 		var wake, native bool
 		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE delivery_id=$1 AND finished_at IS NULL),EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE delivery_id=$1 AND finished_at IS NULL)`, delivery).Scan(&wake, &native); err != nil {
 			return zero, err
+		}
+		if kind != "request" {
+			// A response, notice or note asks for no work. The operator may close
+			// it only before any consumer claimed it or a host began a wake for
+			// it; once claimed, only its consumer acknowledges it.
+			if state != "pending" || attempts != 0 || wake || native {
+				return zero, failure("UNSUPPORTED_CONTROL", "only an unclaimed response, notice or note can be cancelled; a claimed one is acknowledged by its consumer")
+			}
+			if err = stopRequestDelivery(ctx, tx, delivery, "operator_cancelled", req.Reason); err != nil {
+				return zero, err
+			}
+			out := WorkCancellation{EventID: eventID, DeliveryID: delivery, Control: &WorkControl{}}
+			err = tx.QueryRow(ctx, `SELECT control_at,control_by,code,control_reason FROM cairn.agent_delivery WHERE delivery_id=$1`, delivery).Scan(&out.Control.At, &out.Control.By, &out.Control.Code, &out.Control.Reason)
+			return out, err
 		}
 		if native {
 			// Native work carries a per-request stop contract only when the

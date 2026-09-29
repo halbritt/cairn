@@ -8,7 +8,7 @@ controls introduce no session credentials.
 | --- | --- | --- |
 | `admission_expires_at` | Do not admit work at or after this instant. Work already running may finish. | Request events to agents, topics and pools. |
 | `task_deadline` | Fence completion and stop the managed process group when the deadline is reached. | Configured fresh-worker slots and pools only. |
-| Operator cancellation | Record cancellation against completion, then stop managed work before releasing its hold. | Queued requests and managed wake attempts. |
+| Operator cancellation | Record cancellation against completion, then stop managed work before releasing its hold. | Queued requests and managed wake attempts; unclaimed responses, notices and notes. |
 
 ## Publish with absolute times
 
@@ -59,6 +59,17 @@ Running native work and live manual leases return `UNSUPPORTED_CONTROL`, retaini
 their work and holds. Ending a whole interactive CLI or shared Hermes gateway is
 not a per-request stop contract. Reconcile the actual turn/process end before
 recovery. `schedule-cancel` remains the separate operation for unpublished intent.
+
+### Close an unclaimed response, notice or note
+
+A response, notice or note asks for no work, but it stays pending when its
+consumer never claims it, for example when it was addressed to a conversation
+that has ended. The same `work-cancel` request closes such a delivery with the
+same `operator_cancelled` record: operator, time and reason. It applies only
+while the delivery is pending, has never been claimed and has no wake or native
+attempt. A claimed delivery, including one whose lease has lapsed, returns
+`UNSUPPORTED_CONTROL`: its consumer acknowledges it. Cancelling the delivery
+does not withdraw the published event or change response-group collection.
 
 ## Stop decisions and process cleanup
 

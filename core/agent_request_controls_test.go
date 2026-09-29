@@ -142,3 +142,72 @@ func TestTaskDeadlineFencesCompletionAndRetainsHold(t *testing.T) {
 		t.Fatalf("deadline control: %+v %v", control, err)
 	}
 }
+
+func TestCancelWorkClosesOnlyUnclaimedNonRequests(t *testing.T) {
+	ctx := context.Background()
+	a, b, source, dest := eventFixture(t)
+	op := testStore(t, Channel{Principal: "cancel-notice-operator-" + source.Scope.Repo, Operator: true})
+	publish := func(kind string) string {
+		t.Helper()
+		e, err := a.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: kind, Ref: RecordVersionRef{source.RecordID, 1}, Destination: EventDestination{"agent", b.channel.Principal}}, dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		status, err := a.AgentEventStatus(ctx, EventStatusRequest{EventID: e.EventID}, dest)
+		if err != nil || len(status.Deliveries) != 1 {
+			t.Fatalf("status: %+v %v", status, err)
+		}
+		return status.Deliveries[0].DeliveryID
+	}
+	cancel := func(delivery string) CancelWorkRequest {
+		return CancelWorkRequest{RequestID: uuid.NewString(), Repo: source.Scope.Repo, DeliveryID: delivery, Reason: "Addressed to an ended conversation"}
+	}
+
+	// An unclaimed notice closes with the ordinary operator control record.
+	notice := publish("notice")
+	req := cancel(notice)
+	got, err := op.CancelWork(ctx, req)
+	if err != nil || got.Held || got.Control == nil || got.Control.Code != "operator_cancelled" || got.Control.Reason != req.Reason {
+		t.Fatalf("notice cancel: %+v %v", got, err)
+	}
+	again, err := op.CancelWork(ctx, req)
+	if err != nil || again.Control.Code != "operator_cancelled" {
+		t.Fatalf("retry: %+v %v", again, err)
+	}
+	var state, code string
+	if err = op.pool.QueryRow(ctx, `SELECT state,code FROM cairn.agent_delivery WHERE delivery_id=$1`, notice).Scan(&state, &code); err != nil || state != "failed" || code != "operator_cancelled" {
+		t.Fatalf("stored: %s %s %v", state, code, err)
+	}
+	// The cancelled notice is never offered to its consumer.
+	if next, err := b.NextEvent(ctx, NextEventRequest{}, dest); err != nil || next.Delivery != nil {
+		t.Fatalf("cancelled notice delivered: %+v %v", next, err)
+	}
+
+	// Once claimed, only the consumer acknowledges it, even after the lease lapses.
+	claimed := publish("notice")
+	lease := nextFixture(t, b, dest)
+	if lease.DeliveryID != claimed {
+		t.Fatalf("claimed %s, want %s", lease.DeliveryID, claimed)
+	}
+	_, err = op.CancelWork(ctx, cancel(claimed))
+	requireCode(t, err, "UNSUPPORTED_CONTROL")
+	if _, err = op.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, claimed); err != nil {
+		t.Fatal(err)
+	}
+	_, err = op.CancelWork(ctx, cancel(claimed))
+	requireCode(t, err, "UNSUPPORTED_CONTROL")
+
+	// The lapsed notice is redelivered to its consumer, who acknowledges it;
+	// a handled notice is terminal. An ordinary profile cannot cancel.
+	next := nextFixture(t, b, dest)
+	if next.DeliveryID != claimed {
+		t.Fatalf("redelivered %s, want %s", next.DeliveryID, claimed)
+	}
+	if _, err = b.CompleteEvent(ctx, CompleteEventRequest{RequestID: uuid.NewString(), DeliveryID: next.DeliveryID, LeaseID: next.LeaseID, Disposition: "handled"}, dest); err != nil {
+		t.Fatal(err)
+	}
+	_, err = op.CancelWork(ctx, cancel(claimed))
+	requireCode(t, err, "VERSION_CONFLICT")
+	_, err = a.CancelWork(ctx, cancel(publish("notice")))
+	requireCode(t, err, "AUTHORITY_DENIED")
+}
