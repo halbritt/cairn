@@ -6,10 +6,22 @@ derives the bounded excerpt from that validated body and labels it
 second pull or fresh receipt is needed. Instructions, mandatory selections and
 competing positions still require complete delivery.
 
-The session state records `last_recall.duration_ms` for successful recall calls,
-including empty results. This measures search and optional expansion with a
-monotonic clock. It excludes process startup, session-lock acquisition and failed
-calls, and is not a measurement of the model's response time.
+The session state records `last_recall.duration_ms` for recall calls, including
+empty results and handled failures after recall starts. This measures search and
+optional expansion with a monotonic clock. It excludes process startup,
+session-lock acquisition and status persistence, and is not a measurement of the
+model's response time. Input validation and lock failures before recall starts
+do not create a recall observation.
+
+A handled failure replaces an earlier success with `outcome: failed`, zero
+delivered bytes/records and a fixed `error_type` category. Available stage
+diagnostics are retained; prompt text, note bodies and exception messages are
+not copied into the failure observation. Prior delivery and hint state for the
+current project/workstream binding is preserved because no recall context was
+returned. A changed binding still clears state from the previous binding. The original failure still
+reaches the hook caller. If saving the failure status also fails, the hook reports
+both failures; the saved status can then remain stale. This is the latest
+observation only, not durable per-invocation history or proof of host ingestion.
 
 The engine config supports optional `preview_model` and `recall_model` fields.
 Preview admission selects `preview_model`, then `recall_model`, then the existing

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Selected Cairn memory at authorized host lifecycle boundaries (stdlib only)."""
 import argparse
+import copy
 import fcntl
 import hashlib
 import json
@@ -971,6 +972,8 @@ def recall(memory, event, state=None):
     started = time.monotonic()
     deadline = started + RECALL_SECONDS
     state = state if state is not None else {}
+    state["last_recall"] = status = dict(at=time.time(), outcome="empty", records=[], bytes=0,
+                                        discovery="lexical", inspected=0, rejected={})
     if event["hook_event_name"] == "SessionStart":
         state["seen"] = {}  # new/resumed/compacted context needs fresh delivery
     if "retained_record_ids" in event:
@@ -1000,8 +1003,6 @@ def recall(memory, event, state=None):
                                         if seen.get(entry["record_id"]) != entry["version"]][:RECALL_CANDIDATES]
     previews = [entry for entry in entries if relevant(entry, intent)]
     entries = previews + [entry for entry in entries if entry not in previews]
-    state["last_recall"] = status = dict(at=time.time(), outcome="empty", records=[], bytes=0,
-                                        discovery="lexical", inspected=0, rejected={})
     chosen = pulled = None
     if defer_optional:
         status["discovery"] = "deferred"
@@ -1435,8 +1436,27 @@ def handle(config, event):
         if topic:
             state["workstream"] = workstream_prefix(event) + topic
         if event_name in ("SessionStart", "UserPromptSubmit"):
+            previous_state = copy.deepcopy(state)
             recall_started = time.monotonic()
-            result = recall(memory, event, state)
+            try:
+                result = recall(memory, event, state)
+            except (HookError, OSError, ValueError, KeyError, TypeError) as exc:
+                status = state["last_recall"]
+                status.update(outcome="failed", records=[], bytes=0,
+                              duration_ms=round((time.monotonic() - recall_started) * 1000, 3),
+                              error_type=next(kind.__name__ for kind in
+                                              (HookError, OSError, ValueError, KeyError, TypeError)
+                                              if isinstance(exc, kind)))
+                for key in ("expanded", "partial_record", "source_extent"):
+                    status.pop(key, None)
+                # No recall context was returned. Keep prior delivery/hint state,
+                # while replacing an older success with this attempt's diagnostics.
+                previous_state["last_recall"] = status
+                try:
+                    save_state(path, previous_state)
+                except OSError as save_error:
+                    raise HookError("recall failed and failure status could not be saved") from save_error
+                raise
             state["last_recall"]["duration_ms"] = round((time.monotonic() - recall_started) * 1000, 3)
         elif event_name in ("PostToolUse", "PostToolUseFailure"):
             result = observe(event, state)
