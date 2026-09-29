@@ -78,7 +78,8 @@ source hash.
 The API owns separate persistent worker processes for query and document
 embedding. Background work cannot occupy the query worker. A concurrent query
 that finds its worker busy falls back immediately. Indexed search has a
-two-second deadline; document exchanges retain the worker's 25-second deadline.
+two-second deadline; document exchanges allow up to 90 seconds, below the
+two-minute job lease, so maximum-size sources have time to finish.
 The owner cancels, reaps and joins both workers on shutdown. Workers receive a
 restricted environment without the database DSN and use prepared local files.
 

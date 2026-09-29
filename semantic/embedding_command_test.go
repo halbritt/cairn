@@ -2,13 +2,48 @@ package semantic
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 )
+
+func TestRealMaximumDocumentEmbeddingCompletes(t *testing.T) {
+	path := os.Getenv("CAIRN_EMBEDDING_WORKER")
+	if path == "" {
+		t.Skip("requires a prepared local embedding worker")
+	}
+	e, err := EmbeddingCommand(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	body := strings.Repeat("abc def ghi jkl mno pqr stu vwx yz. ", 2000)[:65536]
+	start := time.Now()
+	passages, err := e.Document(context.Background(), body)
+	if err != nil {
+		t.Fatalf("accepted maximum document could not be embedded: %v", err)
+	}
+	if len(passages) == 0 || len(passages) > 256 {
+		t.Fatalf("unbounded or empty passages: %d", len(passages))
+	}
+	end := 0
+	for _, p := range passages {
+		if p.Span.Offset > end || p.Span.Length <= 0 || len(p.Vector) != 384 {
+			t.Fatalf("document coverage gap or invalid vector: %+v", p.Span)
+		}
+		end = p.Span.Offset + p.Span.Length
+	}
+	// Tokenizer offsets can exclude trailing whitespace, but never source text.
+	if end > len(body) || strings.TrimSpace(body[end:]) != "" {
+		t.Fatalf("document tail omitted: %d of %d bytes", end, len(body))
+	}
+	t.Logf("embedded %d original bytes in %d passages in %s", len(body), len(passages), time.Since(start))
+}
 
 func embeddingFixture(t *testing.T) string {
 	t.Helper()
@@ -101,5 +136,31 @@ func TestEmbeddingModelIdentityCannotChangeAcrossRestart(t *testing.T) {
 	}
 	if _, err = e.Query(context.Background(), "storage"); err != nil {
 		t.Fatalf("same-model restart failed: %v", err)
+	}
+}
+
+func TestEmbeddingDocumentHonorsEarlierCallerDeadline(t *testing.T) {
+	e, err := EmbeddingCommand(context.Background(), embeddingFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	ready := filepath.Join(t.TempDir(), "ready")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err = e.Document(ctx, ready)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("document ignored caller deadline: %v", err)
+	}
+	b, err := os.ReadFile(ready)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(string(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
+		t.Fatalf("document worker survived caller deadline: %v", err)
 	}
 }

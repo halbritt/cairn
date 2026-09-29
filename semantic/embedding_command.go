@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -79,7 +80,13 @@ func (e *CommandEmbedder) call(ctx context.Context, lane *embeddingLane, operati
 		return embeddingReply{}, fmt.Errorf("embedding worker busy")
 	}
 	defer lane.mu.Unlock()
-	ctx, cancel := context.WithTimeout(ctx, workerTimeout)
+	limit := workerTimeout
+	if operation == "document" {
+		// A maximum-size note can take longer than an interactive exchange.
+		// Stay below the index job's two-minute lease, leaving time to publish.
+		limit = 90 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return embeddingReply{}, err
