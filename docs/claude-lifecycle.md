@@ -115,7 +115,7 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   the receipt exhausted, so a later smaller candidate can still be inspected.
   Both selector inputs together remain capped at 24,000 UTF-8
   bytes; candidates that would exceed it are omitted whole. Preview admission
-  has a three-second allowance; the body decision's eight-second allowance
+  has a five-second allowance; the body decision's eight-second allowance
   starts after candidate pulls. Neither extends the 11-second recall deadline.
   Preview selection remains fallible and can miss relevant later-ranked notes. Reinstall
   hooks to apply the new default; no running copy is changed.
