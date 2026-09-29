@@ -203,7 +203,8 @@ class HermesBoundaryTests(unittest.TestCase):
     def test_hermes_filename_key_preserves_original_scope_and_blocks_path_escape(self):
         config=dict(cairn='cairn',socket='socket',token_file='token',repo='shared',harness='hermes',state_dir=str(self.home/'state'))
         event=dict(hook_event_name='UserPromptSubmit',session_id='../../slack-thread',cwd=str(self.home),prompt='validation')
-        with patch.object(hook,'recall',return_value={}) as recall:
+        with patch.object(hook, 'recall', wraps=hook.recall) as recall, \
+             patch.object(hook.Memory, 'search', return_value={'index': []}):
             hook.handle(config,event)
         memory=recall.call_args.args[0]
         self.assertIn('hermes/../../slack-thread',memory.scope)

@@ -532,8 +532,7 @@ def current_pull(memory, entry, deadline):
     return pulled
 
 
-def current_span_pull(memory, entry, deadline):
-    """A checked partial A/B source, never a substitute for C or competing positions."""
+def optional_span_hint(entry):
     hint = entry.get("match_span", entry.get("summary_span"))
     if (not isinstance(hint, dict) or type(hint.get("offset")) is not int
             or type(hint.get("length")) is not int or not 0 <= hint["offset"] < 65536
@@ -544,9 +543,39 @@ def current_span_pull(memory, entry, deadline):
         # The lexical preview locates source bytes but is too short to carry
         # surrounding guidance. Read forward within the existing source limit.
         hint = dict(offset=hint["offset"], length=min(SUMMARY_EXCERPT_BYTES, 65536 - hint["offset"]))
+    return hint
+
+
+def current_span_pull(memory, entry, deadline):
+    """A checked partial A/B source, never a substitute for C or competing positions."""
+    hint = optional_span_hint(entry)
     args = dict(entry["pull_arguments"], request_id=str(uuid.uuid4()),
                 span=dict(offset=hint["offset"], length=hint["length"]))
     pulled = memory.call("pull", payload=args, timeout=recall_timeout(deadline))
+    return checked_optional_span(entry, pulled, hint)
+
+
+def excerpt_from_full(entry, pulled):
+    """Display an excerpt of an already paid-for whole pull without another read."""
+    hint = optional_span_hint(entry)
+    selection = pulled["selection"]
+    record = selection["record"]
+    source = record["body"].encode()
+    part = source[hint["offset"]:hint["offset"] + hint["length"]]
+    try:
+        body = part.decode()
+    except UnicodeDecodeError as exc:
+        raise HookError("optional excerpt cuts a UTF-8 character") from exc
+    excerpt = dict(pulled, selection=dict(selection, record=dict(record, body="")),
+                   span=dict(offset=hint["offset"], end=hint["offset"] + len(part),
+                             total_bytes=len(source), body=body,
+                             sha256=hashlib.sha256(part).hexdigest(),
+                             source_sha256=hashlib.sha256(source).hexdigest()),
+                   span_origin="whole_pull")
+    return checked_optional_span(entry, excerpt, hint)
+
+
+def checked_optional_span(entry, pulled, hint):
     if (not isinstance(pulled.get("selection"), dict)
             or not isinstance(pulled["selection"].get("record"), dict)
             or not isinstance(pulled.get("span"), dict)):
@@ -573,6 +602,7 @@ def current_span_pull(memory, entry, deadline):
     return pulled
 
 
+
 def fitting_candidate(memory, entry, deadline, selected, budget, discovery=None):
     """Prefer complete source; try a checked passage if it cannot fit."""
     try:
@@ -585,9 +615,7 @@ def fitting_candidate(memory, entry, deadline, selected, budget, discovery=None)
         if pulled is None:
             raise BudgetRefused("optional body exceeds receipt budget")
         raise ContextRefused("optional body exceeds lifecycle context budget")
-    span = current_span_pull(memory, entry, deadline)
-    if pulled is not None and hashlib.sha256(pulled["selection"]["record"]["body"].encode()).hexdigest() != span["span"]["source_sha256"]:
-        raise HookError("optional span source changed")
+    span = excerpt_from_full(entry, pulled) if pulled is not None else current_span_pull(memory, entry, deadline)
     if len(render_recall(selected, [entry], span, discovery).encode()) > budget:
         raise ContextRefused("optional span exceeds lifecycle context budget")
     return span
@@ -906,7 +934,7 @@ def recall(memory, event, state=None):
                 continue
             if len(render_recall(selected, [entry], candidate).encode()) > budget and candidate.get("source_extent") != "partial_span":
                 try:
-                    candidate = current_span_pull(memory, entry, deadline)
+                    candidate = excerpt_from_full(entry, candidate)
                 except HookError:
                     status["rejected"]["context_budget"] = status["rejected"].get("context_budget", 0) + 1
                     continue

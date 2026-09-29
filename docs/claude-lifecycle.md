@@ -1,5 +1,11 @@
 # Ambient memory in Claude Code
 
+If a whole optional pull succeeds but its rendered context is too large, the hook
+derives the bounded excerpt from that validated body and labels it
+`span_origin: whole_pull`. The receipt retains the cost of the whole pull; no
+second pull or fresh receipt is needed. Instructions, mandatory selections and
+competing positions still require complete delivery.
+
 The session state records `last_recall.duration_ms` for successful recall calls,
 including empty results. This measures search and optional expansion with a
 monotonic clock. It excludes process startup, session-lock acquisition and failed

@@ -80,31 +80,31 @@ class ReceiptAccountingTests(unittest.TestCase):
         self.assertEqual(state['last_recall']['receipt_attempts'], {'lexical': 2})
         self.assertEqual(state['last_recall']['receipt_pull_calls'], {'lexical': 2})
 
-    def test_context_rejection_accounts_for_full_and_span_before_next_candidate(self):
+    def test_context_rejection_preserves_credit_for_later_small_guidance(self):
         cli = ReceiptCLI(dict(large1='x' * 5000, large2='y' * 5000, small='Useful small note'),
                          dict(large1=1800, large2=1800))
         result, state = self.recall(cli, budget=1500)
-        self.assertEqual(result, {})
-        self.assertEqual(cli.credits, 0)
-        self.assertEqual(cli.pulls, [('large1', 'full'), ('large1', 'span'),
-                                     ('large2', 'full'), ('large2', 'span')])
-        self.assertEqual(state['last_recall']['receipt_attempts'], {'lexical': 2})
-        self.assertEqual(state['last_recall']['receipt_pull_calls'], {'lexical': 4})
-        self.assertEqual(state['last_recall']['rejected']['receipt_exhausted'], 1)
+        self.assertIn('Useful small note', result['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(state['seen'], {'small': 1})
+        self.assertEqual(cli.credits, 1)
+        self.assertEqual(cli.pulls, [('large1', 'full'), ('large2', 'full'), ('small', 'full')])
+        self.assertEqual(state['last_recall']['receipt_attempts'], {'lexical': 3})
+        self.assertEqual(state['last_recall']['receipt_pull_calls'], {'lexical': 3})
+        self.assertEqual(state['last_recall']['rejected']['context_budget'], 2)
 
-    def test_successful_spans_account_for_both_pulls(self):
+    def test_excerpts_from_full_bodies_spend_only_one_pull_each(self):
         cli = ReceiptCLI(dict(large1='x' * 5000, large2='y' * 5000, small='Useful small note'),
                          dict(large1=500, large2=500))
         result, state = self.recall(cli, budget=3000)
         self.assertIn('hookSpecificOutput', result)
         self.assertEqual(state['seen'], {})  # a span does not mark the whole source delivered
         self.assertEqual(state['last_recall']['partial_record'], 'large1')
-        self.assertEqual(cli.credits, 0)
-        self.assertEqual(len(cli.pulls), 4)
-        self.assertEqual(state['last_recall']['receipt_attempts'], {'lexical': 2})
-        self.assertEqual(state['last_recall']['receipt_pull_calls'], {'lexical': 4})
+        self.assertEqual(cli.credits, 1)
+        self.assertEqual(cli.pulls, [('large1', 'full'), ('large2', 'full'), ('small', 'full')])
+        self.assertEqual(state['last_recall']['receipt_attempts'], {'lexical': 3})
+        self.assertEqual(state['last_recall']['receipt_pull_calls'], {'lexical': 3})
         self.assertEqual(state['last_recall']['shortlist_source_extents'],
-                         dict(full_body=0, partial_span=2))
+                         dict(full_body=1, partial_span=2))
 
     def test_refused_full_body_can_still_use_span(self):
         cli = ReceiptCLI(dict(large='Use disposable databases. ' * 1500), dict(large=500))
@@ -119,7 +119,8 @@ class ReceiptAccountingTests(unittest.TestCase):
         cli = ReceiptCLI(dict(large='x' * 5000), dict(large=500))
         cli.credits = 1
         result, state = self.recall(cli, budget=3000)
-        self.assertEqual(result, {})
+        self.assertIn('"source_extent":"partial_span"', result['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(state['seen'], {})
         self.assertEqual(cli.credits, 0)
         self.assertEqual(cli.pulls, [('large', 'full')])
         self.assertEqual(state['last_recall']['receipt_pull_calls'], {'lexical': 1})

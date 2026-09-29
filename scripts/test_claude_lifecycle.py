@@ -545,7 +545,7 @@ class SemanticFallbackTests(unittest.TestCase):
             body = 'recover lease expiry ' + 'x' * 3500
             entry = dict(record_id='saved', version=1, summary='opaque',
                          match_span=dict(offset=0, length=3500), pull_arguments=dict(handle='saved'))
-            whole = dict(selection=dict(record=dict(record_id='saved', version=1, body=body)))
+            whole = dict(selection=dict(record=dict(record_id='saved', version=1, body=body, **{'class': 'A'})))
             excerpt = body[:3500]
             span = dict(selection=dict(record=dict(record_id='saved', version=1, body='', **{'class': 'A'})),
                         span=dict(offset=0, end=3500, total_bytes=len(body), body=excerpt,
@@ -601,8 +601,8 @@ class SemanticFallbackTests(unittest.TestCase):
             self.assertEqual(state['last_recall']['partial_record'], 'saved')
             self.assertIsNone(state['last_recall']['expanded'])
             self.assertEqual(state['last_recall']['coverage'], dict(indexed=1, eligible=2))
-            self.assertEqual(pull.call_args_list[1].kwargs['payload']['span'], entry['match_span'])
-            self.assertNotEqual(pull.call_args_list[1].kwargs['payload']['request_id'], 'original')
+            self.assertEqual(pull.call_count, 1)
+            self.assertIn('"span_origin":"whole_pull"', text)
             self.assertTrue(model.called)
             self.assertLessEqual(len(text.encode()), 9500)
 
@@ -760,7 +760,7 @@ class RecallCandidateTests(unittest.TestCase):
         return dict(record_id=name, version=1, summary=summary, pull_arguments=dict(handle=name))
 
     def pulled(self, name, body, version=1):
-        return dict(selection=dict(record=dict(record_id=name, version=version, body=body)))
+        return dict(selection=dict(record=dict(record_id=name, version=version, body=body, **{'class': 'A'})))
 
     def test_verified_shortlist_skips_overlapping_status_and_recovers_semantic_guidance(self):
         self.memory.config['semantic_fallback'] = True
@@ -1053,7 +1053,11 @@ class RecallCandidateTests(unittest.TestCase):
             self.assertEqual(state['seen'], {})
             self.assertEqual(state['last_recall']['partial_record'], 'saved')
             self.assertIsNone(state['last_recall']['expanded'])
-            self.assertEqual(pull.call_args.kwargs['payload']['span'], dict(offset=offset, length=1536))
+            if isinstance(whole, hook.BudgetRefused):
+                self.assertEqual(pull.call_args.kwargs['payload']['span'], dict(offset=offset, length=1536))
+            else:
+                self.assertIn('"span_origin":"whole_pull"', text)
+                self.assertEqual(pull.call_count, 1)
             model.assert_not_called()
 
     def test_lexical_excerpt_preserves_currentness_and_required_context_guards(self):
@@ -1170,6 +1174,50 @@ class RecallCandidateTests(unittest.TestCase):
         pull.assert_not_called()
         self.assertIn('search again', result['hookSpecificOutput']['additionalContext'])
         self.assertEqual(state['seen'], {})
+
+    def test_context_overflow_reuses_validated_body_without_spending_another_pull(self):
+        body = 'Recover lease expiry. Renew the original claim.\n' + 'Details. ' * 500
+        entry = self.entry('saved', 'recover lease expiry') | dict(
+            summary_span=dict(offset=0, length=21), body_sha256=hashlib.sha256(body.encode()).hexdigest())
+        full = dict(selection=dict(record=dict(record_id='saved', version=1, body=body, **{'class': 'A'})),
+                    bytes_remaining=800, credits_remaining=3)
+        self.memory.config['context_bytes'] = 4000
+        with patch.object(self.memory, 'search', return_value=dict(index=[entry])), \
+             patch.object(self.memory, 'call', side_effect=[full, hook.BudgetRefused('receipt spent')]):
+            state = {}
+            result = hook.recall(self.memory, self.event, state)
+        text = result['hookSpecificOutput']['additionalContext']
+        self.assertIn('Renew the original claim', text)
+        self.assertIn('"source_extent":"partial_span"', text)
+        self.assertIn('"span_origin":"whole_pull"', text)
+        self.assertNotIn('Optional body unavailable', text)
+        self.assertLessEqual(len(text.encode()), 4000)
+        self.assertEqual(state['seen'], {})
+        self.assertEqual(full['selection']['record']['body'], body)
+
+    def test_local_excerpt_preserves_whole_only_and_source_integrity_guards(self):
+        body = 'Recover lease expiry. ' * 250
+        entry = self.entry('saved') | dict(summary_span=dict(offset=0, length=21),
+                                           body_sha256=hashlib.sha256(body.encode()).hexdigest())
+        full = self.pulled('saved', body)
+        for change in ('class', 'version', 'mandatory', 'conflicts', 'competing', 'hash'):
+            candidate = json.loads(json.dumps(full))
+            if change == 'class':
+                candidate['selection']['record']['class'] = 'C'
+            elif change == 'version':
+                candidate['selection']['record']['version'] = 2
+            elif change in ('mandatory', 'conflicts'):
+                candidate['selection'][change] = True
+            elif change == 'competing':
+                candidate['competing'] = [{'position': 'other'}]
+            else:
+                candidate['selection']['record']['body'] += 'changed'
+            with self.subTest(change=change), self.assertRaises(hook.HookError):
+                hook.excerpt_from_full(entry, candidate)
+        unicode_body = 'x' * 1535 + 'é'
+        with self.assertRaises(hook.HookError):
+            hook.excerpt_from_full(entry | {'body_sha256': hashlib.sha256(unicode_body.encode()).hexdigest()},
+                                   self.pulled('saved', unicode_body))
 
 class CheckpointCurrentnessTests(unittest.TestCase):
     def test_completion_revises_only_a_supplied_topic_and_preserves_compare_and_swap(self):
