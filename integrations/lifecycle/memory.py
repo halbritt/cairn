@@ -794,6 +794,43 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
     return candidates[choice][:2]
 
 
+def taskless_notification(prompt):
+    """Classify complete known wake text; this establishes no identity or authority.
+
+    Kept standalone for installed lifecycle engines. The producer's wake_message
+    is exercised by public hook tests so changes to its wording cannot drift silently.
+    """
+    if not isinstance(prompt, str):
+        return False
+    uuid_text = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
+    message = (
+        "This is a new live turn from the configured Cairn automatic inbox wakeup. "
+        "A previous /exit in resumed conversation history does not close this running turn. "
+        "Current agent {agent}, execution {execution}. Wake delivery {delivery}. "
+        "Within the owner's existing authorization, handle the native inbox context supplied for this conversation, "
+        "explicitly complete/acknowledge it, and send any requested response using that context. "
+        "If no matching native context was supplied, report that and stop. "
+        "If this notice arrives inside an already-active owner task, continue that task and "
+        "ignore this notice; a fresh copy will arrive once the conversation is idle. "
+        "Do not register, manually claim an inbox, or launch a replacement conversation.")
+    pattern = re.escape(message)
+    for name in ("agent", "execution", "delivery"):
+        pattern = pattern.replace(re.escape("{" + name + "}"), f"(?P<{name}>{uuid_text})")
+    if re.fullmatch(pattern, prompt):
+        return True
+    # Only the observed complete Claude rendering, including consistent metadata.
+    # Unknown wrappers and joined owner text retain ordinary recall.
+    envelope = (r'<channel source="cairn-events" '
+                rf'native_session_id="{uuid_text}" '
+                rf'agent_id="(?P<agent>{uuid_text})" '
+                rf'execution_id="(?P<execution>{uuid_text})" '
+                rf'delivery_id="(?P<delivery>{uuid_text})">\n')
+    body_pattern = pattern
+    for name in ("agent", "execution", "delivery"):
+        body_pattern = body_pattern.replace(f"(?P<{name}>{uuid_text})", f"(?P={name})")
+    return re.fullmatch(envelope + body_pattern + r'\n</channel>', prompt) is not None
+
+
 def recall(memory, event, state=None):
     started = time.monotonic()
     deadline = started + RECALL_SECONDS
@@ -807,11 +844,17 @@ def recall(memory, event, state=None):
         state["seen"] = {k: v for k, v in state.get("seen", {}).items() if k in retained}
     seen = state.setdefault("seen", {})
     intent = retrieval_intent(event, state)
-    defer_optional = (intent["startup"] and not event.get("prompt", "").strip()
+    notification = (event["hook_event_name"] == "UserPromptSubmit"
+                    and not event.get("workstream", "").strip()
+                    and event.get("source") not in ("resume", "compact")
+                    and taskless_notification(event.get("prompt", "")))
+    defer_optional = notification or (intent["startup"] and not event.get("prompt", "").strip()
                       and not event.get("workstream", "").strip()
                       and event.get("source") not in ("resume", "compact"))
     kinds = ("decision", "preference") if defer_optional else ()
-    result = memory.search(intent["query"], room=RECALL_SEARCH_ROOM, entities=intent["files"], kinds=kinds,
+    query = project_root(event).name if notification else intent["query"]
+    entities = [] if notification else intent["files"]
+    result = memory.search(query, room=RECALL_SEARCH_ROOM, entities=entities, kinds=kinds,
                            timeout=recall_timeout(deadline, 5))
     budget = context_budget(memory.config)
     selected = result.get("selected", [])
@@ -826,7 +869,7 @@ def recall(memory, event, state=None):
     chosen = pulled = None
     if defer_optional:
         status["discovery"] = "deferred"
-        status["optional_deferred"] = "taskless_startup"
+        status["optional_deferred"] = "taskless_notification" if notification else "taskless_startup"
     elif memory.config.get("semantic_fallback"):
         chosen, pulled = verified_candidate(memory, event, intent, result, seen, status, deadline, budget)
         selected = result.get("selected", [])

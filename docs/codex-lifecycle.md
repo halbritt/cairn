@@ -11,6 +11,23 @@ capture that Claude Code already has. They use the shared lifecycle engine,
 | `PreCompact` | Selects and saves a checkpoint before manual or automatic compaction. |
 | `Stop` (async) | Offers a checkpoint in the background once at least six new top-level messages exist since the last capture. |
 
+A taskless `UserPromptSubmit` containing only the complete current Cairn wake
+notice also defers optional recall. This recognizes the plain notice and the exact
+`cairn-events` Claude channel envelope with matching UUID fields; it classifies
+content and does not authenticate a sender or authorize an assignment. Extra
+owner text, quoted notices, malformed or unknown renderings retain normal recall.
+Explicit workstreams and resume/compact events retain their existing behavior.
+The required-context search uses only the project name, without notice UUIDs or
+recent file hints, and still delivers required instructions whole or refuses the
+whole package when it exceeds budget. No optional semantic search, pull or
+selector call runs for a deferred notice, and existing seen-state is retained.
+The original host event is unchanged.
+
+The notice does not contain the queued task body. After reading that source,
+the agent still needs explicit task-conditioned retrieval through its normal
+memory tools; a later actual prompt also uses normal hook recall. Notification
+deferral does not itself supply useful task guidance or complete that goal.
+
 Codex `SessionEnd` hooks run synchronously, with a one-second default and a
 three-second maximum. That is too short for checkpoint selection, so the Codex
 adapter does not capture at exit. The background Stop hook covers ordinary

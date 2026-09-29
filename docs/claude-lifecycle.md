@@ -30,6 +30,23 @@ also permits project-labelled decisions and preferences. Fresh, prompt-free
 startup without an explicit workstream performs the ordinary required-context
 search but makes no optional pulls or model calls. Required context must still
 fit whole within the configured budget. The next prompt uses normal recall.
+A taskless `UserPromptSubmit` containing only the complete current Cairn wake
+notice also defers optional recall. This recognizes the plain notice and the exact
+`cairn-events` Claude channel envelope with matching UUID fields; it classifies
+content and does not authenticate a sender or authorize an assignment. Extra
+owner text, quoted notices, malformed or unknown renderings retain normal recall.
+Explicit workstreams and resume/compact events retain their existing behavior.
+The required-context search uses only the project name, without notice UUIDs or
+recent file hints, and still delivers required instructions whole or refuses the
+whole package when it exceeds budget. No optional semantic search, pull or
+selector call runs for a deferred notice, and existing seen-state is retained.
+The original host event is unchanged.
+
+The notice does not contain the queued task body. After reading that source,
+the agent still needs explicit task-conditioned retrieval through its normal
+memory tools; a later actual prompt also uses normal hook recall. Notification
+deferral does not itself supply useful task guidance or complete that goal.
+
 Hints expire after 15 minutes. A delivered body is
 suppressed at the same version until startup, resume or compaction resets the
 context; required selected context is always retained. Empty or weak results add
