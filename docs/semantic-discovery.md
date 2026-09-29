@@ -27,6 +27,12 @@ placement, capability or security decisions.
 
 ## Local backend
 
+For collections beyond the request-scoring limits below, the
+[persistent passage backend](persistent-semantic-retrieval.md) adds versioned
+PostgreSQL embeddings, bounded hybrid discovery and matched passage spans. It is
+selected with `--embedding-command`; the search/pull interface stays the same.
+The following command modes retain their existing request-scoring behavior.
+
 The optional worker uses FastEmbed 0.8.0 and a local quantized
 `BAAI/bge-small-en-v1.5` model. It does not require a model server or GPU. Prepare
 its separate Python environment and downloaded model with:

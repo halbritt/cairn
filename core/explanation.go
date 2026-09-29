@@ -10,22 +10,23 @@ import (
 // CandidateEvaluation contains features, never query text or candidate bodies.
 // Rank is the one-based eligible ordering before packing; zero means unranked.
 type CandidateEvaluation struct {
-	EntityMatch       bool            `json:"entity_match,omitempty"`
-	FailureMatch      *FailureMatch   `json:"failure_match,omitempty"`
-	ExactTextMatch    bool            `json:"exact_text_match,omitempty"`
-	SemanticScore     *int            `json:"semantic_score,omitempty"`
-	Facts             *CandidateFacts `json:"facts,omitempty"`
-	RecordID          string          `json:"record_id"`
-	Version           int             `json:"version"`
-	Class             string          `json:"class"`
-	Reason            string          `json:"reason"`
-	EscalationBlocked bool            `json:"escalation_blocked"`
-	LexicalMatches    int             `json:"lexical_matches"`
-	ScopeSpecificity  int             `json:"scope_specificity"`
-	WrittenAt         time.Time       `json:"written_at"`
-	Mandatory         bool            `json:"mandatory"`
-	Rank              int             `json:"rank"`
-	Cost              int             `json:"cost_bytes"`
+	PassageHit        *SemanticPassageHit `json:"passage_hit,omitempty"`
+	EntityMatch       bool                `json:"entity_match,omitempty"`
+	FailureMatch      *FailureMatch       `json:"failure_match,omitempty"`
+	ExactTextMatch    bool                `json:"exact_text_match,omitempty"`
+	SemanticScore     *int                `json:"semantic_score,omitempty"`
+	Facts             *CandidateFacts     `json:"facts,omitempty"`
+	RecordID          string              `json:"record_id"`
+	Version           int                 `json:"version"`
+	Class             string              `json:"class"`
+	Reason            string              `json:"reason"`
+	EscalationBlocked bool                `json:"escalation_blocked"`
+	LexicalMatches    int                 `json:"lexical_matches"`
+	ScopeSpecificity  int                 `json:"scope_specificity"`
+	WrittenAt         time.Time           `json:"written_at"`
+	Mandatory         bool                `json:"mandatory"`
+	Rank              int                 `json:"rank"`
+	Cost              int                 `json:"cost_bytes"`
 }
 
 type Explanation struct {

@@ -36,10 +36,11 @@ type SemanticRankResult struct {
 	Scores      []SemanticScore `json:"scores"`
 }
 type DiscoveryRanking struct {
-	State        string `json:"state"`
-	ModelSHA256  string `json:"model_sha256,omitempty" cbor:"model_sha256,omitempty"`
-	Algorithm    string `json:"algorithm,omitempty" cbor:"algorithm,omitempty"`
-	ScoresSHA256 string `json:"scores_sha256,omitempty" cbor:"scores_sha256,omitempty"`
+	Coverage     *SemanticCoverage `json:"coverage,omitempty" cbor:"coverage,omitempty"`
+	State        string            `json:"state"`
+	ModelSHA256  string            `json:"model_sha256,omitempty" cbor:"model_sha256,omitempty"`
+	Algorithm    string            `json:"algorithm,omitempty" cbor:"algorithm,omitempty"`
+	ScoresSHA256 string            `json:"scores_sha256,omitempty" cbor:"scores_sha256,omitempty"`
 }
 
 func scoreDigest(scores []SemanticScore) string {
@@ -64,6 +65,9 @@ func semanticIdentityValid(d *DiscoveryRanking) bool {
 }
 
 func (s *Store) rankSemantic(ctx context.Context, query string, p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation) ([]candidate, error) {
+	if s.semanticRetriever != nil {
+		return s.rankIndexed(ctx, query, p, candidates, evaluations)
+	}
 	p.Discovery = &DiscoveryRanking{State: "unavailable"}
 	notes := []SemanticNote{}
 	bytes := 0
@@ -132,6 +136,10 @@ func (s *Store) rankSemantic(ctx context.Context, query string, p *SemanticPacka
 			}
 		}
 	}
+	return lexicalSemanticFallback(p, candidates, evaluations)
+}
+
+func lexicalSemanticFallback(p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation) ([]candidate, error) {
 	// Model errors and bounded-work refusals degrade to the existing lexical
 	// route. No partial semantic ordering or unvalidated model result survives.
 	var pool map[string]candidate
@@ -178,8 +186,19 @@ func discoveryStatus(p SemanticPackage) SemanticPackage {
 }
 
 func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*CandidateEvaluation, query string) error {
+	if hasHybridRanking(p.Ranking) {
+		if p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
+			return failure("INTEGRITY_FAILURE", "invalid indexed retrieval intent")
+		}
+		return validateFrozenIndexed(p, evaluations)
+	}
+	for _, e := range evaluations {
+		if e.PassageHit != nil {
+			return failure("INTEGRITY_FAILURE", "legacy ranking cannot carry indexed passages")
+		}
+	}
 	invalid := func() error { return failure("INTEGRITY_FAILURE", "historical semantic ranking metadata is invalid") }
-	if p.Schema != "cairn.semantic/7" && ((p.Schema != "cairn.semantic/8" && p.Schema != "cairn.semantic/9" && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/11" && p.Schema != "cairn.semantic/12" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/14") || p.Discovery == nil) {
+	if p.Schema != "cairn.semantic/7" && ((p.Schema != "cairn.semantic/8" && p.Schema != "cairn.semantic/9" && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/11" && p.Schema != "cairn.semantic/12" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/14" && p.Schema != "cairn.semantic/15") || p.Discovery == nil) {
 		if p.Discovery != nil || p.Ranking == "semantic-scope-recency/1" || p.Ranking == "semantic-scope-recency/2" || p.Ranking == "semantic-scope-recency/3" || p.Ranking == "semantic-scope-recency/4" {
 			return invalid()
 		}

@@ -89,7 +89,7 @@ func matchesEntities(record, query []EntityRef) bool {
 }
 
 func hasEntityRanking(version string) bool {
-	return version == "lexical-scope-recency/7" || version == "semantic-scope-recency/4"
+	return version == "lexical-scope-recency/7" || version == "semantic-scope-recency/4" || version == "hybrid-scope-recency/4"
 }
 
 func entityReason(reason string, matched bool) string {
@@ -100,6 +100,9 @@ func entityReason(reason string, matched bool) string {
 }
 
 func withEntitySchema(p SemanticPackage) SemanticPackage {
+	if p.Schema == "cairn.semantic/15" {
+		return p
+	}
 	if p.AdvisoryConflicts {
 		p.Schema = "cairn.semantic/14"
 		return p

@@ -9,6 +9,7 @@ import (
 	"github.com/halbritt/cairn/localapi"
 	"github.com/halbritt/cairn/semantic"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,7 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	machine := f.String("machine-id", strings.ToLower(strings.SplitN(hostname, ".", 2)[0]), "local directory machine ID")
 	semanticCommand := f.String("semantic-command", "", "optional absolute local CPU scoring executable")
 	semanticStreamCommand := f.String("semantic-stream-command", "", "optional absolute reusable local CPU scoring executable")
+	embeddingCommand := f.String("embedding-command", "", "optional absolute local embedding executable for persistent passage retrieval")
 	semanticIdle := f.Duration("semantic-idle-timeout", 30*time.Second, "positive idle lifetime for the reusable semantic worker")
 	if err = f.Parse(args); err != nil {
 		return invalid(err.Error())
@@ -39,7 +41,13 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 	if f.NArg() != 0 {
 		return invalid("unexpected serve arguments")
 	}
-	if *semanticCommand != "" && *semanticStreamCommand != "" {
+	semanticModes := 0
+	for _, path := range []string{*semanticCommand, *semanticStreamCommand, *embeddingCommand} {
+		if path != "" {
+			semanticModes++
+		}
+	}
+	if semanticModes > 1 {
 		return invalid("choose one semantic command mode")
 	}
 	idleConfigured := false
@@ -96,7 +104,19 @@ func serveLocal(ctx context.Context, dsn string, args []string) error {
 		}
 		defer closeWorker()
 	}
-	handler, err := localapi.NewWithSemanticRanker(ctx, dsn, identities, ranker)
+	var handler *localapi.Server
+	if *embeddingCommand != "" {
+		retrieve, closeIndex, startErr := semantic.StartIndex(ctx, dsn, *embeddingCommand, func(err error) {
+			slog.Warn("semantic indexing unavailable; lexical retrieval remains available", "error", err)
+		})
+		if startErr != nil {
+			return startErr
+		}
+		defer closeIndex()
+		handler, err = localapi.NewWithSemanticRetriever(ctx, dsn, identities, retrieve)
+	} else {
+		handler, err = localapi.NewWithSemanticRanker(ctx, dsn, identities, ranker)
+	}
 	if err != nil {
 		return err
 	}

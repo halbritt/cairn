@@ -371,10 +371,11 @@ func TestAdvisoryConflictRelevanceAndSemanticFallback(t *testing.T) {
 	if _, err = s.Dispute(ctx, DisputeRequest{uuid.NewString(), []string{a.RecordID, b.RecordID}, "Synthetic alternative"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"kind", "entity", "semantic", "fallback", "unmatched"} {
+	for _, mode := range []string{"kind", "entity", "semantic", "fallback", "unmatched", "indexed"} {
 		t.Run(mode, func(t *testing.T) {
 			req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "fixture_error", Purpose: "context", AvailableTokens: 64000, AdvisoryConflicts: true}
 			s.semanticRanker = nil
+			s.semanticRetriever = nil
 			want := 2
 			switch mode {
 			case "kind":
@@ -395,6 +396,20 @@ func TestAdvisoryConflictRelevanceAndSemanticFallback(t *testing.T) {
 					result := SemanticRankResult{ModelSHA256: strings.Repeat("a", 64), Algorithm: "fixture/1"}
 					for _, n := range input.Notes {
 						result.Scores = append(result.Scores, SemanticScore{n.RecordID, n.Version, n.BodySHA256, 500000})
+					}
+					return result, nil
+				}
+			case "indexed":
+				req.Semantic, req.Query, req.Kinds = true, "unseen_query", []string{"decision"}
+				s.semanticRetriever = func(_ context.Context, input SemanticRankRequest) (SemanticRetrievalResult, error) {
+					if len(input.Notes) != 2 {
+						t.Fatalf("index did not receive complete positions: %+v", input)
+					}
+					result := SemanticRetrievalResult{ModelSHA256: strings.Repeat("a", 64), Algorithm: "fixture/1", Indexed: 2}
+					for _, n := range input.Notes {
+						if n.RecordID == a.RecordID {
+							result.Hits = append(result.Hits, SemanticPassageHit{SemanticScore: SemanticScore{n.RecordID, n.Version, n.BodySHA256, 900000}, Span: ByteSpanRequest{Length: len(n.Body)}})
+						}
 					}
 					return result, nil
 				}

@@ -1315,6 +1315,16 @@
           "mandatory": {
             "type": "boolean"
           },
+          "passage_hit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.SemanticPassageHit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "rank": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
@@ -2539,6 +2549,16 @@
         "properties": {
           "algorithm": {
             "type": "string"
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.SemanticCoverage"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "model_sha256": {
             "type": "string"
@@ -4303,6 +4323,16 @@
           },
           "kind": {
             "type": "string"
+          },
+          "match_span": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.ByteSpanRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "record_id": {
             "type": "string"
@@ -7239,6 +7269,26 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.Selection"
       },
+      "core.SemanticCoverage": {
+        "properties": {
+          "eligible": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "indexed": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "eligible",
+          "indexed"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SemanticCoverage"
+      },
       "core.SemanticPackage": {
         "properties": {
           "advisory_conflicts": {
@@ -7396,6 +7446,38 @@
         ],
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.SemanticPackage"
+      },
+      "core.SemanticPassageHit": {
+        "properties": {
+          "body_sha256": {
+            "type": "string"
+          },
+          "record_id": {
+            "type": "string"
+          },
+          "score": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "span": {
+            "$ref": "#/components/schemas/core.ByteSpanRequest"
+          },
+          "version": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "body_sha256",
+          "record_id",
+          "score",
+          "span",
+          "version"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SemanticPassageHit"
       },
       "core.SessionCancel": {
         "properties": {

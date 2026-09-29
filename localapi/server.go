@@ -51,6 +51,14 @@ func New(ctx context.Context, dsn string, identities []Identity) (*Server, error
 }
 
 func NewWithSemanticRanker(ctx context.Context, dsn string, identities []Identity, ranker core.SemanticRanker) (*Server, error) {
+	return newWithSemantic(ctx, dsn, identities, ranker, nil)
+}
+
+func NewWithSemanticRetriever(ctx context.Context, dsn string, identities []Identity, retrieve core.SemanticRetriever) (*Server, error) {
+	return newWithSemantic(ctx, dsn, identities, nil, retrieve)
+}
+
+func newWithSemantic(ctx context.Context, dsn string, identities []Identity, ranker core.SemanticRanker, retrieve core.SemanticRetriever) (*Server, error) {
 	if err := ValidateIdentities(identities); err != nil {
 		return nil, err
 	}
@@ -59,7 +67,14 @@ func NewWithSemanticRanker(ctx context.Context, dsn string, identities []Identit
 	for _, identity := range identities {
 		digest, _ := hex.DecodeString(identity.TokenSHA256)
 		key := [32]byte(digest)
-		store, err := core.OpenWithSemanticRanker(ctx, dsn, core.Channel{Principal: identity.Principal, Repo: identity.Repo, Instrumented: identity.Role == "observer"}, ranker)
+		channel := core.Channel{Principal: identity.Principal, Repo: identity.Repo, Instrumented: identity.Role == "observer"}
+		var store *core.Store
+		var err error
+		if retrieve != nil {
+			store, err = core.OpenWithSemanticRetriever(ctx, dsn, channel, retrieve)
+		} else {
+			store, err = core.OpenWithSemanticRanker(ctx, dsn, channel, ranker)
+		}
 		if err != nil {
 			return fail(err)
 		}

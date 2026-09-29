@@ -21,10 +21,11 @@ import (
 var schemas embed.FS
 
 type Store struct {
-	pool           *pgxpool.Pool
-	channel        Channel
-	semanticRanker SemanticRanker
-	session        *agentSessionChannel
+	pool              *pgxpool.Pool
+	channel           Channel
+	semanticRanker    SemanticRanker
+	semanticRetriever SemanticRetriever
+	session           *agentSessionChannel
 }
 
 // Open must be called by trusted host code. Agents must never receive the DSN
@@ -53,6 +54,16 @@ func OpenWithSemanticRanker(ctx context.Context, dsn string, channel Channel, ra
 	s, err := Open(ctx, dsn, channel)
 	if err == nil {
 		s.semanticRanker = ranker
+	}
+	return s, err
+}
+
+// OpenWithSemanticRetriever enables a host-owned persistent index. It does not
+// change access checks or grant the index authority over source eligibility.
+func OpenWithSemanticRetriever(ctx context.Context, dsn string, channel Channel, retrieve SemanticRetriever) (*Store, error) {
+	s, err := Open(ctx, dsn, channel)
+	if err == nil {
+		s.semanticRetriever = retrieve
 	}
 	return s, err
 }

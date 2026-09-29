@@ -14,7 +14,7 @@ type FailureMatch struct {
 }
 
 func hasFailureRanking(version string) bool {
-	return version == "lexical-scope-recency/6" || version == "semantic-scope-recency/3"
+	return version == "lexical-scope-recency/6" || version == "semantic-scope-recency/3" || version == "hybrid-scope-recency/3"
 }
 
 func failureReason(reason string, matched bool) string {

@@ -29,6 +29,9 @@ type IndexEntry struct {
 	BodySHA256 string             `json:"body_sha256"`
 	// SummarySpan excludes the summary's synthetic omission markers.
 	SummarySpan *ByteSpanRequest `json:"summary_span,omitempty" cbor:"summary_span,omitempty"`
+	// MatchSpan addresses the complete passage scored by the local model.
+	// It is a discovery hint, not evidence that this source answers the query.
+	MatchSpan *ByteSpanRequest `json:"match_span,omitempty" cbor:"match_span,omitempty"`
 }
 
 // BrowsePage addresses eligible optional candidates in this call's ordering.
@@ -132,9 +135,16 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 		for _, member := range members {
 			entry := indexEntry(member.selection.Record)
 			entry.Conflicts = member.selection.Conflicts
-			if p.Schema == "cairn.semantic/8" || p.Schema == "cairn.semantic/9" || p.Schema == "cairn.semantic/10" || p.Schema == "cairn.semantic/11" || p.Schema == "cairn.semantic/12" || p.Schema == "cairn.semantic/13" || p.Schema == "cairn.semantic/14" {
+			if p.Schema == "cairn.semantic/8" || p.Schema == "cairn.semantic/9" || p.Schema == "cairn.semantic/10" || p.Schema == "cairn.semantic/11" || p.Schema == "cairn.semantic/12" || p.Schema == "cairn.semantic/13" || p.Schema == "cairn.semantic/14" || p.Schema == "cairn.semantic/15" {
 				var span ByteSpanRequest
 				entry.Summary, span = indexPreview(member.selection.Record.Body, query, p.Ranking)
+				if hit := evaluations[entry.RecordID].PassageHit; hit != nil && !member.literal {
+					entry.Summary, span = passagePreview(member.selection.Record.Body, hit.Span)
+					if member.selection.Record.Class != "C" && len(entry.Conflicts) == 0 {
+						matched := hit.Span
+						entry.MatchSpan = &matched
+					}
+				}
 				if member.selection.Record.Class != "C" && span.Length > 0 && len(entry.Conflicts) == 0 {
 					entry.SummarySpan = &span
 				}
