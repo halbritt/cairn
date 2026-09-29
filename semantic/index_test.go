@@ -14,7 +14,10 @@ import (
 	"github.com/halbritt/cairn/core"
 )
 
-type fixtureEmbedder struct{ documents int }
+type fixtureEmbedder struct {
+	documents int
+	modelHash string
+}
 
 type delayedEmbedder struct {
 	fixtureEmbedder
@@ -36,7 +39,11 @@ func (e *delayedEmbedder) Document(ctx context.Context, body string) ([]Embedded
 }
 
 func (e *fixtureEmbedder) Identity(context.Context) (EmbeddingIdentity, error) {
-	return EmbeddingIdentity{ModelSHA256: strings.Repeat("a", 64), Algorithm: "fixture/1", Dimensions: 384}, nil
+	hash := e.modelHash
+	if hash == "" {
+		hash = strings.Repeat("a", 64)
+	}
+	return EmbeddingIdentity{ModelSHA256: hash, Algorithm: "fixture/1", Dimensions: 384}, nil
 }
 
 func TestRealPersistentPassageDiscovery(t *testing.T) {
@@ -173,6 +180,30 @@ func TestPersistentIndexSurvivesRestartAndInvalidatesEditedSource(t *testing.T) 
 	if err != nil || result.Indexed != 1 || len(result.Hits) != 1 || result.Hits[0].RecordID != record.RecordID || model.documents != 0 {
 		t.Fatalf("persistent lookup: %+v %v embedded=%d", result, err, model.documents)
 	}
+	changedModel := &fixtureEmbedder{modelHash: strings.Repeat("b", 64)}
+	changed, err := OpenIndex(ctx, dsn, changedModel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer changed.Close()
+	result, err = changed.Search(ctx, req)
+	if err != nil || result.Indexed != 0 || len(result.Hits) != 0 {
+		t.Fatalf("old vectors mixed with new model: %+v %v", result, err)
+	}
+	for n := 0; n < 100; n++ {
+		worked, err := changed.Step(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !worked {
+			break
+		}
+	}
+	result, err = changed.Search(ctx, req)
+	if err != nil || result.Indexed != 1 || len(result.Hits) != 1 || changedModel.documents == 0 {
+		t.Fatalf("new model failed to rebuild: %+v %v", result, err)
+	}
+	idx = changed
 	if _, err = s.Revise(ctx, core.ReviseRequest{RequestID: uuid.NewString(), RecordID: record.RecordID, ExpectedVersion: 1, Repo: draft.Scope.Repo, Body: "The directory moved."}); err != nil {
 		t.Fatal(err)
 	}

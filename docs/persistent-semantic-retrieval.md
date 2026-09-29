@@ -64,7 +64,8 @@ spans. It normally uses 128-token windows with a 96-token stride, including the
 final shorter window. For unusually token-dense notes, the stride increases to
 cover the whole source within 256 passages. Each passage is checked against the
 model's input limit. The model identity includes model files, package versions,
-encoder configuration and the passage worker's source hash.
+encoder configuration, the passage worker's source hash and its imported scorer's
+source hash.
 
 The API owns separate persistent worker processes for query and document
 embedding. Background work cannot occupy the query worker. A concurrent query

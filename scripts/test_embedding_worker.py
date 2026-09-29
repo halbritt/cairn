@@ -1,4 +1,10 @@
 import unittest
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 
 from embedding_worker import source_passages
@@ -10,6 +16,22 @@ class CharacterTokenizer:
 
 
 class PassageContractTest(unittest.TestCase):
+    def test_imported_scorer_change_invalidates_worker_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copyfile(Path(__file__).with_name("embedding_worker.py"), root / "embedding_worker.py")
+            scorer = root / "semantic_rank.py"
+            # A fixed model/package identity isolates the imported code change.
+            scorer.write_text('PREFIX="query: "\nclass Scorer:\n def __init__(self,path): self.model_hash="a"*64\n')
+            def identity():
+                result = subprocess.run([sys.executable, "-B", str(root / "embedding_worker.py"), "--model-dir", directory],
+                                        input=json.dumps(dict(id="identity", operation="identity", text="")) + "\n",
+                                        capture_output=True, text=True, check=True)
+                return json.loads(result.stdout)["identity"]["model_sha256"]
+            first = identity()
+            scorer.write_text(scorer.read_text() + "# revised scorer implementation\n")
+            self.assertNotEqual(first, identity())
+
     def test_utf8_spans_address_original_bytes_and_cover_tail(self):
         body = "é漢🙂 before guidance. " * 25 + "Use the private directory."
         raw = body.encode()

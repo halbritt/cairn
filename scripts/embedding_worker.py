@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+import semantic_rank
 from semantic_rank import PREFIX, Scorer
 
 ALGORITHM = "bge-original-passages/1"
@@ -40,7 +41,8 @@ class Embeddings:
         # Include this derivation's source as well as model, tokenizer, packages
         # and encoding constants in the index identity.
         identity = dict(base=self.scorer.model_hash, algorithm=ALGORITHM,
-                        source=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+                        source=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                        scorer_source=hashlib.sha256(Path(semantic_rank.__file__).read_bytes()).hexdigest())
         self.identity = dict(model_sha256=hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest(),
                              algorithm=ALGORITHM, dimensions=384)
 
