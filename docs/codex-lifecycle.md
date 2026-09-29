@@ -66,7 +66,11 @@ Quoted identifiers and task terms still guide retrieval.
 Checkpoint selection uses the same Claude Code selector as the Claude,
 OpenCode and Hermes adapters. The installer defaults its model to
 `claude-sonnet-5`, and each selection runs one isolated `claude --print` call
-with no tools. Retrieval never calls a model.
+with no ordinary tools. Ambient semantic recall can make separate preview and
+body selector calls through the shared engine. The opt-in
+[`--recall-mode agent_tools` path](claude-lifecycle.md#optional-recall-through-the-task-agent)
+delegates optional inspection to the current task agent without those calls;
+capture selection is unchanged. An omitted mode retains the existing default.
 
 ## Install
 

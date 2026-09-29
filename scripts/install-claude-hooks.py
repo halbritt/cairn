@@ -28,6 +28,18 @@ def retain_model_overrides(config, existing_path, preview_model=None, recall_mod
     return result
 
 
+def retain_recall_mode(config, existing_path, recall_mode=None):
+    existing = json.loads(existing_path.read_text()) if existing_path.exists() else {}
+    result = dict(config)
+    if recall_mode is None and 'recall_mode' not in config and 'recall_mode' not in existing:
+        return result  # Absence retains the ambient default.
+    mode = recall_mode if recall_mode is not None else config.get('recall_mode', existing.get('recall_mode'))
+    if mode not in ('ambient', 'agent_tools'):
+        raise ValueError('invalid lifecycle recall_mode: expected ambient or agent_tools')
+    result['recall_mode'] = mode
+    return result
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False, encoding="utf-8") as out:
@@ -41,12 +53,13 @@ def write_json(path, value):
             temporary.unlink(missing_ok=True)
 
 
-def install(settings_path, destination, config, preview_model=None, recall_model=None):
+def install(settings_path, destination, config, preview_model=None, recall_model=None, recall_mode=None):
     settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
     hooks = settings.setdefault("hooks", {})
     script = destination / "lifecycle.py"
     config_path = destination / "config.json"
     config = retain_model_overrides(config, config_path, preview_model, recall_model)
+    config = retain_recall_mode(config, config_path, recall_mode)
     command = shlex.join([sys.executable, str(script), "--config", str(config_path)])
     for event in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse", "PostToolUseFailure"):
         groups = hooks.setdefault(event, [])
@@ -85,6 +98,8 @@ def main():
     parser.add_argument("--repo", default=str(home / "git/cairn"))
     parser.add_argument("--preview-model", help="optional preview selector model; omitted preserves the installed override")
     parser.add_argument("--recall-model", help="optional recall selector model; omitted preserves the installed override")
+    parser.add_argument("--recall-mode", choices=("ambient", "agent_tools"),
+                        help="optional recall path; omitted preserves the installed mode (default ambient)")
     args = parser.parse_args()
     if not args.cairn or not args.claude:
         parser.error("installed cairn and claude executables are required")
@@ -93,7 +108,7 @@ def main():
                   socket=str(args.socket.absolute()), token_file=str(args.token_file.absolute()), repo=args.repo)
     if settings.get("model"):
         config["model"] = settings["model"]
-    install(args.settings.absolute(), args.destination.absolute(), config, args.preview_model, args.recall_model)
+    install(args.settings.absolute(), args.destination.absolute(), config, args.preview_model, args.recall_model, args.recall_mode)
     print(f"Installed Cairn lifecycle hooks in {args.settings}. Start a fresh Claude session.")
 
 

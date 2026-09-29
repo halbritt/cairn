@@ -13,7 +13,7 @@ installer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(installer)
 
 
-def install(config_dir, destination, claude, model=None, preview_model=None, recall_model=None):
+def install(config_dir, destination, claude, model=None, preview_model=None, recall_model=None, recall_mode=None):
     native = json.loads((config_dir / "cairn.json").read_text())
     config = {"cairn": native["executable"], "socket": native["socket"], "token_file": native["token_file"],
               "repo": native["repo"], "harness": "opencode", "claude": claude,
@@ -25,6 +25,7 @@ def install(config_dir, destination, claude, model=None, preview_model=None, rec
         config["model"] = model
     engine_config = destination / "config.json"
     config = installer.retain_model_overrides(config, engine_config, preview_model, recall_model)
+    config = installer.retain_recall_mode(config, engine_config, recall_mode)
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
     script = destination / "memory.py"
     shutil.copyfile(ROOT / "integrations/lifecycle/memory.py", script)
@@ -46,6 +47,8 @@ def main():
     parser.add_argument("--model")
     parser.add_argument("--preview-model")
     parser.add_argument("--recall-model")
+    parser.add_argument("--recall-mode", choices=("ambient", "agent_tools"),
+                        help="optional recall path; omitted preserves the installed mode (default ambient)")
     args = parser.parse_args()
     if not args.claude:
         parser.error("installed Claude is required for the tool-free selector")
@@ -54,7 +57,7 @@ def main():
         profile = home / ".claude/settings.json"
         model = json.loads(profile.read_text()).get("model") if profile.exists() else None
     install(args.config_dir.absolute(), args.destination.absolute(), str(Path(args.claude).absolute()), model,
-            args.preview_model, args.recall_model)
+            args.preview_model, args.recall_model, args.recall_mode)
     print(f"Installed Cairn lifecycle plugin in {args.config_dir}. Start a fresh OpenCode process.")
 
 

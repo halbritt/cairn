@@ -50,11 +50,12 @@ def trust(config_home, hooks_path, command):
     coordination.trust_codex_hooks(config_home, hooks_path, command, expected=len(EVENTS))
 
 
-def install(hooks_path, destination, config):
+def install(hooks_path, destination, config, recall_mode=None):
     data = json.loads(hooks_path.read_text()) if hooks_path.exists() else {}
     hooks = data.setdefault("hooks", {})
     script = destination / "lifecycle.py"
     config_path = destination / "config.json"
+    config = shared.retain_recall_mode(config, config_path, recall_mode)
     command = shlex.join([sys.executable, str(script), "--config", str(config_path)])
     for event, settings in EVENTS.items():
         groups = hooks.setdefault(event, [])
@@ -91,6 +92,8 @@ def main():
     parser.add_argument("--model", default="claude-sonnet-5", help="selection model")
     parser.add_argument("--preview-model")
     parser.add_argument("--recall-model")
+    parser.add_argument("--recall-mode", choices=("ambient", "agent_tools"),
+                        help="optional recall path; omitted preserves the installed mode (default ambient)")
     parser.add_argument("--socket", type=Path, default=home / ".local/share/cairn/api.sock")
     parser.add_argument("--token-file", type=Path, default=home / ".local/share/cairn/hosted-agent.token")
     parser.add_argument("--repo", default=str(home / "git/cairn"))
@@ -101,7 +104,7 @@ def main():
                   socket=str(args.socket.absolute()), token_file=str(args.token_file.absolute()), repo=args.repo)
     config_path = args.destination.absolute() / "config.json"
     config = shared.retain_model_overrides(config, config_path, args.preview_model, args.recall_model)
-    install(args.hooks.absolute(), args.destination.absolute(), config)
+    install(args.hooks.absolute(), args.destination.absolute(), config, args.recall_mode)
     print(f"Installed and trusted Cairn lifecycle hooks in {args.hooks}. Start a fresh Codex session.")
 
 

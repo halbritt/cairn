@@ -17,7 +17,7 @@ shared = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(shared)
 
 
-def install(home, native, claude, skill, model=None, preview_model=None, recall_model=None):
+def install(home, native, claude, skill, model=None, preview_model=None, recall_model=None, recall_mode=None):
     path = home / 'config.yaml'
     original = path.read_bytes() if path.exists() else b''
     config = yaml.safe_load(original) or {}
@@ -33,6 +33,7 @@ def install(home, native, claude, skill, model=None, preview_model=None, recall_
             raise ValueError(f'missing Cairn profile field: {key}')
     engine_path = home / 'cairn/engine.json'
     model_overrides = shared.retain_model_overrides({}, engine_path, preview_model, recall_model)
+    model_overrides = shared.retain_recall_mode(model_overrides, engine_path, recall_mode)
     plugin = home / 'plugins/cairn'
     plugin.mkdir(parents=True, exist_ok=True, mode=0o700)
     for source, target in [(ROOT / 'integrations/hermes/__init__.py', plugin / '__init__.py'),
@@ -96,6 +97,8 @@ def main():
     parser.add_argument('--model')
     parser.add_argument('--preview-model')
     parser.add_argument('--recall-model')
+    parser.add_argument('--recall-mode', choices=('ambient', 'agent_tools'),
+                        help='optional recall path; omitted preserves the installed mode (default ambient)')
     args = parser.parse_args()
     if not args.claude:
         parser.error('installed Claude is required for selected capture')
@@ -104,7 +107,7 @@ def main():
         settings = home / '.claude/settings.json'
         model = json.loads(settings.read_text()).get('model') if settings.exists() else None
     install(args.hermes_home.resolve(), json.loads(args.native_config.read_text()),
-            str(Path(args.claude).absolute()), args.skill, model, args.preview_model, args.recall_model)
+            str(Path(args.claude).absolute()), args.skill, model, args.preview_model, args.recall_model, args.recall_mode)
     print(f'Installed Cairn in {args.hermes_home}; start a fresh CLI and restart its gateway.')
 
 

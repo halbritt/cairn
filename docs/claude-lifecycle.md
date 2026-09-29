@@ -31,6 +31,49 @@ lifecycle installers accept `--preview-model` and `--recall-model`; omitting
 either on reinstall retains its installed value. Invalid overrides fail clearly.
 These settings only choose a selector, not a recommended production model.
 
+## Optional recall through the task agent
+
+`recall_mode` selects `ambient` (the default when absent) or the opt-in
+`agent_tools` path. All four lifecycle installers accept
+`--recall-mode agent_tools`; omitting the option preserves an installed value,
+and `--recall-mode ambient` explicitly restores the normal recall path. Unknown
+values fail before retrieval. This option does not change capture selection.
+
+In `agent_tools` mode, the hook retains the ordinary required-context search and
+whole-context budget check. When optional recall is eligible, it supplies a cue
+for the task agent to use its existing native `cairn_search` and `cairn_pull`
+tools, inspect candidates and verify applicability against the task's conditions
+and current source before use. The hook delivers no optional previews or bodies,
+makes no optional pulls, semantic searches or hosted selector calls, and gives no
+record a new seen-state credit. `last_recall.outcome` is `delegated`, which means
+the cue was offered, not that relevant memory was found or used.
+
+The cue allows at most two searches per task (precise first, a semantic rephrase
+only if needed) and four pull/span calls total. Its aggregate budget is the
+configured `context_bytes`, counting the supplied lifecycle context plus all
+native search/pull result text and envelopes. Search room must fit the remainder.
+Required instructions stay whole: insufficient room means stop optional
+inspection and report the limitation, rather than truncate them. These are
+instructions to the agent, **not enforcement by the host**. Native receipts each
+have their own budgets; a new receipt does not reset this requested task allowance.
+A pilot must measure aggregate exposure and actual compliance across tool calls
+and turns. It must also measure task-model/tool work: `last_recall.duration_ms`
+covers only the hook and does not establish total task delay or usefulness.
+
+The complete mandatory package is reserved before the cue. If the cue cannot
+fit, it is omitted with outcome `delegation_omitted` and rejection
+`delegation_context_budget`; mandatory context is still delivered whole. An
+oversized mandatory package refuses as before. Taskless fresh starts and wake
+notifications keep their existing optional deferral. Eligible resume, compact
+and explicit-workstream starts receive the cue without optional selector calls.
+
+Before any pilot, verify that the actual harness exposes and permits the native
+tools with the intended authenticated scope and destination. The source cue
+cannot certify tool availability or agent compliance. Unavailable tools or room
+must be reported honestly; there is no automatic model-selector fallback. This
+mode implements delegated inspection, not measured successful retrieval or task
+improvement. Installation remains subject to the owner's production authorization.
+
 Cairn's optional Claude Code hooks retrieve memory before a task and preserve
 selected context before compaction or exit. Install them once at user scope;
 normal sessions in other projects use the same shared collection.
