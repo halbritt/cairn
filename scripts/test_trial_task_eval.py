@@ -1,4 +1,5 @@
 import json
+import argparse
 import os
 from pathlib import Path
 import shutil
@@ -100,6 +101,22 @@ def scripted(case, script):
 
 
 class FixtureTest(unittest.TestCase):
+    def test_later_store_setup_failure_closes_every_acquired_store(self):
+        args = argparse.Namespace(model="sonnet", harness="claude", wording="task", cases=["local-ci"],
+                                  first_seed=0, seeds=1, paired_plan=[], arms=[], reasoning_effort=None,
+                                  semantic_worker=None, embedding_worker=None, distractors=0,
+                                  memory=["baseline:/bin/true:/tmp/memory.py", "candidate:/bin/true:/tmp/memory.py"],
+                                  semantic_recall=[], selector_model="sonnet")
+        first, second = Mock(), Mock()
+        second.start.side_effect = RuntimeError("second API failed")
+        with tempfile.TemporaryDirectory() as directory:
+            args.output = str(Path(directory) / "results")
+            with patch.object(te, "TrialStore", side_effect=[first, second]), patch.object(te, "run", return_value=Mock(stdout=b"test version")):
+                with self.assertRaisesRegex(RuntimeError, "second API failed"):
+                    te.cmd_agent(args)
+        first.stop.assert_called_once()
+        second.stop.assert_called_once()
+
     def test_fixtures_validate(self):
         for version in range(1, te.latest_version() + 1):
             self.assertEqual(te.validate(te.load_cases(version), te.load_corpus()), [])
@@ -142,7 +159,89 @@ class FixtureTest(unittest.TestCase):
         self.assertEqual(store.readiness["coverage"], dict(state="ready", indexed=4, eligible=4))
 
 
+class SandboxTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("bwrap"), "bubblewrap is required")
+    def test_codex_sandbox_hides_host_profiles_and_only_exposes_supplied_auth(self):
+        with tempfile.TemporaryDirectory(prefix="task-eval-isolation-") as directory:
+            base = Path(directory)
+            work = base / "work"
+            work.mkdir()
+            profile = base / "profile"
+            profile.mkdir()
+            auth = base / "synthetic-auth.json"
+            auth.write_text('{"fixture": true}')
+            home = Path.home()
+            binds = [(profile, home / ".codex", "rw"), (auth, home / ".codex/auth.json", "ro")]
+            code = """import json, pathlib
+home=pathlib.Path.home()
+assert json.loads((home/'.codex/auth.json').read_text()) == {'fixture': True}
+for p in ['.codex-harm', '.claude', '.local/share/cairn', 'git/cairn', '.local/bin/codex']:
+    assert not (home/p).exists(), p
+try:
+    (home/'.codex/auth.json').write_text('changed')
+except OSError:
+    pass
+else:
+    raise AssertionError('auth was writable')
+pathlib.Path('result.txt').write_text('isolated')
+"""
+            command = te.sandbox_command(work, ".", binds, dict(HOME=str(home), PATH="/usr/bin:/bin"),
+                                         ["python3", "-c", code], harness="codex")
+            result = subprocess.run(command, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            self.assertEqual((work / "result.txt").read_text(), "isolated")
+            self.assertEqual(json.loads(auth.read_text()), dict(fixture=True))
+
+
 class InjectionTest(unittest.TestCase):
+    def test_hook_report_retains_selector_failure_and_cost(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "session.json").write_text(json.dumps(dict(last_recall=dict(
+                outcome="empty", rejected=dict(model_error=1), model_seconds=8.0,
+                model_reported_cost_usd=0.01, discovery="unavailable", shortlist_candidates=4))))
+            observed = te.hook_observations(directory, Mock(names={}))
+        self.assertEqual(observed["recalls"][0]["rejected"], dict(model_error=1))
+        self.assertEqual(observed["recalls"][0]["model_seconds"], 8.0)
+        self.assertEqual(observed["delivered"], [])
+
+    def test_failed_or_truncated_provider_runs_cannot_pass_from_partial_output(self):
+        for harness, events, code in [
+            ("claude", [dict(type="result", result="OAuth expired", is_error=True, num_turns=1)], 1),
+            ("codex", [dict(type="item.completed", item=dict(id="a", type="agent_message", text="done")),
+                       dict(type="turn.failed", error=dict(message="authentication expired"))], 1),
+            ("codex", [dict(type="item.completed", item=dict(id="a", type="agent_message", text="partial answer"))], 0),
+        ]:
+            with self.subTest(harness=harness, code=code):
+                trace = te.parse_stream("\n".join(map(json.dumps, events)), harness)
+                self.assertIsNotNone(te.execution_failure(trace, code))
+        complete = te.parse_stream(json.dumps(dict(type="turn.completed", usage={})), "codex")
+        self.assertIsNone(te.execution_failure(complete, 0))
+        self.assertEqual(te.execution_failure(complete, 124), "timeout")
+
+    def test_codex_native_events_preserve_observed_actions_and_completion(self):
+        # Shapes verified with the native CLI on a disposable hook/MCP probe.
+        command = dict(id="cmd", type="command_execution", command="/bin/bash -lc pwd", status="completed")
+        events = [
+            dict(type="turn.started"),
+            dict(type="item.completed", item=dict(id="warning", type="error", message="hook trust bypass enabled")),
+            dict(type="item.started", item=command),
+            dict(type="item.completed", item=command),
+            dict(type="item.completed", item=dict(id="edit", type="file_change", changes=[dict(path="probe.txt", kind="add")], status="completed")),
+            dict(type="item.completed", item=dict(id="mcp", type="mcp_tool_call", server="cairn", tool="cairn_search", arguments=dict(query="local CI"), status="completed")),
+            dict(type="item.completed", item=dict(id="answer", type="agent_message", text="READY")),
+            dict(type="turn.completed", usage=dict(input_tokens=40, cached_input_tokens=30, output_tokens=10)),
+        ]
+        trace = te.parse_stream("\n".join(map(json.dumps, events)), harness="codex")
+        self.assertEqual(trace["commands"], ["/bin/bash -lc pwd"])
+        self.assertEqual(trace["writes"], ["probe.txt"])
+        self.assertEqual(trace["memory_calls"], [dict(tool="mcp__cairn__cairn_search", input=dict(query="local CI"))])
+        self.assertEqual(trace["answer"], "READY")
+        self.assertEqual(trace["input_tokens"], 40)
+        self.assertEqual(trace["cache_read_tokens"], 30)
+        self.assertEqual(trace["turns"], 1)
+        self.assertTrue(trace["completed"])
+        self.assertFalse(trace["is_error"])
+
     def test_parse_hook_output(self):
         view = {"selected": [], "index": [{"record_id": "a"}, {"record_id": "b"}],
                 "expanded": {"selection": {"record": {"record_id": "a"}}}}

@@ -6,7 +6,7 @@ Subcommands:
   freeze     record hashes of the pre-registered labels before any candidate run
   verify     refuse when labels changed after freezing
   retrieval  measure the retrieval funnel for every case wording at growing collection sizes
-  agent      run sandboxed Claude Code on the cases under no-memory, direct-context and memory arms
+  agent      run sandboxed Claude Code or Codex under no-memory, direct-context and memory arms
   report     summarise retrieval and agent result directories
 
 The store commands need CAIRN_TASK_EVAL_PG, the socket directory of a disposable
@@ -15,6 +15,7 @@ writes an existing Cairn store.
 """
 import argparse
 import concurrent.futures
+from contextlib import ExitStack
 import fnmatch
 import glob
 import hashlib
@@ -38,6 +39,7 @@ TRIAL = ROOT / "trials" / "task-eval"
 TRIAL_REPO = "trial:task-eval"
 OTHER_REPO = "trial:other-collection"
 CLAUDE_CONTEXT_BYTES = 9500  # scripts/install-claude-hooks.py
+CODEX_CONTEXT_BYTES = 12000  # scripts/install-codex-hooks.py
 RANK_DEPTH = 50
 MEMORY_INSTRUCTION = """# Shared memory
 
@@ -607,7 +609,57 @@ def grade(case, ctx):
 
 # ---------------------------------------------------------------- agent runs
 
-def parse_stream(text):
+def parse_stream(text, harness="claude"):
+    if harness == "codex":
+        return parse_codex_stream(text)
+    if harness != "claude":
+        raise ValueError("unknown harness " + harness)
+    return parse_claude_stream(text)
+
+
+def parse_codex_stream(text):
+    """Read completed native exec items; item-level warnings are not turn failures."""
+    commands, writes, memory, errors = [], [], [], []
+    answer, turns, usage, seen = "", 0, {}, set()
+    for line in text.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("type")
+        if kind == "turn.completed":
+            turns += 1
+            for key, value in (event.get("usage") or {}).items():
+                if isinstance(value, int):
+                    usage[key] = usage.get(key, 0) + value
+        elif kind in ("turn.failed", "error"):
+            errors.append(event.get("error") or event.get("message") or kind)
+        elif kind == "item.completed":
+            item = event.get("item") or {}
+            if item.get("id") in seen:
+                continue
+            if item.get("id") is not None:
+                seen.add(item["id"])
+            item_type = item.get("type")
+            if item_type == "command_execution":
+                commands.append(item.get("command", ""))
+            elif item_type == "file_change" and item.get("status") == "completed":
+                writes.extend(change["path"] for change in item.get("changes", []))
+            elif item_type == "mcp_tool_call" and item.get("server") == "cairn":
+                memory.append(dict(tool="mcp__cairn__" + item["tool"], input=item.get("arguments") or {}))
+            elif item_type == "agent_message":
+                answer = item.get("text", "")
+    return dict(commands=commands, writes=writes, memory_calls=memory, answer=answer,
+                turns=turns, turn_unit="native_exec_turn", duration_ms=None, cost_usd=None,
+                is_error=bool(errors), errors=errors, completed=bool(turns) and not errors,
+                subtype="turn.failed" if errors else "turn.completed" if turns else "unterminated",
+                input_tokens=usage.get("input_tokens"), cache_read_tokens=usage.get("cached_input_tokens"),
+                cache_creation_tokens=usage.get("cache_write_input_tokens"), output_tokens=usage.get("output_tokens"))
+
+
+def parse_claude_stream(text):
     """Summarise Claude Code stream-json output: commands, file writes, memory tool calls, answer, usage."""
     commands, writes, memory, answer, result = [], [], [], "", {}
     for line in text.splitlines():
@@ -633,27 +685,43 @@ def parse_stream(text):
     usage = result.get("usage") or {}
     return dict(commands=commands, writes=writes, memory_calls=memory, answer=answer,
                 turns=result.get("num_turns"), duration_ms=result.get("duration_ms"), cost_usd=result.get("total_cost_usd"),
-                is_error=result.get("is_error"), subtype=result.get("subtype"),
+                is_error=result.get("is_error"), subtype=result.get("subtype"), completed=bool(result),
+                turn_unit="claude_num_turns",
                 input_tokens=usage.get("input_tokens"), cache_read_tokens=usage.get("cache_read_input_tokens"),
                 cache_creation_tokens=usage.get("cache_creation_input_tokens"), output_tokens=usage.get("output_tokens"))
 
 
-def sandbox_command(root, cwd_name, extra_binds, env, claude_args):
-    """bwrap: read-only host, private /tmp and HOME, only the claude install, credentials and trial paths bound."""
+def execution_failure(trace, code):
+    if code == 124:
+        return "timeout"
+    if code:
+        return "nonzero_exit"
+    if trace.get("is_error"):
+        return "provider_error"
+    if not trace.get("completed"):
+        return "unterminated_stream"
+    return None
+
+
+def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="claude"):
+    """Private /tmp and HOME; bind only the chosen provider and owned trial paths."""
     home = Path.home()
-    command = ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--tmpfs", str(home),
-               "--ro-bind", str(home / ".local/share/claude"), str(home / ".local/share/claude"),
-               "--ro-bind", str(home / ".local/bin"), str(home / ".local/bin"),
-               "--ro-bind", str(home / ".local/go"), str(home / ".local/go"),
-               "--dir", str(home / ".claude"),
-               "--bind", str(home / ".claude/.credentials.json"), str(home / ".claude/.credentials.json"),
-               "--bind", str(root), str(root), "--chdir", str(Path(root) / cwd_name),  # same path: worktrees record absolute gitdirs
+    command = ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--tmpfs", str(home)]
+    if harness == "claude":
+        command += ["--ro-bind", str(home / ".local/share/claude"), str(home / ".local/share/claude"),
+                    "--ro-bind", str(home / ".local/bin"), str(home / ".local/bin"),
+                    "--dir", str(home / ".claude"),
+                    "--bind", str(home / ".claude/.credentials.json"), str(home / ".claude/.credentials.json")]
+    elif harness != "codex":
+        raise ValueError("unknown harness " + harness)
+    command += ["--ro-bind", str(home / ".local/go"), str(home / ".local/go"),
+               "--bind", str(root), str(root), "--chdir", str(Path(root) / cwd_name),  # worktrees record absolute gitdirs
                "--unshare-pid", "--die-with-parent", "--clearenv"]
     for source, target, mode in extra_binds:
         command += ["--ro-bind" if mode == "ro" else "--bind", str(source), str(target)]
     for key, value in env.items():
         command += ["--setenv", key, value]
-    return command + claude_args
+    return command + provider_args
 
 
 def run_agent(case, arm, seed, order, args, stores, out):
@@ -671,10 +739,22 @@ def run_agent(case, arm, seed, order, args, stores, out):
                LANG="C.UTF-8", GOTOOLCHAIN="local", GOFLAGS="-mod=mod", TERM="dumb",
                GIT_AUTHOR_NAME="trial agent", GIT_AUTHOR_EMAIL="agent@example.invalid",
                GIT_COMMITTER_NAME="trial agent", GIT_COMMITTER_EMAIL="agent@example.invalid")
-    claude = ["claude", "-p", "--model", args.model, "--output-format", "stream-json", "--verbose",
-              "--permission-mode", "bypassPermissions", "--no-session-persistence", "--strict-mcp-config",
-              "--max-turns", str(args.max_turns)]
     binds = []
+    if args.harness == "claude":
+        provider = ["claude", "-p", "--model", args.model, "--output-format", "stream-json", "--verbose",
+                    "--permission-mode", "bypassPermissions", "--no-session-persistence", "--strict-mcp-config",
+                    "--max-turns", str(args.max_turns)]
+    else:
+        # Invoke the reviewed npm entry point, not this host's coordination launcher.
+        install = Path(args.codex_install).resolve()
+        profile = base / "codex-home"
+        profile.mkdir(mode=0o700)
+        binds += [(install, install, "ro"), (profile, home / ".codex", "rw"),
+                  (Path(args.codex_auth_file).resolve(), home / ".codex/auth.json", "ro")]
+        provider = [str(install / "codex/bin/codex.js"), "exec", "--json", "--ephemeral", "--ignore-user-config",
+                    "--ignore-rules", "--skip-git-repo-check", "--sandbox", "danger-full-access",
+                    "-c", 'approval_policy="never"', "-c", "model_reasoning_effort=" + json.dumps(args.reasoning_effort),
+                    "-m", args.model]
     if arm == "direct":
         notes = [corpus[n]["body"] for n in case["expected"]]
         if notes:
@@ -685,7 +765,14 @@ def run_agent(case, arm, seed, order, args, stores, out):
         session_state.mkdir()
         trial = Path("/tmp/trial/store")
         config = dict(cairn=str(trial / "cairn"), socket=str(trial / "sock/api.sock"), token_file=str(trial / "agent.token"),
-                      repo=TRIAL_REPO, state_dir="/tmp/trial/hookstate", context_bytes=CLAUDE_CONTEXT_BYTES, harness="claude")
+                      repo=TRIAL_REPO, state_dir="/tmp/trial/hookstate",
+                      context_bytes=CLAUDE_CONTEXT_BYTES if args.harness == "claude" else CODEX_CONTEXT_BYTES,
+                      harness=args.harness, semantic_fallback=arm in args.semantic_recall)
+        if config["semantic_fallback"]:
+            config.update(claude="/tmp/trial/selector/claude", model=args.selector_model)
+            binds.append((Path(args.selector_binary).resolve(), config["claude"], "ro"))
+            if args.harness == "codex":
+                binds.append((Path(args.selector_auth_file).resolve(), home / ".claude/.credentials.json", "ro"))
         (base / "hook-config.json").write_text(json.dumps(config))
         hook_cmd = "bash -o pipefail -c 'python3 -B /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json | tee -a /tmp/trial/hookstate/calls.jsonl'"
         settings = dict(hooks={event: [dict(hooks=[dict(type="command", command=hook_cmd, timeout=13)])] for event in HOOK_EVENTS})
@@ -698,9 +785,21 @@ def run_agent(case, arm, seed, order, args, stores, out):
                   (store["store"].token_file, trial / "agent.token", "ro"), (Path(store["hook"]).parent, "/tmp/trial/hook", "ro"),
                   (base / "hook-config.json", "/tmp/trial/hookconfig.json", "ro"), (session_state, "/tmp/trial/hookstate", "rw"),
                   (base / "settings.json", "/tmp/trial/settings.json", "ro"), (base / "mcp.json", "/tmp/trial/mcp.json", "ro")]
-        claude += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json", "--append-system-prompt", MEMORY_INSTRUCTION]
-    claude += ["--", prompt]
-    command = sandbox_command(root, case["cwd"], binds, env, claude)
+        if args.harness == "claude":
+            provider += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json", "--append-system-prompt", MEMORY_INSTRUCTION]
+        else:
+            # Only recall hooks; capture and production inbox hooks are absent.
+            hooks = {event: [dict(hooks=[dict(type="command", command=hook_cmd, timeout=13,
+                                            additionalContextLimit=CODEX_CONTEXT_BYTES)])]
+                     for event in ("SessionStart", "UserPromptSubmit")}
+            (profile / "hooks.json").write_text(json.dumps(dict(hooks=hooks)))
+            server = mcp["mcpServers"]["cairn"]
+            provider += ["--dangerously-bypass-hook-trust",
+                         "-c", "mcp_servers.cairn.command=" + json.dumps(server["command"]),
+                         "-c", "mcp_servers.cairn.args=" + json.dumps(server["args"]),
+                         "-c", "developer_instructions=" + json.dumps(MEMORY_INSTRUCTION)]
+    provider += ["--", prompt]
+    command = sandbox_command(root, case["cwd"], binds, env, provider, args.harness)
     started = time.monotonic()
     try:
         result = subprocess.run(command, capture_output=True, timeout=args.timeout)
@@ -711,18 +810,17 @@ def run_agent(case, arm, seed, order, args, stores, out):
     elapsed = time.monotonic() - started
     (base / "stream.jsonl").write_text(stdout)
     (base / "stderr.txt").write_text(stderr[-20000:])
-    trace = parse_stream(stdout)
-    if trace["turns"] is None and not trace["commands"] and not trace["answer"]:
-        record = dict(run_id=run_id, case=case["id"], arm=arm, seed=seed, order=order, outcome="harness_error",
-                      exit=code, error=stderr[-600:])
-        (base / "result.json").write_text(json.dumps(record, indent=2))
-        return record
+    trace = parse_stream(stdout, args.harness)
+    failure = execution_failure(trace, code)
     ctx = dict(cwd=cwd, commands=trace["commands"], answer=trace["answer"],
                snapshot=json.loads((root / ".eval-snapshot.json").read_text()))
     graded = grade(case, ctx)
+    if failure:
+        graded = dict(graded, check_outcome=graded["outcome"], outcome="harness_error", execution_failure=failure,
+                      error=stderr[-600:])
     memory = hook_observations(base / "hook-state", stores.get(arm, {}).get("store"))
     record = dict(run_id=run_id, case=case["id"], category=case["category"], provenance=case["provenance"]["type"], arm=arm,
-                  seed=seed, order=order, model=args.model, wording=args.wording, exit=code, seconds=round(elapsed, 2), prompt_bytes=len(prompt.encode()),
+                  seed=seed, order=order, harness=args.harness, model=args.model, wording=args.wording, exit=code, seconds=round(elapsed, 2), prompt_bytes=len(prompt.encode()),
                   **graded, trace={k: v for k, v in trace.items() if k not in ("answer", "commands")},
                   commands=len(trace["commands"]), answer_chars=len(trace["answer"] or ""), memory=memory)
     record["memory_tool_pulls"] = [names_for(stores.get(arm, {}).get("store"), call) for call in trace["memory_calls"]]
@@ -743,7 +841,7 @@ def hook_observations(state_dir, store):
     """Delivered records per hook call, from the lifecycle state files (last_recall is overwritten per call)."""
     if store is None or not Path(state_dir).is_dir():
         return {}
-    delivered, size, outcomes = [], 0, []
+    delivered, size, outcomes, recalls = [], 0, [], []
     calls = Path(state_dir) / "calls.jsonl"
     injections = []
     if calls.exists():
@@ -760,9 +858,13 @@ def hook_observations(state_dir, store):
         state = json.loads(path.read_text())
         recall = state.get("last_recall") or {}
         outcomes.append(recall.get("outcome"))
+        recalls.append({key: recall[key] for key in ("outcome", "discovery", "coverage", "inspected", "rejected",
+                                                    "shortlist_candidates", "model_seconds", "model_reported_cost_usd")
+                        if key in recall})
         delivered += [store.names.get(r["record_id"], "?") for r in recall.get("records", [])]
         delivered += [store.names.get(r, "?") for r in state.get("seen", {})]
-    return dict(delivered=sorted(set(delivered)), injected_bytes=size, injections=injections, outcomes=outcomes)
+    return dict(delivered=sorted(set(delivered)), injected_bytes=size, injections=injections, outcomes=outcomes,
+                recalls=recalls)
 
 
 def cmd_agent(args):
@@ -772,11 +874,13 @@ def cmd_agent(args):
     paired_plans, baseline_pairs = [], set()
     for path in args.paired_plan:
         baseline = load_json(path)
-        if (baseline["model"] != args.model or baseline["wording"] != args.wording
+        if (baseline.get("harness", "claude") != args.harness
+                or baseline.get("reasoning_effort") != (args.reasoning_effort if args.harness == "codex" else None)
+                or baseline["model"] != args.model or baseline["wording"] != args.wording
                 or baseline["distractors"] != args.distractors
                 or baseline["frozen"]["cases_sha256"] != frozen["cases_sha256"]
                 or baseline["frozen"]["corpus_sha256"] != frozen["corpus_sha256"]):
-            raise SystemExit("paired baseline plan differs in model, wording, distractors or base fixtures: " + path)
+            raise SystemExit("paired baseline plan differs in harness, reasoning, model, wording, distractors or base fixtures: " + path)
         pairs = {(case, seed) for case, arm, seed, _ in baseline["runs"] if arm == "baseline"}
         baseline_pairs |= pairs
         paired_plans.append(dict(path=str(Path(path).resolve()), sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest(),
@@ -785,41 +889,48 @@ def cmd_agent(args):
                                  baseline_pairs=len(pairs)))
     if paired_plans and baseline_pairs != expected_pairs:
         raise SystemExit("paired baseline plans do not cover exactly the candidate case/seed pairs")
+    execution = dict(harness=args.harness, reasoning_effort=args.reasoning_effort if args.harness == "codex" else None,
+                     evaluator_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                     harness_version=run([str(Path(args.codex_install) / "codex/bin/codex.js") if args.harness == "codex" else "claude", "--version"]).stdout.decode().strip())
     out = Path(args.output)
     out.mkdir(mode=0o700)
-    stores = {}
-    corpus = load_corpus()
-    arms = list(args.arms)
-    for spec in args.memory:
-        label, binary, hook = spec.split(":", 2)
-        store = TrialStore(out / "stores" / label, binary, label, worker=args.semantic_worker,
-                           embedding_worker=args.embedding_worker)
-        store.seed_corpus(corpus)
-        store.grow(args.distractors, 0)
-        store.start()
-        try:
+    with ExitStack() as cleanup:
+        stores = {}
+        corpus = load_corpus()
+        arms = list(args.arms)
+        for spec in args.memory:
+            label, binary, hook = spec.split(":", 2)
+            store = TrialStore(out / "stores" / label, binary, label, worker=args.semantic_worker,
+                               embedding_worker=args.embedding_worker)
+            cleanup.callback(store.stop)
+            store.seed_corpus(corpus)
+            store.grow(args.distractors, 0)
+            store.start()
             store.wait_for_full_coverage()
-        except Exception:
-            store.stop()
-            raise
-        stores[label] = dict(store=store, hook=str(Path(hook).resolve()))
-        arms.append(label)
-    plan = []
-    for seed in range(args.first_seed, args.first_seed + args.seeds):
-        for case in cases:
-            order = list(arms)
-            random.Random(f"{seed}:{case['id']}").shuffle(order)
-            plan += [(case, arm, seed, position) for position, arm in enumerate(order)]
-    (out / "plan.json").write_text(json.dumps(dict(frozen=frozen, arms=arms, model=args.model, wording=args.wording,
-                                                   distractors=args.distractors, paired_plans=paired_plans,
-                                                   memory_backends={k: dict(backend=v["store"].backend,
-                                                                            readiness=v["store"].readiness)
-                                                                    for k, v in stores.items()},
-                                                   limits=dict(max_turns=args.max_turns, timeout=args.timeout,
-                                                               parallel=args.parallel),
-                                                   runs=[(c["id"], a, s, p) for c, a, s, p in plan]), indent=2))
-    records = []
-    try:
+            stores[label] = dict(store=store, hook=str(Path(hook).resolve()))
+            arms.append(label)
+        plan = []
+        for seed in range(args.first_seed, args.first_seed + args.seeds):
+            for case in cases:
+                order = list(arms)
+                random.Random(f"{seed}:{case['id']}").shuffle(order)
+                plan += [(case, arm, seed, position) for position, arm in enumerate(order)]
+        recall = {label: dict(semantic_fallback=label in args.semantic_recall,
+                             selector_model=args.selector_model if label in args.semantic_recall else None)
+                  for label in stores}
+        if args.semantic_recall:
+            execution["selector_version"] = run([args.selector_binary, "--version"]).stdout.decode().strip()
+            execution["selector_binary_sha256"] = hashlib.sha256(Path(args.selector_binary).read_bytes()).hexdigest()
+        execution["recall"] = recall
+        (out / "plan.json").write_text(json.dumps(dict(frozen=frozen, arms=arms, model=args.model, wording=args.wording, **execution,
+                                                       distractors=args.distractors, paired_plans=paired_plans,
+                                                       memory_backends={k: dict(backend=v["store"].backend,
+                                                                                readiness=v["store"].readiness)
+                                                                        for k, v in stores.items()},
+                                                       limits=dict(max_turns=args.max_turns, timeout=args.timeout,
+                                                                   parallel=args.parallel),
+                                                       runs=[(c["id"], a, s, p) for c, a, s, p in plan]), indent=2))
+        records = []
         with concurrent.futures.ThreadPoolExecutor(args.parallel) as pool:
             futures = {pool.submit(run_agent, c, a, s, p, args, stores, out): (c["id"], a, s) for c, a, s, p in plan}
             for future in concurrent.futures.as_completed(futures):
@@ -830,19 +941,16 @@ def cmd_agent(args):
                     record = dict(run_id=f"{cid}.{arm}.s{seed}", case=cid, arm=arm, seed=seed, outcome="harness_error", error=str(error)[-600:])
                 records.append(record)
                 print(json.dumps({k: record.get(k) for k in ("run_id", "outcome", "seconds")}), flush=True)
-    finally:
-        for store in stores.values():
-            store["store"].stop()
-    report = dict(schema="cairn.task-eval.agent/1", frozen=frozen, arms=arms, model=args.model, wording=args.wording,
-                  distractors=args.distractors, memory={k: dict(cairn=str(v["store"].binary), hook=v["hook"],
-                  hook_sha256=hashlib.sha256(Path(v["hook"]).read_bytes()).hexdigest(),
-                  backend=v["store"].backend, readiness=v["store"].readiness,
-                  cairn_version=cairn_json(v["store"].binary, ["version"], v["store"].env)) for k, v in stores.items()},
-                  paired_plans=paired_plans,
-                  records=sorted(records, key=lambda r: r["run_id"]))
-    report["summary"] = summarise_agent(report["records"], arms)
-    (out / "agent.json").write_text(json.dumps(report, indent=2))
-    print(json.dumps(report["summary"], indent=2))
+        report = dict(schema="cairn.task-eval.agent/1", frozen=frozen, arms=arms, model=args.model, wording=args.wording, **execution,
+                      distractors=args.distractors, memory={k: dict(cairn=str(v["store"].binary), hook=v["hook"],
+                      hook_sha256=hashlib.sha256(Path(v["hook"]).read_bytes()).hexdigest(),
+                      backend=v["store"].backend, readiness=v["store"].readiness,
+                      cairn_version=cairn_json(v["store"].binary, ["version"], v["store"].env)) for k, v in stores.items()},
+                      paired_plans=paired_plans,
+                      records=sorted(records, key=lambda r: r["run_id"]))
+        report["summary"] = summarise_agent(report["records"], arms)
+        (out / "agent.json").write_text(json.dumps(report, indent=2))
+        print(json.dumps(report["summary"], indent=2))
 
 
 def summarise_agent(records, arms):
@@ -871,7 +979,7 @@ def cmd_regrade(args):
         base = out / "runs" / record["run_id"]
         if record.get("outcome") != "harness_error" and (base / "stream.jsonl").exists():
             case = cases[record["case"]]
-            trace = parse_stream((base / "stream.jsonl").read_text())
+            trace = parse_stream((base / "stream.jsonl").read_text(), record.get("harness", data.get("harness", "claude")))
             ctx = dict(cwd=base / "work" / case["cwd"], commands=trace["commands"], answer=trace["answer"],
                        snapshot=json.loads((base / "work" / ".eval-snapshot.json").read_text()))
             record["graded_v1"] = {k: record.get(k) for k in ("outcome", "correct", "mistake")}
@@ -928,21 +1036,52 @@ def main(argv=None):
     a.add_argument("--output", required=True)
     a.add_argument("--arms", nargs="*", default=["none", "direct"], choices=["none", "direct"])
     a.add_argument("--memory", action="append", default=[], help="LABEL:CAIRN_BINARY:MEMORY_PY")
+    a.add_argument("--semantic-recall", action="append", default=[], metavar="LABEL",
+                   help="enable semantic recall and the isolated applicability selector for this memory arm")
+    a.add_argument("--selector-model", default="sonnet")
+    a.add_argument("--selector-binary", default=shutil.which("claude"), help="reviewed Claude CLI for the hook's tool-free selector")
+    a.add_argument("--selector-auth-file", default=str(Path.home() / ".claude/.credentials.json"),
+                   help="existing selector account auth for Codex memory arms; read-only mount")
     a.add_argument("--cases", nargs="*")
     a.add_argument("--seeds", type=int, default=1)
     a.add_argument("--first-seed", type=int, default=0)
-    a.add_argument("--model", default="sonnet")
+    a.add_argument("--harness", choices=["claude", "codex"], default="claude")
+    a.add_argument("--model", help="default sonnet for Claude; required explicitly for Codex")
+    a.add_argument("--reasoning-effort", default="high", choices=["low", "medium", "high", "xhigh", "max", "ultra"])
+    a.add_argument("--codex-install", default=str(Path.home() / ".npm-global/lib/node_modules/@openai"),
+                   help="npm installation containing codex/bin/codex.js and its platform packages")
+    a.add_argument("--codex-auth-file", default=str(Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "auth.json"),
+                   help="existing account auth only; read-only mount into isolated profile")
     a.add_argument("--wording", default="task", choices=["task", "paraphrase", "direct"])
     a.add_argument("--distractors", type=int, default=1900)
     a.add_argument("--semantic-worker")
     a.add_argument("--embedding-worker", help="persistent passage backend; waits for full eligible coverage")
     a.add_argument("--paired-plan", action="append", default=[], help="captured baseline plan for case/seed matching")
-    a.add_argument("--max-turns", type=int, default=40)
+    a.add_argument("--max-turns", type=int, help="Claude only; defaults to 40. Codex is bounded by --timeout.")
     a.add_argument("--timeout", type=int, default=900)
     a.add_argument("--parallel", type=int, default=3)
     p = sub.add_parser("report")
     p.add_argument("results", nargs="+")
     args = parser.parse_args(argv)
+    if args.command == "agent":
+        labels = [s.split(":", 1)[0] for s in args.memory]
+        if len(labels) != len(set(labels)) or set(labels) & {"none", "direct"}:
+            parser.error("memory labels must be unique and must not use none/direct")
+        if not set(args.semantic_recall) <= set(labels):
+            parser.error("--semantic-recall must name a --memory label")
+        if args.semantic_recall and (not args.selector_binary or not Path(args.selector_binary).is_file()
+                                     or (args.harness == "codex" and not Path(args.selector_auth_file).is_file())):
+            parser.error("semantic recall requires an existing selector binary and account auth")
+        if args.harness == "codex":
+            if not args.model:
+                parser.error("--model is required for Codex")
+            if args.max_turns is not None:
+                parser.error("Codex exec has no --max-turns contract; use --timeout")
+            if not (Path(args.codex_install) / "codex/bin/codex.js").is_file() or not Path(args.codex_auth_file).is_file():
+                parser.error("Codex installation and existing auth file must exist")
+        else:
+            args.model = args.model or "sonnet"
+            args.max_turns = args.max_turns if args.max_turns is not None else 40
     if args.command == "validate":
         problems = validate(load_cases(), load_corpus())
         print(json.dumps(dict(ok=not problems, problems=problems), indent=2))

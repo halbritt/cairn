@@ -53,12 +53,12 @@ first 3,000. Sizes 0, 60, 1,900 (the live eligible count observed on
 
 ## Arms
 
-All arms use the same model, prompt, turn limit and sandbox. Arm order is
+Within a provider, all arms use the same model, prompt, limits and sandbox. Arm order is
 randomised per case and seed. Failed and harness-error runs stay in the record.
 
 - `none`: no hooks, no MCP and no memory instruction.
 - `direct`: the case's expected note bodies are prepended to the prompt. This is
-  the ceiling for perfect retrieval and presentation.
+  an oracle-note intervention, not an established ceiling on task completion.
 - memory arms (`--memory LABEL:CAIRN_BINARY:MEMORY_PY`): the revision's
   lifecycle hook (`SessionStart`, `UserPromptSubmit`, `PostToolUse`,
   `PostToolUseFailure`, 9,500-byte Claude budget), the revision's `cairn mcp`
@@ -77,6 +77,62 @@ workspace and the trial store's socket, token and hook are bound. The owner's
 settings, hooks, MCP servers, CLAUDE.md and production Cairn socket are not
 visible. A probe confirmed that no instructions and no `cairn` tools reach the
 agent.
+
+### Native Codex
+
+`agent --harness codex --model MODEL` runs the npm entry point directly, so the
+host's coordination launcher cannot register a trial agent or deliver production
+inbox work. `--codex-install` names the directory containing `codex/bin/codex.js`
+and its platform packages. `--codex-auth-file` supplies existing account auth,
+mounted read-only into a fresh profile. Neither the host configuration nor its
+rules, hooks, skills, history or production MCP configuration is mounted.
+
+Codex memory arms use native `SessionStart` and `UserPromptSubmit` recall hooks
+with the installer's 12,000-byte context limit, a trial-only MCP server and the
+same shared-memory instruction. Only these reviewed fixture hooks receive the
+invocation's trust bypass. None/direct arms have no hooks or MCP. Capture is
+disabled in every arm.
+
+The evaluator reads native JSON completion events for commands, file changes,
+Cairn tool calls, answers and usage. Codex's turn count describes exec turns;
+it is not comparable to Claude's `num_turns`. Codex does not expose the same
+turn limit: `--max-turns` is rejected for this provider and `--timeout` bounds
+the process. Reasoning effort is explicit (`--reasoning-effort`, default high).
+Plans retain provider, version, evaluator hash, model, effort and limits. A
+paired plan with another provider or effort is rejected.
+
+For example, after choosing an available model:
+
+```sh
+python3 scripts/trial_task_eval.py agent --harness codex --model MODEL \
+  --output OUT/codex --arms none direct --cases local-ci --parallel 1
+```
+
+Memory arms still require the disposable-cluster wrapper shown below. The npm
+installation and auth paths are host-specific defaults; they can be overridden.
+Use `--semantic-recall LABEL` for each memory arm that should run the semantic
+recall/applicability route. Its default is off, matching the frozen Claude
+baseline. This setting must match the intended adapter configuration: passing a
+different `memory.py` alone does not change it. `--selector-model` selects the
+tool-free Claude applicability model. `--selector-binary` supplies the reviewed
+CLI; Codex mounts that resolved executable and `--selector-auth-file` without
+the host's Claude settings or hooks. Plans retain each arm's recall mode and
+selector model plus selector version and binary hash when enabled. This allows
+comparison of the complete recall configuration rather than an accidental
+disabled-selector run. Selector failures remain visible through hook outcomes;
+they do not mean that the task provider itself failed.
+
+The sandbox isolates the owner's HOME and /tmp, not every readable host file or
+network destination. Fixtures must remain reviewed, nonsensitive tasks.
+
+Nonzero process exits, provider errors, timeouts and unterminated streams are
+reported as `harness_error`, even when partial answers satisfy a check. Their
+check results remain as `check_outcome` for diagnosis. Existing reports are
+unchanged; older reports can undercount provider failures. Raw output remains
+local. Hook injection metrics exclude manually pulled MCP result bytes.
+Command/tool lists describe observed attempts; a command appearing there does
+not establish its success, test coverage or successful memory delivery. Task
+checks and independent review must establish those claims.
 
 ## Measurements
 
@@ -130,13 +186,14 @@ directory and is not committed.
   `unavailable` conflates them.
 - A candidate hook must stay a drop-in `memory.py --config` with the same
   config keys, or document the new ones.
-- If candidate indexing adds migrations or background work, report index lag.
-  The harness waits for nothing after seeding.
+- Persistent candidates selected with `--embedding-worker` must reach full
+  eligible coverage before agent runs; reports retain cold indexing duration.
 
 ## Limits
 
-- The agent is Claude Code (Sonnet by default). Other harnesses (Codex, OpenCode,
-  Hermes) use the same memory engine. They are not covered yet.
+- Claude Code (Sonnet by default) and native Codex are supported. A passing
+  provider smoke test establishes harness operation, not retrieval usefulness.
+  OpenCode and Hermes task outcomes are not covered.
 - The fixtures are small. They reproduce each decision point, not the full
   project. Strong models can succeed without memory on some cases, so those
   cases measure harm and cost rather than benefit.
