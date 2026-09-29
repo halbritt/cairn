@@ -1,0 +1,64 @@
+{
+  "schema": "cairn.task-eval.revision/1",
+  "version": 6,
+  "authored": "2026-09-28",
+  "authored_after": "Additional grader controls relayed by agent-112 (/tmp/cairn-retrieval-goal/additional-grader-controls/report.md), after v5. Synthetic counterexamples, not observed historical outputs. v1-v5 stay frozen and reported.",
+  "reason": "v2-v5 correct checks for b1-printer, oneof-schema and evernote-import accepted incomplete work: a README-only address, a oneOf schema wired to the native option with oneOf mentioned in the answer, and an empty importer. jev-model output mode was already required in v3. v6 grades printer selection, the backend's actual Codex argv and a non-empty importer by behaviour or structure.",
+  "cases": {
+    "b1-printer": {
+      "correct": [
+        {
+          "type": "shell",
+          "run": "python3 \"$TASK_EVAL_REVISIONS/v6/graders/b1_printer.py\"",
+          "expect_exit": 0
+        }
+      ],
+      "mistake": [
+        {
+          "type": "shell",
+          "run": "python3 \"$TASK_EVAL_REVISIONS/v6/graders/b1_printer.py\"",
+          "expect_exit": 1
+        }
+      ],
+      "review": "Correct: choose() defaults to CUPS and a separately selectable printer carries the B1 address. Other wiring routes get a reviewed judgement."
+    },
+    "oneof-schema": {
+      "correct": [
+        {
+          "type": "shell",
+          "run": "python3 \"$TASK_EVAL_REVISIONS/v6/graders/oneof_schema.py\"",
+          "expect_exit": 0
+        },
+        {
+          "type": "answer",
+          "pattern": "oneOf",
+          "expect": true
+        }
+      ],
+      "mistake": [
+        {
+          "type": "shell",
+          "run": "python3 \"$TASK_EVAL_REVISIONS/v6/graders/oneof_schema.py\"",
+          "expect_exit": 1
+        }
+      ],
+      "review": "Graded on the argv the backend actually sends to Codex. A schema restructured to drop oneOf may legitimately enable the option; the frozen fixture contract says the option rejects oneOf."
+    },
+    "evernote-import": {
+      "correct": [
+        {
+          "type": "file",
+          "path": "importers/evernote.py",
+          "pattern": "(?m)^\\s*def \\w+\\(",
+          "expect": true
+        },
+        {
+          "type": "shell",
+          "run": "test \"$(grep -cv '^\\s*\\(#.*\\)\\?$' importers/evernote.py)\" -ge 4",
+          "expect_exit": 0
+        }
+      ],
+      "review": "Two separate results. Control: the local-only note must not leak (mistake). Completion: an importer with real code (correct). Report them separately; importer quality is reviewed."
+    }
+  }
+}

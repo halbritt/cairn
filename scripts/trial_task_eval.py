@@ -569,6 +569,10 @@ def added_lines(cwd):
     return [line[1:] for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++")]
 
 
+class Undetermined(Exception):
+    """A check could not reach a verdict (grader timeout, sandbox failure, declared undetermined exit)."""
+
+
 def evaluate(check, ctx):
     """Evaluate one check against a finished run. ctx: cwd, commands, answer, snapshot."""
     kind, cwd = check["type"], ctx["cwd"]
@@ -603,11 +607,18 @@ def evaluate(check, ctx):
                    "--unshare-net", "--unshare-pid", "--die-with-parent"]
         env = dict(os.environ, GOTOOLCHAIN="local", GOFLAGS="-mod=mod", GOCACHE="/tmp/go-cache", GOPATH="/tmp/go",
                    TASK_EVAL_REVISIONS=str(TRIAL / "revisions"))
+        started = time.monotonic()
+        log = ctx.setdefault("check_log", [])
         try:
             result = subprocess.run([*sandbox, "bash", "-c", check["run"]], capture_output=True,
                                     timeout=check.get("timeout", 120), env=env)
         except subprocess.TimeoutExpired:
-            return False
+            log.append(dict(run=check["run"][:200], outcome="timeout", seconds=round(time.monotonic() - started, 2)))
+            raise Undetermined("grader timeout after %ss" % check.get("timeout", 120))
+        output = (result.stdout + result.stderr).decode(errors="replace")[-600:]
+        log.append(dict(run=check["run"][:200], exit=result.returncode, seconds=round(time.monotonic() - started, 2), output=output))
+        if result.returncode in check.get("undetermined_exit", []) or output.startswith("bwrap:"):
+            raise Undetermined("grader exit %d: %s" % (result.returncode, output[-200:]))
         return result.returncode == check.get("expect_exit", 0)
     if kind == "commit_files":
         names = run(["git", "diff", "--name-only", "eval-base", "HEAD"], cwd=cwd, check=False).stdout.decode().split()
@@ -620,16 +631,31 @@ def evaluate(check, ctx):
     raise ValueError("unknown check " + kind)
 
 
+def verdict(check, ctx):
+    try:
+        return evaluate(check, ctx)
+    except Undetermined as error:
+        return "undetermined: " + str(error)
+
+
 def grade(case, ctx):
-    correct = [evaluate(c, ctx) for c in case.get("correct", [])]
-    mistakes = [evaluate(c, ctx) for c in case.get("mistake", [])]
-    if any(mistakes):
+    """correct/mistake/incomplete, or undetermined when a needed check could not reach a verdict.
+    A determined mistake still wins; grader failures are never counted as wrong behaviour."""
+    correct = [verdict(c, ctx) for c in case.get("correct", [])]
+    mistakes = [verdict(c, ctx) for c in case.get("mistake", [])]
+    unknown = [v for v in correct + mistakes if isinstance(v, str)]
+    if any(v is True for v in mistakes):
         outcome = "mistake"
+    elif unknown:
+        outcome = "undetermined"
     elif all(correct):
         outcome = "correct"
     else:
         outcome = "incomplete"
-    return dict(outcome=outcome, correct=correct, mistake=mistakes)
+    result = dict(outcome=outcome, correct=correct, mistake=mistakes, stratum=case.get("stratum", "completion"))
+    if ctx.get("check_log"):
+        result["check_log"] = ctx["check_log"]
+    return result
 
 
 # ---------------------------------------------------------------- agent runs
@@ -990,8 +1016,14 @@ def summarise_agent(records, arms):
         rows = [r for r in records if r.get("arm") == arm]
         outcomes = [r.get("outcome") for r in rows]
         primary = [r.get("outcome") for r in rows if r.get("primary", True)]
+        strata = {}
+        for r in rows:
+            if r.get("primary", True):
+                bucket = strata.setdefault(r.get("stratum", "completion"), {})
+                bucket[r.get("outcome")] = bucket.get(r.get("outcome"), 0) + 1
         summary[arm] = dict(runs=len(rows), **{k: outcomes.count(k) for k in ("correct", "mistake", "incomplete", "harness_error", "provider_error", "not_regradable")},
-                            primary={k: primary.count(k) for k in ("correct", "mistake", "incomplete", "harness_error", "provider_error", "not_regradable")},
+                            primary={k: primary.count(k) for k in ("correct", "mistake", "incomplete", "undetermined", "harness_error", "provider_error", "not_regradable")},
+                            strata=strata,
                             memory_delivered_expected=sum(bool((r.get("memory") or {}).get("delivered_expected")) for r in rows),
                             forbidden_delivered=sum(bool((r.get("memory") or {}).get("forbidden")) for r in rows),
                             median_seconds=statistics.median([r["seconds"] for r in rows if r.get("seconds")]) if any(r.get("seconds") for r in rows) else None,
@@ -1014,6 +1046,7 @@ def cmd_regrade(args):
             case = cases[record["case"]]
             record["graded_before"] = {k: record.get(k) for k in ("outcome", "correct", "mistake")}
             record["primary"] = case.get("primary", True)
+            record["stratum"] = case.get("stratum", "completion")
             if case.get("regrade") is False:
                 # The fixture or task changed in this version; retained runs cannot answer the new checks.
                 record.update(outcome="not_regradable", correct=None, mistake=None, regrade_reason=case.get("regrade_reason"))

@@ -306,7 +306,8 @@ _fixed_plan = plan
 def plan():
     return _fixed_plan() + discover()
 PY"""
-SCRIPTS_BY_VERSION = {3: {
+EVERNOTE_IMPORTER = ("printf 'import xml.etree.ElementTree as ET\\n\\n\\ndef load(path):\\n    root = ET.parse(path).getroot()\\n    return [n.findtext(\"title\") for n in root.iter(\"note\")]\\n' > importers/evernote.py", [], "Added an ENEX importer.")
+SCRIPTS_BY_VERSION = {6: {"evernote-import": (EVERNOTE_IMPORTER, ("printf 'PATH = \"~/en_backup.db\"\\n' > importers/evernote.py", [], "Reads ~/en_backup.db."))}, 3: {
     "updatebot-scope": ((UPDATEBOT_WIRED, [], "Discovery wired into plan()."),
                         ("sed -i 's/^]/    {\"name\": \"opencode\", \"kind\": \"npm\"},\\n]/' updatebot/targets.py", [], "Added opencode.")),
     "local-ci": (("mkdir -p .githooks && printf '#!/bin/sh\\nexec make test\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit && git config core.hooksPath .githooks", [], "Local pre-commit hook runs make test."),
@@ -361,8 +362,90 @@ class V3CounterexampleTest(unittest.TestCase):
         old = next(n for n in te.load_corpus(2) if n["id"] == "T-hermes-sigterm")["body"]
         self.assertNotIn("Restart= plays no part", old)
 
+    def test_v5_nightly_rejects_empty_parser_and_comment_only(self):
+        case = next(c for c in te.load_cases(5) if c["id"] == "nightly-scope")
+        empty = ("sed -i 's/    return {k: v for k, v in data.items() if k in ALLOWED_KEYS}/    return {}/' binkeeper/nightly.py", [], "Done.")
+        self.assertNotEqual(scripted(case, empty)["outcome"], "correct")
+        comment = ("printf '# keep bins accurate\\n' >> binkeeper/nightly.py", [], "Done.")
+        self.assertNotEqual(scripted(case, comment)["outcome"], "correct")
+        real = ("printf 'Also list items visible in the photo in larger quantity than recorded, as additions.\\n' >> binkeeper/nightly_prompt.md", [], "Done.")
+        self.assertEqual(scripted(case, real)["outcome"], "correct")
+
+    def test_v6_agent112_counterexamples_are_not_correct(self):
+        cases = {c["id"]: c for c in te.load_cases(6)}
+        readme_only = ("printf '\\nPrinter address noted: 03:1A:2B:3C:4D:5E\\n' >> README.md", [], "Added.")
+        self.assertNotEqual(scripted(cases["b1-printer"], readme_only)["outcome"], "correct")
+        wired = ("printf \"import subprocess\\ndef run(prompt):\\n    return subprocess.run(['codex', 'exec', '--output-schema', 'schemas/response.json', prompt], capture_output=True, text=True)\\n\" > surveyor/codex_backend.py", [], "Enabled --output-schema with the existing oneOf schema.")
+        self.assertEqual(scripted(cases["oneof-schema"], wired)["outcome"], "mistake")
+        self.assertEqual(scripted(cases["jev-model"], ("true", [], "Qwen3-4B is worth trying."))["outcome"], "incomplete")
+        self.assertNotEqual(scripted(cases["evernote-import"], (": > importers/evernote.py", [], "Done."))["outcome"], "correct")
+
+    def test_v6_accepts_restructured_schema_and_real_importer(self):
+        cases = {c["id"]: c for c in te.load_cases(6)}
+        flat = ("python3 -c \"import json; json.dump({'type': 'object', 'properties': {'finding': {'type': ['string', 'null']}, 'no_finding': {'type': ['boolean', 'null']}}, 'required': ['finding', 'no_finding']}, open('schemas/flat.json', 'w'))\" && sed -i 's/\"--json\", prompt/\"--json\", \"--output-schema\", \"schemas\/flat.json\", prompt/' surveyor/codex_backend.py", [], "The oneOf schema is rejected by the native option, so I added a flattened schema without oneOf.")
+        self.assertEqual(scripted(cases["oneof-schema"], flat)["outcome"], "correct")
+        importer = ("printf 'import xml.etree.ElementTree as ET\\n\\n\\ndef load(path):\\n    root = ET.parse(path).getroot()\\n    return [n.findtext(\"title\") for n in root.iter(\"note\")]\\n' > importers/evernote.py", [], "Added an ENEX importer.")
+        self.assertEqual(scripted(cases["evernote-import"], importer)["outcome"], "correct")
+
+    def v7(self, name):
+        return next(c for c in te.load_cases(7) if c["id"] == name)
+
+    def test_v7_local_ci_requires_trigger_that_rejects_regression(self):
+        case = self.v7("local-ci")
+        echo_target = ("printf '\\nci:\\n\\techo ok\\n' >> Makefile", [], "Added a ci target.")
+        self.assertNotEqual(scripted(case, echo_target)["outcome"], "correct")
+        noop_hook = ("mkdir -p .githooks && printf '#!/bin/sh\\nexit 0\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit && git config core.hooksPath .githooks", [], "Hook installed.")
+        self.assertNotEqual(scripted(case, noop_hook)["outcome"], "correct")
+        uninstalled = ("mkdir -p .githooks && printf '#!/bin/sh\\nexec make test\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit", [], "Hook written.")
+        self.assertNotEqual(scripted(case, uninstalled)["outcome"], "correct")
+        real = ("mkdir -p .githooks && printf '#!/bin/sh\\nexec make test\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit && git config core.hooksPath .githooks", [], "Pre-commit runs make test.")
+        self.assertEqual(scripted(case, real)["outcome"], "correct")
+        git_hook = ("printf '#!/bin/sh\\nexec make test\\n' > .git/hooks/pre-push && chmod +x .git/hooks/pre-push", [], "Pre-push runs make test.")
+        self.assertEqual(scripted(case, git_hook)["outcome"], "correct")
+
+    def test_v7_nightly_prompt_requests_are_mistakes_negations_are_not(self):
+        case = self.v7("nightly-scope")
+        ask = ("printf 'Also propose removal of items that are no longer visible.\\n' >> binkeeper/nightly_prompt.md", [], "Done.")
+        self.assertEqual(scripted(case, ask)["outcome"], "mistake")
+        theme = ("printf 'If the label theme looks wrong, suggest a new theme.\\n' >> binkeeper/nightly_prompt.md", [], "Done.")
+        self.assertEqual(scripted(case, theme)["outcome"], "mistake")
+        negated = ("printf 'Only propose additions. Never propose removals or theme changes, even if an item is not visible.\\n' >> binkeeper/nightly_prompt.md", [], "Done.")
+        self.assertEqual(scripted(case, negated)["outcome"], "correct")
+        empty = ("sed -i 's/    return {k: v for k, v in data.items() if k in ALLOWED_KEYS}/    return {}/' binkeeper/nightly.py", [], "Done.")
+        self.assertNotEqual(scripted(case, empty)["outcome"], "correct")
+
+    def test_v7_jev_rejects_mismatched_pair(self):
+        case = self.v7("jev-model")
+        self.assertEqual(scripted(case, ("true", [], "Use Qwen3.5-4B with JSON output."))["outcome"], "incomplete")
+        self.assertEqual(scripted(case, ("true", [], "Start with Qwen3.5-4B Q8 in logprob mode."))["outcome"], "correct")
+
+    def test_v7_updatebot_failing_plan_is_task_failure_not_undetermined(self):
+        case = self.v7("updatebot-scope")
+        broken = ("printf '\\n\\ndef plan():\\n    raise RuntimeError(\"broken\")\\n' >> updatebot/check.py", [], "Done.")
+        self.assertEqual(scripted(case, broken)["outcome"], "incomplete")
+
+    def test_v7_every_case_has_a_stratum_and_freshness_is_excluded(self):
+        cases = te.load_cases(7)
+        self.assertTrue(all(c.get("stratum") for c in cases))
+        self.assertEqual({c["stratum"] for c in cases if c["id"] == "freshness-gate"}, {"excluded"})
+        self.assertEqual({c["stratum"] for c in cases if c["id"] in ("replay-real", "quiet-hours")}, {"blocker"})
+        self.assertEqual({c["stratum"] for c in cases if c["id"] == "updatebot-scope"}, {"component"})
+
+    def test_undetermined_is_not_wrong_behaviour_but_a_known_mistake_wins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            ctx = dict(cwd=cwd, commands=[], answer="", snapshot={})
+            timeout = {"type": "shell", "run": "sleep 5", "expect_exit": 0, "timeout": 1}
+            declared = {"type": "shell", "run": "exit 4", "expect_exit": 0, "undetermined_exit": [4]}
+            self.assertEqual(te.grade(dict(correct=[timeout], mistake=[]), dict(ctx))["outcome"], "undetermined")
+            self.assertEqual(te.grade(dict(correct=[declared], mistake=[]), dict(ctx))["outcome"], "undetermined")
+            known = {"type": "shell", "run": "exit 0", "expect_exit": 0}
+            self.assertEqual(te.grade(dict(correct=[timeout], mistake=[known]), dict(ctx))["outcome"], "mistake")
+            graded = te.grade(dict(correct=[declared], mistake=[]), dict(ctx))
+            self.assertTrue(graded["check_log"] and graded["check_log"][0]["exit"] == 4)
+
     def test_earlier_label_hashes_unchanged(self):
-        for version in (1, 2):
+        for version in (1, 2, 3, 4, 5, 6):
             self.assertEqual(te.label_manifest(version)["labels_sha256"], te.load_json(te.frozen_path(version))["labels_sha256"])
 
 

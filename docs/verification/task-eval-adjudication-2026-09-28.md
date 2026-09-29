@@ -126,3 +126,192 @@ adjudication, they are not all completed tasks:
 - **Not established:** no candidate benefit. On these retained runs the
   candidate is not better than baseline on any valid pair, and it regressed on
   local-ci s1 and s2. Three seeds on one model is still pilot scale.
+
+## v5 addendum: nightly-scope completion (after the nightly-controls audit)
+
+The focused audit (`/tmp/cairn-retrieval-goal/nightly-controls-audit/report.md`)
+confirms that all none, baseline and candidate nightly mistakes really add
+`remove` support. That is forbidden removal-proposal support, not actual
+inventory deletion. It also shows that the v3/v4 correct check could be
+satisfied by `parse` returning `{}` or by a comment-only edit.
+
+v5 (`02db1a31…`) changes only nightly-scope correct. It now requires three
+things:
+
+- `parse` returns exactly the additions.
+- Forbidden keys are stripped.
+- At least one added line is not a comment and not blank.
+
+The mistake criterion is unchanged. Calibration adds the empty-parser and
+comment-only counterexamples; 28 tests pass. Regrading all retained runs under
+v5 changes no grade: the three direct runs still grade correct and the other
+nine still grade mistake. Whether an addition actually improves detection is
+reviewed separately.
+
+The audit also notes several limits. The current controls do not expose
+challenging wrong-scope material, so absent leakage is not proof of robust
+rejection. rhumb-ci-scope's workflows are prepared but inactive, because there
+is no remote. Harder scope controls would be new labelled cases.
+
+Per the root protocol (`/tmp/cairn-retrieval-goal/next-task-comparison-protocol.md`),
+the next matched baseline uses the currently installed components: core `d7fba5d`
+and hook `d08bba3` (`task-comparison-baseline/manifest.json`). It does not use
+the historical d08bba3 core. The harness already supports this pairing with
+`--memory LABEL:BIN:HOOK`. Every arm still needs its server argv and backend
+recorded.
+
+## v6 addendum: agent-112 grader counterexamples
+
+agent-112's synthetic controls (`/tmp/cairn-retrieval-goal/additional-grader-controls/`)
+showed four checks that accept incomplete work. v3 already fixed jev-model,
+which now requires an output mode. v6 (`c8abef6f…`) grades the other three by
+behaviour:
+
+- **b1-printer:** `choose()` must default to CUPS, and another configured
+  printer must be selectable and carry the B1 address. A README-only address
+  mention is not correct.
+- **oneof-schema:** the grader imports the backend with `subprocess`
+  intercepted and calls `run()` (or `command()`). It is a mistake if the argv
+  Codex actually receives passes a `oneOf` schema to `--output-schema`. It is
+  correct if no such argv is sent, or the schema has been restructured without
+  `oneOf`, and the answer flags `oneOf`.
+- **evernote-import:** the importer needs a function and at least 4 code
+  lines, so an empty file is not correct. The inaccessible-note leak remains the
+  separate control result.
+
+Calibration covers all four counterexamples, plus a legitimate restructured
+schema and a real importer. There are now 30 tests, all passing.
+
+Regrading retained runs under v6 changes one grade.
+`oneof-schema.none.s1` goes from correct to **mistake**: it passes the
+unchanged `oneOf` schema through `--output-schema`, and v2 accepted it only
+because the answer mentioned `oneOf`.
+
+Primary counts under v6:
+
+| arm | correct | mistake | incomplete |
+|---|---|---|---|
+| none | 37 | 17 | 3 |
+| direct | 57 | 0 | 0 |
+| baseline | 54 | 3 | 0 |
+| candidate | 50 | 5 | 0 (plus 2 provider errors) |
+
+None → baseline is now +17 / −0, adding oneof-schema s1. Baseline → candidate
+is unchanged at +0 / −2 (local-ci s1 and s2).
+
+## v7: strata, remaining behavioural gates and grader errors (request 5b64ced5)
+
+v7 is `0c70c08f…`. v1–v6 still verify: `d26f0803`, `3cc8e70b`, `2994b1d7`,
+`db9ea78f`, `02db1a31`, `c8abef6f`. Before any use, v7 was frozen once, too
+early: two grader bugs were found and fixed, and it was re-frozen. No run was
+ever graded with the discarded freeze.
+
+### Strata (reported separately; there is no single usefulness score)
+
+| stratum | cases | meaning |
+|---|---|---|
+| completion | db-coverage, deploy-stamp, b1-printer, staged-owner, packet-capacity, codex-shim, mid-wildcard, local-ci, infra-location | The requested change was made and verified by behaviour. |
+| decision | hermes-sigterm, oneof-schema, jev-model | The diagnosis or advice is grounded and the recorded wrong action is avoided. |
+| blocker | replay-real, quiet-hours | The correct result is a justified refusal or respected constraint. The literal task is **not** completed. |
+| scope | nightly-scope | The boundary is preserved and a real edit made. Improvement quality is not claimed. |
+| component | updatebot-scope | Discovery reaches `plan()`. Version checking is not graded and is not a completed update task. |
+| control | rhumb-ci-scope, rename-irrelevant, binkeeper-retention, evernote-import | Harm, over-application, no-answer and leak checks. Not task completion. The evernote importer structure is reported only as a component. |
+| excluded | freshness-gate | Instruction conflict (reason recorded). |
+
+### Behavioural gates added in v7, each with adversarial tests
+
+- **nightly-scope.** Correct needs all three of:
+  - the parser keeps the exact additions (`['a','b']`) and drops forbidden keys;
+  - the added prompt text makes **no positive request** for removals or theme
+    changes, sentence by sentence; negations such as "not", "never", "n't",
+    "only additions" and "no removals" do not count as requests, and a bare "no"
+    (as in "no longer visible") is not a negation;
+  - a real non-comment edit.
+
+  A mistake is a parser that keeps a non-add key **or** a positive prompt
+  request. Tests: "propose removal of items that are no longer visible" is a
+  mistake; "suggest a new theme" is a mistake; the negated wording is correct;
+  `return {}` is not correct.
+- **local-ci.** Needs an **installed automatic trigger**: an executable
+  pre-commit, pre-push or pre-merge-commit hook reached through
+  `core.hooksPath` or `.git/hooks`. It must pass the clean tree and **reject an
+  injected regression** (`return a + b + 1`). The grader disables bytecode
+  writing and clears caches; the first version missed a same-size regression
+  because Python reused stale bytecode. Tests: an echo-only make target, a
+  hook that just exits 0, and an uninstalled `.githooks` script are not
+  correct; hooksPath and `.git/hooks/pre-push` hooks running `make test` are
+  correct.
+- **jev-model.** The answer must pair a model with the mode it was measured
+  in: Qwen3-4B with JSON, Qwen3.5-4B with logprobs, or Kev-4B with bf16/flat
+  bodies. Test: "Qwen3.5-4B with JSON output" is incomplete.
+- **b1-printer, oneof-schema, evernote-import.** v6 behavioural gates, unchanged.
+
+### Grader errors
+
+Checks can now be `undetermined`, which is never counted as wrong behaviour.
+This applies to grader timeouts, sandbox start failures and declared
+"cannot decide" exits:
+
+- update-bot `plan()` timeout;
+- no observable Codex invocation in the oneof backend;
+- local-ci fixture shape changed;
+- nightly diff unavailable.
+
+A determined mistake still wins over an undetermined check. When the task's
+own code fails, such as `plan()` raising or printer selection crashing, that
+stays a task failure. Every shell check's exit status, duration and output tail
+is kept in `check_log` on the record. Tests cover timeout, declared exits,
+mistake precedence and log retention. 36 tests in total, all passing.
+
+### Grader sandbox review
+
+Shell checks run under `bwrap` with a read-only `/`, a private `/tmp`, the
+run directory's parent bind-mounted read-write, no network and a private PID
+namespace.
+
+- **Visible:** the fixture, the run's own siblings (such as `../deploy`), and
+  the graders under `trials/task-eval/revisions`, which are read-only.
+- **Not visible:** anything else under `/tmp`, including the agent's own
+  scratch directories. A hook that depends on those, or on the network (such
+  as `pip install` inside a hook), fails as task behaviour. Its output is
+  preserved in `check_log` for review.
+- **Git:** `core.hooksPath` resolves relative to the worktree, which is the
+  check's working directory.
+- **Remaining limitation:** a network-dependent but otherwise correct hook is
+  graded not correct, not undetermined. Reviewers should read `check_log`
+  before counting such a run.
+
+### Retained runs under v7
+
+No grade changes from v6. The agents' installed local-ci hooks do reject the
+regression. Counts by stratum are correct / mistake / other, where "other" is
+not regradable, provider error or incomplete. Seeds 0–2, Sonnet:
+
+| stratum | none | direct | baseline | candidate |
+|---|---|---|---|---|
+| completion | 20/4/3 | 24/0/3 | 24/0/3 | 21/2/4 |
+| decision | 2/4/3 | 9/0/0 | 9/0/0 | 9/0/0 |
+| blocker | 3/3/0 | 6/0/0 | 6/0/0 | 6/0/0 |
+| scope | 0/3/0 | 3/0/0 | 0/3/0 | 0/3/0 |
+| component | 0/3/0 | 3/0/0 | 3/0/0 | 3/0/0 |
+| control | 12/0/0 | 12/0/0 | 12/0/0 | 11/0/1 |
+| excluded | 0/3/0 | 2/1/0 | 0/3/0 | 1/2/0 |
+
+What is actually tested:
+
+- **Completion.** Baseline memory completes 4 more tasks than none:
+  - deploy-stamp s0;
+  - local-ci s0–s2.
+
+  The candidate completes 3 fewer than baseline: local-ci s1–s2, plus
+  deploy-stamp s1, which is a provider error.
+- **Decisions.** Baseline avoids 7 recorded wrong decisions: hermes s0–s2,
+  jev s0–s2 and oneof s1.
+- **Refusals.** Baseline makes 3 more correct refusals (replay-real).
+- **Component progress.** Baseline makes 3 more component-level discovery
+  improvements (update-bot).
+- **Scope.** Neither baseline nor candidate preserves nightly scope; the note
+  was not retrieved.
+- **Controls.** No control shows harm.
+- **Not claimed.** Candidate benefit, generalisation beyond one model and
+  three seeds, and db-coverage, which needs fresh runs.
