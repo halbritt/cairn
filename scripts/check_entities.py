@@ -13,7 +13,7 @@ def check_harness(invoke):
     assert invoke('cairn_remember', capture) == saved
     invoke('cairn_remember', dict(request_id=str(uuid.uuid4()), body='Incidental reference: ' + name, shareable=True))
     view = invoke('cairn_search', dict(query='"' + name + '"', entities=refs))
-    assert view['ranking'] == 'lexical-scope-recency/7'
+    assert view['ranking'] == 'binary-idf-scope-recency/4'
     assert view['index'][0]['record_id'] == saved['record_id']
     assert view['index'][0]['entities'] == refs
     record = invoke('cairn_pull', view['index'][0]['pull_arguments'])['selection']['record']

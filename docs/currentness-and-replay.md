@@ -88,8 +88,10 @@ No database migration is needed, but reverting a reader alone after writing new
 constraints is unsupported. The [phase verification](verification/task-phase-2026-09-09.md)
 records both preserved old packages and this reader-version limit.
 
-Unquoted lexical retrievals use `lexical-scope-recency/4`, which also filters fixed question
-framing words from lexical matches. Historical recompilation uses the ranking
+Legacy unquoted lexical retrievals use `lexical-scope-recency/4`, which also filters fixed question
+framing words from lexical matches. New ordinary context index queries use the
+[binary-IDF ranking](index-and-pull.md#ordinary-lexical-ranking).
+Historical recompilation uses the ranking
 version retained in each receipt. The [retrieval comparison](verification/question-words-2026-09-08.md)
 records the measured improvements and regressions. Reusing a compile request ID
 across a ranking upgrade returns `STALE_PACKAGE`; use a new ID for current context.
@@ -149,6 +151,16 @@ retained bytes, recomputes lexical ranking and budget packing, and checks the
 result against the original seal. It writes no new exposure record and cannot authorize
 fresh delivery. Its cutoff is the named retrieval's actual read set, not an
 arbitrary timestamp or a reusable PostgreSQL transaction handle.
+
+For ordinary index receipts in semantic format v17, reconstruction checks the
+IDF cohort and term frequencies against retained versions and eligibility facts,
+then ranks with the sealed integer weights. It does not recompute floating-point
+logarithms or consult the live corpus for those weights. Construction quantizes
+`ln(N/df)` to millionths, rounded half away from zero; this does not promise
+identical floating-point construction on every platform. The full scoring
+snapshot stays in canonical CBOR and is omitted from public JSON package views.
+The returned seal refers to the retained canonical package, not to the JSON
+projection alone.
 
 Receipt ownership still applies. The local CLI can recompile its own receipts;
 another channel's receipt returns `AUTHORITY_DENIED`. Authenticated callers use

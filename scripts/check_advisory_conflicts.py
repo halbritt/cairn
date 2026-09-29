@@ -15,7 +15,7 @@ def check_harness(invoke, binary, environment):
         record_ids=[a['record_id'], b['record_id']], reason='PRIVATE-OPENING-DETAIL'))
     assert not invoke('cairn_search', dict(query=marker))['index']
     view = invoke('cairn_search', dict(query=marker, advisory_conflicts=True, kinds=['decision']))
-    assert view['source_schema'] == 'cairn.semantic/14' and view['advisory_conflicts'] is True
+    assert view['source_schema'] == 'cairn.semantic/17' and view['advisory_conflicts'] is True
     assert {e['record_id'] for e in view['index']} == {a['record_id'], b['record_id']}
     assert 'PRIVATE-OPENING-DETAIL' not in json.dumps(view)
     for entry in view['index']:

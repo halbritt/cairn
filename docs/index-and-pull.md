@@ -136,6 +136,14 @@ connection profile. If the structured view still exceeds the room, it refuses
 without truncating entries or mandatory context. The original index may already
 be recorded; this refusal does not erase exposure history or prove delivery.
 
+For ordinary lexical searches using semantic format v17, the stored canonical
+CBOR package also contains the IDF scoring snapshot. Public JSON, including raw
+`agent index` and historical package responses, omits that snapshot. The seal
+identifies the complete stored package; clients cannot reconstruct it from the
+JSON projection. The server validates retained bytes when expanding or
+recompiling a receipt. This keeps per-query scoring statistics out of the memory
+room while preserving their replay identity.
+
 Body and evidence commands are also available directly:
 
 ```sh
@@ -176,13 +184,41 @@ An index contains mandatory instructions in full, plus optional pointers with
 record/version, class, kind, a summary of at most 160 UTF-8 bytes and a body digest.
 It uses the same currentness, authority, conflict, evidence and destination gates
 as ordinary compilation. It fits at most 100 pointers into the existing optional
-budget and reserves room for the handle envelope. Current index packages use
+budget and reserves room for the handle envelope. Earlier index formats use
 semantic format v8 for the unfiltered base, v9 with kind filters, v10 with task
 phase, v11 with a ranked page offset, v12 with a failure signature, or v13 with
 entity hints; a later facet can select a later format. These formats seal the
 index and bootstrap; opaque delivery handles stay outside that seal. Historical
 recompilation reproduces the index without issuing new handles, including the
 prefix previews in older v4 packages.
+
+## Ordinary lexical ranking
+
+New nonempty context index queries with `semantic: false` use semantic format
+v17 and `binary-idf-scope-recency/1..4`. Matching still uses the v4 tokenizer.
+Each distinct matching query term contributes an integer weight based on how
+rare it is in the eligible optional cohort. Repeated occurrences do not add
+weight. A raw lexical match remains eligible even when its weight is zero.
+
+The cohort includes eligible notes with no query match and applies the request's
+scope, destination, currentness, kind and conflict checks. Required instructions
+do not contribute. Entity, quoted-text and failure-signature preferences remain
+above the weighted score; conflict groups and scope, recency and identity ties
+retain their existing rules. Index packing can skip an entry that does not fit,
+so the returned entries need not be an uninterrupted ranking prefix.
+
+Browse, body compilation and `semantic: true` requests retain their separate
+ranking paths, including lexical fallback when semantic discovery is
+unavailable. Different modes can therefore rank the same query differently.
+Each new page reads the current cohort, so changes to any eligible note can
+affect later pages. Follow the pagination rules above.
+
+The server seals cohort identity, term frequencies and integer weights for
+[historical reconstruction](currentness-and-replay.md#recompile-a-retained-read-set).
+Readers must support v17 before it is written; older binaries cannot reconstruct
+these receipts. Earlier accepted formats retain their historical behavior.
+
+## Previews and expansion limits
 
 Search previews show a matching passage when it contains more distinct query
 terms than the note's opening 160 bytes. They use the ranker's existing word and

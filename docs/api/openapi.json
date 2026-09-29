@@ -1307,6 +1307,14 @@
               }
             ]
           },
+          "idf_score": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "lexical_matches": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,

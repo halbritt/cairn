@@ -703,6 +703,31 @@ func TestToolResultBoundsAndErrors(t *testing.T) {
 	}
 }
 
+func TestSearchViewOmitsSealedIDFSnapshot(t *testing.T) {
+	terms := make([]core.IDFTerm, 519)
+	for i := range terms {
+		terms[i] = core.IDFTerm{Digest: strings.Repeat("a", 64), DF: 1, Weight: 693147}
+	}
+	entry := core.IndexEntry{RecordID: "record", Version: 1, Class: "A", Kind: "note", Summary: "anchor", BodySHA256: "digest"}
+	result := core.IndexResult{
+		Package: core.Package{Semantic: core.SemanticPackage{Schema: "cairn.semantic/17", Index: []core.IndexEntry{entry}, IDF: &core.IDFSnapshot{Algorithm: "idf-ln-micro/1", N: 2, Terms: terms}}, Seal: "sealed", ReceiptID: "receipt"},
+		Handles: []core.IndexHandle{{RecordID: "record", Version: 1, Handle: "handle"}},
+	}
+	view, err := presentSearch(result, "request")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, _, err := toolResult(view, nil, 8000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(tool)
+	text := tool.Content[0].(*mcp.TextContent).Text
+	if err != nil || len(encoded) >= 8000 || strings.Contains(text, `"idf"`) || !strings.Contains(text, `"source_seal":"sealed"`) {
+		t.Fatalf("MCP view lost bounded source metadata: %d bytes, %v", len(encoded), err)
+	}
+}
+
 func TestCodexThreadRequiresValidMetadata(t *testing.T) {
 	// No API client: malformed metadata must fail before any database request.
 	server, err := NewServer(nil, Config{Scope: core.Scope{Repo: "repo"}, CodexThread: true, AvailableTokens: 32000})

@@ -139,7 +139,7 @@ def check(binary, root, environment, opencode, claim, support):
     invoke('search', dict(browse=True, semantic=True), 'cannot be combined')
     assert first['schema'] == 'cairn.opencode-search/1'
     for view in (first, second):
-        assert view['context']['task_phase'] == 'validation' and view['source_schema'] == 'cairn.semantic/10'
+        assert view['context']['task_phase'] == 'validation' and view['source_schema'] == 'cairn.semantic/17'
         assert view['scope']['repo'] == settings['repo']
         assert view['scope']['task_id'] == 'opencode/' + view['scope']['run_id']
         assert view['scope']['run_id'].startswith('ses_')
@@ -156,7 +156,7 @@ def check(binary, root, environment, opencode, claim, support):
     browsed = next(entry for entry in browse['index'] if entry['record_id'] == saved['record_id'])
     assert invoke('pull', browsed['pull_arguments'])['selection']['record']['body'] == capture['body']
     ranked_page = invoke('search', dict(query=marker, offset=0))
-    assert ranked_page['page'] == dict(offset=0) and ranked_page['source_schema'] == 'cairn.semantic/11'
+    assert ranked_page['page'] == dict(offset=0) and ranked_page['source_schema'] == 'cairn.semantic/17'
     assert [e['record_id'] for e in ranked_page['index']] == [e['record_id'] for e in first['index']]
     assert invoke('pull', ranked_page['index'][0]['pull_arguments'])['selection']['record']['body'] == capture['body']
     ranked_end = invoke('search', dict(query=marker, offset=10000, semantic=True))
