@@ -16,6 +16,12 @@ and MCP processes.
 
 ## 2026-09-28
 
+- New persistent semantic searches interleave bounded lexical and dense ranks,
+  so a strong match from either channel can surface without an overlap bonus.
+  Versioned packages preserve historical reciprocal-rank replay and the existing
+  eligibility, required-context and conflict rules. Candidate exposure still
+  requires an applicability check; no task-success improvement is claimed.
+
 - Lifecycle recall now inspects a bounded shortlist of current optional bodies
   before injecting one, so a stale, irrelevant or oversized first candidate does
   not hide a later usable note. Search inspection room is larger while final

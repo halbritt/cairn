@@ -85,11 +85,25 @@ restricted environment without the database DSN and use prepared local files.
 
 ## Ranking and delivery
 
-The new compiler package is `cairn.semantic/15`. It combines up to 100 lexical
-candidates and up to 100 dense matches using reciprocal ranks: each list
-contributes `floor(1,000,000 / (60 + rank))`, with ranks starting at one. Existing
-entity, failure-signature and quoted-text preferences remain outside that score.
-Mandatory instructions remain independent of optional ranking.
+New persistent searches use `cairn.semantic/16` and
+`interleaved-scope-recency/1` through `/4`. They retain up to 100 lexical candidates
+and up to 100 dense matches. At each rank, lexical comes first and dense second;
+a record already exposed is skipped. Membership in both lists earns no extra
+position. If one list ends, the other continues. The original channel ordering
+is retained: lexical terms/scope/recency and dense cosine score/record ID.
+
+Existing entity, failure-signature and quoted-text preferences remain outside
+this ordering. Mandatory instructions remain independent of optional ranking.
+Within an ordinary tier, each channel's first `k` records is exposed within at
+most `2k` positions before packing. Outer preferences, whole conflict groups,
+deduplication of equal bodies and context budgets can change delivered positions.
+This is candidate exposure, not an applicability or confidence judgment. It can
+promote a strong one-channel hit and demote a note favored by both channels.
+
+Historical `cairn.semantic/15` packages with `hybrid-scope-recency/1` through `/4`
+retain reciprocal-rank fusion exactly: each bounded list contributes
+`floor(1,000,000 / (60 + rank))`, with ranks starting at one. Replay rejects mixed
+schema/ranking contracts; it never applies the new rule to an old receipt.
 
 `discovery.state: ready` means the indexed result passed validation. Its
 `coverage.indexed` and `coverage.eligible` report coverage of the eligible source
