@@ -15,6 +15,7 @@ type CandidateEvaluation struct {
 	FailureMatch      *FailureMatch       `json:"failure_match,omitempty"`
 	ExactTextMatch    bool                `json:"exact_text_match,omitempty"`
 	SemanticScore     *int                `json:"semantic_score,omitempty"`
+	IDFScore          *int64              `json:"idf_score,omitempty"`
 	Facts             *CandidateFacts     `json:"facts,omitempty"`
 	RecordID          string              `json:"record_id"`
 	Version           int                 `json:"version"`

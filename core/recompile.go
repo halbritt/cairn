@@ -167,7 +167,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if original.Semantic.Query != "sha256:"+hex.EncodeToString(digest[:]) {
 		return Package{}, failure("INVALID_REQUEST", "query does not match the historical intent digest")
 	}
-	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4" && original.Semantic.Schema != "cairn.semantic/5" && original.Semantic.Schema != "cairn.semantic/6" && original.Semantic.Schema != "cairn.semantic/7" && original.Semantic.Schema != "cairn.semantic/8" && original.Semantic.Schema != "cairn.semantic/9" && original.Semantic.Schema != "cairn.semantic/10" && original.Semantic.Schema != "cairn.semantic/11" && original.Semantic.Schema != "cairn.semantic/12" && original.Semantic.Schema != "cairn.semantic/13" && original.Semantic.Schema != "cairn.semantic/14" && original.Semantic.Schema != "cairn.semantic/15" && original.Semantic.Schema != "cairn.semantic/16") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1" && !hasLiteralRanking(original.Semantic.Ranking) && !hasIndexedRanking(original.Semantic.Ranking)) {
+	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4" && original.Semantic.Schema != "cairn.semantic/5" && original.Semantic.Schema != "cairn.semantic/6" && original.Semantic.Schema != "cairn.semantic/7" && original.Semantic.Schema != "cairn.semantic/8" && original.Semantic.Schema != "cairn.semantic/9" && original.Semantic.Schema != "cairn.semantic/10" && original.Semantic.Schema != "cairn.semantic/11" && original.Semantic.Schema != "cairn.semantic/12" && original.Semantic.Schema != "cairn.semantic/13" && original.Semantic.Schema != "cairn.semantic/14" && original.Semantic.Schema != "cairn.semantic/15" && original.Semantic.Schema != "cairn.semantic/16" && original.Semantic.Schema != "cairn.semantic/17") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1" && !hasLiteralRanking(original.Semantic.Ranking) && !hasIndexedRanking(original.Semantic.Ranking) && !hasIDFRanking(original.Semantic.Ranking)) {
 		return Package{}, failure("REPLAY_INCOMPLETE", "historical compiler version is not supported")
 	}
 	if original.Semantic.Schema == "cairn.semantic/6" || ((original.Semantic.Schema == "cairn.semantic/8" || original.Semantic.Schema == "cairn.semantic/9" || original.Semantic.Schema == "cairn.semantic/10" || original.Semantic.Schema == "cairn.semantic/13" || original.Semantic.Schema == "cairn.semantic/14") && original.Semantic.Browse != nil) {
@@ -179,17 +179,21 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		return Package{}, failure("INTEGRITY_FAILURE", "legacy compiler cannot carry a browse page")
 	}
 	indexedSchema := original.Semantic.Schema == "cairn.semantic/15" || original.Semantic.Schema == "cairn.semantic/16"
-	advisorySchema := original.Semantic.Schema == "cairn.semantic/14" || (indexedSchema && original.Semantic.AdvisoryConflicts)
+	idfSchema := original.Semantic.Schema == "cairn.semantic/17"
+	advisorySchema := original.Semantic.Schema == "cairn.semantic/14" || ((indexedSchema || idfSchema) && original.Semantic.AdvisoryConflicts)
 	if advisorySchema != original.Semantic.AdvisoryConflicts || (advisorySchema && original.Semantic.Purpose != "context") {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical advisory conflict intent is invalid")
 	}
-	entitySchema := original.Semantic.Schema == "cairn.semantic/13" || advisorySchema || indexedSchema
+	entitySchema := original.Semantic.Schema == "cairn.semantic/13" || advisorySchema || indexedSchema || idfSchema
 	entityIntent := original.Semantic.EntitiesSHA256 != ""
 	if original.Semantic.EntitiesSHA256 != entitiesDigest(req.Entities) {
 		return Package{}, failure("INVALID_REQUEST", "entities do not match the historical intent digest")
 	}
 	if (entityIntent && (!entitySchema || original.Semantic.Browse != nil)) || entityIntent != hasEntityRanking(original.Semantic.Ranking) {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical entity intent is invalid")
+	}
+	if idfSchema && (original.Semantic.Ranking != idfRanking(req.Entities, original.Semantic.ErrorSignature, queryLiterals(req.Query)) || original.Semantic.IDF == nil) {
+		return Package{}, failure("INTEGRITY_FAILURE", "historical IDF ranking identity is invalid")
 	}
 	signatureSchema := original.Semantic.ErrorSignature != ""
 	if (original.Semantic.Schema == "cairn.semantic/12" && !signatureSchema) || (signatureSchema && ((!entitySchema && original.Semantic.Schema != "cairn.semantic/12") || !digestValid(original.Semantic.ErrorSignature) || original.Semantic.ErrorSignature != strings.ToLower(original.Semantic.ErrorSignature) || (!hasFailureRanking(original.Semantic.Ranking) && !hasEntityRanking(original.Semantic.Ranking)))) || (!signatureSchema && hasFailureRanking(original.Semantic.Ranking)) {
@@ -266,6 +270,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		return Package{}, err
 	}
 	terms := rankingTerms(req.Query, p.Ranking)
+	idfMembers := []idfMember{}
 	var literals []string
 	if hasLiteralRanking(p.Ranking) {
 		literals = queryLiterals(req.Query)
@@ -353,8 +358,11 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 			e.Reason = "NO_FAILURE_MATCH"
 			continue
 		}
+		if idfSchema && !selection.Mandatory {
+			idfMembers = append(idfMembers, makeIDFMember(record, words, terms))
+		}
 		nonemptyQuery := len(terms) > 0
-		if p.Ranking == "lexical-scope-recency/2" || p.Ranking == "lexical-scope-recency/3" || p.Ranking == "lexical-scope-recency/4" || hasLiteralRanking(p.Ranking) {
+		if p.Ranking == "lexical-scope-recency/2" || p.Ranking == "lexical-scope-recency/3" || p.Ranking == "lexical-scope-recency/4" || hasLiteralRanking(p.Ranking) || idfSchema {
 			nonemptyQuery = strings.TrimSpace(req.Query) != ""
 		}
 		if !hasIndexedRanking(p.Ranking) && p.Ranking != "semantic-scope-recency/1" && p.Ranking != "semantic-scope-recency/2" && p.Ranking != "semantic-scope-recency/3" && p.Ranking != "semantic-scope-recency/4" && !selection.Mandatory && nonemptyQuery && score == 0 && !literal && !failureMatch && !entity {
@@ -376,6 +384,12 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		}
 	} else if advisorySchema {
 		candidates = qualifyAdvisoryCandidates(&p, pool, candidates, groups, evaluations)
+	}
+	if idfSchema {
+		if err = verifyFrozenIDF(p.IDF, req.Query, idfMembers, evaluations); err != nil {
+			return Package{}, err
+		}
+		applyIDF(candidates, p.IDF, idfMembers, evaluations)
 	}
 	if p.Mode == "index" {
 		p, err = packIndex(p, candidates, evaluations, req.Query)

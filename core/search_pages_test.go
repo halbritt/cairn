@@ -120,7 +120,11 @@ func checkSearchPages(t *testing.T, semantic bool) {
 			t.Fatal(err)
 		}
 		page := wire.Page
-		if p.Schema != "cairn.semantic/11" || page == nil || page.Offset != offset || len(p.Selected) != 1 || p.Selected[0].Record.RecordID != required.RecordID || !p.Selected[0].Mandatory {
+		wantSchema := "cairn.semantic/11"
+		if !semantic {
+			wantSchema = "cairn.semantic/17"
+		}
+		if p.Schema != wantSchema || page == nil || page.Offset != offset || len(p.Selected) != 1 || p.Selected[0].Record.RecordID != required.RecordID || !p.Selected[0].Mandatory {
 			t.Fatalf("page lost its offset or required instruction: %+v", p)
 		}
 		if len(p.Index) == 0 || p.AvailableTokens != 10000 || p.OptionalLimit != 1000 {

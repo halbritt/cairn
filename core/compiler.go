@@ -59,6 +59,7 @@ type SemanticPackage struct {
 	ErrorSignature    string            `json:"error_signature_sha256,omitempty" cbor:"error_signature_sha256,omitempty"`
 	Kinds             []string          `json:"kinds,omitempty" cbor:"kinds,omitempty"`
 	Discovery         *DiscoveryRanking `json:"discovery,omitempty" cbor:"discovery,omitempty"`
+	IDF               *IDFSnapshot      `json:"idf,omitempty" cbor:"idf,omitempty"`
 	Page              *BrowsePage       `json:"page,omitempty" cbor:"page,omitempty"`
 	Browse            *BrowsePage       `json:"browse,omitempty" cbor:"browse,omitempty"`
 	Mode              string            `json:"mode,omitempty"`
@@ -256,6 +257,8 @@ type candidate struct {
 	failure     bool
 	selection   Selection
 	score       int
+	weighted    int64
+	idf         bool
 	specificity int
 }
 
@@ -266,14 +269,14 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	if req.Mode == "index" {
 		p.Mode = "index"
-		if len(req.Kinds) == 0 && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/13" && req.ErrorSignature == "" {
+		if len(req.Kinds) == 0 && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/17" && req.ErrorSignature == "" {
 			p.Schema = "cairn.semantic/8"
 		}
 		if req.BrowseOffset != nil {
 			p.Browse = &BrowsePage{Offset: *req.BrowseOffset}
 		}
 		if req.PageOffset != nil {
-			if req.ErrorSignature == "" && p.Schema != "cairn.semantic/13" {
+			if req.ErrorSignature == "" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/17" {
 				p.Schema = "cairn.semantic/11"
 			}
 			p.Page = &BrowsePage{Offset: *req.PageOffset}
@@ -315,6 +318,11 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 		p.EntitiesSHA256 = entitiesDigest(req.Entities)
 		p.Ranking = "lexical-scope-recency/7"
 		p.Omitted["NO_ENTITY_MATCH"] = 0
+	}
+	idfSearch := req.Mode == "index" && req.Purpose == "context" && strings.TrimSpace(req.Query) != "" && req.BrowseOffset == nil && !req.Semantic
+	if idfSearch {
+		p.Schema = "cairn.semantic/17"
+		p.Ranking = idfRanking(req.Entities, req.ErrorSignature, literals)
 	}
 	policy, err := policySnapshot(ctx, tx, req.Scope.Repo)
 	if err != nil {
@@ -361,6 +369,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 	candidates := []candidate{}
 	policyKeys := map[string]string{}
 	terms := rankingTerms(req.Query, p.Ranking)
+	idfMembers := []idfMember{}
 	var chunk []candidateRecord
 	for position, id := range ids {
 		if position%candidateReadChunkSize == 0 {
@@ -494,6 +503,9 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			p.Omitted["NO_FAILURE_MATCH"]++
 			continue
 		}
+		if idfSearch && !selection.Mandatory {
+			idfMembers = append(idfMembers, makeIDFMember(record, words, terms))
+		}
 		if !req.Semantic && !selection.Mandatory && strings.TrimSpace(req.Query) != "" && score == 0 && !literal && !failureMatch && !entity {
 			evaluation.Reason = "NO_LEXICAL_MATCH"
 			p.Omitted["NO_LEXICAL_MATCH"]++
@@ -503,6 +515,13 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 	}
 	if allowDisputes {
 		candidates = qualifyAdvisoryCandidates(&p, pool, candidates, groups, evaluations)
+	}
+	if idfSearch {
+		p.IDF, err = buildIDF(req.Query, idfMembers, evaluations)
+		if err != nil {
+			return p, nil, err
+		}
+		applyIDF(candidates, p.IDF, idfMembers, evaluations)
 	}
 	return p, candidates, nil
 }
@@ -806,7 +825,7 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 // retaining the whole identifier for exact matches. Version 4 also excludes
 // question framing words. Negation and obligation words remain meaningful.
 func rankingTerms(text, version string) map[string]bool {
-	if version == "semantic-scope-recency/1" || hasIndexedRanking(version) || hasLiteralRanking(version) {
+	if version == "semantic-scope-recency/1" || hasIndexedRanking(version) || hasLiteralRanking(version) || hasIDFRanking(version) {
 		version = "lexical-scope-recency/4"
 	}
 	terms := lexical(text)
@@ -852,7 +871,14 @@ func sortCandidates(candidates []candidate) {
 			}
 			return 1
 		}
-		if a.score != b.score {
+		if a.idf && b.idf {
+			if a.weighted != b.weighted {
+				if a.weighted > b.weighted {
+					return -1
+				}
+				return 1
+			}
+		} else if a.score != b.score {
 			return b.score - a.score
 		}
 		if a.specificity != b.specificity {

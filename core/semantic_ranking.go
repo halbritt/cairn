@@ -186,6 +186,25 @@ func discoveryStatus(p SemanticPackage) SemanticPackage {
 }
 
 func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*CandidateEvaluation, query string) error {
+	if p.Schema == "cairn.semantic/17" {
+		if !hasIDFRanking(p.Ranking) || p.IDF == nil || p.Discovery != nil || p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
+			return failure("INTEGRITY_FAILURE", "historical IDF search intent is invalid")
+		}
+		for _, e := range evaluations {
+			if e.SemanticScore != nil || e.PassageHit != nil {
+				return failure("INTEGRITY_FAILURE", "IDF search has semantic features")
+			}
+		}
+		return nil
+	}
+	if p.IDF != nil || hasIDFRanking(p.Ranking) {
+		return failure("INTEGRITY_FAILURE", "historical IDF metadata has the wrong schema")
+	}
+	for _, e := range evaluations {
+		if e.IDFScore != nil {
+			return failure("INTEGRITY_FAILURE", "historical IDF score has the wrong schema")
+		}
+	}
 	if hasIndexedRanking(p.Ranking) {
 		if p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
 			return failure("INTEGRITY_FAILURE", "invalid indexed retrieval intent")
