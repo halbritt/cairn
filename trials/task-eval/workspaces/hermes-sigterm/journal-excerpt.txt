@@ -1,0 +1,5 @@
+Sep 27 21:04:11 proximal systemd[2211]: Stopping hermes-gateway.service - Hermes gateway...
+Sep 27 21:04:11 proximal python3[88412]: WARNING gateway: Exiting with code 1 (signal-initiated shutdown without restart request)
+Sep 27 21:04:12 proximal systemd[2211]: hermes-gateway.service: Main process exited, code=exited, status=1/FAILURE
+Sep 27 21:04:12 proximal systemd[2211]: hermes-gateway.service: Failed with result 'exit-code'.
+Sep 27 21:04:12 proximal systemd[2211]: Started hermes-gateway.service - Hermes gateway.

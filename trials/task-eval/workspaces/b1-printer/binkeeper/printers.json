@@ -1,0 +1,6 @@
+{
+  "default": "cups",
+  "printers": {
+    "cups": {"backend": "cups", "queue": "DYMO_LabelWriter"}
+  }
+}

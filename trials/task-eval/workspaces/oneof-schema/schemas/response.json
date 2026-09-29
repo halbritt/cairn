@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "result": {
+      "oneOf": [
+        {"type": "object", "properties": {"finding": {"type": "string"}}, "required": ["finding"]},
+        {"type": "object", "properties": {"no_finding": {"const": true}}, "required": ["no_finding"]}
+      ]
+    }
+  },
+  "required": ["result"]
+}
