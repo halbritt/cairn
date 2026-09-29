@@ -13,7 +13,7 @@ installer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(installer)
 
 
-def install(config_dir, destination, claude, model=None):
+def install(config_dir, destination, claude, model=None, preview_model=None, recall_model=None):
     native = json.loads((config_dir / "cairn.json").read_text())
     config = {"cairn": native["executable"], "socket": native["socket"], "token_file": native["token_file"],
               "repo": native["repo"], "harness": "opencode", "claude": claude,
@@ -23,11 +23,12 @@ def install(config_dir, destination, claude, model=None):
             config[key] = native[key]
     if model:
         config["model"] = model
+    engine_config = destination / "config.json"
+    config = installer.retain_model_overrides(config, engine_config, preview_model, recall_model)
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
     script = destination / "memory.py"
     shutil.copyfile(ROOT / "integrations/lifecycle/memory.py", script)
     script.chmod(0o700)
-    engine_config = destination / "config.json"
     installer.write_json(engine_config, config)
     installer.write_json(config_dir / "cairn-lifecycle.json", dict(
         python=sys.executable, script=str(script), engine_config=str(engine_config)))
@@ -43,6 +44,8 @@ def main():
     parser.add_argument("--destination", type=Path, default=home / ".local/share/cairn/opencode-hooks")
     parser.add_argument("--claude", default=shutil.which("claude"))
     parser.add_argument("--model")
+    parser.add_argument("--preview-model")
+    parser.add_argument("--recall-model")
     args = parser.parse_args()
     if not args.claude:
         parser.error("installed Claude is required for the tool-free selector")
@@ -50,7 +53,8 @@ def main():
     if model is None:
         profile = home / ".claude/settings.json"
         model = json.loads(profile.read_text()).get("model") if profile.exists() else None
-    install(args.config_dir.absolute(), args.destination.absolute(), str(Path(args.claude).absolute()), model)
+    install(args.config_dir.absolute(), args.destination.absolute(), str(Path(args.claude).absolute()), model,
+            args.preview_model, args.recall_model)
     print(f"Installed Cairn lifecycle plugin in {args.config_dir}. Start a fresh OpenCode process.")
 
 

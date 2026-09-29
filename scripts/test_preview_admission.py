@@ -43,7 +43,7 @@ class PreviewAdmissionTests(unittest.TestCase):
                             credits_remaining=credits[receipt])
             return subprocess.CompletedProcess(command, 0, json.dumps(dict(ok=True, data=data)), '')
 
-        def select(config, schema, prompt, request, timeout):
+        def select(config, schema, prompt, request, timeout, stage="capture"):
             preview = schema is hook.PREVIEW_SCHEMA
             selections.append('preview' if preview else 'body')
             return dict(structured_output=dict(indices=indices) if preview else dict(index=body_index))

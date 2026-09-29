@@ -46,6 +46,49 @@ class LifecycleTests(unittest.TestCase):
     def write_dialogue(self, messages):
         self.transcript.write_text("\n".join(json.dumps(m) for m in messages) + "\n")
 
+    def test_selector_stage_models_choose_command_without_mutating_config(self):
+        config = dict(self.config, model="capture", recall_model="body", preview_model="preview")
+        original = dict(config)
+        commands = []
+        def local_selector(command, **kwargs):
+            commands.append(command)
+            return {}
+        with patch.object(hook, "run_json", side_effect=local_selector):
+            for stage in ("preview", "recall", "capture"):
+                hook.select_json(config, {}, "prompt", {}, stage=stage)
+            self.assertEqual([command[command.index("--model") + 1] for command in commands],
+                             ["preview", "body", "capture"])
+            self.assertEqual(config, original)
+            commands.clear()
+            del config["preview_model"]
+            hook.select_json(config, {}, "prompt", {}, stage="preview")
+            self.assertEqual(commands[-1][commands[-1].index("--model") + 1], "body")
+            del config["recall_model"]
+            commands.clear()
+            for stage in ("preview", "recall", "capture"):
+                hook.select_json(config, {}, "prompt", {}, stage=stage)
+            self.assertEqual([command[command.index("--model") + 1] for command in commands],
+                             ["capture"] * 3)
+            commands.clear()
+            del config["model"]
+            hook.select_json(config, {}, "prompt", {}, stage="preview")
+            self.assertNotIn("--model", commands[-1])
+        for key in ("preview_model", "recall_model"):
+            with patch.object(hook, "run_json") as call, self.assertRaisesRegex(hook.HookError, key):
+                hook.select_json(dict(self.config, **{key: " "}), {}, "prompt", {},
+                                 stage="preview" if key == "preview_model" else "recall")
+            call.assert_not_called()
+
+    def test_installer_retains_optional_models_on_reinstall(self):
+        settings = self.root / "settings.json"
+        destination = self.root / "installed"
+        installer.install(settings, destination, self.config, preview_model="first", recall_model="second")
+        installer.install(settings, destination, self.config)
+        config = json.loads((destination / "config.json").read_text())
+        self.assertEqual((config["preview_model"], config["recall_model"]), ("first", "second"))
+        with self.assertRaisesRegex(ValueError, "preview_model"):
+            installer.install(settings, destination, self.config, preview_model=" ")
+
     def test_excerpt_omits_tools_reasoning_and_sidechains_and_bounds_unicode(self):
         self.write_dialogue([
             dict(type="user", message=dict(content="Use PostgreSQL.")),
@@ -809,7 +852,7 @@ class RecallCandidateTests(unittest.TestCase):
         semantic = self.entry('semantic')
         body = 'Renew the original lease claim.'
         cap = []
-        def select(config, schema, prompt, request, timeout=8):
+        def select(config, schema, prompt, request, timeout=8, stage="capture"):
             if schema is hook.PREVIEW_SCHEMA:
                 first_body_request = dict(project=str(self.root), request=self.event['prompt'],
                                           workstream=None, startup=False,

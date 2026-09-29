@@ -638,7 +638,7 @@ def admit_previews(memory, event, intent, sources, status, deadline):
         return []
     started = time.monotonic()
     try:
-        verdict = select_json(memory.config, PREVIEW_SCHEMA, PREVIEW_PROMPT, request,
+        verdict = select_json(memory.config, PREVIEW_SCHEMA, PREVIEW_PROMPT, request, stage="preview",
                               timeout=recall_timeout(min(deadline, started + PREVIEW_MODEL_SECONDS), PREVIEW_MODEL_SECONDS))
     except HookError as exc:
         status["preview_seconds"] = round(time.monotonic() - started, 3)
@@ -768,7 +768,7 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
     model_deadline = min(deadline, time.monotonic() + SEMANTIC_MODEL_SECONDS)
     model_started = time.monotonic()
     try:
-        verdict = select_json(memory.config, SHORTLIST_SCHEMA, SHORTLIST_PROMPT, selector_request,
+        verdict = select_json(memory.config, SHORTLIST_SCHEMA, SHORTLIST_PROMPT, selector_request, stage="recall",
                               timeout=recall_timeout(model_deadline, SEMANTIC_MODEL_SECONDS))
     except HookError as exc:
         status["model_seconds"] = round(time.monotonic() - model_started, 3)
@@ -1073,7 +1073,21 @@ def record_capture_status(state, outcome, records=(), selector_calls=0):
                                   records=list(records), selector_calls=selector_calls)
 
 
-def select_json(config, schema, prompt, excerpt, timeout=35):
+def selector_model(config, stage):
+    for key in ("preview_model", "recall_model"):
+        if key in config:
+            value = config[key]
+            if (not isinstance(value, str) or not value or value != value.strip()
+                    or len(value) > 256 or any(ord(char) < 33 or ord(char) == 127 for char in value)):
+                raise HookError(f"invalid lifecycle {key}: expected a nonempty model name without whitespace or controls")
+    for key in (("preview_model", "recall_model", "model") if stage == "preview"
+                else ("recall_model", "model") if stage == "recall" else ("model",)):
+        if config.get(key):
+            return config[key]
+    return None
+
+
+def select_json(config, schema, prompt, excerpt, timeout=35, stage="capture"):
     env = dict(os.environ, CAIRN_LIFECYCLE_CHILD="1")
     env.pop("CLAUDECODE", None)
     command = [config["claude"], "--print", "--output-format", "json", "--disable-slash-commands",
@@ -1081,8 +1095,9 @@ def select_json(config, schema, prompt, excerpt, timeout=35):
                "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--tools", "",
                "--max-turns", "2", "--json-schema", encoded(schema),
                "--system-prompt", prompt]
-    if config.get("model"):
-        command += ["--model", config["model"]]
+    model = selector_model(config, stage)
+    if model:
+        command += ["--model", model]
     # Keep existing provider authentication, but load no project settings/tools.
     # --bare would disable the owner's OAuth credentials as well as hooks.
     with tempfile.TemporaryDirectory(prefix="cairn-selection-") as work:

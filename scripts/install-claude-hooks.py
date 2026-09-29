@@ -13,6 +13,19 @@ import tempfile
 CLAUDE_CONTEXT_BYTES = 9500
 
 
+def retain_model_overrides(config, existing_path, preview_model=None, recall_model=None):
+    existing = json.loads(existing_path.read_text()) if existing_path.exists() else {}
+    result = dict(config)
+    for key, supplied in (("preview_model", preview_model), ("recall_model", recall_model)):
+        value = supplied if supplied is not None else existing.get(key)
+        if value is not None:
+            if (not isinstance(value, str) or not value or value != value.strip()
+                    or len(value) > 256 or any(ord(char) < 33 or ord(char) == 127 for char in value)):
+                raise ValueError(f"invalid lifecycle {key}: expected a nonempty model name without whitespace or controls")
+            result[key] = value
+    return result
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False, encoding="utf-8") as out:
@@ -26,11 +39,12 @@ def write_json(path, value):
             temporary.unlink(missing_ok=True)
 
 
-def install(settings_path, destination, config):
+def install(settings_path, destination, config, preview_model=None, recall_model=None):
     settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
     hooks = settings.setdefault("hooks", {})
     script = destination / "lifecycle.py"
     config_path = destination / "config.json"
+    config = retain_model_overrides(config, config_path, preview_model, recall_model)
     command = shlex.join([sys.executable, str(script), "--config", str(config_path)])
     for event in ("SessionStart", "UserPromptSubmit", "PreCompact", "SessionEnd", "PostToolUse", "PostToolUseFailure"):
         groups = hooks.setdefault(event, [])
@@ -67,6 +81,8 @@ def main():
     parser.add_argument("--socket", type=Path, default=home / ".local/share/cairn/api.sock")
     parser.add_argument("--token-file", type=Path, default=home / ".local/share/cairn/hosted-agent.token")
     parser.add_argument("--repo", default=str(home / "git/cairn"))
+    parser.add_argument("--preview-model", help="optional preview selector model; omitted preserves the installed override")
+    parser.add_argument("--recall-model", help="optional recall selector model; omitted preserves the installed override")
     args = parser.parse_args()
     if not args.cairn or not args.claude:
         parser.error("installed cairn and claude executables are required")
@@ -75,7 +91,7 @@ def main():
                   socket=str(args.socket.absolute()), token_file=str(args.token_file.absolute()), repo=args.repo)
     if settings.get("model"):
         config["model"] = settings["model"]
-    install(args.settings.absolute(), args.destination.absolute(), config)
+    install(args.settings.absolute(), args.destination.absolute(), config, args.preview_model, args.recall_model)
     print(f"Installed Cairn lifecycle hooks in {args.settings}. Start a fresh Claude session.")
 
 

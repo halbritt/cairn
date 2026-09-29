@@ -17,6 +17,9 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("claude_installer", ROOT / "scripts/install-claude-hooks.py")
+shared = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(shared)
 CONTEXT_LIMIT = 12000  # matches the engine's CONTEXT_BYTES retrieval budget
 EVENTS = {
     "SessionStart": dict(timeout=13, additionalContextLimit=CONTEXT_LIMIT),
@@ -86,6 +89,8 @@ def main():
     parser.add_argument("--claude", default=shutil.which("claude"),
                         help="Claude Code CLI used for checkpoint selection, as in the other lifecycle adapters")
     parser.add_argument("--model", default="claude-sonnet-5", help="selection model")
+    parser.add_argument("--preview-model")
+    parser.add_argument("--recall-model")
     parser.add_argument("--socket", type=Path, default=home / ".local/share/cairn/api.sock")
     parser.add_argument("--token-file", type=Path, default=home / ".local/share/cairn/hosted-agent.token")
     parser.add_argument("--repo", default=str(home / "git/cairn"))
@@ -94,6 +99,8 @@ def main():
         parser.error("installed cairn and claude executables are required")
     config = dict(cairn=str(Path(args.cairn).absolute()), claude=str(Path(args.claude).absolute()), model=args.model,
                   socket=str(args.socket.absolute()), token_file=str(args.token_file.absolute()), repo=args.repo)
+    config_path = args.destination.absolute() / "config.json"
+    config = shared.retain_model_overrides(config, config_path, args.preview_model, args.recall_model)
     install(args.hooks.absolute(), args.destination.absolute(), config)
     print(f"Installed and trusted Cairn lifecycle hooks in {args.hooks}. Start a fresh Codex session.")
 

@@ -1,5 +1,13 @@
 # Ambient memory in Claude Code
 
+The engine config supports optional `preview_model` and `recall_model` fields.
+Preview admission selects `preview_model`, then `recall_model`, then the existing
+`model`; recall body applicability selects `recall_model`, then `model`.
+Capture keeps `model`. With no overrides, selection is unchanged. All four
+lifecycle installers accept `--preview-model` and `--recall-model`; omitting
+either on reinstall retains its installed value. Invalid overrides fail clearly.
+These settings only choose a selector, not a recommended production model.
+
 Cairn's optional Claude Code hooks retrieve memory before a task and preserve
 selected context before compaction or exit. Install them once at user scope;
 normal sessions in other projects use the same shared collection.
