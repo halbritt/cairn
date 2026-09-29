@@ -738,7 +738,7 @@ def cmd_agent(args):
         stores[label] = dict(store=store, hook=str(Path(hook).resolve()))
         arms.append(label)
     plan = []
-    for seed in range(args.seeds):
+    for seed in range(args.first_seed, args.first_seed + args.seeds):
         for case in cases:
             order = list(arms)
             random.Random(f"{seed}:{case['id']}").shuffle(order)
@@ -855,6 +855,7 @@ def main(argv=None):
     a.add_argument("--memory", action="append", default=[], help="LABEL:CAIRN_BINARY:MEMORY_PY")
     a.add_argument("--cases", nargs="*")
     a.add_argument("--seeds", type=int, default=1)
+    a.add_argument("--first-seed", type=int, default=0)
     a.add_argument("--model", default="sonnet")
     a.add_argument("--wording", default="task", choices=["task", "paraphrase", "direct"])
     a.add_argument("--distractors", type=int, default=1900)
