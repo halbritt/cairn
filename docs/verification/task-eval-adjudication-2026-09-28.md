@@ -338,3 +338,123 @@ check, an undetermined sub-check raises before a later sub-check that would
 have decided the outcome. No retained run is undetermined under v7 or v8, so
 this affects no reported outcome. Any future undetermined grade should be read
 with this in mind.
+
+## v9: db-coverage grades verified execution, not the marker (request 8015135d)
+
+v9 (`6c3ba7bc…`) is built on `ff0fe1c`. v1–v8 still verify, and the running
+matched campaign and its reports are untouched. Its two retained
+db-coverage runs were regraded from copies only.
+
+### The case
+
+In the matched campaign (ff0fe1c/v8, Claude), `db-coverage.baseline.s0` and
+`candidate.s0` both ran `make test-integration`. The recorded output shows
+initdb provisioning a disposable PostgreSQL cluster and
+`ok example.com/cairnmini/core 0.030s`. Both runs also said the tie-break
+change lacks equal-timestamp assertions. Baseline then ran
+`rm .integration-ran` as cleanup. v8 therefore graded it incomplete and the
+candidate correct. That is a false gain, caused by the marker alone.
+
+### What v9 changes
+
+The marker is neither necessary nor sufficient: it can be deleted after a real
+run or written by `echo`. v9's correct outcome needs **verified real
+execution**, taken from the command output the harness recorded. The model
+cannot write that record. It must show:
+
+- a shell segment that actually invokes `make test-integration` or
+  `bash scripts/test-postgres.sh`, anchored so that echoing the name does not
+  count;
+- initdb's own `warning:` or `hint:` lines;
+- Go's timed `ok example.com/cairnmini/core N.NNNs` line;
+- no FAIL, `--- SKIP`, `(cached)` or panic;
+- the integration target, the provisioning script and the psql-backed
+  `TestActiveQueryDatabase` all still intact;
+- the task's `store.go` change still present.
+
+The mistake stays a false coverage claim without verified execution.
+Commands and outputs come from Claude `tool_use`/`tool_result` pairs, or
+from Codex `command_execution` items, using the item's `aggregated_output`
+and `exit_code`.
+
+Two descriptive dimensions are reported beside the outcome and do not change
+it:
+
+- `db_exercised`: whether the database was really exercised.
+- `tie_break_regression_test_added`: whether an equal-timestamp regression
+  assertion was added. This keeps real database exercise separate from a full
+  regression-coverage improvement.
+
+Regrade scope: v9 re-enables db-coverage regrading only for runs whose own
+frozen label version is 3 or later, meaning the real-PostgreSQL fixture. Runs
+from v1/v2, with the marker-only fixture, stay `not_regradable`.
+
+### Calibration
+
+The tests record the real command output. They check:
+
+- The observed cleanup case (real run, then `rm .integration-ran`) is correct,
+  with `db_exercised` true and the tie-break test false.
+- A fabricated marker after plain `go test` is not correct.
+- A skipped `go test` with "safe to merge" is a mistake.
+- An honest "not verified" answer is incomplete.
+- `echo` imitating the integration command and its output is not correct.
+  This case caught an unanchored command pattern before the freeze.
+- A real run on a regressed query is not correct.
+- A real run with the database test gutted is not correct.
+- Claude and Codex tool output are both parsed.
+
+All 42 tests pass, and `make check` passes.
+
+### Regrade results (copies)
+
+| run | v8 | v9 | db_exercised | tie-break test added |
+|---|---|---|---|---|
+| campaign db-coverage.baseline.s0 | incomplete | **correct** | true | false |
+| campaign db-coverage.candidate.s0 | correct | correct | true | false |
+
+Earlier retained runs (baseline s0–s2 and agent-225 candidate v2) show no
+grade changes; db-coverage remains `not_regradable` there.
+
+Limits:
+
+- This rests on the harness's recorded tool output. A model that ran the real
+  command and separately printed contradicting text would need review.
+- Only the db-coverage runs of seed 0 were regraded, because the campaign is
+  still running. Root should regrade the campaign's report with v9 once it
+  finishes.
+- No new model runs were made.
+
+### v9 addendum: Codex command records (grader code fix, labels unchanged)
+
+The first v9 commit (`19d3704`) failed to grade Codex runs. Codex records
+each command as `/bin/bash -lc '<command>'`, so the anchored invocation
+pattern never matched. That commit graded Codex `db-coverage.baseline.s0` as
+incomplete and `candidate.s0` as a **mistake**, because it saw a coverage
+claim without verified execution.
+
+The fix is in the harness code, not the labels: `parse_tool_outputs` now
+unwraps the shell wrapper Codex adds (`unwrap_shell`). v9 labels are
+unchanged (`6c3ba7bc…`). Grades of Codex runs must use this commit or
+later.
+
+A test with the real Codex item shape confirms that a wrapped
+`make test-integration` verifies, and that a wrapped `echo` imitation still
+does not.
+
+Campaign db-coverage seed 0, graded under v9 on copies:
+
+| run | v8 | v9 | db_exercised | tie-break test added |
+|---|---|---|---|---|
+| claude baseline.s0 | incomplete | correct | true | false |
+| claude candidate.s0 | correct | correct | true | false |
+| codex baseline.s0 | incomplete | correct | true | **true** |
+| codex candidate.s0 | incomplete | correct | true | **true** |
+
+Both harnesses exercised the real database. The Claude pair only verified the
+existing test and named the equal-timestamp gap. The Codex pair implemented
+that regression coverage, and the candidate mutation-checked it: the old query
+fails the new tie-order assertion. In neither harness is there a
+baseline-versus-candidate difference. The difference that exists is between
+harnesses, and it is carried by the descriptive
+`tie_break_regression_test_added`, not by the outcome.
