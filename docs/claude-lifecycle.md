@@ -6,7 +6,7 @@ normal sessions in other projects use the same shared collection.
 
 | Event | Behavior |
 | --- | --- |
-| `SessionStart` | Retrieve project guidance on startup or clear; on resume or after compaction, prefer this session's checkpoint. |
+| `SessionStart` | Retrieve required instructions. Defer optional recall on fresh startup or clear without a prompt or explicit workstream; on resume or after compaction, prefer this session's checkpoint. |
 | `UserPromptSubmit` | Search using project, task keywords, quoted phrases and file/error hints; omit weak matches and unchanged bodies already delivered. |
 | `PostToolUse` / `PostToolUseFailure` | Retain recent Read/Edit/Write filenames and diagnostic identifiers for the next search; omit tool output. |
 | `PreCompact` | Select and save a checkpoint before either manual or automatic compaction. |
@@ -17,8 +17,12 @@ arguments, and one current optional body when it fits. The hook inspects up to s
 unseen candidates, including candidates whose short preview misses relevant body
 text. It tries later candidates when an earlier body is stale, irrelevant or too
 large. A file association, quoted phrase or at least two nearby task terms must
-support lexical body delivery; at startup, project-labelled decisions and
-preferences also qualify. Hints expire after 15 minutes. A delivered body is
+support lexical body delivery; startup with task context or a resumed session
+also permits project-labelled decisions and preferences. Fresh, prompt-free
+startup without an explicit workstream performs the ordinary required-context
+search but makes no optional pulls or model calls. Required context must still
+fit whole within the configured budget. The next prompt uses normal recall.
+Hints expire after 15 minutes. A delivered body is
 suppressed at the same version until startup, resume or compaction resets the
 context; required selected context is always retained. Empty or weak results add
 no boilerplate. The bounded shortlist can still miss relevant notes, so explicit

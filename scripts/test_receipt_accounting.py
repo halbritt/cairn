@@ -62,7 +62,7 @@ class ReceiptAccountingTests(unittest.TestCase):
             Path(directory, '.git').mkdir()
             memory = hook.Memory(dict(cairn='fixture', socket='fixture', token_file='fixture', repo='fixture',
                                       semantic_fallback=True, context_bytes=budget), 'receipt-test')
-            event = dict(hook_event_name='SessionStart', cwd=directory, prompt='')
+            event = dict(hook_event_name='SessionStart', cwd=directory, prompt='', workstream='Receipt accounting')
             state = {}
             with patch.object(hook, 'bounded_command', side_effect=cli), \
                  patch.object(hook, 'select_json', return_value=dict(structured_output=dict(index=0))):

@@ -6,7 +6,7 @@ capture that Claude Code already has. They use the shared lifecycle engine,
 
 | Codex event | Behavior |
 | --- | --- |
-| `SessionStart` | Retrieves project guidance on startup or clear. On resume or after compaction, it prefers this session's checkpoint. |
+| `SessionStart` | Retrieves required instructions. Fresh startup or clear without a prompt or explicit workstream defers optional recall. Resume and compaction still prefer this session's checkpoint. |
 | `UserPromptSubmit` | Searches with the prompt's task terms, quoted phrases and hints, and adds matches as additional context. |
 | `PreCompact` | Selects and saves a checkpoint before manual or automatic compaction. |
 | `Stop` (async) | Offers a checkpoint in the background once at least six new top-level messages exist since the last capture. |

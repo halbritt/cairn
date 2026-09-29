@@ -807,21 +807,27 @@ def recall(memory, event, state=None):
         state["seen"] = {k: v for k, v in state.get("seen", {}).items() if k in retained}
     seen = state.setdefault("seen", {})
     intent = retrieval_intent(event, state)
-    kinds = ("decision", "preference") if intent["startup"] and not event.get("prompt") and event.get("source") not in ("resume", "compact") else ()
+    defer_optional = (intent["startup"] and not event.get("prompt", "").strip()
+                      and not event.get("workstream", "").strip()
+                      and event.get("source") not in ("resume", "compact"))
+    kinds = ("decision", "preference") if defer_optional else ()
     result = memory.search(intent["query"], room=RECALL_SEARCH_ROOM, entities=intent["files"], kinds=kinds,
                            timeout=recall_timeout(deadline, 5))
     budget = context_budget(memory.config)
     selected = result.get("selected", [])
     if len(render_recall(selected, []).encode()) > budget:
         raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")
-    entries = [entry for entry in result.get("index", [])
-               if seen.get(entry["record_id"]) != entry["version"]][:RECALL_CANDIDATES]
+    entries = [] if defer_optional else [entry for entry in result.get("index", [])
+                                        if seen.get(entry["record_id"]) != entry["version"]][:RECALL_CANDIDATES]
     previews = [entry for entry in entries if relevant(entry, intent)]
     entries = previews + [entry for entry in entries if entry not in previews]
     state["last_recall"] = status = dict(at=time.time(), outcome="empty", records=[], bytes=0,
                                         discovery="lexical", inspected=0, rejected={})
     chosen = pulled = None
-    if memory.config.get("semantic_fallback"):
+    if defer_optional:
+        status["discovery"] = "deferred"
+        status["optional_deferred"] = "taskless_startup"
+    elif memory.config.get("semantic_fallback"):
         chosen, pulled = verified_candidate(memory, event, intent, result, seen, status, deadline, budget)
         selected = result.get("selected", [])
         previews = [chosen] if chosen else []

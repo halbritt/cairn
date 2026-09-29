@@ -831,11 +831,11 @@ class RecallCandidateTests(unittest.TestCase):
         self.assertEqual(state['last_recall']['rejected']['selector_input_budget'], 1)
         self.assertEqual(state['last_recall']['shortlist_candidates'], 1)
 
-    def test_startup_status_noise_needs_applicability_verification(self):
+    def test_named_startup_status_noise_needs_applicability_verification(self):
         self.memory.config['semantic_fallback'] = True
         entries = [self.entry('status', 'fixture: release status') | {'kind': 'decision'},
                    self.entry('direction', 'fixture: durable direction') | {'kind': 'decision'}]
-        event = dict(self.event, hook_event_name='SessionStart', prompt='')
+        event = dict(self.event, hook_event_name='SessionStart', prompt='', workstream='Database validation')
         with patch.object(self.memory, 'search', return_value=dict(index=entries)) as search, \
              patch.object(self.memory, 'call', side_effect=[
                  self.pulled('status', 'fixture: release status only'),
