@@ -16,6 +16,16 @@ The reader records hashes of the report, corpus, analyzer and each available
 stream. Missing streams are labelled; run paths outside the report's `runs`
 directory are rejected.
 
+New task runs also retain `observed-corpus.json`: the exact authored notes after
+revision overlays, taken from the collection passed to store seeding. Its path
+and SHA-256 appear in both plan and report. The reader checks that snapshot and
+uses it for body identity, so corrected note bodies are not mistaken for unknown
+sources. The base corpus hash remains checked separately. Older reports without
+this snapshot retain base-corpus matching. Regrading preserves the original
+observed corpus; a later label revision does not replace what the agent saw.
+Snapshot paths must remain inside the report directory. Paired execution plans
+must match the complete frozen label hash, including revision assets.
+
 Calls are correlated by native tool ID. Started calls remain incomplete until
 a completion arrives. Failed calls contribute response text bytes but no
 successful delivery. Search previews, selected whole bodies and checked byte

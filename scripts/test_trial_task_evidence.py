@@ -12,6 +12,36 @@ def text(value):
 
 
 class DeliveryEvidenceTest(unittest.TestCase):
+    def test_report_uses_pinned_observed_corpus_after_overlay(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            corpus = root / "corpus.json"
+            corpus.write_text(json.dumps(dict(notes=[dict(id="T", body="old guidance") ])))
+            observed = root / "observed-corpus.json"
+            observed.write_text(json.dumps(dict(notes=[dict(id="T", body="corrected α guidance")])))
+            metadata = dict(path=observed.name, sha256=hashlib.sha256(observed.read_bytes()).hexdigest())
+            record = dict(run_id="case.candidate.s0", case="case", arm="candidate", seed=0, outcome="correct", harness="codex")
+            report = dict(frozen=dict(corpus_sha256=hashlib.sha256(corpus.read_bytes()).hexdigest()),
+                          observed_corpus=metadata, records=[record])
+            source = root / "agent.json"
+            source.write_text(json.dumps(report))
+            stream = root / "runs" / record["run_id"] / "stream.jsonl"
+            stream.parent.mkdir(parents=True)
+            payload = dict(selection=dict(record=dict(record_id="r", version=1,
+                body="corrected α guidance", scope=dict(repo="trial:task-eval"))))
+            stream.write_text(json.dumps(dict(type="item.completed", item=dict(id="p", type="mcp_tool_call",
+                server="cairn", tool="cairn_pull", status="completed", result=dict(content=text(payload))))))
+            result = evidence.analyze_report(source, corpus)
+            self.assertEqual(result["records"][0]["body_notes"], ["T"])
+            self.assertEqual(result["observed_corpus_sha256"], metadata["sha256"])
+            observed.write_text('{"notes":[]}')
+            with self.assertRaisesRegex(ValueError, "observed corpus hash"):
+                evidence.analyze_report(source, corpus)
+            metadata["path"] = "../outside.json"
+            source.write_text(json.dumps(report))
+            with self.assertRaisesRegex(ValueError, "outside"):
+                evidence.analyze_report(source, corpus)
+
     def test_retained_report_enforces_frozen_source_and_run_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
