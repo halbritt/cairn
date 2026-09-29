@@ -64,7 +64,8 @@ def install(hooks_path, destination, config):
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
     shutil.copyfile(ROOT / "integrations/lifecycle/memory.py", script)
     script.chmod(0o700)
-    write_json(config_path, dict(config, harness="codex", state_dir=str(destination / "state")))
+    write_json(config_path, dict(config, harness="codex", state_dir=str(destination / "state"),
+                                 semantic_fallback=config.get("semantic_fallback", True)))
     backup = hooks_path.with_name(hooks_path.name + ".before-cairn-lifecycle")
     if original is not None and not backup.exists():
         backup.write_bytes(original)

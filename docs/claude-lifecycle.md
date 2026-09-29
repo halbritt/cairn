@@ -92,6 +92,20 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   require a whole-body pull. Other oversized bodies are skipped in favor of a
   later candidate when one fits. Bounded preview entries retain their pull
   handles when they fit.
+  With the installed `semantic_fallback` default, the tested sorted hook query
+  feeds lexical and semantic discovery. Both contribute a bounded shortlist of
+  current bodies. One tool-free model decision checks applicability across that
+  shortlist; shared words, a file association,
+  or a project label alone cannot inject an optional body. An unavailable model
+  omits optional guidance, while required context remains. The semantic route
+  also runs after an unhelpful exact-file result. Setting `semantic_fallback`
+  explicitly to `false` keeps the earlier lexical-only route. The hook records
+  the shortlist size, source extents, pull and selector durations, aggregate
+  selector-input bytes, provider-reported cost, and omission reasons in recall
+  status. The selector input is capped at 24,000 UTF-8 bytes; candidates that
+  would exceed it are omitted whole. Its eight-second allowance starts after
+  candidate pulls but never extends the 11-second recall deadline. Reinstall
+  hooks to apply the new default; no running copy is changed.
   Mandatory context is never truncated. Retrieval runs on lifecycle events, not
   on every model or tool request; it does not enforce the whole conversation's
   context budget. Recall has an 11-second local deadline and at most six lexical
