@@ -32,6 +32,14 @@ passages, selects the best passage per note, then returns at most 100 notes.
 There is no approximate vector index or post-search permission filter. The
 compiler's existing 10,000-record scoped scan limit remains.
 
+The compiler loads current sources in batches of 256 within its existing
+repeatable-read transaction. It retains every scoped candidate and the same
+privacy and applicability checks. Ordinary A/context notes can skip further
+database reads only when that snapshot shows no scope authorization, forgotten
+dependency, conflict membership or evidence reference. Other sources use the
+full eligibility path. Candidate receipt details are written together; a failed
+write rolls back the retrieval receipt.
+
 ## Derivation and currentness
 
 Migration 056 adds `semantic_document`, `semantic_passage` and `semantic_job`.
