@@ -92,7 +92,7 @@ def workspace_dir(case):
     return TRIAL / name if name.startswith("revisions/") else TRIAL / "workspaces" / name
 
 
-CHECK_TYPES = {"command", "answer", "file", "exists", "added", "unchanged", "shell", "commit_files", "staged", "all", "any"}
+CHECK_TYPES = {"command", "tool_output", "answer", "file", "exists", "added", "unchanged", "shell", "commit_files", "staged", "all", "any"}
 
 
 def validate(cases, corpus, workspaces=TRIAL / "workspaces"):
@@ -581,6 +581,13 @@ def evaluate(check, ctx):
     if kind == "any":
         return any(evaluate(c, ctx) for c in check["checks"])
     expect = check.get("expect", True)
+    if kind == "tool_output":
+        # Evidence from the harness's own record of a command and its output, which the model cannot write.
+        matched = [t for t in ctx.get("tool_outputs", [])
+                   if re.search(check["command"], t["command"]) and not t.get("is_error")
+                   and all(re.search(pattern, t["output"]) for pattern in check.get("output", []))
+                   and not any(re.search(pattern, t["output"]) for pattern in check.get("output_forbid", []))]
+        return bool(matched) == expect
     if kind == "command":
         return any(re.search(check["pattern"], c) for c in ctx["commands"]) == expect
     if kind == "answer":
@@ -653,6 +660,8 @@ def grade(case, ctx):
     else:
         outcome = "incomplete"
     result = dict(outcome=outcome, correct=correct, mistake=mistakes, stratum=case.get("stratum", "completion"))
+    if case.get("descriptive"):
+        result["descriptive"] = {name: verdict(check, ctx) for name, check in case["descriptive"].items()}
     if ctx.get("check_log"):
         result["check_log"] = ctx["check_log"]
     return result
@@ -666,6 +675,31 @@ def parse_stream(text, harness="claude"):
     if harness != "claude":
         raise ValueError("unknown harness " + harness)
     return parse_claude_stream(text)
+
+
+def parse_tool_outputs(text, harness="claude"):
+    """Commands with the output and error status the harness recorded for them (not model-written text)."""
+    outputs, pending = [], {}
+    for line in text.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if harness == "codex":
+            item = event.get("item") or {}
+            if event.get("type") == "item.completed" and item.get("type") == "command_execution":
+                outputs.append(dict(command=item.get("command", ""), output=item.get("aggregated_output") or "",
+                                    is_error=item.get("exit_code") not in (0, None)))
+            continue
+        content = (event.get("message") or {}).get("content")
+        for part in content if isinstance(content, list) else []:
+            if part.get("type") == "tool_use" and part.get("name") == "Bash":
+                pending[part.get("id")] = (part.get("input") or {}).get("command", "")
+            elif part.get("type") == "tool_result" and part.get("tool_use_id") in pending:
+                body = part.get("content")
+                body = body if isinstance(body, str) else "".join(x.get("text", "") for x in body or [] if isinstance(x, dict))
+                outputs.append(dict(command=pending.pop(part["tool_use_id"]), output=body, is_error=bool(part.get("is_error"))))
+    return outputs
 
 
 def parse_codex_stream(text):
@@ -864,6 +898,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
     trace = parse_stream(stdout, args.harness)
     failure = execution_failure(trace, code)
     ctx = dict(cwd=cwd, commands=trace["commands"], answer=trace["answer"],
+               tool_outputs=parse_tool_outputs(stdout, args.harness),
                snapshot=json.loads((root / ".eval-snapshot.json").read_text()))
     graded = grade(case, ctx)
     if failure:
@@ -1047,7 +1082,8 @@ def cmd_regrade(args):
             record["graded_before"] = {k: record.get(k) for k in ("outcome", "correct", "mistake")}
             record["primary"] = case.get("primary", True)
             record["stratum"] = case.get("stratum", "completion")
-            if case.get("regrade") is False:
+            run_version = (data.get("frozen") or {}).get("label_version", 1)
+            if case.get("regrade") is False or run_version < case.get("regrade_min_label_version", 0):
                 # The fixture or task changed in this version; retained runs cannot answer the new checks.
                 record.update(outcome="not_regradable", correct=None, mistake=None, regrade_reason=case.get("regrade_reason"))
                 records.append(record)
@@ -1062,7 +1098,9 @@ def cmd_regrade(args):
                               correct=None, mistake=None)
                 records.append(record)
                 continue
+            stream = (base / "stream.jsonl").read_text()
             ctx = dict(cwd=base / "work" / case["cwd"], commands=trace["commands"], answer=trace["answer"],
+                       tool_outputs=parse_tool_outputs(stream, record.get("harness", data.get("harness", "claude"))),
                        snapshot=json.loads((base / "work" / ".eval-snapshot.json").read_text()))
             record.update(grade(case, ctx))
         records.append(record)
