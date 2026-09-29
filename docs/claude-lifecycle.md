@@ -104,7 +104,12 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   explicitly to `false` keeps the earlier lexical-only route. The hook records
   preview and body shortlist sizes, source extents, pull and selector durations,
   aggregate selector-input bytes, provider-reported costs, and omission reasons
-  in recall status. Both selector inputs together are capped at 24,000 UTF-8
+  in recall status. `receipt_attempts` counts candidate attempts; `receipt_pull_calls`
+  counts full-body and span CLI pull attempts, including failures and refusals.
+  Successful pulls consume receipt credits even when later context or source
+  validation rejects their contents. A byte-cost refusal alone does not mark
+  the receipt exhausted, so a later smaller candidate can still be inspected.
+  Both selector inputs together remain capped at 24,000 UTF-8
   bytes; candidates that would exceed it are omitted whole. Preview admission
   has a three-second allowance; the body decision's eight-second allowance
   starts after candidate pulls. Neither extends the 11-second recall deadline.
