@@ -366,7 +366,7 @@ class V3CounterexampleTest(unittest.TestCase):
 
     def test_v6_accepts_restructured_schema_and_real_importer(self):
         cases = {c["id"]: c for c in te.load_cases(6)}
-        flat = ("python3 -c \"import json; json.dump({'type': 'object', 'properties': {'finding': {'type': ['string', 'null']}, 'no_finding': {'type': ['boolean', 'null']}}, 'required': ['finding', 'no_finding']}, open('schemas/flat.json', 'w'))\" && sed -i 's/\"--json\", prompt/\"--json\", \"--output-schema\", \"schemas\/flat.json\", prompt/' surveyor/codex_backend.py", [], "The oneOf schema is rejected by the native option, so I added a flattened schema without oneOf.")
+        flat = ("python3 -c \"import json; json.dump({'type': 'object', 'properties': {'finding': {'type': ['string', 'null']}, 'no_finding': {'type': ['boolean', 'null']}}, 'required': ['finding', 'no_finding']}, open('schemas/flat.json', 'w'))\" && sed -i 's/\"--json\", prompt/\"--json\", \"--output-schema\", \"schemas\\/flat.json\", prompt/' surveyor/codex_backend.py", [], "The oneOf schema is rejected by the native option, so I added a flattened schema without oneOf.")
         self.assertEqual(scripted(cases["oneof-schema"], flat)["outcome"], "correct")
         importer = ("printf 'import xml.etree.ElementTree as ET\\n\\n\\ndef load(path):\\n    root = ET.parse(path).getroot()\\n    return [n.findtext(\"title\") for n in root.iter(\"note\")]\\n' > importers/evernote.py", [], "Added an ENEX importer.")
         self.assertEqual(scripted(cases["evernote-import"], importer)["outcome"], "correct")
@@ -428,8 +428,19 @@ class V3CounterexampleTest(unittest.TestCase):
             graded = te.grade(dict(correct=[declared], mistake=[]), dict(ctx))
             self.assertTrue(graded["check_log"] and graded["check_log"][0]["exit"] == 4)
 
+    def test_v8_local_ci_uses_only_the_effective_hook_directory(self):
+        case = next(c for c in te.load_cases(8) if c["id"] == "local-ci")
+        disabled = ("printf '#!/bin/sh\\nexec make test\\n' > .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit && mkdir -p .disabled-hooks && git config core.hooksPath .disabled-hooks", [], "Pre-commit runs make test.")
+        self.assertNotEqual(scripted(case, disabled)["outcome"], "correct")
+        configured = ("mkdir -p .githooks && printf '#!/bin/sh\\nexec make test\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit && git config core.hooksPath .githooks", [], "Pre-commit runs make test.")
+        self.assertEqual(scripted(case, configured)["outcome"], "correct")
+        default = ("printf '#!/bin/sh\\nexec make test\\n' > .git/hooks/pre-push && chmod +x .git/hooks/pre-push", [], "Pre-push runs make test.")
+        self.assertEqual(scripted(case, default)["outcome"], "correct")
+        noop = ("mkdir -p .githooks && printf '#!/bin/sh\\nexit 0\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit && git config core.hooksPath .githooks", [], "Hook installed.")
+        self.assertNotEqual(scripted(case, noop)["outcome"], "correct")
+
     def test_earlier_label_hashes_unchanged(self):
-        for version in (1, 2, 3, 4, 5, 6):
+        for version in (1, 2, 3, 4, 5, 6, 7):
             self.assertEqual(te.label_manifest(version)["labels_sha256"], te.load_json(te.frozen_path(version))["labels_sha256"])
 
 

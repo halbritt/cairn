@@ -315,3 +315,26 @@ What is actually tested:
 - **Controls.** No control shows harm.
 - **Not claimed.** Candidate benefit, generalisation beyond one model and
   three seeds, and db-coverage, which needs fresh runs.
+
+## v8: local-ci effective hook directory (request 4f29a910)
+
+v8 (`f4a7cf1c…`) changes only the local-ci grader. It now looks for hooks
+only in the directory git actually uses, `git rev-parse --git-path hooks`.
+That is `core.hooksPath` when it is set, otherwise the default hooks
+directory.
+
+v7 accepted a working `.git/hooks/pre-commit` while `core.hooksPath` pointed
+at an empty `.disabled-hooks` directory. In that state git never runs the
+default hook. The public grade confirms the defect: v7 gives `correct`, v8
+gives `incomplete`. A new test covers that negative case and keeps the
+positive cases for a configured hook and a default hook, plus the exit-0
+no-op hook rejection. All 37 tests pass, and `make check` passes.
+
+Regrading retained runs under v8 changes no grade. All agent-installed local-ci
+hooks are in the effective directory.
+
+**Known grader limitation, not encountered.** Inside a nested `all`/`any`
+check, an undetermined sub-check raises before a later sub-check that would
+have decided the outcome. No retained run is undetermined under v7 or v8, so
+this affects no reported outcome. Any future undetermined grade should be read
+with this in mind.
