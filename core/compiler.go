@@ -360,11 +360,17 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 	}
 	candidates := []candidate{}
 	policyKeys := map[string]string{}
-	for _, id := range ids {
-		record, err := readRecord(ctx, tx, id)
-		if err != nil {
-			return p, nil, err
+	terms := rankingTerms(req.Query, p.Ranking)
+	var chunk []candidateRecord
+	for position, id := range ids {
+		if position%candidateReadChunkSize == 0 {
+			chunk, err = readCandidateChunk(ctx, tx, ids[position:min(position+candidateReadChunkSize, len(ids))])
+			if err != nil {
+				return p, nil, err
+			}
 		}
+		loaded := chunk[position%candidateReadChunkSize]
+		record := loaded.record
 		// Private records are outside a hosted visibility domain: no hidden IDs,
 		// omission counts, or secret-bearing rejection explanations leave it.
 		if !dest.AllowLocal && record.Sensitivity == "local" {
@@ -398,7 +404,6 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			}
 			continue
 		}
-		terms := rankingTerms(req.Query, p.Ranking)
 		words := rankingTerms(record.Body, p.Ranking)
 		score := 0
 		for word := range terms {
@@ -431,7 +436,7 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 			p.Omitted[reason]++
 			continue
 		}
-		selection, reason, err := eligibleWithAdvisory(ctx, tx, record, req.Purpose, allowDisputes)
+		selection, reason, err := loaded.eligible(ctx, tx, req.Purpose, allowDisputes)
 		evaluation.Mandatory = selection.Mandatory
 		if err != nil {
 			evaluation.Reason = Code(err)
