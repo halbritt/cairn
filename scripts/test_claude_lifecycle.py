@@ -870,7 +870,7 @@ class RecallCandidateTests(unittest.TestCase):
         semantic = self.entry('semantic')
         body = 'Renew the original lease claim.'
         cap = []
-        def select(config, schema, prompt, request, timeout=8, stage="capture"):
+        def select(config, schema, prompt, request, timeout=8, stage="capture", observation=None):
             if schema is hook.PREVIEW_SCHEMA:
                 first_body_request = dict(project=str(self.root), request=self.event['prompt'],
                                           workstream=None, startup=False,

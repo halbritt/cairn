@@ -70,7 +70,7 @@ class ReceiptAccountingTests(unittest.TestCase):
                 event = dict(hook_event_name='UserPromptSubmit', cwd=directory, prompt='repair')
                 state = dict(seen={str(i): 1 for i in range(count)})
 
-                def selector(config, schema, prompt, request, timeout, stage='capture'):
+                def selector(config, schema, prompt, request, timeout, stage='capture', observation=None):
                     if schema is hook.PREVIEW_SCHEMA:
                         return dict(structured_output=dict(indices=list(range(min(4, len(request['previews']))))))
                     return dict(structured_output=dict(index=0))
@@ -108,7 +108,7 @@ class ReceiptAccountingTests(unittest.TestCase):
                     data['selection']['record']['version'] = 2
                 return subprocess.CompletedProcess(args, response.returncode, json.dumps(envelope), response.stderr)
 
-            def selector(config, schema, prompt, request, timeout, stage='capture'):
+            def selector(config, schema, prompt, request, timeout, stage='capture', observation=None):
                 if schema is hook.PREVIEW_SCHEMA:
                     return dict(structured_output=dict(indices=list(range(min(4, len(request['previews']))))))
                 return dict(structured_output=dict(index=0))

@@ -22,6 +22,7 @@ RECALL_FIELDS = (
     'preview_admitted', 'receipt_attempts', 'receipt_pull_calls', 'pull_seconds',
     'selector_input_bytes', 'shortlist_candidates', 'shortlist_source_extents',
     'model_seconds', 'model_reported_cost_usd', 'source_extent', 'elapsed_seconds',
+    'preview_process', 'model_process',
 )
 
 

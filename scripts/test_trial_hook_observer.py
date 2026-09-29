@@ -12,7 +12,8 @@ ENGINE = '''import json, sys
 from pathlib import Path
 def recall(config, event, state):
     state['last_recall'] = dict(outcome='recalled', bytes=40,
-        preview_seconds=event['seconds'], preview_reported_cost_usd=event['cost'])
+        preview_seconds=event['seconds'], preview_reported_cost_usd=event['cost'],
+        preview_process={'outcome':'completed','elapsed_ms':event['seconds'] * 1000})
     return {'hookSpecificOutput': {'additionalContext': 'chosen note'}}
 def handle(config, event):
     path = Path(config['state'])
@@ -95,6 +96,7 @@ class HookObserverTest(unittest.TestCase):
             rows = [json.loads(line) for line in observations.read_text().splitlines()]
             self.assertEqual([r['event'] for r in rows], ['SessionStart', 'UserPromptSubmit', 'PostToolUse'])
             self.assertEqual([r['recall']['preview_reported_cost_usd'] for r in rows[:2]], [.01, .02])
+            self.assertEqual([r['recall']['preview_process']['elapsed_ms'] for r in rows[:2]], [2000, 3000])
             self.assertIsNone(rows[2]['recall'])
             self.assertFalse(rows[2]['recall_attempted'])
             self.assertNotIn('chosen note', observations.read_text())

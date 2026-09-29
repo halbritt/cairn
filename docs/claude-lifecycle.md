@@ -189,6 +189,21 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   Successful pulls consume receipt credits even when later context or source
   validation rejects their contents. A byte-cost refusal alone does not mark
   the receipt exhausted, so a later smaller candidate can still be inspected.
+  Each attempted preview/body selector also records `preview_process` or
+  `model_process`: requested model, process-spawn duration, first stdout/stderr
+  byte times when observed, total process time including cleanup, exit status,
+  and output byte counts. These contain no command arguments, prompts or output
+  text. Spawn time measures `Popen`, not CLI initialization; first output is not
+  provider time-to-first-token. Successful JSON replies may add explicitly
+  labelled CLI-reported duration, API duration, cost and supported usage counts.
+  Missing or invalid values remain absent, including cost after a timeout.
+  If the enclosing deadline expires before launch, process measurements remain
+  absent; an empty observation does not mean a zero-duration call.
+  A completed process is not a valid applicability verdict. An attempted preview
+  selector failure reports `discovery: verification_unavailable`; the precise rejection remains
+  in `rejected`. Session state keeps the latest recall; the existing evaluation
+  observer preserves these fields per invocation. This does not add production
+  history to `use-report` or establish the cause of a slow provider call.
   Both selector inputs together remain capped at 24,000 UTF-8
   bytes; candidates that would exceed it are omitted whole. Preview admission
   has a five-second allowance; the body decision's eight-second allowance

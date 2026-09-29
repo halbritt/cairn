@@ -51,7 +51,7 @@ class PassageAdmissionTests(unittest.TestCase):
                                         sha256=hashlib.sha256(part).hexdigest())
             return subprocess.CompletedProcess(command, 0, json.dumps(dict(ok=True, data=data)), '')
 
-        def selector(config, schema, prompt, request, timeout, stage='capture'):
+        def selector(config, schema, prompt, request, timeout, stage='capture', observation=None):
             self.assertIs(schema, hook.SHORTLIST_SCHEMA)
             inspected.extend(request['candidates'])
             choice = next((i for i, candidate in enumerate(inspected)

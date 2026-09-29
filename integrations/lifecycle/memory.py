@@ -4,6 +4,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import selectors
@@ -140,9 +141,10 @@ def clip(text, limit):
     return text.encode("utf-8")[:limit].decode("utf-8", errors="ignore")
 
 
-def run_json(command, *, body=None, timeout=5, env=None, cwd=None):
+def run_json(command, *, body=None, timeout=5, env=None, cwd=None, observation=None):
     try:
-        process = bounded_command(command, body=body, timeout=timeout, env=env, cwd=cwd)
+        process = bounded_command(command, body=body, timeout=timeout, env=env, cwd=cwd,
+                                  observation=observation)
     except subprocess.TimeoutExpired as exc:
         raise HookError("command timed out; memory operation not confirmed") from exc
     except UnicodeError as exc:
@@ -150,6 +152,8 @@ def run_json(command, *, body=None, timeout=5, env=None, cwd=None):
     except OSError as exc:
         raise HookError("could not start memory command") from exc
     if process.returncode:
+        if observation is not None:
+            observation["outcome"] = "nonzero_exit"
         # CLI stderr and model failures may echo submitted text. Do not log them.
         try:
             refusal = json.loads(process.stdout)
@@ -164,17 +168,25 @@ def run_json(command, *, body=None, timeout=5, env=None, cwd=None):
             raise ValueError("expected JSON object")
         return result
     except ValueError as exc:
+        if observation is not None:
+            observation["outcome"] = "invalid_json"
         raise HookError("memory command returned invalid JSON") from exc
 
 
-def bounded_command(command, *, body, timeout, env, cwd):
+def bounded_command(command, *, body, timeout, env, cwd, observation=None):
     """Read both child pipes concurrently, stopping before either exceeds the cap."""
     input_bytes = None if body is None else body.encode("utf-8")
-    deadline = time.monotonic() + timeout
-    process = subprocess.Popen(command, stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=cwd)
+    started = time.monotonic()
+    deadline = started + timeout
+    process = None
     output = {"stdout": bytearray(), "stderr": bytearray()}
+    if observation is not None:
+        observation["outcome"] = "incomplete"
     try:
+        process = subprocess.Popen(command, stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=cwd)
+        if observation is not None:
+            observation["spawn_ms"] = round((time.monotonic() - started) * 1000, 3)
         with selectors.DefaultSelector() as selector:
             for name in output:
                 stream = getattr(process, name)
@@ -206,6 +218,8 @@ def bounded_command(command, *, body, timeout, env, cwd):
                         selector.unregister(stream)
                         stream.close()
                         continue
+                    if observation is not None:
+                        observation.setdefault("first_" + name + "_ms", round((time.monotonic() - started) * 1000, 3))
                     output[name].extend(chunk)
                     if len(output[name]) > COMMAND_OUTPUT_BYTES:
                         raise HookError("memory command output exceeded limit; operation not confirmed")
@@ -213,15 +227,31 @@ def bounded_command(command, *, body, timeout, env, cwd):
         if remaining <= 0:
             raise subprocess.TimeoutExpired(command, timeout)
         returncode = process.wait(timeout=remaining)
-        return subprocess.CompletedProcess(command, returncode, output["stdout"].decode("utf-8"),
-                                           output["stderr"].decode("utf-8", errors="replace"))
+        result = subprocess.CompletedProcess(command, returncode, output["stdout"].decode("utf-8"),
+                                             output["stderr"].decode("utf-8", errors="replace"))
+        if observation is not None:
+            observation["outcome"] = "completed"
+        return result
+    except subprocess.TimeoutExpired:
+        if observation is not None:
+            observation["outcome"] = "timeout"
+        raise
+    except (HookError, UnicodeError, OSError):
+        if observation is not None:
+            observation["outcome"] = "spawn_failed" if process is None else "communication_failed"
+        raise
     finally:
-        if process.poll() is None:
-            process.kill()
-            process.wait()
-        for stream in (process.stdin, process.stdout, process.stderr):
-            if stream is not None:
-                stream.close()
+        if process is not None:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
+        if observation is not None:
+            observation.update(elapsed_ms=round((time.monotonic() - started) * 1000, 3),
+                               returncode=process.returncode if process is not None else None,
+                               stdout_bytes=len(output["stdout"]), stderr_bytes=len(output["stderr"]))
 
 
 class Memory:
@@ -680,10 +710,13 @@ def admit_previews(memory, event, intent, sources, status, deadline):
         status["rejected"]["preview_input_budget"] = len(previews)
         return []
     started = time.monotonic()
+    status["preview_process"] = {}
     try:
         verdict = select_json(memory.config, PREVIEW_SCHEMA, PREVIEW_PROMPT, request, stage="preview",
-                              timeout=recall_timeout(min(deadline, started + PREVIEW_MODEL_SECONDS), PREVIEW_MODEL_SECONDS))
+                              timeout=recall_timeout(min(deadline, started + PREVIEW_MODEL_SECONDS), PREVIEW_MODEL_SECONDS),
+                              observation=status["preview_process"])
     except HookError as exc:
+        status["discovery"] = "verification_unavailable"
         status["preview_seconds"] = round(time.monotonic() - started, 3)
         status["rejected"]["preview_timeout" if "timed out" in str(exc) else "preview_unavailable"] = len(previews)
         return []
@@ -696,6 +729,7 @@ def admit_previews(memory, event, intent, sources, status, deadline):
     if (verdict.get("is_error") or not isinstance(indices, list) or len(indices) > MAX_PULLED_CANDIDATES
             or any(type(i) is not int or i < 0 or i >= len(previews) for i in indices)
             or len(set(indices)) != len(indices)):
+        status["discovery"] = "verification_unavailable"
         status["rejected"]["preview_invalid_verdict"] = len(previews)
         return []
     admitted = [previews[index] for index in indices]
@@ -831,9 +865,11 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
         partial_span=sum(pulled.get("source_extent") == "partial_span" for _, pulled, _ in candidates))
     model_deadline = min(deadline, time.monotonic() + SEMANTIC_MODEL_SECONDS)
     model_started = time.monotonic()
+    status["model_process"] = {}
     try:
         verdict = select_json(memory.config, SHORTLIST_SCHEMA, SHORTLIST_PROMPT, selector_request, stage="recall",
-                              timeout=recall_timeout(model_deadline, SEMANTIC_MODEL_SECONDS))
+                              timeout=recall_timeout(model_deadline, SEMANTIC_MODEL_SECONDS),
+                              observation=status["model_process"])
     except HookError as exc:
         status["model_seconds"] = round(time.monotonic() - model_started, 3)
         status["discovery"] = "verification_unavailable"
@@ -1195,7 +1231,7 @@ def selector_model(config, stage):
     return None
 
 
-def select_json(config, schema, prompt, excerpt, timeout=35, stage="capture"):
+def select_json(config, schema, prompt, excerpt, timeout=35, stage="capture", observation=None):
     env = dict(os.environ, CAIRN_LIFECYCLE_CHILD="1")
     env.pop("CLAUDECODE", None)
     command = [config["claude"], "--print", "--output-format", "json", "--disable-slash-commands",
@@ -1209,7 +1245,24 @@ def select_json(config, schema, prompt, excerpt, timeout=35, stage="capture"):
     # Keep existing provider authentication, but load no project settings/tools.
     # --bare would disable the owner's OAuth credentials as well as hooks.
     with tempfile.TemporaryDirectory(prefix="cairn-selection-") as work:
-        result = run_json(command, body=encoded(excerpt), timeout=timeout, env=env, cwd=work)
+        if observation is not None:
+            observation["requested_model"] = model
+        result = run_json(command, body=encoded(excerpt), timeout=timeout, env=env, cwd=work,
+                          observation=observation)
+    if observation is not None:
+        if result.get("is_error"):
+            observation["outcome"] = "reported_error"
+        for key, target in (("duration_ms", "reported_duration_ms"),
+                            ("duration_api_ms", "reported_api_duration_ms"),
+                            ("total_cost_usd", "reported_cost_usd")):
+            value = result.get(key)
+            if type(value) in (int, float) and value >= 0 and (type(value) is int or math.isfinite(value)):
+                observation[target] = value
+        usage = result.get("usage")
+        if isinstance(usage, dict):
+            observation["usage"] = {key: value for key in ("input_tokens", "output_tokens",
+                                    "cache_creation_input_tokens", "cache_read_input_tokens")
+                                    if type(value := usage.get(key)) is int and value >= 0}
     return result
 
 

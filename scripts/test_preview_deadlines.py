@@ -33,7 +33,7 @@ class PreviewDeadlineTests(unittest.TestCase):
                 result.stdout = json.dumps(response)
             return result
 
-        def selector(config, schema, prompt, request, timeout, stage="capture"):
+        def selector(config, schema, prompt, request, timeout, stage="capture", observation=None):
             preview = schema is hook.PREVIEW_SCHEMA
             selectors.append(dict(stage='preview' if preview else 'body', timeout=timeout))
             duration = preview_seconds if preview else body_seconds

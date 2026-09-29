@@ -34,7 +34,7 @@ class SelectorFittingTests(unittest.TestCase):
                     data.update(discovery=dict(state='ready'), page={})
             return subprocess.CompletedProcess(command, response.returncode, json.dumps(envelope), response.stderr)
 
-        def selector(config, schema, prompt, request, timeout, stage='capture'):
+        def selector(config, schema, prompt, request, timeout, stage='capture', observation=None):
             self.assertIs(schema, hook.SHORTLIST_SCHEMA)
             self.assertLessEqual(len(hook.encoded(request).encode()), 24000)
             inspected.extend(request['candidates'])
