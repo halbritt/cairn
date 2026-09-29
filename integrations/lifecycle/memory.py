@@ -786,17 +786,29 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
             status["rejected"]["unavailable"] = status["rejected"].get("unavailable", 0) + 1
             continue
         status["inspected"] += 1
-        partial = pulled.get("source_extent") == "partial_span"
-        span_key = (*identity, pulled["span"]["offset"], pulled["span"]["end"]) if partial else None
-        if partial and span_key in accepted_spans:
-            continue
         body = (pulled["span"]["body"] if pulled.get("source_extent") == "partial_span"
                 else pulled["selection"]["record"]["body"])
         selector_view = dict(index=len(candidates), body=body,
                              source_extent=pulled.get("source_extent", "full_body"))
         proposed = dict(selector_request, candidates=[*selector_request["candidates"], selector_view])
+        if (pulled.get("source_extent") != "partial_span"
+                and len(encoded(proposed).encode()) + status["preview_input_bytes"] > SELECTOR_INPUT_BYTES):
+            # Reuse the paid whole read; delivery room and selector room differ.
+            try:
+                excerpt = excerpt_from_full(entry, pulled)
+            except HookError:
+                excerpt = None
+            if excerpt is not None and len(render_recall(selected, [entry], excerpt, result.get("discovery")).encode()) <= budget:
+                pulled = excerpt
+                body = pulled["span"]["body"]
+                selector_view = dict(index=len(candidates), body=body, source_extent="partial_span")
+                proposed = dict(selector_request, candidates=[*selector_request["candidates"], selector_view])
         if len(encoded(proposed).encode()) + status["preview_input_bytes"] > SELECTOR_INPUT_BYTES:
             status["rejected"]["selector_input_budget"] = status["rejected"].get("selector_input_budget", 0) + 1
+            continue
+        partial = pulled.get("source_extent") == "partial_span"
+        span_key = (*identity, pulled["span"]["offset"], pulled["span"]["end"]) if partial else None
+        if partial and span_key in accepted_spans:
             continue
         candidates.append((entry, pulled, body))
         selector_request["candidates"].append(selector_view)
