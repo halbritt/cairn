@@ -200,8 +200,17 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   If the enclosing deadline expires before launch, process measurements remain
   absent; an empty observation does not mean a zero-duration call.
   A completed process is not a valid applicability verdict. An attempted preview
-  selector failure reports `discovery: verification_unavailable`; the precise rejection remains
-  in `rejected`. Session state keeps the latest recall; the existing evaluation
+  selector failure reports `discovery: verification_unavailable`. Invalid verdicts
+  retain the aggregate rejection in `rejected` and a fixed `validation_error`
+  code in that selector's process observation: `reported_error`,
+  `structured_output_missing`, `structured_output_type`, `indices_missing`,
+  `indices_type`, `too_many_indices`, `index_missing`, `index_type`,
+  `index_out_of_range`, or `duplicate_indices`. The first failed check is recorded;
+  invalid field values and response text are not. Preview selection uses `indices`;
+  body selection uses `index` and accepts -1 as a valid negative decision.
+  Valid verdicts have no `validation_error`; their applicability remains a separate
+  decision. These codes describe failed checks, not why a provider produced them.
+  Session state keeps the latest recall; the existing evaluation
   observer preserves these fields per invocation. This does not add production
   history to `use-report` or establish the cause of a slow provider call.
   Both selector inputs together remain capped at 24,000 UTF-8

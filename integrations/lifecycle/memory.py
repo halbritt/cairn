@@ -726,9 +726,27 @@ def admit_previews(memory, event, intent, sources, status, deadline):
         status["preview_reported_cost_usd"] = reported_cost
     structured = verdict.get("structured_output")
     indices = structured.get("indices") if isinstance(structured, dict) else None
-    if (verdict.get("is_error") or not isinstance(indices, list) or len(indices) > MAX_PULLED_CANDIDATES
-            or any(type(i) is not int or i < 0 or i >= len(previews) for i in indices)
-            or len(set(indices)) != len(indices)):
+    reason = None
+    if verdict.get("is_error"):
+        reason = "reported_error"
+    elif "structured_output" not in verdict:
+        reason = "structured_output_missing"
+    elif not isinstance(structured, dict):
+        reason = "structured_output_type"
+    elif "indices" not in structured:
+        reason = "indices_missing"
+    elif not isinstance(indices, list):
+        reason = "indices_type"
+    elif len(indices) > MAX_PULLED_CANDIDATES:
+        reason = "too_many_indices"
+    elif any(type(i) is not int for i in indices):
+        reason = "index_type"
+    elif any(i < 0 or i >= len(previews) for i in indices):
+        reason = "index_out_of_range"
+    elif len(set(indices)) != len(indices):
+        reason = "duplicate_indices"
+    if reason:
+        status["preview_process"]["validation_error"] = reason
         status["discovery"] = "verification_unavailable"
         status["rejected"]["preview_invalid_verdict"] = len(previews)
         return []
@@ -882,7 +900,21 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
         status["model_reported_cost_usd"] = reported_cost
     structured = verdict.get("structured_output")
     choice = structured.get("index") if isinstance(structured, dict) else None
-    if verdict.get("is_error") or type(choice) is not int or choice < -1 or choice >= len(candidates):
+    reason = None
+    if verdict.get("is_error"):
+        reason = "reported_error"
+    elif "structured_output" not in verdict:
+        reason = "structured_output_missing"
+    elif not isinstance(structured, dict):
+        reason = "structured_output_type"
+    elif "index" not in structured:
+        reason = "index_missing"
+    elif type(choice) is not int:
+        reason = "index_type"
+    elif choice < -1 or choice >= len(candidates):
+        reason = "index_out_of_range"
+    if reason:
+        status["model_process"]["validation_error"] = reason
         status["discovery"] = "verification_unavailable"
         status["rejected"]["invalid_verdict"] = len(candidates)
         return None, None
