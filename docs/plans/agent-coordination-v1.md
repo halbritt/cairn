@@ -402,6 +402,9 @@ relevant current notes before acting. Read required selected context and check
 applicability against the task and current source within the owner's existing
 authorization. The wake notice is not the task query. Trivial acknowledgments
 do not need a rote lookup; response and notice handling is unchanged.
+Start without a record-kind filter unless the assignment explicitly limits
+kinds. Labels are fallible: an ordinary note can contain the relevant decision
+or procedure, so restricting search to those labels can hide useful guidance.
 
 AGENTS.md already requires memory retrieval at the start of substantive work.
 This request-local cue clarifies sequencing after an automatic notification;
