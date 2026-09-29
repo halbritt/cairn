@@ -806,7 +806,7 @@ func (s *Store) commitRetrieval(ctx context.Context, tx pgx.Tx, req CompileReque
 // retaining the whole identifier for exact matches. Version 4 also excludes
 // question framing words. Negation and obligation words remain meaningful.
 func rankingTerms(text, version string) map[string]bool {
-	if version == "semantic-scope-recency/1" || hasHybridRanking(version) || hasLiteralRanking(version) {
+	if version == "semantic-scope-recency/1" || hasIndexedRanking(version) || hasLiteralRanking(version) {
 		version = "lexical-scope-recency/4"
 	}
 	terms := lexical(text)

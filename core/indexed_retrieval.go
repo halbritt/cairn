@@ -37,6 +37,14 @@ func hasHybridRanking(ranking string) bool {
 	return ranking == "hybrid-scope-recency/1" || ranking == "hybrid-scope-recency/2" || ranking == "hybrid-scope-recency/3" || ranking == "hybrid-scope-recency/4"
 }
 
+func hasInterleavedRanking(ranking string) bool {
+	return ranking == "interleaved-scope-recency/1" || ranking == "interleaved-scope-recency/2" || ranking == "interleaved-scope-recency/3" || ranking == "interleaved-scope-recency/4"
+}
+
+func hasIndexedRanking(ranking string) bool {
+	return hasHybridRanking(ranking) || hasInterleavedRanking(ranking)
+}
+
 func passageDigest(hits []SemanticPassageHit) string {
 	hits = slices.Clone(hits)
 	slices.SortFunc(hits, func(a, b SemanticPassageHit) int { return strings.Compare(a.RecordID, b.RecordID) })
@@ -50,7 +58,7 @@ func validPassage(body string, span ByteSpanRequest) bool {
 }
 
 func (s *Store) rankIndexed(ctx context.Context, query string, p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation) ([]candidate, error) {
-	p.Schema = "cairn.semantic/15"
+	p.Schema = "cairn.semantic/16"
 	p.Discovery = &DiscoveryRanking{State: "unavailable"}
 	notes := []SemanticNote{}
 	bodies := map[string]string{}
@@ -96,25 +104,25 @@ func (s *Store) rankIndexed(ctx context.Context, query string, p *SemanticPackag
 	p.Discovery = id
 	switch {
 	case hasEntityRanking(p.Ranking):
-		p.Ranking = "hybrid-scope-recency/4"
+		p.Ranking = "interleaved-scope-recency/4"
 	case hasFailureRanking(p.Ranking):
-		p.Ranking = "hybrid-scope-recency/3"
+		p.Ranking = "interleaved-scope-recency/3"
 	case hasLiteralRanking(p.Ranking):
-		p.Ranking = "hybrid-scope-recency/2"
+		p.Ranking = "interleaved-scope-recency/2"
 	default:
-		p.Ranking = "hybrid-scope-recency/1"
+		p.Ranking = "interleaved-scope-recency/1"
 	}
 	for _, h := range r.Hits {
 		hit := h
 		evaluations[h.RecordID].PassageHit = &hit
 	}
-	return rankHybrid(p, candidates, evaluations)
+	return rankIndexedCandidates(p, candidates, evaluations)
 }
 
-// Reciprocal ranks combine bounded lexical and dense lists without treating
-// either raw score as confidence. Exact/entity/failure preferences remain the
-// outer ordering. Frozen features reproduce this computation without a model.
-func rankHybrid(p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation) ([]candidate, error) {
+// Both contracts use the same bounded channels and outer preferences. Historical
+// hybrid packages retain reciprocal-rank fusion; new packages interleave ranks.
+// Frozen features reproduce either computation without invoking a model.
+func rankIndexedCandidates(p *SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation) ([]candidate, error) {
 	lexical := []candidate{}
 	dense := []SemanticPassageHit{}
 	pool := map[string]candidate{}
@@ -138,11 +146,32 @@ func rankHybrid(p *SemanticPackage, candidates []candidate, evaluations map[stri
 		return strings.Compare(a.RecordID, b.RecordID)
 	})
 	scores := map[string]int{}
-	for i, c := range lexical[:min(len(lexical), 100)] {
-		scores[c.selection.Record.RecordID] += 1000000 / (61 + i)
-	}
-	for i, h := range dense {
-		scores[h.RecordID] += 1000000 / (61 + i)
+	if hasInterleavedRanking(p.Ranking) {
+		// At each rank expose lexical, then dense, skipping IDs already exposed.
+		// Duplicate membership earns no bonus and cannot bury a channel's best
+		// match behind its weaker hits. Positive ordinals keep the existing outer
+		// exact/entity/failure ordering and zero-score omission rules intact.
+		add := func(id string) {
+			if scores[id] == 0 {
+				scores[id] = 200 - len(scores)
+			}
+		}
+		for i := range 100 {
+			if i < len(lexical) {
+				add(lexical[i].selection.Record.RecordID)
+			}
+			if i < len(dense) {
+				add(dense[i].RecordID)
+			}
+		}
+	} else {
+		// Schema 15 replay: do not reinterpret its retained RRF contract.
+		for i, c := range lexical[:min(len(lexical), 100)] {
+			scores[c.selection.Record.RecordID] += 1000000 / (61 + i)
+		}
+		for i, h := range dense {
+			scores[h.RecordID] += 1000000 / (61 + i)
+		}
 	}
 	p.Omitted["NO_RETRIEVAL_MATCH"] = 0
 	kept := []candidate{}
@@ -183,7 +212,8 @@ func passagePreview(body string, span ByteSpanRequest) (string, ByteSpanRequest)
 
 func validateFrozenIndexed(p SemanticPackage, evaluations map[string]*CandidateEvaluation) error {
 	invalid := func() error { return failure("INTEGRITY_FAILURE", "historical indexed retrieval metadata is invalid") }
-	if p.Schema != "cairn.semantic/15" || p.Discovery == nil || p.Discovery.State != "ready" || !semanticIdentityValid(p.Discovery) || p.Discovery.Coverage == nil {
+	validContract := (p.Schema == "cairn.semantic/15" && hasHybridRanking(p.Ranking)) || (p.Schema == "cairn.semantic/16" && hasInterleavedRanking(p.Ranking))
+	if !validContract || p.Discovery == nil || p.Discovery.State != "ready" || !semanticIdentityValid(p.Discovery) || p.Discovery.Coverage == nil {
 		return invalid()
 	}
 	coverage := p.Discovery.Coverage

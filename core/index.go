@@ -135,7 +135,7 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 		for _, member := range members {
 			entry := indexEntry(member.selection.Record)
 			entry.Conflicts = member.selection.Conflicts
-			if p.Schema == "cairn.semantic/8" || p.Schema == "cairn.semantic/9" || p.Schema == "cairn.semantic/10" || p.Schema == "cairn.semantic/11" || p.Schema == "cairn.semantic/12" || p.Schema == "cairn.semantic/13" || p.Schema == "cairn.semantic/14" || p.Schema == "cairn.semantic/15" {
+			if p.Schema == "cairn.semantic/8" || p.Schema == "cairn.semantic/9" || p.Schema == "cairn.semantic/10" || p.Schema == "cairn.semantic/11" || p.Schema == "cairn.semantic/12" || p.Schema == "cairn.semantic/13" || p.Schema == "cairn.semantic/14" || (p.Schema == "cairn.semantic/15" || p.Schema == "cairn.semantic/16") {
 				var span ByteSpanRequest
 				entry.Summary, span = indexPreview(member.selection.Record.Body, query, p.Ranking)
 				if hit := evaluations[entry.RecordID].PassageHit; hit != nil && !member.literal {

@@ -186,7 +186,7 @@ func discoveryStatus(p SemanticPackage) SemanticPackage {
 }
 
 func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*CandidateEvaluation, query string) error {
-	if hasHybridRanking(p.Ranking) {
+	if hasIndexedRanking(p.Ranking) {
 		if p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
 			return failure("INTEGRITY_FAILURE", "invalid indexed retrieval intent")
 		}
@@ -198,7 +198,7 @@ func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*Candidat
 		}
 	}
 	invalid := func() error { return failure("INTEGRITY_FAILURE", "historical semantic ranking metadata is invalid") }
-	if p.Schema != "cairn.semantic/7" && ((p.Schema != "cairn.semantic/8" && p.Schema != "cairn.semantic/9" && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/11" && p.Schema != "cairn.semantic/12" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/14" && p.Schema != "cairn.semantic/15") || p.Discovery == nil) {
+	if p.Schema != "cairn.semantic/7" && ((p.Schema != "cairn.semantic/8" && p.Schema != "cairn.semantic/9" && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/11" && p.Schema != "cairn.semantic/12" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/14" && p.Schema != "cairn.semantic/15" && p.Schema != "cairn.semantic/16") || p.Discovery == nil) {
 		if p.Discovery != nil || p.Ranking == "semantic-scope-recency/1" || p.Ranking == "semantic-scope-recency/2" || p.Ranking == "semantic-scope-recency/3" || p.Ranking == "semantic-scope-recency/4" {
 			return invalid()
 		}

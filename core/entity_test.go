@@ -101,7 +101,7 @@ func TestEntityValidationAndCanonicalRetries(t *testing.T) {
 }
 
 func TestEntityRetrievalPreservesGatesAcrossModes(t *testing.T) {
-	for _, mode := range []string{"body", "index", "semantic", "fallback", "browse"} {
+	for _, mode := range []string{"body", "index", "semantic", "indexed", "fallback", "browse"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			s, grant := testOperator(t)
@@ -144,7 +144,7 @@ func TestEntityRetrievalPreservesGatesAcrossModes(t *testing.T) {
 				t.Fatal(err)
 			}
 			req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", "run"}, Query: "repair fixture", Entities: refs, Context: &ContextPins{Revision: strings.Repeat("b", 40)}, Purpose: "context", AvailableTokens: 64000}
-			if mode == "semantic" || mode == "fallback" {
+			if mode == "semantic" || mode == "indexed" || mode == "fallback" {
 				req.Semantic = true
 			}
 			s.semanticRanker = func(_ context.Context, r SemanticRankRequest) (SemanticRankResult, error) {
@@ -160,6 +160,16 @@ func TestEntityRetrievalPreservesGatesAcrossModes(t *testing.T) {
 					result.Scores = append(result.Scores, SemanticScore{n.RecordID, n.Version, n.BodySHA256, score})
 				}
 				return result, nil
+			}
+			if mode == "indexed" {
+				s.semanticRetriever = func(ctx context.Context, req SemanticRankRequest) (SemanticRetrievalResult, error) {
+					ranked, err := s.semanticRanker(ctx, req)
+					result := SemanticRetrievalResult{ModelSHA256: ranked.ModelSHA256, Algorithm: ranked.Algorithm, Indexed: len(req.Notes)}
+					for i, score := range ranked.Scores {
+						result.Hits = append(result.Hits, SemanticPassageHit{SemanticScore: score, Span: ByteSpanRequest{Length: len(req.Notes[i].Body)}})
+					}
+					return result, err
+				}
 			}
 			if mode == "fallback" {
 				s.semanticRanker = nil

@@ -202,7 +202,7 @@ func TestFailureSignaturePreservesEligibilityAndSemanticFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"body", "index", "semantic", "fallback", "signature-only", "kind-filtered", "quoted"} {
+	for _, mode := range []string{"body", "index", "semantic", "indexed", "fallback", "signature-only", "kind-filtered", "quoted"} {
 		t.Run(mode, func(t *testing.T) {
 			req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "new-task", mode}, ErrorSignature: strings.Repeat("b", 64), Query: "connection refused repair", Purpose: "context", AvailableTokens: 64000, Context: &ContextPins{TaskPhase: "implementation"}}
 			if mode != "body" {
@@ -219,10 +219,11 @@ func TestFailureSignaturePreservesEligibilityAndSemanticFallback(t *testing.T) {
 				req.Kinds = []string{"decision"}
 			}
 			s.semanticRanker = nil
-			if mode == "semantic" || mode == "fallback" {
+			s.semanticRetriever = nil
+			if mode == "semantic" || mode == "indexed" || mode == "fallback" {
 				req.Semantic = true
 			}
-			if mode == "semantic" {
+			if mode == "semantic" || mode == "indexed" {
 				s.semanticRanker = func(_ context.Context, r SemanticRankRequest) (SemanticRankResult, error) {
 					result := SemanticRankResult{ModelSHA256: strings.Repeat("c", 64), Algorithm: "fixture/1"}
 					for _, n := range r.Notes {
@@ -233,6 +234,16 @@ func TestFailureSignaturePreservesEligibilityAndSemanticFallback(t *testing.T) {
 						result.Scores = append(result.Scores, SemanticScore{n.RecordID, n.Version, n.BodySHA256, score})
 					}
 					return result, nil
+				}
+			}
+			if mode == "indexed" {
+				s.semanticRetriever = func(ctx context.Context, req SemanticRankRequest) (SemanticRetrievalResult, error) {
+					ranked, err := s.semanticRanker(ctx, req)
+					result := SemanticRetrievalResult{ModelSHA256: ranked.ModelSHA256, Algorithm: ranked.Algorithm, Indexed: len(req.Notes)}
+					for i, score := range ranked.Scores {
+						result.Hits = append(result.Hits, SemanticPassageHit{SemanticScore: score, Span: ByteSpanRequest{Length: len(req.Notes[i].Body)}})
+					}
+					return result, err
 				}
 			}
 			pkg, err := s.Compile(ctx, req, Destination{"hosted", false})

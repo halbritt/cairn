@@ -167,7 +167,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if original.Semantic.Query != "sha256:"+hex.EncodeToString(digest[:]) {
 		return Package{}, failure("INVALID_REQUEST", "query does not match the historical intent digest")
 	}
-	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4" && original.Semantic.Schema != "cairn.semantic/5" && original.Semantic.Schema != "cairn.semantic/6" && original.Semantic.Schema != "cairn.semantic/7" && original.Semantic.Schema != "cairn.semantic/8" && original.Semantic.Schema != "cairn.semantic/9" && original.Semantic.Schema != "cairn.semantic/10" && original.Semantic.Schema != "cairn.semantic/11" && original.Semantic.Schema != "cairn.semantic/12" && original.Semantic.Schema != "cairn.semantic/13" && original.Semantic.Schema != "cairn.semantic/14" && original.Semantic.Schema != "cairn.semantic/15") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1" && !hasLiteralRanking(original.Semantic.Ranking) && !hasHybridRanking(original.Semantic.Ranking)) {
+	if (original.Semantic.Schema != "cairn.semantic/3" && original.Semantic.Schema != "cairn.semantic/4" && original.Semantic.Schema != "cairn.semantic/5" && original.Semantic.Schema != "cairn.semantic/6" && original.Semantic.Schema != "cairn.semantic/7" && original.Semantic.Schema != "cairn.semantic/8" && original.Semantic.Schema != "cairn.semantic/9" && original.Semantic.Schema != "cairn.semantic/10" && original.Semantic.Schema != "cairn.semantic/11" && original.Semantic.Schema != "cairn.semantic/12" && original.Semantic.Schema != "cairn.semantic/13" && original.Semantic.Schema != "cairn.semantic/14" && original.Semantic.Schema != "cairn.semantic/15" && original.Semantic.Schema != "cairn.semantic/16") || (original.Semantic.Ranking != "lexical-scope-recency/1" && original.Semantic.Ranking != "lexical-scope-recency/2" && original.Semantic.Ranking != "lexical-scope-recency/3" && original.Semantic.Ranking != "lexical-scope-recency/4" && original.Semantic.Ranking != "semantic-scope-recency/1" && !hasLiteralRanking(original.Semantic.Ranking) && !hasIndexedRanking(original.Semantic.Ranking)) {
 		return Package{}, failure("REPLAY_INCOMPLETE", "historical compiler version is not supported")
 	}
 	if original.Semantic.Schema == "cairn.semantic/6" || ((original.Semantic.Schema == "cairn.semantic/8" || original.Semantic.Schema == "cairn.semantic/9" || original.Semantic.Schema == "cairn.semantic/10" || original.Semantic.Schema == "cairn.semantic/13" || original.Semantic.Schema == "cairn.semantic/14") && original.Semantic.Browse != nil) {
@@ -178,7 +178,7 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	} else if original.Semantic.Browse != nil {
 		return Package{}, failure("INTEGRITY_FAILURE", "legacy compiler cannot carry a browse page")
 	}
-	indexedSchema := original.Semantic.Schema == "cairn.semantic/15"
+	indexedSchema := original.Semantic.Schema == "cairn.semantic/15" || original.Semantic.Schema == "cairn.semantic/16"
 	advisorySchema := original.Semantic.Schema == "cairn.semantic/14" || (indexedSchema && original.Semantic.AdvisoryConflicts)
 	if advisorySchema != original.Semantic.AdvisoryConflicts || (advisorySchema && original.Semantic.Purpose != "context") {
 		return Package{}, failure("INTEGRITY_FAILURE", "historical advisory conflict intent is invalid")
@@ -357,20 +357,20 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 		if p.Ranking == "lexical-scope-recency/2" || p.Ranking == "lexical-scope-recency/3" || p.Ranking == "lexical-scope-recency/4" || hasLiteralRanking(p.Ranking) {
 			nonemptyQuery = strings.TrimSpace(req.Query) != ""
 		}
-		if !hasHybridRanking(p.Ranking) && p.Ranking != "semantic-scope-recency/1" && p.Ranking != "semantic-scope-recency/2" && p.Ranking != "semantic-scope-recency/3" && p.Ranking != "semantic-scope-recency/4" && !selection.Mandatory && nonemptyQuery && score == 0 && !literal && !failureMatch && !entity {
+		if !hasIndexedRanking(p.Ranking) && p.Ranking != "semantic-scope-recency/1" && p.Ranking != "semantic-scope-recency/2" && p.Ranking != "semantic-scope-recency/3" && p.Ranking != "semantic-scope-recency/4" && !selection.Mandatory && nonemptyQuery && score == 0 && !literal && !failureMatch && !entity {
 			p.Omitted["NO_LEXICAL_MATCH"]++
 			e.Reason = "NO_LEXICAL_MATCH"
 			continue
 		}
 		candidates = append(candidates, item)
 	}
-	if hasHybridRanking(p.Ranking) {
+	if hasIndexedRanking(p.Ranking) {
 		// Recreate the complete qualified dispute set before scoring, just as
 		// collectCandidates does. A kind-filtered companion can still be required.
 		if advisorySchema {
 			candidates = qualifyAdvisoryCandidates(&p, pool, candidates, groups, evaluations)
 		}
-		candidates, err = rankHybrid(&p, candidates, evaluations)
+		candidates, err = rankIndexedCandidates(&p, candidates, evaluations)
 		if err != nil {
 			return Package{}, err
 		}

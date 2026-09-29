@@ -33,7 +33,7 @@ func queryLiterals(query string) []string {
 }
 
 func hasLiteralRanking(version string) bool {
-	return version == "lexical-scope-recency/5" || version == "semantic-scope-recency/2" || version == "hybrid-scope-recency/2" || hasFailureRanking(version) || hasEntityRanking(version)
+	return version == "lexical-scope-recency/5" || version == "semantic-scope-recency/2" || version == "hybrid-scope-recency/2" || version == "interleaved-scope-recency/2" || hasFailureRanking(version) || hasEntityRanking(version)
 }
 
 func matchesLiteral(body string, literals []string) bool {

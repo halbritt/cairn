@@ -112,9 +112,10 @@ func TestQuotedMatchingPreservesGatesAndSemanticFallback(t *testing.T) {
 	if _, err = s.Create(ctx, CreateRequest{uuid.NewString(), d}); err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"body", "index", "semantic-ready", "semantic-unavailable", "page"} {
+	for _, mode := range []string{"body", "index", "semantic-ready", "semantic-indexed", "semantic-unavailable", "page"} {
 		req := CompileRequest{RequestID: uuid.NewString(), Scope: Scope{repo, "task", mode}, Query: `"to be" fallback`, Kinds: []string{"note"}, Context: &ContextPins{TaskPhase: "implementation"}, Purpose: "context", AvailableTokens: 64000}
 		s.semanticRanker = nil
+		s.semanticRetriever = nil
 		if mode != "body" {
 			req.Mode = "index"
 		}
@@ -124,7 +125,7 @@ func TestQuotedMatchingPreservesGatesAndSemanticFallback(t *testing.T) {
 		if mode == "page" {
 			req.PageOffset = new(int)
 		}
-		if mode == "semantic-ready" {
+		if mode == "semantic-ready" || mode == "semantic-indexed" {
 			s.semanticRanker = func(_ context.Context, req SemanticRankRequest) (SemanticRankResult, error) {
 				if len(req.Notes) != 2 {
 					t.Fatalf("gated notes reached scorer: %+v", req.Notes)
@@ -140,6 +141,16 @@ func TestQuotedMatchingPreservesGatesAndSemanticFallback(t *testing.T) {
 					result.Scores = append(result.Scores, SemanticScore{n.RecordID, n.Version, n.BodySHA256, score})
 				}
 				return result, nil
+			}
+		}
+		if mode == "semantic-indexed" {
+			s.semanticRetriever = func(ctx context.Context, req SemanticRankRequest) (SemanticRetrievalResult, error) {
+				ranked, err := s.semanticRanker(ctx, req)
+				result := SemanticRetrievalResult{ModelSHA256: ranked.ModelSHA256, Algorithm: ranked.Algorithm, Indexed: len(req.Notes)}
+				for i, score := range ranked.Scores {
+					result.Hits = append(result.Hits, SemanticPassageHit{SemanticScore: score, Span: ByteSpanRequest{Length: len(req.Notes[i].Body)}})
+				}
+				return result, err
 			}
 		}
 		p, err := s.Compile(ctx, req, Destination{"hosted", false})
