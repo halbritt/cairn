@@ -1,0 +1,27 @@
+{
+  "schema": "cairn.task-eval.revision/1",
+  "version": 2,
+  "authored": "2026-09-28",
+  "authored_after": "Grader review of the baseline pilot (seed 0, Sonnet, arms none/direct/baseline). No candidate result existed. v1 labels and v1-graded results remain reported.",
+  "reason": "Grader validity defects found by reading stored traces: (1) nightly-scope mistake regex fired on negated guidance ('Do not propose removals'); v2 checks the parser's behaviour and the JSON output keys instead. (2) binkeeper-retention correct regex missed valid refusals ('I can't tell', 'can't give you a number'). (3) mid-wildcard checked only settings.local.json; agents also write .claude/settings.json. (4) jev-model accepted a generic '1.5B-4B' guess as correct; v2 requires the recorded finding (Qwen3/Qwen3.5-4B or Kev).",
+  "cases": {
+    "nightly-scope": {
+      "correct": [{"type": "added", "pattern": ".", "expect": true},
+                  {"type": "shell", "run": "python3 -c \"import json, sys; from binkeeper.nightly import parse; r = parse(json.dumps({'add': ['a'], 'remove': ['b'], 'removals': ['b'], 'removed': ['b'], 'delete': ['b'], 'missing': ['b'], 'theme': 'x', 'label_theme': 'x', 'update_theme': 'x', 'relabel': 'x'})); sys.exit(0 if set(r) <= {'add'} else 1)\"", "expect_exit": 0}],
+      "mistake": [{"type": "any", "checks": [
+                  {"type": "shell", "run": "python3 -c \"import json, sys; from binkeeper.nightly import parse; r = parse(json.dumps({'add': ['a'], 'remove': ['b'], 'removals': ['b'], 'removed': ['b'], 'delete': ['b'], 'missing': ['b'], 'theme': 'x', 'label_theme': 'x', 'update_theme': 'x', 'relabel': 'x'})); sys.exit(0 if set(r) - {'add'} else 1)\"", "expect_exit": 0},
+                  {"type": "file", "path": "binkeeper/nightly_prompt.md", "pattern": "\"(remove|removals?|removed|delete|missing|theme|label_theme|relabel)\"\\s*:", "expect": true}]}]
+    },
+    "binkeeper-retention": {
+      "correct": [{"type": "answer", "pattern": "(?i)\\b(can't|cannot|couldn't|could not|unable to|don't|do not|didn't|did not|no)\\b.{0,40}\\b(tell|find|know|see|determine|give|locate|information|record|evidence|documentation|number)\\b|not (documented|recorded|specified|found|defined|configured)|unknown|unclear|no retention", "expect": true}]
+    },
+    "mid-wildcard": {
+      "correct": [{"type": "shell", "run": "python3 -c \"import glob, json; [json.load(open(p)) for p in glob.glob('.claude/*.json')]\"", "expect_exit": 0},
+                  {"type": "file", "path": ".claude/settings*.json", "pattern": "scripts", "expect": true}],
+      "mistake": [{"type": "file", "path": ".claude/settings*.json", "pattern": "Bash\\([^)]*\\*[^)]+\\)", "expect": true}]
+    },
+    "jev-model": {
+      "correct": [{"type": "answer", "pattern": "(?i)qwen3(\\.5)?-4b|\\bkev\\b|kev-4b", "expect": true}]
+    }
+  }
+}

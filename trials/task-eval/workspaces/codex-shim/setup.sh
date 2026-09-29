@@ -1,0 +1,1 @@
+mkdir -p fakehome/.npm-global/bin fakehome/.local/bin && printf '#!/bin/sh\necho real-codex\n' > fakehome/.npm-global/bin/codex.js && chmod +x fakehome/.npm-global/bin/codex.js && ln -s ../../.npm-global/bin/codex.js fakehome/.local/bin/codex && git init -q . && git add -A && git commit -qm initial

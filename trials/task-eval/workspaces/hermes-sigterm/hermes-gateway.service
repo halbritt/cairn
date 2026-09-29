@@ -1,0 +1,6 @@
+[Unit]
+Description=Hermes gateway
+
+[Service]
+ExecStart=/usr/bin/python3 -m gateway.run
+Restart=on-failure
