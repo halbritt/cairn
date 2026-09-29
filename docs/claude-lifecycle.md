@@ -67,6 +67,15 @@ pull other sources through its existing Cairn MCP tools. The hook and tools must
 use the same authenticated principal for those handles. Session labels identify
 host conversations; shared captures remain repository-scoped.
 
+Implicit filename hints require a path or an existing workspace file. URLs and
+email addresses are not file hints; ambiguous bare dotted names remain ordinary
+search terms. Explicitly quoted names remain exact text anchors even when the
+file does not exist. A missing path whose first component contains a dot must
+use `./` or another explicit relative/absolute prefix to become a file hint.
+These rules prevent a domain such as `claude.ai` in a quota notification from
+being treated as an observed repository filename. They do not establish the
+current task behind a generic continuation message.
+
 The hooks use the existing authenticated CLI and hosted profile. Installing them
 explicitly enables lifecycle reads and selected writes independently of whether
 the model chooses a memory tool. Ordinary MCP calls retain their own permissions.
