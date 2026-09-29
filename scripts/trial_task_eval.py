@@ -210,8 +210,9 @@ class TrialStore:
         self.dsn = f"host={pg} dbname={database} sslmode=disable"
         self.home = self.root / "home"
         self.home.mkdir(mode=0o700)
-        self.sockdir = self.root / "sock"
-        self.sockdir.mkdir(mode=0o700)
+        # Unix socket paths are limited to 108 bytes; keep the socket directory short.
+        self.sockdir = Path(tempfile.mkdtemp(prefix="cte-sock-", dir="/tmp"))
+        (self.root / "sock").symlink_to(self.sockdir)
         self.socket = self.sockdir / "api.sock"
         base = {k: v for k, v in os.environ.items() if not k.startswith("CAIRN_")}
         self.env = dict(base, CAIRN_HOME=str(self.home), CAIRN_DATABASE_URL=self.dsn)
@@ -282,6 +283,7 @@ class TrialStore:
             except subprocess.TimeoutExpired:
                 self.server.kill()
         self.server = None
+        shutil.rmtree(self.sockdir, ignore_errors=True)
 
     def agent(self, *args, payload=None):
         return cairn_json(self.binary, ["agent", "--socket", self.socket, "--token-file", self.token_file, *args],
@@ -579,7 +581,7 @@ def sandbox_command(root, cwd_name, extra_binds, env, claude_args):
                "--ro-bind", str(home / ".local/go"), str(home / ".local/go"),
                "--dir", str(home / ".claude"),
                "--bind", str(home / ".claude/.credentials.json"), str(home / ".claude/.credentials.json"),
-               "--bind", str(root), "/work", "--chdir", "/work/" + cwd_name,
+               "--bind", str(root), str(root), "--chdir", str(Path(root) / cwd_name),  # same path: worktrees record absolute gitdirs
                "--unshare-pid", "--die-with-parent", "--clearenv"]
     for source, target, mode in extra_binds:
         command += ["--ro-bind" if mode == "ro" else "--bind", str(source), str(target)]
@@ -615,11 +617,11 @@ def run_agent(case, arm, seed, order, args, stores, out):
         store = stores[arm]
         session_state = base / "hook-state"
         session_state.mkdir()
-        trial = Path("/trialstore")
+        trial = Path("/tmp/trial/store")
         config = dict(cairn=str(trial / "cairn"), socket=str(trial / "sock/api.sock"), token_file=str(trial / "agent.token"),
-                      repo=TRIAL_REPO, state_dir="/hookstate", context_bytes=CLAUDE_CONTEXT_BYTES, harness="claude")
+                      repo=TRIAL_REPO, state_dir="/tmp/trial/hookstate", context_bytes=CLAUDE_CONTEXT_BYTES, harness="claude")
         (base / "hook-config.json").write_text(json.dumps(config))
-        hook_cmd = f"python3 -B /trialhook/memory.py --config /hookconfig.json"
+        hook_cmd = "bash -o pipefail -c 'python3 -B /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json | tee -a /tmp/trial/hookstate/calls.jsonl'"
         settings = dict(hooks={event: [dict(hooks=[dict(type="command", command=hook_cmd, timeout=13)])] for event in HOOK_EVENTS})
         (base / "settings.json").write_text(json.dumps(settings))
         mcp = dict(mcpServers=dict(cairn=dict(type="stdio", command=str(trial / "cairn"), args=[
@@ -627,10 +629,10 @@ def run_agent(case, arm, seed, order, args, stores, out):
             "--task", "task-eval/" + run_id, "--run", run_id])))
         (base / "mcp.json").write_text(json.dumps(mcp))
         binds += [(store["store"].binary, trial / "cairn", "ro"), (store["store"].sockdir, trial / "sock", "rw"),
-                  (store["store"].token_file, trial / "agent.token", "ro"), (Path(store["hook"]).parent, "/trialhook", "ro"),
-                  (base / "hook-config.json", "/hookconfig.json", "ro"), (session_state, "/hookstate", "rw"),
-                  (base / "settings.json", "/trialsettings.json", "ro"), (base / "mcp.json", "/trialmcp.json", "ro")]
-        claude += ["--settings", "/trialsettings.json", "--mcp-config", "/trialmcp.json", "--append-system-prompt", MEMORY_INSTRUCTION]
+                  (store["store"].token_file, trial / "agent.token", "ro"), (Path(store["hook"]).parent, "/tmp/trial/hook", "ro"),
+                  (base / "hook-config.json", "/tmp/trial/hookconfig.json", "ro"), (session_state, "/tmp/trial/hookstate", "rw"),
+                  (base / "settings.json", "/tmp/trial/settings.json", "ro"), (base / "mcp.json", "/tmp/trial/mcp.json", "ro")]
+        claude += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json", "--append-system-prompt", MEMORY_INSTRUCTION]
     claude += ["--", prompt]
     command = sandbox_command(root, case["cwd"], binds, env, claude)
     started = time.monotonic()
@@ -644,12 +646,17 @@ def run_agent(case, arm, seed, order, args, stores, out):
     (base / "stream.jsonl").write_text(stdout)
     (base / "stderr.txt").write_text(stderr[-20000:])
     trace = parse_stream(stdout)
+    if trace["turns"] is None and not trace["commands"] and not trace["answer"]:
+        record = dict(run_id=run_id, case=case["id"], arm=arm, seed=seed, order=order, outcome="harness_error",
+                      exit=code, error=stderr[-600:])
+        (base / "result.json").write_text(json.dumps(record, indent=2))
+        return record
     ctx = dict(cwd=cwd, commands=trace["commands"], answer=trace["answer"],
                snapshot=json.loads((root / ".eval-snapshot.json").read_text()))
     graded = grade(case, ctx)
     memory = hook_observations(base / "hook-state", stores.get(arm, {}).get("store"))
     record = dict(run_id=run_id, case=case["id"], category=case["category"], provenance=case["provenance"]["type"], arm=arm,
-                  seed=seed, order=order, model=args.model, wording=args.wording, exit=code, seconds=round(elapsed, 2),
+                  seed=seed, order=order, model=args.model, wording=args.wording, exit=code, seconds=round(elapsed, 2), prompt_bytes=len(prompt.encode()),
                   **graded, trace={k: v for k, v in trace.items() if k not in ("answer", "commands")},
                   commands=len(trace["commands"]), answer_chars=len(trace["answer"] or ""), memory=memory)
     record["memory_tool_pulls"] = [names_for(stores.get(arm, {}).get("store"), call) for call in trace["memory_calls"]]
@@ -671,14 +678,25 @@ def hook_observations(state_dir, store):
     if store is None or not Path(state_dir).is_dir():
         return {}
     delivered, size, outcomes = [], 0, []
+    calls = Path(state_dir) / "calls.jsonl"
+    injections = []
+    if calls.exists():
+        for line in calls.read_text().splitlines():
+            try:
+                index, expanded, size_one = parse_injection(line)
+            except (ValueError, KeyError):
+                continue
+            injections.append(dict(index=[store.names.get(r, "?") for r in index],
+                                   expanded=store.names.get(expanded) if expanded else None, bytes=size_one))
+            delivered += injections[-1]["index"]
+            size += size_one
     for path in Path(state_dir).glob("*.json"):
         state = json.loads(path.read_text())
         recall = state.get("last_recall") or {}
         outcomes.append(recall.get("outcome"))
-        size = max(size, recall.get("bytes") or 0)
         delivered += [store.names.get(r["record_id"], "?") for r in recall.get("records", [])]
         delivered += [store.names.get(r, "?") for r in state.get("seen", {})]
-    return dict(delivered=sorted(set(delivered)), last_bytes=size, outcomes=outcomes)
+    return dict(delivered=sorted(set(delivered)), injected_bytes=size, injections=injections, outcomes=outcomes)
 
 
 def cmd_agent(args):
