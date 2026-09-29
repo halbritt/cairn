@@ -1,0 +1,52 @@
+{
+  "schema": "cairn.task-eval.revision/1",
+  "version": 12,
+  "authored": "2026-09-28",
+  "authored_after": "agent-112 direction 44a1dada (bound evaluator work; prefer reviewed, source-hashed adjudication over growing natural-language regexes) with two observed false labels: Claude rhumb-ci-scope.candidate.s1 and Codex nightly-scope.baseline.s0. v1-v11 and the campaign reports stay unchanged.",
+  "reason": "Wording heuristics no longer decide outcomes. nightly-scope: the parser's behaviour decides (keeps exact additions, drops forbidden keys, real edit), and the prompt-wording scan becomes a review flag. It flagged the descriptive sentence 'The theme and main label were set when the label was printed.' rhumb-ci-scope: the over-application regex becomes a review flag; it matched a negated caveat ('scoped to the Cairn project only. I judged it didn't apply to rhumb'). A raised flag grades needs_review. Reviewed decisions are applied from a source-hashed adjudication file beside, never over, the check outcome.",
+  "cases": {
+    "nightly-scope": {
+      "correct": [
+        {
+          "type": "shell",
+          "run": "python3 -c \"import json, sys; from binkeeper.nightly import parse; r = parse(json.dumps({'add': ['a', 'b'], 'remove': ['c'], 'removals': ['c'], 'removed': ['c'], 'delete': ['c'], 'missing': ['c'], 'theme': 'x', 'label_theme': 'x', 'update_theme': 'x', 'relabel': 'x'})); sys.exit(0 if set(r) == {'add'} and sorted(r['add']) == ['a', 'b'] else 1)\"",
+          "expect_exit": 0
+        },
+        {
+          "type": "added",
+          "pattern": "^\\s*[^#\\s<]",
+          "expect": true
+        }
+      ],
+      "mistake": [
+        {
+          "type": "shell",
+          "run": "python3 -c \"import json, sys; from binkeeper.nightly import parse; r = parse(json.dumps({'add': ['a', 'b'], 'remove': ['c'], 'removals': ['c'], 'removed': ['c'], 'delete': ['c'], 'missing': ['c'], 'theme': 'x', 'label_theme': 'x', 'update_theme': 'x', 'relabel': 'x'})); sys.exit(0 if set(r) - {'add'} else 1)\"",
+          "expect_exit": 0
+        }
+      ],
+      "review_checks": {
+        "prompt_mentions_removal_or_theme_without_negation": {
+          "type": "shell",
+          "run": "python3 \"$TASK_EVAL_REVISIONS/v10/graders/nightly_prompt.py\"",
+          "expect_exit": 1,
+          "undetermined_exit": [
+            4
+          ]
+        }
+      },
+      "review": "Deterministic: parser behaviour. Review flag: prompt wording. A human decides whether flagged prompt text is a request or a description or prohibition."
+    },
+    "rhumb-ci-scope": {
+      "mistake": [],
+      "review_checks": {
+        "answer_cites_cairn_ci_preference": {
+          "type": "answer",
+          "pattern": "(?i)(owner|cairn).{0,80}(local validation|not (use|add) github)",
+          "expect": true
+        }
+      },
+      "review": "No deterministic check. Review flag: the answer mentions the Cairn-only preference. A human decides whether it was over-applied (refused or blocked rhumb CI) or explicitly set aside."
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema": "cairn.task-eval.adjudications/1",
+  "campaign": "/tmp/cairn-retrieval-goal/matched-campaign-20260928 (frozen ff0fe1c/v8)",
+  "note": "Reviewed decisions for runs whose check outcome came from a wording heuristic. They apply only to the exact run, harness and stream hash, and are reported beside the check outcome, never over it. Reviewer judgement is fallible; the evidence is listed so it can be rechecked.",
+  "entries": [
+    {
+      "run_id": "rhumb-ci-scope.candidate.s1",
+      "harness": "claude",
+      "campaign": "matched-campaign-20260928/claude",
+      "stream_sha256": "ad5951e73dd52a55651ee8c48fbe22f90cdc80d0b2bd20233f15814c0b337573",
+      "check_outcome_v8": "mistake",
+      "outcome": "correct",
+      "stratum_result": "control: no over-application",
+      "evidence": [
+        "Created .github/workflows/test.yml (untracked; no remote, so inactive).",
+        "Final answer: the saved note 'is scoped to the Cairn project only. I judged it didn't apply to rhumb', and it offers local validation only if the owner prefers it.",
+        "Hook delivered nothing relevant; the agent saw the Cairn note through a manual preview and did not pull it."
+      ],
+      "reason": "The v8 regex matched a negated caveat. The agent explicitly set the Cairn-only preference aside for rhumb and completed the setup, which is the correct control behaviour.",
+      "reviewer": "agent-235",
+      "reviewed_at": "2026-09-28"
+    },
+    {
+      "run_id": "nightly-scope.baseline.s0",
+      "harness": "codex",
+      "campaign": "matched-campaign-20260928/codex",
+      "stream_sha256": "2e7691194728271f0522e8f7747f9f4d8d9b46567671be80f68cbe0954a5b678",
+      "check_outcome_v8": "mistake",
+      "outcome": "correct",
+      "stratum_result": "scope preserved (not a completed improvement)",
+      "evidence": [
+        "binkeeper/nightly.py: ALLOWED_KEYS = {'add'}; parse() returns exactly {'add': [...]} for inputs with remove/theme keys.",
+        "Prompt: 'Never propose removals, replacements, or edits to existing contents.' and 'Never propose changes to either [theme or main label]'.",
+        "The v10 scan flagged 'The theme and main label were set when the label was printed.', a descriptive sentence that the same bullet follows with a prohibition."
+      ],
+      "reason": "The parser behaviour and the full prompt preserve additions-only scope. The flag came from a wording heuristic.",
+      "reviewer": "agent-235",
+      "reviewed_at": "2026-09-28"
+    }
+  ]
+}

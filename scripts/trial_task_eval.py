@@ -662,7 +662,14 @@ def grade(case, ctx):
         outcome = "correct"
     else:
         outcome = "incomplete"
+    # Wording heuristics flag runs for human review; they never decide an outcome on their own.
+    review_flags = {name: verdict(check, ctx) for name, check in case.get("review_checks", {}).items()}
+    raised = sorted(name for name, value in review_flags.items() if value is not False)
+    if raised and outcome != "mistake":
+        outcome = "needs_review"
     result = dict(outcome=outcome, correct=correct, mistake=mistakes, stratum=case.get("stratum", "completion"))
+    if review_flags:
+        result["review_flags"] = review_flags
     if case.get("descriptive"):
         result["descriptive"] = {name: verdict(check, ctx) for name, check in case["descriptive"].items()}
     if ctx.get("check_log"):
@@ -1164,6 +1171,7 @@ def summarise_agent(records, arms):
         rows = [r for r in records if r.get("arm") == arm]
         outcomes = [r.get("outcome") for r in rows]
         primary = [r.get("outcome") for r in rows if r.get("primary", True)]
+        reviewed = [(r.get("reviewed") or {}).get("outcome", r.get("outcome")) for r in rows if r.get("primary", True)]
         strata = {}
         for r in rows:
             if r.get("primary", True):
@@ -1172,11 +1180,24 @@ def summarise_agent(records, arms):
         summary[arm] = dict(runs=len(rows), **{k: outcomes.count(k) for k in ("correct", "mistake", "incomplete", "harness_error", "provider_error", "not_regradable")},
                             primary={k: primary.count(k) for k in ("correct", "mistake", "incomplete", "undetermined", "harness_error", "provider_error", "not_regradable")},
                             strata=strata,
+                            primary_reviewed={k: reviewed.count(k) for k in ("correct", "mistake", "incomplete", "needs_review", "undetermined", "harness_error", "provider_error", "not_regradable")},
                             memory_delivered_expected=sum(bool((r.get("memory") or {}).get("delivered_expected")) for r in rows),
                             forbidden_delivered=sum(bool((r.get("memory") or {}).get("forbidden")) for r in rows),
                             median_seconds=statistics.median([r["seconds"] for r in rows if r.get("seconds")]) if any(r.get("seconds") for r in rows) else None,
                             median_turns=statistics.median([r["trace"]["turns"] for r in rows if (r.get("trace") or {}).get("turns")]) if any((r.get("trace") or {}).get("turns") for r in rows) else None)
     return summary
+
+
+def apply_adjudications(records, adjudications, out):
+    """Attach a reviewed outcome to each record whose run id, harness and stream hash match exactly.
+    The check outcome is kept unchanged; reports show both."""
+    for record in records:
+        stream = out / "runs" / record["run_id"] / "stream.jsonl"
+        digest = hashlib.sha256(stream.read_bytes()).hexdigest() if stream.exists() else None
+        for entry in adjudications.get("entries", []):
+            if entry["run_id"] == record["run_id"] and entry["stream_sha256"] == digest and \
+                    entry.get("harness", "claude") == record.get("harness", "claude"):
+                record["reviewed"] = {k: entry[k] for k in ("outcome", "stratum_result", "reason", "reviewer", "reviewed_at") if k in entry}
 
 
 def cmd_regrade(args):
@@ -1217,6 +1238,8 @@ def cmd_regrade(args):
                        snapshot=json.loads((base / "work" / ".eval-snapshot.json").read_text()))
             record.update(grade(case, ctx))
         records.append(record)
+    if getattr(args, "adjudications", None):
+        apply_adjudications(records, load_json(args.adjudications), out)
     report = dict(data, frozen=frozen, label_version=version, records=records, summary=summarise_agent(records, data["arms"]))
     (out / f"agent-v{version}.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report["summary"], indent=2))
@@ -1256,6 +1279,7 @@ def main(argv=None):
     g = sub.add_parser("regrade")
     g.add_argument("result_dir", help="agent output directory with runs/*/work and stream.jsonl")
     g.add_argument("--version", type=int, default=None)
+    g.add_argument("--adjudications", help="reviewed adjudication JSON; applied beside, never over, check outcomes")
     r = sub.add_parser("retrieval")
     r.add_argument("--output", required=True)
     r.add_argument("--cairn", required=True)

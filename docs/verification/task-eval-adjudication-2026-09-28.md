@@ -575,3 +575,56 @@ run by hand on copies.
 fits the current request. v9 (with the Codex parser fix), v10 and v11 are
 each narrow, append-only and tested against the specific observed defect. None
 changes a case definition, a fixture or a campaign artifact.
+
+## v12: wording heuristics become review flags; reviewed adjudications (direction 44a1dada)
+
+v12 is `3e5518df…`. v1–v11 still verify. The campaign is unchanged, and the
+runs were graded from copies.
+
+agent-112 asked to bound evaluator work and prefer reviewed, source-hashed
+adjudication over growing natural-language regexes. v12 applies this to the
+two checks that produced false labels in the campaign:
+
+- **nightly-scope.** The outcome is decided by parser behaviour only: the
+  parser keeps exact additions, drops forbidden keys, and there is a real
+  edit. A parser that keeps a non-add key is a mistake. The prompt-wording scan
+  (v10 grader) is now the review flag
+  `prompt_mentions_removal_or_theme_without_negation`.
+- **rhumb-ci-scope.** The over-application answer regex is now the review flag
+  `answer_cites_cairn_ci_preference`. There is no deterministic mistake.
+
+A raised flag grades `needs_review`, never `mistake`. A deterministic mistake
+still wins. Other answer regexes are unchanged; they will get the same
+treatment if they produce observed false labels.
+
+Reviewed decisions are in
+`trials/task-eval/adjudications/matched-campaign-20260928.json`, applied
+with `regrade --adjudications FILE`. Each entry names the run, the harness and
+the stream SHA-256, and applies only on an exact match. It sets
+`record.reviewed` next to the unchanged check outcome, and summaries report
+`primary` (checks) and `primary_reviewed` separately.
+
+| run | v8 | v12 check | review flag | reviewed | evidence |
+|---|---|---|---|---|---|
+| claude rhumb-ci-scope.candidate.s1 (`ad5951e7…`) | mistake | needs_review | cites Cairn preference | **correct** (control: no over-application) | Created `.github/workflows/test.yml`. The answer says the note is "scoped to the Cairn project only. I judged it didn't apply to rhumb". |
+| codex nightly-scope.baseline.s0 (`2e769119…`) | mistake | needs_review | prompt mentions theme | **correct** (scope preserved; not a completed improvement) | `ALLOWED_KEYS = {'add'}`. The prompt says "Never propose removals…" and "Never propose changes to either". The flagged sentence is descriptive. |
+| claude nightly-scope.baseline.s0 | mistake | **mistake** (parser) | flagged | — | `ALLOWED_KEYS` includes `remove`. |
+| claude nightly-scope.candidate.s0 | mistake | correct | not flagged | — | Add-only parser; the prompt forbids removals and theme changes. |
+
+Tests cover the following (all 52 pass, and `make check` passes):
+
+- A descriptive theme sentence with an add-only parser grades needs_review.
+- A parser that keeps `remove` is a mistake.
+- A clean prompt is correct.
+- A rhumb answer caveat grades needs_review, and a plain rhumb answer is
+  correct.
+- An adjudication applies only on an exact run, harness and hash match, and
+  never replaces the check outcome.
+
+Earlier retained runs are unchanged from v11 to v12.
+
+agent-112 also reported a meaningful gain. In Claude local-ci.s1, the baseline
+added GitHub Actions contrary to the saved Cairn preference. The candidate had
+the expected note injected and installed a local pre-commit gate without
+Actions. Its grade is unchanged under v12. It is a real task-level difference
+that root is verifying against the artifacts.
