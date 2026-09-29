@@ -21,6 +21,7 @@ NOTE_BYTES = 6000
 CHECKPOINT_BYTES = 4500
 SEARCH_ROOM = 8000
 RECALL_SEARCH_ROOM = 32000
+SUMMARY_EXCERPT_BYTES = 1536
 RECALL_SECONDS = 11
 RECALL_CANDIDATES = 6
 PREVIEW_CANDIDATES = 10
@@ -533,12 +534,16 @@ def current_pull(memory, entry, deadline):
 
 def current_span_pull(memory, entry, deadline):
     """A checked partial A/B source, never a substitute for C or competing positions."""
-    hint = entry.get("match_span")
+    hint = entry.get("match_span", entry.get("summary_span"))
     if (not isinstance(hint, dict) or type(hint.get("offset")) is not int
             or type(hint.get("length")) is not int or not 0 <= hint["offset"] < 65536
             or not 0 < hint["length"] <= 4096 or entry.get("conflicts")
             or entry.get("class") == "C"):
         raise HookError("no bounded optional match span")
+    if "match_span" not in entry:
+        # The lexical preview locates source bytes but is too short to carry
+        # surrounding guidance. Read forward within the existing source limit.
+        hint = dict(offset=hint["offset"], length=min(SUMMARY_EXCERPT_BYTES, 65536 - hint["offset"]))
     args = dict(entry["pull_arguments"], request_id=str(uuid.uuid4()),
                 span=dict(offset=hint["offset"], length=hint["length"]))
     pulled = memory.call("pull", payload=args, timeout=recall_timeout(deadline))
@@ -552,6 +557,7 @@ def current_span_pull(memory, entry, deadline):
     if (record.get("record_id") != entry["record_id"] or record.get("version") != entry["version"]
             or record.get("class") not in ("A", "B") or record.get("body") != ""
             or pulled.get("competing") or pulled.get("selection", {}).get("conflicts")
+            or pulled.get("selection", {}).get("mandatory")
             or not isinstance(body, str) or not body
             or type(span.get("offset")) is not int or span["offset"] != hint["offset"]
             or type(span.get("end")) is not int or span["end"] != span["offset"] + len(body.encode())
@@ -575,7 +581,7 @@ def fitting_candidate(memory, entry, deadline, selected, budget, discovery=None)
         pulled = None
     if pulled is not None and len(render_recall(selected, [entry], pulled, discovery).encode()) <= budget:
         return pulled
-    if not entry.get("match_span"):
+    if not entry.get("match_span") and not entry.get("summary_span"):
         if pulled is None:
             raise BudgetRefused("optional body exceeds receipt budget")
         raise ContextRefused("optional body exceeds lifecycle context budget")

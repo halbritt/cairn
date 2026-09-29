@@ -1025,6 +1025,76 @@ class RecallCandidateTests(unittest.TestCase):
                     hook.current_span_pull(self.memory, blocked, time.monotonic() + 2)
                 call.assert_not_called()
 
+    def test_lexical_long_note_delivers_checked_excerpt_without_marking_whole_seen(self):
+        prefix = 'Earlier context. ' * 900
+        passage = 'Recover lease expiry.\nResolve this by renewing the original claim. Keep its identity.\n'
+        body = prefix + passage + 'Later detail. ' * 900
+        offset = len(prefix.encode())
+        excerpt = body.encode()[offset:offset + 1536].decode()
+        entry = self.entry('saved', 'Recover lease expiry.') | dict(
+            summary_span=dict(offset=offset, length=len(passage.encode())),
+            body_sha256=hashlib.sha256(body.encode()).hexdigest(), **{'class': 'A'})
+        partial = dict(selection=dict(record=dict(record_id='saved', version=1, body='', **{'class': 'A'})),
+                       span=dict(offset=offset, end=offset + len(excerpt.encode()), total_bytes=len(body.encode()),
+                                 body=excerpt, sha256=hashlib.sha256(excerpt.encode()).hexdigest(),
+                                 source_sha256=entry['body_sha256']))
+        for whole in (hook.BudgetRefused('whole note exceeds receipt'), self.pulled('saved', body)):
+            with self.subTest(whole=type(whole).__name__), \
+                 patch.object(self.memory, 'search', return_value=dict(index=[entry])), \
+                 patch.object(self.memory, 'call', side_effect=[whole, partial]) as pull, \
+                 patch.object(hook, 'select_json') as model:
+                state = {}
+                result = hook.recall(self.memory, self.event, state)
+            text = result['hookSpecificOutput']['additionalContext']
+            self.assertIn('renewing the original claim', text)
+            self.assertIn('"source_extent":"partial_span"', text)
+            self.assertNotIn('Earlier context.', text)
+            self.assertLessEqual(len(text.encode()), self.memory.config['context_bytes'])
+            self.assertEqual(state['seen'], {})
+            self.assertEqual(state['last_recall']['partial_record'], 'saved')
+            self.assertIsNone(state['last_recall']['expanded'])
+            self.assertEqual(pull.call_args.kwargs['payload']['span'], dict(offset=offset, length=1536))
+            model.assert_not_called()
+
+    def test_lexical_excerpt_preserves_currentness_and_required_context_guards(self):
+        body = 'Recover lease expiry. Preserve the original claim.'
+        digest = hashlib.sha256(body.encode()).hexdigest()
+        entry = self.entry('saved') | dict(summary_span=dict(offset=0, length=21), body_sha256=digest)
+        valid = dict(selection=dict(record=dict(record_id='saved', version=1, body='', **{'class': 'A'})),
+                     span=dict(offset=0, end=len(body), total_bytes=len(body), body=body,
+                               sha256=digest, source_sha256=digest))
+        for field, value in (('version', 2), ('class', 'C')):
+            changed = json.loads(json.dumps(valid))
+            changed['selection']['record'][field] = value
+            with self.subTest(field=field), patch.object(self.memory, 'call', return_value=changed):
+                with self.assertRaises(hook.HookError):
+                    hook.current_span_pull(self.memory, entry, time.monotonic() + 2)
+        for field, value in (('mandatory', True), ('conflicts', [{'position': 'other'}])):
+            changed = json.loads(json.dumps(valid))
+            changed['selection'][field] = value
+            with self.subTest(field=field), patch.object(self.memory, 'call', return_value=changed):
+                with self.assertRaises(hook.HookError):
+                    hook.current_span_pull(self.memory, entry, time.monotonic() + 2)
+        for hint in (dict(offset=-1, length=21), dict(offset=True, length=21),
+                     dict(offset=0, length=0), dict(offset=65536, length=1)):
+            with self.subTest(hint=hint), patch.object(self.memory, 'call') as call:
+                with self.assertRaises(hook.HookError):
+                    hook.current_span_pull(self.memory, entry | {'summary_span': hint}, time.monotonic() + 2)
+                call.assert_not_called()
+
+    def test_lexical_excerpt_refuses_nontext_or_bad_hash_without_claiming_body_delivery(self):
+        entry = self.entry('saved', 'recover lease expiry') | dict(summary_span=dict(offset=0, length=21))
+        for fields in (dict(body='changed', sha256='0' * 64), dict(body_base64='YWJj')):
+            partial = dict(selection=dict(record=dict(record_id='saved', version=1, body='', **{'class': 'A'})),
+                           span=dict(offset=0, end=7, total_bytes=50000, source_sha256='1' * 64, **fields))
+            with self.subTest(fields=fields), \
+                 patch.object(self.memory, 'search', return_value=dict(index=[entry])), \
+                 patch.object(self.memory, 'call', side_effect=[hook.BudgetRefused('too large'), partial]):
+                state = {}
+                result = hook.recall(self.memory, self.event, state)
+            self.assertNotIn('"expanded":', result['hookSpecificOutput']['additionalContext'])
+            self.assertEqual(state['seen'], {})
+
     def test_full_body_hash_must_match_preview(self):
         entry = self.entry('saved') | {'body_sha256': hashlib.sha256(b'original').hexdigest()}
         with patch.object(self.memory, 'call', return_value=self.pulled('saved', 'changed')):

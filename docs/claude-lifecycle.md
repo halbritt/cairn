@@ -120,8 +120,12 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   `context_bytes`: 9,500 UTF-8 bytes for Claude Code, whose hooks keep only about
   10,000 characters of `additionalContext`, and 12,000 bytes by default elsewhere.
   An oversized optional body can use a current, checked `match_span` for class
-  A/B notes when that scored passage fits. It is labelled `partial_span` and
-  does not mark the whole note as seen. Class C and competing positions still
+  A/B notes when that scored passage fits. A lexical hit without `match_span`
+  can instead use `summary_span` as the start of an excerpt of at most 1,536
+  bytes. Both routes verify the current version, source hash and returned bytes.
+  Nontext byte spans (including a cut through a UTF-8 character) are refused;
+  the preview still permits a manual pull. An excerpt is labelled `partial_span`
+  and does not mark the whole note as seen. Class C and competing positions still
   require a whole-body pull. Other oversized bodies are skipped in favor of a
   later candidate when one fits. Bounded preview entries retain their pull
   handles when they fit.
