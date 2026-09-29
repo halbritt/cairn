@@ -100,8 +100,12 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   feeds lexical and semantic discovery. The hook inspects up to ten lexical
   previews and the semantic pages within the total bound above. When previews exceed pull credits, a bounded
   tool-free call chooses which current bodies to read; each receipt retains its
-  own four-credit limit. A separate body-based model decision checks
-  applicability before injection. Shared words, a file association,
+  own four-credit limit. The host admits choices in the selector's ranked order,
+  dropping only choices that exceed their actual receipt's remaining credits.
+  Alias channels share one receipt allowance. `preview_receipt_budget_dropped`
+  counts these omissions; malformed, repeated or out-of-range indices and
+  verdicts exceeding eight choices are still refused as a whole. A separate
+  body-based model decision checks applicability before injection. Shared words, a file association,
   or a project label alone cannot inject an optional body. An unavailable model
   omits optional guidance, while required context remains. The semantic route
   also runs after an unhelpful exact-file result. Setting `semantic_fallback`
