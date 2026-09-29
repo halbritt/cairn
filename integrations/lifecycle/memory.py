@@ -756,13 +756,15 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
         available = min(4, max(0, found.get("credits_remaining", 4)))
         memory.receipt_credits[key] = min(memory.receipt_credits.get(key, 4), available)
     candidates = []
-    pulled_ids = set()
+    accepted_full_versions = set()
+    accepted_spans = set()
     selector_request = dict(project=str(project_root(event)), request=event.get("prompt", ""),
                             workstream=event.get("workstream"), startup=intent["startup"], candidates=[])
     pull_started = time.monotonic()
     for channel, entry in admitted:
         receipt = receipt_keys[channel]
-        if seen.get(entry["record_id"]) == entry["version"] or entry["record_id"] in pulled_ids:
+        identity = (entry["record_id"], entry["version"])
+        if seen.get(entry["record_id"]) == entry["version"] or identity in accepted_full_versions:
             continue
         if memory.receipt_credits[receipt] == 0:
             status["preview_admitted"] -= 1
@@ -783,8 +785,11 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
         except HookError:
             status["rejected"]["unavailable"] = status["rejected"].get("unavailable", 0) + 1
             continue
-        pulled_ids.add(entry["record_id"])
         status["inspected"] += 1
+        partial = pulled.get("source_extent") == "partial_span"
+        span_key = (*identity, pulled["span"]["offset"], pulled["span"]["end"]) if partial else None
+        if partial and span_key in accepted_spans:
+            continue
         body = (pulled["span"]["body"] if pulled.get("source_extent") == "partial_span"
                 else pulled["selection"]["record"]["body"])
         selector_view = dict(index=len(candidates), body=body,
@@ -795,6 +800,12 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
             continue
         candidates.append((entry, pulled, body))
         selector_request["candidates"].append(selector_view)
+        # Only content admitted to the selector covers a source. A whole pull
+        # reduced to an excerpt leaves other passages eligible on their receipts.
+        if partial:
+            accepted_spans.add(span_key)
+        else:
+            accepted_full_versions.add(identity)
     status["receipt_pull_calls"] = {
         channel: memory.pull_calls.get(receipt, 0) - pull_counts_before.get(receipt, 0)
         for channel, receipt in receipt_keys.items()}

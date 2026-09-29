@@ -159,6 +159,14 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   read. A duplicate skipped after a successful read, or a byte-budget refusal,
   does not reserve credit that would hide a later ranked choice. A failed read
   can still be retried through another selected receipt for the same note.
+  Only content admitted to the body selector suppresses later duplicate views.
+  A complete body covers that record version; an excerpt covers only its checked
+  byte range. Distinct passages and later versions remain eligible. An identical
+  excerpt from another receipt may require another successful read before it
+  can be recognized and omitted; that read still consumes credit. A view rejected
+  by the selector-input budget does not suppress a later smaller view. Fitting
+  still prefers a whole body when it fits delivery context, so it can miss an
+  excerpt that would fit the remaining selector-input budget in that case.
   Alias channels share one receipt allowance. `preview_receipt_budget_dropped`
   counts choices skipped because their receipt has no credits at read time;
   `preview_admitted` excludes those choices but can include skipped duplicates
