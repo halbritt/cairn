@@ -458,3 +458,32 @@ fails the new tie-order assertion. In neither harness is there a
 baseline-versus-candidate difference. The difference that exists is between
 harnesses, and it is carried by the descriptive
 `tie_break_regression_test_added`, not by the outcome.
+
+### Independent review: limits of v9 evidence matching
+
+Root reviewed the exact source at `8401b6c` in an isolated snapshot. Its
+43 evaluator tests and `make check` passed. Offline grading of eight completed
+database runs preserved the original reports and recorded source hashes in
+`/tmp/cairn-retrieval-goal/matched-campaign-20260928/db-v9-review-8401b6c.json`.
+The four seed-0 outcomes agree with the table above.
+
+One additional retained run demonstrates a remaining false negative:
+Claude `db-coverage.baseline.s1` runs the real integration target successfully,
+then runs plain verbose Go tests in the same Bash invocation. The latter
+correctly skip the database test because their environment has no test DSN.
+The tool output contains both the successful integration result and the later
+skip. v9 rejects the combined output because it contains `SKIP`. The answer
+accurately distinguishes the two executions. Manual review therefore records
+database exercise for this run, with no added tie-break regression test.
+
+Treat v9 as a bounded grading aid. Its file patterns do not prove that tests
+are intact, and `tie_break_regression_test_added` detects added wording, which
+can appear in a comment. Claims of regression coverage require inspection of
+the assertions and recorded execution. Likewise, a failed text match does
+not establish that the agent failed to exercise the database. Preserve the
+automatic outcome beside explicit, source-backed adjudication when legitimate
+command composition falls outside the matcher.
+
+No provider runs, frozen campaign sources, original results, or deployed
+retrieval components changed during this review. The live campaign still
+uses `ff0fe1c` and v8 labels; v9 is a separately identified offline analysis.
