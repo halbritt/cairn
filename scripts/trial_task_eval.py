@@ -76,8 +76,20 @@ def load_cases(version=None, path=TRIAL / "cases.json"):
     return cases
 
 
-def load_corpus(path=TRIAL / "corpus.json"):
-    return load_json(path)["notes"]
+def load_corpus(version=None, path=TRIAL / "corpus.json"):
+    """Corpus with revision `corpus` overlays up to version (default: latest) applied by note id."""
+    notes = load_json(path)["notes"]
+    for revision in revision_files(version):
+        changes = load_json(revision).get("corpus", {})
+        for note in notes:
+            note.update(changes.get(note["id"], {}))
+    return notes
+
+
+def workspace_dir(case):
+    """Fixture directory: frozen workspaces/NAME, or revisions/vN/... for a later labelled version."""
+    name = case["workspace"]
+    return TRIAL / name if name.startswith("revisions/") else TRIAL / "workspaces" / name
 
 
 CHECK_TYPES = {"command", "answer", "file", "exists", "added", "unchanged", "shell", "commit_files", "staged", "all", "any"}
@@ -107,7 +119,7 @@ def validate(cases, corpus, workspaces=TRIAL / "workspaces"):
             problems.append(cid + ": expected and forbidden overlap")
         if set(case["wordings"]) != {"task", "paraphrase", "direct"}:
             problems.append(cid + ": wordings must be task, paraphrase and direct")
-        if not (workspaces / case["workspace"]).is_dir():
+        if not workspace_dir(case).is_dir():
             problems.append(cid + ": missing workspace")
         if case["provenance"]["type"] not in ("actual", "adapted", "synthetic"):
             problems.append(cid + ": provenance type")
@@ -138,6 +150,9 @@ def frozen_path(version):
 
 def label_manifest(version=1):
     files = [TRIAL / "cases.json", TRIAL / "corpus.json", *revision_files(version)]
+    for revision in revision_files(version):  # fixtures and grader assets of later versions
+        assets = revision.with_suffix("")
+        files += [p for p in assets.rglob("*") if p.is_file() and "__pycache__" not in p.parts] if assets.is_dir() else []
     files += [p for p in (TRIAL / "workspaces").rglob("*") if p.is_file() and "__pycache__" not in p.parts]
     return dict(schema="cairn.task-eval.frozen/1", labels_sha256=tree_digest(files), files=len(files),
                 cases_sha256=hashlib.sha256((TRIAL / "cases.json").read_bytes()).hexdigest(),
@@ -526,7 +541,7 @@ def summarise_retrieval(rows):
 
 def prepare_workspace(case, root):
     """Copy the fixture, run its setup and tag the evaluation base. Returns the working directory."""
-    source = TRIAL / "workspaces" / case["workspace"]
+    source = workspace_dir(case)
     target = Path(root) / case["copy_to"]
     shutil.copytree(source, target, ignore=shutil.ignore_patterns("setup.sh", "__pycache__"))
     env = dict(os.environ, GIT_AUTHOR_NAME="fixture", GIT_AUTHOR_EMAIL="fixture@example.invalid",
@@ -581,8 +596,18 @@ def evaluate(check, ctx):
         path = cwd / check["path"]
         return path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == ctx["snapshot"].get(check["path"])
     if kind == "shell":
-        result = subprocess.run(["bash", "-c", check["run"]], cwd=cwd, capture_output=True, timeout=120,
-                                env=dict(os.environ, GOTOOLCHAIN="local", GOFLAGS="-mod=mod"))
+        # Checks can execute agent-written code: read-only host, writable workspace, private /tmp, no network.
+        workdir = Path(cwd).resolve()
+        sandbox = ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
+                   "--bind", str(workdir.parent), str(workdir.parent), "--chdir", str(workdir),
+                   "--unshare-net", "--unshare-pid", "--die-with-parent"]
+        env = dict(os.environ, GOTOOLCHAIN="local", GOFLAGS="-mod=mod", GOCACHE="/tmp/go-cache", GOPATH="/tmp/go",
+                   TASK_EVAL_REVISIONS=str(TRIAL / "revisions"))
+        try:
+            result = subprocess.run([*sandbox, "bash", "-c", check["run"]], capture_output=True,
+                                    timeout=check.get("timeout", 120), env=env)
+        except subprocess.TimeoutExpired:
+            return False
         return result.returncode == check.get("expect_exit", 0)
     if kind == "commit_files":
         names = run(["git", "diff", "--name-only", "eval-base", "HEAD"], cwd=cwd, check=False).stdout.decode().split()
@@ -819,7 +844,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
         graded = dict(graded, check_outcome=graded["outcome"], outcome="harness_error", execution_failure=failure,
                       error=stderr[-600:])
     memory = hook_observations(base / "hook-state", stores.get(arm, {}).get("store"))
-    record = dict(run_id=run_id, case=case["id"], category=case["category"], provenance=case["provenance"]["type"], arm=arm,
+    record = dict(run_id=run_id, case=case["id"], category=case["category"], primary=case.get("primary", True), provenance=case["provenance"]["type"], arm=arm,
                   seed=seed, order=order, harness=args.harness, model=args.model, wording=args.wording, exit=code, seconds=round(elapsed, 2), prompt_bytes=len(prompt.encode()),
                   **graded, trace={k: v for k, v in trace.items() if k not in ("answer", "commands")},
                   commands=len(trace["commands"]), answer_chars=len(trace["answer"] or ""), memory=memory)
@@ -958,7 +983,9 @@ def summarise_agent(records, arms):
     for arm in arms:
         rows = [r for r in records if r.get("arm") == arm]
         outcomes = [r.get("outcome") for r in rows]
-        summary[arm] = dict(runs=len(rows), **{k: outcomes.count(k) for k in ("correct", "mistake", "incomplete", "harness_error")},
+        primary = [r.get("outcome") for r in rows if r.get("primary", True)]
+        summary[arm] = dict(runs=len(rows), **{k: outcomes.count(k) for k in ("correct", "mistake", "incomplete", "harness_error", "provider_error", "not_regradable")},
+                            primary={k: primary.count(k) for k in ("correct", "mistake", "incomplete", "harness_error", "provider_error", "not_regradable")},
                             memory_delivered_expected=sum(bool((r.get("memory") or {}).get("delivered_expected")) for r in rows),
                             forbidden_delivered=sum(bool((r.get("memory") or {}).get("forbidden")) for r in rows),
                             median_seconds=statistics.median([r["seconds"] for r in rows if r.get("seconds")]) if any(r.get("seconds") for r in rows) else None,
@@ -979,10 +1006,25 @@ def cmd_regrade(args):
         base = out / "runs" / record["run_id"]
         if record.get("outcome") != "harness_error" and (base / "stream.jsonl").exists():
             case = cases[record["case"]]
+            record["graded_before"] = {k: record.get(k) for k in ("outcome", "correct", "mistake")}
+            record["primary"] = case.get("primary", True)
+            if case.get("regrade") is False:
+                # The fixture or task changed in this version; retained runs cannot answer the new checks.
+                record.update(outcome="not_regradable", correct=None, mistake=None, regrade_reason=case.get("regrade_reason"))
+                records.append(record)
+                continue
             trace = parse_stream((base / "stream.jsonl").read_text(), record.get("harness", data.get("harness", "claude")))
+            failure = execution_failure(trace, record.get("exit"))
+            if failure:
+                # Provider or process failures are not task outcomes, whatever the workspace shows.
+                if re.search(r"(?i)failed to authenticate|oauth|unauthori[sz]ed|rate.?limit|quota|overloaded", trace.get("answer") or ""):
+                    failure = "provider_error"
+                record.update(outcome=failure if failure == "provider_error" else "harness_error", execution_failure=failure,
+                              correct=None, mistake=None)
+                records.append(record)
+                continue
             ctx = dict(cwd=base / "work" / case["cwd"], commands=trace["commands"], answer=trace["answer"],
                        snapshot=json.loads((base / "work" / ".eval-snapshot.json").read_text()))
-            record["graded_v1"] = {k: record.get(k) for k in ("outcome", "correct", "mistake")}
             record.update(grade(case, ctx))
         records.append(record)
     report = dict(data, frozen=frozen, label_version=version, records=records, summary=summarise_agent(records, data["arms"]))
