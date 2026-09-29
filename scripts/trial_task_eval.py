@@ -53,8 +53,25 @@ def load_json(path):
     return json.loads(Path(path).read_text())
 
 
-def load_cases(path=TRIAL / "cases.json"):
-    return load_json(path)["cases"]
+def revision_files(version=None):
+    """Labelled revision overlays (revisions/vN.json), in order, up to version."""
+    files = sorted((TRIAL / "revisions").glob("v*.json"), key=lambda p: int(p.stem[1:]))
+    return [p for p in files if version is None or int(p.stem[1:]) <= version]
+
+
+def latest_version():
+    files = revision_files()
+    return int(files[-1].stem[1:]) if files else 1
+
+
+def load_cases(version=None, path=TRIAL / "cases.json"):
+    """Cases with every revision overlay up to version applied (default: latest)."""
+    cases = load_json(path)["cases"]
+    for revision in revision_files(version):
+        changes = load_json(revision)["cases"]
+        for case in cases:
+            case.update(changes.get(case["id"], {}))
+    return cases
 
 
 def load_corpus(path=TRIAL / "corpus.json"):
@@ -113,18 +130,23 @@ def tree_digest(paths):
     return digest.hexdigest()
 
 
-def label_manifest():
-    files = [TRIAL / "cases.json", TRIAL / "corpus.json"]
+def frozen_path(version):
+    return TRIAL / ("FROZEN.json" if version == 1 else f"FROZEN-v{version}.json")
+
+
+def label_manifest(version=1):
+    files = [TRIAL / "cases.json", TRIAL / "corpus.json", *revision_files(version)]
     files += [p for p in (TRIAL / "workspaces").rglob("*") if p.is_file() and "__pycache__" not in p.parts]
     return dict(schema="cairn.task-eval.frozen/1", labels_sha256=tree_digest(files), files=len(files),
                 cases_sha256=hashlib.sha256((TRIAL / "cases.json").read_bytes()).hexdigest(),
                 corpus_sha256=hashlib.sha256((TRIAL / "corpus.json").read_bytes()).hexdigest(),
-                baseline_commit=load_json(TRIAL / "cases.json")["baseline_commit"])
+                baseline_commit=load_json(TRIAL / "cases.json")["baseline_commit"], label_version=version)
 
 
-def verify_frozen():
-    frozen = load_json(TRIAL / "FROZEN.json")
-    current = label_manifest()
+def verify_frozen(version=None):
+    version = version or latest_version()
+    frozen = load_json(frozen_path(version))
+    current = label_manifest(version)
     if frozen["labels_sha256"] != current["labels_sha256"]:
         raise SystemExit("labels changed after freezing; record a new labelled version instead of editing silently")
     return frozen
@@ -761,6 +783,30 @@ def summarise_agent(records, arms):
     return summary
 
 
+def cmd_regrade(args):
+    """Re-grade stored runs under a label version; the original agent.json is left untouched."""
+    version = args.version or latest_version()
+    frozen = verify_frozen(version)
+    out = Path(args.result_dir)
+    data = load_json(out / "agent.json")
+    cases = {c["id"]: c for c in load_cases(version)}
+    records = []
+    for record in data["records"]:
+        record = dict(record)
+        base = out / "runs" / record["run_id"]
+        if record.get("outcome") != "harness_error" and (base / "stream.jsonl").exists():
+            case = cases[record["case"]]
+            trace = parse_stream((base / "stream.jsonl").read_text())
+            ctx = dict(cwd=base / "work" / case["cwd"], commands=trace["commands"], answer=trace["answer"],
+                       snapshot=json.loads((base / "work" / ".eval-snapshot.json").read_text()))
+            record["graded_v1"] = {k: record.get(k) for k in ("outcome", "correct", "mistake")}
+            record.update(grade(case, ctx))
+        records.append(record)
+    report = dict(data, frozen=frozen, label_version=version, records=records, summary=summarise_agent(records, data["arms"]))
+    (out / f"agent-v{version}.json").write_text(json.dumps(report, indent=2))
+    print(json.dumps(report["summary"], indent=2))
+
+
 # ---------------------------------------------------------------- report
 
 def cmd_report(args):
@@ -789,8 +835,12 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("validate")
-    sub.add_parser("freeze")
+    f = sub.add_parser("freeze")
+    f.add_argument("--version", type=int, default=None, help="label version (default: latest revision)")
     sub.add_parser("verify")
+    g = sub.add_parser("regrade")
+    g.add_argument("result_dir", help="agent output directory with runs/*/work and stream.jsonl")
+    g.add_argument("--version", type=int, default=None)
     r = sub.add_parser("retrieval")
     r.add_argument("--output", required=True)
     r.add_argument("--cairn", required=True)
@@ -822,10 +872,11 @@ def main(argv=None):
     if args.command == "freeze":
         if validate(load_cases(), load_corpus()):
             raise SystemExit("fix validation problems first")
-        path = TRIAL / "FROZEN.json"
+        version = args.version or latest_version()
+        path = frozen_path(version)
         if path.exists():
             raise SystemExit("already frozen; labels are append-only")
-        manifest = dict(label_manifest(), frozen_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+        manifest = dict(label_manifest(version), frozen_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"))
         path.write_text(json.dumps(manifest, indent=2) + "\n")
         print(json.dumps(manifest, indent=2))
         return 0
@@ -836,6 +887,8 @@ def main(argv=None):
         cmd_retrieval(args)
     elif args.command == "agent":
         cmd_agent(args)
+    elif args.command == "regrade":
+        cmd_regrade(args)
     else:
         cmd_report(args)
     return 0
