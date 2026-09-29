@@ -39,6 +39,7 @@ class FileHintRecallTests(unittest.TestCase):
 
     def test_web_and_email_references_are_not_file_entities(self):
         for reference in ("claude.ai", "https://example.org/docs/guide.md",
+                          "https://example.org:8080/docs/guide.md?next=core/store.go",
                           "example.org/docs/guide.md", "person@example.org"):
             with self.subTest(reference=reference):
                 intent = hook.retrieval_intent(dict(self.event, prompt="Inspect " + reference), {})

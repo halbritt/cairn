@@ -414,9 +414,8 @@ def retrieval_intent(event, state):
     project = project_root(event).name
     prompt = event.get("prompt", "")
     paths = []
-    for value in re.findall(r"(?:[A-Za-z][A-Za-z0-9+.-]*://|[\w.+-]+@)?[\w./-]+\.[A-Za-z0-9_]+", prompt):
-        if "://" in value or "@" in value:
-            continue
+    file_text = re.sub(r"\S*(?:://|@)\S*", " ", prompt)
+    for value in re.findall(r"[\w./-]+\.[A-Za-z0-9_]+", file_text):
         name = file_hint(value, event.get("project_path") or event["cwd"], project_root(event))
         # A dotted word can be a host name. Infer file identity only from an
         # explicit path or an existing workspace file; keep other words lexical.
