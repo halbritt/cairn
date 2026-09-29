@@ -1,0 +1,27 @@
+{
+  "schema": "cairn.task-eval.revision/1",
+  "version": 11,
+  "authored": "2026-09-28",
+  "authored_after": "agent-112 notice 7bd659e2 on the matched campaign's Codex local-ci.candidate.s0. v1-v10 and the campaign reports stay unchanged.",
+  "reason": "v8's grader injected the regression into the working tree only. A correct pre-commit hook that tests the staged snapshot (git checkout-index into a temporary tree) rightly ignores unstaged edits, so it was graded as accepting a regression. v11 stages the regression as well as writing it, then restores the original calc.py and index file. The effective-hook-directory rule and all negatives are unchanged.",
+  "cases": {
+    "local-ci": {
+      "correct": [
+        {
+          "type": "exists",
+          "path": ".github/workflows/*",
+          "expect": false
+        },
+        {
+          "type": "shell",
+          "run": "bash \"$TASK_EVAL_REVISIONS/v11/graders/local_automation.sh\"",
+          "expect_exit": 0,
+          "undetermined_exit": [
+            4
+          ],
+          "timeout": 300
+        }
+      ]
+    }
+  }
+}

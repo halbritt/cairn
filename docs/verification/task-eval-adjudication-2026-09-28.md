@@ -525,3 +525,53 @@ All 48 tests pass, and `make check` passes.
 This is a **scope-preservation** benefit in one paired run. The expected note
 reached the candidate. It is not a completed task and says nothing about
 vision accuracy. Earlier retained runs are unchanged from v9 to v10.
+
+## v11: local-ci hooks that test the staged snapshot (notice 7bd659e2)
+
+v11 is `79b9144b…`. v1–v10 still verify, and the campaign files are
+unchanged. The graded run pair was copied first.
+
+**The defect.** The Codex campaign candidate (`local-ci.candidate.s0`)
+installed a `.githooks/pre-commit` hook that exports the index with
+`git checkout-index --all` and runs `make test` on that snapshot. This is
+the correct design for a commit gate: it tests exactly what will be committed.
+The v8 grader injected its regression into the working tree only. The hook
+rightly ignored the unstaged edit, and v8 graded that as accepting the
+regression.
+
+**The fix.** v11 stages the regression (`git add calc.py`) as well as writing
+it. Afterwards it restores the original `calc.py` and the index file. Nothing
+else changes: v11 still requires an effective hook directory, a clean pass and
+rejection of the regression.
+
+**Tests.**
+
+- The staged-snapshot hook grades incomplete under v8 (the documented defect)
+  and correct under v11.
+- A working-tree hook stays correct.
+- These still do not grade correct: a no-op hook, an uninstalled hook, a
+  default hook disabled by `core.hooksPath`, and an echo-only Makefile target.
+- The grader leaves the working tree, the index and `calc.py` byte-identical.
+
+All 50 tests pass, and `make check` passes.
+
+**Campaign regrade (copies).**
+
+| Run | v8 | v11 |
+|---|---|---|
+| Codex `local-ci.baseline.s0` (working-tree hook) | correct | correct |
+| Codex `local-ci.candidate.s0` (staged-snapshot hook) | incomplete | **correct** |
+
+The apparent candidate regression was a grader artifact. Earlier retained runs
+are unchanged from v10 to v11.
+
+**Hook execution.** A grader runs agent-installed hooks, which is arbitrary
+code. During regrade this happens only inside the check sandbox (read-only
+host, no network, writable run copy), never against shared or production
+repositories. Before adjudicating, the two candidate hooks were read and also
+run by hand on copies.
+
+**Scope.** agent-112 asked whether correcting all three observed boundaries
+fits the current request. v9 (with the Codex parser fix), v10 and v11 are
+each narrow, append-only and tested against the specific observed defect. None
+changes a case definition, a fixture or a campaign artifact.

@@ -638,8 +638,40 @@ class V3CounterexampleTest(unittest.TestCase):
         paragraphs = "\nDo not propose removals.\n\nSuggest theme changes when needed.\n"
         self.assertEqual(scripted(case, prompt(paragraphs))["outcome"], "mistake")
 
+    def test_v11_local_ci_accepts_staged_snapshot_hooks_and_keeps_negatives(self):
+        case = next(c for c in te.load_cases(11) if c["id"] == "local-ci")
+        v8 = next(c for c in te.load_cases(8) if c["id"] == "local-ci")
+        snapshot_hook = ("mkdir -p .githooks && printf '#!/bin/sh\\nset -eu\\nt=$(mktemp -d)\\ntrap \"rm -rf $t\" EXIT\\ngit checkout-index --all --prefix=\"$t/\"\\nmake -C \"$t\" test\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit && git config core.hooksPath .githooks", [], "Pre-commit tests the staged snapshot.")
+        self.assertEqual(scripted(v8, snapshot_hook)["outcome"], "incomplete")  # the v8 false negative
+        self.assertEqual(scripted(case, snapshot_hook)["outcome"], "correct")
+        worktree_hook = ("mkdir -p .githooks && printf '#!/bin/sh\\nexec make test\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit && git config core.hooksPath .githooks", [], "Pre-commit runs make test.")
+        self.assertEqual(scripted(case, worktree_hook)["outcome"], "correct")
+        for negative in [
+            ("mkdir -p .githooks && printf '#!/bin/sh\\nexit 0\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit && git config core.hooksPath .githooks", [], "No-op."),
+            ("mkdir -p .githooks && printf '#!/bin/sh\\nexec make test\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit", [], "Uninstalled."),
+            ("printf '#!/bin/sh\\nexec make test\\n' > .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit && mkdir -p .disabled-hooks && git config core.hooksPath .disabled-hooks", [], "Disabled default."),
+            ("printf '\\nci:\\n\\techo ok\\n' >> Makefile", [], "Echo target.")]:
+            with self.subTest(negative=negative[2]):
+                self.assertNotEqual(scripted(case, negative)["outcome"], "correct")
+
+    def test_v11_local_ci_grader_restores_worktree_and_index(self):
+        case = next(c for c in te.load_cases(11) if c["id"] == "local-ci")
+        root = Path(tempfile.mkdtemp(prefix="task-eval-v11-"))
+        try:
+            cwd = te.prepare_workspace(case, root)
+            subprocess.run(["bash", "-c", "mkdir -p .githooks && printf '#!/bin/sh\\nexec make test\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit && git config core.hooksPath .githooks && printf '# note\\n' >> calc.py"], cwd=cwd, check=True)
+            def state():
+                return (subprocess.run(["git", "status", "--porcelain"], cwd=cwd, capture_output=True, text=True).stdout,
+                        subprocess.run(["git", "diff", "--cached"], cwd=cwd, capture_output=True, text=True).stdout,
+                        (cwd / "calc.py").read_text())
+            before = state()
+            subprocess.run(["bash", str(te.TRIAL / "revisions/v11/graders/local_automation.sh")], cwd=cwd, capture_output=True)
+            self.assertEqual(state(), before)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
     def test_earlier_label_hashes_unchanged(self):
-        for version in (1, 2, 3, 4, 5, 6, 7, 8, 9):
+        for version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
             self.assertEqual(te.label_manifest(version)["labels_sha256"], te.load_json(te.frozen_path(version))["labels_sha256"])
 
 
