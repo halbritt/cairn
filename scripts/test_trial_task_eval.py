@@ -101,6 +101,19 @@ def scripted(case, script):
 
 
 class FixtureTest(unittest.TestCase):
+    def test_pairing_rejects_changed_revision_assets_with_same_base_fixtures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frozen = te.verify_frozen()
+            baseline = dict(frozen=dict(frozen, labels_sha256="different-revision-assets"),
+                            harness="claude", reasoning_effort=None, model="sonnet", wording="task", distractors=0,
+                            runs=[("local-ci", "baseline", 0, 0)])
+            plan = Path(directory) / "plan.json"
+            plan.write_text(json.dumps(baseline))
+            args = argparse.Namespace(cases=["local-ci"], first_seed=0, seeds=1, paired_plan=[str(plan)],
+                                      harness="claude", reasoning_effort=None, model="sonnet", wording="task", distractors=0)
+            with self.assertRaisesRegex(SystemExit, "frozen labels"):
+                te.cmd_agent(args)
+
     def test_later_store_setup_failure_closes_every_acquired_store(self):
         args = argparse.Namespace(model="sonnet", harness="claude", wording="task", cases=["local-ci"],
                                   first_seed=0, seeds=1, paired_plan=[], arms=[], reasoning_effort=None,
@@ -114,6 +127,9 @@ class FixtureTest(unittest.TestCase):
             with patch.object(te, "TrialStore", side_effect=[first, second]), patch.object(te, "run", return_value=Mock(stdout=b"test version")):
                 with self.assertRaisesRegex(RuntimeError, "second API failed"):
                     te.cmd_agent(args)
+            observed = json.loads((Path(args.output) / "observed-corpus.json").read_text())
+            self.assertEqual(observed["notes"], first.seed_corpus.call_args.args[0])
+            self.assertEqual(observed["notes"], second.seed_corpus.call_args.args[0])
         first.stop.assert_called_once()
         second.stop.assert_called_once()
 

@@ -144,6 +144,16 @@ def analyze_report(path, corpus_path):
     digest = hashlib.sha256(corpus_bytes).hexdigest()
     if report["frozen"]["corpus_sha256"] != digest:
         raise ValueError("corpus does not match this report's frozen hash")
+    observed_digest = None
+    if "observed_corpus" in report:
+        metadata = report["observed_corpus"]
+        observed_path = path.parent / metadata["path"]
+        if Path(metadata["path"]).is_absolute() or not observed_path.resolve().is_relative_to(path.parent.resolve()):
+            raise ValueError("observed corpus path is outside the report directory")
+        corpus_bytes = observed_path.read_bytes()
+        observed_digest = hashlib.sha256(corpus_bytes).hexdigest()
+        if metadata["sha256"] != observed_digest:
+            raise ValueError("observed corpus hash does not match the retained report")
     corpus = json.loads(corpus_bytes)["notes"]
     rows = []
     root = path.parent / "runs"
@@ -162,6 +172,7 @@ def analyze_report(path, corpus_path):
         rows.append(row)
     return dict(schema="cairn.task-eval.delivery-evidence/1", report=str(path.resolve()),
                 report_sha256=hashlib.sha256(path.read_bytes()).hexdigest(), corpus_sha256=digest,
+                observed_corpus_sha256=observed_digest,
                 analyzer_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), records=rows,
                 limits=["No grades are changed and no agent or service is called.",
                         "MCP response text bytes include JSON envelopes and repeated calls, but not provider tool schemas or protocol framing.",

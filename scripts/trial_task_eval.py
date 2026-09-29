@@ -906,6 +906,8 @@ def cmd_agent(args):
                 or baseline["frozen"]["cases_sha256"] != frozen["cases_sha256"]
                 or baseline["frozen"]["corpus_sha256"] != frozen["corpus_sha256"]):
             raise SystemExit("paired baseline plan differs in harness, reasoning, model, wording, distractors or base fixtures: " + path)
+        if baseline["frozen"]["labels_sha256"] != frozen["labels_sha256"]:
+            raise SystemExit("paired baseline plan differs in frozen labels or revision assets: " + path)
         pairs = {(case, seed) for case, arm, seed, _ in baseline["runs"] if arm == "baseline"}
         baseline_pairs |= pairs
         paired_plans.append(dict(path=str(Path(path).resolve()), sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest(),
@@ -922,6 +924,10 @@ def cmd_agent(args):
     with ExitStack() as cleanup:
         stores = {}
         corpus = load_corpus()
+        corpus_bytes = (json.dumps(dict(notes=corpus), ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+        corpus_path = out / "observed-corpus.json"
+        corpus_path.write_bytes(corpus_bytes)
+        execution["observed_corpus"] = dict(path=corpus_path.name, sha256=hashlib.sha256(corpus_bytes).hexdigest())
         arms = list(args.arms)
         for spec in args.memory:
             label, binary, hook = spec.split(":", 2)
