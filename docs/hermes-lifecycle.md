@@ -156,10 +156,12 @@ for tested revisions, remaining limits and deployment evidence.
 
 Hermes enables bounded semantic discovery alongside lexical discovery. A weak
 lexical hit or precise file request does not suppress semantic candidates.
-The hook inspects at most six lexical and eight semantic candidates and asks the
-tool-free selector once which current body directly helps this request; uncertain
-or unavailable verification omits optional guidance. Its aggregate input is
-capped at 24,000 UTF-8 bytes with whole-candidate omission reported in status.
+The hook inspects up to ten previews from each search. If previews exceed a
+receipt's available credits, a bounded tool-free call admits body reads while
+keeping each receipt's four-credit cap. A separate body-based applicability
+decision chooses which current source helps the request; uncertain or unavailable
+verification omits optional guidance. Both selector inputs share a 24,000-byte
+cap with whole-candidate omission reported in status.
 An oversized whole note may use a checked `match_span` for an
 optional class A/B passage; that excerpt is labelled partial and leaves the whole
 note eligible for later recall. Discovery coverage is preserved in injected context

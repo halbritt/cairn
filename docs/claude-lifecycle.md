@@ -93,18 +93,22 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   later candidate when one fits. Bounded preview entries retain their pull
   handles when they fit.
   With the installed `semantic_fallback` default, the tested sorted hook query
-  feeds lexical and semantic discovery. Both contribute a bounded shortlist of
-  current bodies. One tool-free model decision checks applicability across that
-  shortlist; shared words, a file association,
+  feeds lexical and semantic discovery. The hook inspects up to ten ranked
+  previews from each search. When previews exceed pull credits, a bounded
+  tool-free call chooses which current bodies to read; each receipt retains its
+  own four-credit limit. A separate body-based model decision checks
+  applicability before injection. Shared words, a file association,
   or a project label alone cannot inject an optional body. An unavailable model
   omits optional guidance, while required context remains. The semantic route
   also runs after an unhelpful exact-file result. Setting `semantic_fallback`
   explicitly to `false` keeps the earlier lexical-only route. The hook records
-  the shortlist size, source extents, pull and selector durations, aggregate
-  selector-input bytes, provider-reported cost, and omission reasons in recall
-  status. The selector input is capped at 24,000 UTF-8 bytes; candidates that
-  would exceed it are omitted whole. Its eight-second allowance starts after
-  candidate pulls but never extends the 11-second recall deadline. Reinstall
+  preview and body shortlist sizes, source extents, pull and selector durations,
+  aggregate selector-input bytes, provider-reported costs, and omission reasons
+  in recall status. Both selector inputs together are capped at 24,000 UTF-8
+  bytes; candidates that would exceed it are omitted whole. Preview admission
+  has a three-second allowance; the body decision's eight-second allowance
+  starts after candidate pulls. Neither extends the 11-second recall deadline.
+  Preview selection remains fallible and can miss relevant later-ranked notes. Reinstall
   hooks to apply the new default; no running copy is changed.
   Mandatory context is never truncated. Retrieval runs on lifecycle events, not
   on every model or tool request; it does not enforce the whole conversation's
