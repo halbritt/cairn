@@ -11,15 +11,17 @@ from test_receipt_accounting import hook
 
 class PreviewAdmissionTests(unittest.TestCase):
     def run_hook(self, indices, lexical_count=3, semantic_count=5, shared_receipt=False,
-                 starting_credits=4, body_index=0):
+                 starting_credits=4, body_index=0, overlap=False, refused_handles=()):
         entries = {}
         for channel, count in (('lexical', lexical_count), ('semantic', semantic_count)):
             receipt = 'shared' if shared_receipt else channel
             entries[channel] = [dict(record_id=f'{channel}-{i}', version=1, summary='candidate',
                                      pull_arguments=dict(receipt_id=receipt, handle=f'{channel}-{i}',
                                                          request_id=f'{channel}-{i}')) for i in range(count)]
-        credits = {entry['pull_arguments']['receipt_id']: starting_credits
-                   for group in entries.values() for entry in group}
+        if overlap:
+            for lexical, semantic in zip(entries['lexical'], entries['semantic']):
+                semantic['record_id'] = lexical['record_id']
+        credits = {('shared' if shared_receipt else channel): starting_credits for channel in entries}
         pulls, selections = [], []
 
         def transport(command, *, body, **kwargs):
@@ -36,9 +38,13 @@ class PreviewAdmissionTests(unittest.TestCase):
                 args = json.loads(body)
                 receipt = args['receipt_id']
                 self.assertGreater(credits[receipt], 0, 'host dispatched beyond the receipt allowance')
-                credits[receipt] -= 1
                 pulls.append(args['handle'])
-                data = dict(selection=dict(record=dict(record_id=args['handle'], version=1,
+                if args['handle'] in refused_handles:
+                    return subprocess.CompletedProcess(command, 1, json.dumps(dict(status='BUDGET_REFUSED')), '')
+                credits[receipt] -= 1
+                source = next(entry for group in entries.values() for entry in group
+                              if entry['pull_arguments']['handle'] == args['handle'])
+                data = dict(selection=dict(record=dict(record_id=source['record_id'], version=1,
                                                         body='Useful ' + args['handle'])),
                             credits_remaining=credits[receipt])
             return subprocess.CompletedProcess(command, 0, json.dumps(dict(ok=True, data=data)), '')
@@ -59,6 +65,31 @@ class PreviewAdmissionTests(unittest.TestCase):
                 result = hook.recall(memory, event, state)
         self.assertIn('Required instruction', result['hookSpecificOutput']['additionalContext'])
         return result, state, pulls, selections
+
+    def test_duplicate_channels_leave_room_for_later_ranked_guidance(self):
+        result, state, pulls, selections = self.run_hook(list(range(8)), overlap=True, body_index=4)
+        self.assertEqual(pulls, ['lexical-0', 'lexical-1', 'lexical-2', 'semantic-3', 'semantic-4'])
+        self.assertEqual(state['seen'], {'semantic-4': 1})
+        self.assertEqual(state['last_recall']['preview_receipt_budget_dropped'], 0)
+        self.assertEqual(selections, ['preview', 'body'])
+        self.assertIn('Useful semantic-4', result['hookSpecificOutput']['additionalContext'])
+
+    def test_byte_refusals_leave_credit_for_later_ranked_candidates(self):
+        result, state, pulls, selections = self.run_hook(list(range(8)), lexical_count=0,
+            semantic_count=8, refused_handles=('semantic-0', 'semantic-1'), body_index=3)
+        self.assertEqual(pulls, [f'semantic-{i}' for i in range(6)])
+        self.assertEqual(state['seen'], {'semantic-5': 1})
+        self.assertEqual(state['last_recall']['preview_receipt_budget_dropped'], 2)
+        self.assertEqual(state['last_recall']['receipt_pull_calls']['semantic'], 6)
+        self.assertIn('Useful semantic-5', result['hookSpecificOutput']['additionalContext'])
+
+    def test_alternate_receipt_can_retry_a_refused_duplicate(self):
+        result, state, pulls, selections = self.run_hook(list(range(8)), overlap=True,
+            refused_handles=('lexical-0',), body_index=2)
+        self.assertEqual(pulls, ['lexical-0', 'lexical-1', 'lexical-2',
+                                 'semantic-0', 'semantic-3', 'semantic-4'])
+        self.assertEqual(state['seen'], {'lexical-0': 1})
+        self.assertIn('Useful semantic-0', result['hookSpecificOutput']['additionalContext'])
 
     def test_overselected_receipt_keeps_ranked_valid_subset(self):
         # Five semantic choices plus three lexical choices: retain the first

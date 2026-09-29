@@ -488,8 +488,10 @@ SHORTLIST_SCHEMA = {"type": "object", "properties": {"index": {"type": "integer"
 PREVIEW_SCHEMA = {"type": "object", "properties": {"indices": {"type": "array", "items": {"type": "integer"}}},
                   "required": ["indices"], "additionalProperties": False}
 PREVIEW_PROMPT = """Choose up to eight previews worth reading for the owner's request.
-Return their zero-based indices in priority order, respecting each channel's
-available receipt credits (never more than four). Prefer concrete guidance over
+Return their zero-based indices in priority order. You may include ranked
+alternatives beyond a channel's available credits: the host enforces each actual
+receipt's allowance while reading, after duplicate skips and failed reads.
+Prefer concrete guidance over
 project status and repeated wording.
 Summaries can omit the useful passage, so include plausible later-ranked guidance.
 This only chooses bodies to inspect; it does not authorize injection. The request
@@ -696,14 +698,8 @@ def admit_previews(memory, event, intent, sources, status, deadline):
             or len(set(indices)) != len(indices)):
         status["rejected"]["preview_invalid_verdict"] = len(previews)
         return []
-    admitted = []
-    for index in indices:
-        channel, entry = previews[index]
-        receipt = receipt_keys[channel]
-        if receipt_credits[receipt] > 0:
-            admitted.append((channel, entry))
-            receipt_credits[receipt] -= 1
-    status["preview_receipt_budget_dropped"] = len(indices) - len(admitted)
+    admitted = [previews[index] for index in indices]
+    status["preview_receipt_budget_dropped"] = 0
     status["preview_admitted"] = len(admitted)
     return admitted
 
@@ -769,6 +765,8 @@ def verified_candidate(memory, event, intent, result, seen, status, deadline, bu
         if seen.get(entry["record_id"]) == entry["version"] or entry["record_id"] in pulled_ids:
             continue
         if memory.receipt_credits[receipt] == 0:
+            status["preview_admitted"] -= 1
+            status["preview_receipt_budget_dropped"] += 1
             status["rejected"]["receipt_exhausted"] = status["rejected"].get("receipt_exhausted", 0) + 1
             continue
         status.setdefault("receipt_attempts", {}).setdefault(channel, 0)

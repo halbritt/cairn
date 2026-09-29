@@ -153,10 +153,17 @@ cannot run together. Explicit handoffs through the `handoff` skill use the same 
   feeds lexical and semantic discovery. The hook inspects up to ten lexical
   previews and the semantic pages within the total bound above. When previews exceed pull credits, a bounded
   tool-free call chooses which current bodies to read; each receipt retains its
-  own four-credit limit. The host admits choices in the selector's ranked order,
-  dropping only choices that exceed their actual receipt's remaining credits.
+  own four-credit limit. The selector may rank up to eight choices, including
+  alternatives beyond a channel's credits. The host processes those choices in
+  ranked order and checks actual remaining credits just before each candidate
+  read. A duplicate skipped after a successful read, or a byte-budget refusal,
+  does not reserve credit that would hide a later ranked choice. A failed read
+  can still be retried through another selected receipt for the same note.
   Alias channels share one receipt allowance. `preview_receipt_budget_dropped`
-  counts these omissions; malformed, repeated or out-of-range indices and
+  counts choices skipped because their receipt has no credits at read time;
+  `preview_admitted` excludes those choices but can include skipped duplicates
+  and failed attempts. These omissions also record `rejected.receipt_exhausted`.
+  Malformed, repeated or out-of-range indices and
   verdicts exceeding eight choices are still refused as a whole. A separate
   body-based model decision checks applicability before injection. Shared words, a file association,
   or a project label alone cannot inject an optional body. An unavailable model
