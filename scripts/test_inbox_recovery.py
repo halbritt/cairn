@@ -80,23 +80,52 @@ class InboxRecovery(unittest.TestCase):
         path = self.root / 'log.jsonl'
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
-    def context(self):
+    def context(self, with_rendered=False):
         """Write the native context exactly as the hook does, without a live API."""
         self.replies({'event-renew': [dict(ok=True, status='OK', data=self.state['inbox_attempt']['delivery'])],
                       'session-inbox-reconcile': [dict(ok=False, status='DELIVERY_ACTIVE')]})
         observation = dict(event='UserPromptSubmit', phase='busy', native_turn_id='')
         self.state['delivered_since_idle'] = False
         with unittest.mock.patch.object(coordination, 'recover_inbox'):
-            coordination.inbox_context(self.config, self.state, self.path, observation)
+            rendered = coordination.inbox_context(self.config, self.state, self.path, observation)
         target = self.root / 'state' / 'inbox' / (ATTEMPT + '.json')
         (self.root / 'log.jsonl').unlink(missing_ok=True)
-        return json.loads(target.read_text())
+        context = json.loads(target.read_text())
+        return (context, rendered) if with_rendered else context
 
     def run_context(self, argv, body=''):
         return subprocess.run(argv, input=body, capture_output=True, text=True, timeout=30)
 
     def journal(self):
         return json.loads(coordination.intent_path(self.config['state_dir'], ATTEMPT).read_text())
+
+    def test_only_requests_cue_memory_after_exact_task_source_read(self):
+        for kind in ('request', 'response', 'notice'):
+            with self.subTest(kind=kind):
+                self.state['inbox_attempt']['delivery']['event']['kind'] = kind
+                context, rendered = self.context(with_rendered=True)
+                self.assertEqual(context['read_input'], dict(record_id=RESULT['record_id'], version=1))
+                self.assertEqual(context['source'], context['read_input'])
+                self.assertEqual(context['delivery_id'], DELIVERY)
+                self.assertEqual(context['lease_id'], LEASE)
+                self.assertIn('Read its exact selected source', rendered)
+                self.assertIn('For a response or notice, read it and run acknowledgement', rendered)
+                if kind == 'request':
+                    self.assertIn('For a substantive request, after reading that source', rendered)
+                    self.assertIn("within the owner's existing authorization", rendered)
+                    self.assertIn('search ordinary Cairn memory using the actual assignment', rendered)
+                    self.assertIn('pull relevant current notes with their complete pull_arguments', rendered)
+                    self.assertIn('check applicability against the task and current source before acting', rendered)
+                    self.assertIn('not the wake notification', rendered)
+                    self.assertIn('does not grant new authority', rendered)
+                    self.assertLess(rendered.index('Read its exact selected source'),
+                                    rendered.index('search ordinary Cairn memory'))
+                    self.assertLess(rendered.index('search ordinary Cairn memory'),
+                                    rendered.index('For a request, handle it'))
+                else:
+                    self.assertNotIn('search ordinary Cairn memory', rendered)
+                    self.assertNotIn('For a substantive request', rendered)
+                    self.assertNotIn('pull_arguments', rendered)
 
     def test_context_routes_every_command_through_the_journal(self):
         context = self.context()

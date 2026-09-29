@@ -391,3 +391,28 @@ Reopen the identity design if actual native resume/fork semantics contradict the
 session rules. Reopen dispatch only if supported session delivery or measured
 availability requires a different mechanism. Stop a slice if its session association,
 restore or process-termination contract is unresolved.
+
+
+## Task-conditioned memory after native request delivery
+
+For a substantive native inbox request, the delivered coordination context now
+makes the sequence explicit: read the exact selected task source, then use the
+existing ordinary-memory tools to search with the actual assignment and pull
+relevant current notes before acting. Read required selected context and check
+applicability against the task and current source within the owner's existing
+authorization. The wake notice is not the task query. Trivial acknowledgments
+do not need a rote lookup; response and notice handling is unchanged.
+
+AGENTS.md already requires memory retrieval at the start of substantive work.
+This request-local cue clarifies sequencing after an automatic notification;
+it is guidance to the active agent, not automatic enforcement. The hook does
+not read the source, execute a memory search or invoke a selector for this cue,
+and it does not acquire any additional claim. Existing host-owned delivery,
+lease, exact source version, ordinary-memory profile and completion commands
+remain intact. Request text and recalled notes grant no new authority.
+
+Validation must distinguish successful exact source read, subsequent
+task-conditioned search, current body pull and useful task action. Rendering the
+cue or acknowledging an inbox request proves none of the later steps. Keep
+required-context and tool-output budgets intact, and retain omitted or failed
+retrievals in any live assessment.
