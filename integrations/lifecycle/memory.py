@@ -607,18 +607,26 @@ def body_relevant(entry, body, intent):
 
 def admit_previews(memory, event, intent, sources, status, deadline):
     """Choose bounded body reads from all available previews, without trusting them."""
+    receipt_keys = {channel: found.get("receipt_id", channel) for channel, found in sources}
+    receipt_credits = {}
+    for channel, found in sources:
+        receipt = receipt_keys[channel]
+        available = min(4, max(0, found.get("credits_remaining", 4)),
+                        memory.receipt_credits.get(receipt, 4))
+        receipt_credits[receipt] = min(receipt_credits.get(receipt, 4), available)
     previews = [(channel, entry) for channel, found in sources
                 if found.get("credits_remaining", 4) > 0
                 for entry in found.get("index", [])[:PREVIEW_CANDIDATES if channel == "lexical" else SEMANTIC_PREVIEW_LIMIT]]
     status["preview_count"] = len(previews)
     if (len(previews) <= MAX_PULLED_CANDIDATES
-            and all(sum(candidate_channel == channel for candidate_channel, _ in previews)
-                    <= min(4, max(0, found.get("credits_remaining", 4))) for channel, found in sources)):
+            and all(sum(receipt_keys[channel] == receipt for channel, _ in previews) <= credits
+                    for receipt, credits in receipt_credits.items())):
         status["preview_admitted"] = len(previews)
+        status["preview_receipt_budget_dropped"] = 0
         status["preview_input_bytes"] = 0
         return previews
     request = dict(project=str(project_root(event)), request=event.get("prompt", ""),
-                   channel_credits={channel: min(4, max(0, found.get("credits_remaining", 4)))
+                   channel_credits={channel: receipt_credits[receipt_keys[channel]]
                                     for channel, found in sources},
                    previews=[dict(index=i, channel=channel, summary=entry.get("summary", ""),
                                   kind=entry.get("kind"), entities=entry.get("entities", []))
@@ -647,11 +655,14 @@ def admit_previews(memory, event, intent, sources, status, deadline):
             or len(set(indices)) != len(indices)):
         status["rejected"]["preview_invalid_verdict"] = len(previews)
         return []
-    admitted = [previews[i] for i in indices]
-    if any(sum(candidate_channel == channel for candidate_channel, _ in admitted)
-           > request["channel_credits"][channel] for channel, _ in sources):
-        status["rejected"]["preview_invalid_verdict"] = len(previews)
-        return []
+    admitted = []
+    for index in indices:
+        channel, entry = previews[index]
+        receipt = receipt_keys[channel]
+        if receipt_credits[receipt] > 0:
+            admitted.append((channel, entry))
+            receipt_credits[receipt] -= 1
+    status["preview_receipt_budget_dropped"] = len(indices) - len(admitted)
     status["preview_admitted"] = len(admitted)
     return admitted
 
