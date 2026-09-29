@@ -134,6 +134,11 @@ Command/tool lists describe observed attempts; a command appearing there does
 not establish its success, test coverage or successful memory delivery. Task
 checks and independent review must establish those claims.
 
+For retained runs, the [delivery evidence reader](../verification/task-delivery-evidence.md)
+correlates native MCP results and separates previews, bodies, excerpts, failed
+calls and incomplete calls. Its output supplements hook metrics without
+changing the original grades.
+
 ## Measurements
 
 Retrieval (`retrieval`, no model calls), per case × wording × size:
