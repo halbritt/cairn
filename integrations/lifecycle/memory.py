@@ -1277,7 +1277,8 @@ def recall(memory, event, state=None):
     started = time.monotonic()
     deadline = started + RECALL_SECONDS
     state = state if state is not None else {}
-    state["last_recall"] = status = dict(at=time.time(), outcome="empty", records=[], bytes=0,
+    state["last_recall"] = status = dict(at=time.time(), hook_event_name=event["hook_event_name"],
+                                        outcome="empty", records=[], bytes=0,
                                         discovery="lexical", inspected=0, rejected={})
     if event["hook_event_name"] == "SessionStart":
         state["seen"] = {}  # new/resumed/compacted context needs fresh delivery

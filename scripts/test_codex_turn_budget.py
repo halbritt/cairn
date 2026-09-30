@@ -70,7 +70,13 @@ class CodexTurnBudgetTests(unittest.TestCase):
                                         turn_id=None, prompt=''))
         self.assertNotIn('remaining_memory_bytes', startup)
         self.assertIsNone(self.ledger()['active_turn_id'])
+        state_path = Path(self.config['state_dir']) / (self.event['session_id'] + '.json')
+        status = json.loads(state_path.read_text())['last_recall']
+        self.assertEqual(status['hook_event_name'], 'SessionStart')
+        self.assertEqual(status['optional_deferred'], 'native_turn_unbound')
         submitted = self.text(self.invoke())
+        status = json.loads(state_path.read_text())['last_recall']
+        self.assertEqual(status['hook_event_name'], 'UserPromptSubmit')
         view = json.loads(submitted[submitted.index('{"selected":'):])
         self.assertEqual(view['selected'], self.selected)
         self.assertLessEqual(len(startup.encode()) + len(submitted.encode()) +

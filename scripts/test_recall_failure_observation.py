@@ -29,7 +29,7 @@ class RecallFailureObservationTests(unittest.TestCase):
     def test_failed_initial_search_replaces_previous_success_and_records_duration(self):
         self.state_path.parent.mkdir()
         previous = dict(seen={'prior-note': 2}, workstream='Handoff: test / existing',
-                        last_recall=dict(at=1, outcome='recalled', records=[{'record_id': 'prior-note', 'version': 2}],
+                        last_recall=dict(at=1, hook_event_name='SessionStart', outcome='recalled', records=[{'record_id': 'prior-note', 'version': 2}],
                                          bytes=400, duration_ms=1))
         self.state_path.write_text(json.dumps(previous))
         with patch.object(hook, 'bounded_command', side_effect=self.search_failure):
@@ -39,6 +39,7 @@ class RecallFailureObservationTests(unittest.TestCase):
         status = saved['last_recall']
         self.assertEqual(status['outcome'], 'failed')
         self.assertEqual(status['error_type'], 'HookError')
+        self.assertEqual(status['hook_event_name'], 'UserPromptSubmit')
         self.assertEqual(status['records'], [])
         self.assertEqual(status['bytes'], 0)
         self.assertGreaterEqual(status['duration_ms'], 0)
@@ -57,6 +58,7 @@ class RecallFailureObservationTests(unittest.TestCase):
         saved = json.loads(self.state_path.read_text())
         self.assertEqual(saved['seen'], {'prior-note': 2})
         self.assertEqual(saved['last_recall']['outcome'], 'failed')
+        self.assertEqual(saved['last_recall']['hook_event_name'], 'SessionStart')
         empty = dict(ok=True, data=dict(status='READY', destination={'name': 'hosted'}, selected=[], index=[]))
         with patch.object(hook, 'bounded_command', return_value=subprocess.CompletedProcess(
                 ['fixture'], 0, json.dumps(empty), '')):
@@ -64,6 +66,7 @@ class RecallFailureObservationTests(unittest.TestCase):
         saved = json.loads(self.state_path.read_text())
         self.assertEqual(saved['seen'], {})
         self.assertEqual(saved['last_recall']['outcome'], 'empty')
+        self.assertEqual(saved['last_recall']['hook_event_name'], 'SessionStart')
         self.assertNotIn('error_type', saved['last_recall'])
 
     def test_oversized_required_context_records_failure_without_optional_calls_or_payloads(self):
