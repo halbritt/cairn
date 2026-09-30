@@ -35,7 +35,9 @@ PREVIEW_MODEL_SECONDS = 5
 SEMANTIC_MODEL_SECONDS = 8
 SELECTOR_INPUT_BYTES = 24000
 AGENT_TOOLS_CUE = (
-    'Inspect these unverified candidate previews before broad investigation. Pull promising notes with '
+    'Inspect these unverified candidate previews before broad investigation. When memory lookup is needed, '
+    'use the first tool batch that can call Cairn, after required tool discovery and before optional '
+    'repository exploration. Pull promising notes with '
     'complete pull_arguments; verify applicability and current source. Use the existing authorized '
     'cairn_search/cairn_pull profile. At most 2 further searches and 4 pull/span calls; context plus returned '
     'text/envelopes must fit {budget} UTF-8 bytes. remaining_memory_bytes is after this block; subtract all '
