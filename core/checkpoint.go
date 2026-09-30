@@ -15,9 +15,8 @@ import (
 
 const checkpointSchema = "cairn.audit-checkpoint/1"
 
-// maxCheckpointMembers bounds the member list returned to a caller. A larger
-// checkpoint still retains every member in its manifest and is identified by the
-// same digest; its response carries the count and digest only.
+// maxCheckpointMembers bounds complete compatibility responses. Larger stores
+// use the explicitly different checkpoint-header/1 operator summary.
 const maxCheckpointMembers = 10000
 
 type CheckpointRequest struct {
@@ -58,18 +57,6 @@ type CheckpointVerification struct {
 	Limit          string   `json:"limit"`
 }
 
-func checkpointDigest(members []AuditMember) (string, error) {
-	body, err := json.Marshal(struct {
-		Schema  string        `json:"schema"`
-		Members []AuditMember `json:"members"`
-	}{checkpointSchema, members})
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(body)
-	return hex.EncodeToString(sum[:]), nil
-}
-
 // auditMetadataSQL preserves the PostgreSQL metadata text used by checkpoint/1.
 const auditMetadataSQL = `SELECT e.event_id::text AS event_id,
  (jsonb_build_object('event_id',e.event_id,'event_type',e.event_type,'subject_id',e.subject_id,
@@ -87,28 +74,6 @@ const auditMetadataSQL = `SELECT e.event_id::text AS event_id,
  OR EXISTS(SELECT 1 FROM cairn.record_version v WHERE v.record_id=e.subject_id AND v.version=e.resulting_version AND v.version_class='C')
 `
 
-// Only emitted governance and C/D transition events participate. B promotion,
-// correction and retraction and all ordinary A history are excluded. Reasons and
-// content are excluded; this detects audit metadata damage, not payload damage.
-// The member set has no count ceiling: memory grows with the number of these
-// events (a few hundred bytes each), never with records, evidence or receipts.
-func auditMembers(ctx context.Context, tx pgx.Tx) ([]AuditMember, error) {
-	rows, err := tx.Query(ctx, auditMetadataSQL+" ORDER BY e.event_id")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	members := []AuditMember{}
-	for rows.Next() {
-		var id, metadata string
-		if err = rows.Scan(&id, &metadata); err != nil {
-			return nil, err
-		}
-		sum := sha256.Sum256([]byte(metadata))
-		members = append(members, AuditMember{id, hex.EncodeToString(sum[:])})
-	}
-	return members, rows.Err()
-}
 func (s *Store) checkpointAccess() error {
 	if !s.channel.Operator || s.channel.Repo != "" {
 		return failure("AUTHORITY_DENIED", "whole-store checkpoint requires an unscoped operator channel")
@@ -120,7 +85,7 @@ func (s *Store) checkpointAccess() error {
 // previously hashed by Go. The temporary relation can spill to database storage;
 // no application slice grows with the total audit membership.
 func stageActualAudit(ctx context.Context, tx pgx.Tx) error {
-	_, err := tx.Exec(ctx, `CREATE TEMP TABLE IF NOT EXISTS cairn_actual_audit(event_id text PRIMARY KEY,digest text NOT NULL) ON COMMIT DROP;
+	_, err := tx.Exec(ctx, `CREATE TEMP TABLE IF NOT EXISTS cairn_actual_audit(event_id text COLLATE "C" PRIMARY KEY,digest text NOT NULL) ON COMMIT DROP;
  TRUNCATE pg_temp.cairn_actual_audit`)
 	if err != nil {
 		return err
@@ -165,7 +130,36 @@ func streamCheckpointDigest(ctx context.Context, tx pgx.Tx, query string, args .
 const checkpointInlineStorage = "cairn.audit-checkpoint-inline/1"
 const checkpointMemberStorage = "cairn.audit-checkpoint-members/1"
 
+// AuditCheckpointHeader is an explicit summary contract, not a complete
+// checkpoint/1 member manifest. DigestSchema names its unchanged canonical hash.
+type AuditCheckpointHeader struct {
+	Schema        string    `json:"schema"`
+	DigestSchema  string    `json:"digest_schema"`
+	ID            string    `json:"checkpoint_id"`
+	ExportID      string    `json:"export_id"`
+	CreatedAt     time.Time `json:"created_at"`
+	Count         int       `json:"count"`
+	Digest        string    `json:"sha256"`
+	StorageSchema string    `json:"storage_schema"`
+}
+
 func (s *Store) Checkpoint(ctx context.Context, req CheckpointRequest) (AuditCheckpoint, error) {
+	cp, err := s.checkpoint(ctx, req, false)
+	if err == nil && (cp.Count != len(cp.Members) || cp.MembersOmitted) {
+		return AuditCheckpoint{}, failure("BUDGET_REFUSED", "complete checkpoint response exceeds its bound; use checkpoint --header")
+	}
+	return cp, err
+}
+
+func (s *Store) CheckpointHeader(ctx context.Context, req CheckpointRequest) (AuditCheckpointHeader, error) {
+	cp, err := s.checkpoint(ctx, req, true)
+	if err != nil {
+		return AuditCheckpointHeader{}, err
+	}
+	return AuditCheckpointHeader{Schema: "cairn.audit-checkpoint-header/1", DigestSchema: checkpointSchema, ID: cp.ID, ExportID: cp.ExportID, CreatedAt: cp.CreatedAt, Count: cp.Count, Digest: cp.Digest, StorageSchema: checkpointMemberStorage}, nil
+}
+
+func (s *Store) checkpoint(ctx context.Context, req CheckpointRequest, headerOnly bool) (AuditCheckpoint, error) {
 	ctx = s.recoveryContext(ctx)
 	if err := s.checkpointAccess(); err != nil {
 		return AuditCheckpoint{}, err
@@ -173,8 +167,12 @@ func (s *Store) Checkpoint(ctx context.Context, req CheckpointRequest) (AuditChe
 	if strings.TrimSpace(req.ExportID) == "" || len(req.ExportID) > 256 {
 		return AuditCheckpoint{}, failure("INVALID_REQUEST", "bounded export identity required")
 	}
-	return privileged(ctx, s, "checkpoint", req.RequestID, req, func(tx pgx.Tx) (AuditCheckpoint, error) {
-		cp := AuditCheckpoint{Schema: checkpointSchema, ID: uuid.NewString(), ExportID: req.ExportID, Members: []AuditMember{}, StorageSchema: checkpointMemberStorage, MembersOmitted: true}
+	operation := "checkpoint"
+	if headerOnly {
+		operation = "checkpoint-header"
+	}
+	return privileged(ctx, s, operation, req.RequestID, req, func(tx pgx.Tx) (AuditCheckpoint, error) {
+		cp := AuditCheckpoint{Schema: checkpointMemberStorage, ID: uuid.NewString(), ExportID: req.ExportID, Members: []AuditMember{}, StorageSchema: checkpointMemberStorage, MembersOmitted: true}
 		if err := stageActualAudit(ctx, tx); err != nil {
 			return cp, err
 		}
@@ -182,6 +180,9 @@ func (s *Store) Checkpoint(ctx context.Context, req CheckpointRequest) (AuditChe
 		cp.Digest, cp.Count, err = streamCheckpointDigest(ctx, tx, `SELECT event_id,digest FROM pg_temp.cairn_actual_audit ORDER BY event_id`)
 		if err != nil {
 			return cp, err
+		}
+		if !headerOnly && cp.Count > maxCheckpointMembers {
+			return AuditCheckpoint{}, failure("BUDGET_REFUSED", "complete checkpoint response exceeds 10,000 members; use checkpoint --header")
 		}
 		if err = tx.QueryRow(ctx, `SELECT transaction_timestamp()`).Scan(&cp.CreatedAt); err != nil {
 			return cp, err
@@ -192,7 +193,8 @@ func (s *Store) Checkpoint(ctx context.Context, req CheckpointRequest) (AuditChe
 		if _, err = tx.Exec(ctx, `INSERT INTO cairn.audit_checkpoint_member SELECT $1::uuid,event_id::uuid,digest FROM pg_temp.cairn_actual_audit`, cp.ID); err != nil {
 			return cp, err
 		}
-		if cp.Count <= maxCheckpointMembers {
+		if !headerOnly {
+			cp.Schema = checkpointSchema // Complete compatibility response.
 			rows, err := tx.Query(ctx, `SELECT event_id,digest FROM pg_temp.cairn_actual_audit ORDER BY event_id`)
 			if err != nil {
 				return cp, err
@@ -242,15 +244,22 @@ func verifyCheckpoint(ctx context.Context, tx pgx.Tx, req VerifyCheckpointReques
 	result := CheckpointVerification{CheckpointID: req.CheckpointID, Missing: []string{}, Altered: []string{}, Limit: "Verifies the expected emitted C/D audit metadata set only. Payloads, state projections, and newer lost commits require separate verification."}
 	var cp AuditCheckpoint
 	var storage string
+	var header []byte
 	// Read only header fields; even legacy manifests stay in PostgreSQL.
-	err := tx.QueryRow(ctx, `SELECT manifest-'members',storage_schema FROM cairn.audit_checkpoint WHERE checkpoint_id=$1`, req.CheckpointID).Scan(&cp, &storage)
+	err := tx.QueryRow(ctx, `SELECT CASE WHEN octet_length((manifest-'members')::text)<=65536 THEN manifest-'members' ELSE NULL END,storage_schema FROM cairn.audit_checkpoint WHERE checkpoint_id=$1`, req.CheckpointID).Scan(&header, &storage)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, failure("CHECKPOINT_MISMATCH", "expected checkpoint is missing from the restore")
 	}
 	if err != nil {
 		return result, err
 	}
-	if cp.Schema != checkpointSchema || cp.ID != req.CheckpointID || cp.ExportID != req.ExpectedExportID {
+	if len(header) == 0 {
+		return result, failure("CHECKPOINT_MISMATCH", "checkpoint header exceeds its storage bound")
+	}
+	if err = json.Unmarshal(header, &cp); err != nil {
+		return result, failure("CHECKPOINT_MISMATCH", "invalid checkpoint header")
+	}
+	if cp.ID != req.CheckpointID || cp.ExportID != req.ExpectedExportID {
 		return result, failure("CHECKPOINT_MISMATCH", "checkpoint metadata differs from expected restore set")
 	}
 	if _, err = tx.Exec(ctx, `CREATE TEMP TABLE IF NOT EXISTS cairn_checkpoint_expected(position bigint PRIMARY KEY,event_id text NOT NULL,digest text NOT NULL) ON COMMIT DROP;TRUNCATE pg_temp.cairn_checkpoint_expected`); err != nil {
@@ -258,7 +267,7 @@ func verifyCheckpoint(ctx context.Context, tx pgx.Tx, req VerifyCheckpointReques
 	}
 	switch storage {
 	case checkpointInlineStorage:
-		if cp.StorageSchema != "" && cp.StorageSchema != storage {
+		if cp.Schema != checkpointSchema || (cp.StorageSchema != "" && cp.StorageSchema != storage) {
 			return result, failure("CHECKPOINT_MISMATCH", "checkpoint storage representation differs")
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO pg_temp.cairn_checkpoint_expected SELECT n,m->>'event_id',m->>'sha256' FROM cairn.audit_checkpoint c CROSS JOIN LATERAL jsonb_array_elements(c.manifest->'members') WITH ORDINALITY AS a(m,n) WHERE checkpoint_id=$1`, req.CheckpointID)
@@ -267,7 +276,7 @@ func verifyCheckpoint(ctx context.Context, tx pgx.Tx, req VerifyCheckpointReques
 		if err = tx.QueryRow(ctx, `SELECT jsonb_array_length(manifest->'members') FROM cairn.audit_checkpoint WHERE checkpoint_id=$1`, req.CheckpointID).Scan(&inline); err != nil {
 			return result, err
 		}
-		if cp.StorageSchema != storage || inline != 0 || !cp.MembersOmitted {
+		if cp.Schema != checkpointMemberStorage || cp.StorageSchema != storage || inline != 0 || !cp.MembersOmitted {
 			return result, failure("CHECKPOINT_MISMATCH", "invalid member-backed checkpoint header")
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO pg_temp.cairn_checkpoint_expected SELECT row_number() OVER(ORDER BY event_id),event_id::text,digest FROM cairn.audit_checkpoint_member WHERE checkpoint_id=$1`, req.CheckpointID)
@@ -276,6 +285,13 @@ func verifyCheckpoint(ctx context.Context, tx pgx.Tx, req VerifyCheckpointReques
 	}
 	if err != nil {
 		return result, err
+	}
+	var oversized bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_temp.cairn_checkpoint_expected WHERE octet_length(event_id)>36 OR octet_length(digest)>64)`).Scan(&oversized); err != nil {
+		return result, err
+	}
+	if oversized {
+		return result, failure("CHECKPOINT_MISMATCH", "checkpoint member exceeds its identity/digest bounds")
 	}
 	var duplicate bool
 	if err = tx.QueryRow(ctx, `SELECT count(*)<>count(DISTINCT event_id) FROM pg_temp.cairn_checkpoint_expected`).Scan(&duplicate); err != nil {

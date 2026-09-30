@@ -190,56 +190,34 @@ func (s *Store) verifyRestore(ctx context.Context, tx pgx.Tx, req VerifyRestoreR
 	if !checkpoint.Valid {
 		result.Problems = append(result.Problems, "CHECKPOINT_MISMATCH")
 	}
-	// The combined expectations have no count ceiling: every retained application
-	// and the supplied record merge into one union that inspection checks in full.
-	// Only what is reported is bounded. A segmented export is complete only when
-	// every position is retained or supplied, so a missing position refuses.
-	segments := &recoverySegments{}
-	combined, err := captureRecovery(ctx, tx, segments)
+	staged, err := stageKnownRecovery(ctx, tx)
 	if err != nil {
 		return result, err
 	}
-	if err = mergeRecovery(&combined, req.Recovery); err != nil {
+	if err = staged.add(ctx, req.Recovery); err != nil {
 		return result, err
 	}
-	if err = segments.add(req.Recovery); err != nil {
-		return result, err
-	}
-	for _, missing := range segments.incomplete() {
-		result.Problems = append(result.Problems, "RECOVERY_SEGMENTS_INCOMPLETE:"+missing)
-	}
-	combined.SHA256, err = recoveryDigest(combined)
-	if err != nil {
-		return result, err
-	}
-	recovery, err := s.inspectRecoveryTx(ctx, tx, combined)
-	if err != nil {
-		return result, err
-	}
-	digests := map[string]string{}
-	withdrawals := map[string]RecoveryWithdrawal{}
-	for _, a := range combined.Audit {
-		digests[a.EventID] = a.Digest
-	}
-	for _, w := range combined.Withdrawals {
-		withdrawals[w.EventID] = w
-	}
-	var actions map[recoveryActionKey][]RecoveryAction
-	if len(recovery.Gaps) > 0 {
-		if actions, err = loadRecoveryActions(ctx, tx, req.Recovery.RootGrantID); err != nil {
-			return result, err
+	missingSets := 0
+	if err = staged.incomplete(ctx, func(missing string) error {
+		if missingSets < maxReportedDetails {
+			result.Problems = append(result.Problems, "RECOVERY_SEGMENTS_INCOMPLETE:"+missing)
 		}
+		missingSets++
+		return nil
+	}); err != nil {
+		return result, err
 	}
-	// Every gap decides readiness; only the first 100 of each kind are named.
+	if missingSets > maxReportedDetails {
+		result.Problems = append(result.Problems, fmt.Sprintf("RECOVERY_SEGMENTS_INCOMPLETE_ADDITIONAL:%d", missingSets-maxReportedDetails))
+	}
 	gapProblems := 0
-	for _, gap := range recovery.Gaps {
+	if err = staged.inspect(ctx, func(gap RecoveryGap) error {
 		covered := false
-		if w, ok := withdrawals[gap.EventID]; ok && gap.Reason == "AUDIT_MISSING" {
-			for _, action := range actions[recoveryActionKey{w.EventID, digests[w.EventID], w.SubjectID, w.Repo, w.Kind}] {
-				switch action.Outcome {
-				case "reapplied", "already_restricted", "absent":
-					covered = true
-				}
+		if gap.Reason == "AUDIT_MISSING" {
+			var err error
+			covered, err = staged.covers(ctx, gap.EventID)
+			if err != nil {
+				return err
 			}
 		}
 		if covered {
@@ -248,20 +226,26 @@ func (s *Store) verifyRestore(ctx context.Context, tx pgx.Tx, req VerifyRestoreR
 			} else {
 				result.ReappliedAdditional++
 			}
-		} else if gapProblems < maxReportedDetails {
-			gapProblems++
-			result.Problems = append(result.Problems, gap.Reason+":"+gap.EventID+":"+gap.SubjectID)
 		} else {
+			if gapProblems < maxReportedDetails {
+				result.Problems = append(result.Problems, gap.Reason+":"+gap.EventID+":"+gap.SubjectID)
+			}
 			gapProblems++
 		}
+		return nil
+	}); err != nil {
+		return result, err
 	}
 	if gapProblems > maxReportedDetails {
 		result.Problems = append(result.Problems, fmt.Sprintf("RECOVERY_GAPS_ADDITIONAL:%d", gapProblems-maxReportedDetails))
 	}
-	if recovery.OutstandingEffects > 0 {
-		result.Problems = append(result.Problems, fmt.Sprintf("OUTSTANDING_EFFECTS:%d", recovery.OutstandingEffects))
+	var outstanding int
+	if err = tx.QueryRow(ctx, `SELECT count(*) FILTER(WHERE status IN ('pending','running','failed')),count(*) FILTER(WHERE status='not_possible') FROM cairn.deletion_effect`).Scan(&outstanding, &result.ResidualEffects); err != nil {
+		return result, err
 	}
-	result.ResidualEffects = recovery.ResidualEffects
+	if outstanding > 0 {
+		result.Problems = append(result.Problems, fmt.Sprintf("OUTSTANDING_EFFECTS:%d", outstanding))
+	}
 	for _, fixture := range req.Fixtures {
 		pkg, err := s.recompileTx(ctx, tx, fixture)
 		if err != nil {

@@ -13,10 +13,12 @@ func TestCheckpointStoresMembersOutsideBoundedHeader(t *testing.T) {
 	s := restoreTestStore(t)
 	recoveryRoot(t, s)
 	insertSyntheticRevokedGrants(t, s, maxCheckpointMembers+1)
-	cp, err := s.Checkpoint(ctx, CheckpointRequest{uuid.NewString(), "streamed-checkpoint"})
+	cp, err := s.CheckpointHeader(ctx, CheckpointRequest{uuid.NewString(), "streamed-checkpoint"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, legacyErr := s.Checkpoint(ctx, CheckpointRequest{uuid.NewString(), "complete-response-too-large"})
+	requireCode(t, legacyErr, "BUDGET_REFUSED")
 	var inline int
 	if err = s.pool.QueryRow(ctx, `SELECT jsonb_array_length(manifest->'members') FROM cairn.audit_checkpoint WHERE checkpoint_id=$1`, cp.ID).Scan(&inline); err != nil {
 		t.Fatal(err)
@@ -28,7 +30,7 @@ func TestCheckpointStoresMembersOutsideBoundedHeader(t *testing.T) {
 	if err = s.pool.QueryRow(ctx, `SELECT count(*) FROM cairn.audit_checkpoint_member WHERE checkpoint_id=$1`, cp.ID).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != cp.Count || !cp.MembersOmitted || len(cp.Members) != 0 {
+	if count != cp.Count || cp.Schema != "cairn.audit-checkpoint-header/1" || cp.DigestSchema != checkpointSchema {
 		t.Fatalf("membership/header mismatch: %d %+v", count, cp)
 	}
 	tx, err := s.begin(ctx)
@@ -85,10 +87,10 @@ func TestCheckpointReadsLegacyInlineAndRefusesStorageDamage(t *testing.T) {
 	if err = s.pool.QueryRow(ctx, `SELECT manifest FROM cairn.audit_checkpoint WHERE checkpoint_id=$1`, cp.ID).Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
-	// This is the pre-migration reader's count/list guard. A new representation
-	// must never resemble a complete empty checkpoint to that reader.
-	if stored.Count == len(stored.Members) {
-		t.Fatal("pre-057 count/list guard would accept new storage")
+	// The pre-migration reader checks schema and count/list consistency.
+	// New storage must also be refused when the member count is zero.
+	if stored.Schema == checkpointSchema && stored.Count == len(stored.Members) {
+		t.Fatal("pre-057 schema/count guard would accept new storage")
 	}
 	if stored.StorageSchema != checkpointMemberStorage {
 		t.Fatalf("storage version absent: %+v", stored)
@@ -102,6 +104,7 @@ func TestCheckpointReadsLegacyInlineAndRefusesStorageDamage(t *testing.T) {
 	for _, damage := range []string{
 		`ALTER TABLE cairn.audit_checkpoint_member DISABLE TRIGGER immutable_checkpoint_member;UPDATE cairn.audit_checkpoint_member SET digest=repeat('0',64)`,
 		`ALTER TABLE cairn.audit_checkpoint DISABLE TRIGGER immutable_checkpoint;UPDATE cairn.audit_checkpoint SET manifest=jsonb_set(manifest,'{count}','0') WHERE storage_schema='cairn.audit-checkpoint-members/1'`,
+		`ALTER TABLE cairn.audit_checkpoint DISABLE TRIGGER immutable_checkpoint;UPDATE cairn.audit_checkpoint SET manifest=manifest||jsonb_build_object('unexpected',repeat('x',65537)) WHERE storage_schema='cairn.audit-checkpoint-members/1'`,
 	} {
 		tx, err = s.begin(ctx)
 		if err != nil {
@@ -165,5 +168,25 @@ func TestCheckpointMembershipMigrationIsAtomic(t *testing.T) {
 	}
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("migration retry failed: %v", err)
+	}
+}
+
+func TestEmptyCheckpointAlsoRefusesLegacyReader(t *testing.T) {
+	ctx := context.Background()
+	s := restoreTestStore(t)
+	cp, err := s.Checkpoint(ctx, CheckpointRequest{uuid.NewString(), "empty-new-storage"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header AuditCheckpoint
+	if err = s.pool.QueryRow(ctx, `SELECT manifest FROM cairn.audit_checkpoint WHERE checkpoint_id=$1`, cp.ID).Scan(&header); err != nil {
+		t.Fatal(err)
+	}
+	if cp.Count != 0 || cp.Schema != checkpointSchema || header.Schema == checkpointSchema {
+		t.Fatalf("empty storage boundary ambiguous: response=%+v stored=%+v", cp, header)
+	}
+	verified, err := s.VerifyCheckpoint(ctx, VerifyCheckpointRequest{cp.ID, cp.Digest, cp.ExportID})
+	if err != nil || !verified.Valid {
+		t.Fatalf("empty checkpoint refused by current reader: %+v %v", verified, err)
 	}
 }

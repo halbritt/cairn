@@ -16,21 +16,21 @@ and MCP processes.
 
 ## 2026-09-30
 
-- Partial CAIRN-49 work removes the former 10,000-entry barriers from the
-  tested restore path. `rebuild-restore` pages forgotten sources with `limit` and
-  `after`, closes each source's retained descendants inside PostgreSQL without the
-  1,000-version bound, and is idempotent and restartable. Verification checks the
-  complete merged recovery expectations, bounds only what it reports (first 100
-  findings plus counts), and audit checkpoints have no member ceiling. An export
-  larger than one record is written by `recovery-export` as a complete, numbered
-  segment set; `recovery-inspect` accepts every file, and verification refuses a
-  referenced set whose positions are not all retained or supplied. Each segment
-  is reapplied by its own `recovery-reapply`. Single-record exports, digests and
-  the pause, fence and exclusive-resume behavior are unchanged. Recapture refuses
-  incomplete retained segment sets and conflicting set positions. Verification
-  and capture still materialize the full expectation union; bounded-memory
-  verification remains unfinished, so CAIRN-49 is not complete. See
-  [stores beyond one recovery record](docs/restore-admission.md#stores-beyond-one-recovery-record).
+- Add a bounded operator path for larger restores. Recovery comparison and
+  reapplication stage the complete expectation union in PostgreSQL and consume
+  one record/page at a time. `recovery-export --directory DIR` publishes a complete
+  immutable bundle; directory inspection validates its streamed manifest and all
+  parts. Ordinary failures clean only the current staging output, and a crash
+  leaves an unpublished staging directory. Existing destinations are preserved.
+  Checkpoints retain immutable member rows with unchanged canonical digest bytes;
+  `checkpoint --header` exposes an explicit bounded summary, while legacy complete
+  responses retain their size refusal. New readers accept old inline checkpoints;
+  old readers refuse new storage schemas, including empty checkpoints. Rebuild
+  pages, source adoption retries, missing-set obligations, current-root admission,
+  late-fault detection and delivery fencing remain in force. Disposable PostgreSQL
+  tests cross the former 10,000-entry ceiling and the legacy collector budget.
+  See [the operator continuation](docs/restore-admission.md#stores-beyond-one-recovery-record)
+  for bounds and remaining source-freshness/operational limits.
 
 - While an OpenCode request cancellation is pending, the presence watcher now
   repeats only that cancellation step every 2 seconds instead of waiting for its

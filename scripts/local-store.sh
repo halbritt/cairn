@@ -46,7 +46,7 @@ status)
 backup)
     mkdir -p "$store_dir/backups"
     backup="$store_dir/backups/cairn-$(date -u +%Y%m%dT%H%M%S)-$$.dump"
-    python3 - "$backup" <<'PYREQ' | CAIRN_DATABASE_URL="host=$store_dir/socket dbname=cairn sslmode=disable" "$cairn_binary" checkpoint >"$backup.checkpoint.pending"
+    python3 - "$backup" <<'PYREQ' | CAIRN_DATABASE_URL="host=$store_dir/socket dbname=cairn sslmode=disable" "$cairn_binary" checkpoint --header >"$backup.checkpoint.pending"
 import json, pathlib, sys, uuid
 print(json.dumps({'request_id':str(uuid.uuid4()), 'export_id':pathlib.Path(sys.argv[1]).name}))
 PYREQ

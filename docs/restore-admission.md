@@ -131,55 +131,55 @@ withdrawal-event IDs, fixture proofs and the residual count. Failure exits 7 wit
 
 ## Stores beyond one recovery record
 
-This is a partial CAIRN-49 implementation, not a bounded-memory restore solution.
-Rebuild pages and recovery applications can commit progress between calls, and
-exports can span records. Verification, checkpoint construction and expectation
-capture still materialize the complete union in process memory. They cannot
-resume midway through a verification snapshot. The tested operator path above
-the previous 10,000-entry limit uses these steps:
+The operator path keeps the complete expectation union in transaction-local
+PostgreSQL tables. Application buffers hold one validated source record or a
+bounded page; they do not grow with the union. Checkpoint membership is stored
+in immutable rows and compared without decoding a whole manifest in Go. Use
+`checkpoint --header` for a bounded backup-catalog response; the legacy
+`checkpoint` command still returns a complete member list and refuses above
+10,000 members. See [checkpoint storage compatibility](audit-checkpoints.md#storage-compatibility).
 
-1. **Export.** `recovery-export PATH` writes one file while the expectations fit
-   one record (10,000 audit members, withdrawals and context references each,
-   16 MiB). Beyond that it writes every segment of one snapshot, named
-   `PATH.part-0001-of-0003.ext`. An ordinary write failure removes and syncs the
-   files created by that call; process or machine failure can leave an incomplete
-   set, which inspection refuses. Keep the previous complete export until the new
-   command succeeds and every new segment has been retained. Segments carry a set identity and position, stay independently
-   valid (a context segment repeats the forget withdrawal that anchors its
-   records) and merge back to exactly the captured union. Retain every segment
-   outside the database; a missing position is detectable, never silent. The
-   library call `CaptureRecovery` still refuses a set that needs several records
-   instead of exporting part of it; `CaptureRecoverySet` returns the segments.
-2. **Inspect.** `recovery-inspect FILE...` accepts every segment file and refuses a
-   list that names a set but omits a position before inspecting anything.
-3. **Reapply.** Run `recovery-reapply` once per segment, each with its own request
-   UUID and `--expected-sha256`. Each segment is one serializable transaction of at
-   most 2,000 withdrawals and retains its source record, so progress is committed
-   segment by segment. After an interruption, rerun the segments not yet applied;
-   an already restricted subject is reported `already_restricted`, never applied
-   twice, and an identical request UUID returns its original result. Retain every
-   original segment this way before exporting another recovery set, including the
-   segment passed to verification: a verification input alone is not a retained
-   application. Recapture refuses a retained incomplete set or conflicting content
-   at the same set position; it never strips that obligation into a new export.
-4. **Rebuild.** Page `rebuild-restore` with `limit` and `after` until `complete`.
-5. **Verify and resume.** Supply any one segment as `recovery`; the others are
-   already retained by their applications, and verification refuses unless every
-   position of each referenced set is retained or supplied. An abandoned partial
-   set keeps refusing until its missing segments are applied from their files.
-   Checkpoints have no member ceiling either, so a store above 10,000 audit members
-   can be backed up and verified.
+1. **Export outside the backup set.** `recovery-export --directory DIR` streams
+   every expectation from one snapshot into a new private directory. Numbered
+   files retain `cairn.recovery-record/1`; context parts repeat their required
+   forgetting/audit anchors. A streamed manifest pins every position, file hash
+   and record checksum. Only a completed, synced bundle is published, and an
+   existing destination is never replaced. Retain the returned manifest digest
+   independently with the bundle. Keep the previous complete export.
+2. **Inspect while isolated.** `recovery-inspect --directory DIR` validates the
+   manifest, fixed part names, checksums, full position set and every expectation
+   in one database snapshot. Its output bounds named gaps and counts the rest.
+   An older restore may still report the expected original audit/state gaps;
+   inspection success is not permission to resume.
+3. **Reapply every original part.** Use each manifest descriptor's
+   `record_sha256` with `recovery-reapply`. Each part is a serializable operation
+   with its own stable request UUID. Keep the namespace/request IDs for retry:
+   an identical retry returns its original application, while interrupted later
+   parts remain unapplied. A verification input alone does not retain a source.
+   See the [bounded reapplication recipe](recovery-bundles.md#reapply-a-validated-bundle).
+4. **Rebuild.** Page `rebuild-restore` with a request UUID, `limit` and `after`
+   until `complete`. Each completed page is durable and idempotent.
+5. **Verify and explicitly resume.** Supply any original part as `recovery` and
+   the retained backup checkpoint expectation. Other parts are now retained by
+   their applications. Verification refuses missing positions, conflicting
+   metadata and late corruptions. Resume repeats the current checks under the
+   existing exclusive boundary and preserves generation fencing.
 
-Remaining limit: process memory grows with all recovery expectations, and capture
-also builds the full exported segment array. Encoding the segment files holds one
-encoded file at a time, but does not make their decoded source array bounded.
-Evidence bytes are scanned in pages; audit members, withdrawals, custody, retained
-applications and checkpoint manifests are not. Larger stores still need a
-streamed or staged expectation/checkpoint contract before CAIRN-49 can be closed.
-Do not raise another aggregate ceiling, omit records or clear the pause as a
-workaround. Per-withdrawal checks are individual queries and can also be slow.
-Pause/fence checks and the exclusive resume lock remain in force; a failed or
-interrupted verification does not authorize service to resume.
+An interrupted verification starts its read pass again; it never resumes a
+cursor from an obsolete snapshot. Previously committed reapplication parts and
+rebuild pages remain reusable. Failures leave ordinary work paused. No operator
+should clear that pause or omit an expectation to bypass a refusal.
+
+The directory path bounds Go buffers, not total PostgreSQL disk, elapsed work or
+RSS of every component. Comparisons use pages of at most 256 rows and 16 MiB of
+row bodies; transport starts with at most 2,000 audit/withdrawal rows or 1,000
+custody rows and splits further to fit the existing 16 MiB record limit. A
+retained source is validated one record at a time. The existing 100,000-position
+record-format bound remains. Individual unrepresentable/corrupt records refuse;
+there is no claim of unlimited capacity or automatic recovery of unknown sources.
+The `CaptureRecoverySet` and file-list compatibility paths cap combined encoded
+input/output at 16 MiB and direct larger callers to directory/stream mode. That
+compatibility refusal is not the large-store recovery strategy.
 
 ## Operations policy and resume
 

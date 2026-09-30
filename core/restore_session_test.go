@@ -495,8 +495,8 @@ func TestRestoreVerifiesAndResumesBeyondRecoveryCeilings(t *testing.T) {
 		t.Fatal(err)
 	}
 	insertSyntheticRevokedGrants(t, s, maxRecoveryEntries+1)
-	cp, err := s.Checkpoint(ctx, CheckpointRequest{RequestID: uuid.NewString(), ExportID: "synthetic-scale-backup"})
-	if err != nil || cp.Count <= maxCheckpointMembers || !cp.MembersOmitted || len(cp.Members) != 0 {
+	cp, err := s.CheckpointHeader(ctx, CheckpointRequest{RequestID: uuid.NewString(), ExportID: "synthetic-scale-backup"})
+	if err != nil || cp.Count <= maxCheckpointMembers || cp.Schema != "cairn.audit-checkpoint-header/1" {
 		t.Fatalf("checkpoint above the old member ceiling: %+v %v", cp, err)
 	}
 	expected := VerifyCheckpointRequest{CheckpointID: cp.ID, ExpectedDigest: cp.Digest, ExpectedExportID: cp.ExportID}
@@ -690,13 +690,14 @@ func TestRestoreRebuildPagesAndClosesDescendantsBeyondPreviewBound(t *testing.T)
 // alone (a context segment carries its forgotten record's withdrawal) and a set
 // missing any position is detectable.
 func TestSplitRecoveryAnchorsContextsAndPreservesEveryExpectation(t *testing.T) {
-	root := uuid.NewString()
+	store := restoreTestStore(t)
+	root := recoveryRoot(t, store).ID
 	small := RecoveryRecord{Schema: recoverySchema, RootGrantID: root, CapturedAt: time.Now().UTC(), Audit: []AuditMember{}, Withdrawals: []RecoveryWithdrawal{}, Contexts: []RecoveryContext{}}
 	var err error
 	if small.SHA256, err = recoveryDigest(small); err != nil {
 		t.Fatal(err)
 	}
-	one, err := splitRecovery(small)
+	one, err := splitRecoveryStagedForTest(t, store, small)
 	if err != nil || len(one) != 1 || one[0].Segment != nil || one[0].SHA256 != small.SHA256 {
 		t.Fatalf("record that fits was divided: %+v %v", one, err)
 	}
@@ -726,7 +727,7 @@ func TestSplitRecoveryAnchorsContextsAndPreservesEveryExpectation(t *testing.T) 
 	if err = full.validate(); err == nil {
 		t.Fatal("test fixture must exceed one record")
 	}
-	set, err := splitRecovery(full)
+	set, err := splitRecoveryStagedForTest(t, store, full)
 	if err != nil || len(set) < 4 {
 		t.Fatalf("split: %d records %v", len(set), err)
 	}
@@ -760,6 +761,6 @@ func TestSplitRecoveryAnchorsContextsAndPreservesEveryExpectation(t *testing.T) 
 			orphan.Withdrawals = append(orphan.Withdrawals, w)
 		}
 	}
-	_, err = splitRecovery(orphan)
+	_, err = splitRecoveryStagedForTest(t, store, orphan)
 	requireCode(t, err, "INTEGRITY_FAILURE")
 }

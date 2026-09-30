@@ -61,10 +61,11 @@ explicit retained mapping of original event, digest, subject and repository to
 that deletion event. It still verifies the deletion's payload and dependency
 exclusions. Later exports merge retained external expectations with local audit
 and withdrawals; they do not silently discard known missing history. Conflicting
-expectations refuse. The retained union has no count ceiling, so an application is
-not refused for the size of what later exports must carry. One source record is
+expectations refuse. The retained union is staged in PostgreSQL and sources are
+validated one bounded record at a time. An application does not collect the whole
+union in Go or refuse solely because a legacy collector cannot hold it. One source record is
 still bounded to 10,000 entries per list and 16 MiB. When the combined set is
-larger than one record, `recovery-export` writes a complete segment set. Apply
+larger than one record, `recovery-export --directory DIR` streams a complete segment set. Apply
 each segment with its own `recovery-reapply` invocation (its own request UUID and
 `--expected-sha256`): each is one transaction of at most 2,000 withdrawals, so
 progress commits segment by segment and an interrupted run resumes by applying

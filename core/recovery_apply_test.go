@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -332,11 +333,11 @@ func TestRecoveryReapplyBeyondOneRecordExportsCompleteSegmentSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
-	full, err := captureRecoveryTx(ctx, tx)
+	staged, err := stageKnownRecovery(ctx, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	union := RecoveryRecord{Schema: recoverySchema, RootGrantID: full.RootGrantID, Audit: []AuditMember{}, Withdrawals: []RecoveryWithdrawal{}, Contexts: []RecoveryContext{}}
+	union := RecoveryRecord{Schema: recoverySchema, RootGrantID: staged.root, Audit: []AuditMember{}, Withdrawals: []RecoveryWithdrawal{}, Contexts: []RecoveryContext{}}
 	for i, segment := range set {
 		if segment.Segment == nil || segment.Segment.Index != i+1 || segment.Segment.Count != len(set) || segment.Segment.SetID != set[0].Segment.SetID {
 			t.Fatalf("segment %d is not positioned in its set: %+v", i, segment.Segment)
@@ -348,8 +349,46 @@ func TestRecoveryReapplyBeyondOneRecordExportsCompleteSegmentSet(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if !reflect.DeepEqual(union.Audit, full.Audit) || !reflect.DeepEqual(union.Withdrawals, full.Withdrawals) || len(union.Audit) <= maxRecoveryEntries {
-		t.Fatalf("segments dropped expectations: %d/%d audit %d/%d withdrawals", len(union.Audit), len(full.Audit), len(union.Withdrawals), len(full.Withdrawals))
+	for _, kind := range []string{"audit", "withdrawal"} {
+		after := ""
+		seen := 0
+		for {
+			bodies, keys, err := staged.page(ctx, kind, after, recoveryPageSize)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(keys) == 0 {
+				break
+			}
+			for _, body := range bodies {
+				if kind == "audit" {
+					var m AuditMember
+					if err = json.Unmarshal(body, &m); err != nil {
+						t.Fatal(err)
+					}
+					if seen >= len(union.Audit) || union.Audit[seen] != m {
+						t.Fatalf("segment audit differs at %d", seen)
+					}
+				} else {
+					var w RecoveryWithdrawal
+					if err = json.Unmarshal(body, &w); err != nil {
+						t.Fatal(err)
+					}
+					if seen >= len(union.Withdrawals) || union.Withdrawals[seen] != w {
+						t.Fatalf("segment withdrawal differs at %d", seen)
+					}
+				}
+				seen++
+			}
+			after = keys[len(keys)-1]
+		}
+		want := len(union.Audit)
+		if kind == "withdrawal" {
+			want = len(union.Withdrawals)
+		}
+		if seen != want || (kind == "audit" && seen <= maxRecoveryEntries) {
+			t.Fatalf("segments dropped %s: %d/%d", kind, seen, want)
+		}
 	}
 	requireCode(t, CheckRecoverySegments(set[1:]), "INTEGRITY_FAILURE")
 	if err = CheckRecoverySegments(set); err != nil {

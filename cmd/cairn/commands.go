@@ -73,9 +73,10 @@ JSON commands (read one request from stdin):
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
 Administration: recovery-export FILE | recovery-inspect FILE...
+  recovery-export --directory DIR | recovery-inspect --directory DIR
   recovery-reapply --request-id UUID --expected-sha256 DIGEST --reason TEXT FILE
   begin-restore | restore-status | rebuild-restore | verify-restore | resume-restore
-  migrate | fence-restore < request.json | invalidate-handles < request.json | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH] [--machine-id ID] [--listen ADDR (--tls-cert FILE --tls-key FILE | --tls-terminated-proxy)]
+  migrate | fence-restore < request.json | invalidate-handles < request.json | checkpoint [--header] < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH] [--machine-id ID] [--listen ADDR (--tls-cert FILE --tls-key FILE | --tls-terminated-proxy)]
 Default store: ~/.local/share/cairn/socket, database cairn.
 Override with CAIRN_DATABASE_URL. Initialize with scripts/local-store.sh start.
 CLI is trusted operator administration. Agents use a host-established core Channel.
@@ -187,7 +188,25 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			}
 			return store.CaptureEvidence(ctx, req)
 		}
+	case "checkpoint":
+		if len(args) == 2 && args[1] == "--header" {
+			return invoke(ctx, input, store.CheckpointHeader)
+		}
+		if len(args) != 1 {
+			return nil, invalid("checkpoint accepts only --header")
+		}
+		return invoke(ctx, input, store.Checkpoint)
 	case "recovery-export", "recovery-inspect":
+		if len(args) == 3 && args[1] == "--directory" {
+			if args[0] == "recovery-export" {
+				return exportRecoveryDirectory(ctx, store, args[2])
+			}
+			return inspectRecoveryDirectory(ctx, store, args[2])
+		}
+		if len(args) > 1 && args[1] == "--directory" {
+			return nil, invalid("recovery directory mode requires exactly one directory")
+		}
+
 		if args[0] == "recovery-export" {
 			if len(args) != 2 {
 				return nil, invalid("recovery-export requires one file path")
@@ -443,8 +462,6 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 		return invoke(ctx, input, store.CancelSchedule)
 	case "schedule-tick":
 		return invoke(ctx, input, store.TickSchedules)
-	case "checkpoint":
-		return invoke(ctx, input, store.Checkpoint)
 	case "verify-checkpoint":
 		result, err := invoke(ctx, input, store.VerifyCheckpoint)
 		if err == nil && !result.Valid {

@@ -63,16 +63,12 @@ func (s *Store) ReapplyRecovery(ctx context.Context, req RecoveryReapplyRequest)
 		if err := lock(ctx, tx, "recovery:"+req.Record.RootGrantID); err != nil {
 			return result, err
 		}
-		segments := &recoverySegments{}
-		current, err := captureRecovery(ctx, tx, segments)
+		staged, err := stageKnownRecovery(ctx, tx)
 		if err != nil {
 			return result, err
 		}
-		// Refuse contradictory expectations before mutating anything.
-		if err = segments.add(req.Record); err != nil {
-			return result, err
-		}
-		if err = mergeRecovery(&current, req.Record); err != nil {
+		// Keep the complete union and positional conflicts in PostgreSQL.
+		if err = staged.add(ctx, req.Record); err != nil {
 			return result, err
 		}
 		digest := map[string]string{}
@@ -207,95 +203,6 @@ func (s *Store) reapplyWithdrawal(ctx context.Context, tx pgx.Tx, root, reason s
 		}
 	}
 	return action, nil
-}
-
-// mergeRecovery retains exactly the union of known expectations. Contradictory
-// claims about one identity cannot be resolved by whichever export arrived last.
-//
-// The union has no count ceiling; a single exported record is bounded separately
-// (see splitRecovery), so merging many sources cannot be refused for size.
-func mergeRecovery(target *RecoveryRecord, source RecoveryRecord) error {
-	merger := newRecoveryMerger(target)
-	if err := merger.add(source); err != nil {
-		return err
-	}
-	merger.finish()
-	return nil
-}
-
-// recoveryMerger keeps the identity maps across sources so merging many retained
-// sources costs one pass over each, not one rebuild of the union per source.
-type recoveryMerger struct {
-	target      *RecoveryRecord
-	audit       map[string]string
-	withdrawals map[string]RecoveryWithdrawal
-	contexts    map[string]RecoveryContext
-}
-
-func newRecoveryMerger(target *RecoveryRecord) *recoveryMerger {
-	m := &recoveryMerger{target: target, audit: map[string]string{}, withdrawals: map[string]RecoveryWithdrawal{}, contexts: map[string]RecoveryContext{}}
-	for _, member := range target.Audit {
-		m.audit[member.EventID] = member.Digest
-	}
-	for _, w := range target.Withdrawals {
-		m.withdrawals[w.EventID] = w
-	}
-	for _, c := range target.Contexts {
-		m.contexts[c.RecordID+":"+c.ReceiptID] = c
-	}
-	return m
-}
-
-func (m *recoveryMerger) add(source RecoveryRecord) error {
-	if m.target.RootGrantID != source.RootGrantID {
-		return failure("INTEGRITY_FAILURE", "recovery expectations have different roots")
-	}
-	for _, member := range source.Audit {
-		if old, ok := m.audit[member.EventID]; ok {
-			if old != member.Digest {
-				return failure("INTEGRITY_FAILURE", "conflicting recovery audit expectations")
-			}
-		} else {
-			m.target.Audit = append(m.target.Audit, member)
-			m.audit[member.EventID] = member.Digest
-		}
-	}
-	for _, w := range source.Withdrawals {
-		if old, ok := m.withdrawals[w.EventID]; ok {
-			if old != w {
-				return failure("INTEGRITY_FAILURE", "conflicting recovery withdrawal expectations")
-			}
-		} else {
-			m.target.Withdrawals = append(m.target.Withdrawals, w)
-			m.withdrawals[w.EventID] = w
-		}
-	}
-	for _, c := range source.Contexts {
-		key := c.RecordID + ":" + c.ReceiptID
-		if old, ok := m.contexts[key]; ok {
-			if old != c {
-				return failure("INTEGRITY_FAILURE", "conflicting recovery custody expectations")
-			}
-		} else {
-			m.target.Contexts = append(m.target.Contexts, c)
-			m.contexts[key] = c
-		}
-	}
-	return nil
-}
-
-// finish restores the canonical order after all sources have been added.
-func (m *recoveryMerger) finish() {
-	target := m.target
-	sort.Slice(target.Audit, func(i, j int) bool { return target.Audit[i].EventID < target.Audit[j].EventID })
-	sort.Slice(target.Withdrawals, func(i, j int) bool { return target.Withdrawals[i].EventID < target.Withdrawals[j].EventID })
-	sort.Slice(target.Contexts, func(i, j int) bool {
-		a, b := target.Contexts[i], target.Contexts[j]
-		if a.RecordID != b.RecordID {
-			return a.RecordID < b.RecordID
-		}
-		return a.ReceiptID < b.ReceiptID
-	})
 }
 
 func retainRecoveryContext(ctx context.Context, tx pgx.Tx, applicationID string, c RecoveryContext) error {

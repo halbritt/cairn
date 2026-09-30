@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -161,31 +163,45 @@ func readRecoveryFile(path string) (record core.RecoveryRecord, err error) {
 	if err != nil {
 		return record, err
 	}
-	defer func() { err = errors.Join(err, file.Close()) }()
+	return readRecoveryOpened(file)
+}
+func privateRecoveryFile(file *os.File) error {
 	info, err := file.Stat()
 	if err != nil {
-		return record, err
+		return err
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || stat.Uid != uint32(os.Geteuid()) {
-		return record, invalid("recovery record must be an owner-only regular file owned by this operator")
+		return invalid("recovery record must be an owner-only regular file owned by this operator")
+	}
+	return nil
+}
+func readRecoveryOpened(file *os.File) (core.RecoveryRecord, error) {
+	record, _, err := readRecoveryOpenedWithDigest(file)
+	return record, err
+}
+func readRecoveryOpenedWithDigest(file *os.File) (record core.RecoveryRecord, checksum string, err error) {
+	defer func() { err = errors.Join(err, file.Close()) }()
+	if err = privateRecoveryFile(file); err != nil {
+		return record, "", err
 	}
 	body, err := io.ReadAll(io.LimitReader(file, maxRecoveryBytes+1))
 	if err != nil {
-		return record, err
+		return record, "", err
 	}
 	if len(body) > maxRecoveryBytes {
-		return record, invalid("recovery record exceeds 16 MiB")
+		return record, "", invalid("recovery record exceeds 16 MiB")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err = decoder.Decode(&record); err != nil {
-		return record, invalid("invalid recovery record JSON")
+		return record, "", invalid("invalid recovery record JSON")
 	}
-	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-		return record, invalid("expected exactly one recovery record")
+	if err = decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return record, "", invalid("expected exactly one recovery record")
 	}
-	return record, nil
+	sum := sha256.Sum256(body)
+	return record, hex.EncodeToString(sum[:]), nil
 }
 
 type inspectedRecovery struct {
@@ -197,13 +213,22 @@ type inspectedRecovery struct {
 // list that names a segment set but omits a position is refused before any
 // segment is inspected, so a partial list cannot look consistent.
 func inspectRecovery(ctx context.Context, store *core.Store, paths []string) (any, error) {
-	records := make([]core.RecoveryRecord, len(paths))
-	for i, path := range paths {
+	records := []core.RecoveryRecord{}
+	total := 0
+	for _, path := range paths {
 		record, err := readRecoveryFile(path)
 		if err != nil {
 			return nil, err
 		}
-		records[i] = record
+		body, err := json.MarshalIndent(record, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		total += len(body) + 1
+		if total > maxRecoveryBytes {
+			return nil, invalid("recovery inspection collector exceeds 16 MiB; use recovery-inspect --directory")
+		}
+		records = append(records, record)
 	}
 	if err := core.CheckRecoverySegments(records); err != nil {
 		return nil, err

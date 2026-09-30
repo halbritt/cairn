@@ -7,6 +7,14 @@ revoked grants, forgotten records, retracted C instructions, and the registered
 context-file custody associated with forgetting. It contains no record bodies,
 queries, task prompts or audit reasons. Paths and identifiers remain private.
 
+For larger stores use the [streamed directory bundle](recovery-bundles.md):
+`cairn recovery-export --directory /private/recovery/after-withdrawals-001` and
+`cairn recovery-inspect --directory /private/recovery/after-withdrawals-001`.
+These preserve the complete union without collecting every part in application
+memory. The ordinary file/file-list forms below are compatibility interfaces,
+limited to 16 MiB combined encoded records; their refusal directs you to directory
+mode, which retains the same per-record schema and integrity checks.
+
 After a withdrawal, retain a new export outside the database and its backup set:
 
 ```sh
