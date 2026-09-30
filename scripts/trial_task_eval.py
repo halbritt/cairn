@@ -34,6 +34,12 @@ import tempfile
 import time
 import uuid
 
+from trial_native_observation import capture, measure
+from trial_corpus_fingerprint import corpus_stamp, same_corpus
+from trial_task_arms import copy_arms, checked_file, bind_ordinary_claude
+from trial_task_input import freeze_input, load_input
+from trial_task_permissions import settings_permissions, command_metadata, error_metadata, denial_metadata, background_result
+
 ROOT = Path(__file__).resolve().parents[1]
 TRIAL = ROOT / "trials" / "task-eval"
 TRIAL_REPO = "trial:task-eval"
@@ -88,6 +94,8 @@ def load_corpus(version=None, path=TRIAL / "corpus.json"):
 
 def workspace_dir(case):
     """Fixture directory: frozen workspaces/NAME, or revisions/vN/... for a later labelled version."""
+    if "_prospective_workspace" in case:
+        return Path(case["_prospective_workspace"])
     name = case["workspace"]
     return TRIAL / name if name.startswith("revisions/") else TRIAL / "workspaces" / name
 
@@ -95,7 +103,7 @@ def workspace_dir(case):
 CHECK_TYPES = {"command", "tool_output", "answer", "file", "exists", "added", "unchanged", "shell", "commit_files", "staged", "all", "any"}
 
 
-def validate(cases, corpus, workspaces=TRIAL / "workspaces"):
+def validate(cases, corpus, workspaces=TRIAL / "workspaces", *, prospective=False):
     """Return a list of problems; empty means the fixtures are consistent."""
     problems = []
     ids = [n["id"] for n in corpus]
@@ -117,7 +125,7 @@ def validate(cases, corpus, workspaces=TRIAL / "workspaces"):
                     problems.append(f"{cid}: unknown {field} note {ref}")
         if set(case.get("expected", [])) & set(case.get("must_not_deliver", [])):
             problems.append(cid + ": expected and forbidden overlap")
-        if set(case["wordings"]) != {"task", "paraphrase", "direct"}:
+        if set(case["wordings"]) != ({"task"} if prospective else {"task", "paraphrase", "direct"}):
             problems.append(cid + ": wordings must be task, paraphrase and direct")
         if not workspace_dir(case).is_dir():
             problems.append(cid + ": missing workspace")
@@ -251,6 +259,8 @@ class TrialStore:
         pg = disposable_pg()
         database = "task_eval_" + re.sub(r"[^a-z0-9]", "_", label.lower())
         run([Path(os.environ["CAIRN_TASK_EVAL_PG_BIN"]) / "createdb", "-h", pg, database])
+        self.pg_socket, self.database = pg, database
+        self.pg_bin = Path(os.environ["CAIRN_TASK_EVAL_PG_BIN"])
         self.dsn = f"host={pg} dbname={database} sslmode=disable"
         self.home = self.root / "home"
         self.home.mkdir(mode=0o700)
@@ -272,6 +282,12 @@ class TrialStore:
         self.ids = {}  # fixture id -> record id
         self.names = {}  # record id -> fixture id
         self.server = None
+
+    def fingerprint(self):
+        # This instance created its database in the wrapper-owned cluster.
+        if disposable_pg() != self.pg_socket:
+            raise ValueError("owned database routing changed")
+        return corpus_stamp(self.pg_bin / "psql", self.pg_socket, self.database, self.env, run)
 
     def remember(self, note):
         args = ["remember", "--repo", note.get("repo", TRIAL_REPO), "--kind", note["kind"], "--stdin",
@@ -295,8 +311,8 @@ class TrialStore:
             replacement=dict(record_id=self.ids[new], version=1), preview_id=preview["preview_id"],
             reason="task-eval fixture: superseded location"))
 
-    def seed_corpus(self, corpus):
-        self.seed(corpus)
+    def seed_corpus(self, corpus, *, workers=8):
+        self.seed(corpus, workers=workers)
         for note in corpus:
             if note.get("supersede_with"):
                 self.supersede(note["id"], note["supersede_with"])
@@ -549,6 +565,10 @@ def prepare_workspace(case, root):
                GIT_AUTHOR_DATE="2026-09-01T00:00:00Z", GIT_COMMITTER_DATE="2026-09-01T00:00:00Z")
     run(["bash", "-e", source / "setup.sh"], cwd=target, env=env)
     cwd = Path(root) / case["cwd"]
+    if case.get("workspace_commit"):
+        actual = run(["git", "rev-parse", "HEAD"], cwd=cwd, env=env).stdout.decode().strip()
+        if actual != case["workspace_commit"]:
+            raise ValueError("prepared workspace revision differs from frozen input")
     run(["git", "tag", "eval-base"], cwd=cwd, env=env)
     snapshot = {}
     for path in cwd.rglob("*"):
@@ -699,7 +719,7 @@ def unwrap_shell(command):
     return inner.replace("'\\''", "'") if match.group(1) == "'" else inner.replace('\\"', '"')
 
 
-def parse_tool_outputs(text, harness="claude"):
+def parse_tool_outputs(text, harness="claude", *, require_completed=False):
     """Commands with the output and error status the harness recorded for them (not model-written text)."""
     outputs, pending = [], {}
     for line in text.splitlines():
@@ -715,12 +735,18 @@ def parse_tool_outputs(text, harness="claude"):
             continue
         content = (event.get("message") or {}).get("content")
         for part in content if isinstance(content, list) else []:
+            if not isinstance(part, dict):
+                continue
             if part.get("type") == "tool_use" and part.get("name") == "Bash":
-                pending[part.get("id")] = (part.get("input") or {}).get("command", "")
+                pending[part.get("id")] = ((part.get("input") or {}).get("command", ""), (part.get("input") or {}).get("run_in_background") is True)
             elif part.get("type") == "tool_result" and part.get("tool_use_id") in pending:
                 body = part.get("content")
                 body = body if isinstance(body, str) else "".join(x.get("text", "") for x in body or [] if isinstance(x, dict))
-                outputs.append(dict(command=pending.pop(part["tool_use_id"]), output=body, is_error=bool(part.get("is_error"))))
+                command, background = pending[part["tool_use_id"]]
+                if require_completed and (background or background_result(part) or background_result(event.get("tool_use_result"))):
+                    continue
+                pending.pop(part["tool_use_id"])
+                outputs.append(dict(command=command, output=body, is_error=bool(part.get("is_error"))))
     return outputs
 
 
@@ -785,6 +811,8 @@ def claude_admission_failure(result, assistant_error):
 def parse_claude_stream(text):
     """Summarise Claude Code stream-json output: commands, file writes, memory tool calls, answer, usage."""
     commands, writes, memory, answer, result = [], [], [], "", {}
+    permission_calls, denials, tool_errors, backgrounds = {}, [], [], []
+    denials_reported = False
     assistant_error = (None, "")
     for line in text.splitlines():
         try:
@@ -800,20 +828,40 @@ def parse_claude_stream(text):
                     name, data = part.get("name", ""), part.get("input") or {}
                     if name == "Bash":
                         commands.append(data.get("command", ""))
+                        ident = part.get("id")
+                        if isinstance(ident, str) and re.fullmatch(r"toolu_[A-Za-z0-9_-]{1,128}", ident):
+                            permission_calls[ident] = command_metadata(data.get("command"))
+                            if data.get("run_in_background") is True:
+                                backgrounds.append(ident)
                     elif name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
                         writes.append(data.get("file_path", ""))
                     elif name.startswith("mcp__cairn__"):
                         memory.append(dict(tool=name, input=data))
                 elif part.get("type") == "text":
                     answer = part.get("text", "")
+        elif event.get("type") == "user":
+            for part in (event.get("message") or {}).get("content", []):
+                if not isinstance(part, dict) or part.get("type") != "tool_result":
+                    continue
+                ident = part.get("tool_use_id")
+                if isinstance(ident, str) and ident in permission_calls:
+                    if part.get("is_error"):
+                        row = dict(tool_use_id=ident, **permission_calls[ident], **error_metadata(part.get("content")))
+                        tool_errors.append(row)
+                    if background_result(part) or background_result(event.get("tool_use_result")):
+                        backgrounds.append(ident)
         elif event.get("type") == "result":
             result = event
+            denials_reported = isinstance(event.get("permission_denials"), list)
+            denials = [denial_metadata(value, permission_calls) for value in event["permission_denials"]] if denials_reported else []
             answer = event.get("result") or answer
     usage = result.get("usage") or {}
     return dict(commands=commands, writes=writes, memory_calls=memory, answer=answer,
                 turns=result.get("num_turns"), duration_ms=result.get("duration_ms"), cost_usd=result.get("total_cost_usd"),
                 is_error=result.get("is_error"), subtype=result.get("subtype"), completed=bool(result),
                 admission_failure=claude_admission_failure(result, assistant_error),
+                permission_observation=dict(denials_reported=denials_reported, denial_count=len(denials) if denials_reported else None, denials=denials, tool_errors=tool_errors,
+                                            background_calls=sorted(set(backgrounds))),
                 turn_unit="claude_num_turns",
                 input_tokens=usage.get("input_tokens"), cache_read_tokens=usage.get("cache_read_input_tokens"),
                 cache_creation_tokens=usage.get("cache_creation_input_tokens"), output_tokens=usage.get("output_tokens"))
@@ -859,15 +907,15 @@ def runtime_sandbox():
     return command
 
 
-def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="claude"):
+def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="claude", *, native_executable=None):
     """Add the chosen provider and owned trial paths to the runtime filesystem."""
     home = Path.home()
     command = runtime_sandbox()
     if harness == "claude":
         claude = home / ".local/bin/claude"
-        command += ["--ro-bind", str(claude.resolve(strict=True)), str(claude),
+        command += ["--ro-bind", str(Path(native_executable).resolve(strict=True) if native_executable else claude.resolve(strict=True)), str(claude),
                     "--dir", str(home / ".claude"),
-                    "--bind", str(home / ".claude/.credentials.json"), str(home / ".claude/.credentials.json")]
+                    "--ro-bind" if native_executable else "--bind", str(home / ".claude/.credentials.json"), str(home / ".claude/.credentials.json")]
     elif harness != "codex":
         raise ValueError("unknown harness " + harness)
     command += ["--bind", str(root), str(root), "--chdir", str(Path(root) / cwd_name)]  # absolute gitdirs
@@ -886,7 +934,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
     root.mkdir()
     prepare_workspace(case, root)
     cwd = root / case["cwd"]
-    corpus = {n["id"]: n for n in load_corpus()}
+    prospective = getattr(args, "_prospective", None)
+    corpus = {n["id"]: n for n in (prospective["notes"] if prospective else load_corpus())}
     prompt = case["wordings"][args.wording]
     home = Path.home()
     env = dict(HOME=str(home), PATH=f"{home}/.local/bin:{home}/.local/go/bin:/usr/local/bin:/usr/bin:/bin",
@@ -894,10 +943,18 @@ def run_agent(case, arm, seed, order, args, stores, out):
                GIT_AUTHOR_NAME="trial agent", GIT_AUTHOR_EMAIL="agent@example.invalid",
                GIT_COMMITTER_NAME="trial agent", GIT_COMMITTER_EMAIL="agent@example.invalid")
     binds = []
+    sandbox_options = dict(native_executable=checked_file(prospective["document"]["native"]["binary"])) if prospective else {}
     if args.harness == "claude":
         provider = ["claude", "-p", "--model", args.model, "--output-format", "stream-json", "--verbose",
                     "--permission-mode", "bypassPermissions", "--no-session-persistence", "--strict-mcp-config",
                     "--max-turns", str(args.max_turns)]
+        if prospective:
+            provider = ["claude", "-p", "--model", args.model, "--effort", args.reasoning_effort,
+                        "--output-format", "stream-json", "--verbose", "--permission-prompts", "none",
+                        "--setting-sources", "", "--no-session-persistence", "--strict-mcp-config",
+                        "--input-format", "stream-json", "--replay-user-messages", "--include-hook-events",
+                        "--max-turns", str(args.max_turns)]
+            env["ENABLE_TOOL_SEARCH"] = "false"
     else:
         # Invoke the reviewed npm entry point, not this host's coordination launcher.
         install = Path(args.codex_install).resolve()
@@ -915,20 +972,32 @@ def run_agent(case, arm, seed, order, args, stores, out):
             prompt = "Relevant saved notes (fallible; check against the workspace):\n\n" + "\n\n---\n\n".join(notes) + "\n\n---\n\n" + prompt
     elif arm != "none":
         store = stores[arm]
+        task_wire = (json.dumps(dict(type="user", message=dict(role="user", content=prompt)), ensure_ascii=False) + "\n").encode()
+        context_limit = 9500 - len(task_wire) - 512 - len(MEMORY_INSTRUCTION.encode()) if prospective else (CLAUDE_CONTEXT_BYTES if args.harness == "claude" else CODEX_CONTEXT_BYTES)
+        if context_limit < 1000:
+            raise ValueError("task leaves insufficient hook allowance")
         session_state = base / "hook-state"
         session_state.mkdir()
         trial = Path("/tmp/trial/store")
         config = dict(cairn=str(trial / "cairn"), socket=str(trial / "sock/api.sock"), token_file=str(trial / "agent.token"),
                       repo=TRIAL_REPO, state_dir="/tmp/trial/hookstate",
-                      context_bytes=CLAUDE_CONTEXT_BYTES if args.harness == "claude" else CODEX_CONTEXT_BYTES,
+                      context_bytes=context_limit,
                       harness=args.harness, semantic_fallback=arm in args.semantic_recall)
-        if config["semantic_fallback"]:
+        arm_config = stores[arm].get("configuration", {}) if prospective else {}
+        if prospective:
+            config["semantic_fallback"] = arm_config["semantic_fallback"]
+            config["recall_mode"] = arm_config["recall_mode"]
+        if config["semantic_fallback"] and config.get("recall_mode") != "agent_tools":
             config.update(claude="/tmp/trial/selector/claude", model=args.selector_model)
             binds.append((Path(args.selector_binary).resolve(), config["claude"], "ro"))
             if args.harness == "codex":
                 binds.append((Path(args.selector_auth_file).resolve(), home / ".claude/.credentials.json", "ro"))
         (base / "hook-config.json").write_text(json.dumps(config))
+        if prospective and config["recall_mode"] == "agent_tools":
+            binds += bind_ordinary_claude(base, config, arm_config["bridge"])
         hook_cmd = "bash -o pipefail -c 'python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl | tee -a /tmp/trial/hookstate/calls.jsonl'"
+        if prospective:
+            hook_cmd = "python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl"
         settings = dict(hooks={event: [dict(hooks=[dict(type="command", command=hook_cmd, timeout=13)])] for event in HOOK_EVENTS})
         (base / "settings.json").write_text(json.dumps(settings))
         mcp = dict(mcpServers=dict(cairn=dict(type="stdio", command=str(trial / "cairn"), args=[
@@ -953,38 +1022,95 @@ def run_agent(case, arm, seed, order, args, stores, out):
                          "-c", "mcp_servers.cairn.command=" + json.dumps(server["command"]),
                          "-c", "mcp_servers.cairn.args=" + json.dumps(server["args"]),
                          "-c", "developer_instructions=" + json.dumps(MEMORY_INSTRUCTION)]
-    provider += ["--", prompt]
-    command = sandbox_command(root, case["cwd"], binds, env, provider, args.harness)
+    if prospective:
+        settings_path, mcp_path = base / "settings.json", base / "mcp.json"
+        settings = load_json(settings_path) if settings_path.exists() else {}
+        settings.update(permissions=settings_permissions(), autoMemoryEnabled=False, claudeMdExcludes=["**"])
+        settings_path.write_text(json.dumps(settings))
+        if arm in ("none", "direct"):
+            mcp_path.write_text(json.dumps(dict(mcpServers={})))
+            binds += [(settings_path, "/tmp/trial/settings.json", "ro"), (mcp_path, "/tmp/trial/mcp.json", "ro")]
+            provider += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json"]
+        prerequisites = []
+        binding_check = [["python3", "-c", "import json,runpy; runpy.run_path('/tmp/trial/hook/inbox_recall.py')['validate_binding'](json.load(open('/tmp/trial/hookconfig.json')), require_enabled=True)"]] if arm not in ("none", "direct") and arm_config["recall_mode"] == "agent_tools" else []
+        prerequisite_commands = binding_check + ([["go", "version"], ["go", "list", "./..."]] if (cwd / "go.mod").exists() else []) + case["preflight"]
+        for argv in prerequisite_commands:
+            checked = sandbox_command(root, case["cwd"], binds, env, argv, args.harness, **sandbox_options)
+            try:
+                done = subprocess.run(checked, capture_output=True, timeout=min(120, args.timeout))
+                row = dict(argv=argv, exit=done.returncode, stdout_sha256=hashlib.sha256(done.stdout).hexdigest(),
+                           stderr_sha256=hashlib.sha256(done.stderr).hexdigest())
+            except subprocess.TimeoutExpired:
+                row = dict(argv=argv, exit=None, error="prerequisite_timeout")
+            prerequisites.append(row)
+            (base / "preflight.json").write_text(json.dumps(prerequisites, indent=2))
+            if row["exit"] != 0:
+                raise RuntimeError("prospective prerequisite failed before provider launch")
+    if prospective:
+        native_input = (json.dumps(dict(type="user", message=dict(role="user", content=prompt)), ensure_ascii=False) + "\n").encode()
+        input_charge = len(native_input) + 512 + (len(MEMORY_INSTRUCTION.encode()) if arm not in ("none", "direct") else 0)
+        if input_charge > 8500:
+            raise ValueError("task and framing leave less than1000 bytes; no provider launched")
+    else:
+        provider += ["--", prompt]
+    command = sandbox_command(root, case["cwd"], binds, env, provider, args.harness, **sandbox_options)
     started = time.monotonic()
     try:
-        result = subprocess.run(command, capture_output=True, timeout=args.timeout)
-        stdout, stderr, code = result.stdout.decode(errors="replace"), result.stderr.decode(errors="replace"), result.returncode
+        if prospective:
+            raw_stdout, raw_stderr, code, timings = capture(command, args.timeout, base / "stream-timing.json", input_bytes=native_input)
+            stdout, stderr = raw_stdout.decode(errors="replace"), raw_stderr.decode(errors="replace")
+        else:
+            result = subprocess.run(command, capture_output=True, timeout=args.timeout)
+            stdout, stderr, code = result.stdout.decode(errors="replace"), result.stderr.decode(errors="replace"), result.returncode
     except subprocess.TimeoutExpired as expired:
         stdout = (expired.stdout or b"").decode(errors="replace")
         stderr, code = "timeout", 124
     elapsed = time.monotonic() - started
-    (base / "stream.jsonl").write_text(stdout)
-    (base / "stderr.txt").write_text(stderr[-20000:])
+    if not prospective:
+        (base / "stream.jsonl").write_text(stdout)
+        (base / "stderr.txt").write_text(stderr[-20000:])
+    else:
+        (base / "native-output-metadata.json").write_text(json.dumps(dict(
+            stdout_bytes=len(raw_stdout), stdout_sha256=hashlib.sha256(raw_stdout).hexdigest(),
+            stderr_bytes=len(raw_stderr), stderr_sha256=hashlib.sha256(raw_stderr).hexdigest(),
+            raw_stream_retained=False)))
     trace = parse_stream(stdout, args.harness)
+    if prospective:
+        # Retain only fixed terminal admission metadata before fallible grading.
+        # Prospective runs intentionally have no raw stream recovery path.
+        with (base / "native-terminal.json").open("x") as retained:
+            json.dump(dict(schema="cairn.native-terminal/1", admission_failure=trace["admission_failure"]), retained)
+            retained.flush()
+            os.fsync(retained.fileno())
     failure = execution_failure(trace, code)
     ctx = dict(cwd=cwd, commands=trace["commands"], answer=trace["answer"],
-               tool_outputs=parse_tool_outputs(stdout, args.harness),
+               tool_outputs=parse_tool_outputs(stdout, args.harness, require_completed=bool(prospective)),
                snapshot=json.loads((root / ".eval-snapshot.json").read_text()))
     graded = grade(case, ctx)
     if failure:
         graded = dict(graded, check_outcome=graded["outcome"], outcome="harness_error", execution_failure=failure,
-                      error=stderr[-600:])
+                      error="prospective_native_failure" if prospective else stderr[-600:])
     memory = hook_observations(base / "hook-state", stores.get(arm, {}).get("store"))
     record = dict(run_id=run_id, case=case["id"], category=case["category"], primary=case.get("primary", True), provenance=case["provenance"]["type"], arm=arm,
                   seed=seed, order=order, harness=args.harness, model=args.model, wording=args.wording, exit=code, seconds=round(elapsed, 2), prompt_bytes=len(prompt.encode()),
                   **graded, trace={k: v for k, v in trace.items() if k not in ("answer", "commands")},
                   commands=len(trace["commands"]), answer_chars=len(trace["answer"] or ""), memory=memory)
+    if prospective:
+        observations = base / "hook-state/observations.jsonl"
+        hook_rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
+        record["selected_input"] = measure(stdout, timings, hook_rows, input_bytes=input_charge,
+                                            expects_hooks=arm not in ("none", "direct"), model=args.model, prompt=prompt)
     record["memory_tool_pulls"] = [names_for(stores.get(arm, {}).get("store"), call) for call in trace["memory_calls"]]
     if memory:
         expected = set(case["expected"])
         memory["delivered_expected"] = sorted(expected & set(memory["delivered"]))
         memory["forbidden"] = sorted((set(case.get("must_not_deliver", [])) | set(case.get("over_applied", []))) & set(memory["delivered"]))
         memory["irrelevant"] = sorted(set(memory["delivered"]) - expected - set(case.get("acceptable", [])))
+    if prospective:
+        record["trace"] = {key: value for key, value in record["trace"].items() if key not in ("writes", "memory_calls")}
+        record["memory_tool_pulls"] = [dict(tool=row["tool"]) for row in record["memory_tool_pulls"]]
+        record["memory"]["selected_input"] = record["selected_input"]
+        (base / "answer.md").write_text(trace["answer"] or "")
     (base / "result.json").write_text(json.dumps(record, indent=2))
     return record
 
@@ -1044,14 +1170,18 @@ def hook_observations(state_dir, store):
 
 
 def cmd_agent(args):
-    frozen = verify_frozen()
-    cases = [c for c in load_cases() if not args.cases or c["id"] in args.cases]
+    prospective = load_input(args.prospective_input) if getattr(args, "prospective_input", None) else None
+    frozen = prospective["frozen"] if prospective else verify_frozen()
+    all_cases = prospective["cases"] if prospective else load_cases()
+    cases = [c for c in all_cases if not args.cases or c["id"] in args.cases]
+    if not cases or (args.cases and set(args.cases) - {c["id"] for c in all_cases}):
+        raise SystemExit("case selection must name existing cases")
     expected_pairs = {(c["id"], seed) for c in cases for seed in range(args.first_seed, args.first_seed + args.seeds)}
     paired_plans, baseline_pairs = [], set()
     for path in args.paired_plan:
         baseline = load_json(path)
         if (baseline.get("harness", "claude") != args.harness
-                or baseline.get("reasoning_effort") != (args.reasoning_effort if args.harness == "codex" else None)
+                or baseline.get("reasoning_effort") != (args.reasoning_effort if prospective or args.harness == "codex" else None)
                 or baseline["model"] != args.model or baseline["wording"] != args.wording
                 or baseline["distractors"] != args.distractors
                 or baseline["frozen"]["cases_sha256"] != frozen["cases_sha256"]
@@ -1067,15 +1197,42 @@ def cmd_agent(args):
                                  baseline_pairs=len(pairs)))
     if paired_plans and baseline_pairs != expected_pairs:
         raise SystemExit("paired baseline plans do not cover exactly the candidate case/seed pairs")
+    if prospective:
+        problems = validate(prospective["cases"], prospective["notes"], prospective=True)
+        if problems:
+            raise ValueError("invalid prospective input: " + "; ".join(problems))
+        native = prospective["document"]["native"]
+        if args.model != native["model"] or args.reasoning_effort != native["effort"]:
+            raise ValueError("selected native model/effort must equal frozen input")
     execution = dict(harness=args.harness, reasoning_effort=args.reasoning_effort if args.harness == "codex" else None,
                      evaluator_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                      hook_observer_sha256=hashlib.sha256((ROOT / "scripts/trial_hook_observer.py").read_bytes()).hexdigest(),
-                     harness_version=run([str(Path(args.codex_install) / "codex/bin/codex.js") if args.harness == "codex" else "claude", "--version"]).stdout.decode().strip())
+                     harness_version=run([str(Path(args.codex_install) / "codex/bin/codex.js") if args.harness == "codex" else str(checked_file(prospective["document"]["native"]["binary"])) if prospective else "claude", "--version"]).stdout.decode().strip())
     out = Path(args.output)
     out.mkdir(mode=0o700)
+    if prospective:
+        if out.resolve().is_relative_to(prospective["root"]):
+            raise ValueError("output must be outside prospective input")
+        shutil.copytree(prospective["root"], out / "input")
+        prospective = load_input(out / "input")
+        if prospective["frozen"] != frozen:
+            raise ValueError("prospective input changed during snapshot")
+        cases = [c for c in prospective["cases"] if not args.cases or c["id"] in args.cases]
+        args._prospective = prospective
+        chosen_arms, pinned_arms = copy_arms(prospective["document"], out,
+                                            lambda binary: cairn_json(binary, ["version"], dict(os.environ, CAIRN_DATABASE_URL="invalid-not-used")))
+        args.arms = [name for name in chosen_arms if name in ("none", "direct")]
+        args.memory = [label + ":" + item["binary"] + ":" + item["hook"] for label,item in pinned_arms.items()]
+        execution["arm_contracts"] = prospective["document"]["memory_arms"]
+        execution["native_contract"] = prospective["document"]["native"]
+        execution["corpus_policy"] = prospective["corpus_policy"]
+        execution["prospective_input"] = dict(schema="cairn.task-eval.input/1", path="input",
+                                               frozen_sha256=hashlib.sha256((out / "input/FROZEN.json").read_bytes()).hexdigest())
+        execution["reasoning_effort"] = args.reasoning_effort
+        execution["permission_policy_sha256"] = hashlib.sha256((ROOT / "scripts/trial_task_permissions.py").read_bytes()).hexdigest()
     with ExitStack() as cleanup:
         stores = {}
-        corpus = load_corpus()
+        corpus = prospective["notes"] if prospective else load_corpus()
         corpus_bytes = (json.dumps(dict(notes=corpus), ensure_ascii=False, indent=2) + "\n").encode("utf-8")
         corpus_path = out / "observed-corpus.json"
         corpus_path.write_bytes(corpus_bytes)
@@ -1083,14 +1240,24 @@ def cmd_agent(args):
         arms = list(args.arms)
         for spec in args.memory:
             label, binary, hook = spec.split(":", 2)
+            arm_config = pinned_arms[label] if prospective else {}
             store = TrialStore(out / "stores" / label, binary, label, worker=args.semantic_worker,
-                               embedding_worker=args.embedding_worker)
+                               embedding_worker=arm_config.get("embedding_worker") if prospective else args.embedding_worker)
+            if prospective:
+                cleanup.callback(store.token_file.unlink, missing_ok=True)
+                cleanup.callback((store.home / "identities.json").unlink, missing_ok=True)
             cleanup.callback(store.stop)
-            store.seed_corpus(corpus)
+            if prospective:
+                store.seed_corpus(corpus, workers=1)
+                (store.root / "import-provenance.json").write_text(json.dumps([dict(
+                    input_id=note["id"], imported_record_id=store.ids[note["id"]], imported_version=1,
+                    body_sha256=hashlib.sha256(note["body"].encode()).hexdigest(), provenance=note.get("provenance")) for note in corpus], indent=2))
+            else:
+                store.seed_corpus(corpus)
             store.grow(args.distractors, 0)
             store.start()
             store.wait_for_full_coverage()
-            stores[label] = dict(store=store, hook=str(Path(hook).resolve()))
+            stores[label] = dict(store=store, hook=str(Path(hook).resolve()), configuration=arm_config)
             arms.append(label)
         plan = []
         for seed in range(args.first_seed, args.first_seed + args.seeds):
@@ -1098,9 +1265,10 @@ def cmd_agent(args):
                 order = list(arms)
                 random.Random(f"{seed}:{case['id']}").shuffle(order)
                 plan += [(case, arm, seed, position) for position, arm in enumerate(order)]
-        recall = {label: dict(semantic_fallback=label in args.semantic_recall,
+        recall = {label: dict(semantic_fallback=v["configuration"]["semantic_fallback"] if prospective else label in args.semantic_recall,
+                             recall_mode=v["configuration"].get("recall_mode", "ambient"),
                              selector_model=args.selector_model if label in args.semantic_recall else None)
-                  for label in stores}
+                  for label, v in stores.items()}
         if args.semantic_recall:
             execution["selector_version"] = run([args.selector_binary, "--version"]).stdout.decode().strip()
             execution["selector_binary_sha256"] = hashlib.sha256(Path(args.selector_binary).read_bytes()).hexdigest()
@@ -1113,6 +1281,9 @@ def cmd_agent(args):
                                                        limits=dict(max_turns=args.max_turns, timeout=args.timeout,
                                                                    parallel=args.parallel),
                                                        runs=[(c["id"], a, s, p) for c, a, s, p in plan]), indent=2))
+        before = {label: value["store"].fingerprint() for label, value in stores.items()} if prospective else None
+        if prospective:
+            (out / "corpus-before.json").write_text(json.dumps(before, indent=2))
         records, next_run, stop = [], 0, None
         with concurrent.futures.ThreadPoolExecutor(args.parallel) as pool:
             futures = {}
@@ -1132,11 +1303,24 @@ def cmd_agent(args):
                     except Exception as error:  # keep failed runs in the record
                         cid = c["id"]
                         record = dict(run_id=f"{cid}.{arm}.s{seed}", case=cid, arm=arm, seed=seed,
-                                      outcome="harness_error", error=str(error)[-600:])
-                        # run_agent persists the native stream before grading.
+                                      outcome="harness_error", error=type(error).__name__ if prospective else str(error)[-600:],
+                                      harness=args.harness, model=args.model)
                         # A later grading failure must not hide a provider stop.
-                        stream = out / "runs" / record["run_id"] / "stream.jsonl"
-                        if stream.is_file():
+                        base = out / "runs" / record["run_id"]
+                        terminal = base / "native-terminal.json"
+                        stream = base / "stream.jsonl"
+                        if prospective and terminal.is_file():
+                            try:
+                                selected = json.loads(terminal.read_text())
+                                failure = selected.get("admission_failure")
+                                allowed = [dict(provider="claude", reason=reason, api_error_status=status)
+                                           for reason, status in (("authentication_failed", 401), ("capacity_exhausted", 429))]
+                                if selected.get("schema") != "cairn.native-terminal/1" or (failure is not None and failure not in allowed):
+                                    raise ValueError("invalid selected terminal metadata")
+                                record["trace"] = dict(admission_failure=failure)
+                            except (OSError, ValueError, TypeError, AttributeError) as parse_error:
+                                record["trace_parse_error"] = type(parse_error).__name__
+                        elif not prospective and stream.is_file():
                             try:
                                 trace = parse_stream(stream.read_text(), args.harness)
                                 record["trace"] = {k: v for k, v in trace.items() if k not in ("answer", "commands")}
@@ -1148,6 +1332,16 @@ def cmd_agent(args):
                         stop = dict(run_id=record["run_id"], **failure)
                         print(json.dumps(dict(admission_stop=stop)), flush=True)
                     print(json.dumps({k: record.get(k) for k in ("run_id", "outcome", "seconds")}), flush=True)
+        if prospective:
+            after = {}
+            try:
+                for label, value in stores.items():
+                    after[label] = value["store"].fingerprint()
+                corpus_integrity = dict(observed=True, unchanged=all(same_corpus(before[k], after[k]) for k in before))
+            except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
+                corpus_integrity = dict(observed=False, unchanged=None, error_type=type(error).__name__)
+            (out / "corpus-after.json").write_text(json.dumps(after, indent=2))
+            execution["corpus_integrity"] = corpus_integrity
         admission = dict(state="stopped_provider_failure" if stop else "complete", stop=stop,
                          planned=len(plan), admitted=next_run,
                          not_started=[dict(run_id=f"{c['id']}.{a}.s{s}", case=c["id"], arm=a, seed=s, order=p)
@@ -1159,10 +1353,13 @@ def cmd_agent(args):
                       cairn_version=cairn_json(v["store"].binary, ["version"], v["store"].env)) for k, v in stores.items()},
                       paired_plans=paired_plans, admission=admission,
                       records=sorted(records, key=lambda r: r["run_id"]))
+        if prospective:
+            report["measurement_failures"] = [r["run_id"] for r in records
+                                               if (r.get("selected_input") or {}).get("status") != "within_observed_limits"]
         report["summary"] = summarise_agent(report["records"], arms)
         (out / "agent.json").write_text(json.dumps(report, indent=2))
         print(json.dumps(report["summary"], indent=2))
-        return 2 if stop else 0
+        return 2 if stop or (prospective and (execution["corpus_integrity"]["unchanged"] is not True or report["measurement_failures"])) else 0
 
 
 def summarise_agent(records, arms):
@@ -1272,6 +1469,8 @@ def cmd_report(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
+    fresh = sub.add_parser("freeze-input", help="freeze a new explicitly reviewed prospective input")
+    fresh.add_argument("--input", required=True)
     sub.add_parser("validate")
     f = sub.add_parser("freeze")
     f.add_argument("--version", type=int, default=None, help="label version (default: latest revision)")
@@ -1290,7 +1489,10 @@ def main(argv=None):
     r.add_argument("--cases", nargs="*")
     a = sub.add_parser("agent")
     a.add_argument("--output", required=True)
-    a.add_argument("--arms", nargs="*", default=["none", "direct"], choices=["none", "direct"])
+    source = a.add_mutually_exclusive_group(required=True)
+    source.add_argument("--prospective-input", help="explicit frozen fresh input directory")
+    source.add_argument("--legacy-fixtures", action="store_true", help="explicitly select historical fixtures; not authorization to replay")
+    a.add_argument("--arms", nargs="*", default=None, choices=["none", "direct"])
     a.add_argument("--memory", action="append", default=[], help="LABEL:CAIRN_BINARY:MEMORY_PY")
     a.add_argument("--semantic-recall", action="append", default=[], metavar="LABEL",
                    help="enable semantic recall and the isolated applicability selector for this memory arm")
@@ -1303,7 +1505,7 @@ def main(argv=None):
     a.add_argument("--first-seed", type=int, default=0)
     a.add_argument("--harness", choices=["claude", "codex"], default="claude")
     a.add_argument("--model", help="default sonnet for Claude; required explicitly for Codex")
-    a.add_argument("--reasoning-effort", default="high", choices=["low", "medium", "high", "xhigh", "max", "ultra"])
+    a.add_argument("--reasoning-effort", default=None, choices=["low", "medium", "high", "xhigh", "max", "ultra"])
     a.add_argument("--codex-install", default=str(Path.home() / ".npm-global/lib/node_modules/@openai"),
                    help="npm installation containing codex/bin/codex.js and its platform packages")
     a.add_argument("--codex-auth-file", default=str(Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "auth.json"),
@@ -1319,7 +1521,28 @@ def main(argv=None):
     p = sub.add_parser("report")
     p.add_argument("results", nargs="+")
     args = parser.parse_args(argv)
+    if args.command == "freeze-input":
+        bundle = load_input(args.input, frozen=False)
+        problems = validate(bundle["cases"], bundle["notes"], prospective=True)
+        if problems:
+            parser.error("; ".join(problems))
+        print(json.dumps(freeze_input(args.input)["frozen"], indent=2))
+        return 0
     if args.command == "agent":
+        if args.prospective_input:
+            if args.arms is not None or args.memory or args.semantic_recall or args.semantic_worker or args.embedding_worker:
+                parser.error("prospective arms and components come only from frozen input")
+            if args.harness != "claude" or args.wording != "task" or not args.model or not args.reasoning_effort:
+                parser.error("prospective execution requires Claude, explicit model, exact task wording")
+            if args.distractors != 0:
+                parser.error("prospective execution requires --distractors 0; never silently grow the corpus")
+            if args.reasoning_effort not in {"low", "medium", "high", "xhigh", "max"}:
+                parser.error("unsupported prospective Claude effort")
+        else:
+            args.arms = args.arms if args.arms is not None else ["none", "direct"]
+            args.reasoning_effort = args.reasoning_effort or "high"
+        if args.timeout <= 0 or args.parallel <= 0 or args.seeds <= 0 or args.first_seed < 0:
+            parser.error("invalid execution limits")
         labels = [s.split(":", 1)[0] for s in args.memory]
         if len(labels) != len(set(labels)) or set(labels) & {"none", "direct"}:
             parser.error("memory labels must be unique and must not use none/direct")

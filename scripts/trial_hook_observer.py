@@ -7,6 +7,9 @@ it never reads a later state file and attributes it to an earlier invocation.
 """
 import argparse
 import copy
+import contextlib
+import hashlib
+import io
 import fcntl
 import importlib.util
 import json
@@ -42,14 +45,23 @@ def main():
     record = dict(schema='cairn.task-hook-observation/1', event=None, source=None,
                   recall_attempted=False, recall=None, exit_code=None)
     recall_status = None
+    record['memory_call_attempts'] = None
+    if hasattr(engine, 'Memory') and hasattr(engine.Memory, 'call'):
+        counts = {key: 0 for key in ('search', 'pull', 'pull-evidence', 'history', 'other')}
+        record['memory_call_attempts'] = counts
+        original_call = engine.Memory.call
+        def observed_call(memory, operation, *args, **kwargs):
+            counts[operation if operation in counts else 'other'] += 1
+            return original_call(memory, operation, *args, **kwargs)
+        engine.Memory.call = observed_call
 
-    def observed_handle(config, event):
+    def observed_handle(config, event, **kwargs):
         name, source = event.get('hook_event_name'), event.get('source')
         record.update(event=name if name in ('SessionStart', 'UserPromptSubmit', 'PostToolUse',
                                             'PostToolUseFailure', 'PreCompact', 'SessionEnd', 'Stop') else 'unknown',
                       source=source if source in (None, 'startup', 'resume', 'compact', 'clear') else 'other')
         try:
-            return handle(config, event)
+            return handle(config, event, **kwargs)
         finally:
             if recall_status is not None:
                 record['recall'] = copy.deepcopy({k: recall_status[k] for k in RECALL_FIELDS if k in recall_status})
@@ -70,10 +82,15 @@ def main():
 
     engine.handle, engine.recall = observed_handle, observed_recall
     sys.argv = [str(args.engine), '--config', str(args.config)]
+    captured = io.StringIO()
     try:
-        record['exit_code'] = engine.main()
+        with contextlib.redirect_stdout(captured):
+            record['exit_code'] = engine.main()
         return record['exit_code']
     finally:
+        raw = captured.getvalue()
+        record['stdout_bytes'] = len(raw.encode())
+        record['stdout_sha256'] = hashlib.sha256(raw.encode()).hexdigest()
         record['process_seconds'] = time.monotonic() - started
         # Multiple host hooks can finish concurrently. A partial write or disk
         # failure must remain visible instead of silently losing measurements.
@@ -81,6 +98,8 @@ def main():
             fcntl.flock(output, fcntl.LOCK_EX)
             output.write(json.dumps(record, separators=(',', ':')) + '\n')
             output.flush()
+        sys.stdout.write(raw)
+        sys.stdout.flush()
 
 
 if __name__ == '__main__':

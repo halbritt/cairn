@@ -78,7 +78,7 @@ class SchedulingTest(unittest.TestCase):
             out = Path(directory) / "results"
             with patch.object(te, "run_agent", side_effect=attempt), patch.object(
                     te, "run", return_value=Mock(stdout=b"offline provider")), contextlib.redirect_stdout(io.StringIO()):
-                code = te.main(["agent", "--output", str(out), "--arms", "none", "--parallel", "1",
+                code = te.main(["agent", "--legacy-fixtures", "--output", str(out), "--arms", "none", "--parallel", "1",
                                 "--cases", "db-coverage", "deploy-stamp", "local-ci", "rhumb-ci-scope"])
             report = json.loads((out / "agent.json").read_text())
             plan = json.loads((out / "plan.json").read_text())
@@ -118,7 +118,7 @@ class SchedulingTest(unittest.TestCase):
             out = Path(directory) / "results"
             with patch.object(te, "run_agent", side_effect=attempt), patch.object(
                     te, "run", return_value=Mock(stdout=b"offline provider")), patch("builtins.print", side_effect=output):
-                code = te.main(["agent", "--output", str(out), "--arms", "none", "--parallel", "2",
+                code = te.main(["agent", "--legacy-fixtures", "--output", str(out), "--arms", "none", "--parallel", "2",
                                 "--cases", "db-coverage", "deploy-stamp", "local-ci", "rhumb-ci-scope"])
             report = json.loads((out / "agent.json").read_text())
         self.assertEqual(code, 2)
@@ -141,7 +141,7 @@ class SchedulingTest(unittest.TestCase):
             out = Path(directory) / "results"
             with patch.object(te, "run_agent", side_effect=attempt), patch.object(
                     te, "run", return_value=Mock(stdout=b"offline provider")), contextlib.redirect_stdout(io.StringIO()):
-                code = te.main(["agent", "--output", str(out), "--arms", "none", "--parallel", "1",
+                code = te.main(["agent", "--legacy-fixtures", "--output", str(out), "--arms", "none", "--parallel", "1",
                                 "--cases", "db-coverage", "deploy-stamp", "local-ci"])
             report = json.loads((out / "agent.json").read_text())
         self.assertEqual(code, 0)
@@ -164,7 +164,7 @@ class SchedulingTest(unittest.TestCase):
             out = Path(directory) / "results"
             with patch.object(te, "run_agent", side_effect=attempt), patch.object(
                     te, "run", return_value=Mock(stdout=b"offline provider")), contextlib.redirect_stdout(io.StringIO()):
-                code = te.main(["agent", "--output", str(out), "--arms", "none", "--parallel", "1",
+                code = te.main(["agent", "--legacy-fixtures", "--output", str(out), "--arms", "none", "--parallel", "1",
                                 "--cases", "db-coverage", "deploy-stamp"])
             report = json.loads((out / "agent.json").read_text())
         self.assertEqual(launched, ["db-coverage"])
@@ -191,7 +191,7 @@ class SchedulingTest(unittest.TestCase):
                     patch.object(te, "cairn_json", return_value={"revision": "fixture"}), \
                     patch.object(te, "run", return_value=Mock(stdout=b"offline provider")), \
                     contextlib.redirect_stdout(io.StringIO()):
-                code = te.main(["agent", "--output", str(out), "--arms", "--memory", f"baseline:/bin/true:{hook}",
+                code = te.main(["agent", "--legacy-fixtures", "--output", str(out), "--arms", "--memory", f"baseline:/bin/true:{hook}",
                                 "--parallel", "1", "--cases", "db-coverage", "deploy-stamp"])
             report = json.loads((out / "agent.json").read_text())
         self.assertEqual(code, 2)

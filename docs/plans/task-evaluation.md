@@ -109,7 +109,7 @@ paired plan with another provider or effort is rejected.
 For example, after choosing an available model:
 
 ```sh
-python3 scripts/trial_task_eval.py agent --harness codex --model MODEL \
+python3 scripts/trial_task_eval.py agent --legacy-fixtures --harness codex --model MODEL \
   --output OUT/codex --arms none direct --cases local-ci --parallel 1
 ```
 
@@ -177,7 +177,7 @@ directory and is not committed.
    bash scripts/trial-task-eval.sh retrieval --output OUT/ret-LABEL --cairn BIN \
      --hook SRC/integrations/lifecycle/memory.py --label LABEL --sizes 0 60 1900 8000 \
      --semantic-worker ~/.local/share/cairn/semantic/worker-stream
-   bash scripts/trial-task-eval.sh agent --output OUT/agent --arms none direct \
+   bash scripts/trial-task-eval.sh agent --legacy-fixtures --output OUT/agent --arms none direct \
      --memory baseline:BASE_BIN:BASE_SRC/integrations/lifecycle/memory.py \
      --memory candidate:CAND_BIN:CAND_SRC/integrations/lifecycle/memory.py \
      --distractors 1900 --model sonnet --seeds 3
@@ -294,3 +294,136 @@ controller to inspect the already retained native stream for the stop signal;
 unreadable or malformed evidence is reported, not treated as a confirmed cap.
 The complete pre-run plan remains unchanged. Reports describe a partial campaign,
 not a completed paired comparison. Store cleanup retains its existing owner.
+
+## Prospective native input (CAIRN-120)
+
+New `agent` executions must choose `--prospective-input DIR` or explicitly
+`--legacy-fixtures`. The latter preserves the historical reader/executor path;
+it does **not** authorize replaying a closed campaign. Frozen historical files
+and reports are unchanged.
+
+The prospective path reuses `run_agent`, `TrialStore`, the existing disposable
+PostgreSQL wrapper, graders and `cairn.task-eval.agent/1` reports. It currently
+supports one ordinary Claude prompt per case. It does not resume conversations,
+publish inbox work or invent an admitted delivery. Codex, interactive correction
+turns, automatic hosted selector arms and unknown input fields are refused.
+Include **all already-known issue corrections** in the exact `wordings.task`;
+no summarizer shortens it. This integration is not task-benefit evidence.
+
+### Freeze new inputs
+
+A reviewed directory contains `input.json`, `corpus.json` and
+`workspaces/NAME/setup.sh` plus source files. `input.json` uses schema
+`cairn.task-eval.input/1` with:
+
+- `baseline_commit`: full baseline API revision, distinct from the workspace
+  revision. A memory arm named `baseline` must have this API revision.
+- `native`: `binary: {path, sha256}`, exact `model`, and explicit `effort`.
+- `arms`: ordered names, and `memory_arms`: configuration for every name except
+  explicitly chosen `none`/`direct`. These controls never replace the original
+  baseline by inference. Each memory arm supplies `binary` and `hook` descriptors
+  (`{path, sha256}`), `api_revision`, `recall_revision`, `recall_mode` (`ambient`
+  or `agent_tools`), and boolean `semantic_fallback`. `agent_tools` also requires
+  a pinned `bridge` descriptor. Semantic discovery requires a pinned
+  `embedding_worker` launcher; its adjacent dependencies/models remain an
+  operator verification obligation. Binary identity must report the declared
+  revision and an unmodified build. Recall revision is provenance; its actual
+  bytes are checked by the hook digest.
+- `corpus_policy`: an object with a nonempty `description` plus chosen selection,
+  eligibility and provenance details. No note-kind filter is inferred. This is
+  where the prospective natural-cohort rule belongs, before reading outcomes.
+- `cases`: existing case/check vocabulary, but exactly one `wordings.task` and
+  a nonempty `preflight` list of argv lists. `workspace`, `copy_to` and `cwd` are
+  contained relative paths; symlinks are refused. Optional `workspace_commit`
+  is checked after setup. Otherwise the manifest attests source bytes, not a
+  claimed repository HEAD. Setup/grader/preflight commands are trusted operator
+  code, never untrusted agent output. `category`, `provenance`, `expected`,
+  `correct` and `mistake` retain their existing meanings; empty expected guidance
+  is legitimate and is not a positive task-benefit claim.
+
+`corpus.json` is `{ "notes": [...] }`. Every note has `id`, `body`, `kind`;
+optional fields are `shareable`, `repo`, `supersede_with` and `provenance`.
+Lessons and other supported ordinary-note kinds are accepted without filtering.
+This representation creates fresh A records/version1 and keeps an import map;
+it does not recreate historical authority. Unsupported pins, entities, citations
+or authority fields are refused, not silently flattened. Declare exclusions in
+corpus policy; do not add expected-ID notes or refill after seeing rankings.
+
+```sh
+python3 scripts/trial_task_eval.py freeze-input --input /absolute/fresh-input
+scripts/trial-task-eval.sh agent --prospective-input /absolute/fresh-input \
+  --output /absolute/new-output --model EXACT_MODEL --reasoning-effort high \
+  --distractors 0 --parallel 1
+```
+
+Freezing is exclusive and makes no provider call. Execution verifies every input
+file and component, snapshots the bundle into the new output directory, and
+uses no historical overlays or generated distractors. Inputs with the selected
+model/effort differing from the frozen native contract refuse before launch.
+All arms seed the same supplied cohort serially. Per-case prerequisites run in
+the task runtime before its provider launch; a Go module additionally gets
+`go version` and `go list ./...` with `GOTOOLCHAIN=local`. Require task-specific
+build/dependency checks in `preflight`: the tiny capability smoke does not prove
+that an arbitrary repository builds. Failed prerequisites remain recorded and
+are never replaced by successful model assertions. Python tasks can use the
+existing `python3 -m pytest` and `python3 -m ruff` permission route, with explicit
+interpreter/module/version checks in `preflight`. Bare `pytest`, `ruff` and
+virtual-environment executable paths are not in the native allowlist; do not
+assume a successful out-of-model prerequisite grants them native permission.
+
+### Permissions and measurements
+
+Prospective Claude uses the reviewed explicit local toolchain/read/edit allowlist,
+`--permission-prompts none`, empty inherited setting sources, disabled auto-memory,
+no production MCP and no capture hooks. Account auth is mounted read-only. Native
+safety checks remain active; a broad allowed Python command is **not** a hostile
+code sandbox. Provider networking has the existing sandbox's documented limits.
+Native denial metadata retains fixed categories, counts and validated tool IDs,
+not arbitrary command/error strings. Pending/background Bash acknowledgments
+cannot satisfy successful `tool_output` checks. Fixed authentication/quota stop
+metadata is saved before grading, so a grading exception cannot admit more tasks
+after a confirmed provider stop. This record contains no provider error text.
+
+Ambient baseline configuration remains explicit. For a supported current
+`agent_tools` arm the existing ordinary Claude bound-memory path gets an owned,
+pinned, otherwise unused coordinator descriptor. No coordinator hook or durable
+inbox admission is fabricated. This is ordinary task execution, not an inbox
+bridge effectiveness test.
+
+The prospective measurement contract is fixed at 9,500 selected input bytes,
+5 seconds per hook, 30 seconds from native process start to its last native Cairn
+result, two native searches and four actual body-inspection calls including
+hook pulls. Hook searches are recorded separately. Positive-version history
+reads count as body inspection; metadata history does not. Error envelopes,
+repeated results and required context after compaction count again. Initial
+hook room subtracts the full prompt envelope, common memory instruction and a
+512-byte framing reserve. No allowance is inferred from model context capacity.
+
+The observer consumes the stream in memory, retaining selected timings/digests,
+permission metadata, hook wire counts, technical grades and task artifacts.
+No prospective raw native stream/reasoning or raw stderr is retained. Native
+hook start/response metadata must match per-invocation observations, including
+later compact/resume callbacks; missing, malformed or unmatched evidence is
+unknown, never zero. Native reported model is checked against the frozen model.
+These selected counts are conservative observable context accounting, **not**
+provider-wire attestation or the full model window (system/tool schemas and
+ordinary source exploration remain outside this selected task/memory measure).
+A byte/time/call/permission failure remains separate from task correctness: the
+engineering task may finish, but the report's measurement fails. Unknown or
+failed measurement returns nonzero. No-memory-attempt is explicit, not successful
+retrieval or proof of usefulness.
+
+Only executor-created disposable stores are fingerprinted. The semantic/content
+projection excludes `memory_record.use_generation`, while a separate operational
+hash retains its changes; versions, bodies, applicability, entities, lifecycle,
+sensitivity and relations remain covered. Unreviewed memory-record columns
+refuse. This is a five-table corpus check, not a complete DB/security snapshot or
+proof that no intermediate mutation occurred. Store routing never falls back to
+production. First failures and before/after stamps remain evidence; no reseeding
+or retrospective repair of older invalidated reports occurs.
+
+CAPLAB `retrieval import-task` continues to accept the unchanged report schema,
+original plan and frozen `output/input/corpus.json`. It retains original grades
+and memory measurements. Because no raw prospective stream exists, its
+stream-derived delivery is **missing/unknown**, not observed zero; parser replay
+cannot manufacture that evidence. Historical reports/streams remain readable.
