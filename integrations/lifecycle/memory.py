@@ -820,8 +820,12 @@ def codex_agent_context(memory, event, result, budget, status, deadline):
                 and not taskless_notification(event.get("prompt", "")))
     turn = event.get("turn_id")
     eligible = bool(ordinary and native_uuid(turn))
+    status["native_turn_input"] = ("startup" if event["hook_event_name"] != "UserPromptSubmit"
+                                   else "taskless_prompt" if not ordinary
+                                   else "eligible" if eligible else "missing_or_invalid_turn")
     if eligible and turn in ledger["turns"] and turn != ledger["active_turn_id"]:
         eligible = False  # Retired IDs never reopen or replace the current epoch.
+        status["native_turn_input"] = "retired_turn"
     if eligible:
         if turn not in ledger["turns"]:
             startup = ledger["pending"]

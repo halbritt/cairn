@@ -73,10 +73,12 @@ class CodexTurnBudgetTests(unittest.TestCase):
         state_path = Path(self.config['state_dir']) / (self.event['session_id'] + '.json')
         status = json.loads(state_path.read_text())['last_recall']
         self.assertEqual(status['hook_event_name'], 'SessionStart')
+        self.assertEqual(status['native_turn_input'], 'startup')
         self.assertEqual(status['optional_deferred'], 'native_turn_unbound')
         submitted = self.text(self.invoke())
         status = json.loads(state_path.read_text())['last_recall']
         self.assertEqual(status['hook_event_name'], 'UserPromptSubmit')
+        self.assertEqual(status['native_turn_input'], 'eligible')
         view = json.loads(submitted[submitted.index('{"selected":'):])
         self.assertEqual(view['selected'], self.selected)
         self.assertLessEqual(len(startup.encode()) + len(submitted.encode()) +
@@ -100,12 +102,17 @@ class CodexTurnBudgetTests(unittest.TestCase):
 
     def test_missing_invalid_turn_or_taskless_wake_never_opens_grant(self):
         from test_startup_recall import notification
+        state_path = Path(self.config['state_dir']) / (self.event['session_id'] + '.json')
         for value in (None, '', 'not-a-turn', True, [], self.event['turn_id'].replace('-', '')):
             with self.subTest(turn=value):
                 self.assertEqual(self.text(self.invoke(turn_id=value)), '')
                 self.assertEqual(self.ledger()['turns'], {})
+                self.assertEqual(json.loads(state_path.read_text())['last_recall']['native_turn_input'],
+                                 'missing_or_invalid_turn')
         self.assertEqual(self.text(self.invoke(prompt=notification(), workstream='Explicit topic')), '')
         self.assertEqual(self.ledger()['turns'], {})
+        self.assertEqual(json.loads(state_path.read_text())['last_recall']['native_turn_input'],
+                         'taskless_prompt')
         self.assertIn('remaining_memory_bytes', self.text(self.invoke()))
 
     def test_different_turn_has_own_grant_but_old_turn_cannot_refresh(self):
