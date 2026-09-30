@@ -52,6 +52,26 @@ For a smaller allowance on one search, supply
 [`available_tokens`](search-room.md). It may lower the startup `--tokens` ceiling
 without changing subsequent calls. Repeat the allowance on retries and pages.
 
+To allocate less memory than the available input context, also supply
+`memory_budget_bytes`. For example, if 24,000 conservative UTF-8 bytes of input
+room are available, `available_tokens: 24000` with `memory_budget_bytes: 7800`
+keeps the existing optional-policy ceiling of 2,400 accounted preview bytes,
+while limiting the search receipt and its expansions to the smaller allowance.
+This can expose multiple complete preview handles without automatically pulling
+their bodies. It does not guarantee relevance or room for a particular body.
+
+The memory allowance must be between 256 and `available_tokens`; omission keeps
+the existing behavior. Repeat both values on retries and pages. Do not declare
+the model's maximum window as available room: allow for the current prompt,
+tools, conversation and output first. If the actual room is unknown, use the
+remaining memory allowance for both values. An older tool may not expose the
+new argument; in that case use the existing smaller `available_tokens` request.
+Never retry an unsupported new argument by silently dropping its cap while
+keeping the larger context declaration.
+
+Each receipt has its own budget. The agent still accounts for lifecycle context,
+other receipts, retries and error messages in the task's aggregate allowance.
+
 ## Command help
 
 Inspect the installed connection and configuration flags without credentials or a

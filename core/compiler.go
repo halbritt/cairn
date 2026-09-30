@@ -36,6 +36,7 @@ type CompileRequest struct {
 	Query             string       `json:"query"`
 	Purpose           string       `json:"purpose"`
 	AvailableTokens   int          `json:"available_tokens"`
+	MemoryBudgetBytes *int         `json:"memory_budget_bytes,omitempty"`
 }
 
 // Destination comes from trusted host configuration, never request JSON.
@@ -54,6 +55,7 @@ type Selection struct {
 	Reason    string             `json:"reason"`
 }
 type SemanticPackage struct {
+	MemoryBudget      *MemoryBudget     `json:"memory_budget,omitempty" cbor:"memory_budget,omitempty"`
 	AdvisoryConflicts bool              `json:"advisory_conflicts,omitempty" cbor:"advisory_conflicts,omitempty"`
 	EntitiesSHA256    string            `json:"entities_sha256,omitempty" cbor:"entities_sha256,omitempty"`
 	ErrorSignature    string            `json:"error_signature_sha256,omitempty" cbor:"error_signature_sha256,omitempty"`
@@ -154,6 +156,9 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	}
 	if len(req.Query) > 4096 || req.AvailableTokens < 256 || req.AvailableTokens > 1000000 {
 		return Package{}, failure("INVALID_REQUEST", "query or context budget outside limits")
+	}
+	if req.MemoryBudgetBytes != nil && (req.Mode != "index" || req.Purpose != "context" || *req.MemoryBudgetBytes < 256 || *req.MemoryBudgetBytes > req.AvailableTokens) {
+		return Package{}, failure("INVALID_REQUEST", "memory_budget_bytes requires a context index and 256..available_tokens bytes")
 	}
 	switch req.Purpose {
 	case "context", "planning", "placement", "capability", "security":
@@ -297,6 +302,9 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileRequest, dest Destination, evaluations map[string]*CandidateEvaluation) (SemanticPackage, []candidate, error) {
 	queryDigest := sha256.Sum256([]byte(req.Query))
 	p := SemanticPackage{Context: req.Context, Schema: "cairn.semantic/3", Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/4", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
+	if req.MemoryBudgetBytes != nil {
+		p.MemoryBudget = &MemoryBudget{Schema: "cairn.memory-budget/1", Bytes: *req.MemoryBudgetBytes}
+	}
 	literals := queryLiterals(req.Query)
 	if len(literals) > 0 {
 		p.Ranking = "lexical-scope-recency/5"

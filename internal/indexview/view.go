@@ -55,7 +55,7 @@ func Present(result core.IndexResult, request string, command []string, room int
 		}
 		pull := core.ExpandRequest{RequestID: uuid.NewString(), ReceiptID: result.Package.ReceiptID, Handle: handle}
 		var pullCommand string
-		if len(command) != 0 {
+		if len(command) != 0 && result.Package.Semantic.MemoryBudget == nil {
 			argv := append(append([]string{}, command...), "pull", "--request-id", pull.RequestID, pull.ReceiptID, pull.Handle)
 			pullCommand = ShellCommand(argv)
 		}

@@ -88,6 +88,9 @@ func readPackage(ctx context.Context, tx pgx.Tx, receiptID string) (Package, err
 	if seal != p.Seal {
 		return p, failure("INTEGRITY_FAILURE", "stored package does not reproduce its seal")
 	}
+	if err = validateMemoryBudget(p.Semantic); err != nil {
+		return p, err
+	}
 	return p, nil
 }
 

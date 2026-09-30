@@ -51,10 +51,21 @@ the cue was offered, not that relevant memory was found or used.
 The cue allows at most two searches per task (precise first, a semantic rephrase
 only if needed) and four pull/span calls total. Its aggregate budget is the
 configured `context_bytes`, counting the supplied lifecycle context plus all
-native search/pull result text and envelopes. Search room must fit the remainder.
+native search/pull result text and envelopes. With a search tool that exposes
+`memory_budget_bytes`, set that field to the remaining memory allowance. The
+existing `available_tokens` field supplies the separate available input-context
+room used by optional-memory policy. It is not the model's maximum context
+window; if the task agent cannot establish its free input room, use the remaining
+memory allowance for both fields. Older tools accept only `available_tokens`;
+keep that within the remaining memory allowance. Do not send an unsupported
+field or increase the declared context room just to obtain more candidates.
+
+The explicit memory budget bounds one search receipt and its expansions. It
+does not combine multiple receipts or count lifecycle context already supplied;
+the task agent must subtract all such deliveries before its next search.
 Required instructions stay whole: insufficient room means stop optional
-inspection and report the limitation, rather than truncate them. These are
-instructions to the agent, **not enforcement by the host**. Native receipts each
+inspection and report the limitation, rather than truncate them. The aggregate
+task and call limits are instructions to the agent, **not enforcement by the host**. Native receipts each
 have their own budgets; a new receipt does not reset this requested task allowance.
 A pilot must measure aggregate exposure and actual compliance across tool calls
 and turns. It must also measure task-model/tool work: `last_recall.duration_ms`

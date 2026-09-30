@@ -83,6 +83,26 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 	if req.Scope != scope || req.RequestID != requestID || req.Query != "fixture query" || req.AvailableTokens != 32000 || req.Context.Revision != "fixture-revision" || req.Context.TaskPhase != "validation" {
 		t.Fatalf("request changed: %+v", req)
 	}
+	if req.MemoryBudgetBytes != nil {
+		t.Fatal("omitted memory budget changed the legacy request")
+	}
+	t.Run("memory allowance forwarding and final envelope", func(t *testing.T) {
+		for _, room := range []int{8000, 256} {
+			_, err := run(context.Background(), []string{"agent", "--socket", socket, "--token-file", tokenFile,
+				"search", "--repo", scope.Repo, "--task", scope.TaskID, "--run", scope.RunID,
+				"--memory-budget-bytes", fmt.Sprint(room), "fixture query"}, strings.NewReader(""))
+			forwarded := <-requests
+			if forwarded.MemoryBudgetBytes == nil || *forwarded.MemoryBudgetBytes != room || forwarded.AvailableTokens != 32000 {
+				t.Fatalf("memory allowance changed policy context: %+v", forwarded)
+			}
+			if room == 8000 && err != nil {
+				t.Fatal(err)
+			}
+			if room == 256 && core.Code(err) != "BUDGET_REFUSED" {
+				t.Fatalf("oversized CLI view escaped memory cap: %v", err)
+			}
+		}
+	})
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)

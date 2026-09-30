@@ -196,11 +196,11 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 			p.Status = "SCOPE_EMPTY"
 		}
 		p = discoveryStatus(p)
-		rendered, err := (Package{Semantic: p}).Render()
+		cost, err := indexMemoryCost(p)
 		if err != nil {
 			return p, err
 		}
-		if len(rendered)+160*len(p.Index)+512 <= p.AvailableTokens {
+		if cost <= memoryRoom(p) {
 			break
 		}
 		if len(p.Index) == 0 {
@@ -228,11 +228,11 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 	return p, nil
 }
 func createIndexSession(ctx context.Context, tx pgx.Tx, id string, p SemanticPackage, reader string) error {
-	rendered, err := (Package{Semantic: p}).Render()
+	cost, err := indexMemoryCost(p)
 	if err != nil {
 		return err
 	}
-	budget := min(24000, max(0, p.AvailableTokens-len(rendered)-160*len(p.Index)-512))
+	budget := min(24000, max(0, memoryRoom(p)-cost))
 	if _, err = tx.Exec(ctx, `INSERT INTO cairn.index_session(receipt_id,remaining_bytes,expansion_reader) VALUES($1,$2,NULLIF($3,''))`, id, budget, reader); err != nil {
 		return err
 	}
@@ -314,6 +314,7 @@ type Expansion struct {
 }
 
 type expansionState struct {
+	memoryBudget       *MemoryBudget
 	competing          []Selection
 	selection          Selection
 	credits, remaining int
@@ -361,6 +362,9 @@ func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandReque
 	}
 	if original.Mode != "index" || original.Destination != dest {
 		return failure("AUTHORITY_DENIED", "expansion destination differs from indexed destination")
+	}
+	if err = validateMemoryBudget(original); err != nil {
+		return err
 	}
 	var id string
 	var version int
@@ -435,7 +439,7 @@ func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandReque
 	sortSelections(companions)
 	// The queryless recheck establishes eligibility, not the original ranking.
 	selection.Reason = "indexed record; current eligibility revalidated"
-	*state = expansionState{selection: selection, competing: companions, credits: credits, remaining: remaining}
+	*state = expansionState{memoryBudget: original.MemoryBudget, selection: selection, competing: companions, credits: credits, remaining: remaining}
 	return nil
 }
 
@@ -507,7 +511,10 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 		if err != nil {
 			return Expansion{}, err
 		}
-		cost := len(encoded) + 256
+		cost, err := expansionMemoryCost(encoded, state.memoryBudget)
+		if err != nil {
+			return Expansion{}, err
+		}
 		if credits <= 0 || cost > remaining {
 			return Expansion{}, failure("BUDGET_REFUSED", "expansion credits or remaining context bytes exhausted")
 		}

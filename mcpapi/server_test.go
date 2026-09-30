@@ -95,7 +95,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 	if !reflect.DeepEqual(names, []string{"cairn_assess", "cairn_assessments", "cairn_edit", "cairn_history", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_search"}) {
 		t.Fatal(names)
 	}
-	invoke := func(name string, args any, wantError string) json.RawMessage {
+	invokeMeasured := func(name string, args any, wantError string) (json.RawMessage, int) {
 		t.Helper()
 		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 		if err != nil {
@@ -108,7 +108,16 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		if result.IsError != (wantError != "") || (wantError != "" && !strings.Contains(body, wantError)) {
 			t.Fatalf("%s: %+v %s", name, result, body)
 		}
-		return json.RawMessage(body)
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return json.RawMessage(body), len(encoded)
+	}
+	invoke := func(name string, args any, wantError string) json.RawMessage {
+		t.Helper()
+		body, _ := invokeMeasured(name, args, wantError)
+		return body
 	}
 	{
 		var found searchResult
@@ -193,6 +202,84 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		}
 		args["request_id"], args["available_tokens"] = uuid.NewString(), 256
 		invoke(args, "BUDGET_REFUSED")
+	})
+	t.Run("memory budget", func(t *testing.T) {
+		const memoryAllowance = 7800
+		budgetServer, err := NewServer(client, Config{Scope: core.Scope{Repo: repo, TaskID: "memory-budget", RunID: "attempt"}, AvailableTokens: 64000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		originalSession := session
+		session = connect(t, ctx, budgetServer)
+		defer func() { session = originalSession }()
+		for i := range 3 {
+			invoke("cairn_remember", map[string]any{"request_id": uuid.NewString(), "shareable": true, "scope": "task",
+				"body": fmt.Sprintf("allocationneedle %d: ", i) + strings.Repeat("guidance ", 18) + "café 日本語 " + strings.Repeat("\"\\\n\t", 40)}, "")
+		}
+		var narrow searchResult
+		if err := json.Unmarshal(invoke("cairn_search", map[string]any{"query": "allocationneedle", "available_tokens": memoryAllowance}, ""), &narrow); err != nil || len(narrow.Index) != 1 {
+			t.Fatalf("small context baseline: %+v %v", narrow, err)
+		}
+		args := map[string]any{"query": "allocationneedle", "available_tokens": 24000,
+			"memory_budget_bytes": memoryAllowance, "request_id": uuid.NewString()}
+		body, searchBytes := invokeMeasured("cairn_search", args, "")
+		var bounded searchResult
+		if err := json.Unmarshal(body, &bounded); err != nil || len(bounded.Index) < 2 || bounded.OptionalLimit != 2400 || searchBytes > memoryAllowance {
+			t.Fatalf("separate context and memory allowance: %s %v", body, err)
+		}
+		if len(bounded.Selected) != 1 || bounded.Selected[0].Record.RecordID != mandatory.RecordID || bounded.Selected[0].Record.Body != mandatory.Body {
+			t.Fatal("bounded search changed whole mandatory context")
+		}
+		var repeated searchResult
+		if err := json.Unmarshal(invoke("cairn_search", args, ""), &repeated); err != nil || repeated.ReceiptID != bounded.ReceiptID || repeated.SourceSeal != bounded.SourceSeal || repeated.BytesRemaining != bounded.BytesRemaining {
+			t.Fatal("bounded retry changed receipt accounting")
+		}
+		pulled, pullBytes := invokeMeasured("cairn_pull", bounded.Index[0].PullArguments, "")
+		var expanded core.Expansion
+		if err := json.Unmarshal(pulled, &expanded); err != nil || !strings.Contains(expanded.Selection.Record.Body, "日本語") || expanded.BytesRemaining >= bounded.BytesRemaining || searchBytes+pullBytes > memoryAllowance {
+			t.Fatalf("actual search and pull exceed their memory allowance or lost content: search=%d pull=%d expansion=%+v err=%v", searchBytes, pullBytes, expanded, err)
+		}
+		chargedResults := searchBytes + pullBytes
+		t.Logf("bounded receipt: previews=%d search=%d first_pull=%d remaining=%d", len(bounded.Index), searchBytes, pullBytes, expanded.BytesRemaining)
+		for range 3 {
+			pull := bounded.Index[0].PullArguments
+			pull.RequestID = uuid.NewString()
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_pull", Arguments: pull})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.IsError {
+				if len(result.Content) != 1 || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "BUDGET_REFUSED") {
+					t.Fatalf("unexpected refusal: %+v", result)
+				}
+				break
+			}
+			encoded, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			chargedResults += len(encoded)
+			t.Logf("successful result envelopes so far: %d", chargedResults)
+			if chargedResults > memoryAllowance {
+				t.Fatalf("successful search/pull envelopes exceeded memory allowance: %d > memoryAllowance", chargedResults)
+			}
+		}
+		args["memory_budget_bytes"] = memoryAllowance + 1
+		invoke("cairn_search", args, "IDEMPOTENCY_CONFLICT")
+		delete(args, "memory_budget_bytes")
+		invoke("cairn_search", args, "IDEMPOTENCY_CONFLICT")
+		for _, invalid := range []any{0, -1, 255, 24001, 300.5, "6000", true} {
+			args["request_id"], args["memory_budget_bytes"] = uuid.NewString(), invalid
+			invoke("cairn_search", args, "memory_budget_bytes")
+			args["memory_budget_bytes"] = memoryAllowance
+			invoke("cairn_search", args, "") // Invalid input must not reserve the request UUID.
+		}
+		args["request_id"], args["memory_budget_bytes"] = uuid.NewString(), 256
+		invoke("cairn_search", args, "BUDGET_REFUSED")
+		var defaultRoom searchResult
+		if err := json.Unmarshal(invoke("cairn_search", map[string]any{"query": "allocationneedle"}, ""), &defaultRoom); err != nil || defaultRoom.AvailableTokens != 64000 {
+			t.Fatalf("memory cap leaked into later default search: %+v %v", defaultRoom, err)
+		}
 	})
 	t.Run("append", func(t *testing.T) {
 		original := "Preserved instructions.\r\n日本語  "

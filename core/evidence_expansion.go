@@ -103,7 +103,10 @@ func (s *Store) ExpandEvidence(ctx context.Context, req ExpandEvidenceRequest, d
 		if err != nil {
 			return EvidenceExpansion{}, err
 		}
-		cost := len(encoded) + 256
+		cost, err := expansionMemoryCost(encoded, state.memoryBudget)
+		if err != nil {
+			return EvidenceExpansion{}, err
+		}
 		if state.credits <= 0 || cost > state.remaining {
 			return EvidenceExpansion{}, failure("BUDGET_REFUSED", "expansion credits or remaining context bytes exhausted")
 		}
