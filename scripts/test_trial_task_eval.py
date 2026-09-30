@@ -124,7 +124,7 @@ class FixtureTest(unittest.TestCase):
                                   first_seed=0, seeds=1, paired_plan=[], arms=[], reasoning_effort=None,
                                   semantic_worker=None, embedding_worker=None, distractors=0,
                                   memory=["baseline:/bin/true:/tmp/memory.py", "candidate:/bin/true:/tmp/memory.py"],
-                                  semantic_recall=[], selector_model="sonnet")
+                                  semantic_recall=[], selector_model="sonnet", cold_readiness_timeout=1800)
         first, second = Mock(), Mock()
         second.start.side_effect = RuntimeError("second API failed")
         with tempfile.TemporaryDirectory() as directory:
