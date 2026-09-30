@@ -195,7 +195,10 @@ the Cairn checkout root and receives `CAIRN_TASK_EVAL_PG` (the private socket
 directory) and `CAIRN_TASK_EVAL_PG_BIN` (the PostgreSQL tools directory). Its
 arguments and exit status are preserved, including when PostgreSQL has already
 crashed. A cleanup failure after an otherwise successful command returns nonzero;
-if PostgreSQL remains alive, its directory is retained and the error names it.
+if PostgreSQL remains alive or `pg_ctl status` cannot establish whether it is
+running, its directory is retained and the error names it. Only status 3 means
+not running; status 4 (inaccessible data) and other command failures do not
+authorize removing the directory.
 When cleanup succeeds, the wrapper removes its cluster. Without a leading `--`,
 the native evaluator remains the default. This lets CAPLAB supply its own corpus
 and measurement procedure while reusing the existing cluster lifecycle.

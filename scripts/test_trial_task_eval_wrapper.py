@@ -7,6 +7,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -102,6 +103,48 @@ time.sleep(60)
         self.assertEqual(done.returncode, 2)
         self.assertIn("COMMAND", done.stderr)
         self.assertNotIn("initdb", done.stderr)
+
+    def test_unknown_postgres_status_preserves_directory_and_command_failure(self):
+        # Exercise pg_ctl's status contract without risking deletion of a live
+        # cluster in the red regression. Normal cleanup uses real PG above.
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory)
+            initdb = bin_dir / "initdb"
+            initdb.write_text("#!/bin/sh\nmkdir -p \"$2\"\n")
+            initdb.chmod(0o700)
+            ctl = bin_dir / "pg_ctl"
+            ctl.write_text("#!" + sys.executable + "\n" + r'''
+import json, os, pathlib, sys
+args = sys.argv[1:]
+data = pathlib.Path(args[args.index('-D') + 1])
+if 'start' in args:
+    (data / 'postmaster.pid').write_text('fixture-only-no-process\n')
+    sys.exit(0)
+if 'stop' in args:
+    sys.exit(1)
+counter = pathlib.Path(os.environ['FIXTURE_STATUS_COUNTER'])
+n = int(counter.read_text()) if counter.exists() else 0
+counter.write_text(str(n + 1))
+codes = json.loads(os.environ['FIXTURE_STATUS_CODES'])
+sys.exit(codes[min(n, len(codes)-1)])
+''')
+            ctl.chmod(0o700)
+            for codes, command_status in (([4], 0), ([1], 37), ([0, 4], 0)):
+                with self.subTest(codes=codes, command_status=command_status):
+                    counter = bin_dir / "counter"
+                    counter.unlink(missing_ok=True)
+                    env = dict(os.environ, CAIRN_PG_BIN=str(bin_dir),
+                               FIXTURE_STATUS_COUNTER=str(counter),
+                               FIXTURE_STATUS_CODES=json.dumps(codes))
+                    payload = "import os,pathlib,sys; print(pathlib.Path(os.environ['CAIRN_TASK_EVAL_PG']).parent); sys.exit(int(sys.argv[1]))"
+                    done = subprocess.run(["bash", str(WRAPPER), "--", sys.executable,
+                                           "-c", payload, str(command_status)], env=env,
+                                          capture_output=True, text=True, timeout=10)
+                    root = Path(done.stdout.strip())
+                    self.addCleanup(shutil.rmtree, root, True)
+                    self.assertTrue(root.is_dir(), "unknown server status deleted its directory")
+                    self.assertEqual(done.returncode, command_status or 1, done.stderr)
+                    self.assertIn("cleanup failed", done.stderr)
 
 
 if __name__ == "__main__":

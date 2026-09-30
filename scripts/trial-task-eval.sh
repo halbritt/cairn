@@ -15,15 +15,22 @@ pg_bin="${CAIRN_PG_BIN:-$(pg_config --bindir)}"
 trial_db_root="$(mktemp -d /tmp/cairn-task-eval-pg.XXXXXXXX)"
 cleanup() {
     local status=$?
+    local pg_status=3
     trap - EXIT
     set +e
-    if [[ -f "$trial_db_root/data/postmaster.pid" ]] && \
-            "$pg_bin/pg_ctl" -D "$trial_db_root/data" status >/dev/null 2>&1; then
-        "$pg_bin/pg_ctl" -D "$trial_db_root/data" -m immediate -w stop >/dev/null
+    if [[ -f "$trial_db_root/data/postmaster.pid" ]]; then
+        "$pg_bin/pg_ctl" -D "$trial_db_root/data" status >/dev/null 2>&1
+        pg_status=$?
+        if (( pg_status == 0 )); then
+            "$pg_bin/pg_ctl" -D "$trial_db_root/data" -m immediate -w stop >/dev/null
+            "$pg_bin/pg_ctl" -D "$trial_db_root/data" status >/dev/null 2>&1
+            pg_status=$?
+        fi
     fi
-    if [[ -f "$trial_db_root/data/postmaster.pid" ]] && \
-            "$pg_bin/pg_ctl" -D "$trial_db_root/data" status >/dev/null 2>&1; then
-        printf 'cleanup failed: PostgreSQL still runs in %s\n' "$trial_db_root" >&2
+    # Only status 3 proves a checked server is not running. Inaccessible data
+    # (4) and command failures leave its state unknown; retain the directory.
+    if (( pg_status != 3 )); then
+        printf 'cleanup failed: PostgreSQL state unresolved (pg_ctl status %s); retained %s\n' "$pg_status" "$trial_db_root" >&2
         if (( status == 0 )); then status=1; fi
     elif ! rm -rf -- "$trial_db_root"; then
         printf 'cleanup failed: could not remove %s\n' "$trial_db_root" >&2
