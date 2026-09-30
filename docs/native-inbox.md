@@ -118,6 +118,11 @@ UUID or the inbox consumer. Preserve the account's original configuration
 environment when resuming: default Claude uses `~/.claude.json`; an explicit
 `CLAUDE_CONFIG_DIR` uses that directory's `.claude.json`.
 
+After a prior attempt settles, an exact fresh Claude channel wake can admit the
+next delivery even if the prior Stop was missed or belonged to another prompt.
+Active request ownership and joined-prompt rejection still apply; this does not
+permit resending an unobserved submitted or uncertain wake.
+
 When a delivery is ready for an idle conversation but no wake transport exists,
 the watcher logs one line per delivery and reason to the presence journal,
 naming the agent, native conversation, process ID and cause: an unflagged Claude

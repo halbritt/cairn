@@ -728,7 +728,7 @@ time.sleep(30)
     # This test's native host is the test runner, which was not launched
     # channel-enabled; treat it as enabled so the channel-closed contract is exercised.
     @mock.patch.object(coordination, 'claude_channel_enabled', new=lambda config, process: True)
-    def test_sequential_channel_deliveries_after_watcher_releases_completed_attempt(self):
+    def test_sequential_channel_deliveries_after_mismatched_stop_and_watcher_settlement(self):
         host = os.getppid()
         agent = dict(self.agent, context_revision=3, display_name='agent-one', inbox='agent/agent-one')
         config = dict(self.config, harness='claude', binding='sequential', process_names=[],
@@ -775,6 +775,18 @@ time.sleep(30)
                 coordination.write_state(path, state)
                 wake_prompt = prompt('wake-'+str(number),
                     f'<channel source="cairn-events">{coordination.wake_message(marker)}</channel>')
+                if number == 1:
+                    for rejected in (prompt('owner-before-next', 'ordinary owner work'),
+                                     dict(wake_prompt, prompt_id='foreign-wake',
+                                          prompt=wake_prompt['prompt'].replace(delivery_id, 'foreign-delivery')),
+                                     dict(wake_prompt, prompt_id='')):
+                        ordinary = coordination.handle(config, rejected)
+                        self.assertNotIn('structured inbox context', ordinary['hookSpecificOutput']['additionalContext'])
+                        unchanged = json.loads(path.read_text())
+                        self.assertTrue(unchanged['delivered_since_idle'])
+                        self.assertEqual(unchanged['idle_wake'], marker)
+                        self.assertNotIn('inbox_intent', unchanged)
+                        self.assertEqual(len(claims), 1, 'unbound prompt bypassed the stale latch')
                 result = coordination.handle(config, wake_prompt)
                 self.assertIn('structured inbox context', result['hookSpecificOutput']['additionalContext'],
                               'missing context for '+delivery_id)
@@ -782,6 +794,13 @@ time.sleep(30)
                 self.assertEqual(claims[-1]['delivery_id'], delivery_id)
                 self.assertEqual(claims[-1]['native_turn_id'], 'claude-channel:wake-'+str(number))
                 if number != 1:
+                    if number == 0:
+                        # An unrelated Stop cannot end this pinned request. Its
+                        # failure also leaves the per-turn delivery latch set.
+                        with self.assertRaisesRegex(coordination.CoordinationError, 'NATIVE_TURN_MISMATCH'):
+                            coordination.handle(config, prompt('different-prompt', '', 'Stop'))
+                        self.assertIn('inbox_intent', json.loads(path.read_text()))
+                        self.assertEqual(len(claims), 1)
                     completed.add(delivery_id)
                     # The watcher can observe explicit completion before native Stop.
                     state = json.loads(path.read_text())
@@ -790,6 +809,19 @@ time.sleep(30)
                 else:
                     self.assertIn('inbox_intent', json.loads(path.read_text()))
                 self.assertTrue(json.loads(path.read_text())['delivered_since_idle'])
+                if number == 0:
+                    # Completion can be reconciled without a matching Stop.
+                    # The next delivery still cannot join this same prompt.
+                    state = json.loads(path.read_text())
+                    same_turn = dict(marker, delivery_id='delivery-next')
+                    state['idle_wake'] = same_turn
+                    coordination.write_state(path, state)
+                    with self.assertRaisesRegex(coordination.CoordinationError, 'NATIVE_PROMPT_REFUSED'):
+                        coordination.handle(config, prompt('wake-0',
+                            f'<channel source="cairn-events">{coordination.wake_message(same_turn)}</channel>'))
+                    self.assertEqual(len(claims), 1, 'settlement allowed a second delivery in the same prompt')
+                    self.assertNotIn('idle_wake', json.loads(path.read_text()))
+                    continue  # No successful Stop before the next exact fresh wake.
                 coordination.handle(config, dict(wake_prompt, hook_event_name='Stop'))
                 self.assertNotIn('inbox_intent', json.loads(path.read_text()))
                 # Ordinary owner turns and repeated Stops must never consume the next delivery.

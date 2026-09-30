@@ -1773,7 +1773,13 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         return ''  # This native wake transport owns admission; other prompts do not claim work.
     recover_inbox(config, state, path)
     if not state.get('inbox_attempt'):
-        if state.get('delivered_since_idle'):
+        # A settled request can leave its latch behind when its Stop was missed
+        # or belonged to another prompt. Only an exact, freshly bound Claude
+        # channel prompt proves a new delivery boundary without that Stop.
+        fresh_channel = (config.get('harness') == 'claude' and wake_binding and
+                         observation['event'] == 'UserPromptSubmit' and
+                         wake_binding.get('native_turn_id') == observation.get('native_turn_id'))
+        if state.get('delivered_since_idle') and not fresh_channel:
             return ''
         replay_binding = {}
         if opencode_replay and observation.get('native_turn_id'):
