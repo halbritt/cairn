@@ -448,9 +448,13 @@ def title_for(event):
 STOP_WORDS = set("a an and are as at be before can check continue could do does for from have how i in into is it its make me memory need next of on or please project task test tests that the then these this to use using want was we what when which with work would you your".split())
 
 
-def terms(text):
+def term_words(text):
     words = (word.strip(".-") for word in re.findall(r"[\w.-]+", text.lower()))
-    return {word for word in words if len(word) >= 3 and word not in STOP_WORDS}
+    return (word for word in words if len(word) >= 3 and word not in STOP_WORDS)
+
+
+def terms(text):
+    return set(term_words(text))
 
 
 def file_hint(value, cwd, project=None):
@@ -494,7 +498,9 @@ def retrieval_intent(event, state):
     phrases = [p for p in re.findall(r'["`]([^"`\n]{3,160})["`]', prompt) if terms(p)]
     error_terms = hints.get("errors", []) if now - hints.get("error_at", 0) < 900 else []
     # Scan all supplied prompt text so a file/error after a long preamble survives.
-    keywords = sorted(word for word in terms(prompt) - terms(project) if len(word.encode()) <= 128)
+    project_words = terms(project)
+    keywords = [word for word in dict.fromkeys(term_words(prompt))
+                if word not in project_words and len(word.encode()) <= 128]
     anchors = list(dict.fromkeys([*paths, *phrases, *error_terms]))
     if event.get("workstream"):
         anchors.insert(0, workstream_prefix(event) + event["workstream"])
@@ -509,7 +515,7 @@ def retrieval_intent(event, state):
         # alone as evidence that any particular handoff answers the task.
         search_anchors = [workstream_prefix(event).rstrip(), *anchors][:8]
     query = project
-    for part in [*('"' + item + '"' for item in search_anchors), *error_terms, *keywords[:48]]:
+    for part in [*('"' + item + '"' for item in search_anchors), *error_terms, *keywords]:
         if len((query + " " + part).encode()) <= 4000:
             query += " " + part
     return dict(query=query, files=paths, phrases=anchors,

@@ -154,6 +154,16 @@ These rules prevent a domain such as `claude.ai` in a quota notification from
 being treated as an observed repository filename. They do not establish the
 current task behind a generic continuation message.
 
+The query keeps project, file, quoted-phrase, workstream and recent-error anchors
+first, then eligible distinct task words in their original order, within 4,000
+UTF-8 bytes. Whole words that do not fit are omitted. The former alphabetical
+48-word cutoff could discard task identifiers even when the complete query fit.
+Stopword filtering and the 128-byte word limit remain in effect. Long prompts can
+still lose late unquoted words; including more vocabulary does not establish
+relevance or interpret a correction or negation. The same query construction is
+used for related-note searches during capture; capture admission and write checks
+are separate.
+
 The hooks use the existing authenticated CLI and hosted profile. Installing them
 explicitly enables lifecycle reads and selected writes independently of whether
 the model chooses a memory tool. Ordinary MCP calls retain their own permissions.
