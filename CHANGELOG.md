@@ -14,6 +14,17 @@ observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
 
+## 2026-09-30
+
+- The coordination installer's `--no-herdr` installs an OpenCode idle-wake
+  binding through the native bridge without Herdr, with required `--no-service`,
+  so a scratch `--settings`
+  directory (such as the request-cancellation trial's) no longer needs a
+  hand-edited binding. It skips the Herdr executable and integration checks,
+  writes only `--settings` and `--root`, and records `idle_wakeup: true`. Without
+  the flag, the installer's OpenCode behavior is unchanged. See
+  [native presence adapters](docs/agent-sessions.md#native-presence-adapters).
+
 ## 2026-09-29
 
 - Operator `work-cancel` also closes a response, notice or note that was never

@@ -75,6 +75,9 @@ def herdr_environment(process):
 def herdr_call(config, environment, *args):
     prompting = args[:2] == ('agent', 'prompt')
     failure_code = 'WAKE_UNCERTAIN' if prompting else 'HOST_UNAVAILABLE'
+    if not isinstance(config['idle_wakeup'], str):
+        # An OpenCode bridge-only binding enables idle wake with `true` and has no host executable.
+        raise CoordinationError(failure_code, 'this binding has no Herdr executable')
     try:
         result = bounded_herdr_command([config['idle_wakeup'], *args], environment)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -2189,8 +2192,14 @@ def validate_config(config):
         raise CoordinationError('INVALID_CONFIG', 'opencode_cancel_enabled requires an OpenCode boolean')
     binding = config['binding']
     if config.get('idle_wakeup') is not None:
-        if not isinstance(config['idle_wakeup'], str) or not Path(config['idle_wakeup']).is_absolute() or not config.get('native_delivery'):
-            raise CoordinationError('INVALID_CONFIG', 'idle_wakeup requires an absolute Herdr executable and native_delivery')
+        # OpenCode wakes an idle session through its native bridge and never calls
+        # Herdr, so only that harness may enable idle wake with `true` instead of
+        # a Herdr executable.
+        bridge_only = config['harness'] == 'opencode' and config['idle_wakeup'] is True
+        if not config.get('native_delivery') or not (bridge_only or (
+                isinstance(config['idle_wakeup'], str) and Path(config['idle_wakeup']).is_absolute())):
+            raise CoordinationError('INVALID_CONFIG', 'idle_wakeup requires an absolute Herdr executable and native_delivery '
+                                                       '(true is accepted only for the OpenCode bridge)')
     if 'claude_channel_sessions' in config:
         sessions = config['claude_channel_sessions']
         directory = config.get('claude_channel_dir')

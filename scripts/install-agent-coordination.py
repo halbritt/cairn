@@ -210,8 +210,9 @@ def ensure_herdr_integration(herdr, harness, settings):
         state, path = herdr_integration(herdr, environment, target)
         if harness == 'opencode' and path.parent.parent != settings:
             raise RuntimeError(f'Herdr only reads its OpenCode integration from '
-                               f'{path.parent.parent}; --settings {settings} cannot be woken. '
-                               f'Install with --settings {path.parent.parent}')
+                               f'{path.parent.parent}; --settings {settings} cannot be woken through Herdr. '
+                               f'Install with --settings {path.parent.parent}, or pass --no-herdr to use '
+                               f"OpenCode's native bridge wake without Herdr")
         if config_home not in path.parents:
             raise RuntimeError(f'herdr reported its {target} integration at {path}, '
                                f'outside the selected account home {config_home}')
@@ -358,7 +359,11 @@ def main():
     parser.add_argument('--opencode-cancel-trial', action='store_true',
                         help='opt in the OpenCode binding to the request-cancellation trial (requires native delivery and idle wakeup)')
     parser.add_argument('--idle-wakeup', action='store_true', help='automatically prompt eligible idle Herdr sessions with pending inbox work; also installs Herdr\'s native integration in the selected account home through the installed herdr CLI when missing')
-    parser.add_argument('--herdr', default=shutil.which('herdr'), help='Herdr executable for --idle-wakeup')
+    parser.add_argument('--herdr', help='Herdr executable for --idle-wakeup (default: resolved from PATH)')
+    parser.add_argument('--no-herdr', action='store_true',
+                        help="OpenCode only, with --idle-wakeup --no-service: prepare native bridge wake without Herdr. "
+                             'Skips the Herdr executable and integration checks and changes nothing outside the '
+                             'selected --settings directory and --root, so a scratch directory is usable')
     parser.add_argument('--claude-channel-dir', type=Path, help='owner-only directory bridging Claude channel wakes (Claude + --idle-wakeup only)')
     parser.add_argument('--codex', help='native codex executable the launcher shim execs (default: resolved from PATH)')
     parser.add_argument('--no-service', action='store_true', help='prepare hooks without installing/restarting the watcher')
@@ -374,12 +379,23 @@ def main():
                   process_names=[args.harness], native_delivery=args.native_delivery)
     if args.opencode_cancel_trial:
         config['opencode_cancel_enabled'] = True
+    if args.no_herdr and (args.harness != 'opencode' or not args.idle_wakeup or args.herdr):
+        parser.error('--no-herdr requires --harness opencode with --idle-wakeup, and cannot be combined with --herdr')
+    if args.no_herdr and not args.no_service:
+        parser.error('--no-herdr requires --no-service; isolated setup must not replace the shared presence watcher')
+    if not args.no_herdr:
+        args.herdr = args.herdr or shutil.which('herdr')
     if args.idle_wakeup:
-        if not args.native_delivery or not args.herdr or not Path(args.herdr).is_file():
-            parser.error('--idle-wakeup requires --native-delivery and an installed Herdr executable')
-        if args.harness == 'codex' and importlib.util.find_spec('websocket') is None:
-            parser.error('Codex native queue wakeups require websocket-client in this Python environment (Ubuntu: python3-websocket)')
-        config['idle_wakeup'] = str(Path(args.herdr).resolve())
+        if args.no_herdr:
+            if not args.native_delivery:
+                parser.error('--idle-wakeup requires --native-delivery')
+            config['idle_wakeup'] = True  # OpenCode's bridge never calls Herdr.
+        else:
+            if not args.native_delivery or not args.herdr or not Path(args.herdr).is_file():
+                parser.error('--idle-wakeup requires --native-delivery and an installed Herdr executable')
+            if args.harness == 'codex' and importlib.util.find_spec('websocket') is None:
+                parser.error('Codex native queue wakeups require websocket-client in this Python environment (Ubuntu: python3-websocket)')
+            config['idle_wakeup'] = str(Path(args.herdr).resolve())
     if args.claude_channel_dir is not None:
         if args.harness != 'claude' or not args.idle_wakeup:
             parser.error('--claude-channel-dir requires --harness claude with --idle-wakeup')
@@ -391,7 +407,10 @@ def main():
         config['claude_channel_dir'] = str(directory)
     if args.harness in ('codex', 'claude'):
         config['config_home'] = str(args.settings.resolve().parent)
-    if args.idle_wakeup:
+    if args.no_herdr:
+        print(f'OpenCode idle wake uses its native bridge; Herdr was not consulted and no Herdr integration was '
+              f'installed or changed. Only {args.settings.resolve()} and {args.root.resolve()} are written.')
+    elif args.idle_wakeup:
         target = ensure_herdr_integration(Path(args.herdr).resolve(), args.harness, args.settings.resolve())
         if target:
             print(f'Herdr {target} integration is current in the selected {args.harness} account home.')

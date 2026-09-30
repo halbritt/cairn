@@ -144,7 +144,8 @@ terminal scan newer than the cancellation decision and every later capture.
   failed closed. Recovery for a real session needs an explicit operator
   decision, as the plan says.
 - The installer cannot express a scratch OpenCode binding with idle wake (see
-  Setup). The trial edited the scratch binding by hand.
+  Setup). The trial edited the scratch binding by hand. (CAIRN-42 later added
+  the installer's `--no-herdr`; this record is unchanged.)
 - The owned tmux server, which held the trial OpenCode session and watcher,
   was stopped from outside the trial after the C5 held state had been
   recorded. It did not affect any recorded result. The trial store was then

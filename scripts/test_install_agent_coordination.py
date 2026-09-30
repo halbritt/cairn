@@ -1,5 +1,6 @@
-"""Idle-wakeup installation covers the selected account home via the Herdr CLI."""
+"""Idle-wakeup installation covers the selected account home via the Herdr CLI, or skips Herdr for OpenCode."""
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -206,6 +207,187 @@ class IdleWakeupPreflight(unittest.TestCase):
             before = settings.read_bytes()
             installer.ensure_herdr_integration(shutil.which('herdr'), 'claude', settings)
             self.assertEqual(settings.read_bytes(), before)
+
+
+INSTALLER = ROOT / 'scripts/install-agent-coordination.py'
+TRAP_HERDR = '#!/bin/sh\necho "$0 $@" >> "$(dirname "$0")/herdr-was-run"\nexit 1\n'
+
+
+class ScratchOpenCodeBinding(unittest.TestCase):
+    """A scratch OpenCode directory wakes through the native bridge without Herdr (CAIRN-42)."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.temp = Path(temp.name).resolve()
+        self.home = self.temp / 'home'
+        self.bin = self.temp / 'bin'
+        self.scratch = self.temp / 'scratch'
+        for directory in (self.home / '.config/opencode/plugins', self.bin, self.scratch):
+            directory.mkdir(parents=True)
+        # Stand-ins for an unrelated installed OpenCode profile and for Herdr.
+        (self.home / '.config/opencode/opencode.json').write_text('{"owner": "profile"}')
+        (self.home / '.config/opencode/plugins/herdr-agent-state.js').write_text('// herdr plugin v11')
+        self.trap = self.bin / 'herdr'
+        self.trap.write_text(TRAP_HERDR)
+        self.trap.chmod(0o700)
+        self.cairn = self.bin / 'cairn'
+        self.cairn.write_text('#!/bin/sh\nexit 0\n')
+        self.cairn.chmod(0o700)
+        self.token = self.scratch / 'agent.token'
+        self.token.write_text('scratch-token')
+        self.settings = self.scratch / 'opencode'
+        self.root = self.scratch / 'root'
+
+    def snapshot(self):
+        return {str(path.relative_to(self.home)): path.read_bytes()
+                for path in sorted(self.home.rglob('*')) if path.is_file()}
+
+    def install(self, *extra, harness='opencode'):
+        command = [sys.executable, '-B', str(INSTALLER), '--harness', harness, '--binding', 'scratch',
+                   '--settings', str(self.settings), '--root', str(self.root), '--cairn', str(self.cairn),
+                   '--socket', str(self.scratch / 'api.sock'), '--token-file', str(self.token),
+                   '--repo', 'fixture:scratch', '--no-service', *extra]
+        environment = dict(os.environ, HOME=str(self.home), PATH=f'{self.bin}:/usr/bin:/bin')
+        for name in ('HERDR_ENV', 'HERDR_SOCKET_PATH', 'CAIRN_COORDINATION_CONFIG'):
+            environment.pop(name, None)
+        return subprocess.run(command, env=environment, capture_output=True, text=True, timeout=60)
+
+    def binding(self):
+        return json.loads((self.root / 'bindings/scratch.json').read_text())
+
+    def test_no_herdr_installs_a_usable_scratch_binding_and_touches_nothing_else(self):
+        before = self.snapshot()
+        result = self.install('--native-delivery', '--idle-wakeup', '--opencode-cancel-trial', '--no-herdr')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Herdr was not consulted', result.stdout)
+        self.assertFalse((self.bin / 'herdr-was-run').exists(), 'Herdr was run')
+        self.assertEqual(self.snapshot(), before)  # the unrelated installed profile and HOME are unchanged
+        self.assertTrue((self.settings / 'plugins/cairn-coordination.ts').is_file())
+        self.assertTrue((self.settings / 'cairn-coordination.json').is_file())
+        binding = self.binding()
+        self.assertEqual((binding['harness'], binding['native_delivery'], binding['idle_wakeup'],
+                          binding['opencode_cancel_enabled']), ('opencode', True, True, True))
+        self.assertEqual(installer.engine.load_config(self.root / 'bindings/scratch.json')['idle_wakeup'], True)
+
+    def test_no_herdr_without_no_service_refuses_before_install_or_shared_watcher(self):
+        # The normal service installer targets a fixed shared unit even when
+        # --root points at scratch. Never reach it through this isolated mode.
+        argv = ['install-agent-coordination.py', '--harness', 'opencode', '--binding', 'scratch',
+                '--settings', str(self.settings), '--root', str(self.root), '--cairn', str(self.cairn),
+                '--socket', str(self.scratch / 'api.sock'), '--token-file', str(self.token),
+                '--repo', 'fixture:scratch', '--native-delivery', '--idle-wakeup', '--no-herdr']
+        before = self.snapshot()
+        error = io.StringIO()
+        with mock.patch.object(sys, 'argv', argv), mock.patch.object(sys, 'stderr', error), \
+                mock.patch.object(sys, 'stdout', io.StringIO()), \
+                mock.patch.object(installer, 'install_service') as shared_service, \
+                self.assertRaises(SystemExit) as caught:
+            installer.main()
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn('--no-herdr requires --no-service', error.getvalue())
+        shared_service.assert_not_called()
+        self.assertFalse((self.root / 'bindings').exists())
+        self.assertFalse(self.settings.exists())
+        self.assertEqual(self.snapshot(), before)
+
+    def test_installed_scratch_binding_selects_the_bridge_wake_without_herdr(self):
+        self.assertEqual(self.install('--native-delivery', '--idle-wakeup', '--opencode-cancel-trial',
+                                      '--no-herdr').returncode, 0)
+        engine = installer.engine
+        config = engine.load_config(self.root / 'bindings/scratch.json')
+        session = dict(agent_id='fixture-agent', execution_id='fixture-execution')
+        state = dict(workspace=str(self.scratch), process=dict(pid=os.getpid(), start=1, boot='boot'),
+                     agent=dict(**session, native_session_id='ses_scratch',
+                                metadata=dict(workspace=str(self.scratch), state='idle',
+                                              delivery_mode='existing-session')))
+        path = Path(config['state_dir']) / 'session.json'
+        engine.write_state(path, state)
+        delivery = '00000000-0000-4000-8000-000000000001'
+
+        def store(_config, operation, _request, **_kwargs):
+            self.assertEqual(operation, 'session-inbox-ready')
+            return dict(delivery_id=delivery)
+
+        with mock.patch.object(engine, 'call', side_effect=store), \
+                mock.patch.object(engine, 'opencode_idle_endpoint', return_value='/tmp/cairn-opencode-fixture.sock'), \
+                mock.patch.object(engine, 'opencode_capture_available', return_value=False), \
+                mock.patch.object(engine, 'herdr_environment', side_effect=AssertionError('Herdr environment read')), \
+                mock.patch.object(engine, 'bounded_herdr_command', side_effect=AssertionError('Herdr run')), \
+                engine.session_lock(path):
+            prepared = engine.prepare_idle_wake(config, state, path)
+        self.assertEqual(prepared['wake']['transport'], 'opencode-queue')
+        self.assertEqual((prepared['wake']['delivery_id'], prepared['wake']['native_id']), (delivery, 'ses_scratch'))
+
+    def test_without_the_flag_a_scratch_directory_is_refused_and_points_to_it(self):
+        state = dict(status=[f'opencode: outdated (v10 < v11) ({self.home}/.config/opencode/plugins/herdr-agent-state.js)'],
+                     after=[], install_fails=False)
+        herdr = self.bin / 'herdr'
+        herdr.write_text(HERDR)
+        (self.bin / 'herdr.json').write_text(json.dumps(state))
+        before = self.snapshot()
+        result = self.install('--native-delivery', '--idle-wakeup')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('cannot be woken through Herdr', result.stderr)
+        self.assertIn('--no-herdr', result.stderr)
+        self.assertFalse((self.bin / 'installs.jsonl').exists(), 'Herdr install ran for an unrelated home')
+        self.assertFalse((self.root / 'bindings').exists())
+        self.assertEqual(self.snapshot(), before)
+
+    def test_no_herdr_is_limited_to_opencode_idle_wake_without_a_herdr_choice(self):
+        for arguments, harness, message in (
+                (('--native-delivery', '--idle-wakeup', '--no-herdr'), 'claude', '--no-herdr requires'),
+                (('--native-delivery', '--no-herdr'), 'opencode', '--no-herdr requires'),
+                (('--native-delivery', '--idle-wakeup', '--no-herdr', '--herdr', str(self.trap)), 'opencode', 'cannot be combined'),
+                (('--idle-wakeup', '--no-herdr'), 'opencode', '--idle-wakeup requires --native-delivery')):
+            with self.subTest(arguments=arguments, harness=harness):
+                result = self.install(*arguments, harness=harness)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn(message, result.stderr)
+                self.assertFalse((self.root / 'bindings').exists())
+        self.assertFalse((self.bin / 'herdr-was-run').exists())
+
+    def test_default_herdr_install_is_unchanged_for_the_owner_home(self):
+        # Herdr's own OpenCode home still gets the existing coverage, with the Herdr path recorded.
+        home = self.home / '.config/opencode'
+        herdr = self.bin / 'herdr'
+        herdr.write_text(HERDR)
+        (self.bin / 'herdr.json').write_text(json.dumps(dict(
+            status=[f'opencode: current (v11) ({home}/plugins/herdr-agent-state.js)'], after=[], install_fails=False)))
+        self.settings = home
+        result = self.install('--native-delivery', '--idle-wakeup')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Herdr opencode integration is current', result.stdout)
+        self.assertEqual(self.binding()['idle_wakeup'], str(herdr.resolve()))
+
+
+class BridgeOnlyIdleWakeConfig(unittest.TestCase):
+    """`idle_wakeup: true` is the OpenCode bridge's switch, never a way to run Herdr."""
+
+    def config(self, root, **override):
+        values = dict(cairn=str(root / 'cairn'), socket=str(root / 'api.sock'), token_file=str(root / 'token'),
+                      state_dir=str(root / 'state'), repo='fixture', binding='fixture', harness='opencode',
+                      native_delivery=True, idle_wakeup=True)
+        values.update(override)
+        return values
+
+    def test_only_opencode_with_native_delivery_accepts_true(self):
+        engine = installer.engine
+        root = Path('/absolute')
+        self.assertEqual(engine.validate_config(self.config(root))['idle_wakeup'], True)
+        self.assertEqual(engine.validate_config(self.config(root, idle_wakeup='/usr/bin/herdr'))['idle_wakeup'], '/usr/bin/herdr')
+        for override in (dict(harness='claude'), dict(harness='hermes'), dict(harness='codex'), dict(native_delivery=False),
+                         dict(idle_wakeup=False), dict(idle_wakeup='herdr'), dict(idle_wakeup=1)):
+            with self.subTest(override=override), self.assertRaises(engine.CoordinationError) as caught:
+                engine.validate_config(self.config(root, **override))
+            self.assertEqual(caught.exception.code, 'INVALID_CONFIG')
+
+    def test_a_bridge_only_binding_cannot_be_run_as_a_herdr_command(self):
+        engine = installer.engine
+        with mock.patch.object(engine, 'bounded_herdr_command', side_effect=AssertionError('ran a command')):
+            with self.assertRaises(engine.CoordinationError) as caught:
+                engine.herdr_call(dict(idle_wakeup=True), {}, 'agent', 'list')
+        self.assertEqual(caught.exception.code, 'HOST_UNAVAILABLE')
 
 
 if __name__ == '__main__':

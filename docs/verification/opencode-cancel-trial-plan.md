@@ -37,11 +37,12 @@ observer that reads `/proc` without consulting Cairn.
   existing production database for the trial or its cleanup.
 - An owned tmux session running the installed OpenCode build with the bridge
   enabled, in a scratch directory under `/tmp/cairn-draft-trial/`, registered
-  through the normal native path. The installer requires `--native-delivery`
-  and `--idle-wakeup` with `--opencode-cancel-trial`; it cannot express this
-  isolated scratch binding. Set `idle_wakeup` and `opencode_cancel_enabled`
-  in the scratch binding by hand as described in the
-  [executed trial](opencode-cancel-trial-2026-09-24.md#setup). Never use a
+  through the normal native path. Install the scratch binding with
+  `--native-delivery --idle-wakeup --opencode-cancel-trial --no-herdr` and
+  scratch `--root`, `--settings`, `--socket`, `--token-file` and `--no-service`
+  (`--no-herdr` skips Herdr, which OpenCode's bridge wake does not use). The
+  [executed trial](opencode-cancel-trial-2026-09-24.md#setup) predates the flag
+  and set `idle_wakeup` and `opencode_cancel_enabled` by hand. Never use a
   session someone else is using.
 - The request is published to that session's inbox with an ordinary `request`
   event. The body asks the model to run exactly one fixture command. Nothing is

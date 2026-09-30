@@ -140,11 +140,26 @@ Herdr's own native integration: it checks `herdr integration status` and runs
 the installed `herdr integration install <target>` when that integration is
 missing or outdated, never copying Herdr's private assets. Claude selects the
 home through `CLAUDE_CONFIG_DIR`, Agy through `ANTIGRAVITY_CLI_CONFIG_DIR` and
-Hermes through `HERMES_HOME`; OpenCode has one integration home at
+Hermes through `HERMES_HOME`; OpenCode has one Herdr integration home at
 `~/.config/opencode`, and an OpenCode `--settings` directory elsewhere is
-refused because Herdr cannot observe it. Codex needs no Herdr hooks: idle
-matching identifies it by its unique open rollout file. Both installers
-preserve unrelated hooks and settings.
+refused with `--idle-wakeup` alone because Herdr cannot observe it. Codex needs
+no Herdr hooks: idle matching identifies it by its unique open rollout file.
+Both installers preserve unrelated hooks and settings.
+
+OpenCode's idle wake does not use Herdr. The watcher reaches an idle OpenCode
+session only through the plugin's peer-verified native bridge and never falls back
+to a terminal prompt. Add `--no-herdr` to `--harness opencode --native-delivery
+--idle-wakeup --no-service` (it cannot be combined with `--herdr`) to skip the Herdr
+executable and integration checks. The binding records `idle_wakeup: true`, and the
+installer writes only the `--settings` directory and `--root`, so a scratch
+directory or trial can be used without changing another OpenCode profile.
+`--no-service` is required: this prepares the binding without replacing or
+restarting the shared user presence service. Run a separately owned watcher for
+the scratch root when needed; installation alone does not start wake delivery. The
+directory must still be the configuration home the OpenCode process loads, for
+example through `XDG_CONFIG_HOME`, and the process needs the bridge; Herdr will not
+report OpenCode state for that directory. Without the bridge, owner prompts still
+claim pending work.
 
 Hook installation follows `CLAUDE_CONFIG_DIR`. The installed Claude 2.1.273
 still lists memory from the default `~/.claude/CLAUDE.md` in the second
