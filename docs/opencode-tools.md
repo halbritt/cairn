@@ -85,7 +85,7 @@ the tool; OpenCode runs it. On updates, copy the new adapter together with the
 matching Cairn CLI. Search refuses a CLI result without structured pull arguments.
 
 The names are `cairn_search`, `cairn_pull`, `cairn_pull_evidence`,
-`cairn_remember`, `cairn_edit`, `cairn_history`, `cairn_assessments` and
+`cairn_prepare_note`, `cairn_remember`, `cairn_edit`, `cairn_history`, `cairn_assessments` and
 `cairn_assess`. OpenCode's tool permissions apply, including
 explicit requests through the native permission context. Choose permissions for
 the intended task. These names differ from the `cairn_cairn_*` MCP names; an
@@ -136,6 +136,17 @@ its receipt expansions to the separate allowance. Omission preserves existing
 behavior; null, zero and values above the input room are invalid. Repeat both
 values on retries and pages; changing either requires a new request UUID.
 
+Optional `min_pull_bytes` reserves charged source-expansion room within an
+explicit `memory_budget_bytes` allowance. It must be an integer from 1 through
+`min(24000, memory_budget_bytes)`. The final search result must fit the total
+allowance minus that reserve. It does not increase optional policy, truncate
+required selections, promise plain body bytes, or guarantee a useful source
+will fit. Repeat the same reserve on retries and pages; changing or omitting an
+explicit reserve on the same request UUID conflicts. A retry does not replenish
+an already spent receipt; its returned remaining balance can be below the
+original reserve. Unsupported CLI/API options refuse; the adapter does not
+silently retry without them.
+
 The adapter checks the UTF-8 size of its final serialized result, including
 `query_entities` and JSON escaping, against the effective allowance. With an
 explicit memory budget, that result plus the receipt's remaining expansion
@@ -144,6 +155,32 @@ result without shortening mandatory context or dropping structured pull handles.
 OpenCode's outer envelope or aggregate conversation usage; account for repeated
 cached deliveries, errors and other receipts separately. Presentation refusal
 can follow receipt creation; change the request with a fresh UUID.
+
+### Inspect predecessors before saving
+
+`cairn_prepare_note` accepts a short subject `query`, optional explicit `entities`
+and current retrieval `context`, `available_tokens`, `memory_budget_bytes`,
+`min_pull_bytes`, and a search `request_id`. It uses the same authenticated
+search scope and current access checks. It accepts no draft body, capture pins,
+browsing, semantic mode, kind filter or mutation arguments; no automatic recent
+file hints are added by the optional search plugin. Its separate native
+`cairn_prepare_note` permission must be allowed by the host; the installer does
+not grant it or weaken other permissions.
+
+Preparation reserves 1,024 bytes within the total allowance for bounded decision
+guidance, so it needs at least 1,280 bytes. With an explicit reserve, its maximum
+is `min(24000, memory_budget_bytes - 1024)`. The API receives the smaller receipt
+cap; the final native result plus the receipt's remaining expansion allowance
+must fit the caller's original total. Guidance and whole mandatory selections
+are never shortened to fit. The result retains the ordinary search metadata and
+complete pull handles, adding `preparation: {note_saved: false, guidance: ...}`.
+The receipt's `memory_budget.bytes` describes the cap after guidance reservation.
+
+Pull complete current predecessor bodies and check subject, scope, pins and
+evidence before deciding whether to edit the same active A note or separately
+save distinct guidance. Empty, omitted or failed searches do not certify novelty
+or permit saving. Supersession and B/C changes keep their protected authority
+paths. Preparation itself never saves, edits, retires or classifies a note.
 
 Capture accepts explicit [applicability pins](currentness-and-replay.md#saving-guidance-with-explicit-applicability),
 including task phase and validity. Search settings are never automatically copied
@@ -292,7 +329,8 @@ CAIRN_OPENCODE_TOOLS_BINARY=/absolute/path/to/opencode make test-integration
 
 This variable enables no-model custom-tool checks. It is separate from the older
 `CAIRN_OPENCODE_BINARY` model probe. Tests cover session scope, default local
-capture, exact body/evidence pulls, retries, edits, stale handles, hosted filtering
+capture, exact body/evidence pulls, capped/reserved retrieval and preparation,
+retries, edits, stale handles, hosted filtering
 and permission/repository refusals, including malformed capture arguments. See the
 [verification record](verification/opencode-tools-2026-09-09.md) for evidence and
 remaining limits. Remove the installed tool file to undo this integration; keep

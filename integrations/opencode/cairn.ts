@@ -106,60 +106,96 @@ const searchView = z.object({
 }).passthrough()
 const writeResult = z.object({ record_id: z.string().uuid(), version: z.number().int().positive() })
 
+const preparationOverhead = 1024
+const preparationGuidance = "No note saved. These are possible predecessors, not verified replacements. Pull complete current bodies with pull_arguments and compare subject, scope, pins and evidence. Same active A note: use cairn_edit with its expected_version and a new request_id, preserving unrelated content. Distinct knowledge: use cairn_remember. Separate obsolete record: formal supersession requires protected preview and authorized local/operator access; do not borrow another profile. B/C changes need their authority path. Empty or budget-limited results do not prove no predecessor exists. Search failure is not clearance to save."
+
+const searchFields = { min_pull_bytes: z.number().int().min(1).max(24000).optional().describe("Optional minimum charged expansion allowance reserved within memory_budget_bytes; cannot exceed that cap. Reduces search presentation room, not required context or policy input room. Not plain body bytes or guaranteed source fit. Repeat on retries/pages; changing it needs a new request UUID. The reserve is granted once, not replenished by retries."), memory_budget_bytes: z.number().int().min(256).max(1000000).optional().describe("Optional smaller allowance for this search response and its receipt expansions, in UTF-8 bytes: 256 through available_tokens (or the configured default). Omit to preserve the existing budget. Repeat on retries/pages; changing this value requires a new request UUID. Does not enforce aggregate conversation usage."), available_tokens: z.number().int().min(256).max(1000000).optional().describe("Actual free input-context room for this search, in conservative UTF-8 bytes; not model capacity. Cannot exceed the configured host ceiling. Use memory_budget_bytes for a smaller memory allowance. Omit for the host default. Repeat on retries and pages; changed room needs a new request UUID. Does not measure or enforce whole-conversation context usage."), advisory_conflicts: z.boolean().optional().describe("Opt in to qualified competing advisory positions. All must be eligible together; otherwise the group is omitted. Pulling a marked position returns its complete competing positions under the shared budget. Repeat on retries and later pages. Does not resolve disagreement or change authority."), entities: entities.describe("Optional explicit file/symbol hints. With the recent-files plugin, omission on a fresh first search uses recent successful file reads; [] disables that behavior. Copy returned query_entities on retries and later pages. Names are fallible relevance metadata, not authority."), context: z.object(contextFields).strict().optional().describe("Context declared for this search only. May fill fields the host left unset; conflicting configured values are refused. Observe actual task state first. Does not certify execution or change repository/session scope. Repeat the same context on later pages."), error_signature_sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional().describe("SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by a shareable operator review. May replace query text; cannot browse. Not proof of failure or correctness."), kinds: z.array(z.enum(["note", "observation", "claim", "lesson", "procedure", "decision", "preference", "instruction"])).max(8).optional().describe("Select any listed optional record label; empty means all. Required instructions always apply. Labels do not establish authority."), query: z.string().optional().describe("Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available."), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget."), request_id: z.string().uuid().optional() }
+const searchArgumentSchema = z.object(searchFields)
+type SearchArguments = ReturnType<typeof searchArgumentSchema.parse>
+
+// Shared ordinary retrieval; preparation adds bounded guidance, never a write.
+async function executeSearch(args: SearchArguments, context: ToolContext, prepare: boolean) {
+  const query = args.query ?? ""
+  if (args.semantic && args.browse) throw new Error("INVALID_REQUEST: semantic discovery cannot be combined with browsing")
+  if ((args.browse && (query !== "" || args.error_signature_sha256 || args.entities?.length)) || (!args.browse && query.trim() === "" && !args.error_signature_sha256 && !args.entities?.length)) {
+    throw new Error("INVALID_REQUEST: search requires a query, entities, error_signature_sha256, or browse=true without search hints")
+  }
+  const config = await settings(prepare ? "prepare_note" : "search", context)
+  const room = args.available_tokens ?? config.tokens
+  if (room > config.tokens) throw new Error("INVALID_REQUEST: available_tokens exceeds configured ceiling " + config.tokens)
+  const allowance = args.memory_budget_bytes ?? room
+  if (allowance > room) throw new Error("INVALID_REQUEST: memory_budget_bytes exceeds available_tokens " + room)
+  const receiptAllowance = allowance - (prepare ? preparationOverhead : 0)
+  if (prepare && receiptAllowance < 256) throw new Error("BUDGET_REFUSED: note preparation needs room for guidance and a search receipt")
+  const reserve = args.min_pull_bytes ?? 0
+  if (args.min_pull_bytes !== undefined && (args.memory_budget_bytes === undefined || reserve > Math.min(24000, receiptAllowance))) {
+    throw new Error("INVALID_REQUEST: min_pull_bytes requires memory_budget_bytes and cannot exceed its receipt allowance (after preparation guidance)")
+  }
+  const scope = searchScope(config, context)
+  const command = ["search", "--repo", scope.repo, "--task", scope.task_id, "--run", scope.run_id, "--tokens", String(room)]
+  if (args.memory_budget_bytes !== undefined || prepare) command.push("--memory-budget-bytes", String(receiptAllowance))
+  if (args.min_pull_bytes !== undefined) command.push("--min-pull-bytes", String(reserve))
+  if (args.request_id) command.push("--request-id", args.request_id)
+  const declared: Record<string, string | undefined> = { ...args.context }
+  for (const [key, value] of Object.entries(config.context ?? {})) {
+    if (!value) continue
+    const field = key === "binding" ? "binding_id" : key === "capability" ? "capability_id" : key
+    if (declared[field] && declared[field] !== value) {
+      throw new Error("INVALID_REQUEST: context." + field + " conflicts with configured context")
+    }
+    declared[field] = value
+  }
+  for (const [key, value] of Object.entries(declared)) {
+    const flag = key === "binding_id" ? "binding" : key === "capability_id" ? "capability" : key.replaceAll("_", "-")
+    if (value !== undefined) command.push("--" + flag, value)
+  }
+  for (const entity of args.entities ?? []) command.push("--entity-" + entity.kind, entity.name)
+  for (const kind of args.kinds ?? []) command.push("--kind", kind)
+  if (args.error_signature_sha256) command.push("--error-signature-sha256", args.error_signature_sha256)
+  if (args.advisory_conflicts) command.push("--advisory-conflicts")
+  if (args.semantic) command.push("--semantic")
+  if (args.browse) command.push("--browse", "--offset", String(args.offset ?? 0))
+  else {
+    if (args.offset !== undefined) command.push("--offset", String(args.offset))
+    command.push("--", query)
+  }
+  const view = searchView.parse(await call(config, context, command))
+  // Native callers need the structured arguments, not a shell invocation.
+  const index = view.index.map(({ pull_command, ...entry }) => entry)
+  // Presentation metadata for repeatable retries/pages, not part of the seal.
+  const result = render({ ...view, schema: "cairn.opencode-search/1", query_entities: args.entities ?? [], index,
+    ...(prepare ? { preparation: { note_saved: false, guidance: preparationGuidance } } : {}),
+  }, { ...config, tokens: allowance - reserve })
+  if (args.memory_budget_bytes !== undefined || prepare) {
+    const remaining = view.bytes_remaining
+    if (typeof remaining !== "number" || !Number.isSafeInteger(remaining) || remaining < 0 ||
+        Buffer.byteLength(result, "utf8") + remaining > allowance) {
+      throw new Error("BUDGET_REFUSED: native search presentation and receipt allowance exceed memory budget")
+    }
+  }
+  return result
+}
+
 export const search = validatedTool({
   description: "Search repository memory in the host's configured task/run scope, defaulting to this OpenCode session, with a query or browse=true without a query. Browsing is bounded by the same budget, ordered by scope and recency, and is not a complete inventory or relevance ranking. Read mandatory selected context and pull relevant index entries using their complete pull_arguments. A notes are fallible; verify before applying them. Search records exposure, not proven use.",
-  args: { memory_budget_bytes: z.number().int().min(256).max(1000000).optional().describe("Optional smaller allowance for this search response and its receipt expansions, in UTF-8 bytes: 256 through available_tokens (or the configured default). Omit to preserve the existing budget. Repeat on retries/pages; changing this value requires a new request UUID. Does not enforce aggregate conversation usage."), available_tokens: z.number().int().min(256).max(1000000).optional().describe("Actual free input-context room for this search, in conservative UTF-8 bytes; not model capacity. Cannot exceed the configured host ceiling. Use memory_budget_bytes for a smaller memory allowance. Omit for the host default. Repeat on retries and pages; changed room needs a new request UUID. Does not measure or enforce whole-conversation context usage."), advisory_conflicts: z.boolean().optional().describe("Opt in to qualified competing advisory positions. All must be eligible together; otherwise the group is omitted. Pulling a marked position returns its complete competing positions under the shared budget. Repeat on retries and later pages. Does not resolve disagreement or change authority."), entities: entities.describe("Optional explicit file/symbol hints. With the recent-files plugin, omission on a fresh first search uses recent successful file reads; [] disables that behavior. Copy returned query_entities on retries and later pages. Names are fallible relevance metadata, not authority."), context: z.object(contextFields).strict().optional().describe("Context declared for this search only. May fill fields the host left unset; conflicting configured values are refused. Observe actual task state first. Does not certify execution or change repository/session scope. Repeat the same context on later pages."), error_signature_sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional().describe("SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by a shareable operator review. May replace query text; cannot browse. Not proof of failure or correctness."), kinds: z.array(z.enum(["note", "observation", "claim", "lesson", "procedure", "decision", "preference", "instruction"])).max(8).optional().describe("Select any listed optional record label; empty means all. Required instructions always apply. Labels do not establish authority."), query: z.string().optional().describe("Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available."), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget."), request_id: z.string().uuid().optional() },
+  args: searchFields,
+  async execute(args, context) { return executeSearch(args, context, false) },
+})
+
+export const prepare_note = validatedTool({
+  description: "Inspect possible predecessors before a separate explicit note save or correction. Supply a short subject query, not the draft body or secrets. Uses ordinary retrieval, current access/scope checks and complete pull handles; empty results or search failures are not clearance to save. No automatic writes, replacement inference or authority changes.",
+  args: {
+    query: z.string().min(1).describe("Short subject query including project and known identifiers; no draft body or secrets."),
+    entities: entities.describe("Explicit known file/symbol hints; not source identity or applicability proof. No automatic recent-file hints."),
+    context: searchFields.context,
+    available_tokens: searchFields.available_tokens,
+    memory_budget_bytes: z.number().int().min(256).max(1000000).optional().describe("Total preparation output plus receipt expansion allowance within available_tokens. Reserves 1024 bytes for guidance, so at least 1280 bytes are needed. Omit for the host default. Repeat exact values on retries; changed allowance needs a new UUID."),
+    min_pull_bytes: z.number().int().min(1).max(24000).optional().describe("Minimum charged receipt expansion allowance; requires memory_budget_bytes and cannot exceed memory_budget_bytes minus 1024 guidance bytes. Final preparation output must fit total minus reserve. Not plain body bytes or guaranteed successful retrieval. Repeat on retries; changing it needs a new UUID. No replenishment after pulls."),
+    request_id: searchFields.request_id,
+  },
   async execute(args, context) {
-    const query = args.query ?? ""
-    if (args.semantic && args.browse) throw new Error("INVALID_REQUEST: semantic discovery cannot be combined with browsing")
-    if ((args.browse && (query !== "" || args.error_signature_sha256 || args.entities?.length)) || (!args.browse && query.trim() === "" && !args.error_signature_sha256 && !args.entities?.length)) {
-      throw new Error("INVALID_REQUEST: search requires a query, entities, error_signature_sha256, or browse=true without search hints")
-    }
-    const config = await settings("search", context)
-    const room = args.available_tokens ?? config.tokens
-    if (room > config.tokens) throw new Error("INVALID_REQUEST: available_tokens exceeds configured ceiling " + config.tokens)
-    const allowance = args.memory_budget_bytes ?? room
-    if (allowance > room) throw new Error("INVALID_REQUEST: memory_budget_bytes exceeds available_tokens " + room)
-    const scope = searchScope(config, context)
-    const command = ["search", "--repo", scope.repo, "--task", scope.task_id, "--run", scope.run_id, "--tokens", String(room)]
-    if (args.memory_budget_bytes !== undefined) command.push("--memory-budget-bytes", String(args.memory_budget_bytes))
-    if (args.request_id) command.push("--request-id", args.request_id)
-    const declared: Record<string, string | undefined> = { ...args.context }
-    for (const [key, value] of Object.entries(config.context ?? {})) {
-      if (!value) continue
-      const field = key === "binding" ? "binding_id" : key === "capability" ? "capability_id" : key
-      if (declared[field] && declared[field] !== value) {
-        throw new Error("INVALID_REQUEST: context." + field + " conflicts with configured context")
-      }
-      declared[field] = value
-    }
-    for (const [key, value] of Object.entries(declared)) {
-      const flag = key === "binding_id" ? "binding" : key === "capability_id" ? "capability" : key.replaceAll("_", "-")
-      if (value !== undefined) command.push("--" + flag, value)
-    }
-    for (const entity of args.entities ?? []) command.push("--entity-" + entity.kind, entity.name)
-    for (const kind of args.kinds ?? []) command.push("--kind", kind)
-    if (args.error_signature_sha256) command.push("--error-signature-sha256", args.error_signature_sha256)
-    if (args.advisory_conflicts) command.push("--advisory-conflicts")
-    if (args.semantic) command.push("--semantic")
-    if (args.browse) command.push("--browse", "--offset", String(args.offset ?? 0))
-    else {
-      if (args.offset !== undefined) command.push("--offset", String(args.offset))
-      command.push("--", query)
-    }
-    const view = searchView.parse(await call(config, context, command))
-    // Native callers need the structured arguments, not a shell invocation.
-    const index = view.index.map(({ pull_command, ...entry }) => entry)
-    // Presentation metadata for repeatable retries/pages, not part of the seal.
-    const result = render({ ...view, schema: "cairn.opencode-search/1", query_entities: args.entities ?? [], index }, { ...config, tokens: allowance })
-    if (args.memory_budget_bytes !== undefined) {
-      const remaining = view.bytes_remaining
-      if (typeof remaining !== "number" || !Number.isSafeInteger(remaining) || remaining < 0 ||
-          Buffer.byteLength(result, "utf8") + remaining > allowance) {
-        throw new Error("BUDGET_REFUSED: native search presentation and receipt allowance exceed memory budget")
-      }
-    }
-    return result
+    if (args.query.trim() === "") throw new Error("INVALID_REQUEST: preparation requires a subject query")
+    return executeSearch(args, context, true)
   },
 })
 

@@ -14,6 +14,7 @@ from check_opencode_unicode import check as check_unicode
 from check_native_history import check as check_history
 from check_native_assessments import check as check_assessments
 from check_recent_file_session import check as check_recent_files
+from check_opencode_retrieval import check_presentation as check_retrieval_presentation, check_store as check_retrieval_store
 from check_opencode_scope import check as check_scope, check_capture
 
 
@@ -109,7 +110,7 @@ def check(binary, root, environment, opencode, claim, support):
         'npm': '@ai-sdk/openai-compatible', 'name': 'No-model fixture',
         'options': {'baseURL': 'http://127.0.0.1:1/v1', 'apiKey': 'unused'},
         'models': {'probe': {'name': 'Probe'}}}}, permission={'*': 'deny'})
-    for name in ('search', 'pull', 'pull_evidence', 'remember', 'edit', 'history', 'assess', 'assessments'):
+    for name in ('search', 'prepare_note', 'pull', 'pull_evidence', 'remember', 'edit', 'history', 'assess', 'assessments'):
         config['permission']['cairn_' + name] = 'allow'
     config_path = work / 'opencode.json'
     config_path.write_text(json.dumps(config))
@@ -133,6 +134,8 @@ def check(binary, root, environment, opencode, claim, support):
         return json.loads(json.loads(result.stdout)['result']['output'])
 
     check_search_budget(invoke, settings_path, settings, root)
+    check_retrieval_presentation(invoke, settings_path, settings, root)
+    check_retrieval_store(invoke, binary, environment, settings_path, settings)
     check_scope(binary, environment, invoke, settings_path, settings, root / 'opencode-scope.json')
     check_capture(binary, environment, invoke, settings_path, settings, root / 'opencode-capture-scope.json')
     check_unicode(invoke, opencode, root / 'opencode-unicode', settings_path, settings)
