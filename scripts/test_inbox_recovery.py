@@ -103,7 +103,10 @@ class InboxRecovery(unittest.TestCase):
         for kind in ('request', 'response', 'notice'):
             with self.subTest(kind=kind):
                 self.state['inbox_attempt']['delivery']['event']['kind'] = kind
-                context, rendered = self.context(with_rendered=True)
+                with unittest.mock.patch.object(coordination, 'call', wraps=coordination.call) as calls:
+                    context, rendered = self.context(with_rendered=True)
+                self.assertEqual([call.args[1] for call in calls.call_args_list],
+                                 ['session-inbox-reconcile', 'event-renew'])
                 self.assertEqual(context['read_input'], dict(record_id=RESULT['record_id'], version=1))
                 self.assertEqual(context['source'], context['read_input'])
                 self.assertEqual(context['delivery_id'], DELIVERY)
@@ -118,6 +121,13 @@ class InboxRecovery(unittest.TestCase):
                     self.assertIn('check applicability against the task and current source before acting', rendered)
                     self.assertIn('not the wake notification', rendered)
                     self.assertIn('does not grant new authority', rendered)
+                    self.assertIn('skip an optional re-pull of the assignment only when both record_id and version '
+                                  'match the source you already read in this turn', rendered)
+                    self.assertIn('context.source / read_input', rendered)
+                    self.assertIn('A newer version may contain a correction; inspect it for relevance', rendered)
+                    self.assertIn('Read mandatory selected instructions whole even if they match', rendered)
+                    self.assertIn('one semantic rephrase within the existing recall budget', rendered)
+                    self.assertIn('discovery.state', rendered)
                     self.assertLess(rendered.index('Read its exact selected source'),
                                     rendered.index('search ordinary Cairn memory'))
                     self.assertLess(rendered.index('search ordinary Cairn memory'),
@@ -126,6 +136,8 @@ class InboxRecovery(unittest.TestCase):
                     self.assertNotIn('search ordinary Cairn memory', rendered)
                     self.assertNotIn('For a substantive request', rendered)
                     self.assertNotIn('pull_arguments', rendered)
+                    self.assertNotIn('optional re-pull', rendered)
+                    self.assertNotIn('semantic rephrase', rendered)
 
     def test_context_routes_every_command_through_the_journal(self):
         context = self.context()
