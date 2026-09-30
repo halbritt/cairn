@@ -63,9 +63,12 @@ their bodies. It does not guarantee relevance or room for a particular body.
 The memory allowance must be between 256 and `available_tokens`; omission keeps
 the existing behavior. Repeat both values on retries and pages. Do not declare
 the model's maximum window as available room: allow for the current prompt,
-tools, conversation and output first. If the actual room is unknown, use the
-remaining memory allowance for both values. An older tool may not expose the
-new argument; in that case use the existing smaller `available_tokens` request.
+tools, conversation and output first. If the actual room is unknown and both
+facade and API support the memory cap, omit `available_tokens` and supply the
+remaining allowance as `memory_budget_bytes`. This uses the configured policy
+default, not measured free context. Honor any known smaller free room. If support
+is unknown or an older tool lacks the field, use the existing smaller
+`available_tokens` request.
 Never retry an unsupported new argument by silently dropping its cap while
 keeping the larger context declaration.
 

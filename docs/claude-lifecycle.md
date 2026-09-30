@@ -69,8 +69,11 @@ native search/pull result text and envelopes. With a search tool that exposes
 `memory_budget_bytes`, set that field to the remaining memory allowance. The
 existing `available_tokens` field supplies the separate available input-context
 room used by optional-memory policy. It is not the model's maximum context
-window; if the task agent cannot establish its free input room, use the remaining
-memory allowance for both fields. Older tools accept only `available_tokens`;
+window. If free input room is unknown and both facade and API support the memory
+cap, omit `available_tokens` and supply the remaining allowance as
+`memory_budget_bytes`. This uses the configured policy default, not measured free
+context. Honor known smaller free room. With older tools or unknown cap support,
+use only `available_tokens`;
 keep that within the remaining memory allowance. Do not send an unsupported
 field or increase the declared context room just to obtain more candidates.
 

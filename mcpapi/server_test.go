@@ -280,6 +280,20 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		if err := json.Unmarshal(invoke("cairn_search", map[string]any{"query": "allocationneedle"}, ""), &defaultRoom); err != nil || defaultRoom.AvailableTokens != 64000 {
 			t.Fatalf("memory cap leaked into later default search: %+v %v", defaultRoom, err)
 		}
+		// An unknown live context size can use the configured policy default
+		// without dropping the caller's explicit memory allocation.
+		body, searchBytes = invokeMeasured("cairn_search", map[string]any{"query": "allocationneedle", "memory_budget_bytes": memoryAllowance}, "")
+		var defaultPolicy searchResult
+		if err := json.Unmarshal(body, &defaultPolicy); err != nil || defaultPolicy.AvailableTokens != 64000 || defaultPolicy.OptionalLimit != 6000 || len(defaultPolicy.Index) < 2 || searchBytes > memoryAllowance {
+			t.Fatalf("default policy with explicit memory cap: %s %v", body, err)
+		}
+		if defaultPolicy.MemoryBudget == nil || defaultPolicy.MemoryBudget.Schema != "cairn.memory-budget/1" || defaultPolicy.MemoryBudget.Bytes != memoryAllowance || searchBytes+defaultPolicy.BytesRemaining > memoryAllowance {
+			t.Fatalf("default policy lost sealed memory cap: %s", body)
+		}
+		pulled, pullBytes = invokeMeasured("cairn_pull", defaultPolicy.Index[0].PullArguments, "")
+		if err := json.Unmarshal(pulled, &expanded); err != nil || !strings.Contains(expanded.Selection.Record.Body, "日本語") || searchBytes+pullBytes > memoryAllowance {
+			t.Fatalf("default policy exceeded search/pull allocation: search=%d pull=%d err=%v", searchBytes, pullBytes, err)
+		}
 	})
 	t.Run("expanded preview envelope", func(t *testing.T) {
 		const allowance = 6000

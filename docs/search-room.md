@@ -78,6 +78,27 @@ than silently replaying it without the cap. Existing receipts remain readable.
 
 Update both the API and the CLI/MCP facade before using this field; no database
 migration is needed. Do not silently drop an unsupported field while keeping a
-larger context declaration. If actual context room or field support is unknown,
-use the remaining memory allowance as `available_tokens` with the existing
-interface. More previews do not establish useful guidance or task success.
+larger context declaration. If field support is unknown, use the remaining
+memory allowance as `available_tokens` with the existing interface.
+
+When both the facade and API support the memory cap but actual free context room
+is unknown, omit `available_tokens` and set `memory_budget_bytes` to the remaining
+memory allowance:
+
+```json
+{"query":"storage migration procedure","memory_budget_bytes":4500}
+```
+
+This uses the configured host default for optional policy, not an observation of
+free context. With the usual 32,000-byte host default, the default preview ceiling
+is 3,200 bytes instead of the 450 bytes that declaring `available_tokens: 4500`
+would allow. The explicit 4,500-byte cap still covers search delivery and its
+successful new expansions; it does not guarantee room for a pull. If the host
+default is smaller than the requested memory cap, the call refuses; lower the
+cap instead of increasing the configured ceiling. Known smaller free context
+room must constrain both arguments. This changes the client allocation choice,
+not server policy, access checks, or the caller's total memory allowance.
+
+Account for prior hook context and all other memory calls separately. Neither
+the configured default nor more previews establishes useful guidance, task
+success, or whole-conversation budget enforcement.
