@@ -17,6 +17,7 @@ type prepareNoteArgs struct {
 	Context           *core.ContextPins `json:"context,omitempty" jsonschema:"Actual current retrieval context; must not conflict with host context. Not the proposed note's capture pins."`
 	AvailableTokens   *int              `json:"available_tokens,omitempty" jsonschema:"Known free input-context room within the host ceiling. Omit when unknown to use host policy default; not the memory allocation."`
 	MemoryBudgetBytes *int              `json:"memory_budget_bytes,omitempty" jsonschema:"Optional total UTF-8 allowance for preparation output and receipt expansions, within available_tokens. 1024 bytes are reserved for guidance; at least 1280 bytes are needed. Count combined recall across calls yourself."`
+	MinPullBytes      *int              `json:"min_pull_bytes,omitempty" jsonschema:"Optional minimum charged receipt expansion allowance left after preparation, for pulling predecessor sources. Requires memory_budget_bytes; 1 through min(24000, memory_budget_bytes minus the 1024 guidance bytes). Reserves within that total by reducing preview delivery, never by increasing total room, dropping the guidance or truncating required context; the final preparation result must fit memory_budget_bytes minus this reserve. May refuse if guidance, envelope and required context cannot fit. Not plain body bytes, a guaranteed successful pull, proof of relevance or clearance to save. Omit for existing allocation; repeat on retries and use a new request UUID when changing it."`
 	RequestID         string            `json:"request_id,omitempty" jsonschema:"Optional search retry UUID. Reuse only for identical preparation arguments. Later save/edit is a separate explicit mutation."`
 }
 
@@ -35,6 +36,6 @@ func (t memoryTools) prepareNote(ctx context.Context, request *mcp.CallToolReque
 	return t.searchWithPreparation(ctx, request, searchArgs{
 		Query: args.Query, Entities: args.Entities, Context: args.Context,
 		AvailableTokens: args.AvailableTokens, MemoryBudgetBytes: args.MemoryBudgetBytes,
-		RequestID: args.RequestID,
+		MinPullBytes: args.MinPullBytes, RequestID: args.RequestID,
 	}, true)
 }

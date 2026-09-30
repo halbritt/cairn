@@ -195,18 +195,28 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 		}
 		memoryRoom = *args.MemoryBudgetBytes
 	}
-	if args.MinPullBytes != nil && (args.MemoryBudgetBytes == nil || *args.MinPullBytes < 1 || *args.MinPullBytes > min(24000, memoryRoom)) {
-		return nil, nil, fmt.Errorf("INVALID_REQUEST: min_pull_bytes requires memory_budget_bytes and 1..min(24000, memory_budget_bytes)")
-	}
+	// The API measures a reserve against the receipt cap it is given. For
+	// preparation that is the caller's allowance less the guidance bytes, which
+	// the final result check below still charges once, with the reserve.
+	receiptRoom := memoryRoom
 	if prepare {
 		// Reserve space for the decision guidance without treating the smaller
 		// memory allowance as measured free input room. Final serialization is
 		// still checked by toolResult; required selections are never truncated.
-		indexRoom := memoryRoom - preparationOverhead
-		if indexRoom < 256 {
+		receiptRoom -= preparationOverhead
+		if receiptRoom < 256 {
 			return nil, nil, errors.New("BUDGET_REFUSED: note preparation needs room for guidance and a search receipt")
 		}
-		args.MemoryBudgetBytes = &indexRoom
+	}
+	if args.MinPullBytes != nil && (args.MemoryBudgetBytes == nil || *args.MinPullBytes < 1 || *args.MinPullBytes > min(24000, receiptRoom)) {
+		bound := "memory_budget_bytes"
+		if prepare {
+			bound = fmt.Sprintf("memory_budget_bytes-%d", preparationOverhead)
+		}
+		return nil, nil, fmt.Errorf("INVALID_REQUEST: min_pull_bytes requires memory_budget_bytes and 1..min(24000, %s)", bound)
+	}
+	if prepare {
+		args.MemoryBudgetBytes = &receiptRoom
 	}
 	if args.Semantic && args.Browse {
 		return nil, nil, fmt.Errorf("semantic discovery cannot be combined with browsing")

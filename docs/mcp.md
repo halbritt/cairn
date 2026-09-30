@@ -98,6 +98,10 @@ The CLI and MCP also check the final serialized search response against the
 cap minus the requested reserve. Repeated exposure still counts toward the
 caller's aggregate task budget.
 
+`cairn_prepare_note` accepts the same field under the same rules, with the
+guidance allowance counted first; see
+[preparation](#inspect-possible-predecessors-before-saving).
+
 Each receipt has its own budget. The agent still accounts for lifecycle context,
 other receipts, retries and error messages in the task's aggregate allowance.
 
@@ -148,7 +152,7 @@ Before saving knowledge that may replace an existing note, use
 | `cairn_pull` | Pass an entry's `pull_arguments` unchanged for the full body. Add `span: {offset: 0, length: 4096}` for a partial A/B source, or copy the entry's `summary_span` to read its exact preview source bytes. Use a new request UUID for each range. Reuse identical arguments for retries. Instructions require whole delivery. |
 | `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its full-object `expected_sha256`, and a retry `request_id`. Optional `span: {offset: 0, length: 4096}` selects at most that many bytes. Shares the body's expansion credits and bytes. |
 | `cairn_remember` | `body` and a stable UUID `request_id`; optional `scope`, `kind`, `shareable`, `entities` and explicit `pins`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |
-| `cairn_prepare_note` | Required short subject `query`; optional `entities`, current `context`, `request_id`, `available_tokens` and `memory_budget_bytes`. Returns ordinary eligible search previews/handles plus pre-save guidance. Saves no note and performs no edit or retirement. |
+| `cairn_prepare_note` | Required short subject `query`; optional `entities`, current `context`, `request_id`, `available_tokens`, `memory_budget_bytes` and `min_pull_bytes`. Returns ordinary eligible search previews/handles plus pre-save guidance. Saves no note and performs no edit or retirement. |
 | `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and exactly one of `body`, `append` (a verbatim suffix), `replace` (`old_text`/`new_text` for one exact passage), a complete replacement `draft`, or `evidence_citations` to replace source references (`[]` clears them). Revises an active A note; text edits preserve citations. See [ordinary citations](evidence-citations.md#ordinary-notes). Returns identifiers without echoing the body. |
 | `cairn_history` | `record_id` with optional `limit`/`before_version` for retained metadata, or positive `version` for one exact body. Add `span: {offset, length}` for a bounded byte excerpt of that version. Historical comparison only; no current eligibility or authority. Uses configured repository, authenticated destination and the tool output budget. See [retained history](record-history.md#native-tools). |
 | `cairn_assessments` | Known `receipt_id` owned by the configured profile. Reads ordered assessment history with reasons and evidence IDs, without evidence bodies. |
@@ -539,6 +543,30 @@ refuses. Required context and handles are never truncated. The receipt exposes
 the smaller search/expansion cap; account for preparation output and later pulls
 against the original total, and combine this with other memory calls yourself.
 An older API that refuses the cap remains an error, with no uncapped retry.
+
+To keep room to pull a predecessor after preparation, add `min_pull_bytes` with
+an explicit `memory_budget_bytes`, for example
+`{"query": "Cairn socket configuration procedure", "memory_budget_bytes": 8000, "min_pull_bytes": 3000}`.
+It uses the search reserve contract above: at least that much **charged receipt
+expansion allowance** remains after the call, gained by omitting complete
+optional preview groups. It does not enlarge the total, drop the guidance, or
+truncate required context. Its range is 1 through the smaller of 24,000 or the
+total less the 1,024 guidance bytes; a value above that, or without an explicit
+total, is refused before any API call. The facade forwards the total less
+guidance once as the receipt cap and the reserve once as `min_pull_bytes`, then
+requires the final native JSON, including the guidance, to fit the total less
+the reserve; otherwise the call returns `BUDGET_REFUSED`. A reserve near the
+limit can therefore refuse even though its value is valid. The result reports
+the actual `bytes_remaining`, and `memory_budget` seals `cairn.memory-budget/2`
+with the receipt cap, which is smaller than the caller's total. Omission keeps
+the earlier behavior and `cairn.memory-budget/1`. This is a charged allowance,
+not plain body bytes, a guaranteed successful pull, proof of relevance or
+clearance to save. Repeat the reserve on identical retries; changing it needs a
+new request UUID. Pulls spend the reserve and a retry reports the remaining
+balance. An older facade or API that rejects the field remains an error: do not
+retry without it and claim a reservation. `cairn_client_info` declares only
+`search_min_pull_bytes`; the registered `cairn_prepare_note` input schema shows
+whether this facade accepts the field.
 
 Local contract tests cover candidate inspection and correction, destination
 filtering, mandatory context, concurrent-edit refusal, history, budgets and API

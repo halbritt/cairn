@@ -849,6 +849,77 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		}
 	})
 
+	t.Run("prepare reserves checked source pull", func(t *testing.T) {
+		const allowance, reserve = 8000, 3000
+		sources := map[string]string{}
+		for i := range 5 {
+			body := fmt.Sprintf("reservedprep %d: keep the rollout flag ", i) + strings.Repeat("guidance ", 20) + "café 日本語 " + strings.Repeat("\"\\\n\t", 20)
+			var written recordWriteResult
+			json.Unmarshal(invoke("cairn_remember", rememberArgs{RequestID: uuid.NewString(), Body: body, Kind: "procedure", Shareable: true}, ""), &written)
+			sources[written.RecordID] = body
+		}
+		prepare := func(min *int, want string) (searchResult, int) {
+			t.Helper()
+			allowed := allowance
+			args := prepareNoteArgs{Query: "reservedprep", MemoryBudgetBytes: &allowed, MinPullBytes: min, RequestID: uuid.NewString()}
+			body, size := invokeMeasured("cairn_prepare_note", args, want)
+			var view searchResult
+			if want == "" {
+				if err := json.Unmarshal(body, &view); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return view, size
+		}
+		legacy, legacySize := prepare(nil, "")
+		if legacy.MemoryBudget == nil || legacy.MemoryBudget.Schema != "cairn.memory-budget/1" || legacy.MemoryBudget.MinPullBytes != 0 || legacy.MemoryBudget.Bytes != allowance-preparationOverhead ||
+			len(legacy.Index) != len(sources) || legacySize+legacy.BytesRemaining > allowance || legacy.BytesRemaining >= reserve {
+			t.Fatalf("omission changed legacy preparation or fixture cannot show the reserve: size=%d %+v", legacySize, legacy)
+		}
+		// Without a reserve this fixture leaves too little receipt room for even
+		// its first source, which is the failure the option addresses.
+		invoke("cairn_pull", legacy.Index[0].PullArguments, "BUDGET_REFUSED")
+		minimum := reserve
+		reserved, size := prepare(&minimum, "")
+		if reserved.Preparation == nil || reserved.Preparation.NoteSaved || reserved.MemoryBudget == nil || reserved.MemoryBudget.Schema != "cairn.memory-budget/2" || reserved.MemoryBudget.MinPullBytes != reserve || reserved.MemoryBudget.Bytes != allowance-preparationOverhead {
+			t.Fatalf("reserve lost sealed contract or no-save guidance: %+v", reserved)
+		}
+		// The reserve reduces optional previews within the same total. It must
+		// neither exceed the caller's total nor spend it on the reserved bytes.
+		if reserved.BytesRemaining < reserve || len(reserved.Index) == 0 || len(reserved.Index) >= len(legacy.Index) || size > allowance-reserve || size+reserved.BytesRemaining > allowance {
+			t.Fatalf("reserve did not bound previews and envelope: size=%d remaining=%d previews=%d legacy=%d", size, reserved.BytesRemaining, len(reserved.Index), len(legacy.Index))
+		}
+		if len(reserved.Selected) != 1 || reserved.Selected[0].Record.RecordID != mandatory.RecordID || reserved.Selected[0].Record.Body != mandatory.Body {
+			t.Fatal("reserve truncated whole mandatory context")
+		}
+		entry := reserved.Index[0]
+		want, ok := sources[entry.RecordID]
+		if !ok {
+			t.Fatalf("preview is not a saved predecessor: %+v", entry)
+		}
+		pulled, pullSize := invokeMeasured("cairn_pull", entry.PullArguments, "")
+		var expanded core.Expansion
+		if err := json.Unmarshal(pulled, &expanded); err != nil || expanded.Selection.Record.Body != want || expanded.BytesRemaining >= reserved.BytesRemaining || size+pullSize > allowance {
+			t.Fatalf("reserved predecessor pull lost content or accounting: prepare=%d pull=%d cap=%d err=%v", size, pullSize, allowance, err)
+		}
+		t.Logf("prepare reserve: legacy previews=%d/%dB remaining=%d; reserved previews=%d/%dB remaining=%d; first pull=%dB", len(legacy.Index), legacySize, legacy.BytesRemaining, len(reserved.Index), size, reserved.BytesRemaining, pullSize)
+		// The minimum applies at issuance. An identical retry reports the spent
+		// balance, and a changed reserve is a different request.
+		args := prepareNoteArgs{Query: "reservedprep", MemoryBudgetBytes: ptrInt(allowance), MinPullBytes: &minimum, RequestID: reserved.RequestID}
+		var retried searchResult
+		if err := json.Unmarshal(invoke("cairn_prepare_note", args, ""), &retried); err != nil || retried.ReceiptID != reserved.ReceiptID || retried.BytesRemaining != expanded.BytesRemaining {
+			t.Fatalf("prepare retry changed spent allowance: %+v err=%v", retried, err)
+		}
+		args.MinPullBytes = ptrInt(reserve + 1)
+		invoke("cairn_prepare_note", args, "IDEMPOTENCY_CONFLICT")
+		args.MinPullBytes = nil
+		invoke("cairn_prepare_note", args, "IDEMPOTENCY_CONFLICT")
+		// Mandatory context and the guidance envelope come first: a reserve that
+		// leaves no room for them refuses instead of truncating either one.
+		args = prepareNoteArgs{Query: "reservedprep", MemoryBudgetBytes: ptrInt(1500), MinPullBytes: ptrInt(1500 - preparationOverhead), RequestID: uuid.NewString()}
+		invoke("cairn_prepare_note", args, "BUDGET_REFUSED")
+	})
+
 }
 
 // CI shares its service database across packages. Bootstrap this fixture in its
