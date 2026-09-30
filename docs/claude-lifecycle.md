@@ -53,6 +53,9 @@ with at most two seconds per pull; packing and state-save overhead can add time.
 `candidate_inspection` reports attempted pulls, remaining calls and refusals.
 
 Whole candidate bodies take priority within the configured context ceiling.
+The agent-tools cue states shared source-check and safety guidance once; the
+ambient guidance paragraph is not appended again. Response fields and whole
+source bodies retain their existing representation.
 Up to three remaining previews retain complete handles and source-span/conflict
 metadata, except the redundant CLI `pull_command`. Whole preview groups occupy
 at most 2,000 additional UTF-8 bytes. When no bodies are delivered, previews also

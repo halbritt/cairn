@@ -72,6 +72,28 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertEqual(state['last_recall']['outcome'], 'delegated')
         self.assertIn('unverified', text)
 
+    def test_compact_instructions_leave_room_for_whole_conflict_and_native_inspection(self):
+        self.config['context_bytes'] = 5000
+        self.result['selected'] = [dict(mandatory=True, record=dict(
+            record_id='required', version=1, body='Retain both competing positions whole.'))]
+        self.conflict(2)
+        for entry in self.entries[:2]:
+            body = 'Keep 日本語 conditions and "quoted" prerequisites. ' * 10
+            entry['body_sha256'] = hashlib.sha256(body.encode()).hexdigest()
+            self.responses[entry['record_id']]['selection']['record']['body'] = body
+        original = json.loads(json.dumps(self.result))
+        text, view, state = self.invoke()
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(view['selected'], self.result['selected'])
+        self.assertEqual(len(view['candidate_bodies']), 1)
+        self.assertEqual(view['candidate_bodies'][0]['response'], self.responses[self.entries[0]['record_id']])
+        self.assertEqual(view['candidate_inspection']['delivered_records'], 2)
+        self.assertEqual(view['candidate_inspection']['pull_calls'], 1)
+        self.assertGreaterEqual(view['remaining_memory_bytes'], 500)
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5000)
+        self.assertEqual(self.result, original)
+        self.assertEqual(state['seen'], {})
+
     def test_whole_context_refusal_retains_required_text_and_handles(self):
         self.result['selected'] = [dict(mandatory=True, record=dict(body='Keep this required rule whole.'))]
         body = '巨大な候補' * 3000
