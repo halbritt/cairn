@@ -95,7 +95,16 @@ Save and revise hints through the existing body operations. Full body replacemen
 removes any omitted hints; correct or remove stale phrases instead of appending
 contradictory lists. Hints share the note's version history and sensitivity.
 Earlier versions and retained receipts keep their original bytes. There is no
-automatic enrichment or backfill of existing notes.
+background enrichment or collection-wide backfill of existing notes.
+
+Lifecycle capture may use concrete wording from the supplied episode when it
+already selects a reusable memory. It may add up to three grounded phrases if
+that wording is absent from the main prose. It must preserve prerequisites and
+exclusions, omit hints before shortening substantive guidance, and never create
+or revise a memory solely to add hints. This does not update the rest of the
+collection. Changing the capture prompt invalidates its selection fingerprint,
+so a later eligible capture can revisit a previously captured excerpt and incur
+another selector call; the same substantive-selection rule still applies.
 
 This convention makes alternate writer vocabulary available to the existing
 matcher. Improved discovery and task outcomes still require fresh evidence;

@@ -130,6 +130,15 @@ note use record_id=null, a concise stable topic title under 90 UTF-8 bytes, and
 body with project, rationale and source/verification context. Do not put session
 UUIDs or routine progress in durable notes. Use null/[] for lookup-only exchanges,
 speculation, duplicate information or nothing useful. Honor the user's exclusions.
+For a reusable memory, retain concrete task wording from this excerpt when it
+helps a future agent recognize the situation. If that wording is absent from
+the main prose, you may add a short final 'Retrieval hints (writer-supplied):'
+paragraph with up to three phrases grounded in this excerpt. This is optional:
+do not invent use cases, widen prerequisites or exclusions, add unrelated
+keywords, or copy private vocabulary. Omit hints before shortening substantive
+guidance to fit. Revise stale hints with substantive changes to the note; do not
+enrich other notes or create or revise a memory solely to add hints. Hints do not
+establish applicability or authority.
 Never include credentials, secrets, private Council content, raw dialogue, tool
 output or full model responses. Distinguish plans/testimony from verified results.
 Each body must be under 6000 UTF-8 bytes. No tools or external actions are available.
