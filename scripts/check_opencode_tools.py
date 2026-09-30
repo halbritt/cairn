@@ -17,6 +17,82 @@ from check_recent_file_session import check as check_recent_files
 from check_opencode_scope import check as check_scope, check_capture
 
 
+def check_search_budget(invoke, settings_path, settings, root):
+    """Exercise adapter presentation boundaries with a scripted CLI, no store."""
+    fixture = root / 'budget-response.json'
+    arguments = root / 'budget-arguments.json'
+    executable = root / 'budget-cli'
+    executable.write_text('#!/usr/bin/python3\nimport json, pathlib, sys\n'
+        + f'pathlib.Path({str(arguments)!r}).write_text(json.dumps(sys.argv[1:]))\n'
+        + f'print(pathlib.Path({str(fixture)!r}).read_text())\n')
+    executable.chmod(0o700)
+    handles = dict(request_id=str(uuid.uuid4()), receipt_id=str(uuid.uuid4()), handle=str(uuid.uuid4()))
+    view = dict(schema='cairn.agent-search/1', selected=[dict(body='日本語 😀 "quoted"\n\\ literal \u2028')],
+                index=[dict(summary='source 日本語', pull_arguments=handles)], source_seal='unchanged', bytes_remaining=0)
+    def reply(value):
+        fixture.write_text(json.dumps(dict(schema='cairn.response/1', ok=True, data=value), ensure_ascii=True))
+    try:
+        settings_path.write_text(json.dumps(dict(settings, executable=str(executable), tokens=32000)))
+        reply(view)
+        result = invoke('search', dict(query='fixture', available_tokens=32000, memory_budget_bytes=2000))
+        assert result['selected'] == view['selected'] and result['index'][0]['pull_arguments'] == handles
+        assert result['source_seal'] == 'unchanged' and 'pull_command' not in result['index'][0]
+        args = json.loads(arguments.read_text())
+        assert args[args.index('--tokens') + 1] == '32000'
+        assert args[args.index('--memory-budget-bytes') + 1] == '2000'
+        # Exact final serialized UTF-8 length includes native schema/metadata and escaping.
+        size = len(json.dumps(result, ensure_ascii=False, separators=(',', ':')).encode())
+        assert size >= 256
+        assert invoke('search', dict(query='fixture', memory_budget_bytes=size)) == result
+        invoke('search', dict(query='fixture', memory_budget_bytes=size - 1), 'BUDGET_REFUSED')
+        invoke('search', dict(query='fixture', available_tokens=size - 1), 'BUDGET_REFUSED')
+        # CLI data alone fits: the adapter must still charge its presentation fields.
+        assert len(json.dumps(view, ensure_ascii=False, separators=(',', ':')).encode()) < size
+        invoke('search', dict(query='fixture', memory_budget_bytes=size,
+                              entities=[dict(kind='file', name='extra日本語.go')]), 'BUDGET_REFUSED')
+        view['index'][0]['pull_command'] = 'unused shell command'
+        reply(view)
+        assert invoke('search', dict(query='fixture')) == result
+        assert '--memory-budget-bytes' not in json.loads(arguments.read_text())
+        for invalid in (None, True, '2000', 255, 0, -1, 256.5, 1000001, 32001):
+            arguments.unlink()
+            invoke('search', dict(query='fixture', memory_budget_bytes=invalid), 'INVALID_REQUEST')
+            assert not arguments.exists(), invalid
+            arguments.write_text('[]')
+        invoke('search', dict(query='fixture', available_tokens=1000, memory_budget_bytes=1001), 'INVALID_REQUEST')
+        invoke('search', dict(query='fixture', available_tokens=32001, memory_budget_bytes=1000), 'INVALID_REQUEST')
+        # Native query metadata must fit alongside the server's remaining pull allowance.
+        long_entities = [dict(kind='file', name=f'{i:02d}' + 'a' * 507 + '.go') for i in range(16)]
+        shared = dict(view, bytes_remaining=10000)
+        reply(shared)
+        legacy = invoke('search', dict(query='fixture', entities=long_entities))
+        native_size = len(json.dumps(legacy, ensure_ascii=False, separators=(',', ':')).encode())
+        assert native_size < 12000 < native_size + shared['bytes_remaining']
+        invoke('search', dict(query='fixture', entities=long_entities,
+                              available_tokens=32000, memory_budget_bytes=12000), 'BUDGET_REFUSED')
+        reply(dict(view, bytes_remaining=321))
+        expected = invoke('search', dict(query='fixture'))
+        size = len(json.dumps(expected, ensure_ascii=False, separators=(',', ':')).encode())
+        assert invoke('search', dict(query='fixture', memory_budget_bytes=size + 321)) == expected
+        invoke('search', dict(query='fixture', memory_budget_bytes=size + 320), 'BUDGET_REFUSED')
+        for invalid in (None, True, -1, 0.5, '321', 9007199254740992):
+            reply(dict(view, bytes_remaining=invalid))
+            invoke('search', dict(query='fixture', memory_budget_bytes=2000), 'BUDGET_REFUSED')
+        missing = dict(view)
+        del missing['bytes_remaining']
+        reply(missing)
+        invoke('search', dict(query='fixture', memory_budget_bytes=2000), 'BUDGET_REFUSED')
+        # Convenience text cannot replace any member of the usable structured handle.
+        for key in handles:
+            broken = json.loads(json.dumps(view))
+            del broken['index'][0]['pull_arguments'][key]
+            reply(broken)
+            invoke('search', dict(query='fixture', memory_budget_bytes=2000), key)
+        print('OpenCode separate allowance: forwarding, defaults, complete handles, UTF-8 and exact presentation boundary verified')
+    finally:
+        settings_path.write_text(json.dumps(settings))
+
+
 def check(binary, root, environment, opencode, claim, support):
     check_recent_files(binary, root, environment, opencode)
     work = root / 'opencode-tools'
@@ -56,6 +132,7 @@ def check(binary, root, environment, opencode, claim, support):
         assert result.returncode == 0, (name, result.stderr, result.stdout)
         return json.loads(json.loads(result.stdout)['result']['output'])
 
+    check_search_budget(invoke, settings_path, settings, root)
     check_scope(binary, environment, invoke, settings_path, settings, root / 'opencode-scope.json')
     check_capture(binary, environment, invoke, settings_path, settings, root / 'opencode-capture-scope.json')
     check_unicode(invoke, opencode, root / 'opencode-unicode', settings_path, settings)
@@ -130,7 +207,18 @@ def check(binary, root, environment, opencode, claim, support):
     for invalid in (0, -1, 255, 64001, 1000001, 300.5, '8000', True, None):
         invoke('search', dict(query=marker, available_tokens=invalid), 'INVALID_REQUEST')
     invoke('search', dict(query=marker, available_tokens=256), 'BUDGET_REFUSED')
-    print('Native OpenCode searches honor smaller per-call room, preserve defaults, and share bounded pull retries')
+    budgeted = invoke('search', dict(query=marker, available_tokens=32000, memory_budget_bytes=5000))
+    assert budgeted['available_tokens'] == 32000 and budgeted['optional_limit'] == 3200
+    assert budgeted['memory_budget'] == dict(schema='cairn.memory-budget/1', bytes=5000)
+    assert len(json.dumps(budgeted, ensure_ascii=False, separators=(',', ':')).encode()) <= 5000
+    entry = next(e for e in budgeted['index'] if e['record_id'] == saved['record_id'])
+    assert 'pull_command' not in entry and set(entry['pull_arguments']) == {'request_id', 'receipt_id', 'handle'}
+    budget_pull = invoke('pull', entry['pull_arguments'])
+    assert budget_pull['selection']['record']['body'] == capture['body']
+    assert sum(len(json.dumps(v, ensure_ascii=False, separators=(',', ':')).encode())
+               for v in (budgeted, budget_pull)) <= 5000
+    assert invoke('pull', entry['pull_arguments']) == budget_pull
+    print('Native OpenCode searches honor separate allowances, preserve defaults, and share bounded pull retries')
 
     fallback = invoke('search', dict(query=marker, semantic=True))
     assert fallback['status'] == 'DEGRADED_NO_EMBEDDINGS'

@@ -42,8 +42,8 @@ need no upgrade.
 
 ## Allocate memory separately from available context
 
-The MCP search, CLI `agent search --memory-budget-bytes`, and API `/v1/index`
-accept an optional `memory_budget_bytes` integer from 256 through
+The MCP and native OpenCode search, CLI `agent search --memory-budget-bytes`,
+and API `/v1/index` accept an optional `memory_budget_bytes` integer from 256 through
 `available_tokens` (CLI `--tokens`). For example:
 
 ```json
@@ -63,7 +63,11 @@ This opt-in contract conservatively accounts for MCP JSON string escaping and
 native response metadata. The CLI returns complete `pull_arguments` but omits
 convenience `pull_command` strings under this contract. Other receipts, repeated
 delivery of cached retries, and error responses still require caller accounting.
-The native OpenCode adapter does not yet expose this separate allocation.
+The native OpenCode adapter also checks that its final search JSON, including
+`query_entities`, fits alongside the receipt's remaining expansion allowance.
+It refuses the whole presentation if those combined bytes exceed the allocation;
+it does not reduce the server's allowance or truncate required context. This
+refusal can follow receipt creation. Change the request with a fresh UUID.
 
 Omission preserves existing packing, accounting and sealed bytes. An explicit
 allocation, including one equal to `available_tokens`, is distinct for request

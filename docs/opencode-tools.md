@@ -50,7 +50,7 @@ credentials, edit Git exclusions, or start a harness. Keep the connection file
 out of Git and start a fresh OpenCode session to load the installed tools. Upgrade
 the API separately when a new tool feature requires it.
 
-Use `--tokens` to set memory room (default 32,000). Optional `--revision`,
+Use `--tokens` to set the input-context ceiling (default 32,000). Optional `--revision`,
 `--workspace-sha256`, `--task-class`, `--task-phase`, `--binding` and `--capability` flags populate
 the existing declared context settings; the API validates them on retrieval.
 Use optional `--task` and `--run` for [declared task scope](#continue-a-task-across-sessions).
@@ -125,7 +125,25 @@ alone does not identify the cause of a stalled tool call.
 
 Search accepts [`available_tokens`](search-room.md) to lower its input room for
 one call beneath the configured `tokens` ceiling. Omission keeps the configured
-default; repeat the allowance on retries and pages.
+default. This is actual free input-context room, not the model window size.
+
+Use optional `memory_budget_bytes` for a smaller memory allowance without
+reducing the input room used by optional-memory policy. It must be an integer
+from 256 through the effective `available_tokens` (or configured default). For
+example, `{"query":"storage tests","available_tokens":32000,"memory_budget_bytes":6000}`
+keeps 32,000 bytes of policy input room while bounding the search response and
+its receipt expansions to the separate allowance. Omission preserves existing
+behavior; null, zero and values above the input room are invalid. Repeat both
+values on retries and pages; changing either requires a new request UUID.
+
+The adapter checks the UTF-8 size of its final serialized result, including
+`query_entities` and JSON escaping, against the effective allowance. With an
+explicit memory budget, that result plus the receipt's remaining expansion
+allowance must also fit. If the presentation does not fit, it refuses the whole
+result without shortening mandatory context or dropping structured pull handles. This does not enforce
+OpenCode's outer envelope or aggregate conversation usage; account for repeated
+cached deliveries, errors and other receipts separately. Presentation refusal
+can follow receipt creation; change the request with a fresh UUID.
 
 Capture accepts explicit [applicability pins](currentness-and-replay.md#saving-guidance-with-explicit-applicability),
 including task phase and validity. Search settings are never automatically copied
@@ -180,8 +198,10 @@ covers native sessions without an answering-model task.
 
 Search returns full mandatory `selected` context and an ordered index. Pass each
 relevant entry's complete `pull_arguments` to `cairn_pull`. Retain those arguments
-for retries. The CLI also retains its existing shell `pull_command`; the native
-adapter omits that redundant command from the tool result. Its
+for retries. The CLI may include a convenience shell `pull_command`; budgeted
+responses omit it and other responses may omit it to fit. The native adapter accepts
+either form, removes any redundant command, and preserves complete structured
+`pull_arguments`. Its
 `cairn.opencode-search/1` presentation preserves the underlying `source_schema`
 and `source_seal` and is not itself a sealed package.
 
