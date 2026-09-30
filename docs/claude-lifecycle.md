@@ -65,7 +65,13 @@ do not fit, coverage is incomplete or a handle expires, and four pull/span calls
 total. Use a semantic rephrase for a vocabulary miss when room permits; repeating
 discovery merely to obtain an already supplied handle adds delay. The aggregate budget is the
 configured `context_bytes`, counting the supplied lifecycle context plus all
-native search/pull result text and envelopes. With a search tool that exposes
+native search/pull result text and envelopes. The hook reports
+`remaining_memory_bytes` after conservatively subtracting the complete emitted
+context, including this field. Use it instead of estimating the hook's size;
+subtract later memory responses from it. It deducts this emitted block only;
+account separately for earlier retained hook blocks and memory calls. Outer
+harness framing is not measured.
+With a search tool that exposes
 `memory_budget_bytes`, set that field to the remaining memory allowance. The
 existing `available_tokens` field supplies the separate available input-context
 room used by optional-memory policy. It is not the model's maximum context

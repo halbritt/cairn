@@ -35,7 +35,7 @@ PREVIEW_MODEL_SECONDS = 5
 SEMANTIC_MODEL_SECONDS = 8
 SELECTOR_INPUT_BYTES = 24000
 AGENT_TOOLS_CUE = (
-    "Optional Cairn recall is delegated to this task agent. The index below contains unverified candidate previews, "
+    "Cairn recall is delegated to you. The index contains unverified candidate previews, "
     "not established guidance. Inspect them before broad investigation; pull promising notes before using them. "
     "The hook caps this list to reserve pull room; candidate_search.returned_entries counts entries before that cap. "
     "Use the existing cairn_search and cairn_pull tools with the actual task's project, files, errors and requirements. "
@@ -43,14 +43,14 @@ AGENT_TOOLS_CUE = (
     "For this task use at most 2 further searches and 4 pull/span calls total. Search when these candidates do not fit, "
     "coverage is incomplete, or a handle expires; do not repeat discovery just to obtain a supplied handle. "
     "Keep this lifecycle context plus all native search/pull result text, including envelopes, within {budget} UTF-8 bytes; "
+    "remaining_memory_bytes below is the allowance after this complete context. "
     "use memory_budget_bytes for the remaining allowance when supported. available_tokens is free input-context room, "
     "not the memory allotment or model window. If free room is unknown and both facade and API support the memory cap, "
     "omit available_tokens and send memory_budget_bytes for the remaining allowance. This uses the configured host "
     "policy default, not measured free room. Honor any known smaller free room. "
-    "If the memory cap is unsupported or its support is unknown, send only available_tokens within that allowance. "
-    "Use the remaining allowance capped by known free input room, not a small per-call share. "
-    "Never increase available_tokens beyond known free room. Optional previews normally receive only "
-    "10% of available_tokens, so a tiny value may admit no entry. Subtract actual returned bytes, not the requested cap. "
+    "For unsupported/unknown cap support, use available_tokens alone within the remaining allowance and known free room. "
+    "Do not divide the allowance per call or exceed known free room. Default optional previews receive 10% of policy room; "
+    "tiny values can admit none. Subtract actual returned bytes, not the requested cap. "
     "An empty index with OPTIONAL_BUDGET or TOTAL_BUDGET omissions is capacity-limited, not proof of no relevant notes. "
     "Do not spend the second search on semantic rephrasing for that reason; adjust only within real remaining room "
     "or report the limit. Use a semantic rephrase for a vocabulary miss when room permits. "
@@ -600,8 +600,9 @@ def render_agent_candidates(selected, result, budget, status):
     search = dict(status=result.get("status"), omitted=result.get("omitted", {}),
                   returned_entries=len(result.get("index", [])))
 
-    def render(entries):
-        return cue + GUIDANCE + encoded(dict(selected=selected, index=entries, candidate_search=search))
+    def render(entries, remaining=budget):
+        return cue + GUIDANCE + encoded(dict(selected=selected, index=entries, candidate_search=search,
+                                             remaining_memory_bytes=remaining))
 
     text = render([])
     base_bytes = len(text.encode())
@@ -621,7 +622,9 @@ def render_agent_candidates(selected, result, budget, status):
         packed.append(entry)
         text = candidate
     status.update(outcome="delegated", candidate_previews=len(packed))
-    return text
+    # The provisional allowance uses the widest possible decimal representation.
+    # Replacing it with the actual remainder can only shorten the context.
+    return render(packed, budget - len(text.encode()))
 
 
 def recall_timeout(deadline, limit=2):

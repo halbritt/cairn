@@ -62,10 +62,29 @@ class AgentToolRecallTests(unittest.TestCase):
         self.assertNotIn('{budget}', text)
         # The OpenCode adapter parses from this marker to the end of the text.
         view = json.loads(text[text.index('{"selected":'):])
+        remaining = view.pop('remaining_memory_bytes')
+        self.assertGreater(remaining, 0)
+        self.assertLessEqual(len(text.encode()) + remaining, self.config['context_bytes'])
         self.assertEqual(view, dict(selected=self.required, index=self.entries,
                                    candidate_search=dict(status='READY', omitted=dict(OPTIONAL_BUDGET=7,
                                                                                     NO_LEXICAL_MATCH=2),
                                                          returned_entries=1)))
+
+    def test_reported_remaining_memory_fits_full_unicode_context_and_whole_required_text(self):
+        self.required[0]['record']['body'] = 'Keep 日本語 qualifiers and "quoted" context. '
+        self.entries[0]['summary'] = '日本語 café \\ quoted "candidate"'
+        for budget in (4300, 9500, 10000, 65536):
+            with self.subTest(budget=budget):
+                self.config['context_bytes'] = budget
+                result, _ = self.invoke()
+                text = result['hookSpecificOutput']['additionalContext']
+                view = json.loads(text[text.index('{"selected":'):])
+                remaining = view['remaining_memory_bytes']
+                self.assertEqual(view['selected'], self.required)
+                self.assertGreaterEqual(remaining, 0)
+                spare = budget - len(text.encode())
+                self.assertLessEqual(remaining, spare)
+                self.assertLessEqual(spare - remaining, len(str(budget)))
 
     def test_candidates_keep_server_order_handles_spans_and_conflicts_with_three_entry_cap(self):
         self.entries = [dict(record_id=str(i), version=2, summary='Preview ' + str(i),
