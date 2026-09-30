@@ -2,6 +2,15 @@
 # Own the complete database lifetime; never use an existing Cairn store.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+trial_command=(python3 -B scripts/trial_task_eval.py "$@")
+if [[ "${1-}" == -- ]]; then
+    shift
+    if (( $# == 0 )); then
+        printf 'usage: %s -- COMMAND [ARG ...]\n' "$0" >&2
+        exit 2
+    fi
+    trial_command=("$@")
+fi
 pg_bin="${CAIRN_PG_BIN:-$(pg_config --bindir)}"
 trial_db_root="$(mktemp -d /tmp/cairn-task-eval-pg.XXXXXXXX)"
 cleanup() {
@@ -16,4 +25,4 @@ mkdir "$trial_db_root/socket"
 "$pg_bin/pg_ctl" -D "$trial_db_root/data" -l "$trial_db_root/postgres.log" \
     -o "-F -k $trial_db_root/socket -c listen_addresses='' -c max_connections=200" -w start >/dev/null
 export CAIRN_TASK_EVAL_PG="$trial_db_root/socket" CAIRN_TASK_EVAL_PG_BIN="$pg_bin"
-python3 -B scripts/trial_task_eval.py "$@"
+"${trial_command[@]}"

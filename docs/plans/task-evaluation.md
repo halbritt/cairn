@@ -189,6 +189,15 @@ directory and is not committed.
    insensitive rather than as a win. Include cost: injected bytes, hook latency,
    turns and tokens.
 
+Other local evaluators can reuse the same disposable PostgreSQL lifecycle with
+`bash scripts/trial-task-eval.sh -- COMMAND [ARG ...]`. The command runs from
+the Cairn checkout root and receives `CAIRN_TASK_EVAL_PG` (the private socket
+directory) and `CAIRN_TASK_EVAL_PG_BIN` (the PostgreSQL tools directory). Its
+arguments and exit status are preserved. When the command returns, the wrapper
+stops and removes its cluster. Without `--`, the native evaluator command above
+remains the default. This lets CAPLAB supply its own corpus and measurement
+procedure while reusing the existing cluster lifecycle.
+
 ## Interface needs for candidate retrieval (agent-112)
 
 - The harness consumes the hook's `additionalContext` JSON view (`index`,
