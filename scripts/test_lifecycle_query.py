@@ -55,8 +55,31 @@ class LifecycleQueryTests(unittest.TestCase):
         self.assertEqual(words, {self.root.name} | hook.terms(prompt))
         self.assertNotIn("memory", words)
 
+    def test_feature_vocabulary_does_not_request_a_workstream_continuation(self):
+        for prompt in ("Fix stale handoff status in the coordination UI.",
+                       "Make paused requests resume after reconnect.",
+                       "Ensure retries continue after a transport failure.",
+                       "Do not continue prior work; inspect the new failure."):
+            with self.subTest(prompt=prompt):
+                query = self.query(prompt)
+                self.assertNotIn('"' + hook.workstream_prefix(self.event).rstrip() + '"', query)
+                self.assertEqual(set(shlex.split(query)), {self.root.name} | hook.terms(prompt))
+
+    def test_explicit_continuation_and_workstream_anchors_are_preserved(self):
+        prefix = hook.workstream_prefix(self.event).rstrip()
+        for prompt in ("Continue editor layout", "  Please resume editor layout"):
+            with self.subTest(prompt=prompt):
+                self.assertIn('"' + prefix + '"', self.query(prompt))
+        title = hook.workstream_prefix(self.event) + "Queue repair"
+        for source in ("resume", "compact"):
+            event = dict(self.event, hook_event_name="SessionStart", source=source, session_id="query-test")
+            query = hook.retrieval_intent(event, dict(workstream=title))["query"]
+            self.assertIn('"' + title + '"', query)
+        event = dict(self.event, prompt="Inspect status", workstream="Queue repair")
+        self.assertIn('"' + title + '"', hook.retrieval_intent(event, {})["query"])
+
     def test_capture_related_searches_keep_vocabulary_and_candidate_guards(self):
-        prompt = " ".join("background%02d" % i for i in range(65)) + " Repair OpenCode memory_budget_bytes."
+        prompt = " ".join("background%02d" % i for i in range(65)) + " Repair handoff status and OpenCode memory_budget_bytes."
         messages = [dict(role="user", text=prompt)]
         for kind in ("handoff", "durable"):
             with self.subTest(kind=kind):
@@ -79,6 +102,8 @@ class LifecycleQueryTests(unittest.TestCase):
                 self.assertEqual(result, [records[0]])
                 self.assertIn("memory_budget_bytes", memory.search.call_args.args[0].split())
                 self.assertIn("opencode", memory.search.call_args.args[0].split())
+                self.assertNotIn('"' + hook.workstream_prefix(self.event).rstrip() + '"',
+                                 memory.search.call_args.args[0])
 
 
 if __name__ == "__main__":

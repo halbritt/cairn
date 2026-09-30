@@ -184,6 +184,13 @@ relevance or interpret a correction or negation. The same query construction is
 used for related-note searches during capture; capture admission and write checks
 are separate.
 
+A prompt beginning with `continue` or `resume` (optionally preceded by `please`)
+also prefers the project's handoff title prefix. Mentioning those words or
+`handoff` elsewhere does not add that preference: feature work can discuss
+resuming or handoffs without asking to resume an earlier task. This narrow
+heuristic is not an intent classifier. Explicit workstreams and native
+resume/compact events retain their saved-title anchors.
+
 The hooks use the existing authenticated CLI and hosted profile. Installing them
 explicitly enables lifecycle reads and selected writes independently of whether
 the model chooses a memory tool. Ordinary MCP calls retain their own permissions.

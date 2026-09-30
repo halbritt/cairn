@@ -518,9 +518,9 @@ def retrieval_intent(event, state):
             anchors.append(workstream_prefix(event).rstrip())
     anchors = [a for a in anchors if len(a.encode()) <= 256 and '"' not in a][:8]
     search_anchors = anchors
-    if re.search(r"\b(?:continue|resume|handoff)\b", prompt, re.IGNORECASE):
-        # Prefer this project's workstreams without treating project identity
-        # alone as evidence that any particular handoff answers the task.
+    if re.match(r"\s*(?:please\s+)?(?:continue|resume)\b", prompt, re.IGNORECASE):
+        # A leading continuation request may prefer this project's workstreams.
+        # Mentioning handoffs or resumable behavior in feature work must not.
         search_anchors = [workstream_prefix(event).rstrip(), *anchors][:8]
     query = project
     for part in [*('"' + item + '"' for item in search_anchors), *error_terms, *keywords]:
