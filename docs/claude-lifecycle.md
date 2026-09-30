@@ -40,16 +40,28 @@ and `--recall-mode ambient` explicitly restores the normal recall path. Unknown
 values fail before retrieval. This option does not change capture selection.
 
 In `agent_tools` mode, the hook retains the ordinary required-context search and
-whole-context budget check. When optional recall is eligible, it supplies a cue
-for the task agent to use its existing native `cairn_search` and `cairn_pull`
-tools, inspect candidates and verify applicability against the task's conditions
-and current source before use. The hook delivers no optional previews or bodies,
-makes no optional pulls, semantic searches or hosted selector calls, and gives no
-record a new seen-state credit. `last_recall.outcome` is `delegated`, which means
-the cue was offered, not that relevant memory was found or used.
+whole-context budget check. When optional recall is eligible, it supplies up to
+three unverified candidate previews from that same lexical result, in server
+order, with their complete handles and source-span/conflict metadata. Candidate
+entries occupy at most 2,000 additional UTF-8 bytes and half the room left after
+required context, the cue and search metadata. Entries that do not fit are omitted
+whole, together with later entries. Search status, server omission reasons and
+`candidate_search.returned_entries` (the count before hook packing) remain visible,
+so an empty list is not mistaken for proof that no guidance exists.
 
-The cue allows at most two searches per task (precise first, a semantic rephrase
-only if needed) and four pull/span calls total. Its aggregate budget is the
+The task agent inspects those candidates first, uses its native `cairn_pull` for
+promising notes, and checks applicability against the task and current source
+before using them. Hook and native tools must use profiles authorized to expand
+the same receipt; exposing a handle grants no new access. The hook makes no
+optional pulls, additional searches or hosted selector calls. It gives no record
+a new seen-state credit. `last_recall.candidate_previews` counts offered entries;
+`last_recall.outcome` remains `delegated`. Neither establishes that a note was
+read, applicable or used. Taskless startup and wake deferral are unchanged.
+
+The cue allows at most two further searches per task when the supplied candidates
+do not fit, coverage is incomplete or a handle expires, and four pull/span calls
+total. Use a semantic rephrase for a vocabulary miss when room permits; repeating
+discovery merely to obtain an already supplied handle adds delay. The aggregate budget is the
 configured `context_bytes`, counting the supplied lifecycle context plus all
 native search/pull result text and envelopes. With a search tool that exposes
 `memory_budget_bytes`, set that field to the remaining memory allowance. The

@@ -23,6 +23,9 @@ class AgentToolRecallTests(unittest.TestCase):
                           session_id='caed9473-b01a-41e7-95ce-c3c1f28d66b3', prompt='Repair lease expiry')
         self.required = [dict(mandatory=True, record=dict(record_id='required', version=1,
                                                         body='Preserve the current authority boundary.'))]
+        self.entries = [dict(record_id='optional', version=3, summary='Repair lease expiry: candidate preview',
+                             summary_span=dict(offset=90, length=39),
+                             pull_arguments=dict(receipt_id='receipt', handle='optional', request_id='pull'))]
         self.commands = []
 
     def transport(self, command, **kwargs):
@@ -31,8 +34,7 @@ class AgentToolRecallTests(unittest.TestCase):
         self.assertEqual(command[6], 'search', 'no optional pull may run')
         self.assertNotIn('--semantic', command, 'no semantic discovery may run')
         result = dict(status='READY', destination=dict(name='hosted'), selected=self.required,
-                      index=[dict(record_id='optional', version=3, summary='Repair lease expiry: unwanted preview',
-                                  pull_arguments=dict(receipt_id='receipt', handle='optional', request_id='pull'))])
+                      index=self.entries, omitted=dict(OPTIONAL_BUDGET=7, NO_LEXICAL_MATCH=2))
         return subprocess.CompletedProcess(command, 0, json.dumps(dict(ok=True, data=result)), '')
 
     def invoke(self, **event):
@@ -41,25 +43,79 @@ class AgentToolRecallTests(unittest.TestCase):
         state = json.loads((Path(self.config['state_dir']) / (self.event['session_id'] + '.json')).read_text())
         return result, state
 
-    def test_prompt_delegates_to_native_tools_without_optional_memory_or_seen_credit(self):
+    def test_prompt_offers_complete_candidates_without_pulls_or_seen_credit(self):
         result, state = self.invoke()
         text = result['hookSpecificOutput']['additionalContext']
         self.assertIn(self.required[0]['record']['body'], text)
         self.assertIn('cairn_search', text)
         self.assertIn('cairn_pull', text)
-        self.assertNotIn('unwanted preview', text)
-        self.assertNotIn('"record_id":"optional"', text)
+        self.assertIn('unverified candidate previews', text)
+        self.assertIn('candidate preview', text)
         self.assertEqual(len(self.commands), 1)
         self.assertEqual(state['seen'], {})
         self.assertEqual(state['last_recall']['outcome'], 'delegated')
         self.assertEqual(state['last_recall']['records'], [])
         self.assertEqual(state['last_recall']['inspected'], 0)
+        self.assertEqual(state['last_recall']['candidate_previews'], 1)
 
         self.assertIn('9500 UTF-8 bytes', text)
         self.assertNotIn('{budget}', text)
         # The OpenCode adapter parses from this marker to the end of the text.
         view = json.loads(text[text.index('{"selected":'):])
-        self.assertEqual(view, dict(selected=self.required, index=[]))
+        self.assertEqual(view, dict(selected=self.required, index=self.entries,
+                                   candidate_search=dict(status='READY', omitted=dict(OPTIONAL_BUDGET=7,
+                                                                                    NO_LEXICAL_MATCH=2),
+                                                         returned_entries=1)))
+
+    def test_candidates_keep_server_order_handles_spans_and_conflicts_with_three_entry_cap(self):
+        self.entries = [dict(record_id=str(i), version=2, summary='Preview ' + str(i),
+                             summary_span=dict(offset=11, length=14),
+                             conflicts=[dict(record_id='peer', version=1)],
+                             pull_arguments=dict(receipt_id='receipt', handle=str(i), request_id='pull-' + str(i)))
+                        for i in range(5)]
+        result, state = self.invoke()
+        text = result['hookSpecificOutput']['additionalContext']
+        view = json.loads(text[text.index('{"selected":'):])
+        self.assertEqual(view['index'], self.entries[:3])
+        self.assertEqual(view['candidate_search']['returned_entries'], 5)
+        self.assertEqual(state['last_recall']['candidate_previews'], 3)
+        self.assertEqual(state['last_recall']['records'], [])
+        self.assertEqual(len(self.commands), 1)
+
+    def test_oversize_unicode_candidate_omits_whole_tail_and_preserves_required_context(self):
+        self.entries[0]['summary'] = '\"日\\\n' * 600
+        self.entries.append(dict(record_id='later', version=1, summary='Shorter later-ranked candidate',
+                                 pull_arguments=dict(receipt_id='receipt', handle='later', request_id='later')))
+        result, state = self.invoke()
+        text = result['hookSpecificOutput']['additionalContext']
+        view = json.loads(text[text.index('{"selected":'):])
+        self.assertEqual(view['selected'], self.required)
+        self.assertEqual(view['index'], [])
+        self.assertEqual(view['candidate_search']['returned_entries'], 2)
+        self.assertLessEqual(len(text.encode()), self.config['context_bytes'])
+        self.assertEqual(state['last_recall']['candidate_previews'], 0)
+
+    def test_required_context_leaves_room_for_cue_but_not_a_candidate(self):
+        self.required[0]['record']['body'] = 'Required instruction. ' * 180
+        self.entries[0]['summary'] = '日' * 200
+        self.config['context_bytes'] = 7300
+        result, state = self.invoke()
+        text = result['hookSpecificOutput']['additionalContext']
+        view = json.loads(text[text.index('{"selected":'):])
+        self.assertEqual(view['selected'], self.required)
+        self.assertEqual(view['index'], [])
+        self.assertIn('unverified candidate previews', text)
+        self.assertEqual(state['last_recall']['outcome'], 'delegated')
+
+    def test_empty_candidates_preserve_omission_reasons_without_optional_calls(self):
+        self.entries = []
+        result, state = self.invoke()
+        text = result['hookSpecificOutput']['additionalContext']
+        view = json.loads(text[text.index('{"selected":'):])
+        self.assertEqual(view['index'], [])
+        self.assertEqual(view['candidate_search']['omitted']['OPTIONAL_BUDGET'], 7)
+        self.assertEqual(state['last_recall']['candidate_previews'], 0)
+        self.assertEqual(len(self.commands), 1)
 
     def test_resume_compact_and_explicit_workstream_delegate_without_optional_calls(self):
         for event in (dict(hook_event_name='SessionStart', source='resume', prompt=''),

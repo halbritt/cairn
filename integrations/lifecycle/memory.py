@@ -35,9 +35,13 @@ PREVIEW_MODEL_SECONDS = 5
 SEMANTIC_MODEL_SECONDS = 8
 SELECTOR_INPUT_BYTES = 24000
 AGENT_TOOLS_CUE = (
-    "Optional Cairn recall is delegated to this task agent; no optional guidance is included here. "
+    "Optional Cairn recall is delegated to this task agent. The index below contains unverified candidate previews, "
+    "not established guidance. Inspect them before broad investigation; pull promising notes before using them. "
+    "The hook caps this list to reserve pull room; candidate_search.returned_entries counts entries before that cap. "
     "Use the existing cairn_search and cairn_pull tools with the actual task's project, files, errors and requirements. "
-    "For this task use at most 2 searches and 4 pull/span calls total. Start with a precise search. "
+    "Use the supplied complete pull_arguments; the hook and tools must share an authorized memory profile. "
+    "For this task use at most 2 further searches and 4 pull/span calls total. Search when these candidates do not fit, "
+    "coverage is incomplete, or a handle expires; do not repeat discovery just to obtain a supplied handle. "
     "Keep this lifecycle context plus all native search/pull result text, including envelopes, within {budget} UTF-8 bytes; "
     "use memory_budget_bytes for the remaining allowance when supported. available_tokens is free input-context room, "
     "not the memory allotment or model window. If free room is unknown, set available_tokens to the remaining allowance too. "
@@ -583,6 +587,33 @@ def render_recall(selected, entries, expanded=None, discovery=None):
     return GUIDANCE + encoded(view)
 
 
+def render_agent_candidates(selected, result, budget, status):
+    cue = AGENT_TOOLS_CUE.format(budget=budget)
+    search = dict(status=result.get("status"), omitted=result.get("omitted", {}),
+                  returned_entries=len(result.get("index", [])))
+
+    def render(entries):
+        return cue + GUIDANCE + encoded(dict(selected=selected, index=entries, candidate_search=search))
+
+    text = render([])
+    base_bytes = len(text.encode())
+    if base_bytes > budget:
+        status["outcome"] = "delegation_omitted"
+        status["rejected"]["delegation_context_budget"] = 1
+        return render_recall(selected, []) if selected else ""
+    # Keep at least half the room after instructions available for native pulls.
+    preview_bytes = min(2000, (budget - base_bytes) // 2)
+    packed = []
+    for entry in result.get("index", [])[:3]:
+        candidate = render([*packed, entry])
+        if len(candidate.encode()) - base_bytes > preview_bytes:
+            break
+        packed.append(entry)
+        text = candidate
+    status.update(outcome="delegated", candidate_previews=len(packed))
+    return text
+
+
 def recall_timeout(deadline, limit=2):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
@@ -1028,16 +1059,7 @@ def recall(memory, event, state=None):
     if len(render_recall(selected, []).encode()) > budget:
         raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")
     if mode == "agent_tools" and not defer_optional:
-        text = render_recall(selected, [])
-        cue = AGENT_TOOLS_CUE.format(budget=budget)
-        if len((cue + text).encode()) <= budget:
-            text = cue + text
-            status["outcome"] = "delegated"
-        else:
-            status["outcome"] = "delegation_omitted"
-            status["rejected"]["delegation_context_budget"] = 1
-            if not selected:
-                text = ""
+        text = render_agent_candidates(selected, result, budget, status)
         status.update(discovery="agent_tools", bytes=len(text.encode()),
                       elapsed_seconds=round(time.monotonic() - started, 3))
         return ({"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
