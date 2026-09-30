@@ -4,6 +4,7 @@ import argparse
 import copy
 import fcntl
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -31,6 +32,7 @@ SEMANTIC_PREVIEW_LIMIT = 32
 SEMANTIC_PAGE_LIMIT = 4
 SEMANTIC_SEARCH_ROOM = 64000
 MAX_PULLED_CANDIDATES = 8
+INBOX_RECALL_VERSION = 1
 PREVIEW_MODEL_SECONDS = 5
 SEMANTIC_MODEL_SECONDS = 8
 SELECTOR_INPUT_BYTES = 24000
@@ -165,6 +167,17 @@ before relying on claims outside that passage.
 class HookError(Exception):
     """An expected host, transport or format failure, safe to report without payloads."""
 
+    def __init__(self, *args, code=None):
+        super().__init__(*args)
+        # Fixed categories only; never retain untrusted API messages or codes.
+        self.code = code if isinstance(code, str) and code in {"TIMEOUT", "API_UNAVAILABLE", "API_CONNECTION_FAILED",
+                                    "AUTHORITY_DENIED", "NOT_FOUND", "PAYLOAD_UNAVAILABLE",
+                                    "OPEN_CONFLICT", "POLICY_UNENFORCEABLE"} else None
+
+
+class RequiredContextRefused(HookError):
+    """A current or still-pending required selection cannot be restored whole."""
+
 
 class BudgetRefused(HookError):
     """This expansion exceeds the receipt's remaining credits or bytes."""
@@ -187,11 +200,11 @@ def run_json(command, *, body=None, timeout=5, env=None, cwd=None, observation=N
         process = bounded_command(command, body=body, timeout=timeout, env=env, cwd=cwd,
                                   observation=observation)
     except subprocess.TimeoutExpired as exc:
-        raise HookError("command timed out; memory operation not confirmed") from exc
+        raise HookError("command timed out; memory operation not confirmed", code="TIMEOUT") from exc
     except UnicodeError as exc:
         raise HookError("memory command returned invalid JSON") from exc
     except OSError as exc:
-        raise HookError("could not start memory command") from exc
+        raise HookError("could not start memory command", code="API_UNAVAILABLE") from exc
     if process.returncode:
         if observation is not None:
             observation["outcome"] = "nonzero_exit"
@@ -202,7 +215,8 @@ def run_json(command, *, body=None, timeout=5, env=None, cwd=None, observation=N
             refusal = None
         if isinstance(refusal, dict) and refusal.get("status") == "BUDGET_REFUSED":
             raise BudgetRefused("memory expansion budget exhausted")
-        raise HookError(f"memory command exited {process.returncode}; operation not confirmed")
+        raise HookError(f"memory command exited {process.returncode}; operation not confirmed",
+                        code=refusal.get("status") if isinstance(refusal, dict) else None)
     try:
         result = json.loads(process.stdout)
         if not isinstance(result, dict):
@@ -485,7 +499,7 @@ def file_hint(value, cwd, project=None):
     return name
 
 
-def retrieval_intent(event, state):
+def retrieval_intent(event, state, *, semantic=False):
     project = project_root(event).name
     prompt = event.get("prompt", "")
     paths = []
@@ -516,7 +530,10 @@ def retrieval_intent(event, state):
     project_words = terms(project)
     keywords = [word for word in dict.fromkeys(term_words(prompt))
                 if word not in project_words and len(word.encode()) <= 128]
-    anchors = list(dict.fromkeys([*paths, *phrases, *error_terms]))
+    # In semantic recall, inferred file identity remains an entity/text hint.
+    # Only explicit phrases/errors (and workstream anchors below) request the
+    # stronger exact-body preference; do not manufacture it from every path.
+    anchors = list(dict.fromkeys([*([] if semantic else paths), *phrases, *error_terms]))
     if event.get("workstream"):
         anchors.insert(0, workstream_prefix(event) + event["workstream"])
     if event.get("source") in ("resume", "compact"):
@@ -530,7 +547,8 @@ def retrieval_intent(event, state):
         # Mentioning handoffs or resumable behavior in feature work must not.
         search_anchors = [workstream_prefix(event).rstrip(), *anchors][:8]
     query = project
-    for part in [*('"' + item + '"' for item in search_anchors), *error_terms, *keywords]:
+    path_terms = [path.replace('"', ' ') for path in paths] if semantic else []
+    for part in [*('"' + item + '"' for item in search_anchors), *path_terms, *error_terms, *keywords]:
         if len((query + " " + part).encode()) <= 4000:
             query += " " + part
     return dict(query=query, files=paths, phrases=anchors,
@@ -632,7 +650,8 @@ def candidate_groups(entries):
         yield [e for e in entries if (e["record_id"], e["version"]) in members]
 
 
-def render_agent_candidates(selected, result, budget, status, bodies=(), inspection=None):
+def render_agent_candidates(selected, result, budget, status, bodies=(), inspection=None, measure=None):
+    measure = measure or (lambda text: len(text.encode()))
     cue = AGENT_TOOLS_CUE.format(budget=budget)
     search = dict(status=result.get("status"), omitted=result.get("omitted", {}),
                   returned_entries=len(result.get("index", [])))
@@ -647,7 +666,7 @@ def render_agent_candidates(selected, result, budget, status, bodies=(), inspect
         return cue + encoded(view)
 
     text = render([])
-    base_bytes = len(text.encode())
+    base_bytes = measure(text)
     if base_bytes > budget:
         if bodies:
             raise ContextRefused("whole candidate group exceeds lifecycle context budget")
@@ -668,25 +687,25 @@ def render_agent_candidates(selected, result, budget, status, bodies=(), inspect
             break
         group = [{key: value for key, value in entry.items() if key != "pull_command"} for entry in group]
         candidate = render([*packed, *group])
-        if len(candidate.encode()) - base_bytes > preview_bytes:
+        if measure(candidate) - base_bytes > preview_bytes:
             break
         packed.extend(group)
         text = candidate
     status.update(outcome="delegated", candidate_previews=len(packed), candidate_body_records=len(delivered))
-    status["native_allowance_bytes"] = budget - len(text.encode())
+    status["native_allowance_bytes"] = budget - measure(text)
     return render(packed, status["native_allowance_bytes"])
 
 
-def eager_agent_candidates(memory, result, budget, status, deadline):
+def eager_agent_candidates(memory, result, budget, status, deadline, measure=None):
     selected = result.get("selected", [])
     entries = result.get("index", [])
     # A whole body needs a checked immutable identity; legacy/test envelopes may
     # offer only previews, which remain available without speculative reads.
     if not any(re.fullmatch(r"[0-9a-f]{64}", entry.get("body_sha256", "")) for entry in entries):
-        return render_agent_candidates(selected, result, budget, status)
+        return render_agent_candidates(selected, result, budget, status, measure=measure)
     inspection = dict(pull_calls=0, remaining_pull_calls=4, delivered_records=0, refusals={})
     bodies = []
-    text = render_agent_candidates(selected, result, budget, status, bodies, inspection)
+    text = render_agent_candidates(selected, result, budget, status, bodies, inspection, measure=measure)
     if status["outcome"] != "delegated":
         return text
     for group in candidate_groups(entries):
@@ -713,7 +732,7 @@ def eager_agent_candidates(memory, result, budget, status, deadline):
                 raise HookError("whole competing candidate identity changed")
             candidate = dict(pull_arguments=group[0]["pull_arguments"], response=pulled)
             tentative = dict(inspection, delivered_records=inspection["delivered_records"] + len(group))
-            text = render_agent_candidates(selected, result, budget, status, [*bodies, candidate], tentative)
+            text = render_agent_candidates(selected, result, budget, status, [*bodies, candidate], tentative, measure=measure)
             bodies.append(candidate)
             inspection = tentative
         except BudgetRefused:
@@ -729,7 +748,7 @@ def eager_agent_candidates(memory, result, budget, status, deadline):
     # silent fallback to partial bodies or a relevance/success assertion.
     while True:
         try:
-            text = render_agent_candidates(selected, result, budget, status, bodies, inspection)
+            text = render_agent_candidates(selected, result, budget, status, bodies, inspection, measure=measure)
             status["candidate_inspection"] = inspection
             return text
         except ContextRefused:
@@ -781,6 +800,16 @@ def codex_budget_ledger(path, session, budget):
                     or grant["emitted_hook_bytes"] + grant["reserved_native_bytes"] > grant["limit_bytes"]
                     or (not grant["granted"] and grant["reserved_native_bytes"] != 0)):
                 raise ValueError("invalid grant accounting")
+            required = grant.get("required", dict(count=0, selection_sha256="", pending=False))
+            if (not isinstance(required, dict) or type(required.get("count")) is not int or required["count"] < 0
+                    or type(required.get("pending")) is not bool
+                    or not isinstance(required.get("selection_sha256"), str)
+                    or (required["count"] > 0 and not re.fullmatch(r"[0-9a-f]{64}", required["selection_sha256"]))
+                    or (required["count"] == 0 and required["selection_sha256"] != "")
+                    or type(grant.get("required_refresh_bytes", 0)) is not int or grant.get("required_refresh_bytes", 0) < 0
+                    or ("serialized_hook_bytes" in grant and (type(grant["serialized_hook_bytes"]) is not int
+                        or grant["serialized_hook_bytes"] < 0))):
+                raise ValueError("invalid required-context accounting")
         if (ledger["pending"]["granted"] or (ledger["active_turn_id"] is not None
                                             and ledger["pending"]["emitted_hook_bytes"] != 0)):
             raise ValueError("invalid startup accounting")
@@ -808,6 +837,86 @@ def save_codex_budget(path, ledger):
             temporary.unlink(missing_ok=True)
 
 
+def bound_codex(config):
+    return config.get("harness") == "codex" and bool(config.get("inbox_recall_binding"))
+
+
+def codex_hook_cost(event, text):
+    return (1 + len(encoded(dict(hookSpecificOutput=dict(
+        hookEventName=event["hook_event_name"], additionalContext=text))).encode())) if text else 0
+
+
+def codex_emitted_wire_bytes(grant):
+    emitted = grant["emitted_hook_bytes"]
+    if grant.get("serialized_hook_bytes") == emitted:
+        return emitted
+    # Older engines count raw text. Their writes change emitted_hook_bytes but
+    # cannot update this stamp, so a mixed counter is converted conservatively.
+    framing = 1 + len(encoded(dict(hookSpecificOutput=dict(
+        hookEventName="SessionStart", additionalContext=""))).encode())
+    return 2 * emitted + framing if emitted else 0
+
+
+def codex_required_selection(grant, selected):
+    grant["required"] = dict(count=len(selected), selection_sha256=hashlib.sha256(
+        encoded(selected).encode()).hexdigest() if selected else "", pending=False)
+
+
+def codex_required_grant(ledger, event):
+    if event["hook_event_name"] == "UserPromptSubmit" and native_uuid(event.get("turn_id")):
+        turn = event["turn_id"]
+        if turn in ledger["turns"]:
+            return ledger["turns"][turn]
+        # Old engines may leave startup metadata after resetting its counter.
+        # Once a turn exists, that stale pending metadata belongs to no new task.
+        return ledger["pending"] if ledger["active_turn_id"] is None else None
+    active = ledger["active_turn_id"]
+    return ledger["turns"][active] if active is not None else ledger["pending"]
+
+
+def codex_required_error(config, event, error, *, persist=False):
+    """Classify a known restoration failure; generic optional failures stay so.
+
+    persist=True is called only while the existing memory session lock is held.
+    The read-only main-boundary use can see a prior atomic snapshot when that lock
+    is busy. It does not clear requirements or manufacture a failed requirement.
+    """
+    if isinstance(error, RequiredContextRefused) or not bound_codex(config):
+        return error
+    if event.get("hook_event_name") not in ("SessionStart", "UserPromptSubmit") or not native_uuid(event.get("session_id")):
+        return error
+    policy = isinstance(error, HookError) and error.code in ("OPEN_CONFLICT", "POLICY_UNENFORCEABLE")
+    proven = policy
+    try:
+        path = Path(config["state_dir"]) / (event["session_id"] + ".memory-budget.json")
+        ledger = codex_budget_ledger(path, event["session_id"], context_budget(config))
+        grant = codex_required_grant(ledger, event)
+        known = grant.get("required", {}) if grant is not None else {}
+        proven = policy or bool(known.get("count") or known.get("pending"))
+        if not proven:
+            return error
+        if persist:
+            if grant is None:
+                turn = event["turn_id"]
+                grant = ledger["turns"][turn] = dict(limit_bytes=context_budget(config), emitted_hook_bytes=0,
+                                                    reserved_native_bytes=0, granted=False)
+                ledger["active_turn_id"] = turn
+            grant["required"] = dict(count=known.get("count", 0),
+                                     selection_sha256=known.get("selection_sha256", ""), pending=True)
+            save_codex_ledger(path, ledger)
+    except (HookError, OSError, ValueError, KeyError, TypeError):
+        if not proven:
+            return error
+    return RequiredContextRefused("current required context could not be restored")
+
+
+def save_codex_ledger(path, ledger):
+    marker = path.with_suffix(".initialized")
+    if not marker.exists():
+        save_codex_budget(marker, dict(schema="cairn.codex-memory-grants/1", session_id=ledger["session_id"]))
+    save_codex_budget(path, ledger)
+
+
 def codex_agent_context(memory, event, result, budget, status, deadline):
     # handle holds the session lock through this independent ledger save and
     # final state save. Capture, binding changes and seen resets cannot refund it.
@@ -833,37 +942,79 @@ def codex_agent_context(memory, event, result, budget, status, deadline):
                                         if startup["emitted_hook_bytes"] else budget,
                                         emitted_hook_bytes=startup["emitted_hook_bytes"],
                                         reserved_native_bytes=0, granted=False)
+            if startup.get("serialized_hook_bytes") == startup["emitted_hook_bytes"]:
+                ledger["turns"][turn]["serialized_hook_bytes"] = startup["emitted_hook_bytes"]
             startup["emitted_hook_bytes"] = 0
+            startup.pop("serialized_hook_bytes", None)
+            startup.pop("required", None)
         ledger["active_turn_id"] = turn
     grant = (ledger["turns"][ledger["active_turn_id"]] if ledger["active_turn_id"] is not None
              else ledger["pending"])
-    remaining = min(budget, grant["limit_bytes"]) - grant["emitted_hook_bytes"] - grant["reserved_native_bytes"]
+    bound = bound_codex(memory.config)
+    emitted = codex_emitted_wire_bytes(grant) if bound else grant["emitted_hook_bytes"]
+    remaining = min(budget, grant["limit_bytes"]) - emitted - grant["reserved_native_bytes"]
     selected = result.get("selected", [])
+    def cost(text):
+        return codex_hook_cost(event, text) if bound else len(text.encode())
     text = render_recall(selected, []) if selected else ""
-    if len(text.encode()) > remaining:
+    def persist_current():
+        try:
+            save_codex_ledger(path, ledger)
+        except OSError as exc:
+            if bound and selected:
+                raise RequiredContextRefused("current required delivery status could not be persisted") from exc
+            raise
+    refresh = bound and event["hook_event_name"] == "SessionStart" and (grant["granted"] or emitted > 0)
+    if bound:
+        destination = result.get("destination", {})
+        if destination.get("name") != "hosted" or destination.get("allow_local") is not False:
+            raise HookError("current required check lacks hosted destination", code="AUTHORITY_DENIED")
+        codex_required_selection(grant, selected)
+    limit = budget if refresh else remaining
+    if cost(text) > limit:
+        if bound and selected:
+            grant["required"]["pending"] = True
+            try:
+                persist_current()
+            except OSError as exc:
+                raise RequiredContextRefused("whole required context refused; status persistence failed") from exc
+            raise RequiredContextRefused("current required context cannot fit whole")
         raise HookError("native-turn memory budget cannot fit whole required context")
+    if refresh:
+        # Current mandatory context is restored independently of the consumed
+        # optional allowance. Count it honestly; cumulative delivery may exceed
+        # the original per-task evaluation cap.
+        grant["required_refresh_bytes"] = grant.get("required_refresh_bytes", 0) + cost(text)
+        persist_current()
+        status.update(outcome="required_only" if text else "suppressed", discovery="agent_tools",
+                      optional_deferred="native_turn_grant_used", bytes=len(text.encode()),
+                      native_turn_id=ledger["active_turn_id"],
+                      cumulative_hook_bytes=grant["emitted_hook_bytes"],
+                      required_refresh_bytes=grant["required_refresh_bytes"],
+                      reserved_native_bytes=grant["reserved_native_bytes"])
+        return text
+    if bound:
+        # A successful current empty selection can clear a pending requirement
+        # even if later optional candidate work becomes unavailable.
+        persist_current()
     if eligible and not grant["granted"]:
-        text = eager_agent_candidates(memory, result, remaining, status, deadline)
+        text = eager_agent_candidates(memory, result, remaining, status, deadline, measure=cost)
         if status["outcome"] == "delegated":
             grant["granted"] = True
             grant["reserved_native_bytes"] = status["native_allowance_bytes"]
     else:
         status.update(outcome="required_only" if text else "suppressed",
                       optional_deferred="native_turn_grant_used" if grant["granted"] else "native_turn_unbound")
-    grant["emitted_hook_bytes"] += len(text.encode())
+    grant["emitted_hook_bytes"] = emitted + cost(text)
+    if bound:
+        grant["serialized_hook_bytes"] = grant["emitted_hook_bytes"]
     status.update(discovery="agent_tools", bytes=len(text.encode()),
                   native_turn_id=ledger["active_turn_id"],
                   cumulative_hook_bytes=grant["emitted_hook_bytes"],
                   reserved_native_bytes=grant["reserved_native_bytes"])
     # A save followed by an uncertain output/state-save failure still consumes
     # this grant. No caller may roll this ledger back with ordinary hook state.
-    marker = path.with_suffix(".initialized")
-    if not marker.exists():
-        # This independent tombstone survives legacy capture/binding resets.
-        # A crash after marker creation but before the first ledger is a refusal,
-        # never permission to mint another allowance.
-        save_codex_budget(marker, dict(schema="cairn.codex-memory-grants/1", session_id=session))
-    save_codex_budget(path, ledger)
+    persist_current()
     return text
 
 
@@ -1292,17 +1443,14 @@ def recall(memory, event, state=None):
             raise HookError("invalid retained context identities")
         state["seen"] = {k: v for k, v in state.get("seen", {}).items() if k in retained}
     seen = state.setdefault("seen", {})
-    intent = retrieval_intent(event, state)
     notification = (event["hook_event_name"] == "UserPromptSubmit"
                     and not event.get("workstream", "").strip()
                     and event.get("source") not in ("resume", "compact")
                     and taskless_notification(event.get("prompt", "")))
-    defer_optional = notification or (intent["startup"] and not event.get("prompt", "").strip()
+    defer_optional = notification or (event["hook_event_name"] == "SessionStart" and not event.get("prompt", "").strip()
                       and not event.get("workstream", "").strip()
                       and event.get("source") not in ("resume", "compact"))
     kinds = ("decision", "preference") if defer_optional else ()
-    query = project_root(event).name if notification else intent["query"]
-    entities = [] if notification else intent["files"]
     mode = memory.config.get("recall_mode", "ambient")
     if mode not in ("ambient", "agent_tools"):
         raise HookError("invalid lifecycle recall_mode: expected ambient or agent_tools")
@@ -1311,11 +1459,14 @@ def recall(memory, event, state=None):
     semantic = (mode == "agent_tools" and not defer_optional and bool(memory.config.get("semantic_fallback"))
                 and (memory.config.get("harness") != "codex" or
                      (event["hook_event_name"] == "UserPromptSubmit" and native_uuid(event.get("turn_id")))))
+    intent = retrieval_intent(event, state, semantic=semantic)
+    query = project_root(event).name if notification else intent["query"]
+    entities = [] if notification else intent["files"]
     result = memory.search(query, room=RECALL_SEARCH_ROOM, entities=entities, kinds=kinds,
                            semantic=semantic, timeout=recall_timeout(deadline, 5))
     budget = context_budget(memory.config)
     selected = result.get("selected", [])
-    if len(render_recall(selected, []).encode()) > budget:
+    if not bound_codex(memory.config) and len(render_recall(selected, []).encode()) > budget:
         raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")
     if mode == "agent_tools" and memory.config.get("harness") == "codex":
         text = codex_agent_context(memory, event, result, budget, status, deadline)
@@ -1710,7 +1861,69 @@ def codex_new_messages(event, state):
     return sum(1 for offset in offsets if offset > marker["offset"])
 
 
-def handle(config, event):
+def effective_inbox_config(config, event=None):
+    """Snapshot the one-file activation decision for this hook invocation.
+
+    Disabled staging must not inspect pins whose configurations are still being
+    replaced. Removing the opt-in from a private copy preserves every old path.
+    """
+    if not config.get("inbox_recall_binding"):
+        return config
+    excluded = (any(os.environ.get(k) == "1" for k in
+                    ("CAIRN_LIFECYCLE_DISABLED", "CAIRN_LIFECYCLE_CHILD", "CAIRN_COORDINATION_DISABLED"))
+                or bool(os.environ.get("CAIRN_WAKE_CONTEXT")))
+    if event is not None:
+        excluded = excluded or event.get("hook_event_name") not in ("SessionStart", "UserPromptSubmit")
+        for name in ("cwd", "project_path"):
+            if event.get(name) and isinstance(event[name], str):
+                root = Path(event[name]).resolve()
+                excluded = excluded or any((p / marker).exists() for p in (root, *root.parents)
+                                           for marker in (".cairn-no-memory", ".cairn-no-coordination"))
+    if excluded:
+        result = dict(config)
+        result.pop("inbox_recall_binding")
+        return result
+    path = Path(config["inbox_recall_binding"])
+    if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
+        raise ValueError("inbox recall binding must be owner-only")
+    manifest = json.loads(path.read_text())
+    if manifest.get("schema") != "cairn.inbox-recall-binding/1" or type(manifest.get("enabled")) is not bool:
+        raise ValueError("unsupported inbox recall activation state")
+    enabled = manifest["enabled"]
+    if (event is not None and event.get("hook_event_name") == "UserPromptSubmit"
+            and taskless_notification(event.get("prompt", ""))):
+        enabled = load_inbox_recall(config, validate=False).activation_decision(config, event, enabled)
+    if enabled:
+        return config
+    result = dict(config)
+    result.pop("inbox_recall_binding")
+    return result
+
+
+def load_inbox_recall(config, *, validate=True):
+    """Load only the explicitly installed, hash-pinned bridge; no path discovery."""
+    path = Path(config["inbox_recall_binding"])
+    if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
+        raise ValueError("inbox recall binding must be owner-only")
+    manifest = json.loads(path.read_text())
+    if manifest.get("schema") != "cairn.inbox-recall-binding/1":
+        raise ValueError("unsupported inbox recall binding")
+    target = Path(manifest["bridge"]["path"])
+    raw = target.read_bytes()
+    if (not target.is_absolute() or target.stat().st_uid != os.getuid() or target.stat().st_mode & 0o022
+            or hashlib.sha256(raw).hexdigest() != manifest["bridge"]["sha256"]):
+        raise ValueError("inbox recall bridge changed")
+    spec = importlib.util.spec_from_file_location("cairn_inbox_recall", target)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(raw, str(target), 'exec'), module.__dict__)
+    if validate:
+        module.binding(config)
+    return module
+
+
+def handle(config, event, *, _inbox_resolved=False):
+    if not _inbox_resolved:
+        config = effective_inbox_config(config, event)
     if os.environ.get("CAIRN_LIFECYCLE_CHILD") == "1" or os.environ.get("CAIRN_LIFECYCLE_DISABLED") == "1":
         return {}
     if not isinstance(event.get("session_id"), str) or not event["session_id"] or len(event["session_id"]) > 128:
@@ -1742,6 +1955,11 @@ def handle(config, event):
         raise HookError("invalid explicit workstream")
     if any((path / ".cairn-no-memory").exists() for path in (Path(event["cwd"]), project_for(event["cwd"]), project_root(event))):
         return {}
+    if config.get("inbox_recall_binding") and event_name in ("UserPromptSubmit", "SessionStart"):
+        bridge = load_inbox_recall(config)
+        if (event_name == "UserPromptSubmit" and taskless_notification(event.get("prompt", ""))
+                and bridge.coordinates_wake(config, event)):
+            return {}  # Bound coordination owns required and optional wake context.
     memory = Memory(config, event["session_id"])
     # Host labels remain intact in Cairn scope; Hermes labels need not be paths.
     state_key = (hashlib.sha256(event["session_id"].encode()).hexdigest()
@@ -1752,7 +1970,8 @@ def handle(config, event):
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            if config.get("harness") == "codex" and event_name in ("SessionStart", "UserPromptSubmit"):
+            if (config.get("harness") == "codex" and not config.get("inbox_recall_binding")
+                    and event_name in ("SessionStart", "UserPromptSubmit")):
                 # Codex captures at an async Stop that can still hold the lock when
                 # the next prompt arrives; skip optional retrieval instead of failing.
                 return {}
@@ -1770,6 +1989,7 @@ def handle(config, event):
             try:
                 result = recall(memory, event, state)
             except (HookError, OSError, ValueError, KeyError, TypeError) as exc:
+                exc = codex_required_error(config, event, exc, persist=True)
                 status = state["last_recall"]
                 status.update(outcome="failed", records=[], bytes=0,
                               duration_ms=round((time.monotonic() - recall_started) * 1000, 3),
@@ -1784,8 +2004,10 @@ def handle(config, event):
                 try:
                     save_state(path, previous_state)
                 except OSError as save_error:
+                    if isinstance(exc, RequiredContextRefused):
+                        raise exc from save_error
                     raise HookError("recall failed and failure status could not be saved") from save_error
-                raise
+                raise exc
             state["last_recall"]["duration_ms"] = round((time.monotonic() - recall_started) * 1000, 3)
         elif event_name in ("PostToolUse", "PostToolUseFailure"):
             result = observe(event, state)
@@ -1808,6 +2030,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
+    config = event = None
     try:
         config = json.loads(args.config.read_text())
         raw = sys.stdin.buffer.read(1024 * 1024 + 1)
@@ -1816,8 +2039,19 @@ def main():
         event = json.loads(raw)
         if not isinstance(config, dict) or not isinstance(event, dict):
             raise HookError("configuration and host event must be objects")
-        result = handle(config, event)
+        config = effective_inbox_config(config, event)
+        result = handle(config, event, _inbox_resolved=True)
     except (HookError, OSError, ValueError, KeyError, TypeError) as exc:
+        if isinstance(config, dict) and isinstance(event, dict):
+            exc = codex_required_error(config, event, exc)
+        if isinstance(exc, RequiredContextRefused) and event.get("hook_event_name") == "SessionStart":
+            # SessionStart exit 1/2 does not stop compaction continuation. Codex
+            # supports this explicit common-output stop decision instead.
+            print(encoded({"continue": False, "stopReason": "Bound inbox recall cannot restore required context."}))
+            return 0
+        if isinstance(exc, RequiredContextRefused) and event.get("hook_event_name") == "UserPromptSubmit":
+            print("Cairn: current required context could not be restored.", file=sys.stderr)
+            return 2
         # Optional memory must not break the user's task. Surface a labelled failure.
         message = str(exc) if isinstance(exc, HookError) else "invalid lifecycle input or unavailable local file"
         print("Cairn lifecycle: " + message + "; use native tools or an explicit handoff.", file=sys.stderr)

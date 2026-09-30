@@ -5,6 +5,9 @@ boundaries. They use its Cairn UUID and current execution through the existing
 profile. No session credentials are created. Migration 039 retains native
 delivery attempts and idempotent polls in PostgreSQL.
 
+For the explicit same-delivery task-source and memory binding, see
+[recall on an admitted inbox request](inbox-recall.md). It is disabled by default.
+
 ## Boundaries and ownership
 
 Enable with `scripts/install-agent-coordination.py --native-delivery` after

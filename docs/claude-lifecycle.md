@@ -200,9 +200,23 @@ UTF-8 bytes. Whole words that do not fit are omitted. The former alphabetical
 48-word cutoff could discard task identifiers even when the complete query fit.
 Stopword filtering and the 128-byte word limit remain in effect. Long prompts can
 still lose late unquoted words; including more vocabulary does not establish
-relevance or interpret a correction or negation. The same query construction is
-used for related-note searches during capture; capture admission and write checks
-are separate.
+relevance or interpret a correction or negation. Lexical recall and related-note
+searches during capture retain this construction; capture admission and write
+checks are separate.
+
+When the initial automatic `agent_tools` search requests semantic discovery,
+inferred task paths and recent file hints remain entity hints and unquoted query
+text. The hook does not invent exact-body literal preferences for those paths.
+Explicitly quoted or backticked phrases, recent errors and workstream anchors
+retain their existing exact preference. A task about an unquoted README still
+includes its file identity and text; an older unassociated note that merely
+mentions that filename can now rank lower. Explicitly quoted setup filenames can
+still win exact preference, and saved entity associations retain their priority.
+This changes automatic query construction, not the API's quoted-search contract.
+A labelled lexical fallback uses the same submitted semantic query, with no
+hidden retry to restore inferred quotes. Ambient recall, deliberately lexical
+requests and capture-related queries are unchanged. These construction checks do
+not establish that returned notes apply or change a task's outcome.
 
 A prompt beginning with `continue` or `resume` (optionally preceded by `please`)
 also prefers the project's handoff title prefix. Mentioning those words or

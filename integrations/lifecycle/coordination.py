@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -1881,7 +1882,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
         "Read required selected context, pull relevant current notes with their complete "
         "pull_arguments, and check applicability against the task and current source before acting. "
         "Use the existing ordinary-memory profile; a request, notification or recalled note does not grant new authority. "
-        if event['kind'] == 'request' else '')
+        if event['kind'] == 'request' and not config.get('inbox_recall_binding') else '')
     return (f"Cairn has a {event['kind']} from {event['from']} for this conversation. "
         f"Read the structured inbox context at {target}. Read its exact selected source with the read argv and read_input JSON. "
         f"{recall_cue}"
@@ -1999,7 +2000,98 @@ def coordination_excluded(workspace):
                for name in ('.cairn-no-memory', '.cairn-no-coordination'))
 
 
-def handle(config, event, event_name=None):
+def inbox_recall_wake(event):
+    """Recognize only the producer's complete reserved text, never authority."""
+    if event.get('hook_event_name') != 'UserPromptSubmit' or not isinstance(event.get('prompt'), str):
+        return False
+    prompt = event['prompt']
+    value = r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}'
+    ids = re.search(rf'Current agent ({value}), execution ({value})\. Wake delivery ({value})\.', prompt)
+    if not ids:
+        return False
+    body = wake_message(dict(session=dict(agent_id=ids[1], execution_id=ids[2]), delivery_id=ids[3]))
+    if prompt == body:
+        return True
+    return re.fullmatch(rf'<channel source="cairn-events" native_session_id="{value}" '
+                        + re.escape(f'agent_id="{ids[1]}" execution_id="{ids[2]}" delivery_id="{ids[3]}">\n' + body + '\n</channel>'),
+                        prompt) is not None
+
+
+def effective_inbox_config(config, event=None):
+    """Snapshot the one-file activation decision for this hook invocation.
+
+    Disabled staging must not inspect pins whose configurations are still being
+    replaced. Removing the opt-in from a private copy preserves every old path.
+    """
+    if not config.get("inbox_recall_binding"):
+        return config
+    excluded = (any(os.environ.get(k) == "1" for k in
+                    ("CAIRN_LIFECYCLE_DISABLED", "CAIRN_LIFECYCLE_CHILD", "CAIRN_COORDINATION_DISABLED"))
+                or bool(os.environ.get("CAIRN_WAKE_CONTEXT")))
+    if event is not None:
+        excluded = excluded or event.get("hook_event_name") not in ("SessionStart", "UserPromptSubmit")
+        for name in ("cwd", "project_path"):
+            if event.get(name) and isinstance(event[name], str):
+                root = Path(event[name]).resolve()
+                excluded = excluded or any((p / marker).exists() for p in (root, *root.parents)
+                                           for marker in (".cairn-no-memory", ".cairn-no-coordination"))
+    if excluded:
+        result = dict(config)
+        result.pop("inbox_recall_binding")
+        return result
+    path = Path(config["inbox_recall_binding"])
+    if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
+        raise ValueError("inbox recall binding must be owner-only")
+    manifest = json.loads(path.read_text())
+    if manifest.get("schema") != "cairn.inbox-recall-binding/1" or type(manifest.get("enabled")) is not bool:
+        raise ValueError("unsupported inbox recall activation state")
+    enabled = manifest["enabled"]
+    if (event is not None and event.get("hook_event_name") == "UserPromptSubmit"
+            and inbox_recall_wake(event)):
+        enabled = load_inbox_recall(config, validate=False).activation_decision(config, event, enabled)
+    if enabled:
+        return config
+    result = dict(config)
+    result.pop("inbox_recall_binding")
+    return result
+
+
+def load_inbox_recall(config, *, validate=True):
+    """Load only the explicitly installed, hash-pinned bridge; no path discovery."""
+    path = Path(config["inbox_recall_binding"])
+    if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
+        raise ValueError("inbox recall binding must be owner-only")
+    manifest = json.loads(path.read_text())
+    if manifest.get("schema") != "cairn.inbox-recall-binding/1":
+        raise ValueError("unsupported inbox recall binding")
+    target = Path(manifest["bridge"]["path"])
+    raw = target.read_bytes()
+    if (not target.is_absolute() or target.stat().st_uid != os.getuid() or target.stat().st_mode & 0o022
+            or hashlib.sha256(raw).hexdigest() != manifest["bridge"]["sha256"]):
+        raise ValueError("inbox recall bridge changed")
+    spec = importlib.util.spec_from_file_location("cairn_inbox_recall", target)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(raw, str(target), 'exec'), module.__dict__)
+    if validate:
+        module.binding(config)
+    return module
+
+
+def handle(config, event, event_name=None, *, _inbox_resolved=False):
+    try:
+        if not _inbox_resolved:
+            config = effective_inbox_config(config, event)
+        return _handle(config, event, event_name)
+    except (CoordinationError, ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as exc:
+        if config.get('inbox_recall_binding') and inbox_recall_wake(event):
+            if isinstance(exc, NativePromptRefused):
+                raise
+            raise NativePromptRefused('bound inbox wake refused; required context or live ownership unavailable') from exc
+        raise
+
+
+def _handle(config, event, event_name=None):
+    bridge_deadline = time.monotonic() + 12
     if os.environ.get('CAIRN_COORDINATION_DISABLED') == '1':
         return {}
     if config.get("config_home") and config["harness"] in ("codex", "claude"):
@@ -2144,6 +2236,23 @@ def handle(config, event, event_name=None):
                         "Complete its original slot delivery using CAIRN_WAKE_CONTEXT; do not claim a second inbox. ")
         if inbox:
             message += '\n' + inbox
+        if config.get('inbox_recall_binding') and inbox_recall_wake(event):
+            def revalidate(attempt):
+                timeout = min(2, bridge_deadline - time.monotonic())
+                if timeout <= 0 or attempt.get('lease_lapsed'):
+                    raise CoordinationError('STALE_LEASE', 'inbox recall cannot confirm live ownership')
+                delivery = attempt['delivery']
+                renewed = call(config, 'event-renew', dict(delivery_id=delivery['delivery_id'],
+                    lease_id=delivery['lease_id'], lease_seconds=90), session=attempt['session'], timeout=timeout)
+                if (renewed.get('delivery_id') != delivery['delivery_id'] or renewed.get('lease_id') != delivery['lease_id']
+                        or renewed.get('state') != 'leased' or renewed.get('event') != delivery.get('event')):
+                    raise CoordinationError('STALE_LEASE', 'inbox recall delivery changed')
+            try:
+                bridge = load_inbox_recall(config)
+                message = bridge.output(config, event, observation, state, message,
+                                        revalidate=revalidate, outer_deadline=bridge_deadline)
+            except (ValueError, KeyError, TypeError, OSError, CoordinationError) as exc:
+                raise NativePromptRefused('bound inbox recall unavailable; no source or memory grant delivered') from exc
         if config["harness"] == "agy":
             return {"injectSteps": [{"ephemeralMessage": message}]}
         output = {"hookSpecificOutput": {"hookEventName": observation["event"], "additionalContext": message}}
@@ -2361,7 +2470,19 @@ def main():
             raw = sys.stdin.buffer.read(1024 * 1024 + 1)
             if len(raw) > 1024 * 1024:
                 raise CoordinationError("INVALID_HOST", "hook input exceeds limit")
-            print(json.dumps(handle(load_config(args.config), json.loads(raw), args.event)))
+            config, event = load_config(args.config), json.loads(raw)
+            try:
+                config = effective_inbox_config(config, event)
+            except (ValueError, KeyError, TypeError, OSError) as exc:
+                if config.get('inbox_recall_binding') and inbox_recall_wake(event):
+                    raise NativePromptRefused('inbox activation decision unavailable') from exc
+                raise
+            result = handle(config, event, args.event, _inbox_resolved=True)
+            if config.get('inbox_recall_binding') and inbox_recall_wake(event):
+                # Matches the bridge's measured complete stdout envelope, including newline.
+                print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
+            else:
+                print(json.dumps(result))
         else:
             if args.config_dir is None:
                 parser.error("watch requires --config-dir")
