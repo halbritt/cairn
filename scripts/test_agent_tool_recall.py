@@ -70,6 +70,31 @@ class AgentToolRecallTests(unittest.TestCase):
                                                                                     NO_LEXICAL_MATCH=2),
                                                          returned_entries=1)))
 
+    def test_reserve_guidance_fits_small_and_normal_allowances_without_extra_calls(self):
+        self.entries = []
+        self.required[0]['record']['body'] = 'Preserve 日本語 and "quoted" required context. '
+        for budget in (3400, 9500):
+            with self.subTest(budget=budget):
+                self.config['context_bytes'] = budget
+                self.commands.clear()
+                result, state = self.invoke()
+                text = result['hookSpecificOutput']['additionalContext']
+                view = json.loads(text[text.index('{"selected":'):])
+                self.assertEqual(view['selected'], self.required)
+                self.assertEqual(view['index'], [])
+                self.assertEqual(len(self.commands), 1)
+                self.assertNotIn('--min-pull-bytes', self.commands[0],
+                                 'cue guidance must not change the hook search contract')
+                self.assertEqual(state['last_recall']['outcome'], 'delegated')
+                self.assertIn('min_pull_bytes', text)
+                # Small allowances still receive the complete policy, including
+                # capability fallback; the renderer must not trim instructions.
+                self.assertTrue(text.startswith(hook.AGENT_TOOLS_CUE.format(budget=budget)))
+                self.assertGreater(view['remaining_memory_bytes'], 0)
+                self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], budget)
+                if budget == 3400:
+                    self.assertLess(view['remaining_memory_bytes'], 1024)
+
     def test_reported_remaining_memory_fits_full_unicode_context_and_whole_required_text(self):
         self.required[0]['record']['body'] = 'Keep 日本語 qualifiers and "quoted" context. '
         self.entries[0]['summary'] = '日本語 café \\ quoted "candidate"'
