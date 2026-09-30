@@ -493,10 +493,14 @@ def retrieval_intent(event, state):
             paths.append(name)
     now = time.time()
     hints = state.get("hints", {})
-    for name, seen_at in hints.get("files", {}).items():
-        if now - seen_at < 900 and name not in paths:
-            paths.append(name)
+    recent = [name for name, seen_at in hints.get("files", {}).items()
+              if now - seen_at < 900 and name not in paths]
+    # Reserve the file budget for the current task before filling from the
+    # recent-file tail. Keep each source's existing order and overflow policy.
     paths = paths[-16:]
+    remaining = 16 - len(paths)
+    if remaining:
+        paths.extend(recent[-remaining:])
     phrases = [p for p in re.findall(r'["`]([^"`\n]{3,160})["`]', prompt) if terms(p)]
     error_terms = hints.get("errors", []) if now - hints.get("error_at", 0) < 900 else []
     # Scan all supplied prompt text so a file/error after a long preamble survives.

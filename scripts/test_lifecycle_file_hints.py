@@ -62,3 +62,59 @@ class FileHintRecallTests(unittest.TestCase):
         quoted = hook.retrieval_intent(dict(self.event, prompt='Repair "missing.py"'), {})
         self.assertIn('"missing.py"', quoted["query"])
         self.assertTrue(hook.relevant(dict(summary="missing.py repair guidance"), quoted))
+
+    def test_current_task_files_survive_full_recent_cache(self):
+        recent = {f"old/file{i}.py": 1000 for i in range(15)}
+        # Normalized duplicates consume only one slot, including cached copies.
+        recent["src/active.py"] = 1000
+        state = dict(hints=dict(files=dict(recent)))
+        event = dict(self.event, prompt="Repair ./src/active.py src/active.py src/next.py")
+        with patch.object(hook.time, "time", return_value=1100):
+            intent = hook.retrieval_intent(event, state)
+        self.assertEqual(intent["files"], ["src/active.py", "src/next.py"] +
+                         [f"old/file{i}.py" for i in range(1, 15)])
+        self.assertEqual(intent["phrases"][:2], ["src/active.py", "src/next.py"])
+        self.assertIn('"src/active.py"', intent["query"])
+        self.assertLessEqual(len(intent["query"].encode()), 4000)
+        self.assertEqual(state["hints"]["files"], recent)
+        self.assertTrue(hook.relevant(dict(summary="guidance", entities=[
+            dict(kind="file", name="src/active.py")]), intent))
+        self.assertFalse(hook.relevant(dict(summary="unrelated", entities=[
+            dict(kind="file", name="elsewhere/other.py")]), intent))
+
+    def test_recent_tail_order_and_expiry_without_task_files(self):
+        recent = {f"old/file{i}.py": 1000 for i in range(18)}
+        recent["old/expired.py"] = 200
+        with patch.object(hook.time, "time", return_value=1100):
+            intent = hook.retrieval_intent(self.event, dict(hints=dict(files=recent)))
+        self.assertEqual(intent["files"], [f"old/file{i}.py" for i in range(2, 18)])
+
+    def test_prompt_overflow_keeps_existing_tail_order(self):
+        current = [f"src/task{i}.py" for i in range(18)]
+        event = dict(self.event, prompt="Repair " + " ".join(current))
+        with patch.object(hook.time, "time", return_value=1100):
+            intent = hook.retrieval_intent(event, dict(hints=dict(files={"old/recent.py": 1000})))
+        self.assertEqual(intent["files"], current[-16:])
+
+    def test_saturated_cache_does_not_change_file_eligibility(self):
+        (self.root / "settings.json").write_text("{}")
+        (self.root / "outside").symlink_to(self.root.parent, target_is_directory=True)
+        event = dict(self.event, prompt="Inspect settings.json src/new.py missing.py "
+                     "../escape.py outside/escape.py https://example.org/src/remote.py "
+                     "example.org/docs/page.md person@example.org")
+        recent = {f"old/file{i}.py": 1000 for i in range(16)}
+        with patch.object(hook.time, "time", return_value=1100):
+            intent = hook.retrieval_intent(event, dict(hints=dict(files=recent)))
+        self.assertEqual(intent["files"], ["settings.json", "src/new.py"] +
+                         [f"old/file{i}.py" for i in range(2, 16)])
+
+    def test_recall_forwards_current_task_file_under_cache_pressure(self):
+        memory = hook.Memory(dict(cairn="unused", socket="unused", token_file="unused",
+                                  repo="fixture", context_bytes=9500), "session")
+        state = dict(hints=dict(files={f"old/file{i}.py": 1000 for i in range(16)}))
+        event = dict(self.event, prompt="Inspect src/current.py")
+        with patch.object(hook.time, "time", return_value=1100), \
+                patch.object(memory, "search", return_value=dict(selected=[], index=[])) as search:
+            hook.recall(memory, event, state)
+        self.assertEqual(search.call_args.kwargs["entities"], ["src/current.py"] +
+                         [f"old/file{i}.py" for i in range(1, 16)])

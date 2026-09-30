@@ -165,6 +165,12 @@ These rules prevent a domain such as `claude.ai` in a quota notification from
 being treated as an observed repository filename. They do not establish the
 current task behind a generic continuation message.
 
+The shared lifecycle hook reserves its 16 file-hint slots for current-task paths
+before filling unused slots from recent file hints less than 15 minutes old.
+It deduplicates normalized paths, preserves current-task order, and uses the
+recent cache's newest tail in cache order. If the task itself names more than
+16 eligible paths, it retains the last 16 in task order.
+
 The query keeps project, file, quoted-phrase, workstream and recent-error anchors
 first, then eligible distinct task words in their original order, within 4,000
 UTF-8 bytes. Whole words that do not fit are omitted. The former alphabetical
