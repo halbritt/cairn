@@ -63,7 +63,12 @@ read, applicable or used. Taskless startup and wake deferral are unchanged.
 The cue allows at most two further searches per task when the supplied candidates
 do not fit, coverage is incomplete or a handle expires, and four pull/span calls
 total. Use a semantic rephrase for a vocabulary miss when room permits; repeating
-discovery merely to obtain an already supplied handle adds delay. The aggregate budget is the
+discovery merely to obtain an already supplied handle adds delay. When searching
+for guidance, describe the decision, constraint or failure the task needs help
+with, preserving its stated conditions and known project, files or errors.
+Do not assume a saved rule or its answer. Status and record lookups retain their
+requested identifiers. This is query advice, not an applicability guarantee.
+The aggregate budget is the
 configured `context_bytes`, counting the supplied lifecycle context plus all
 native search/pull result text and envelopes. The hook reports
 `remaining_memory_bytes` after conservatively subtracting the complete emitted
