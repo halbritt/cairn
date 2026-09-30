@@ -43,6 +43,8 @@ In `agent_tools` mode, the hook retains the ordinary required-context search and
 whole-context budget check. When optional recall is eligible, it supplies up to
 three unverified candidate previews from that same lexical result, in server
 order, with their complete handles and source-span/conflict metadata. Candidate
+presentation omits the redundant CLI `pull_command`; native tools use the
+unchanged `pull_arguments`. All other entry fields are retained. Candidate
 entries occupy at most 2,000 additional UTF-8 bytes and half the room left after
 required context, the cue and search metadata. Entries that do not fit are omitted
 whole, together with later entries. Search status, server omission reasons and

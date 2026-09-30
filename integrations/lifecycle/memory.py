@@ -611,6 +611,8 @@ def render_agent_candidates(selected, result, budget, status):
     preview_bytes = min(2000, (budget - base_bytes) // 2)
     packed = []
     for entry in result.get("index", [])[:3]:
+        # Native tools use the complete structured handle, not a shell command.
+        entry = {key: value for key, value in entry.items() if key != "pull_command"}
         candidate = render([*packed, entry])
         if len(candidate.encode()) - base_bytes > preview_bytes:
             break

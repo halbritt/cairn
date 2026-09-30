@@ -84,6 +84,7 @@ class AgentToolRecallTests(unittest.TestCase):
 
     def test_oversize_unicode_candidate_omits_whole_tail_and_preserves_required_context(self):
         self.entries[0]['summary'] = '\"日\\\n' * 600
+        self.entries[0]['pull_command'] = 'cairn agent pull receipt optional'
         self.entries.append(dict(record_id='later', version=1, summary='Shorter later-ranked candidate',
                                  pull_arguments=dict(receipt_id='receipt', handle='later', request_id='later')))
         result, state = self.invoke()
@@ -94,6 +95,48 @@ class AgentToolRecallTests(unittest.TestCase):
         self.assertEqual(view['candidate_search']['returned_entries'], 2)
         self.assertLessEqual(len(text.encode()), self.config['context_bytes'])
         self.assertEqual(state['last_recall']['candidate_previews'], 0)
+
+    def test_native_candidates_omit_shell_commands_before_packing_without_changing_sources(self):
+        receipt = '4eb7877c-7cbb-41bf-8a4c-8c8a145a1c84'
+        entries = []
+        for i in range(4):
+            identity = f'00000000-0000-4000-8000-{i:012d}'
+            pull = dict(request_id=identity, receipt_id=receipt, handle=identity)
+            entries.append(dict(record_id=identity, version=2, **{'class': 'A'}, kind='procedure',
+                                summary='Preserve source names. 日本語', body_sha256='a' * 64,
+                                summary_span=dict(offset=120, length=35), pull_arguments=pull,
+                                pull_command='/home/operator/.local/bin/cairn agent --socket '
+                                '/home/operator/.local/share/cairn/api.sock --token-file '
+                                '/home/operator/.local/share/cairn/hosted-agent.token pull '
+                                f'--request-id {identity} {receipt} {identity}'))
+        entries[0].update(match_span=dict(offset=80, length=140),
+                          conflicts=[dict(record_id=entries[1]['record_id'], version=2)],
+                          future_metadata=dict(labels=['keep this'], enabled=True))
+        source = dict(status='READY', destination=dict(name='hosted'), selected=self.required,
+                      index=entries, omitted={})
+        before = json.loads(json.dumps(source))
+        with patch.object(hook.Memory, 'search', return_value=source) as search, \
+                patch.object(hook.Memory, 'call', side_effect=AssertionError('no optional calls')):
+            result = hook.handle(self.config, self.event)
+        search.assert_called_once()
+        self.assertEqual(source, before, 'presentation must not mutate the search response')
+        text = result['hookSpecificOutput']['additionalContext']
+        marker = text.index('{"selected":')
+        view = json.loads(text[marker:])
+        self.assertEqual(view['selected'], self.required)
+        expected = [{key: value for key, value in entry.items() if key != 'pull_command'}
+                    for entry in entries[:3]]
+        self.assertEqual(view['index'], expected)
+        self.assertEqual(view['candidate_search']['returned_entries'], 4)
+        # The old shell-bearing envelope crowds out the third realistic entry.
+        base_bytes = len((text[:marker] + hook.encoded(dict(view, index=[]))).encode())
+        limit = min(2000, (self.config['context_bytes'] - base_bytes) // 2)
+        original_two = len((text[:marker] + hook.encoded(dict(view, index=entries[:2]))).encode())
+        original_three = len((text[:marker] + hook.encoded(dict(view, index=entries[:3]))).encode())
+        self.assertLessEqual(original_two - base_bytes, limit)
+        self.assertGreater(original_three - base_bytes, limit)
+        self.assertLessEqual(len(text.encode()) - base_bytes, limit)
+        self.assertLessEqual(len(text.encode()), self.config['context_bytes'])
 
     def test_required_context_leaves_room_for_cue_but_not_a_candidate(self):
         self.required[0]['record']['body'] = 'Required instruction. ' * 180
