@@ -193,10 +193,17 @@ Other local evaluators can reuse the same disposable PostgreSQL lifecycle with
 `bash scripts/trial-task-eval.sh -- COMMAND [ARG ...]`. The command runs from
 the Cairn checkout root and receives `CAIRN_TASK_EVAL_PG` (the private socket
 directory) and `CAIRN_TASK_EVAL_PG_BIN` (the PostgreSQL tools directory). Its
-arguments and exit status are preserved. When the command returns, the wrapper
-stops and removes its cluster. Without `--`, the native evaluator command above
-remains the default. This lets CAPLAB supply its own corpus and measurement
-procedure while reusing the existing cluster lifecycle.
+arguments and exit status are preserved, including when PostgreSQL has already
+crashed. A cleanup failure after an otherwise successful command returns nonzero;
+if PostgreSQL remains alive, its directory is retained and the error names it.
+When cleanup succeeds, the wrapper removes its cluster. Without a leading `--`,
+the native evaluator remains the default. This lets CAPLAB supply its own corpus
+and measurement procedure while reusing the existing cluster lifecycle.
+
+For cancellation, start the wrapper in a new process group and send SIGTERM to
+that whole group, including the command. Signalling only the wrapper PID can
+leave its child running. Give the EXIT cleanup time to finish; SIGKILL cannot
+run cleanup. CAPLAB uses a new session and group signalling for this reason.
 
 ## Interface needs for candidate retrieval (agent-112)
 

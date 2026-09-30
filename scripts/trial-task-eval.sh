@@ -14,10 +14,22 @@ fi
 pg_bin="${CAIRN_PG_BIN:-$(pg_config --bindir)}"
 trial_db_root="$(mktemp -d /tmp/cairn-task-eval-pg.XXXXXXXX)"
 cleanup() {
-    if [[ -f "$trial_db_root/data/postmaster.pid" ]]; then
+    local status=$?
+    trap - EXIT
+    set +e
+    if [[ -f "$trial_db_root/data/postmaster.pid" ]] && \
+            "$pg_bin/pg_ctl" -D "$trial_db_root/data" status >/dev/null 2>&1; then
         "$pg_bin/pg_ctl" -D "$trial_db_root/data" -m immediate -w stop >/dev/null
     fi
-    rm -rf -- "$trial_db_root"
+    if [[ -f "$trial_db_root/data/postmaster.pid" ]] && \
+            "$pg_bin/pg_ctl" -D "$trial_db_root/data" status >/dev/null 2>&1; then
+        printf 'cleanup failed: PostgreSQL still runs in %s\n' "$trial_db_root" >&2
+        if (( status == 0 )); then status=1; fi
+    elif ! rm -rf -- "$trial_db_root"; then
+        printf 'cleanup failed: could not remove %s\n' "$trial_db_root" >&2
+        if (( status == 0 )); then status=1; fi
+    fi
+    exit "$status"
 }
 trap cleanup EXIT
 "$pg_bin/initdb" -D "$trial_db_root/data" --auth-local=trust --auth-host=reject --no-locale -E UTF8 >/dev/null

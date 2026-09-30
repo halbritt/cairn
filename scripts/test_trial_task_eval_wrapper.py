@@ -2,7 +2,9 @@
 import json
 import os
 from pathlib import Path
+import select
 import shutil
+import signal
 import subprocess
 import sys
 import unittest
@@ -50,6 +52,49 @@ class TrialTaskWrapperTests(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("retrieval", done.stdout)
         self.assertIn("agent", done.stdout)
+
+    def test_postmaster_death_preserves_command_status_and_removes_cluster(self):
+        payload = r"""
+import json, os, pathlib, signal, sys, time
+root = pathlib.Path(os.environ['CAIRN_TASK_EVAL_PG']).parent
+pid = int((root / 'data/postmaster.pid').read_text().splitlines()[0])
+print(json.dumps({'root': str(root), 'pid': pid}), flush=True)
+os.kill(pid, signal.SIGKILL)
+time.sleep(0.3)
+sys.exit(5)
+"""
+        done = self.invoke("--", sys.executable, "-c", payload)
+        observed = json.loads(done.stdout)
+        root = Path(observed["root"])
+        # The failure case must not leave the disposable test data behind.
+        self.addCleanup(shutil.rmtree, root, True)
+        self.assertEqual(done.returncode, 5, done.stderr)
+        self.assertFalse(root.exists(), "dead postmaster left its cluster directory")
+
+    def test_process_group_sigterm_stops_command_and_cleans_cluster(self):
+        payload = r"""
+import json, os, pathlib, time
+root = pathlib.Path(os.environ['CAIRN_TASK_EVAL_PG']).parent
+print(json.dumps({'root': str(root), 'command_pid': os.getpid()}), flush=True)
+time.sleep(60)
+"""
+        proc = subprocess.Popen(["bash", str(WRAPPER), "--", sys.executable, "-c", payload],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                start_new_session=True)
+        try:
+            self.assertTrue(select.select([proc.stdout], [], [], 20)[0], "command did not start")
+            observed = json.loads(proc.stdout.readline())
+            os.killpg(proc.pid, signal.SIGTERM)
+            proc.communicate(timeout=15)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertFalse(Path(observed["root"]).exists(), "owned cluster directory remains")
+            command = Path("/proc") / str(observed["command_pid"]) / "cmdline"
+            if command.exists():
+                self.assertEqual(command.read_bytes(), b"", "owned command is still running")
+        finally:
+            if proc.poll() is None:
+                os.killpg(proc.pid, signal.SIGTERM)
+                proc.communicate(timeout=15)
 
     def test_empty_explicit_command_is_rejected_before_database_setup(self):
         env = dict(os.environ, CAIRN_PG_BIN="/nonexistent-postgres")
