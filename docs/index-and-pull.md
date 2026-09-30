@@ -380,3 +380,27 @@ The existing local `get` command/API remains advisory inspection, and full
 `compile` remains available. The new credits govern index expansion, not every
 possible source of context. No adapter can yet attest to H1 model tool routing,
 mid-run refresh, or a global task budget.
+
+## Reserve allowance for a source pull
+
+`agent search --memory-budget-bytes 7800 --min-pull-bytes 3500 QUERY` requests
+at least 3,500 charged receipt expansion bytes after search within the same
+7,800-byte cap. The JSON index field is `min_pull_bytes`. It requires
+`memory_budget_bytes`, and its range is 1 through the smaller of 24,000 or that
+cap. Keep the actual input-context/policy room in `--tokens`; the reserve does
+not raise it. Complete optional preview groups may be omitted to fit. Required
+context remains whole; impossible requests fail with `BUDGET_REFUSED`.
+
+The response seals `cairn.memory-budget/2` with `min_pull_bytes` and reports
+actual `bytes_remaining`. Omission preserves the v1/default request and replay
+behavior. This is a charged expansion allowance, not a count of plain body
+bytes or proof that a source pull will succeed or be relevant. Repeat it on
+pages and retries; changed intent needs a new request UUID. Older APIs reject
+unsupported fields; do not silently retry without the reserve. Account for
+other receipts, hook context, retries and errors separately at the task level.
+
+The minimum applies when a receipt is issued. Pulls spend its allowance; an
+identical search retry reports the remaining amount without replenishing it.
+The CLI and MCP also check the final serialized search response against the
+cap minus the requested reserve. Repeated exposure still counts toward the
+caller's aggregate task budget.

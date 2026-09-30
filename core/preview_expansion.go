@@ -66,7 +66,7 @@ func expandPreviewBoundaries(p SemanticPackage, candidates []candidate, evaluati
 		if err != nil {
 			return p, err
 		}
-		if cost > memoryRoom(p) {
+		if cost > indexMemoryRoom(p) {
 			p.Index[i] = entry
 			continue
 		}

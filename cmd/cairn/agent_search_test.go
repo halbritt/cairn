@@ -83,7 +83,7 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 	if req.Scope != scope || req.RequestID != requestID || req.Query != "fixture query" || req.AvailableTokens != 32000 || req.Context.Revision != "fixture-revision" || req.Context.TaskPhase != "validation" {
 		t.Fatalf("request changed: %+v", req)
 	}
-	if req.MemoryBudgetBytes != nil {
+	if req.MemoryBudgetBytes != nil || req.MinPullBytes != nil {
 		t.Fatal("omitted memory budget changed the legacy request")
 	}
 	t.Run("memory allowance forwarding and final envelope", func(t *testing.T) {
@@ -100,6 +100,39 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 			}
 			if room == 256 && core.Code(err) != "BUDGET_REFUSED" {
 				t.Fatalf("oversized CLI view escaped memory cap: %v", err)
+			}
+		}
+	})
+	t.Run("pull reserve forwarding and validation", func(t *testing.T) {
+		base := []string{"agent", "--socket", socket, "--token-file", tokenFile, "search", "--repo", scope.Repo, "--task", scope.TaskID, "--run", scope.RunID}
+		_, err := run(context.Background(), append(append([]string{}, base...), "--memory-budget-bytes", "8000", "--min-pull-bytes", "3000", "fixture query"), strings.NewReader(""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		forwarded := <-requests
+		if forwarded.MinPullBytes == nil || *forwarded.MinPullBytes != 3000 || forwarded.MemoryBudgetBytes == nil || *forwarded.MemoryBudgetBytes != 8000 || forwarded.AvailableTokens != 32000 {
+			t.Fatalf("reserve changed request policy or allowance: %+v", forwarded)
+		}
+		_, err = run(context.Background(), append(append([]string{}, base...), "--memory-budget-bytes", "8000", "--min-pull-bytes", "7000", "fixture query"), strings.NewReader(""))
+		<-requests
+		if core.Code(err) != "BUDGET_REFUSED" {
+			t.Fatalf("CLI final envelope spent requested reserve: %v", err)
+		}
+		for _, flags := range [][]string{
+			{"--min-pull-bytes", "1"},
+			{"--memory-budget-bytes", "8000", "--min-pull-bytes", "0"},
+			{"--memory-budget-bytes", "8000", "--min-pull-bytes", "-1"},
+			{"--memory-budget-bytes", "8000", "--min-pull-bytes", "8001"},
+			{"--memory-budget-bytes", "32000", "--min-pull-bytes", "24001"},
+		} {
+			_, err := run(context.Background(), append(append(append([]string{}, base...), flags...), "fixture query"), strings.NewReader(""))
+			if core.Code(err) != "INVALID_REQUEST" {
+				t.Fatalf("invalid reserve %v: %v", flags, err)
+			}
+			select {
+			case req := <-requests:
+				t.Fatalf("invalid reserve reached API: %+v", req)
+			default:
 			}
 		}
 	})

@@ -15,6 +15,7 @@ import (
 type clientInfoComponent struct {
 	Build                   *buildinfo.Info `json:"build,omitempty"`
 	SearchMemoryBudgetBytes string          `json:"search_memory_budget_bytes"`
+	SearchMinPullBytes      string          `json:"search_min_pull_bytes"`
 	SupportBasis            string          `json:"support_basis"`
 }
 type clientInfoAPI struct {
@@ -32,8 +33,8 @@ type clientInfoResult struct {
 // cover both its exposed argument and forwarding to the authenticated API.
 func (t memoryTools) clientInfo(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 	result := clientInfoResult{Schema: "cairn.client-info/1",
-		Facade: clientInfoComponent{Build: &t.facadeBuild, SearchMemoryBudgetBytes: "supported", SupportBasis: "registered_search_contract"},
-		API:    clientInfoAPI{clientInfoComponent: clientInfoComponent{SearchMemoryBudgetBytes: "unknown", SupportBasis: "no_api_capability_contract"}, State: "unavailable"}}
+		Facade: clientInfoComponent{Build: &t.facadeBuild, SearchMemoryBudgetBytes: "supported", SearchMinPullBytes: "supported", SupportBasis: "registered_search_contract"},
+		API:    clientInfoAPI{clientInfoComponent: clientInfoComponent{SearchMemoryBudgetBytes: "unknown", SearchMinPullBytes: "unknown", SupportBasis: "no_api_capability_contract"}, State: "unavailable"}}
 	probe, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	var version localapi.VersionInfo

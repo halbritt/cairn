@@ -37,6 +37,7 @@ type CompileRequest struct {
 	Purpose           string       `json:"purpose"`
 	AvailableTokens   int          `json:"available_tokens"`
 	MemoryBudgetBytes *int         `json:"memory_budget_bytes,omitempty"`
+	MinPullBytes      *int         `json:"min_pull_bytes,omitempty"`
 }
 
 // Destination comes from trusted host configuration, never request JSON.
@@ -162,6 +163,9 @@ func (s *Store) Compile(ctx context.Context, req CompileRequest, destination Des
 	}
 	if req.MemoryBudgetBytes != nil && (req.Mode != "index" || req.Purpose != "context" || *req.MemoryBudgetBytes < 256 || *req.MemoryBudgetBytes > req.AvailableTokens) {
 		return Package{}, failure("INVALID_REQUEST", "memory_budget_bytes requires a context index and 256..available_tokens bytes")
+	}
+	if req.MinPullBytes != nil && (req.MemoryBudgetBytes == nil || *req.MinPullBytes <= 0 || *req.MinPullBytes > min(24000, *req.MemoryBudgetBytes)) {
+		return Package{}, failure("INVALID_REQUEST", "min_pull_bytes requires memory_budget_bytes and 1..min(24000,memory_budget_bytes) bytes")
 	}
 	switch req.Purpose {
 	case "context", "planning", "placement", "capability", "security":
@@ -310,6 +314,10 @@ func (s *Store) collectCandidates(ctx context.Context, tx pgx.Tx, req CompileReq
 	p := SemanticPackage{Context: req.Context, Schema: "cairn.semantic/3", Status: "READY", Scope: req.Scope, Query: "sha256:" + hex.EncodeToString(queryDigest[:]), Purpose: req.Purpose, Destination: dest, Policy: "local-loop/1", Ranking: "lexical-scope-recency/4", Tokenizer: "utf8-byte-upper-bound/1", AvailableTokens: req.AvailableTokens, OptionalLimit: min(req.AvailableTokens/10, 6000), Selected: []Selection{}, Omitted: omissionCensus()}
 	if req.MemoryBudgetBytes != nil {
 		p.MemoryBudget = &MemoryBudget{Schema: "cairn.memory-budget/1", Bytes: *req.MemoryBudgetBytes}
+		if req.MinPullBytes != nil {
+			p.MemoryBudget.Schema = "cairn.memory-budget/2"
+			p.MemoryBudget.MinPullBytes = *req.MinPullBytes
+		}
 	}
 	literals := queryLiterals(req.Query)
 	if len(literals) > 0 {

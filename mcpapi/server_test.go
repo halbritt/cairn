@@ -280,6 +280,40 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		if err := json.Unmarshal(invoke("cairn_search", map[string]any{"query": "allocationneedle"}, ""), &defaultRoom); err != nil || defaultRoom.AvailableTokens != 64000 {
 			t.Fatalf("memory cap leaked into later default search: %+v %v", defaultRoom, err)
 		}
+		t.Run("reserve permits checked pull", func(t *testing.T) {
+			const reserve = 3500
+			args := map[string]any{"query": "allocationneedle", "available_tokens": 24000, "memory_budget_bytes": memoryAllowance, "min_pull_bytes": reserve, "request_id": uuid.NewString()}
+			body, searchBytes := invokeMeasured("cairn_search", args, "")
+			var reserved searchResult
+			if err := json.Unmarshal(body, &reserved); err != nil {
+				t.Fatal(err)
+			}
+			if reserved.MemoryBudget == nil || reserved.MemoryBudget.Schema != "cairn.memory-budget/2" || reserved.MemoryBudget.MinPullBytes != reserve || reserved.BytesRemaining < reserve || reserved.OptionalLimit != 2400 || len(reserved.Index) == 0 || searchBytes+reserved.BytesRemaining > memoryAllowance {
+				t.Fatalf("reserve contract or native envelope lost: bytes=%d result=%s", searchBytes, body)
+			}
+			if len(reserved.Selected) != 1 || reserved.Selected[0].Record.Body != mandatory.Body {
+				t.Fatal("reserve truncated mandatory context")
+			}
+			pulled, pullBytes := invokeMeasured("cairn_pull", reserved.Index[0].PullArguments, "")
+			var expanded core.Expansion
+			if err := json.Unmarshal(pulled, &expanded); err != nil || !strings.Contains(expanded.Selection.Record.Body, "日本語") || expanded.BytesRemaining >= reserved.BytesRemaining || searchBytes+pullBytes > memoryAllowance {
+				t.Fatalf("reserved checked pull lost content/accounting: search=%d pull=%d result=%s err=%v", searchBytes, pullBytes, pulled, err)
+			}
+			t.Logf("reserved native envelopes: search=%d pull=%d cap=%d previews=%d remaining-before-pull=%d", searchBytes, pullBytes, memoryAllowance, len(reserved.Index), reserved.BytesRemaining)
+			if expanded.BytesRemaining >= reserve {
+				t.Fatal("fixture must spend below the initial reserve before retry")
+			}
+			// The minimum applies at issuance. An identical search retry must
+			// report spent receipt room, without rejecting or replenishing it.
+			var retried searchResult
+			if err := json.Unmarshal(invoke("cairn_search", args, ""), &retried); err != nil || retried.BytesRemaining != expanded.BytesRemaining || retried.ReceiptID != reserved.ReceiptID {
+				t.Fatalf("search retry changed spent allowance: %+v err=%v", retried, err)
+			}
+			args["min_pull_bytes"] = reserve + 1
+			invoke("cairn_search", args, "IDEMPOTENCY_CONFLICT")
+			delete(args, "min_pull_bytes")
+			invoke("cairn_search", args, "IDEMPOTENCY_CONFLICT")
+		})
 		// An unknown live context size can use the configured policy default
 		// without dropping the caller's explicit memory allocation.
 		body, searchBytes = invokeMeasured("cairn_search", map[string]any{"query": "allocationneedle", "memory_budget_bytes": memoryAllowance}, "")

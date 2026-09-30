@@ -1586,6 +1586,14 @@
               "null"
             ]
           },
+          "min_pull_bytes": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "mode": {
             "type": "string"
           },
@@ -1706,6 +1714,14 @@
             ]
           },
           "memory_budget_bytes": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "min_pull_bytes": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
             "type": [
@@ -4626,6 +4642,11 @@
       "core.MemoryBudget": {
         "properties": {
           "bytes": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "min_pull_bytes": {
             "maximum": 9223372036854775807,
             "minimum": -9223372036854775808,
             "type": "integer"
@@ -12376,6 +12397,14 @@
                           "null"
                         ]
                       },
+                      "min_pull_bytes": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
                       "mode": {
                         "type": [
                           "string",
@@ -16234,6 +16263,14 @@
                         ]
                       },
                       "memory_budget_bytes": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "min_pull_bytes": {
                         "maximum": 9223372036854775807,
                         "minimum": -9223372036854775808,
                         "type": [

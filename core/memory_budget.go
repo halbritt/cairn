@@ -6,8 +6,9 @@ import "encoding/json"
 // expansion allowance. AvailableTokens remains the context-room policy input.
 // A nil extension preserves every historical schema and its encoded bytes.
 type MemoryBudget struct {
-	Schema string `json:"schema" cbor:"schema"`
-	Bytes  int    `json:"bytes" cbor:"bytes"`
+	Schema       string `json:"schema" cbor:"schema"`
+	Bytes        int    `json:"bytes" cbor:"bytes"`
+	MinPullBytes int    `json:"min_pull_bytes,omitempty" cbor:"min_pull_bytes,omitempty"`
 }
 
 func memoryRoom(p SemanticPackage) int {
@@ -15,6 +16,19 @@ func memoryRoom(p SemanticPackage) int {
 		return p.MemoryBudget.Bytes
 	}
 	return p.AvailableTokens
+}
+
+// The minimum reserves charged expansion room within the existing allowance.
+// It is not a source-body size promise or an extra grant.
+func minPullBytes(p SemanticPackage) int {
+	if p.MemoryBudget != nil {
+		return p.MemoryBudget.MinPullBytes
+	}
+	return 0
+}
+
+func indexMemoryRoom(p SemanticPackage) int {
+	return memoryRoom(p) - minPullBytes(p)
 }
 
 // Index delivery reserves the rendered package, complete native pull handles,
@@ -43,8 +57,22 @@ func expansionMemoryCost(encoded []byte, budget *MemoryBudget) (int, error) {
 }
 
 func validateMemoryBudget(p SemanticPackage) error {
-	if p.MemoryBudget != nil && (p.MemoryBudget.Schema != "cairn.memory-budget/1" || p.Mode != "index" || p.Purpose != "context" || p.MemoryBudget.Bytes < 256 || p.MemoryBudget.Bytes > p.AvailableTokens) {
+	b := p.MemoryBudget
+	if b == nil {
+		return nil
+	}
+	if p.Mode != "index" || p.Purpose != "context" || b.Bytes < 256 || b.Bytes > p.AvailableTokens {
 		return failure("INTEGRITY_FAILURE", "historical memory budget contract is invalid")
 	}
-	return nil
+	switch b.Schema {
+	case "cairn.memory-budget/1":
+		if b.MinPullBytes == 0 {
+			return nil
+		}
+	case "cairn.memory-budget/2":
+		if b.MinPullBytes > 0 && b.MinPullBytes <= min(24000, b.Bytes) {
+			return nil
+		}
+	}
+	return failure("INTEGRITY_FAILURE", "historical memory budget reserve is invalid")
 }

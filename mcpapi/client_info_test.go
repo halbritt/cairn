@@ -77,10 +77,10 @@ func invokeDiagnostic(t *testing.T, session *mcp.ClientSession) clientInfoResult
 	if err = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &info); err != nil {
 		t.Fatal(err)
 	}
-	if info.Schema != "cairn.client-info/1" || info.Facade.SearchMemoryBudgetBytes != "supported" || !reflect.DeepEqual(info.Facade.Build, ptrBuild(buildinfo.Read())) {
+	if info.Schema != "cairn.client-info/1" || info.Facade.SearchMemoryBudgetBytes != "supported" || info.Facade.SearchMinPullBytes != "supported" || !reflect.DeepEqual(info.Facade.Build, ptrBuild(buildinfo.Read())) {
 		t.Fatalf("local identity lost: %+v", info)
 	}
-	if info.API.SearchMemoryBudgetBytes != "unknown" {
+	if info.API.SearchMemoryBudgetBytes != "unknown" || info.API.SearchMinPullBytes != "unknown" {
 		t.Fatalf("invented API support: %+v", info)
 	}
 	return info
@@ -122,7 +122,7 @@ func TestClientInfoLegacyAndForwarding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	foundInfo, foundBudget := false, false
+	foundInfo, foundBudget, foundReserve := false, false, false
 	for _, tool := range list.Tools {
 		if tool.Name == "cairn_client_info" {
 			foundInfo = true
@@ -137,9 +137,10 @@ func TestClientInfoLegacyAndForwarding(t *testing.T) {
 			}
 			json.Unmarshal(b, &schema)
 			_, foundBudget = schema.Properties["memory_budget_bytes"]
+			_, foundReserve = schema.Properties["min_pull_bytes"]
 		}
 	}
-	if !foundInfo || !foundBudget {
+	if !foundInfo || !foundBudget || !foundReserve {
 		t.Fatal("declared support absent from registered tools")
 	}
 	info := invokeDiagnostic(t, session)
@@ -229,5 +230,56 @@ func TestClientInfoDevelopmentAndSVNBuilds(t *testing.T) {
 				t.Fatalf("legitimate producer identity rejected: %+v", info)
 			}
 		})
+	}
+}
+
+func TestSearchPullReserveForwardingAndValidation(t *testing.T) {
+	var calls atomic.Int32
+	client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var req core.CompileRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+		}
+		if r.URL.Path != "/v1/index" || req.MinPullBytes == nil || *req.MinPullBytes != 2000 || req.MemoryBudgetBytes == nil || *req.MemoryBudgetBytes != 4000 || req.AvailableTokens != 32000 {
+			t.Errorf("reserve was dropped or changed policy: %+v path=%s", req, r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "data": core.IndexResult{}})
+	})
+	session := diagnosticSession(t, client, 32000)
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "cairn_search", Arguments: map[string]any{"query": "synthetic", "memory_budget_bytes": 4000, "min_pull_bytes": 2000}})
+	if err != nil || result.IsError {
+		t.Fatalf("reserve invocation: %v %+v", err, result)
+	}
+	for _, args := range []map[string]any{
+		{"min_pull_bytes": 1},
+		{"memory_budget_bytes": 4000, "min_pull_bytes": 0},
+		{"memory_budget_bytes": 4000, "min_pull_bytes": -1},
+		{"memory_budget_bytes": 4000, "min_pull_bytes": 4001},
+		{"memory_budget_bytes": 32000, "min_pull_bytes": 24001},
+		{"memory_budget_bytes": 4000, "min_pull_bytes": 1.5},
+		{"memory_budget_bytes": 4000, "min_pull_bytes": "2000"},
+	} {
+		args["query"] = "synthetic"
+		result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "cairn_search", Arguments: args})
+		if err != nil || !result.IsError {
+			t.Fatalf("invalid reserve accepted: %v result=%+v err=%v", args, result, err)
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("invalid requests reached API: %d calls", calls.Load())
+	}
+}
+
+func TestSearchFinalEnvelopePreservesPullReserve(t *testing.T) {
+	client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "data": core.IndexResult{}})
+	})
+	session := diagnosticSession(t, client, 32000)
+	// The synthetic API response fits the total cap but not the cap minus
+	// the requested reserve. The facade must refuse its own final envelope.
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "cairn_search", Arguments: map[string]any{"query": "synthetic", "memory_budget_bytes": 4000, "min_pull_bytes": 3900}})
+	if err != nil || !result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "BUDGET_REFUSED") {
+		t.Fatalf("MCP final envelope spent reserve: %v %+v", err, result)
 	}
 }

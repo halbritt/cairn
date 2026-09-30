@@ -200,7 +200,7 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 		if err != nil {
 			return p, err
 		}
-		if cost <= memoryRoom(p) {
+		if cost <= indexMemoryRoom(p) {
 			break
 		}
 		if len(p.Index) == 0 {
@@ -233,6 +233,9 @@ func createIndexSession(ctx context.Context, tx pgx.Tx, id string, p SemanticPac
 		return err
 	}
 	budget := min(24000, max(0, memoryRoom(p)-cost))
+	if budget < minPullBytes(p) {
+		return failure("BUDGET_REFUSED", "index cannot preserve the requested pull allowance")
+	}
 	if _, err = tx.Exec(ctx, `INSERT INTO cairn.index_session(receipt_id,remaining_bytes,expansion_reader) VALUES($1,$2,NULLIF($3,''))`, id, budget, reader); err != nil {
 		return err
 	}

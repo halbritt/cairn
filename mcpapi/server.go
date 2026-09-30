@@ -57,6 +57,7 @@ func (c Config) Validate() error {
 
 type searchArgs struct {
 	MemoryBudgetBytes *int              `json:"memory_budget_bytes,omitempty" jsonschema:"Optional smaller memory allowance for this search response and its receipt expansions, in UTF-8 bytes: 256 through available_tokens. available_tokens remains actual free input-context room used by optional policy, not model capacity. Omit to preserve the existing budget. Repeat on retries/pages; changing this field requires a new request UUID. Does not enforce aggregate conversation usage."`
+	MinPullBytes      *int              `json:"min_pull_bytes,omitempty" jsonschema:"Optional minimum charged receipt expansion allowance left after search. Requires memory_budget_bytes; 1 through min(24000, memory_budget_bytes). Reserves within that budget by reducing preview delivery, never by increasing total room or truncating required context. May refuse if the envelope and required context cannot fit. Not plain body bytes, a guaranteed successful pull, or proof of relevance. Omit for existing allocation; repeat on retries/pages and use a new request UUID when changing it."`
 	AvailableTokens   *int              `json:"available_tokens,omitempty" jsonschema:"Actual free input-context room, in conservative UTF-8 bytes, used by optional policy. At least 256 and no greater than the configured host ceiling; not model capacity. Omit for the host default. Set memory_budget_bytes for a smaller memory allocation without reducing this policy input. Repeat on retries/pages; changed room requires a new request UUID. Does not measure or enforce whole-conversation usage."`
 	AdvisoryConflicts bool              `json:"advisory_conflicts,omitempty" jsonschema:"Opt in to qualified competing advisory positions. All positions must be eligible together; otherwise the whole group is omitted. Pulling a marked position returns its complete competing positions under the shared budget. Repeat on retries and later pages. Does not resolve disagreement or change authority."`
 	Entities          []core.EntityRef  `json:"entities,omitempty" jsonschema:"Explicit file or symbol retrieval hints within this repository, at most 16. File names are canonical relative paths; symbol names are qualified labels. Exact kind and case-sensitive name overlap prefers associated notes. May replace query text; cannot browse. Hints do not establish scope, authority or observed workspace state. Repeat on later pages."`
@@ -154,7 +155,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	facadeBuild := buildinfo.Read()
 	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: facadeBuild.Label()}, nil)
 	tools := memoryTools{client: client, config: config, facadeBuild: facadeBuild}
-	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_client_info", Description: "Inspect this running MCP facade build and its declared search memory_budget_bytes support, separately from the authenticated API build. API failures retain local information with a sanitized diagnostic. API capability support remains unknown without a recognized declaration; revisions do not establish compatibility or release ordering. Does not identify installed Python code or other clients. No retries, restarts or writes."}, tools.clientInfo)
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_client_info", Description: "Inspect this running MCP facade build and its declared search memory_budget_bytes and min_pull_bytes support, separately from the authenticated API build. API failures retain local information with a sanitized diagnostic. API capability support remains unknown without a recognized declaration; revisions do not establish compatibility or release ordering. Does not identify installed Python code or other clients. No retries, restarts or writes."}, tools.clientInfo)
 	destructive := true
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_assess", Description: "Append a review to a receipt owned by the configured profile in its repository and destination. Read cairn_assessments first; expected_version is the latest reviewed version, or 0 for empty history. Choose a request UUID before writing and reuse the complete arguments for retries. VERSION_CONFLICT requires reading and reconciling history. For qualitative review with uncertain acceptance, use task_outcome=unknown, failure_domain=unknown, failure_kind=\"\", evidence_ids=[], and record observations, alternatives, costs and uncertainty in reason (8-4000 trimmed characters); name your method. Other outcomes require selected evidence IDs. Agent reviews remain testimony; an owned retrieval is distinct from the host's task assessment. Returns identifiers and attribution without echoing the reason. A failed response may follow a committed write; retry the saved request."}, tools.assess)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_assessments", Description: "Read an owned receipt's assessment history in ascending version order, including reasons, evidence IDs, observer, witness and method. Empty history returns []. Read this before writing or interpreting a task outcome; unknown acceptance does not mean zero memory value. A linked retrieval does not grant access to the host's assessment. Returns evidence IDs without bodies, at most 1000 versions; there is no pagination. The configured output budget applies without silent truncation."}, tools.assessments)
@@ -188,6 +189,9 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 		}
 		memoryRoom = *args.MemoryBudgetBytes
 	}
+	if args.MinPullBytes != nil && (args.MemoryBudgetBytes == nil || *args.MinPullBytes < 1 || *args.MinPullBytes > min(24000, memoryRoom)) {
+		return nil, nil, fmt.Errorf("INVALID_REQUEST: min_pull_bytes requires memory_budget_bytes and 1..min(24000, memory_budget_bytes)")
+	}
 	if args.Semantic && args.Browse {
 		return nil, nil, fmt.Errorf("semantic discovery cannot be combined with browsing")
 	}
@@ -219,11 +223,14 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 		return nil, nil, err
 	}
 	var index core.IndexResult
-	err = t.client.Call(ctx, "index", core.CompileRequest{MemoryBudgetBytes: args.MemoryBudgetBytes, AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: room, Context: declared}, &index)
+	err = t.client.Call(ctx, "index", core.CompileRequest{MemoryBudgetBytes: args.MemoryBudgetBytes, MinPullBytes: args.MinPullBytes, AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: room, Context: declared}, &index)
 	if err != nil {
 		return toolResult(nil, err, memoryRoom)
 	}
 	view, err := presentSearch(index, args.RequestID)
+	if err == nil && args.MinPullBytes != nil {
+		memoryRoom -= *args.MinPullBytes
+	}
 	return toolResult(view, err, memoryRoom)
 }
 

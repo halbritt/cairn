@@ -72,6 +72,32 @@ is unknown or an older tool lacks the field, use the existing smaller
 Never retry an unsupported new argument by silently dropping its cap while
 keeping the larger context declaration.
 
+To leave room for source inspection, optionally add `min_pull_bytes`, for example
+`{"query":"deployment rollback", "memory_budget_bytes":7800, "min_pull_bytes":3500}`.
+It requires an explicit memory cap and must be between 1 and the smaller of
+24,000 or that cap. The index removes complete optional preview groups until it
+can leave at least that much **charged receipt expansion allowance**. Preview
+boundary expansion must also fit without spending the reserve. Mandatory
+context stays whole; a budget too small for it, the response envelope and the
+reserve returns `BUDGET_REFUSED`.
+
+This does not enlarge the total allowance or the existing optional policy. It
+reserves accounting room, not plain source-body bytes or a guarantee that a
+particular pull succeeds, exists or is relevant. The search result reports the
+actual `bytes_remaining`; `memory_budget` seals this request as
+`cairn.memory-budget/2`. Omitting the reserve retains the existing v1 allocation.
+Repeat the reserve on pages and identical retries; changing it requires a new
+request UUID. Older facades/APIs can reject the field: do not silently drop it
+and claim a reservation. `cairn_client_info` declares this facade's
+`search_min_pull_bytes` support separately from API support, which remains
+`unknown` without a recognized API capability declaration.
+
+The minimum applies when a receipt is issued. Pulls spend its allowance; an
+identical search retry reports the remaining amount without replenishing it.
+The CLI and MCP also check the final serialized search response against the
+cap minus the requested reserve. Repeated exposure still counts toward the
+caller's aggregate task budget.
+
 Each receipt has its own budget. The agent still accounts for lifecycle context,
 other receipts, retries and error messages in the task's aggregate allowance.
 
