@@ -98,8 +98,11 @@ The complete mandatory package is reserved before the cue. If the cue cannot
 fit, it is omitted with outcome `delegation_omitted` and rejection
 `delegation_context_budget`; mandatory context is still delivered whole. An
 oversized mandatory package refuses as before. Taskless fresh starts and wake
-notifications keep their existing optional deferral. Eligible resume, compact
-and explicit-workstream starts receive the cue without optional selector calls.
+notifications keep their existing optional deferral. For Claude, OpenCode and
+Hermes, eligible resume, compact and explicit-workstream starts receive the cue
+without optional selector calls. Codex instead retains a
+[native-turn allowance across compaction](codex-lifecycle.md#delegated-recall-across-compaction)
+and does not issue another cue on `SessionStart`.
 
 Before any pilot, verify that the actual harness exposes and permits the native
 tools with the intended authenticated scope and destination. The source cue

@@ -79,6 +79,48 @@ body selector calls through the shared engine. The opt-in
 delegates optional inspection to the current task agent without those calls;
 capture selection is unchanged. An omitted mode retains the existing default.
 
+### Delegated recall across compaction
+
+For Codex `agent_tools`, an ordinary `UserPromptSubmit` with canonical native
+session and turn UUIDs can issue one optional recall allowance per native turn.
+`SessionStart` never opens an allowance: startup, resume and compaction deliver
+only required context, or no additional context when none is required. A wake
+notification or a prompt without a valid turn ID cannot open an allowance.
+
+The hook retains grants in `<session_id>.memory-budget.json` under `state_dir`,
+using the existing session lock. A separate `.memory-budget.initialized` marker
+detects ledger loss even when an older capture engine rewrites ordinary state.
+Each grant records its byte limit, emitted hook
+bytes and reserved native-tool allowance. The ledger is saved before context is
+returned, independently of the ordinary hint/capture state. Binding changes,
+seen resets, compaction and replay of an older turn cannot refund its allowance.
+An uncertain output or later state-save failure conservatively retains the
+reservation. Corrupt ledgers, or a missing ledger after initialization, refuse
+renewed recall. A bootstrap failure after saving the marker also refuses renewed
+recall until the state is reconciled. Do not delete these files to recover room
+in a running turn.
+
+Required startup context is charged to the first ordinary turn. Required replay
+must fit whole in the remaining unreserved allowance or the hook refuses it;
+it never truncates instructions. The hook reserves the entire allowance issued
+for native tools because it cannot observe how much the agent actually spends.
+Unused reservations therefore cannot fund required replay after compaction.
+With no required context, a repeated event emits nothing.
+
+This contains repeated hook grants. It does **not** enforce aggregate native
+tool consumption: the agent must still count search/pull results and envelopes
+against its issued allowance. A new native turn can receive another allowance;
+a logical assignment spanning several turns is not bounded as one task. Outer
+harness framing is not measured. Other harnesses retain the shared behavior
+described in [Claude lifecycle](claude-lifecycle.md#optional-recall-through-the-task-agent).
+Grants retain prior turn IDs without eviction to prevent old-turn replay;
+their metadata grows with the session. They contain no memory bodies or prompts.
+Enable this mode at the next ordinary turn boundary. The ledger cannot recover
+allowances already delivered by an older engine during an in-flight turn. Its
+checks also cannot detect deletion of the entire state directory. Preserve that
+directory across resumes. The identity contract is present in the
+[Codex 0.157.1 hook schema](https://github.com/openai/codex/blob/rust-v0.157.1/codex-rs/hooks/src/schema.rs#L567).
+
 ## Install
 
 From the Cairn checkout, with `cairn`, `claude` and Codex installed:
