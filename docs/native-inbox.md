@@ -56,10 +56,17 @@ The cue is a hint, not delivery:
   takes no session lock and has a 2-second timeout. It stays silent for stale
   counts (older than 90 seconds), another execution or live process, fresh
   workers, lifecycle children and other harnesses.
-- A cue repeats only when the counts or the newest position change, not after
-  every tool.
+- A cue repeats only when the counts or the newest counted position change,
+  not after every tool. The API counts the earliest 100 eligible deliveries;
+  new arrivals beyond an unchanged first 100 do not change the cue.
 - Against an API without the operation, the watcher drops the counts and the
   cue never appears; delivery is unchanged.
+
+The watcher must observe an arrival before a later tool completion can show
+the cue. Its 30-second cycle does not guarantee a cue on the first tool call
+after arrival. This implementation covers Claude and Codex, not OpenCode.
+It does not clear an earlier submitted or uncertain channel wake, or prove
+that waiting work was delivered or completed.
 
 ### Claude channel activation and selection
 
