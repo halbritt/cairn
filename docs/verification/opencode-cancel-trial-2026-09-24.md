@@ -135,7 +135,8 @@ terminal scan newer than the cancellation decision and every later capture.
 - Stop latency is set by the watcher's 30-second poll. The native stop goes out
   on the first tick after `work-cancel`, and reconciliation happens on the
   next, so cancellation was confirmed about 45 to 50 s after the request.
-  Faster polling while a cancel is pending would shorten this.
+  Faster polling while a cancel is pending would shorten this. (CAIRN-40 later
+  added a 2-second cancellation-only pass; this record's timings are unchanged.)
 - The turn stop and process cleanup are recorded separately. C4 shows a stop
   recorded before the last process died, with release still correctly gated
   on the scan.

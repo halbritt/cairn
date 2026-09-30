@@ -36,6 +36,8 @@ class NativePromptRefused(CoordinationError):
 
 
 HERDR_OUTPUT_BYTES = 1024 * 1024
+WATCH_INTERVAL = 30  # seconds between full presence, renewal and wake cycles
+CANCEL_POLL_INTERVAL = 2  # seconds between cancellation-only passes while one is pending
 
 
 def process_reference(pid):
@@ -1685,6 +1687,26 @@ def settle_inbox(config, state, path):
     return release_inbox(config, state, path, 'delivery_completed')
 
 
+def advance_opencode_cancel(config, state, path):
+    """Take the next store-fenced OpenCode cancellation step.
+
+    Returns (handled, native stop to submit after the state lock is released).
+    The full watcher cycle and the faster cancellation pass share this step.
+    """
+    attempt = opencode_inbox_control(config, state, path)
+    if not attempt and state.get('inbox_close', {}).get('reason') in ('cancel_confirmed', 'exclusivity_revoked'):
+        release_inbox(config, state, path, state['inbox_close']['reason'])
+        return True, None
+    if attempt and attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
+        # The store has already fenced completion and renewal. Retain the
+        # hold until a pinned turn stop and terminal tool scan are proved.
+        scan_opencode_cancel(config, state, path, attempt)
+        if not state.get('inbox_intent'):
+            return True, None
+        return True, prepare_opencode_cancel(config, state, path, attempt)
+    return False, None
+
+
 def watch_inbox(config, state, path):
     if not state.get('inbox_intent'):
         # A reply journaled after its attempt was reconciled still needs replay.
@@ -1692,17 +1714,9 @@ def watch_inbox(config, state, path):
         write_state(path, state)
         return
     if config.get('harness') == 'opencode':
-        attempt = opencode_inbox_control(config, state, path)
-        if not attempt and state.get('inbox_close', {}).get('reason') in ('cancel_confirmed', 'exclusivity_revoked'):
-            release_inbox(config, state, path, state['inbox_close']['reason'])
-            return
-        if attempt and attempt.get('cancel') and not attempt['cancel'].get('confirmed_at'):
-            # The store has already fenced completion and renewal. Retain the
-            # hold until a pinned turn stop and terminal tool scan are proved.
-            scan_opencode_cancel(config, state, path, attempt)
-            if not state.get('inbox_intent'):
-                return
-            return prepare_opencode_cancel(config, state, path, attempt)
+        handled, cancel_prepared = advance_opencode_cancel(config, state, path)
+        if handled:
+            return cancel_prepared
     if not flush_inbox_intents(config, state):
         return  # Uncertain journaled command: keep the hold and retry next cycle.
     if settle_inbox(config, state, path):
@@ -2181,6 +2195,104 @@ def watch_once(config):
             print(f"Cairn presence {config['binding']}: {type(exc).__name__}; presence may expire", file=sys.stderr)
 
 
+def opencode_cancel_pending(config, state):
+    """True while the last store-fenced OpenCode attempt still lacks confirmed cleanup."""
+    attempt = state.get('inbox_attempt')
+    return (config.get('harness') == 'opencode' and bool(state.get('inbox_intent')) and isinstance(attempt, dict)
+            and isinstance(attempt.get('cancel'), dict) and not attempt['cancel'].get('confirmed_at'))
+
+
+def pending_cancel_configs(configs):
+    """Keep the bindings whose saved session state shows an unconfirmed cancellation."""
+    pending = []
+    for config in configs:
+        for path in sorted(Path(config['state_dir']).glob('*.json')):
+            try:
+                state = json.loads(path.read_text())
+                if (isinstance(state, dict) and not state.get('retired') and not state.get('ending') and
+                        opencode_cancel_pending(config, state)):
+                    pending.append(config)
+                    break
+            except (OSError, ValueError, TypeError):
+                continue  # The full cycle reports unreadable state; one bad file hides no other session.
+    return pending
+
+
+def watch_pending_cancels(config):
+    """Advance only pending OpenCode cancellations between full watcher cycles.
+
+    A full cycle also heartbeats, renews and wakes every session. This pass runs
+    the full cycle's cancel step, and nothing else, for a session whose saved
+    attempt is unconfirmed and whose native process is alive. A dead process is
+    left to the full cycle. Returns True while a cancellation remains pending.
+    A failure ends fast polling for this binding until the next full cycle.
+    """
+    pending = False
+    failed = False
+    for path in sorted(Path(config['state_dir']).glob('*.json')):
+        try:
+            cancel_prepared = None
+            # Atomic state replacement makes this a consistent hint. Recheck
+            # under the lock before acting; unrelated hooks need no fast retry.
+            try:
+                hint = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            if (not isinstance(hint, dict) or hint.get('retired') or hint.get('ending') or
+                    not opencode_cancel_pending(config, hint)):
+                continue
+            with session_lock(path):
+                try:
+                    state = json.loads(path.read_text())
+                except (OSError, ValueError):
+                    continue  # The full cycle reports unreadable state once per cycle.
+                if (not isinstance(state, dict) or state.get('retired') or state.get('ending') or
+                        not state.get('agent') or not opencode_cancel_pending(config, state) or
+                        not process_alive(state['process'])):
+                    continue
+                _, cancel_prepared = advance_opencode_cancel(config, state, path)
+                write_state(path, state)
+                pending = pending or opencode_cancel_pending(config, state)
+            if cancel_prepared:
+                submit_opencode_cancel(config, path, cancel_prepared)
+        except CoordinationError as exc:
+            if exc.code == 'SESSION_BUSY':
+                pending = True  # A hook owns presence and may finish the step; ask again shortly.
+                continue
+            failed = True
+            print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+            failed = True
+            print(f"Cairn presence {config['binding']}: {type(exc).__name__}; presence may expire", file=sys.stderr)
+    return pending and not failed
+
+
+def wait_for_next_cycle(stop, configs, seconds, clock=time.monotonic):
+    """Sleep until the next full cycle, polling pending OpenCode cancellations faster.
+
+    With no pending cancellation this is one plain wait, as before. A pending one
+    yields to the next full cycle when it is due. An in-flight synchronous
+    cancellation pass can run beyond that deadline.
+    """
+    deadline = clock() + seconds
+    active = pending_cancel_configs(configs)
+    while active and not stop.is_set():
+        remaining = deadline - clock()
+        if remaining <= 0:
+            return
+        if stop.wait(min(CANCEL_POLL_INTERVAL, remaining)):
+            return
+        still_pending = []
+        for config in active:
+            if stop.is_set() or clock() >= deadline:
+                return
+            if watch_pending_cancels(config):
+                still_pending.append(config)
+        active = still_pending
+    if not stop.is_set():
+        stop.wait(max(0, deadline - clock()))
+
+
 def validate_config(config):
     for key in ("cairn", "socket", "token_file", "state_dir"):
         if not isinstance(config.get(key), str) or not Path(config[key]).is_absolute():
@@ -2259,11 +2371,13 @@ def main():
             with session_lock(args.config_dir / ".watch"):
                 while not stop.is_set():
                     started = time.monotonic()
+                    configs = []
                     for path in sorted(args.config_dir.glob("*.json")):
-                        watch_once(load_config(path))
+                        configs.append(load_config(path))
+                        watch_once(configs[-1])
                     if args.once:
                         break
-                    stop.wait(max(1, 30 - (time.monotonic() - started)))
+                    wait_for_next_cycle(stop, configs, max(1, WATCH_INTERVAL - (time.monotonic() - started)))
     except CoordinationError as exc:
         if exc.code == 'NATIVE_PROMPT_REFUSED':
             print(f"Cairn coordination: {exc}; channel text rejected, owner prompt continues", file=sys.stderr)

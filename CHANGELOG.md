@@ -16,6 +16,15 @@ and MCP processes.
 
 ## 2026-09-30
 
+- While an OpenCode request cancellation is pending, the presence watcher now
+  repeats only that cancellation step every 2 seconds instead of waiting for its
+  next 30-second cycle. This configures more frequent observation of the pinned
+  turn stop and clear-scan reconciliation; real cancellation latency has not
+  been remeasured. The faster pass does no heartbeat, renewal or wake work, skips
+  sessions whose native process is gone, and leaves all confirmation rules
+  unchanged. Idle cadence is unchanged, and the first cycle after `work-cancel`
+  can still take up to 30 seconds. See [request controls](docs/request-controls.md#native-interactive-cancellation-opencode-trial-gate).
+
 - The coordination installer's `--no-herdr` installs an OpenCode idle-wake
   binding through the native bridge without Herdr, with required `--no-service`,
   so a scratch `--settings`

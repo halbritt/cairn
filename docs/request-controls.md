@@ -135,6 +135,14 @@ stop outside its state lock, records the pinned `TurnEnd`, scans marked tool
 processes, reports terminal captures and reconciles only after a fresh clear
 scan. It never kills the shared native process. An uncertain stop is not
 resent automatically. A live or unreadable marked process keeps the hold.
+While a fenced attempt is unconfirmed, the watcher repeats only that cancellation
+step every 2 seconds between its normal 30-second cycles. The faster pass skips
+heartbeats, renewals and wake work, leaves a dead native process to the full
+cycle, and falls back to the full cycle after any failure. The next full cycle
+takes priority when due; an in-flight synchronous cancellation pass can still
+run beyond that deadline. A watcher with no pending cancellation waits as
+before. The first cycle after `work-cancel` can still take up to 30 seconds to
+notice the cancellation.
 If another native turn starts before a positive stop of the pinned turn, the
 host records an owner join and revokes the exclusivity attestation; the hold
 still requires turn and tool cleanup before `exclusivity_revoked` reconciliation.
