@@ -139,12 +139,16 @@ replaced. Update the setup/MCP executable for these checks.
 
 ## Tools
 
+Before saving knowledge that may replace an existing note, use
+[`cairn_prepare_note`](#inspect-possible-predecessors-before-saving).
+
 | Tool | Inputs and behavior |
 | --- | --- |
 | `cairn_search` | A `query`, or `browse: true` without a query; optional retry `request_id` and per-call `context` for fields not fixed by the host. Returns mandatory context plus a bounded index. Each entry has a complete `pull_arguments` object for the next call. |
 | `cairn_pull` | Pass an entry's `pull_arguments` unchanged for the full body. Add `span: {offset: 0, length: 4096}` for a partial A/B source, or copy the entry's `summary_span` to read its exact preview source bytes. Use a new request UUID for each range. Reuse identical arguments for retries. Instructions require whole delivery. |
 | `cairn_pull_evidence` | Original `receipt_id` and `handle`, an attached `evidence_id`, its full-object `expected_sha256`, and a retry `request_id`. Optional `span: {offset: 0, length: 4096}` selects at most that many bytes. Shares the body's expansion credits and bytes. |
 | `cairn_remember` | `body` and a stable UUID `request_id`; optional `scope`, `kind`, `shareable`, `entities` and explicit `pins`. Defaults to an ordinary local note. Returns the record ID, version and retry ID, without echoing the body. |
+| `cairn_prepare_note` | Required short subject `query`; optional `entities`, current `context`, `request_id`, `available_tokens` and `memory_budget_bytes`. Returns ordinary eligible search previews/handles plus pre-save guidance. Saves no note and performs no edit or retirement. |
 | `cairn_edit` | `record_id`, `expected_version`, a stable UUID `request_id`, and exactly one of `body`, `append` (a verbatim suffix), `replace` (`old_text`/`new_text` for one exact passage), a complete replacement `draft`, or `evidence_citations` to replace source references (`[]` clears them). Revises an active A note; text edits preserve citations. See [ordinary citations](evidence-citations.md#ordinary-notes). Returns identifiers without echoing the body. |
 | `cairn_history` | `record_id` with optional `limit`/`before_version` for retained metadata, or positive `version` for one exact body. Add `span: {offset, length}` for a bounded byte excerpt of that version. Historical comparison only; no current eligibility or authority. Uses configured repository, authenticated destination and the tool output budget. See [retained history](record-history.md#native-tools). |
 | `cairn_assessments` | Known `receipt_id` owned by the configured profile. Reads ordered assessment history with reasons and evidence IDs, without evidence bodies. |
@@ -327,7 +331,7 @@ args = [
 ]
 enabled_tools = [
   "cairn_search", "cairn_pull", "cairn_pull_evidence",
-  "cairn_remember", "cairn_edit", "cairn_history",
+  "cairn_remember", "cairn_prepare_note", "cairn_edit", "cairn_history",
   "cairn_assessments", "cairn_assess",
 ]
 required = false
@@ -462,3 +466,81 @@ turn a process exit into task acceptance.
 Known failure signatures can also find reviewed lessons without shared query
 vocabulary. See [failure signature search](failure-signature-search.md) for the
 optional `error_signature_sha256` tool field and operator sharing requirement.
+
+
+## Inspect possible predecessors before saving
+
+`cairn_prepare_note` is an explicit pre-save inspection, available through the
+MCP facade. Newly generated Codex configurations enable it; existing tool
+allowlists must add it explicitly, and long-running facades need the updated
+binary on their next normal start. This change does not deploy or restart them.
+The separate OpenCode custom-tool adapter can use its existing search/pull/edit
+workflow; it does not gain this MCP-only tool automatically.
+
+For example:
+
+```json
+{
+  "query": "Cairn socket configuration procedure",
+  "entities": [{"kind": "file", "name": "cmd/cairn/mcp.go"}],
+  "memory_budget_bytes": 8000
+}
+```
+
+Supply selected subject words and known identifiers, not the whole draft or
+secrets. Search uses the host's current repository/task/run and declared context;
+it does not broaden scope to match the proposed note's intended audience or
+pretend the draft's pins describe the workspace. It uses the current lexical
+ranking, without a model call, semantic worker, subject-line inference, or
+recency-based replacement rule. Unrelated high matches remain possible.
+
+The response is the normal search view, including required `selected` context,
+`index`, omission reasons, source seal, receipt and complete `pull_arguments`.
+An added `preparation` object says `note_saved: false` and explains the decision.
+The receipt records retrieval, not a save reservation or a duplicate-check
+certificate. Preparation does not invoke `create`, `edit` or `supersede`.
+
+1. Read required context and pull plausible predecessors with their complete
+   arguments. Check the whole current body, actual subject, scope, pins,
+   sensitivity and source evidence. A preview, score, date or larger version
+   number does not establish that one record replaces another.
+2. For a correction to the same active A note, use `cairn_edit` with its
+   `record_id`, current `expected_version`, a new mutation request UUID and the
+   corrected body or exact passage replacement. Preserve unrelated content.
+   Ordinary edits cannot change scope, pins or sensitivity. Version conflicts
+   require a fresh search/pull and reconciliation; do not blindly retry a newer
+   expected version. Earlier bodies remain in history.
+3. For distinct knowledge, explicitly use `cairn_remember`. Existing save
+   behavior and idempotent retries remain unchanged. Preparation is optional,
+   not an enforced gate or atomic check-and-save: concurrent writers can still
+   create parallel notes.
+4. If a separate record is actually obsolete, use the existing authorized
+   [supersession workflow](supersession.md). Hosted profiles cannot obtain its
+   required protected impact preview through the hosted interface; coordinate
+   with the authorized local/operator workflow, without switching profiles to
+   bypass this boundary. B/C changes retain their own authority requirements.
+   Ordinary derivation/contradiction links are not supersession.
+
+An empty or budget-limited index does not prove no predecessor exists. Failed
+search/pull, expired handles, unseen scopes and unsupported API fields remain
+explicit limitations, not permission or confidence to overwrite. No automatic
+fallback saves a note. The existing lifecycle capture already searches/pulls
+candidate notes and can revise a supplied A note; this tool neither adds a
+selector call nor changes lifecycle capture behavior.
+
+`available_tokens` is known free input room, not this workflow's allowance.
+Omit it when unknown to use the host policy default; use `memory_budget_bytes`
+for the smaller allocation. The facade reserves 1,024 bytes for guidance and
+passes the remaining cap to the existing index/expansion API, keeping the actual
+policy input unchanged. At least 1,280 bytes are needed even to attempt a
+search; required context may need more. The final native JSON (including escaped
+Unicode and quotes) must fit the caller's effective allowance or the call
+refuses. Required context and handles are never truncated. The receipt exposes
+the smaller search/expansion cap; account for preparation output and later pulls
+against the original total, and combine this with other memory calls yourself.
+An older API that refuses the cap remains an error, with no uncapped retry.
+
+Local contract tests cover candidate inspection and correction, destination
+filtering, mandatory context, concurrent-edit refusal, history, budgets and API
+failures. They do not measure suggestion precision on real saves or establish
+CAIRN-110's closed evaluation gate. No global retrieval ranking changed.

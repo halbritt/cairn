@@ -130,15 +130,16 @@ type searchEntry struct {
 
 type searchResult struct {
 	core.SemanticPackage
-	Schema           string        `json:"schema"`
-	Index            []searchEntry `json:"index"`
-	SourceSchema     string        `json:"source_schema"`
-	SourceSeal       string        `json:"source_seal"`
-	ReceiptID        string        `json:"receipt_id"`
-	RequestID        string        `json:"request_id"`
-	ExpiresAt        time.Time     `json:"expires_at"`
-	CreditsRemaining int           `json:"credits_remaining"`
-	BytesRemaining   int           `json:"bytes_remaining"`
+	Preparation      *notePreparation `json:"preparation,omitempty"`
+	Schema           string           `json:"schema"`
+	Index            []searchEntry    `json:"index"`
+	SourceSchema     string           `json:"source_schema"`
+	SourceSeal       string           `json:"source_seal"`
+	ReceiptID        string           `json:"receipt_id"`
+	RequestID        string           `json:"request_id"`
+	ExpiresAt        time.Time        `json:"expires_at"`
+	CreditsRemaining int              `json:"credits_remaining"`
+	BytesRemaining   int              `json:"bytes_remaining"`
 }
 
 // NewServer borrows client; its caller owns the connection and process lifetime.
@@ -155,6 +156,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	facadeBuild := buildinfo.Read()
 	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: facadeBuild.Label()}, nil)
 	tools := memoryTools{client: client, config: config, facadeBuild: facadeBuild}
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_prepare_note", Description: "Before saving reusable knowledge, inspect possible predecessors with a short subject query and known entities. Creates a bounded lexical search receipt, not a note. Returns eligible previews and complete pull_arguments; pull current bodies and check applicability before choosing cairn_edit for the same A note or cairn_remember for distinct knowledge. Similarity is not supersession. Hosted profiles cannot obtain the required protected impact preview; formal supersession needs the authorized local/operator workflow. No automatic save, edit, retirement or model call."}, tools.prepareNote)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_client_info", Description: "Inspect this running MCP facade build and its declared search memory_budget_bytes and min_pull_bytes support, separately from the authenticated API build. API failures retain local information with a sanitized diagnostic. API capability support remains unknown without a recognized declaration; revisions do not establish compatibility or release ordering. Does not identify installed Python code or other clients. No retries, restarts or writes."}, tools.clientInfo)
 	destructive := true
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_assess", Description: "Append a review to a receipt owned by the configured profile in its repository and destination. Read cairn_assessments first; expected_version is the latest reviewed version, or 0 for empty history. Choose a request UUID before writing and reuse the complete arguments for retries. VERSION_CONFLICT requires reading and reconciling history. For qualitative review with uncertain acceptance, use task_outcome=unknown, failure_domain=unknown, failure_kind=\"\", evidence_ids=[], and record observations, alternatives, costs and uncertainty in reason (8-4000 trimmed characters); name your method. Other outcomes require selected evidence IDs. Agent reviews remain testimony; an owned retrieval is distinct from the host's task assessment. Returns identifiers and attribution without echoing the reason. A failed response may follow a committed write; retry the saved request."}, tools.assess)
@@ -163,7 +165,7 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_search", Description: "Search scoped memory with a query, or set browse=true without a query to inspect available topics. Browsing is bounded by the same budget and is not a complete inventory or relevance ranking. Read mandatory context in selected and inspect relevant index entries with cairn_pull using their complete pull_arguments. A notes are fallible; verify before relying on them. Search records exposure, not proven use."}, tools.search)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull", Description: "Pull a memory body using complete pull_arguments from cairn_search. Optional span selects byte offset and maximum length for a partial A/B source; bytes and hashes appear in span with record.body empty. Copy an index entry's summary_span into span to read its exact preview source bytes without omission markers; match_span, when present, addresses the complete scored passage. Instructions and marked competing positions require a whole pull. A marked pull returns the requested selection plus competing positions; read all of them. Use a new request UUID for a different range. A stale handle requires a fresh search. Shares the receipt's expansion budget. Read the complete note before replacing its body."}, tools.pull)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_pull_evidence", Description: "Pull evidence referenced by an expanded memory, using its evidence ID and full-object expected SHA256 plus the original receipt and handle. Optional span selects byte offset and maximum length, clipped at EOF; selected bytes and their checksum appear in span. Reuse a request UUID only for identical retries. Shares the same expansion budget."}, tools.pullEvidence)
-	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_remember", Description: "Save an explicitly selected note as ordinary A testimony. Scope defaults to repository-wide; explicitly choose task or run for narrower applicability. Does not promote claims or grant authority. Choose shareable only for content suitable for hosted models; default local notes will not appear in hosted searches. Preserve the request UUID when retrying."}, tools.remember)
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_remember", Description: "Save an explicitly selected note as ordinary A testimony. When it may replace existing guidance, use cairn_prepare_note and pull possible predecessors before saving; use cairn_edit for a correction to the same A note. Scope defaults to repository-wide; explicitly choose task or run for narrower applicability. Does not promote claims or grant authority. Choose shareable only for content suitable for hosted models; default local notes will not appear in hosted searches. Preserve the request UUID when retrying."}, tools.remember)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, OpenWorldHint: new(bool)}, Name: "cairn_edit", Description: "Revise a previously pulled active Class A note. Supply its record_id and expected_version, a new request_id UUID, and body to change only the text while preserving all stored metadata. For an additive update, supply append with the exact suffix, including separating whitespace; existing text is preserved and the combined body must fit 65536 bytes. For a targeted correction, supply replace with old_text and new_text; old_text must occur exactly once, and all other text is preserved. Alternatively supply the complete replacement draft or evidence_citations to replace source references ([] clears them). Supply exactly one of body, append, replace, draft or evidence_citations. Text edits preserve citations and earlier versions retain their sources. Citations remain testimony, not qualification. For a full draft, copy kind, scope, pins, entities, sensitivity, relations and attribution fields from the pulled record; change only the intended content. Scope and sensitivity changes and privileged records are refused. The authenticated writer is recorded. Retry with exactly the same arguments; VERSION_CONFLICT requires a fresh search/pull and reconciliation, not blind overwrite. Returns identifiers without echoing the body."}, tools.edit)
 	return server, nil
 }
@@ -175,6 +177,10 @@ type memoryTools struct {
 }
 
 func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {
+	return t.searchWithPreparation(ctx, request, args, false)
+}
+
+func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.CallToolRequest, args searchArgs, prepare bool) (*mcp.CallToolResult, any, error) {
 	room := t.config.AvailableTokens
 	if args.AvailableTokens != nil {
 		if *args.AvailableTokens < 256 || *args.AvailableTokens > room {
@@ -191,6 +197,16 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 	}
 	if args.MinPullBytes != nil && (args.MemoryBudgetBytes == nil || *args.MinPullBytes < 1 || *args.MinPullBytes > min(24000, memoryRoom)) {
 		return nil, nil, fmt.Errorf("INVALID_REQUEST: min_pull_bytes requires memory_budget_bytes and 1..min(24000, memory_budget_bytes)")
+	}
+	if prepare {
+		// Reserve space for the decision guidance without treating the smaller
+		// memory allowance as measured free input room. Final serialization is
+		// still checked by toolResult; required selections are never truncated.
+		indexRoom := memoryRoom - preparationOverhead
+		if indexRoom < 256 {
+			return nil, nil, errors.New("BUDGET_REFUSED: note preparation needs room for guidance and a search receipt")
+		}
+		args.MemoryBudgetBytes = &indexRoom
 	}
 	if args.Semantic && args.Browse {
 		return nil, nil, fmt.Errorf("semantic discovery cannot be combined with browsing")
@@ -228,6 +244,9 @@ func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, a
 		return toolResult(nil, err, memoryRoom)
 	}
 	view, err := presentSearch(index, args.RequestID)
+	if prepare {
+		view.Preparation = &notePreparation{NoteSaved: false, Guidance: preparationGuidance}
+	}
 	if err == nil && args.MinPullBytes != nil {
 		memoryRoom -= *args.MinPullBytes
 	}

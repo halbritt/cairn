@@ -92,7 +92,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	if !reflect.DeepEqual(names, []string{"cairn_assess", "cairn_assessments", "cairn_client_info", "cairn_edit", "cairn_history", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_search"}) {
+	if !reflect.DeepEqual(names, []string{"cairn_assess", "cairn_assessments", "cairn_client_info", "cairn_edit", "cairn_history", "cairn_prepare_note", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_search"}) {
 		t.Fatal(names)
 	}
 	invokeMeasured := func(name string, args any, wantError string) (json.RawMessage, int) {
@@ -119,6 +119,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		body, _ := invokeMeasured(name, args, wantError)
 		return body
 	}
+
 	{
 		var found searchResult
 		if err := json.Unmarshal(invoke("cairn_search", searchArgs{Query: "review workflow"}, ""), &found); err != nil {
@@ -798,6 +799,56 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		}
 	})
 
+	t.Run("prepare pull reconcile without parallel note", func(t *testing.T) {
+		oldBody := "predecessorbeacon: set fixture option to alpha. Preserve unrelated guidance."
+		var old recordWriteResult
+		json.Unmarshal(invoke("cairn_remember", rememberArgs{RequestID: uuid.NewString(), Body: oldBody, Kind: "procedure", Shareable: true}, ""), &old)
+		// A hosted preflight must not disclose even a closer local-only source.
+		invoke("cairn_remember", rememberArgs{RequestID: uuid.NewString(), Body: "predecessorbeacon private fixture", Kind: "procedure"}, "")
+		allowance := 8000
+		args := prepareNoteArgs{Query: "predecessorbeacon", MemoryBudgetBytes: &allowance, RequestID: uuid.NewString()}
+		var prepared searchResult
+		body, size := invokeMeasured("cairn_prepare_note", args, "")
+		if err := json.Unmarshal(body, &prepared); err != nil || prepared.Preparation == nil || prepared.Preparation.NoteSaved || len(prepared.Index) != 1 || prepared.Index[0].RecordID != old.RecordID || len(prepared.Selected) != 1 || prepared.Selected[0].Record.RecordID != mandatory.RecordID {
+			t.Fatalf("preflight lost eligibility or mandatory context: %s %v", body, err)
+		}
+		if size+prepared.BytesRemaining > allowance {
+			t.Fatal("guidance spent the pull allowance")
+		}
+		var pulled core.Expansion
+		pullBody, pullSize := invokeMeasured("cairn_pull", prepared.Index[0].PullArguments, "")
+		if err := json.Unmarshal(pullBody, &pulled); err != nil || pulled.Selection.Record.Body != oldBody || size+pullSize > allowance {
+			t.Fatalf("predecessor not usable: %s %v", pullBody, err)
+		}
+		// A competing edit makes the inspected version stale. The preflight is
+		// advisory, never a lock or permission to overwrite newer knowledge.
+		competing := oldBody + " Concurrent correction."
+		invoke("cairn_edit", editArgs{RequestID: uuid.NewString(), RecordID: old.RecordID, ExpectedVersion: 1, Body: &competing}, "")
+		corrected := "predecessorbeacon: set fixture option to beta. Preserve unrelated guidance. Concurrent correction."
+		invoke("cairn_edit", editArgs{RequestID: uuid.NewString(), RecordID: old.RecordID, ExpectedVersion: 1, Body: &corrected}, "VERSION_CONFLICT")
+		args.RequestID = uuid.NewString()
+		json.Unmarshal(invoke("cairn_prepare_note", args, ""), &prepared)
+		json.Unmarshal(invoke("cairn_pull", prepared.Index[0].PullArguments, ""), &pulled)
+		if pulled.Selection.Record.Version != 2 || pulled.Selection.Record.Body != competing {
+			t.Fatal("fresh preparation did not expose current predecessor")
+		}
+		edit := editArgs{RequestID: uuid.NewString(), RecordID: old.RecordID, ExpectedVersion: 2, Body: &corrected}
+		written := invoke("cairn_edit", edit, "")
+		if string(invoke("cairn_edit", edit, "")) != string(written) {
+			t.Fatal("correction retry changed identity")
+		}
+		var history core.RecordHistory
+		json.Unmarshal(invoke("cairn_history", historyArgs{RecordID: old.RecordID, Version: 1}, ""), &history)
+		if history.CurrentVersion != 3 || len(history.Versions) != 1 || history.Versions[0].Body == nil || *history.Versions[0].Body != oldBody {
+			t.Fatal("correction lost predecessor history")
+		}
+		args.RequestID = uuid.NewString()
+		json.Unmarshal(invoke("cairn_prepare_note", args, ""), &prepared)
+		if len(prepared.Index) != 1 || prepared.Index[0].RecordID != old.RecordID || prepared.Index[0].Version != 3 {
+			t.Fatal("workflow created a parallel visible note")
+		}
+	})
+
 }
 
 // CI shares its service database across packages. Bootstrap this fixture in its
@@ -907,6 +958,7 @@ func TestCodexThreadRequiresValidMetadata(t *testing.T) {
 			args any
 		}{
 			{"cairn_search", searchArgs{Query: "note"}},
+			{"cairn_prepare_note", prepareNoteArgs{Query: "note"}},
 			{"cairn_remember", map[string]any{"request_id": uuid.NewString(), "body": "scoped", "scope": "task"}},
 			{"cairn_remember", map[string]any{"request_id": uuid.NewString(), "body": "scoped", "scope": "run"}},
 		} {
