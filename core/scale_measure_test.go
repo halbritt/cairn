@@ -173,16 +173,29 @@ func TestScaleMeasure(t *testing.T) {
 		}
 		sample.Overall = map[string]float64{"median": pct(overall, 0.5), "p95": pct(overall, 0.95), "max": pct(overall, 1)}
 		results = append(results, sample)
-		b, _ := json.Marshal(sample)
+		b, err := json.Marshal(sample)
+		if err != nil {
+			t.Fatal(err)
+		}
 		t.Log(string(b))
 		if out != "" {
-			data, _ := json.MarshalIndent(results, "", " ")
-			os.WriteFile(out+"/results.json", data, 0o600)
+			data, err := json.MarshalIndent(results, "", " ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(out+"/results.json", data, 0o600); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 done:
 	if out != "" {
-		data, _ := json.MarshalIndent(results, "", " ")
-		os.WriteFile(out+"/results.json", data, 0o600)
+		data, err := json.MarshalIndent(results, "", " ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(out+"/results.json", data, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
