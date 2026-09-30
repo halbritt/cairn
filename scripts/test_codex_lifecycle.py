@@ -18,7 +18,16 @@ def module(name, path):
 
 hook = module("cairn_lifecycle_codex", ROOT / "integrations/lifecycle/memory.py")
 installer = module("install_codex_hooks", ROOT / "scripts/install-codex-hooks.py")
+coordination = module("capture_coordination", ROOT / "integrations/lifecycle/coordination.py")
 SESSION = "01a0d0ea-3941-74b1-812a-ec349e878da4"  # Codex session IDs are UUIDv7
+
+
+def wake():
+    # Exercise the producer's actual envelope; wording drift must fail this test.
+    return coordination.wake_message(dict(
+        session=dict(agent_id="11111111-1111-4111-8111-111111111111",
+                     execution_id="22222222-2222-4222-8222-222222222222"),
+        delivery_id="33333333-3333-4333-8333-333333333333"))
 
 
 def item(role, *texts, kind=None, kinds=None):
@@ -95,6 +104,35 @@ class CodexTranscriptTests(unittest.TestCase):
         self.assertIn("truncated", excerpt[-1]["text"])
         self.assertLessEqual(len(hook.encoded(excerpt).encode()), hook.TEXT_BYTES)
 
+    def test_automatic_wakes_are_excluded_with_and_without_owner_label(self):
+        for kinds in (None, ["user.text"]):
+            with self.subTest(kinds=kinds):
+                self.write([item("user", wake(), kinds=kinds),
+                            item("user", "Keep the retry policy.", kinds=kinds),
+                            item("assistant", "Policy retained."),
+                            item("user", wake(), kinds=kinds)])
+                messages, offsets = hook.conversation(self.path, with_offsets=True)
+                self.assertEqual(messages, [dict(role="user", text="Keep the retry policy."),
+                                            dict(role="assistant", text="Policy retained.")])
+                lines = self.path.read_bytes().splitlines(keepends=True)
+                self.assertEqual(offsets, [sum(map(len, lines[:2])), sum(map(len, lines[:3]))])
+
+    def test_wake_discussion_and_other_owner_parts_are_preserved(self):
+        owner_texts = ["Why does this appear?\n" + wake(),
+                      "> " + wake(), wake() + "\nPlease fix this.",
+                      wake().replace("11111111-1111-4111-8111-111111111111", "not-a-uuid"),
+                      "fixture: automatic inbox wakeup uses concise field names"]
+        for kinds in (None, ["user.text"]):
+            with self.subTest(kinds=kinds):
+                self.write([item("user", t, kinds=kinds) for t in owner_texts] + [
+                    item("user", wake(), "Owner request in a separate part.",
+                         kinds=["user.text", "user.text"]),
+                    item("assistant", wake())])
+                self.assertEqual(hook.conversation(self.path),
+                                 [dict(role="user", text=t) for t in owner_texts] + [
+                                     dict(role="user", text="Owner request in a separate part."),
+                                     dict(role="assistant", text=wake())])
+
     def test_claude_transcripts_are_unchanged(self):
         self.write([dict(type="user", message=dict(content="Use PostgreSQL.")),
                     dict(type="assistant", message=dict(content=[dict(type="text", text="Recorded.")]))])
@@ -155,6 +193,18 @@ class CodexHookTests(unittest.TestCase):
             self.assertEqual(len(calls), 2, "new dialogue beyond a saturated window was never captured")
             hook.handle(self.config, dict(self.event, hook_event_name="Stop"))
             self.assertEqual(len(calls), 2)
+
+    def test_wakes_do_not_advance_capture_position_or_trigger_stop_capture(self):
+        self.dialogue(hook.CODEX_STOP_MIN_MESSAGES // 2)
+        state = {"codex_capture_marker": hook.codex_snapshot_marker(self.transcript)}
+        with self.transcript.open("a") as out:
+            for _ in range(hook.CODEX_STOP_MIN_MESSAGES):
+                out.write(json.dumps(item("user", wake(), kinds=["user.text"])) + "\n")
+        self.assertEqual(hook.codex_new_messages(self.event, state), 0)
+        self.assertEqual(hook.codex_snapshot_marker(self.transcript), state["codex_capture_marker"])
+        with self.transcript.open("a") as out:
+            out.write(json.dumps(item("user", "Next real request.", kinds=["user.text"])) + "\n")
+        self.assertEqual(hook.codex_new_messages(self.event, state), 1)
 
     def test_dialogue_appended_during_capture_is_not_marked_captured(self):
         self.dialogue(hook.CODEX_STOP_MIN_MESSAGES // 2)  # six messages

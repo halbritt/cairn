@@ -51,14 +51,21 @@ The transcript reader keeps only top-level `user` and `assistant` message
 items from the Codex rollout. Codex 0.156 labels each content part in
 `content_item_kinds`. From user items the reader keeps only `user.text` parts,
 which excludes `AGENTS.md`, environment context, plugin and skill blocks, and
-this adapter's own `hooks.additional_context`. Rollouts without those labels
+this adapter's own `hooks.additional_context`. Cairn's native queue submits its
+automatic inbox wake as ordinary `user.text`, so the reader also excludes that
+complete reserved envelope, with valid UUID fields, through the same recognizer
+used by recall. It retains surrounding owner discussion, quoted wake text and
+other owner parts in the same message. This is a capture filter, not proof of
+sender identity. Rollouts without those labels
 come from Codex versions before 0.156. For those, the reader drops the
 `AGENTS.md` block and strips only a closed list of known injected tag blocks,
 such as `<environment_context>` and `<recommended_plugins>`. All other text is
 kept, including owner-written markup. That fallback covers only these known
 forms, and the structural labels are the supported path. Developer items, reasoning, tool calls and their output are always
-omitted. A scan of 30 recent real rollouts (277 excerpt messages) found no
-injected context in the output.
+omitted. The earlier scan of 30 rollouts (277 excerpt messages) found no injected
+context, but did not establish that queue wakes were excluded: a later retained
+session inspection found a complete wake in capture input. The wake regression
+tests cover both labelled and unlabelled rollouts and retained message offsets.
 Codex now performs edits through its generic `exec` tool instead of
 `apply_patch`, so the adapter does not collect file hints from tool use.
 Quoted identifiers and task terms still guide retrieval.

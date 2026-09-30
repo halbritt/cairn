@@ -76,10 +76,14 @@ def codex_owner_parts(payload):
     kinds = (payload.get("internal_chat_message_metadata_passthrough") or {}).get("content_item_kinds")
     content = payload.get("content") or []
     if isinstance(kinds, list) and len(kinds) == len(content):
-        return [part.get("text", "") for part, kind in zip(content, kinds)
-                if kind == CODEX_OWNER_KIND and part.get("type") == "input_text"]
-    return [CODEX_INJECTED_BLOCK.sub("", part.get("text", "")).strip() for part in parts
-            if not part.get("text", "").lstrip().startswith("# AGENTS.md instructions")]
+        texts = [part.get("text", "") for part, kind in zip(content, kinds)
+                 if kind == CODEX_OWNER_KIND and part.get("type") == "input_text"]
+    else:
+        texts = [CODEX_INJECTED_BLOCK.sub("", part.get("text", "")).strip() for part in parts
+                 if not part.get("text", "").lstrip().startswith("# AGENTS.md instructions")]
+    # The native queue submits Cairn wakes as ordinary user.text. Exclude only
+    # the complete reserved envelope; discussion/quotes and other parts survive.
+    return [text for text in texts if not taskless_notification(text)]
 DURABLE_KINDS = ("decision", "preference", "lesson", "procedure")
 CAPTURE_SCHEMA = {
     "type": "object", "properties": {
