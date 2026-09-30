@@ -437,6 +437,11 @@ def prepare_idle_wake(config, state, path, cycle=None):
     state.pop('opencode_replay', None)
     endpoint = codex_queue_endpoint(config, state['process'])
     prior = state.get('idle_wake', {})
+    if (prior.get('session') == session_ref(agent) and
+            prior.get('reconciliation_required') == 'queue_item_missing'):
+        return note_wake_refusal(config, state, delivery,
+            'retained native queue item is missing; prior admission is unknown; reconciliation required',
+            'wake_retained' if prior.get('delivery_id') == delivery else 'unknown', cycle)
     if prior.get('delivery_id') == delivery and prior.get('session') == session_ref(agent):
         if (endpoint and prior.get('transport') == 'codex-queue' and prior.get('status') == 'queued' and
                 prior.get('queued_submission_id') and prior.get('endpoint') == endpoint['endpoint'] and
@@ -789,6 +794,7 @@ def submit_idle_wake(config, path, prepared):
     text = wake_message(wake)
     queued_id = None
     started = None
+    start_outcome = None
     if wake.get('transport') == 'codex-queue':
         try:
             queue = queue_helper()
@@ -801,13 +807,12 @@ def submit_idle_wake(config, path, prepared):
         if wake.get('status') == 'queued' and wake.get('queued_submission_id'):
             # The add already committed; only this exact pending submission's start retries.
             try:
-                started = queue.start(wake['endpoint'], prepared['process'], wake['native_id'],
-                                      wake['queued_submission_id'], owner=wake.get('owner', 'process'))
+                start_outcome = queue.start_outcome(wake['endpoint'], prepared['process'], wake['native_id'],
+                                                    wake['queued_submission_id'], owner=wake.get('owner', 'process'))
             except queue.QueueUnavailable as exc:
                 print(f"Cairn presence {config['binding']}: {exc}", file=sys.stderr)
-                return
-            if not started:
-                return  # Still queued, busy or raced; a later idle cycle retries the same start.
+                start_outcome = 'unavailable'
+            started = start_outcome == 'started'
         else:
             try:
                 queued_id, started = queue.enqueue(wake['endpoint'], prepared['process'],
@@ -910,8 +915,19 @@ def submit_idle_wake(config, path, prepared):
     try:
         with session_lock(path):
             state = json.loads(path.read_text())
+            if start_outcome is not None and (
+                    state.get('inbox_intent') or state.get('inbox_attempt') or
+                    session_ref(state['agent']) != wake['session'] or
+                    any(state['process'].get(key) != prepared['process'].get(key)
+                        for key in ('pid', 'start', 'boot'))):
+                return  # Native admission or process replacement supersedes this start observation.
             if state.get('idle_wake') == wake:
                 state['idle_wake']['status'] = 'submitted' if started else 'queued'
+                if start_outcome is not None:
+                    state['idle_wake']['last_start'] = start_outcome
+                if start_outcome == 'missing':
+                    state['idle_wake']['status'] = 'refused'
+                    state['idle_wake']['reconciliation_required'] = 'queue_item_missing'
                 if queued_id:
                     state['idle_wake']['queued_submission_id'] = queued_id
                 write_state(path, state)

@@ -322,6 +322,93 @@ time.sleep(30)
         self.assertNotIn('turn/start',methods)
         self.assertEqual(self.prompts(),[])
 
+    def test_missing_codex_queue_item_retains_identity_and_requires_reconciliation(self):
+        endpoint = self.spawn_queue_child([dict(start='busy'), dict(start='missing')])
+        self.adopt_queue_child()
+        self.assertEqual(self.watch().returncode, 0)
+        original = json.loads(self.path.read_text())['idle_wake']
+        result = self.watch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        retained = json.loads(self.path.read_text())['idle_wake']
+        self.assertEqual(retained['status'], 'refused')
+        self.assertEqual(retained['reconciliation_required'], 'queue_item_missing')
+        self.assertEqual(retained['last_start'], 'missing')
+        for key in ('delivery_id', 'request_id', 'session', 'native_id', 'endpoint',
+                    'owner', 'queued_submission_id', 'attempted_at'):
+            self.assertEqual(retained[key], original[key])
+        result = self.watch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('reconciliation required', result.stderr)
+        self.assertEqual(json.loads(self.path.read_text())['idle_wake'], retained)
+        self.assertEqual(self.observations()[-1]['wake']['status'], 'refused')
+        methods = [r['method'] for r in self.queue_requests(endpoint)]
+        self.assertEqual(methods.count('thread/queue/add'), 1)
+        self.assertEqual(methods.count('thread/queue/start'), 2)
+        self.assertNotIn('thread/queue/list', methods, 'Offset pages cannot prove atomic absence')
+        self.assertNotIn('turn/interrupt', methods)
+        self.assertEqual(self.prompts(), [])
+        self.fixture['delivery'] = 'later-delivery'
+        self.save_fixture()
+        result = self.watch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(self.path.read_text())['idle_wake'], retained,
+                         'another ready head must not erase unresolved admission evidence')
+        self.assertEqual(self.observations()[-1]['condition'], 'none')
+
+    def test_missing_response_cannot_overwrite_native_admission_or_closed_state(self):
+        wake = dict(transport='codex-queue', status='queued', delivery_id='delivery-one',
+                    queued_submission_id='queued-one', endpoint='unused', native_id='native-one',
+                    session=coordination.session_ref(self.agent))
+        original = json.loads(self.path.read_text())
+        original['idle_wake'] = wake
+        for transition in ('closed', 'admitted', 'replaced', 'process_replaced'):
+            with self.subTest(transition=transition):
+                coordination.write_state(self.path, original)
+                concurrent = json.loads(json.dumps(original))
+                if transition == 'closed':
+                    concurrent.pop('idle_wake')
+                elif transition == 'admitted':
+                    concurrent['inbox_intent'] = dict(request_id='attempt-one', session=wake['session'])
+                elif transition == 'replaced':
+                    concurrent['agent']['execution_id'] = 'replacement-execution'
+                else:
+                    concurrent['process']['start'] += 1
+                helper = mock.Mock()
+                helper.QueueUnavailable = type('QueueUnavailable', (Exception,), {})
+
+                def start(*args, **kwargs):
+                    coordination.write_state(self.path, concurrent)
+                    return 'missing'
+
+                helper.start_outcome.side_effect = start
+                with mock.patch.object(coordination, 'queue_helper', return_value=helper):
+                    coordination.submit_idle_wake(self.config, self.path,
+                        dict(wake=wake, process=original['process']))
+                self.assertEqual(json.loads(self.path.read_text()), concurrent)
+                helper.enqueue.assert_not_called()
+
+    def test_unconfirmed_retained_start_keeps_retry_identity_without_absence_claim(self):
+        wake = dict(transport='codex-queue', status='queued', delivery_id='delivery-one',
+                    queued_submission_id='queued-one', endpoint='unused', native_id='native-one',
+                    session=coordination.session_ref(self.agent))
+        original = json.loads(self.path.read_text())
+        original['idle_wake'] = wake
+        for outcome in ('busy', 'refused', 'unknown', 'unavailable'):
+            with self.subTest(outcome=outcome):
+                coordination.write_state(self.path, original)
+                helper = mock.Mock()
+                helper.QueueUnavailable = type('QueueUnavailable', (Exception,), {})
+                if outcome == 'unavailable':
+                    helper.start_outcome.side_effect = helper.QueueUnavailable('fixture endpoint unavailable')
+                else:
+                    helper.start_outcome.return_value = outcome
+                with mock.patch.object(coordination, 'queue_helper', return_value=helper):
+                    coordination.submit_idle_wake(self.config, self.path,
+                        dict(wake=wake, process=original['process']))
+                retained = json.loads(self.path.read_text())['idle_wake']
+                self.assertEqual(retained, dict(wake, last_start=outcome))
+                helper.enqueue.assert_not_called()
+
     def test_lost_codex_queue_add_reply_is_never_duplicated(self):
         endpoint=self.spawn_queue_child([dict(add='refuse')])
         self.adopt_queue_child()

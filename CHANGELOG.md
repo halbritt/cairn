@@ -16,6 +16,12 @@ and MCP processes.
 
 ## 2026-09-30
 
+- Diagnose an exact native refusal for a missing retained Codex queue item as
+  requiring reconciliation. Keep the delivery marker and stop retrying that
+  item; absence never authorizes replay or proves whether it was admitted.
+  The existing API reports `wake_retained` / `refused`; protected host state
+  retains the specific reason. See [delivery health](docs/delivery-health.md#missing-retained-codex-queue-item).
+
 - Add a bounded operator path for larger restores. Recovery comparison and
   reapplication stage the complete expectation union in PostgreSQL and consume
   one record/page at a time. `recovery-export --directory DIR` publishes a complete

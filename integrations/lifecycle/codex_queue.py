@@ -15,6 +15,14 @@ class QueueUnavailable(QueueError):
     """A precondition refused before the queue submission was sent."""
 
 
+class QueueRefused(QueueError):
+    """A structured native refusal; its meaning depends on the operation."""
+    def __init__(self, method, error):
+        super().__init__(f'native Codex refused {method}')
+        self.code = error.get('code')
+        self.message = error.get('message')
+
+
 BUSY_CODE = -32600
 BUSY_MESSAGE = 'thread already has an active or pending turn'
 MAX_PEER_BYTES = 1024 * 1024
@@ -84,7 +92,7 @@ class _Rpc:
                     raise QueueError('native Codex returned an invalid response')
                 if busy_ok and _busy(message['error']):
                     return None  # An existing turn keeps ownership; queued input waits.
-                raise QueueError(f'native Codex refused {method}')
+                raise QueueRefused(method, message['error'])
             if not isinstance(message.get('result'), dict):
                 raise QueueError('native Codex returned an invalid response')
             return message['result']
@@ -226,11 +234,17 @@ def enqueue(endpoint, process, native_id, text, client_id, owner='process'):
 
 
 def start(endpoint, process, native_id, queued_id, owner='process'):
+    """Compatibility boolean: only a confirmed native start returns True."""
+    return start_outcome(endpoint, process, native_id, queued_id, owner) == 'started'
+
+
+def start_outcome(endpoint, process, native_id, queued_id, owner='process'):
     """Retry only the start of one retained, still-pending submission.
 
-    Returns True when its native turn started and False for every
-    unconfirmed outcome (busy, raced consumption, refused). QueueUnavailable
-    again proves nothing was sent. The submission itself is never re-added.
+    Returns started, busy, refused, unknown or missing. Only the exact native
+    not-found response establishes missing at that observation, never whether
+    the input was previously admitted. QueueUnavailable is a pre-start failure.
+    The submission itself is never re-added.
     """
     connection, websocket, _ = _open(endpoint, process, owner)
     try:
@@ -242,9 +256,18 @@ def start(endpoint, process, native_id, queued_id, owner='process'):
         try:
             started = rpc('thread/queue/start', dict(threadId=native_id, queuedSubmissionId=queued_id),
                           busy_ok=True)
-            return (started is not None and isinstance(started, dict) and
-                    isinstance(started.get('turn'), dict) and bool(started['turn'].get('id')))
+            if started is None:
+                return 'busy'
+            if isinstance(started.get('turn'), dict) and started['turn'].get('id'):
+                return 'started'
+            return 'unknown'
+        except QueueRefused as exc:
+            if type(exc.code) is int and exc.code == -32600 and isinstance(exc.message, str) and exc.message:
+                if exc.message == f'queued submission not found: {queued_id}':
+                    return 'missing'
+                return 'refused'
+            return 'unknown'
         except (QueueError, OSError, ValueError, KeyError, TypeError, websocket.WebSocketException):
-            return False
+            return 'unknown'
     finally:
         connection.close(timeout=0)

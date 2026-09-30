@@ -36,11 +36,11 @@ class NativeQueue(unittest.TestCase):
         self.threads = []
 
     def serve(self, loaded=('native-one',), add='confirm', start='confirm', malformed_loaded=False,
-              request_collision=False, oversized_method=None, malformed_method=None):
+              request_collision=False, oversized_method=None, malformed_method=None, start_error=None):
         """Serve exactly one connection with the requested fixture behavior.
 
         add: 'confirm' or 'refuse' (no acknowledgment; the add may have committed).
-        start: 'confirm', 'busy', 'busy_extra', 'unknown' or 'drop'.
+        start: 'confirm', 'busy', 'busy_extra', 'missing', 'unknown' or 'drop'.
         """
         def exact(stream, size):
             result = b''
@@ -66,6 +66,9 @@ class NativeQueue(unittest.TestCase):
                 error['data'] = {'hint': 'tolerate extra fields'}
             if kind == 'unknown':
                 error = {'code': -32000, 'message': 'queued submission is not pending'}
+            if kind == 'missing':
+                error = {'code': -32600, 'message':
+                    'queued submission not found: ' + request['params']['queuedSubmissionId']}
             return frame(json.dumps({'id': request['id'], 'error': error}).encode())
 
         def run():
@@ -118,10 +121,13 @@ class NativeQueue(unittest.TestCase):
                                     'method': 'server/notice', 'params': {}}).encode()))
                             result = {'queuedSubmission': {'id': 'queued-one', **request['params']}}
                         elif method == 'thread/queue/start':
+                            if start_error is not None:
+                                connection.sendall(frame(json.dumps({'id': request['id'], 'error': start_error}).encode()))
+                                continue
                             if start in ('busy', 'busy_extra'):
                                 connection.sendall(refused(start, request))
                                 continue
-                            if start == 'unknown':
+                            if start in ('unknown', 'missing'):
                                 connection.sendall(refused(start, request))
                                 continue
                             if start == 'drop':
@@ -200,14 +206,64 @@ class NativeQueue(unittest.TestCase):
         self.assertNotIn('thread/resume', self.methods())
         self.assertNotIn('turn/start', self.methods())
 
-    def test_retained_submission_start_stays_false_while_busy_or_raced(self):
+    def test_retained_submission_start_distinguishes_busy_from_unknown(self):
         self.serve(start='busy')
         self.assertEqual(self.enqueue(), ('queued-one', False))
         self.serve(start='drop')
-        self.assertFalse(self.queue.start(self.path, self.process, 'native-one', 'queued-one'))
+        self.assertEqual(self.queue.start_outcome(self.path, self.process, 'native-one', 'queued-one'), 'unknown')
         self.serve(start='busy_extra')
-        self.assertFalse(self.queue.start(self.path, self.process, 'native-one', 'queued-one'))
+        self.assertEqual(self.queue.start_outcome(self.path, self.process, 'native-one', 'queued-one'), 'busy')
         self.assertEqual(len([r for r in self.requests if r['method'] == 'thread/queue/add']), 1)
+
+    def test_exact_retained_item_missing_requires_reconciliation_without_readd(self):
+        self.serve(start='missing')
+        self.assertEqual(self.queue.start_outcome(self.path, self.process, 'native-one', 'queued-one'), 'missing')
+        self.join()
+        self.assertEqual(self.methods(), ['initialize', 'initialized', 'thread/loaded/list', 'thread/queue/start'])
+
+    def test_legacy_boolean_start_never_treats_diagnostic_labels_as_success(self):
+        for outcome in ('missing', 'busy', 'unknown', 'drop'):
+            with self.subTest(outcome=outcome):
+                self.serve(start=outcome)
+                self.assertIs(self.queue.start(self.path, self.process, 'native-one', 'queued-one'), False)
+        self.join()
+
+    def test_unrecognized_refusal_or_mismatched_item_is_not_absence(self):
+        for error, outcome in (
+                ({'code': -32600, 'message': 'queued submission not found: another-item'}, 'refused'),
+                ({'code': -32000, 'message': 'queued submission not found: queued-one'}, 'unknown'),
+                ({'code': '-32600', 'message': 'queued submission not found: queued-one'}, 'unknown'),
+                ({'code': -32600, 'message': None}, 'unknown'),
+                ({'code': -32600, 'message': 'queue is empty'}, 'refused'),
+                ({'code': -32600, 'message': 'thread not found: native-one'}, 'refused')):
+            with self.subTest(error=error):
+                self.serve(start_error=error)
+                self.assertEqual(self.queue.start_outcome(self.path, self.process, 'native-one', 'queued-one'), outcome)
+        self.join()
+        self.assertNotIn('thread/queue/add', self.methods())
+
+    def test_transient_or_malformed_retained_start_is_unknown(self):
+        for options in (dict(start='drop'), dict(start='unknown'),
+                        dict(malformed_method='thread/queue/start'),
+                        dict(oversized_method='thread/queue/start')):
+            with self.subTest(options=options):
+                self.serve(**options)
+                self.assertEqual(self.queue.start_outcome(self.path, self.process, 'native-one', 'queued-one'), 'unknown')
+        self.join()
+
+    def test_retained_start_identity_or_admission_failure_never_means_missing(self):
+        for change in (dict(pid=os.getpid()+1), dict(start=self.process['start']+1), dict(boot='other-boot')):
+            with self.subTest(change=change):
+                self.serve(start='missing')
+                with self.assertRaises(self.queue.QueueUnavailable):
+                    self.queue.start_outcome(self.path, dict(self.process, **change), 'native-one', 'queued-one')
+                self.assertEqual(self.requests, [])
+        for options in (dict(loaded=()), dict(malformed_loaded=True)):
+            self.serve(**options)
+            with self.assertRaises(self.queue.QueueUnavailable):
+                self.queue.start_outcome(self.path, self.process, 'native-one', 'queued-one')
+        self.join()
+        self.assertNotIn('thread/queue/start', self.methods())
 
     def test_never_loads_an_unloaded_conversation(self):
         self.serve(loaded=())
@@ -261,7 +317,7 @@ class NativeQueue(unittest.TestCase):
         self.assertEqual(self.queue.enqueue(self.path, self.process, 'native-one', 'wake only',
                                             'delivery-one', owner='uid'), ('queued-one', True))
         self.serve(start='busy')
-        self.assertFalse(self.queue.start(self.path, self.process, 'native-one', 'queued-one', owner='uid'))
+        self.assertEqual(self.queue.start_outcome(self.path, self.process, 'native-one', 'queued-one', owner='uid'), 'busy')
         self.serve()
         with self.assertRaisesRegex(self.queue.QueueUnavailable, 'identity'):
             self.queue.enqueue(self.path, dict(self.process, start=self.process['start']+1), 'native-one',

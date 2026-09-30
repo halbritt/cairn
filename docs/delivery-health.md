@@ -50,6 +50,30 @@ delivery route. A retained submitted or uncertain wake suggests inspecting that
 exact wake and native handling. Neither observation authorizes a new wake,
 replacement request, manual claim, or deletion of a retained marker.
 
+### Missing retained Codex queue item
+
+For a confirmed native queue submission, the watcher retries only that item's
+start. The exact native `-32600` response `queued submission not found: <item ID>`
+now stops those retries. It retains the original delivery, session, queue item
+and attempted timestamp with `status: refused`, `last_start: missing` and
+`reconciliation_required: queue_item_missing` in protected host state. The next
+watcher observation reports the existing `wake_retained` / `refused` labels,
+and the host logs that reconciliation is required. The API does not expose the
+more specific local reason. A later ready delivery cannot replace this marker.
+
+This response establishes absence at the native observation only. The item may
+already have been admitted or removed; it does not establish task outcome or
+authorize replay, cancellation, release or replacement. A concurrent hook's
+admission or closure supersedes the pending start observation. A genuine late
+native delivery can still claim through its exact wake binding.
+
+Busy, other structured refusals, unknown responses and unavailable transports
+remain distinct `last_start` values and retain the existing exact-item retry
+rule. None authorizes another queue add. Offset-paged queue listings are not an
+atomic absence proof and are not used by this diagnostic. An ordinary owner
+prompt does not claim work when the Codex native queue owns inbox admission.
+There is no new operator reconciliation command in this change.
+
 ## Opt-in attention on the operator review
 
 Add `attention` to the existing local operator `coordination-review` request:

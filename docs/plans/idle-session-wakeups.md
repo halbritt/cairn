@@ -106,8 +106,11 @@ unavailable native identity leave work queued. An API restore fences the old
 execution and refuses readiness; the watcher never resumes it to bypass fencing.
 An uncertain submitted wake remains suppressed until a real native boundary
 handles work. Inspect the selected `idle_wake` status in the session's protected
-host state and `cairn coordination-review`; a genuine user prompt can create the
-missing boundary. Do not republish the request or blindly remove the marker.
+host state and `cairn coordination-review`. A genuine user prompt can create the
+missing boundary only on routes that admit ordinary prompts; Codex native queue
+admission requires its exact wake binding. A confirmed missing retained Codex
+queue item requires reconciliation, as described in [delivery health](../delivery-health.md#missing-retained-codex-queue-item).
+Do not republish the request or blindly remove the marker.
 
 Sessions outside Herdr retain supported boundary delivery. Gateway conversations
 without an idle interactive process are not terminal wake targets. Account homes
