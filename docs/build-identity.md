@@ -48,14 +48,37 @@ Call native `cairn_client_info` with `{}` through the conversation's existing
 Cairn connection. Its `cairn.client-info/1` result separates:
 
 - `facade.build`: the executing facade's build, captured at server construction.
-  `facade.search_memory_budget_bytes: "supported"` is a local declaration with
+  `facade.search_memory_budget_bytes: "supported"` and
+  `facade.search_min_pull_bytes: "supported"` are local declarations with
   `support_basis: "registered_search_contract"`. Tests cover the registered
   search argument, validation and forwarding to the authenticated API.
 - `api.build`: the build returned by one authenticated `/v1/version` request,
-  when available. `api.search_memory_budget_bytes` remains `"unknown"`, with
-  `support_basis: "no_api_capability_contract"`: the current version endpoint
-  declares builds and wire protocol, not feature support. This applies to older
-  responses too; equal revisions or unknown extra response fields do not change it.
+  when available. Recognized API declarations set `api.search_memory_budget_bytes`
+  and `api.search_min_pull_bytes` to `"supported"` or `"unsupported"`, with
+  `support_basis: "api_retrieval_capabilities_v1"`. Missing, malformed or unknown
+  declarations leave both `"unknown"`, with `support_basis: "no_api_capability_contract"`.
+  A valid build remains available even when its optional declaration is unusable.
+  Equal revisions, protocol versions and unrelated extra fields never imply support.
+
+The authenticated version response now includes this fixed declaration:
+
+```json
+{"retrieval_capabilities":{"schema":"cairn.retrieval-capabilities/1","search_memory_budget_bytes":true,"search_min_pull_bytes":true}}
+```
+
+It declares the existing search semantics in [search room](search-room.md), not
+permission to access a source, measured free context, service health, a particular
+body's fit or task-wide accounting. Both flags are required JSON booleans; reserve
+support requires cap support. The diagnostic accepts only the exact three fields,
+unique case-sensitive names, this schema, and at most 256 encoded bytes in the
+nested object. It never forwards arbitrary capability metadata. This is a
+narrow search contract; it does not declare capabilities of other tools.
+
+The field is additive: older API replies remain readable and yield unknown
+support; older clients ignore the new field and retain their build/protocol
+behavior. There is no wire-protocol version change or new request field on
+`/v1/version`. A running old facade still uses its old interpretation until
+replaced; upgrading only the API does not make that facade report support.
 
 The probe has a two-second timeout and never retries. An unavailable API leaves
 facade information intact with `api.state: "unavailable"` and a fixed diagnostic

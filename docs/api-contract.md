@@ -98,6 +98,13 @@ Responses use the canonical view. Fields without `omitempty` are always present.
 Response schemas stay open to additional properties, because new response fields
 are compatible additions and clients must ignore fields they do not know.
 
+The version response's optional `retrieval_capabilities` object is a narrow,
+versioned search declaration. The generated schema records its required boolean
+fields; [build identity](build-identity.md) specifies the recognized schema,
+256-byte bound, duplicate rejection and reserve-implies-cap constraint applied
+by `cairn_client_info`. Unknown declarations do not establish support. This
+additive response field leaves the existing wire-protocol version unchanged.
+
 ## Requests
 
 - **Method and path.** Every operation is `POST /v1/OPERATION` with one JSON

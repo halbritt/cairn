@@ -65,12 +65,31 @@ func (p ProtocolRange) Effective(server ProtocolRange, declared bool) int {
 	return 0
 }
 
+const RetrievalCapabilitiesSchema = "cairn.retrieval-capabilities/1"
+
+// RetrievalCapabilities declares implemented search request semantics, not
+// authorization, current service health, or a guarantee that a body will fit.
+// Both flags are required; reserve support requires memory-budget support.
+type RetrievalCapabilities struct {
+	Schema                  string `json:"schema"`
+	SearchMemoryBudgetBytes bool   `json:"search_memory_budget_bytes"`
+	SearchMinPullBytes      bool   `json:"search_min_pull_bytes"`
+}
+
 // VersionInfo is the version route's reply: the build identity, which is
 // diagnostic only, and the protocol range, which decides compatibility. A
-// legacy server replies with the build fields alone.
+// legacy server replies with the build fields alone. Build/protocol consumers
+// ignore optional capability metadata, including future declaration formats.
 type VersionInfo struct {
 	buildinfo.Info
 	Protocol *ProtocolRange `json:"protocol,omitempty"`
+}
+
+// VersionResponse is the current producer shape. Keep it separate from the
+// build/protocol reader so optional capability formats cannot break those reads.
+type VersionResponse struct {
+	VersionInfo
+	RetrievalCapabilities *RetrievalCapabilities `json:"retrieval_capabilities,omitempty"`
 }
 
 // ServerProtocol is a peer's declared range, or protocol 1 when it declared none.

@@ -2,6 +2,8 @@ package mcpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
 	"github.com/halbritt/cairn/localapi"
@@ -80,7 +83,7 @@ func invokeDiagnostic(t *testing.T, session *mcp.ClientSession) clientInfoResult
 	if info.Schema != "cairn.client-info/1" || info.Facade.SearchMemoryBudgetBytes != "supported" || info.Facade.SearchMinPullBytes != "supported" || !reflect.DeepEqual(info.Facade.Build, ptrBuild(buildinfo.Read())) {
 		t.Fatalf("local identity lost: %+v", info)
 	}
-	if info.API.SearchMemoryBudgetBytes != "unknown" || info.API.SearchMinPullBytes != "unknown" {
+	if info.API.SupportBasis == "no_api_capability_contract" && (info.API.SearchMemoryBudgetBytes != "unknown" || info.API.SearchMinPullBytes != "unknown") {
 		t.Fatalf("invented API support: %+v", info)
 	}
 	return info
@@ -144,7 +147,7 @@ func TestClientInfoLegacyAndForwarding(t *testing.T) {
 		t.Fatal("declared support absent from registered tools")
 	}
 	info := invokeDiagnostic(t, session)
-	if info.API.State != "available" || info.API.Build == nil || info.API.Build.Revision != strings.Repeat("a", 40) || info.API.Build.Modified != nil {
+	if info.API.State != "available" || info.API.Build == nil || info.API.Build.Revision != strings.Repeat("a", 40) || info.API.Build.Modified != nil || info.API.SearchMemoryBudgetBytes != "unknown" || info.API.SearchMinPullBytes != "unknown" || info.API.SupportBasis != "no_api_capability_contract" {
 		t.Fatalf("legacy identity: %+v", info)
 	}
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "cairn_search", Arguments: map[string]any{"query": "synthetic", "available_tokens": 32000, "memory_budget_bytes": 4000}})
@@ -281,5 +284,99 @@ func TestSearchFinalEnvelopePreservesPullReserve(t *testing.T) {
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "cairn_search", Arguments: map[string]any{"query": "synthetic", "memory_budget_bytes": 4000, "min_pull_bytes": 3900}})
 	if err != nil || !result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "BUDGET_REFUSED") {
 		t.Fatalf("MCP final envelope spent reserve: %v %+v", err, result)
+	}
+}
+
+func TestClientInfoRecognizedRetrievalCapabilities(t *testing.T) {
+	const valid = `{"schema":"cairn.retrieval-capabilities/1","search_memory_budget_bytes":true,"search_min_pull_bytes":true}`
+	for _, tc := range []struct{ name, declaration, budget, reserve string }{
+		{"supported", valid, "supported", "supported"},
+		{"unsupported", `{"schema":"cairn.retrieval-capabilities/1","search_memory_budget_bytes":false,"search_min_pull_bytes":false}`, "unsupported", "unsupported"},
+		{"cap-only", `{"schema":"cairn.retrieval-capabilities/1","search_memory_budget_bytes":true,"search_min_pull_bytes":false}`, "supported", "unsupported"},
+		{"absent", "", "unknown", "unknown"},
+		{"null", "null", "unknown", "unknown"},
+		{"array", "[]", "unknown", "unknown"},
+		{"unknown-schema", strings.Replace(valid, "/1", "/2", 1), "unknown", "unknown"},
+		{"wrong-type", strings.Replace(valid, "true", `"true"`, 1), "unknown", "unknown"},
+		{"null-flag", strings.Replace(valid, "true", "null", 1), "unknown", "unknown"},
+		{"missing-flag", `{"schema":"cairn.retrieval-capabilities/1","search_memory_budget_bytes":true}`, "unknown", "unknown"},
+		{"duplicate", strings.Replace(valid, `"search_min_pull_bytes":true`, `"search_min_pull_bytes":false,"search_min_pull_bytes":true`, 1), "unknown", "unknown"},
+		{"unknown-field", strings.TrimSuffix(valid, "}") + `,"private-token-canary":"private-token-canary"}`, "unknown", "unknown"},
+		{"wrong-case", strings.Replace(valid, "search_min_pull_bytes", "SEARCH_MIN_PULL_BYTES", 1), "unknown", "unknown"},
+		{"inconsistent", strings.Replace(valid, "true", "false", 1), "unknown", "unknown"},
+		{"oversized", "{" + strings.Repeat(" ", 256) + valid[1:], "unknown", "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+				body := `{"schema":"cairn.response/1","ok":true,"data":{"schema":"cairn.build/1","go_version":"go1.25.0"`
+				if tc.declaration != "" {
+					body += `,"retrieval_capabilities":` + tc.declaration
+				}
+				_, _ = w.Write([]byte(body + `}}`))
+			})
+			info := invokeDiagnostic(t, diagnosticSession(t, client, 32000))
+			if info.API.State != "available" || info.API.Build == nil || info.API.SearchMemoryBudgetBytes != tc.budget || info.API.SearchMinPullBytes != tc.reserve {
+				t.Fatalf("unexpected declaration: %+v", info.API)
+			}
+			basis := "no_api_capability_contract"
+			if tc.budget != "unknown" {
+				basis = "api_retrieval_capabilities_v1"
+			}
+			if info.API.SupportBasis != basis {
+				t.Fatalf("unexpected basis: %+v", info.API)
+			}
+		})
+	}
+}
+
+func TestClientInfoActualAPICapabilitiesAndSearch(t *testing.T) {
+	dsn := testDatabase(t)
+	ctx := context.Background()
+	fixture, err := core.Open(ctx, dsn, core.Channel{Principal: "capability-fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fixture.Close()
+	if err = fixture.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	repo := uuid.NewString()
+	digest := sha256.Sum256([]byte("private-token-canary"))
+	api, err := localapi.New(ctx, dsn, []localapi.Identity{{TokenSHA256: hex.EncodeToString(digest[:]), Principal: "capability-agent", Repo: repo, Role: "agent", Destination: "hosted"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer api.Close()
+	client, _ := diagnosticClient(t, api.ServeHTTP)
+	session := diagnosticSession(t, client, 32000)
+	info := invokeDiagnostic(t, session)
+	if info.API.State != "available" || info.API.SearchMemoryBudgetBytes != "supported" || info.API.SearchMinPullBytes != "supported" || info.API.SupportBasis != "api_retrieval_capabilities_v1" {
+		t.Fatalf("actual API declaration lost: %+v", info.API)
+	}
+	// The server's scope must match its authenticated profile, not the diagnostic
+	// helper's deliberate private-path canary configuration.
+	server, err := NewServer(client, Config{Scope: core.Scope{Repo: repo, TaskID: "capabilities", RunID: "attempt"}, AvailableTokens: 32000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session = connect(t, ctx, server)
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "cairn_search", Arguments: map[string]any{"query": "capabilityfixture", "memory_budget_bytes": 6000, "min_pull_bytes": 2000}})
+	if err != nil || result.IsError {
+		t.Fatalf("declared search failed: %v %+v", err, result)
+	}
+	var found searchResult
+	if err = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &found); err != nil {
+		t.Fatal(err)
+	}
+	if found.MemoryBudget == nil || found.MemoryBudget.Bytes != 6000 || found.MemoryBudget.MinPullBytes != 2000 || found.MemoryBudget.Schema != "cairn.memory-budget/2" || found.BytesRemaining < 2000 {
+		t.Fatalf("actual API ignored declaration semantics: %+v", found)
+	}
+	// Bypass facade validation as well: the authenticated API itself enforces
+	// the advertised dependency and range, rather than silently dropping reserve.
+	invalid := core.CompileRequest{RequestID: uuid.NewString(), Scope: core.Scope{Repo: repo, TaskID: "capabilities", RunID: "attempt"}, AvailableTokens: 32000}
+	reserve := 2000
+	invalid.MinPullBytes = &reserve
+	if err = client.Call(ctx, "index", invalid, &core.IndexResult{}); core.Code(err) != "INVALID_REQUEST" {
+		t.Fatalf("API accepted reserve without cap: %v", err)
 	}
 }

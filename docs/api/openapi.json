@@ -10077,7 +10077,27 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/localapi.ProtocolRange"
       },
-      "localapi.VersionInfo": {
+      "localapi.RetrievalCapabilities": {
+        "properties": {
+          "schema": {
+            "type": "string"
+          },
+          "search_memory_budget_bytes": {
+            "type": "boolean"
+          },
+          "search_min_pull_bytes": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schema",
+          "search_memory_budget_bytes",
+          "search_min_pull_bytes"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.RetrievalCapabilities"
+      },
+      "localapi.VersionResponse": {
         "properties": {
           "go_version": {
             "type": "string"
@@ -10089,6 +10109,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/localapi.ProtocolRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retrieval_capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/localapi.RetrievalCapabilities"
               },
               {
                 "type": "null"
@@ -10120,7 +10150,7 @@
           "vcs_modified"
         ],
         "type": "object",
-        "x-go-type": "github.com/halbritt/cairn/localapi.VersionInfo"
+        "x-go-type": "github.com/halbritt/cairn/localapi.VersionResponse"
       },
       "localapi.recordRequest": {
         "properties": {
@@ -20516,7 +20546,7 @@
                 "schema": {
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/localapi.VersionInfo"
+                      "$ref": "#/components/schemas/localapi.VersionResponse"
                     },
                     "message": {
                       "type": "string"
@@ -20561,7 +20591,7 @@
         },
         "x-cairn-go-types": {
           "request": "struct{}",
-          "response": "github.com/halbritt/cairn/localapi.VersionInfo"
+          "response": "github.com/halbritt/cairn/localapi.VersionResponse"
         },
         "x-cairn-local-roles": [
           "agent",
