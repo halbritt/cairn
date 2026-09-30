@@ -420,6 +420,14 @@ engineering task may finish, but the report's measurement fails. Unknown or
 failed measurement returns nonzero. No-memory-attempt is explicit, not successful
 retrieval or proof of usefulness.
 
+System/status string messages are not assistant/user content. Malformed relevant
+message shapes make observation unknown. If selected-input measurement or origin
+binding raises, the prospective report records a fixed phase and exception
+category, with unavailable counters null; it retains no exception text or raw
+payload. Technical grading can still complete independently. Supplemental hook
+summary failures also remain explicit. Missing measurements cannot be reconstructed
+from these error records, and the failed original run is not retrospectively healed.
+
 Only executor-created disposable stores are fingerprinted. The semantic/content
 projection excludes `memory_record.use_generation`, while a separate operational
 hash retains its changes; versions, bodies, applicability, entities, lifecycle,

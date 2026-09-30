@@ -734,7 +734,8 @@ def parse_tool_outputs(text, harness="claude", *, require_completed=False):
                 outputs.append(dict(command=unwrap_shell(item.get("command", "")), output=item.get("aggregated_output") or "",
                                     is_error=item.get("exit_code") not in (0, None)))
             continue
-        content = (event.get("message") or {}).get("content")
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
         for part in content if isinstance(content, list) else []:
             if not isinstance(part, dict):
                 continue
@@ -821,9 +822,11 @@ def parse_claude_stream(text):
         except ValueError:
             continue
         if event.get("type") == "assistant":
-            content = (event.get("message") or {}).get("content", [])
+            message = event.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            content = [part for part in content if isinstance(part, dict)] if isinstance(content, list) else []
             assistant_error = (event.get("error"), "".join(
-                part.get("text", "") for part in content if part.get("type") == "text"))
+                part["text"] for part in content if part.get("type") == "text" and isinstance(part.get("text"), str)))
             for part in content:
                 if part.get("type") == "tool_use":
                     name, data = part.get("name", ""), part.get("input") or {}
@@ -838,10 +841,12 @@ def parse_claude_stream(text):
                         writes.append(data.get("file_path", ""))
                     elif name.startswith("mcp__cairn__"):
                         memory.append(dict(tool=name, input=data))
-                elif part.get("type") == "text":
-                    answer = part.get("text", "")
+                elif part.get("type") == "text" and isinstance(part.get("text"), str):
+                    answer = part["text"]
         elif event.get("type") == "user":
-            for part in (event.get("message") or {}).get("content", []):
+            message = event.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            for part in content if isinstance(content, list) else []:
                 if not isinstance(part, dict) or part.get("type") != "tool_result":
                     continue
                 ident = part.get("tool_use_id")
@@ -1086,27 +1091,37 @@ def run_agent(case, arm, seed, order, args, stores, out):
             os.fsync(retained.fileno())
     failure = execution_failure(trace, code)
     if prospective:
-        observations = base / "hook-state/observations.jsonl"
-        hook_rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
-        selected_input = measure(stdout, timings, hook_rows, input_bytes=input_charge,
-                                 expects_hooks=arm not in ("none", "direct"), model=args.model, prompt=prompt)
-        origin_path = stores[arm]["store"].root / "import-provenance.json" if arm in stores else None
-        origins = json.loads(origin_path.read_bytes()) if origin_path else []
-        selected_input['origin_map_sha256'] = hashlib.sha256(origin_path.read_bytes()).hexdigest() if origin_path else None
-        if arm == 'direct' and case['expected']:
-            selected_input['status'] = 'unknown'
-            selected_input['unknown'].append('direct_prompt_source_delivery_unobserved')
-        for delivery in selected_input['source_deliveries']:
-            delivery['delivery'] = bind_origins(delivery['delivery'], origins, bodies={n['id']: n['body'] for n in prospective['notes']})
-            if delivery['delivery']['status'] == 'unknown':
+        try:
+            observation_phase = "hook_metadata"
+            observations = base / "hook-state/observations.jsonl"
+            hook_rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
+            observation_phase = "measurement"
+            selected_input = measure(stdout, timings, hook_rows, input_bytes=input_charge,
+                                     expects_hooks=arm not in ("none", "direct"), model=args.model, prompt=prompt)
+            observation_phase = "origin_binding"
+            origin_path = stores[arm]["store"].root / "import-provenance.json" if arm in stores else None
+            origins = json.loads(origin_path.read_bytes()) if origin_path else []
+            selected_input['origin_map_sha256'] = hashlib.sha256(origin_path.read_bytes()).hexdigest() if origin_path else None
+            if arm == 'direct' and case['expected']:
                 selected_input['status'] = 'unknown'
-                if 'source_delivery_or_origin_unknown' not in selected_input['unknown']:
-                    selected_input['unknown'].append('source_delivery_or_origin_unknown')
-        # Preserve source evidence even when the independent task grader fails.
-        with (base / "selected-input.json").open('x') as retained:
-            json.dump(selected_input, retained)
-            retained.flush()
-            os.fsync(retained.fileno())
+                selected_input['unknown'].append('direct_prompt_source_delivery_unobserved')
+            for delivery in selected_input['source_deliveries']:
+                delivery['delivery'] = bind_origins(delivery['delivery'], origins, bodies={n['id']: n['body'] for n in prospective['notes']})
+                if delivery['delivery']['status'] == 'unknown':
+                    selected_input['status'] = 'unknown'
+                    if 'source_delivery_or_origin_unknown' not in selected_input['unknown']:
+                        selected_input['unknown'].append('source_delivery_or_origin_unknown')
+            # Preserve source evidence even when the independent task grader fails.
+            observation_phase = "selected_input_write"
+            with (base / "selected-input.json").open('x') as retained:
+                json.dump(selected_input, retained)
+                retained.flush()
+                os.fsync(retained.fileno())
+        except Exception as error:
+            # Observation failure must remain visible without erasing independent
+            # technical grading. Never retain exception text or raw native data.
+            selected_input = failed_selected_input(input_charge, observation_phase, error)
+            retain_observation_error(base, selected_input["observation_error"])
     ctx = dict(cwd=cwd, commands=trace["commands"], answer=trace["answer"],
                tool_outputs=parse_tool_outputs(stdout, args.harness, require_completed=bool(prospective)),
                snapshot=json.loads((root / ".eval-snapshot.json").read_text()))
@@ -1114,7 +1129,15 @@ def run_agent(case, arm, seed, order, args, stores, out):
     if failure:
         graded = dict(graded, check_outcome=graded["outcome"], outcome="harness_error", execution_failure=failure,
                       error="prospective_native_failure" if prospective else stderr[-600:])
-    memory = hook_observations(base / "hook-state", stores.get(arm, {}).get("store"))
+    try:
+        memory = hook_observations(base / "hook-state", stores.get(arm, {}).get("store"))
+    except Exception as error:
+        if not prospective:
+            raise
+        memory = dict(observation_error=selected_observation_error("hook_summary", error))
+        selected_input['status'] = 'unknown'
+        selected_input['unknown'].append('hook_summary_failed')
+        retain_observation_error(base, memory['observation_error'], name="hook-summary-error.json")
     record = dict(run_id=run_id, case=case["id"], category=case["category"], primary=case.get("primary", True), provenance=case["provenance"]["type"], arm=arm,
                   seed=seed, order=order, harness=args.harness, model=args.model, wording=args.wording, exit=code, seconds=round(elapsed, 2), prompt_bytes=len(prompt.encode()),
                   **graded, trace={k: v for k, v in trace.items() if k not in ("answer", "commands")},
@@ -1132,6 +1155,34 @@ def run_agent(case, arm, seed, order, args, stores, out):
         (base / "answer.md").write_text(trace["answer"] or "")
     (base / "result.json").write_text(json.dumps(record, indent=2))
     return record
+
+
+def selected_observation_error(phase, error):
+    categories = (ValueError, TypeError, AttributeError, KeyError, OSError, RuntimeError)
+    category = next((kind.__name__ for kind in categories if isinstance(error,kind)), 'Exception')
+    return dict(phase=phase, exception_type=category)
+
+
+def retain_observation_error(base, metadata, *, name="observation-error.json"):
+    try:
+        with (base / name).open('x') as retained:
+            json.dump(metadata, retained)
+            retained.flush()
+            os.fsync(retained.fileno())
+    except OSError:
+        # A report-write error cannot erase an independently available grade.
+        # The aggregate record still exposes the fixed failure and failed save.
+        metadata['persistence_failed'] = True
+
+
+def failed_selected_input(input_bytes, phase, error):
+    return dict(schema='cairn.task-eval.selected-input/1', status='unknown', failures=[],
+                unknown=['observation_failed'], observation_error=selected_observation_error(phase, error),
+                input_bytes=input_bytes, hook_wire_bytes=None, native_memory_result_bytes=None,
+                total_bytes=None, last_native_memory_seconds=None, memory_attempted=None,
+                memory_calls=None, native_searches=None, hook_searches=None, total_actual_pull_calls=None,
+                source_deliveries=[], source_delivery_events_omitted=None, origin_map_sha256=None,
+                limits=dict(selected_input_bytes=9500, hook_seconds=5, last_native_memory_seconds=30))
 
 
 def add_delivery_evidence(memory, selected_input):

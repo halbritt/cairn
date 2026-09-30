@@ -66,3 +66,50 @@ class NativeObservationTest(unittest.TestCase):
             self.assertEqual(code,124)
             self.assertIn(b'PRIVATE',out)
             self.assertNotIn('PRIVATE',path.read_text())
+
+class NativeMessageShapeTests(unittest.TestCase):
+    def test_status_strings_preserve_checked_partial_delivery_and_limits(self):
+        import uuid
+        body='évidence'.encode()
+        source='0'*64
+        result={'selection':{'record':{'record_id':str(uuid.uuid4()),'version':2,'body':''}},
+                'span':{'offset':0,'end':len(body),'total_bytes':100,'body':body.decode(),
+                        'sha256':hashlib.sha256(body).hexdigest(),'source_sha256':source}}
+        events=base()+[
+            dict(type='assistant',message={'content':[dict(type='tool_use',id='p',name='mcp__cairn__cairn_pull',input={})]}),
+            dict(type='user',late=True,message={'content':[dict(type='tool_result',tool_use_id='p',content=[dict(type='text',text=json.dumps(result))])]}),
+        ]
+        expected=observe(events)
+        actual=observe(events+[dict(type='system',subtype='status',message='arbitrary status'),
+                               dict(type='system',subtype='notification',message=['status'])])
+        self.assertEqual(actual,expected)
+        item=actual['source_deliveries'][0]['delivery']['items'][0]
+        self.assertEqual(item['span'],{'offset':0,'end':len(body),'total_bytes':100})
+        self.assertEqual(item['delivered_sha256'],hashlib.sha256(body).hexdigest())
+        self.assertEqual(actual['total_actual_pull_calls'],1)
+        self.assertIn('last_memory_exceeded_30_seconds',actual['failures'])
+
+    def test_malformed_relevant_messages_are_unknown_not_complete(self):
+        for kind in ('user','assistant'):
+            for message in (None,'status',[],{'content':None},{'content':False},
+                            {'content':[None]}, {'content':[{}]}, {'content':[{'type':'text','text':None}]}):
+                with self.subTest(kind=kind,message=message):
+                    result=observe(base()+[dict(type=kind,message=message)])
+                    self.assertEqual(result['status'],'unknown')
+                    self.assertIn('native_message_shape_unknown',result['unknown'])
+
+    def test_technical_readers_skip_status_and_malformed_messages(self):
+        events=base()+[
+            dict(type='system',subtype='status',message='status'),
+            dict(type='assistant',message='unsupported'),
+            dict(type='user',message={'content':False}),
+            dict(type='assistant',message={'content':[dict(type='tool_use',id='toolu_x',name='Bash',input={'command':'printf checked'})]}),
+            dict(type='user',message={'content':[dict(type='tool_result',tool_use_id='toolu_x',content='checked',is_error=False)]})]
+        text='\n'.join(map(json.dumps,events))
+        trace=te.parse_stream(text)
+        self.assertEqual(trace['answer'],'done')
+        self.assertEqual(trace['commands'],['printf checked'])
+        outputs=te.parse_tool_outputs(text,require_completed=True)
+        self.assertEqual(len(outputs),1)
+        self.assertEqual(outputs[0]['output'],'checked')
+        self.assertEqual(observe(events)['status'],'unknown')

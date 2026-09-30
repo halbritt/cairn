@@ -142,9 +142,18 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
                 unknown.append('permission_denials_missing_or_malformed')
             elif denials:
                 fail('native_permission_denial')
-        blocks = (event.get('message') or {}).get('content',[])
+        if event.get('type') not in ('assistant','user'):
+            continue
+        message = event.get('message')
+        blocks = message.get('content') if isinstance(message,dict) else None
+        if not isinstance(blocks,list) and not (event['type'] == 'user' and isinstance(blocks,str)):
+            unknown.append('native_message_shape_unknown')
+            continue
+        if isinstance(blocks,list) and any(not isinstance(part,dict) or not isinstance(part.get('type'),str) or
+                (part.get('type') == 'text' and not isinstance(part.get('text'),str)) for part in blocks):
+            unknown.append('native_message_shape_unknown')
         if event.get('type') == 'user':
-            text = blocks if isinstance(blocks,str) else ''.join(p.get('text','') for p in blocks if isinstance(p,dict) and p.get('type') == 'text') if isinstance(blocks,list) else ''
+            text = blocks if isinstance(blocks,str) else ''.join(p.get('text','') for p in blocks if isinstance(p,dict) and p.get('type') == 'text' and isinstance(p.get('text'),str)) if isinstance(blocks,list) else ''
             if text == prompt:
                 if seen_prompt:
                     fail('duplicate_task_input')

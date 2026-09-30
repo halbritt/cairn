@@ -140,6 +140,39 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
                 te.main(['agent','--prospective-input',str(root),'--model','fixture-model','--reasoning-effort','high',
                          '--output',str(base/'out'),'--distractors','0','--parallel','1'])
 
+    def test_observer_exception_preserves_independent_task_correctness(self):
+        for failing_phase in ('measurement', 'hook_summary'):
+            with self.subTest(phase=failing_phase), tempfile.TemporaryDirectory() as directory:
+                base=Path(directory); root=fixture(base/'input')
+                with contextlib.redirect_stdout(io.StringIO()):
+                    te.main(['freeze-input','--input',str(root)])
+                child=base/'native.py'
+                child.write_text("import json,sys\nprint(json.dumps({'type':'system','subtype':'init','model':'fixture-model'}))\nprint(sys.stdin.readline().strip())\nprint(json.dumps({'type':'result','is_error':False,'result':'inspected','permission_denials':[]}))\n")
+                def sandbox(work,cwd,binds,env,argv,harness='claude',**kwargs):
+                    return [sys.executable,str(child)] if argv[0]=='claude' else argv
+                target='measure' if failing_phase=='measurement' else 'hook_observations'
+                with patch.object(te,'sandbox_command',side_effect=sandbox), patch.object(te,target,side_effect=AttributeError('PRIVATE failure payload')), contextlib.redirect_stdout(io.StringIO()):
+                    te.main(['agent','--prospective-input',str(root),'--model','fixture-model','--reasoning-effort','high',
+                             '--output',str(base/'out'),'--distractors','0','--parallel','1'])
+                report=json.loads((base/'out/agent.json').read_text())
+                record=report['records'][0]
+                self.assertEqual(record['outcome'],'correct')
+                self.assertIsInstance(record['seconds'],(int,float))
+                selected=record['selected_input']
+                if failing_phase=='measurement':
+                    self.assertEqual(selected['status'],'unknown')
+                    self.assertIsNone(selected['total_bytes'])
+                    self.assertIsNone(selected['total_actual_pull_calls'])
+                    error=selected['observation_error']
+                else:
+                    error=record['memory']['observation_error']
+                self.assertEqual(error,{'phase':failing_phase,'exception_type':'AttributeError'})
+                self.assertEqual(selected['status'],'unknown')
+                error_file='observation-error.json' if failing_phase=='measurement' else 'hook-summary-error.json'
+                self.assertEqual(json.loads((base/'out/runs/new-work.none.s0'/error_file).read_text()),error)
+                self.assertNotIn('PRIVATE',json.dumps(report))
+                self.assertFalse((base/'out/runs/new-work.none.s0/stream.jsonl').exists())
+
     def test_selected_terminal_stop_survives_grading_failure_without_raw_stream(self):
         with tempfile.TemporaryDirectory() as directory:
             base=Path(directory); root=fixture(base/'input')
