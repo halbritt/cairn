@@ -26,7 +26,7 @@ writable by another user, and is pinned by SHA-256:
 ```
 
 The memory engine must implement inbox recall version 1. Configurations must
-agree on explicit `harness: "codex"`, `cairn`, `socket`, `token_file`,
+agree on explicit `harness: "codex"` or `harness: "claude"`, `cairn`, `socket`, `token_file`,
 and repository. Memory uses `recall_mode: "agent_tools"` and a byte allowance
 between 1000 and 9500. Coordination uses `native_delivery: true`. State directories
 are absolute and the coordination and memory directories differ. Credentials,
@@ -34,7 +34,7 @@ models, and API scope are not selected or created by this adapter.
 
 A shared memory configuration can reference up to eight coordination
 configurations. Multiple entries require distinct absolute `config_home` values.
-The memory hook selects the actual `CODEX_HOME`, with the same native default
+The memory hook selects the actual `CODEX_HOME` or `CLAUDE_CONFIG_DIR`, with the same native default
 home used by coordination. It never chooses the first entry
 on ambiguity. An unmatched home retains ordinary required-only wake recall.
 
@@ -49,7 +49,8 @@ and capture callbacks do not acquire activation metadata or depend on this manif
 
 Two callbacks can straddle that replacement. The first complete reserved-wake
 callback records an enabled/disabled decision for the actual session and native
-turn in the existing memory-budget ledger, under its session lock. The other
+turn in the existing memory-budget ledger, or Claude prompt owner in the inbox
+grant ledger, under its session lock. The other
 callback keeps that decision in either order. This writes mode metadata only;
 it does not create a turn grant, change the active turn, read a source, or confer
 authority. Locating the ledger during disabled staging reads only the owner-controlled
@@ -68,8 +69,13 @@ choose the disabled path. This slice adds no installer or service changes.
 
 The wake envelope is only a trigger. Coordination's authenticated admission and
 live lease bind the request to the current agent, execution, delivery and attempt.
-The actual Codex native turn UUID must equal the attempt's owner. No native turn
-identity is synthesized from an inbox ID, session ID or wake text.
+The actual Codex native turn UUID must equal the attempt's owner. For Claude, the
+complete channel envelope must name this native session, and the admitted owner
+must equal `claude-channel:<prompt_id>` from the host event. Missing or mismatched
+ownership refuses the wake before source reads. No native turn identity is
+synthesized from an inbox ID, session ID or wake text. A Claude prompt owner does
+not prove permanent exclusivity: the existing coordinator still handles joined
+owner/channel input.
 
 The bridge first searches required context and verifies the actual hosted
 destination. It then reads the exact event source through authenticated History,
@@ -108,7 +114,8 @@ this bridge does not intercept every tool result or provide a global API budget.
 After compaction, current required-only context is restored whole under a separate
 per-emission serialized limit. It does not consume or renew an already reserved
 optional grant. Every such output is accumulated in `required_refresh_bytes`;
-initial `emitted_hook_bytes` and reserved optional bytes remain unchanged.
+initial Codex `emitted_hook_bytes` (Claude `output_bytes`) and reserved optional
+bytes remain unchanged.
 **This does not satisfy an evaluation requiring all cumulative task memory bytes
 to stay below 9500 when initial delivery plus refreshes exceeds that limit.**
 Retain that original evaluation failure instead of silently changing its denominator.
@@ -153,13 +160,38 @@ that this stops automatic compact continuation before another model request.
 UserPromptSubmit uses exit 2. Nonzero SessionStart exits alone are not treated as
 blocking.
 
-**Claude activation is refused in this slice.** An isolated installed Claude
-2.1.285 resume probe with a scripted localhost response observed another model
-dispatch after both exit 2 and exit-zero `continue: false`. Its normal unbound
-required-memory and coordination paths are preserved. Supporting that host needs
-a proven continuation boundary; claiming parity from the common JSON field would
-be incorrect. Other harnesses are also unsupported by this binding. This is a
-staged implementation, not a reduction of the cross-agent retrieval goal.
+### Claude entry support and continuation limit
+
+Claude uses the existing admitted `UserPromptSubmit` channel boundary. Its grant
+is scoped to the authenticated delivery and native prompt owner, not a fabricated
+Codex turn. Before the first grant, serialized startup required context is carried
+into the initial allowance once. A new ordinary host prompt can receive its own
+grant; repeated or joined input with the same prompt ID cannot renew optional
+credits. Missing ordinary prompt identity permits only required context. Original
+owner input and capture callbacks remain unchanged, including PreCompact.
+
+Bound Claude SessionStart always refreshes required context only. Successful
+refresh records every emitted byte separately; it never repeats source History,
+optional pulls or the initial optional allowance. A failure to restore known
+required context stays pending. A successful authenticated current check may clear
+it. A subsequent UserPromptSubmit refuses a still-proven required failure with
+exit 2, including when a new prompt arrives before restoration. If a failed status write
+could not record `pending`, the known active selection still requires a fresh
+authenticated check across that prompt boundary; it is not silently cleared. Configuration or
+optional-service failures with no known requirement remain nonblocking.
+
+**Claude SessionStart failure does not stop the next model dispatch.** An isolated
+installed Claude 2.1.285 resume probe with a scripted localhost response observed
+another request after both exit 2 and exit-zero `continue: false`. This adapter
+therefore emits a labeled error and retains pending status at that boundary; it
+does not return a misleading stop decision. No PreCompact refusal or PreToolUse
+guard is added here. A model request or text-only answer can occur before a later
+supported prompt boundary. This is entry retrieval plus required refresh, not
+complete mandatory-context enforcement through every Claude continuation.
+
+Other harnesses are unsupported by this binding. Default unbound Claude memory
+and coordination behavior is preserved. This extension supplies no installer,
+channel activation, native-session restart, or measured task-benefit claim.
 
 Focused tests exercise
 public hook JSON/exit behavior and disposable transport fixtures; they do not

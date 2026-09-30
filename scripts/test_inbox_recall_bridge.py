@@ -165,7 +165,7 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.assertFalse((self.root/'memory'/f'{SESSION}.inbox-recall.json').exists())
 
 
-    def test_claude_binding_refused_while_unbound_required_recall_is_unchanged(self):
+    def test_unbound_claude_required_recall_is_unchanged(self):
         self.mc['harness']=self.cc['harness']='claude'
         self.state['agent']['metadata']['harness']='claude'
         self.event.pop('turn_id'); self.event['prompt_id']='existing-native-prompt'
@@ -173,9 +173,6 @@ class InboxRecallBridgeTests(unittest.TestCase):
         self.state['inbox_attempt']['native_turn_id']='claude-channel:existing-native-prompt'
         self.fixture['search']['selected']=[dict(mandatory=True,record=dict(body='Whole Claude required instruction.'))]
         self.freeze()
-        with self.assertRaises(ValueError): memory.handle(self.mc,self.event)
-        self.assertEqual(self.invoke(main=True)['code'],2)
-        self.assertEqual(self.calls(),[])
         # No activation means the supported independent required-only path and
         # original exact-source workflow are unchanged.
         self.mc.pop('inbox_recall_binding'); self.cc.pop('inbox_recall_binding')

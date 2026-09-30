@@ -399,3 +399,14 @@ yet been summarized in dialogue. Session locks and bounded metadata files remain
 Claude's [hook reference](https://code.claude.com/docs/en/hooks) defines these
 lifecycle events. The installed behavior is checked separately in the
 [native verification report](verification/claude-lifecycle-2026-09-13.md).
+
+## Optional admitted-inbox binding
+
+The separately configured [inbox recall bridge](inbox-recall.md) can join an
+authenticated Claude channel request's exact source and checked memory in one
+UserPromptSubmit output. It requires the host's actual prompt ID and existing
+coordinator admission; wake text alone is not authority. It preserves original
+owner/capture input and refreshes whole required context without renewing optional
+credits. Claude SessionStart failure remains nonblocking: pending requirements
+are retried/refused at the next supported prompt boundary, not claimed to prevent
+every intervening model dispatch. Default hooks do not enable this binding.

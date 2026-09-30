@@ -837,6 +837,168 @@ def save_codex_budget(path, ledger):
             temporary.unlink(missing_ok=True)
 
 
+def bound_claude(config):
+    return config.get("harness") == "claude" and bool(config.get("inbox_recall_binding"))
+
+
+def claude_ledger(config, session):
+    bridge = load_inbox_recall(config)
+    path = Path(config["state_dir"]) / (session + ".inbox-recall.json")
+    return bridge, path, bridge.load_grants(path, session)
+
+
+def save_claude_ledger(path, ledger):
+    marker = path.with_suffix(".initialized")
+    if not marker.exists():
+        save_codex_budget(marker, dict(schema="cairn.inbox-recall-initialized/1", session=ledger["session"]))
+    save_codex_budget(path, ledger)
+
+
+def claude_prompt_owner(event):
+    prompt = event.get("prompt_id")
+    if (not isinstance(prompt, str) or not prompt.strip() or len(prompt.encode()) > 256
+            or any(ord(c) < 32 for c in prompt)):
+        return None
+    return "claude-channel:" + prompt
+
+
+def claude_required_grant(ledger, event):
+    if event["hook_event_name"] == "UserPromptSubmit" and claude_prompt_owner(event):
+        owner = claude_prompt_owner(event)
+        for grant in ledger["grants"].values():
+            if grant["identity"].get("native_owner") == owner:
+                return grant
+        if ledger.get("active") is None:
+            return ledger
+        active = ledger["grants"][ledger["active"]]
+        return active if active.get("required", {}).get("pending") else None
+    return ledger["grants"][ledger["active"]] if ledger.get("active") else ledger
+
+
+def claude_required_error(config, event, error, *, persist=False):
+    if not bound_claude(config):
+        return error
+    if event.get("hook_event_name") not in ("SessionStart", "UserPromptSubmit"):
+        return error
+    policy = isinstance(error, HookError) and error.code in ("OPEN_CONFLICT", "POLICY_UNENFORCEABLE")
+    typed = isinstance(error, RequiredContextRefused)
+    proven = typed or policy
+    try:
+        # Failure classification reads only durable local status. It must still
+        # recognize pending requirements when the optional bridge/config is unavailable.
+        if not native_uuid(event.get("session_id")):
+            return error
+        path = Path(config["state_dir"]) / (event["session_id"] + ".inbox-recall.json")
+        ledger = json.loads(path.read_text()) if path.exists() else dict(
+            schema="cairn.inbox-recall-grants/1", session=event["session_id"], grants={})
+        if ledger.get("schema") != "cairn.inbox-recall-grants/1" or ledger.get("session") != event["session_id"]:
+            return error
+        grant = claude_required_grant(ledger, event)
+        if grant is None and ledger.get("active"):
+            # A failed status write may leave pending=False after a missed
+            # restoration. Known active requirements survive a new prompt until
+            # an authenticated current check replaces them; no body is replayed.
+            grant = ledger["grants"][ledger["active"]]
+        known = grant.get("required", {}) if grant is not None else {}
+        if (type(known.get("count", 0)) is not int or known.get("count", 0) < 0
+                or type(known.get("pending", False)) is not bool):
+            return error
+        proven = typed or policy or bool(known.get("count") or known.get("pending"))
+        if not proven:
+            return error
+        if persist:
+            if grant is None:
+                owner = claude_prompt_owner(event)
+                key = hashlib.sha256(encoded(dict(claude_prompt=owner)).encode()).hexdigest()
+                grant = ledger["grants"][key] = dict(identity=dict(native_owner=owner, boundary="ordinary_prompt"),
+                    limit_bytes=context_budget(config), output_bytes=0, native_allowance_bytes=0)
+                ledger["active"] = key
+            grant["required"] = dict(count=known.get("count", 0),
+                selection_sha256=known.get("selection_sha256", ""), pending=True)
+            save_claude_ledger(path, ledger)
+    except (HookError, OSError, ValueError, KeyError, TypeError):
+        if not proven:
+            return error
+    return RequiredContextRefused("current required Claude context could not be restored")
+
+
+def claude_boundary_error(config, event, error):
+    """Public-main failures occur outside handle's lock, including final save.
+
+    Keep proven restoration failure pending even when dependency validation failed
+    before recall. Never turn an unknown optional failure into a requirement.
+    """
+    error = claude_required_error(config, event, error)
+    if not isinstance(error, RequiredContextRefused):
+        return error
+    try:
+        directory = Path(config["state_dir"])
+        with (directory / (event["session_id"] + ".lock")).open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return claude_required_error(config, event, error, persist=True)
+    except (OSError, ValueError, KeyError, TypeError):
+        # A busy writer/failed filesystem cannot be claimed durable. The known
+        # failure still refuses this UPS; Claude SessionStart remains nonblocking.
+        return error
+
+
+def claude_agent_context(memory, event, result, budget, status, deadline):
+    """Called under the existing session lock; no synthetic native turn identity."""
+    _, path, ledger = claude_ledger(memory.config, event["session_id"])
+    selected = result.get("selected", [])
+    grant = claude_required_grant(ledger, event)
+    owner = claude_prompt_owner(event) if event["hook_event_name"] == "UserPromptSubmit" else None
+    existing = next((key for key, item in ledger["grants"].items()
+                     if owner and item["identity"].get("native_owner") == owner), None)
+    required_only = owner is None or existing is not None or taskless_notification(event.get("prompt", ""))
+    if grant is None:
+        grant = ledger
+    codex_required_selection(grant, selected)
+    def persist():
+        try:
+            save_claude_ledger(path, ledger)
+        except OSError as exc:
+            if selected:
+                raise RequiredContextRefused("current required Claude delivery status could not be persisted") from exc
+            raise
+    text = render_recall(selected, []) if selected else ""
+    measure = lambda value: codex_hook_cost(event, value)
+    if measure(text) > budget:
+        grant["required"]["pending"] = True
+        persist()
+        raise RequiredContextRefused("current required Claude context cannot fit whole")
+    if required_only:
+        if ledger.get("active"):
+            grant["required_refresh_bytes"] = grant.get("required_refresh_bytes", 0) + measure(text)
+        else:
+            if ledger.get("pending_bytes", 0) + measure(text) > budget:
+                grant["required"]["pending"] = True
+                persist()
+                raise RequiredContextRefused("initial whole required Claude context exceeds grant budget")
+            ledger["pending_bytes"] = ledger.get("pending_bytes", 0) + measure(text)
+        status.update(outcome="required_only" if selected else "empty", discovery="deferred",
+                      optional_deferred="bound_claude_required_refresh", bytes=len(text.encode()))
+    else:
+        prior = ledger.get("pending_bytes", 0)
+        remaining = budget - prior
+        if measure(text) > remaining:
+            grant["required"]["pending"] = True
+            persist()
+            raise RequiredContextRefused("whole required Claude context exceeds initial allowance")
+        text = eager_agent_candidates(memory, result, remaining, status, deadline, measure=measure)
+        key = hashlib.sha256(encoded(dict(claude_prompt=owner)).encode()).hexdigest()
+        current = dict(identity=dict(native_owner=owner, boundary="ordinary_prompt"), limit_bytes=budget,
+                       output_bytes=measure(text) + prior, native_allowance_bytes=status.get("native_allowance_bytes", 0))
+        if current["output_bytes"] + current["native_allowance_bytes"] > budget:
+            raise HookError("Claude prompt context exceeds combined budget")
+        codex_required_selection(current, selected)
+        ledger["grants"][key] = current
+        ledger["active"] = key
+        ledger["pending_bytes"] = 0
+    persist()
+    return text
+
+
 def bound_codex(config):
     return config.get("harness") == "codex" and bool(config.get("inbox_recall_binding"))
 
@@ -881,6 +1043,8 @@ def codex_required_error(config, event, error, *, persist=False):
     The read-only main-boundary use can see a prior atomic snapshot when that lock
     is busy. It does not clear requirements or manufacture a failed requirement.
     """
+    if bound_claude(config):
+        return claude_required_error(config, event, error, persist=persist)
     if isinstance(error, RequiredContextRefused) or not bound_codex(config):
         return error
     if event.get("hook_event_name") not in ("SessionStart", "UserPromptSubmit") or not native_uuid(event.get("session_id")):
@@ -1450,6 +1614,8 @@ def recall(memory, event, state=None):
     defer_optional = notification or (event["hook_event_name"] == "SessionStart" and not event.get("prompt", "").strip()
                       and not event.get("workstream", "").strip()
                       and event.get("source") not in ("resume", "compact"))
+    if bound_claude(memory.config) and event["hook_event_name"] == "SessionStart":
+        defer_optional = True
     kinds = ("decision", "preference") if defer_optional else ()
     mode = memory.config.get("recall_mode", "ambient")
     if mode not in ("ambient", "agent_tools"):
@@ -1466,8 +1632,13 @@ def recall(memory, event, state=None):
                            semantic=semantic, timeout=recall_timeout(deadline, 5))
     budget = context_budget(memory.config)
     selected = result.get("selected", [])
-    if not bound_codex(memory.config) and len(render_recall(selected, []).encode()) > budget:
+    if not (bound_codex(memory.config) or bound_claude(memory.config)) and len(render_recall(selected, []).encode()) > budget:
         raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")
+    if bound_claude(memory.config):
+        text = claude_agent_context(memory, event, result, budget, status, deadline)
+        status["elapsed_seconds"] = round(time.monotonic() - started, 3)
+        return ({"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
+                if text else {})
     if mode == "agent_tools" and memory.config.get("harness") == "codex":
         text = codex_agent_context(memory, event, result, budget, status, deadline)
         status["elapsed_seconds"] = round(time.monotonic() - started, 3)
@@ -2043,8 +2214,10 @@ def main():
         result = handle(config, event, _inbox_resolved=True)
     except (HookError, OSError, ValueError, KeyError, TypeError) as exc:
         if isinstance(config, dict) and isinstance(event, dict):
-            exc = codex_required_error(config, event, exc)
-        if isinstance(exc, RequiredContextRefused) and event.get("hook_event_name") == "SessionStart":
+            exc = (claude_boundary_error(config, event, exc) if bound_claude(config)
+                   else codex_required_error(config, event, exc))
+        if (isinstance(exc, RequiredContextRefused) and config.get("harness") == "codex"
+                and event.get("hook_event_name") == "SessionStart"):
             # SessionStart exit 1/2 does not stop compaction continuation. Codex
             # supports this explicit common-output stop decision instead.
             print(encoded({"continue": False, "stopReason": "Bound inbox recall cannot restore required context."}))

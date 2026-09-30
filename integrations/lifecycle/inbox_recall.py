@@ -42,7 +42,7 @@ def validate_binding(config, *, require_enabled=False):
     homes = [str(Path(c['config_home']).resolve()) if c.get('config_home') else None for c in coordinators]
     if len(coordinators) > 1 and (None in homes or len(homes) != len(set(homes))):
         raise ValueError('shared memory binding requires distinct explicit configuration homes')
-    if (config.get('harness') != 'codex' or memory.get('recall_mode') != 'agent_tools'
+    if (config.get('harness') not in ('codex', 'claude') or memory.get('recall_mode') != 'agent_tools'
             or any(not c.get('native_delivery') for c in coordinators)
             or any(c.get('inbox_recall_binding') != str(path) for c in profiles)
             or any(c.get(k) != memory.get(k) for c in profiles for k in ('harness', 'cairn', 'socket', 'token_file', 'repo'))
@@ -63,13 +63,22 @@ def binding(config):
     return validate_binding(config, require_enabled=False)
 
 
+def claude_owner(event):
+    prompt = event.get('prompt_id')
+    if (not isinstance(prompt, str) or not prompt.strip() or len(prompt.encode()) > 256
+            or any(ord(c) < 32 for c in prompt)):
+        raise ValueError('inbox recall requires actual Claude prompt ownership')
+    return 'claude-channel:' + prompt
+
+
 def activation_decision(config, event, enabled):
     """One decision for both reserved-wake hooks; no grant or active turn changes."""
-    if config.get('harness') != 'codex' or event.get('hook_event_name') != 'UserPromptSubmit':
+    if config.get('harness') not in ('codex', 'claude') or event.get('hook_event_name') != 'UserPromptSubmit':
         return enabled
-    session, turn = event.get('session_id'), event.get('turn_id')
+    session = event.get('session_id')
+    turn = claude_owner(event) if config['harness'] == 'claude' else event.get('turn_id')
     try:
-        if str(uuid.UUID(session)) != session or str(uuid.UUID(turn)) != turn:
+        if str(uuid.UUID(session)) != session or (config['harness'] == 'codex' and str(uuid.UUID(turn)) != turn):
             return enabled
     except (ValueError, TypeError, AttributeError):
         return enabled
@@ -95,21 +104,27 @@ def activation_decision(config, event, enabled):
         raise ValueError('activation ledger directory is not owner-controlled')
     with (directory / (session + '.lock')).open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        path = directory / (session + '.memory-budget.json')
-        marker = path.with_suffix('.initialized')
-        expected = dict(schema='cairn.codex-memory-grants/1', session_id=session)
-        if marker.exists() and (json.loads(marker.read_text()) != expected or not path.exists()):
-            raise ValueError('activation cannot reset initialized turn accounting')
-        if path.exists():
-            ledger = json.loads(path.read_text())
+        if config['harness'] == 'claude':
+            path = directory / (session + '.inbox-recall.json')
+            marker = path.with_suffix('.initialized')
+            expected = dict(schema='cairn.inbox-recall-initialized/1', session=session)
+            ledger = load_grants(path, session)
         else:
-            budget = memory.get('context_bytes', 9500)
-            if type(budget) is not int or not 1000 <= budget <= 65536:
-                raise ValueError('invalid initial activation accounting limit')
-            ledger = dict(expected, active_turn_id=None, turns={}, pending=dict(
-                limit_bytes=budget, emitted_hook_bytes=0, reserved_native_bytes=0, granted=False))
-        if ledger.get('schema') != expected['schema'] or ledger.get('session_id') != session:
-            raise ValueError('activation ledger identity differs')
+            path = directory / (session + '.memory-budget.json')
+            marker = path.with_suffix('.initialized')
+            expected = dict(schema='cairn.codex-memory-grants/1', session_id=session)
+            if marker.exists() and (json.loads(marker.read_text()) != expected or not path.exists()):
+                raise ValueError('activation cannot reset initialized turn accounting')
+            if path.exists():
+                ledger = json.loads(path.read_text())
+            else:
+                budget = memory.get('context_bytes', 9500)
+                if type(budget) is not int or not 1000 <= budget <= 65536:
+                    raise ValueError('invalid initial activation accounting limit')
+                ledger = dict(expected, active_turn_id=None, turns={}, pending=dict(
+                    limit_bytes=budget, emitted_hook_bytes=0, reserved_native_bytes=0, granted=False))
+            if ledger.get('schema') != expected['schema'] or ledger.get('session_id') != session:
+                raise ValueError('activation ledger identity differs')
         decisions = ledger.setdefault('inbox_activation', {})
         if not isinstance(decisions, dict) or any(not isinstance(k, str) or type(v) is not bool for k,v in decisions.items()):
             raise ValueError('invalid activation decisions')
@@ -142,7 +157,7 @@ def coordinates_wake(config, event):
     """A coordination opt-out leaves the independent required-only hook active."""
     manifest = json.loads(Path(config['inbox_recall_binding']).read_text())
     coordinators = [json.loads(checked_file(item)[1]) for item in manifest['coordination_configs']]
-    variable = 'CODEX_HOME'
+    variable = 'CLAUDE_CONFIG_DIR' if config['harness'] == 'claude' else 'CODEX_HOME'
     active = Path(os.environ.get(variable, str(Path.home() / ('.' + config['harness'])))).resolve()
     matches = [c for c in coordinators if not c.get('config_home') or active == Path(c['config_home']).resolve()]
     if len(matches) > 1:
@@ -156,7 +171,7 @@ def coordinates_wake(config, event):
     if any((p / '.cairn-no-coordination').exists() for p in [root, *root.parents]):
         return False
     if coordination.get('config_home'):
-        variable = 'CODEX_HOME'
+        variable = 'CLAUDE_CONFIG_DIR' if config['harness'] == 'claude' else 'CODEX_HOME'
         active = Path(os.environ.get(variable, str(Path.home() / ('.' + config['harness'])))).resolve()
         if active != Path(coordination['config_home']).resolve():
             return False
@@ -178,6 +193,16 @@ def load_grants(path, session):
                 or any(type(grant.get(k)) is not int or grant[k] < 0 for k in ('limit_bytes', 'output_bytes', 'native_allowance_bytes'))
                 or grant['output_bytes'] + grant['native_allowance_bytes'] > grant['limit_bytes']):
             raise ValueError('inbox recall grant ledger corrupt')
+    for grant in [ledger, *ledger['grants'].values()]:
+        required = grant.get('required')
+        if required is not None and (not isinstance(required, dict)
+                or type(required.get('count')) is not int or required['count'] < 0
+                or type(required.get('pending')) is not bool
+                or not isinstance(required.get('selection_sha256'), str)
+                or (required['selection_sha256'] != '' and not re.fullmatch('[0-9a-f]{64}', required['selection_sha256']))):
+            raise ValueError('inbox required-context status corrupt')
+        if type(grant.get('required_refresh_bytes', 0)) is not int or grant.get('required_refresh_bytes', 0) < 0:
+            raise ValueError('inbox required refresh counter corrupt')
     if type(ledger.get('pending_bytes', 0)) is not int or not 0 <= ledger.get('pending_bytes', 0) <= 9500:
         raise ValueError('inbox recall pending charge corrupt')
     if ledger.get('active') is not None and ledger['active'] not in ledger['grants']:
@@ -233,6 +258,11 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
     native = observation.get('native_turn_id', '')
     if config['harness'] == 'codex' and not engine.native_uuid(native):
         raise ValueError('inbox recall requires actual Codex native turn UUID')
+    if config['harness'] == 'claude':
+        if native != claude_owner(event):
+            raise ValueError('inbox recall Claude prompt owner differs')
+        if not event['prompt'].startswith(f'<channel source="cairn-events" native_session_id="{session}" '):
+            raise ValueError('inbox recall requires this session channel envelope')
     wake_ids = re.search(r'Current agent ([0-9a-f-]+), execution ([0-9a-f-]+)\. Wake delivery ([0-9a-f-]+)\.', event['prompt'])
     if not wake_ids or wake_ids.group(1, 2) != (state['agent']['agent_id'], state['agent']['execution_id']):
         raise ValueError('reserved wake belongs to another registered execution')
@@ -242,8 +272,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             raise ValueError('inbox recall attempt is not live')
         if attempt['session'] != dict(agent_id=state['agent']['agent_id'], execution_id=state['agent']['execution_id']):
             raise ValueError('inbox recall attempt session differs')
-        if ((config['harness'] == 'codex' and not attempt.get('native_turn_id'))
-                or (attempt.get('native_turn_id') or native) and attempt.get('native_turn_id') != native):
+        if not attempt.get('native_turn_id') or attempt['native_turn_id'] != native:
             raise ValueError('inbox recall native owner differs')
         delivery = attempt['delivery']
         if delivery['delivery_id'] != wake_ids.group(3):
@@ -252,7 +281,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         identity = dict(attempt_id=attempt['attempt_id'], delivery_id=delivery['delivery_id'],
                         event_id=publication['event_id'], session=attempt['session'],
                         source=publication['ref'], native_owner=native,
-                        boundary='native_turn')
+                        boundary='claude_prompt_delivery' if config['harness'] == 'claude' else 'native_turn')
     else:
         publication = None
         # This key deduplicates required-only output, not admission or authority.
@@ -271,7 +300,9 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         ledger = load_grants(path, session)
         if key in ledger['grants'] and ledger['grants'][key]['identity'] != identity:
             raise ValueError('inbox recall delivery identity changed')
-        if key in ledger['grants'] or any(g.get('wake_sha256') == wake_hash for g in ledger['grants'].values()):
+        if key in ledger['grants'] or any(g.get('wake_sha256') == wake_hash
+                or (config['harness'] == 'claude' and g['identity'].get('native_owner') == native)
+                for g in ledger['grants'].values()):
             raise ValueError('inbox source/memory grant already consumed; no repeated read or new optional allowance')
         started = time.monotonic()
         deadline = min(started + 5, outer_deadline)
@@ -406,6 +437,8 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
             if not tombstone.exists():
                 engine.save_codex_budget(tombstone, dict(schema='cairn.codex-memory-grants/1', session_id=session))
             engine.save_codex_budget(codex_path, codex_ledger)
+        if config['harness'] == 'claude':
+            engine.codex_required_selection(grant, selected)
         ledger['grants'][key] = grant
         ledger['active'] = key
         ledger['pending_bytes'] = 0
