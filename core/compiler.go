@@ -854,16 +854,44 @@ func rankingTerms(text, version string) map[string]bool {
 		}
 	}
 	if version == "lexical-scope-recency/2" || version == "lexical-scope-recency/3" || version == "lexical-scope-recency/4" {
-		for _, word := range strings.Fields("a an and are as at be by for from in is it of on or that the this to was were with") {
-			delete(terms, word)
-		}
+		removeRankingStopWords(terms, functionStopWords, functionStopSet)
 	}
 	if version == "lexical-scope-recency/4" {
-		for _, word := range strings.Fields("what where when why who whom whose which how do does did") {
-			delete(terms, word)
-		}
+		removeRankingStopWords(terms, questionStopWords, questionStopSet)
 	}
 	return terms
+}
+
+// Fixed stop lists are built once: previews tokenize every candidate word, so
+// re-splitting these strings per call dominated search CPU at scale.
+var (
+	functionStopWords = strings.Fields("a an and are as at be by for from in is it of on or that the this to was were with")
+	questionStopWords = strings.Fields("what where when why who whom whose which how do does did")
+	functionStopSet   = stopSet(functionStopWords)
+	questionStopSet   = stopSet(questionStopWords)
+)
+
+func stopSet(words []string) map[string]bool {
+	set := make(map[string]bool, len(words))
+	for _, word := range words {
+		set[word] = true
+	}
+	return set
+}
+
+// Remove every listed word; visit whichever side is smaller.
+func removeRankingStopWords(terms map[string]bool, words []string, set map[string]bool) {
+	if len(terms) < len(words) {
+		for term := range terms {
+			if set[term] {
+				delete(terms, term)
+			}
+		}
+		return
+	}
+	for _, word := range words {
+		delete(terms, word)
+	}
 }
 
 func sortCandidates(candidates []candidate) {
