@@ -1251,7 +1251,8 @@ def cmd_agent(args):
         native = prospective["document"]["native"]
         if args.model != native["model"] or args.reasoning_effort != native["effort"]:
             raise ValueError("selected native model/effort must equal frozen input")
-    execution = dict(harness=args.harness, reasoning_effort=args.reasoning_effort if args.harness == "codex" else None,
+    execution = dict(cold_readiness_timeout_seconds=args.cold_readiness_timeout,
+                     harness=args.harness, reasoning_effort=args.reasoning_effort if args.harness == "codex" else None,
                      evaluator_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                      hook_observer_sha256=hashlib.sha256((ROOT / "scripts/trial_hook_observer.py").read_bytes()).hexdigest(),
                      harness_version=run([str(Path(args.codex_install) / "codex/bin/codex.js") if args.harness == "codex" else str(checked_file(prospective["document"]["native"]["binary"])) if prospective else "claude", "--version"]).stdout.decode().strip())
@@ -1303,7 +1304,7 @@ def cmd_agent(args):
                 store.seed_corpus(corpus)
             store.grow(args.distractors, 0)
             store.start()
-            store.wait_for_full_coverage()
+            store.wait_for_full_coverage(timeout=args.cold_readiness_timeout)
             stores[label] = dict(store=store, hook=str(Path(hook).resolve()), configuration=arm_config)
             arms.append(label)
         plan = []
@@ -1572,6 +1573,8 @@ def main(argv=None):
     a.add_argument("--embedding-worker", help="persistent passage backend; waits for full eligible coverage")
     a.add_argument("--paired-plan", action="append", default=[], help="captured baseline plan for case/seed matching")
     a.add_argument("--max-turns", type=int, help="Claude only; defaults to 40. Codex is bounded by --timeout.")
+    a.add_argument("--cold-readiness-timeout", type=int, default=1800,
+                   help="maximum cold passage-index readiness wait in seconds; separate from task timeout")
     a.add_argument("--timeout", type=int, default=900)
     a.add_argument("--parallel", type=int, default=3)
     p = sub.add_parser("report")
@@ -1597,7 +1600,7 @@ def main(argv=None):
         else:
             args.arms = args.arms if args.arms is not None else ["none", "direct"]
             args.reasoning_effort = args.reasoning_effort or "high"
-        if args.timeout <= 0 or args.parallel <= 0 or args.seeds <= 0 or args.first_seed < 0:
+        if args.cold_readiness_timeout <= 0 or args.timeout <= 0 or args.parallel <= 0 or args.seeds <= 0 or args.first_seed < 0:
             parser.error("invalid execution limits")
         labels = [s.split(":", 1)[0] for s in args.memory]
         if len(labels) != len(set(labels)) or set(labels) & {"none", "direct"}:

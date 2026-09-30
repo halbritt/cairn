@@ -220,6 +220,13 @@ run cleanup. CAPLAB uses a new session and group signalling for this reason.
   config keys, or document the new ones.
 - Persistent candidates selected with `--embedding-worker` must reach full
   eligible coverage before agent runs; reports retain cold indexing duration.
+  `agent --cold-readiness-timeout SECONDS` selects a positive setup wait
+  (default1800), independently of the task's `--timeout`. Both `plan.json`
+  and `agent.json` retain `cold_readiness_timeout_seconds`. The full-coverage
+  predicate is unchanged; searches already in flight can finish after the wait
+  deadline. A setup timeout occurs before any task admission. Preserve that
+  failed output and verify cleanup before a separately recorded fresh setup;
+  changing this limit does not authorize replaying an admitted task.
 
 ## Limits
 
