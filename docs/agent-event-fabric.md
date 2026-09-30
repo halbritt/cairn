@@ -70,6 +70,61 @@ preserves already-addressed work. Resubscribe does not replay old events.
 Repeating the same active/inactive state is harmless. Subscription mutations use
 request UUIDs. A caller manages only its own subscriptions.
 
+## Dedicated assignment sources and search scope
+
+Save a one-off assignment under a dedicated task such as
+`coordination/<publication-request-UUID>`, with run `*`. Use the client publication
+request UUID, known before saving the source, not the server-generated event UUID.
+Reserve repository-wide task/run wildcards for selected reusable guidance. Record
+kind is descriptive: a `note` can be either an assignment or a reusable lesson;
+there is no assignment kind blacklist.
+
+For an existing authenticated session, choose and retain two different UUIDs once:
+`source_request_id` for remembering the source and `publication_id` for publication.
+Also retain the assignment text, exact returned source reference, destination and
+session IDs. With those variables set, the sequence is:
+
+```sh
+cairn agent --token-file "$token_file" remember \
+  --request-id "$source_request_id" --repo "$collection" \
+  --task "coordination/$publication_id" --run '*' --kind note --shareable \
+  --stdin < assignment.txt > assignment-source.json
+```
+
+Read `data.record_id` and `data.version` from the successful response into
+`source_record_id` and `source_version`. Publish that exact version:
+
+```sh
+cairn publish --token-file "$token_file" --repo "$collection" \
+  --agent-id "$sender_agent_id" --execution-id "$sender_execution_id" \
+  --request-id "$publication_id" --to "$recipient_principal" \
+  --kind request --version "$source_version" "$source_record_id"
+```
+
+Use the current registered sender IDs and the intended recipient's exact
+`agent/<UUID>` address; do not register a replacement session for publication.
+A retry uses the same operation UUID and identical arguments/body, including task
+scope and source version. After an uncertain response, do not create a new UUID
+and another source/event. Changed intent under the same mutation UUID refuses
+with `IDEMPOTENCY_CONFLICT`; reconcile that refusal rather than changing retry
+arguments. New content or intent is a separate operation after
+reconciling the original result. Source creation and publication are separate
+mutations; if publication is refused, creation may already have succeeded.
+
+Task scope narrows lexical and semantic search eligibility. Searches in another
+task omit the assignment, while a matching task can discover it alongside
+repository-scoped guidance. It is **not an access-control boundary**: an otherwise
+authorized recipient reads the exact event reference through History even when
+its current search task differs. Repository authorization, local/shareable
+privacy and forgetting still apply. Later edits do not retarget an existing
+event to the newest version, and historical text is not current authority.
+
+This recipe does not retroactively rescope old repository-wide assignments.
+Review any migration separately; do not rewrite or forget historical sources as
+routine cleanup. Completion also does not automatically inherit the source task:
+its result uses the supplied Draft/defaults. Preserve supplied native completion
+arguments; do not assume that publishing a scoped source changes result policy.
+
 ## Delivery, leases and completion
 
 `inbox next` atomically claims one pending or expired delivery. It returns the

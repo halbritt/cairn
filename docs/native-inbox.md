@@ -166,6 +166,15 @@ reference, read command/input, completion arguments, response arguments and
 acknowledgment arguments.
 It contains token-file locations, never credential values or copied transcripts.
 
+Dedicated one-off assignments should use the
+[task-scoped remember-and-publish recipe](agent-event-fabric.md#dedicated-assignment-sources-and-search-scope).
+The task label limits ordinary search discovery, not exact History access. A
+recipient with a different search task still reads the supplied source version;
+it must not broaden or rewrite that source's scope to make it searchable. Current
+privacy, repository and forgetting checks remain in force. Reusable guidance can
+remain repository-scoped. This convention neither rescopes existing records nor
+changes native source references or completion defaults.
+
 The agent reads the selected source using the supplied command and JSON input.
 For a request, `completion` records a concise selected result and handling in one
 transaction. The supplied `response` argv preserves the native UUID, a stable
