@@ -24,6 +24,7 @@ def handle(config, event):
 def main():
     config = json.loads(Path(sys.argv[2]).read_text())
     print(json.dumps(handle(config, json.load(sys.stdin))))
+    print('fixture warning 日本語',file=sys.stderr)
     return 0
 if __name__ == '__main__':
     sys.exit(main())
@@ -31,6 +32,30 @@ if __name__ == '__main__':
 
 
 class HookObserverTest(unittest.TestCase):
+    def test_bounded_prompt_metadata_keeps_output_and_distinguishes_absent_origin(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); engine=root/'memory.py';engine.write_text(ENGINE)
+            config=root/'config.json';config.write_text(json.dumps(dict(state=str(root/'state.json'))))
+            observations=root/'observations.jsonl'
+            frozen='PRIVATE external task'
+            events=[dict(prompt=frozen,prompt_id='native-one',source='user'),
+                    dict(prompt='PRIVATE automatic text',prompt_id='native-two'),
+                    dict(prompt=frozen,prompt_id={'bad':'PRIVATE'},source='PRIVATE future origin')]
+            for fields in events:
+                event=dict(hook_event_name='UserPromptSubmit',seconds=0,cost=0,**fields)
+                direct=subprocess.run([sys.executable,str(engine),'--config',str(config)],input=json.dumps(event),text=True,capture_output=True)
+                observed=subprocess.run([sys.executable,str(OBSERVER),'--engine',str(engine),'--config',str(config),
+                    '--observations',str(observations),'--frozen-prompt-sha256',hashlib.sha256(frozen.encode()).hexdigest()],input=json.dumps(event),text=True,capture_output=True)
+                self.assertEqual((observed.returncode,observed.stdout),(direct.returncode,direct.stdout))
+            rows=[json.loads(line)['prompt_metadata'] for line in observations.read_text().splitlines()]
+            self.assertEqual([x['origin'] for x in rows],['user','absent','unknown'])
+            self.assertEqual([x['matches_frozen_prompt'] for x in rows],[True,False,True])
+            self.assertNotEqual(rows[0]['prompt_id_sha256'],rows[1]['prompt_id_sha256'])
+            self.assertEqual(rows[2]['prompt_id_state'],'invalid')
+            self.assertNotIn('PRIVATE',observations.read_text())
+            self.assertNotIn('native-one',observations.read_text())
+
     def test_actual_engine_search_failure_records_final_failed_status_without_payloads(self):
         engine = OBSERVER.parent.parent / 'integrations/lifecycle/memory.py'
         with tempfile.TemporaryDirectory() as directory:
@@ -57,6 +82,8 @@ class HookObserverTest(unittest.TestCase):
             self.assertEqual(row['recall']['error_type'], 'HookError')
             self.assertGreaterEqual(row['recall']['duration_ms'], 0)
             self.assertEqual(row['exit_code'], 1)
+            self.assertEqual(row['stderr_bytes'],len(direct.stderr.encode()))
+            self.assertGreater(row['stderr_bytes'],0)
             self.assertNotIn('private', observations.read_text())
 
     def test_actual_engine_empty_search_preserves_output(self):
@@ -121,6 +148,9 @@ class HookObserverTest(unittest.TestCase):
                 self.assertEqual(observed.returncode, direct.returncode, observed.stderr)
                 self.assertEqual(observed.stdout, direct.stdout)
                 self.assertEqual(observed.stderr, direct.stderr)
+                row=json.loads(observations.read_text().splitlines()[-1])
+                self.assertEqual(row['stderr_bytes'],len(direct.stderr.encode()))
+                self.assertGreater(row['stderr_bytes'],0)
             rows = [json.loads(line) for line in observations.read_text().splitlines()]
             self.assertEqual([r['event'] for r in rows], ['SessionStart', 'UserPromptSubmit', 'PostToolUse'])
             self.assertEqual([r['recall']['preview_reported_cost_usd'] for r in rows[:2]], [.01, .02])

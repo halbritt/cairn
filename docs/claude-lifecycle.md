@@ -448,3 +448,20 @@ owner/capture input and refreshes whole required context without renewing option
 credits. Claude SessionStart failure remains nonblocking: pending requirements
 are retried/refused at the next supported prompt boundary, not claimed to prevent
 every intervening model dispatch. Default hooks do not enable this binding.
+
+### Explicit prospective task grant
+
+The prospective one-task/one-child launcher can supply a fresh UUID
+`recall_task_key` in its pinned, bound Claude `agent_tools` configuration. That
+explicit key shares one optional grant across native prompt IDs in that child;
+it is not inferred from prompt text, search task/run labels, or a session-wide
+limit. Authentic native prompt ownership is still required. Startup does not
+open the grant. Repeated prompts and required refreshes cannot renew it; a new
+launcher task receives a new key. Missing configuration preserves the ordinary
+native-prompt behavior. Invalid keys or unsupported routes refuse before search.
+
+Whole required refreshes remain available or explicitly refuse. Their serialized
+outputs and failed-hook output/error bytes remain part of prospective aggregate
+measurement; this grant does not enforce later native tool spending or guarantee
+that required refreshes fit the original task allowance. The key grants no inbox,
+source, or execution authority and is not enabled by ordinary installers.

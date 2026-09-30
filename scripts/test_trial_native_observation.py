@@ -24,6 +24,44 @@ def base():
 
 
 class NativeObservationTest(unittest.TestCase):
+    def test_native_prompt_provenance_is_bounded_and_never_inferred_from_absence(self):
+        events=base()+[
+            dict(type='user',promptId='native-next',source='system',isSynthetic=True,isReplay=False,
+                 parent_tool_use_id='toolu_parent',message={'content':'PRIVATE internal prompt'}),
+            dict(type='user',source='PRIVATE unknown',isSynthetic='PRIVATE',message={'content':'new task'})]
+        result=observe(events)
+        rows=result['native_prompt_events']
+        self.assertEqual(rows[0]['origin'],'absent')
+        self.assertTrue(rows[0]['matches_frozen_prompt'])
+        self.assertIsNone(rows[0]['isSynthetic'])
+        self.assertEqual(rows[1]['origin'],'system')
+        self.assertFalse(rows[1]['matches_frozen_prompt'])
+        self.assertIs(rows[1]['isSynthetic'],True)
+        self.assertIs(rows[1]['isReplay'],False)
+        self.assertEqual(rows[1]['prompt_id_sha256'],hashlib.sha256(b'native-next').hexdigest())
+        self.assertEqual(rows[1]['parent_tool_use_id_sha256'],hashlib.sha256(b'toolu_parent').hexdigest())
+        self.assertEqual(rows[2]['origin'],'unknown')
+        self.assertIsNone(rows[2]['isSynthetic'])
+        self.assertNotIn('PRIVATE',json.dumps(result))
+        bounded=observe(events+[dict(type='user',message={'content':'PRIVATE many'})]*40)
+        self.assertEqual(len(bounded['native_prompt_events']),32)
+        self.assertEqual(bounded['native_prompt_events_omitted'],11)
+
+    def test_successful_hook_missing_error_bytes_is_unknown(self):
+        row=dict(event='UserPromptSubmit',stdout_bytes=3,process_seconds=.1,exit_code=0,
+                 memory_call_attempts=dict(search=1,pull=0,history=0,other=0,**{'pull-evidence':0}))
+        result=observe(base(),[row])
+        self.assertIn('hook_error_bytes_missing_or_malformed',result['unknown'])
+
+    def test_hook_error_bytes_remain_charged(self):
+        row=dict(event='UserPromptSubmit',stdout_bytes=3,stderr_bytes=113,
+                 process_seconds=.1,exit_code=1,
+                 memory_call_attempts=dict(search=1,pull=0,history=0,other=0,**{'pull-evidence':0}))
+        result=observe(base(),[row])
+        self.assertEqual(result['hook_wire_bytes'],116)
+        self.assertEqual(result['total_bytes'],616)
+        self.assertIn('hook_failed',result['failures'])
+
     def test_error_results_late_bodies_and_repeated_context_all_count(self):
         events=base()
         for i in range(5):
@@ -42,7 +80,7 @@ class NativeObservationTest(unittest.TestCase):
         for i,name in enumerate(('SessionStart','UserPromptSubmit')):
             events += [dict(type='system',subtype='hook_started',hook_id=str(i),hook_event=name),
                        dict(type='system',subtype='hook_response',hook_id=str(i),hook_event=name,stdout=text,outcome='success')]
-            rows.append(dict(event=name,stdout_bytes=3,stdout_sha256=digest,exit_code=0,process_seconds=.1,
+            rows.append(dict(event=name,stdout_bytes=3,stderr_bytes=0,stdout_sha256=digest,exit_code=0,process_seconds=.1,
                              memory_call_attempts=dict(search=1,pull=0,history=0,other=0,**{'pull-evidence':0})))
         self.assertEqual(observe(events,rows,True)['status'],'within_observed_limits')
         events += [dict(type='system',subtype='hook_started',hook_id='2',hook_event='SessionStart')]

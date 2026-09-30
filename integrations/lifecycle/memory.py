@@ -18,6 +18,7 @@ import tempfile
 import time
 import uuid
 
+RECALL_TASK_VERSION = 1  # explicit one-task/one-child launcher contract only
 CONTEXT_BYTES = 12000  # default; installations may lower it with config["context_bytes"]
 TEXT_BYTES = 24000
 TRANSCRIPT_BYTES = 2 * 1024 * 1024
@@ -916,11 +917,28 @@ def claude_prompt_owner(event):
     return "claude-channel:" + prompt
 
 
-def claude_required_grant(ledger, event):
+def recall_task_key(config):
+    """Configuration is launcher-owned; this key conveys no source authority."""
+    if "recall_task_key" not in config:
+        return None
+    key = config["recall_task_key"]
+    if (not native_uuid(key) or not bound_claude(config)
+            or config.get("recall_mode") != "agent_tools"):
+        raise HookError("invalid explicit recall_task_key or unsupported recall route")
+    return key
+
+
+def claude_grant_matches(grant, owner, task_key):
+    identity = grant["identity"]
+    return (identity.get("recall_task_key") == task_key if task_key else
+            identity.get("native_owner") == owner and not identity.get("recall_task_key"))
+
+
+def claude_required_grant(ledger, event, task_key=None):
     if event["hook_event_name"] == "UserPromptSubmit" and claude_prompt_owner(event):
         owner = claude_prompt_owner(event)
         for grant in ledger["grants"].values():
-            if grant["identity"].get("native_owner") == owner:
+            if claude_grant_matches(grant, owner, task_key):
                 return grant
         if ledger.get("active") is None:
             return ledger
@@ -947,7 +965,14 @@ def claude_required_error(config, event, error, *, persist=False):
             schema="cairn.inbox-recall-grants/1", session=event["session_id"], grants={})
         if ledger.get("schema") != "cairn.inbox-recall-grants/1" or ledger.get("session") != event["session_id"]:
             return error
-        grant = claude_required_grant(ledger, event)
+        try:
+            task_key = recall_task_key(config)
+        except HookError:
+            # Configuration failure cannot erase already known requirements.
+            # Consult only durable active status; never open or rebind a grant.
+            grant = ledger["grants"][ledger["active"]] if ledger.get("active") else ledger
+        else:
+            grant = claude_required_grant(ledger, event, task_key)
         if grant is None and ledger.get("active"):
             # A failed status write may leave pending=False after a missed
             # restoration. Known active requirements survive a new prompt until
@@ -1000,10 +1025,11 @@ def claude_agent_context(memory, event, result, budget, status, deadline):
     """Called under the existing session lock; no synthetic native turn identity."""
     _, path, ledger = claude_ledger(memory.config, event["session_id"])
     selected = result.get("selected", [])
-    grant = claude_required_grant(ledger, event)
+    task_key = recall_task_key(memory.config)
+    grant = claude_required_grant(ledger, event, task_key)
     owner = claude_prompt_owner(event) if event["hook_event_name"] == "UserPromptSubmit" else None
     existing = next((key for key, item in ledger["grants"].items()
-                     if owner and item["identity"].get("native_owner") == owner), None)
+                     if owner and claude_grant_matches(item, owner, task_key)), None)
     required_only = owner is None or existing is not None or taskless_notification(event.get("prompt", ""))
     if grant is None:
         grant = ledger
@@ -1040,8 +1066,11 @@ def claude_agent_context(memory, event, result, budget, status, deadline):
             persist()
             raise RequiredContextRefused("whole required Claude context exceeds initial allowance")
         text = eager_agent_candidates(memory, result, remaining, status, deadline, measure=measure)
-        key = hashlib.sha256(encoded(dict(claude_prompt=owner)).encode()).hexdigest()
-        current = dict(identity=dict(native_owner=owner, boundary="ordinary_prompt"), limit_bytes=budget,
+        identity = dict(native_owner=owner, boundary="ordinary_prompt")
+        if task_key:
+            identity.update(recall_task_key=task_key, boundary="launcher_task")
+        key = hashlib.sha256(encoded(dict(recall_task_key=task_key) if task_key else dict(claude_prompt=owner)).encode()).hexdigest()
+        current = dict(identity=identity, limit_bytes=budget,
                        output_bytes=measure(text) + prior, native_allowance_bytes=status.get("native_allowance_bytes", 0))
         if current["output_bytes"] + current["native_allowance_bytes"] > budget:
             raise HookError("Claude prompt context exceeds combined budget")
@@ -1049,6 +1078,7 @@ def claude_agent_context(memory, event, result, budget, status, deadline):
         ledger["grants"][key] = current
         ledger["active"] = key
         ledger["pending_bytes"] = 0
+    status["recall_task_scope"] = "launcher_task" if task_key else "native_prompt"
     persist()
     return text
 
@@ -1760,6 +1790,7 @@ def recall(memory, event, state=None):
     mode = memory.config.get("recall_mode", "ambient")
     if mode not in ("ambient", "agent_tools"):
         raise HookError("invalid lifecycle recall_mode: expected ambient or agent_tools")
+    recall_task_key(memory.config)  # Reject malformed explicit launch binding before retrieval.
     if mode == "agent_tools":
         deadline = started + 5
     semantic = (mode == "agent_tools" and not defer_optional and bool(memory.config.get("semantic_fallback"))

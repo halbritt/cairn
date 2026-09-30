@@ -28,6 +28,29 @@ class ArmContractTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'missing or changed'):
                 copy_arms(document,root/'out2',lambda _:{})
 
+    def test_launcher_task_binding_is_fresh_once_and_requires_engine_support(self):
+        import uuid
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); code=root/'code';code.mkdir()
+            engine=code/'memory.py';bridge=code/'inbox_recall.py'
+            engine.write_text('RECALL_TASK_VERSION = 1\n');bridge.write_text('# fixture bridge\n')
+            keys=[]
+            for label in ('first','second'):
+                base=root/label;base.mkdir()
+                config=dict(harness='claude',cairn='cairn',socket='socket',token_file='token',repo='fixture')
+                bind_ordinary_claude(base,config,bridge,launcher_task=True)
+                retained=json.loads((base/'hook-config.json').read_text())
+                key=retained['recall_task_key'];self.assertEqual(str(uuid.UUID(key)),key);keys.append(key)
+                self.assertEqual(retained['repo'],'fixture')
+                with self.assertRaisesRegex(ValueError,'already'):
+                    bind_ordinary_claude(base,config,bridge,launcher_task=True)
+            self.assertNotEqual(*keys)
+            engine.write_text('# old pinned engine\n')
+            base=root/'old';base.mkdir()
+            with self.assertRaisesRegex(ValueError,'launcher task'):
+                bind_ordinary_claude(base,dict(harness='claude'),bridge,launcher_task=True)
+            self.assertFalse((base/'hook-config.json').exists())
+
     @unittest.skipUnless(shutil.which('bwrap'),'needs local filesystem sandbox')
     def test_actual_bound_ordinary_hook_accepts_prepared_owned_descriptor(self):
         with tempfile.TemporaryDirectory() as directory:

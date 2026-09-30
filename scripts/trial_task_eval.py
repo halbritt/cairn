@@ -1000,10 +1000,11 @@ def run_agent(case, arm, seed, order, args, stores, out):
                 binds.append((Path(args.selector_auth_file).resolve(), home / ".claude/.credentials.json", "ro"))
         (base / "hook-config.json").write_text(json.dumps(config))
         if prospective and config["recall_mode"] == "agent_tools":
-            binds += bind_ordinary_claude(base, config, arm_config["bridge"])
+            binds += bind_ordinary_claude(base, config, arm_config["bridge"], launcher_task=True)
         hook_cmd = "bash -o pipefail -c 'python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl | tee -a /tmp/trial/hookstate/calls.jsonl'"
         if prospective:
             hook_cmd = "python3 -B /tmp/trial/hook-observer.py --engine /tmp/trial/hook/memory.py --config /tmp/trial/hookconfig.json --observations /tmp/trial/hookstate/observations.jsonl"
+            hook_cmd += " --frozen-prompt-sha256 " + hashlib.sha256(prompt.encode()).hexdigest()
         settings = dict(hooks={event: [dict(hooks=[dict(type="command", command=hook_cmd, timeout=13)])] for event in HOOK_EVENTS})
         (base / "settings.json").write_text(json.dumps(settings))
         mcp = dict(mcpServers=dict(cairn=dict(type="stdio", command=str(trial / "cairn"), args=[
@@ -1039,7 +1040,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
             binds += [(settings_path, "/tmp/trial/settings.json", "ro"), (mcp_path, "/tmp/trial/mcp.json", "ro")]
             provider += ["--settings", "/tmp/trial/settings.json", "--mcp-config", "/tmp/trial/mcp.json"]
         prerequisites = []
-        binding_check = [["python3", "-c", "import json,runpy; runpy.run_path('/tmp/trial/hook/inbox_recall.py')['validate_binding'](json.load(open('/tmp/trial/hookconfig.json')), require_enabled=True)"]] if arm not in ("none", "direct") and arm_config["recall_mode"] == "agent_tools" else []
+        binding_check = [["python3", "-c", "import json,runpy; config=json.load(open('/tmp/trial/hookconfig.json')); engine=runpy.run_path('/tmp/trial/hook/memory.py'); assert engine.get('RECALL_TASK_VERSION')==1; engine['recall_task_key'](config); runpy.run_path('/tmp/trial/hook/inbox_recall.py')['validate_binding'](config, require_enabled=True)"]] if arm not in ("none", "direct") and arm_config["recall_mode"] == "agent_tools" else []
         prerequisite_commands = binding_check + ([["go", "version"], ["go", "list", "./..."]] if (cwd / "go.mod").exists() else []) + case["preflight"]
         for argv in prerequisite_commands:
             checked = sandbox_command(root, case["cwd"], binds, env, argv, args.harness, **sandbox_options)
@@ -1182,6 +1183,7 @@ def failed_selected_input(input_bytes, phase, error):
                 total_bytes=None, last_native_memory_seconds=None, memory_attempted=None,
                 memory_calls=None, native_searches=None, hook_searches=None, total_actual_pull_calls=None,
                 source_deliveries=[], source_delivery_events_omitted=None, origin_map_sha256=None,
+                native_prompt_events=[], native_prompt_events_omitted=None,
                 limits=dict(selected_input_bytes=9500, hook_seconds=5, last_native_memory_seconds=30))
 
 

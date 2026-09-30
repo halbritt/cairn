@@ -13,6 +13,7 @@ import io
 import fcntl
 import importlib.util
 import json
+import re
 from pathlib import Path
 import sys
 import time
@@ -27,8 +28,47 @@ RECALL_FIELDS = (
     'selector_input_bytes', 'shortlist_candidates', 'shortlist_source_extents',
     'model_seconds', 'model_reported_cost_usd', 'source_extent', 'elapsed_seconds',
     'preview_process', 'model_process',
-    'duration_ms', 'error_type',
+    'duration_ms', 'error_type', 'recall_task_scope',
 )
+
+
+class CountedStderr:
+    """Count emitted error bytes while preserving immediate stderr forwarding."""
+    def __init__(self, stream):
+        self.stream, self.bytes = stream, 0
+    def write(self, text):
+        self.bytes += len(text.encode())
+        return self.stream.write(text)
+    def flush(self):
+        self.stream.flush()
+
+
+def bounded_identity(value):
+    if value is None:
+        return dict(state='absent', sha256=None)
+    try:
+        if not isinstance(value,str) or not value.strip() or len(value.encode()) > 256 or any(ord(c)<32 for c in value):
+            raise ValueError('invalid identity')
+        return dict(state='present', sha256=hashlib.sha256(value.encode()).hexdigest())
+    except (ValueError,UnicodeError):
+        return dict(state='invalid', sha256=None)
+
+
+def prompt_metadata(event, frozen_sha256=None):
+    identity=bounded_identity(event.get('prompt_id'))
+    source=event.get('source')
+    origin=(source if isinstance(source,str) and source in (
+        'user','sdk','system','loop_wakeup','schedule_wakeup','poll_event',
+        'startup','resume','compact','clear') else 'absent' if 'source' not in event else 'unknown')
+    text=event.get('prompt')
+    matches=None
+    if frozen_sha256 is not None and isinstance(text,str):
+        try:
+            matches=hashlib.sha256(text.encode()).hexdigest()==frozen_sha256
+        except UnicodeError:
+            pass
+    return dict(prompt_id_state=identity['state'],prompt_id_sha256=identity['sha256'],
+                origin=origin,matches_frozen_prompt=matches)
 
 
 def main():
@@ -36,7 +76,10 @@ def main():
     parser.add_argument('--engine', type=Path, required=True)
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--observations', type=Path, required=True)
+    parser.add_argument('--frozen-prompt-sha256')
     args = parser.parse_args()
+    if args.frozen_prompt_sha256 is not None and not re.fullmatch('[0-9a-f]{64}',args.frozen_prompt_sha256):
+        parser.error('invalid frozen prompt digest')
     started = time.monotonic()
     spec = importlib.util.spec_from_file_location('evaluated_hook', args.engine)
     engine = importlib.util.module_from_spec(spec)
@@ -58,6 +101,7 @@ def main():
 
     def observed_handle(config, event, **kwargs):
         name, source = event.get('hook_event_name'), event.get('source')
+        record['prompt_metadata'] = prompt_metadata(event,args.frozen_prompt_sha256)
         record.update(event=name if name in ('SessionStart', 'UserPromptSubmit', 'PostToolUse',
                                             'PostToolUseFailure', 'PreCompact', 'SessionEnd', 'Stop') else 'unknown',
                       source=source if source in (None, 'startup', 'resume', 'compact', 'clear') else 'other')
@@ -84,13 +128,15 @@ def main():
     engine.handle, engine.recall = observed_handle, observed_recall
     sys.argv = [str(args.engine), '--config', str(args.config)]
     captured = io.StringIO()
+    errors = CountedStderr(sys.stderr)
     try:
-        with contextlib.redirect_stdout(captured):
+        with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(errors):
             record['exit_code'] = engine.main()
         return record['exit_code']
     finally:
         raw = captured.getvalue()
         record['stdout_bytes'] = len(raw.encode())
+        record['stderr_bytes'] = errors.bytes
         record['stdout_sha256'] = hashlib.sha256(raw.encode()).hexdigest()
         record['source_delivery'] = hook_delivery(raw)
         record['process_seconds'] = time.monotonic() - started

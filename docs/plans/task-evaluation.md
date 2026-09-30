@@ -480,3 +480,29 @@ The explicit prospective `direct` control inserts notes in the task prompt rathe
 than these observed source channels. If used with notes, its source-delivery
 measurement is unknown; an empty reference list must not be called zero exposure.
 Historical direct-control reports are unchanged.
+
+### One prospective task, one optional grant
+
+A prospective current `agent_tools` arm now requires a pinned engine declaring
+`RECALL_TASK_VERSION = 1`. Before launching its single native child, the launcher
+creates one UUID `recall_task_key` in the bound hook configuration and validates
+that contract. Native prompt IDs may change without issuing another optional
+grant. A fresh separately admitted task gets a fresh key; changing the key during
+a child is unsupported. Original ambient baseline components retain their pinned
+behavior. Older current-arm engines without this contract refuse before launch;
+this is an explicit component compatibility change, not a relabelled old result.
+
+The hook observer records only a bounded prompt-ID digest, an allowlisted native
+origin (or absent/unknown), and exact equality with the frozen submitted prompt.
+Selected native text-input metadata has the same fields plus boolean synthetic
+and replay flags and a bounded parent-tool ID digest, capped at 32 events with an
+omission count. Missing provenance does not prove an owner prompt. No prompt text
+is retained by these additions, and these fields confer no admission authority.
+Hook output/error bytes, required refreshes and subsequent tool results still
+count toward aggregate measurement. One optional grant prevents repeated prompt
+boundaries from renewing that allowance; it does not host-enforce all tool calls
+or make a run within budget by construction. Earlier failed runs remain unchanged.
+
+The observer counts hook stdout and forwarded engine stderr bytes separately,
+without retaining stderr content or claiming its native consumption. Any hook missing that count remains unknown;
+an observer exception or host timeout is not reconstructed as zero error output.

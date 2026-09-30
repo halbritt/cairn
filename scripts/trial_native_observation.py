@@ -11,6 +11,7 @@ import signal
 import subprocess
 import time
 from trial_source_delivery import hook_delivery, native_delivery
+from trial_hook_observer import prompt_metadata, bounded_identity
 
 
 def capture(command, timeout, timing_path, *, input_bytes=None):
@@ -85,6 +86,8 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
     native_searches, hook_searches, pulls, terminal_seen = 0, 0, 0, False
     hook_started, hook_finished, hook_sources = {}, {}, {}
     source_deliveries = []
+    native_prompt_events, native_prompt_events_omitted = [], 0
+    frozen_prompt_sha256 = hashlib.sha256(prompt.encode()).hexdigest()
     source_items, source_events_omitted = 0, 0
     def retain_delivery(row):
         nonlocal source_items, source_events_omitted
@@ -154,6 +157,20 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
             unknown.append('native_message_shape_unknown')
         if event.get('type') == 'user':
             text = blocks if isinstance(blocks,str) else ''.join(p.get('text','') for p in blocks if isinstance(p,dict) and p.get('type') == 'text' and isinstance(p.get('text'),str)) if isinstance(blocks,list) else ''
+            if isinstance(blocks,str) or any(isinstance(p,dict) and p.get('type') == 'text' for p in blocks):
+                if len(native_prompt_events) < 32:
+                    selected_event=dict(event,prompt=text)
+                    if 'prompt_id' not in selected_event and 'promptId' in event:
+                        selected_event['prompt_id']=event['promptId']
+                    row=prompt_metadata(selected_event,frozen_prompt_sha256)
+                    row.update(received_seconds=timing.get('received_seconds'))
+                    for flag in ('isSynthetic','isReplay'):
+                        row[flag]=event.get(flag) if type(event.get(flag)) is bool else None
+                    parent=bounded_identity(event.get('parent_tool_use_id'))
+                    row.update(parent_tool_use_id_state=parent['state'],parent_tool_use_id_sha256=parent['sha256'])
+                    native_prompt_events.append(row)
+                else:
+                    native_prompt_events_omitted += 1
             if text == prompt:
                 if seen_prompt:
                     fail('duplicate_task_input')
@@ -211,6 +228,11 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
             unknown.append('hook_measurement_missing')
             continue
         hook_bytes += size
+        error_bytes = row.get('stderr_bytes')
+        if type(error_bytes) is int and error_bytes >= 0:
+            hook_bytes += error_bytes
+        else:
+            unknown.append('hook_error_bytes_missing_or_malformed')
         counts = row.get('memory_call_attempts')
         if not isinstance(counts,dict) or any(type(counts.get(k)) is not int or counts[k] < 0 for k in ('search','pull','pull-evidence','history','other')):
             unknown.append('hook_call_accounting_missing')
@@ -240,6 +262,7 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
                 failures=failures, unknown=sorted(set(unknown)), input_bytes=input_bytes,
                 hook_wire_bytes=hook_bytes, native_memory_result_bytes=memory_bytes,
                 total_bytes=total, last_native_memory_seconds=last_memory,
+                native_prompt_events=native_prompt_events, native_prompt_events_omitted=native_prompt_events_omitted,
                 memory_attempted=bool(calls), memory_calls=len(calls), native_searches=native_searches, hook_searches=hook_searches,
                 total_actual_pull_calls=pulls, source_deliveries=source_deliveries, source_delivery_events_omitted=source_events_omitted,
                 limits=dict(selected_input_bytes=9500,hook_seconds=5,last_native_memory_seconds=30))

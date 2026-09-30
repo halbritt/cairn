@@ -1,4 +1,6 @@
 """Pinned arm preparation for the existing prospective native executor."""
+import ast
+import uuid
 import hashlib
 import json
 from pathlib import Path
@@ -76,8 +78,18 @@ def copy_arms(document, output, version):
     return arms, result
 
 
-def bind_ordinary_claude(base, config, bridge_path):
+def bind_ordinary_claude(base, config, bridge_path, *, launcher_task=False):
     """Only memory hook callbacks: no coordinator hook, agent or inbox admission."""
+    if launcher_task:
+        if 'recall_task_key' in config:
+            raise ValueError('launcher task key already assigned')
+        tree=ast.parse(Path(bridge_path).with_name('memory.py').read_bytes())
+        versions=[node.value.value for node in tree.body if isinstance(node,ast.Assign)
+                  and any(isinstance(t,ast.Name) and t.id=='RECALL_TASK_VERSION' for t in node.targets)
+                  and isinstance(node.value,ast.Constant) and type(node.value.value) is int]
+        if versions != [1] or config.get('harness') != 'claude':
+            raise ValueError('pinned hook does not support launcher task grant version1')
+        config['recall_task_key']=str(uuid.uuid4())
     root = Path('/tmp/trial')
     config['recall_mode'] = 'agent_tools'
     config['inbox_recall_binding'] = str(root/'binding.json')
