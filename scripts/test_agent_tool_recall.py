@@ -18,7 +18,7 @@ class AgentToolRecallTests(unittest.TestCase):
         (self.root / '.git').mkdir()
         self.config = dict(cairn='fixture', claude='forbidden-selector', socket='fixture',
                            token_file='fixture', repo='fixture', state_dir=str(self.root / 'state'),
-                           context_bytes=9500, semantic_fallback=True, recall_mode='agent_tools')
+                           context_bytes=9500, semantic_fallback=False, recall_mode='agent_tools')
         self.event = dict(hook_event_name='UserPromptSubmit', cwd=str(self.root),
                           session_id='caed9473-b01a-41e7-95ce-c3c1f28d66b3', prompt='Repair lease expiry')
         self.required = [dict(mandatory=True, record=dict(record_id='required', version=1,
@@ -49,7 +49,7 @@ class AgentToolRecallTests(unittest.TestCase):
         self.assertIn(self.required[0]['record']['body'], text)
         self.assertIn('cairn_search', text)
         self.assertIn('cairn_pull', text)
-        self.assertIn('unverified candidate previews', text)
+        self.assertIn('unverified whole candidates and previews', text)
         self.assertIn('candidate preview', text)
         self.assertEqual(len(self.commands), 1)
         self.assertEqual(state['seen'], {})
@@ -159,12 +159,11 @@ class AgentToolRecallTests(unittest.TestCase):
         source = dict(status='READY', destination=dict(name='hosted'), selected=self.required,
                       index=entries, omitted={})
         before = json.loads(json.dumps(source))
-        with patch.object(hook.Memory, 'search', return_value=source) as search, \
-                patch.object(hook.Memory, 'call', side_effect=AssertionError('no optional calls')):
-            result = hook.handle(self.config, self.event)
-        search.assert_called_once()
+        # Exercise preview presentation itself; eager source acquisition is
+        # covered by test_eager_candidate_context with checked body identities.
+        text = hook.render_agent_candidates(self.required, source, self.config['context_bytes'],
+                                            dict(rejected={}))
         self.assertEqual(source, before, 'presentation must not mutate the search response')
-        text = result['hookSpecificOutput']['additionalContext']
         marker = text.index('{"selected":')
         view = json.loads(text[marker:])
         self.assertEqual(view['selected'], self.required)
@@ -191,7 +190,7 @@ class AgentToolRecallTests(unittest.TestCase):
         view = json.loads(text[text.index('{"selected":'):])
         self.assertEqual(view['selected'], self.required)
         self.assertEqual(view['index'], [])
-        self.assertIn('unverified candidate previews', text)
+        self.assertIn('unverified whole candidates and previews', text)
         self.assertEqual(state['last_recall']['outcome'], 'delegated')
 
     def test_empty_candidates_preserve_omission_reasons_without_optional_calls(self):

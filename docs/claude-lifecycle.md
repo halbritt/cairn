@@ -39,30 +39,42 @@ These settings only choose a selector, not a recommended production model.
 and `--recall-mode ambient` explicitly restores the normal recall path. Unknown
 values fail before retrieval. This option does not change capture selection.
 
-In `agent_tools` mode, the hook retains the ordinary required-context search and
-whole-context budget check. When optional recall is eligible, it supplies up to
-three unverified candidate previews from that same lexical result, in server
-order, with their complete handles and source-span/conflict metadata. Candidate
-presentation omits the redundant CLI `pull_command`; native tools use the
-unchanged `pull_arguments`. All other entry fields are retained. Candidate
-entries occupy at most 2,000 additional UTF-8 bytes and half the room left after
-required context, the cue and search metadata. Entries that do not fit are omitted
-whole, together with later entries. Search status, server omission reasons and
-`candidate_search.returned_entries` (the count before hook packing) remain visible,
-so an empty list is not mistaken for proof that no guidance exists.
+In `agent_tools` mode, the hook retains the required-context search and whole
+budget check. When optional recall is eligible, existing `semantic_fallback`
+configuration requests API semantic discovery on that search. Returned readiness
+or lexical-fallback metadata remains visible; no selector model runs.
 
-The task agent inspects those candidates first, uses its native `cairn_pull` for
-promising notes, and checks applicability against the task and current source
-before using them. Hook and native tools must use profiles authorized to expand
-the same receipt; exposing a handle grants no new access. The hook makes no
-optional pulls, additional searches or hosted selector calls. It gives no record
-a new seen-state credit. `last_recall.candidate_previews` counts offered entries;
-`last_recall.outcome` remains `delegated`. Neither establishes that a note was
-read, applicable or used. Taskless startup and wake deferral are unchanged.
+The hook attempts checked whole pulls in server order for up to two optional
+records. Competing positions form an indivisible group and count individually
+toward that limit. Record IDs, versions, body hashes and group membership must
+match. Oversized, changed, unavailable or refused sources stop eager inspection;
+there is no partial-body retry. Search and pulls share a five-second I/O deadline,
+with at most two seconds per pull; packing and state-save overhead can add time.
+`candidate_inspection` reports attempted pulls, remaining calls and refusals.
+
+Whole candidate bodies take priority within the configured context ceiling.
+Up to three remaining previews retain complete handles and source-span/conflict
+metadata, except the redundant CLI `pull_command`. Whole preview groups occupy
+at most 2,000 additional UTF-8 bytes. When no bodies are delivered, previews also
+use at most half the space left after required context, cue and metadata; with
+bodies, they use available remaining space. A group that does not fit and later
+groups are omitted whole. Search status, omissions, discovery metadata and
+`candidate_search.returned_entries` remain visible. Empty output does not prove
+that guidance is absent.
+
+The task agent checks supplied bodies against the task and current source before
+use, without re-pulling an identical whole version. Other promising notes can be
+pulled through its native tools. Hook and tools must have access to the same
+receipt; handles grant no new access. No new seen-state or applicability credit
+is given. `last_recall.outcome` remains `delegated`; delivered bodies and previews
+do not establish correct use. Two irrelevant bodies can consume most of the
+allowance, and the first oversized candidate can prevent any whole delivery.
+Taskless startup and wake deferral are unchanged.
 
 The cue allows at most two further searches per task when the supplied candidates
 do not fit, coverage is incomplete or a handle expires, and four pull/span calls
-total. Use a semantic rephrase for a vocabulary miss when room permits; repeating
+total, including the hook's attempted candidate pulls. Use a semantic rephrase
+for a vocabulary miss when room permits; repeating
 discovery merely to obtain an already supplied handle adds delay. When searching
 for guidance, describe the decision, constraint or failure the task needs help
 with, preserving its stated conditions and known project, files or errors.

@@ -35,11 +35,13 @@ PREVIEW_MODEL_SECONDS = 5
 SEMANTIC_MODEL_SECONDS = 8
 SELECTOR_INPUT_BYTES = 24000
 AGENT_TOOLS_CUE = (
-    'Inspect these unverified candidate previews before broad investigation. When memory lookup is needed, '
+    'Inspect these unverified whole candidates and previews before broad investigation. Whole delivery '
+    'does not establish applicability. When more memory lookup is needed, '
     'use the first tool batch that can call Cairn, after required tool discovery and before optional '
-    'repository exploration. Pull promising notes with '
+    'repository exploration. Do not re-pull an identical supplied whole version. Pull other promising notes with '
     'complete pull_arguments; verify applicability and current source. Use the existing authorized '
-    'cairn_search/cairn_pull profile. At most 2 further searches and 4 pull/span calls; context plus returned '
+    'cairn_search/cairn_pull profile. At most 2 further searches and 4 total pull/span calls, including '
+    'candidate_inspection.pull_calls already made (absent means zero); context plus returned '
     'text/envelopes must fit {budget} UTF-8 bytes. remaining_memory_bytes is after this block; subtract all '
     'result/error bytes. Aggregate limits are instructions, not enforced. If facade and API support '
     'memory_budget_bytes, set it to remaining allowance B, bounded by known smaller free room. '
@@ -604,37 +606,136 @@ def render_recall(selected, entries, expanded=None, discovery=None):
     return GUIDANCE + encoded(view)
 
 
-def render_agent_candidates(selected, result, budget, status):
+def candidate_groups(entries):
+    """Keep competing index positions together, in their original server order."""
+    by_key = {(entry["record_id"], entry["version"]): entry for entry in entries}
+    used = set()
+    for entry in entries:
+        key = (entry["record_id"], entry["version"])
+        if key in used:
+            continue
+        members = {key}
+        pending = [key]
+        while pending:
+            current = pending.pop()
+            if current not in by_key:
+                raise HookError("incomplete competing candidate group")
+            for conflict in by_key[current].get("conflicts", []):
+                for ref in conflict.get("members", []):
+                    member = (ref["record_id"], ref["version"])
+                    if member not in members:
+                        members.add(member)
+                        pending.append(member)
+        used.update(members)
+        yield [e for e in entries if (e["record_id"], e["version"]) in members]
+
+
+def render_agent_candidates(selected, result, budget, status, bodies=(), inspection=None):
     cue = AGENT_TOOLS_CUE.format(budget=budget)
     search = dict(status=result.get("status"), omitted=result.get("omitted", {}),
                   returned_entries=len(result.get("index", [])))
+    if result.get("discovery") is not None:
+        search["discovery"] = result["discovery"]
 
     def render(entries, remaining=budget):
-        return cue + GUIDANCE + encoded(dict(selected=selected, index=entries, candidate_search=search,
-                                             remaining_memory_bytes=remaining))
+        view = dict(selected=selected, index=entries, candidate_search=search,
+                    remaining_memory_bytes=remaining)
+        if inspection is not None:
+            view.update(candidate_bodies=list(bodies), candidate_inspection=inspection)
+        return cue + GUIDANCE + encoded(view)
 
     text = render([])
     base_bytes = len(text.encode())
     if base_bytes > budget:
+        if bodies:
+            raise ContextRefused("whole candidate group exceeds lifecycle context budget")
         status["outcome"] = "delegation_omitted"
         status["rejected"]["delegation_context_budget"] = 1
         return render_recall(selected, []) if selected else ""
-    # Keep at least half the room after instructions available for native pulls.
-    preview_bytes = min(2000, (budget - base_bytes) // 2)
+    # Once bodies are present their whole delivery has priority. Preview-only
+    # delivery still leaves half its post-instruction room for native inspection.
+    preview_bytes = min(2000, budget - base_bytes if bodies else (budget - base_bytes) // 2)
+    delivered = {(selection["record"]["record_id"], selection["record"]["version"])
+                 for body in bodies for selection in
+                 [body["response"]["selection"], *body["response"].get("competing", [])]}
+    entries = [entry for entry in result.get("index", [])
+               if (entry["record_id"], entry["version"]) not in delivered]
     packed = []
-    for entry in result.get("index", [])[:3]:
-        # Native tools use the complete structured handle, not a shell command.
-        entry = {key: value for key, value in entry.items() if key != "pull_command"}
-        candidate = render([*packed, entry])
+    for group in candidate_groups(entries):
+        if len(packed) + len(group) > 3:
+            break
+        group = [{key: value for key, value in entry.items() if key != "pull_command"} for entry in group]
+        candidate = render([*packed, *group])
         if len(candidate.encode()) - base_bytes > preview_bytes:
             break
-        packed.append(entry)
+        packed.extend(group)
         text = candidate
-    status.update(outcome="delegated", candidate_previews=len(packed))
-    # The provisional allowance uses the widest possible decimal representation.
-    # Replacing it with the actual remainder can only shorten the context.
+    status.update(outcome="delegated", candidate_previews=len(packed), candidate_body_records=len(delivered))
     status["native_allowance_bytes"] = budget - len(text.encode())
     return render(packed, status["native_allowance_bytes"])
+
+
+def eager_agent_candidates(memory, result, budget, status, deadline):
+    selected = result.get("selected", [])
+    entries = result.get("index", [])
+    # A whole body needs a checked immutable identity; legacy/test envelopes may
+    # offer only previews, which remain available without speculative reads.
+    if not any(re.fullmatch(r"[0-9a-f]{64}", entry.get("body_sha256", "")) for entry in entries):
+        return render_agent_candidates(selected, result, budget, status)
+    inspection = dict(pull_calls=0, remaining_pull_calls=4, delivered_records=0, refusals={})
+    bodies = []
+    text = render_agent_candidates(selected, result, budget, status, bodies, inspection)
+    if status["outcome"] != "delegated":
+        return text
+    for group in candidate_groups(entries):
+        if inspection["delivered_records"] + len(group) > 2:
+            inspection["refusals"]["record_limit"] = 1
+            break
+        if not all(re.fullmatch(r"[0-9a-f]{64}", entry.get("body_sha256", "")) for entry in group):
+            inspection["refusals"]["unverifiable_identity"] = 1
+            break
+        if time.monotonic() >= deadline:
+            inspection["refusals"]["deadline"] = 1
+            break
+        inspection["pull_calls"] += 1
+        inspection["remaining_pull_calls"] = 4 - inspection["pull_calls"]
+        try:
+            pulled = current_pull(memory, group[0], deadline)
+            selections = [pulled["selection"], *pulled.get("competing", [])]
+            expected = {(entry["record_id"], entry["version"]): entry for entry in group}
+            actual = [(item["record"]["record_id"], item["record"]["version"]) for item in selections]
+            if (pulled.get("span") is not None or len(actual) != len(expected) or set(actual) != set(expected)
+                    or any(not isinstance(item["record"].get("body"), str)
+                           or hashlib.sha256(item["record"]["body"].encode()).hexdigest()
+                           != expected[key]["body_sha256"] for key, item in zip(actual, selections))):
+                raise HookError("whole competing candidate identity changed")
+            candidate = dict(pull_arguments=group[0]["pull_arguments"], response=pulled)
+            tentative = dict(inspection, delivered_records=inspection["delivered_records"] + len(group))
+            text = render_agent_candidates(selected, result, budget, status, [*bodies, candidate], tentative)
+            bodies.append(candidate)
+            inspection = tentative
+        except BudgetRefused:
+            inspection["refusals"]["whole_pull_budget"] = 1
+            break
+        except ContextRefused:
+            inspection["refusals"]["whole_context_budget"] = 1
+            break
+        except HookError:
+            inspection["refusals"]["whole_pull_unavailable"] = 1
+            break
+    # Failure/omission metadata is part of the final measured context, never a
+    # silent fallback to partial bodies or a relevance/success assertion.
+    while True:
+        try:
+            text = render_agent_candidates(selected, result, budget, status, bodies, inspection)
+            status["candidate_inspection"] = inspection
+            return text
+        except ContextRefused:
+            # Final refusal metadata also costs bytes. Drop a whole previously
+            # admitted group if that metadata no longer fits, never a body slice.
+            removed = bodies.pop()
+            inspection["delivered_records"] -= 1 + len(removed["response"].get("competing", []))
+            inspection["refusals"]["whole_context_budget"] = 1
 
 
 def native_uuid(value):
@@ -705,7 +806,7 @@ def save_codex_budget(path, ledger):
             temporary.unlink(missing_ok=True)
 
 
-def codex_agent_context(memory, event, result, budget, status):
+def codex_agent_context(memory, event, result, budget, status, deadline):
     # handle holds the session lock through this independent ledger save and
     # final state save. Capture, binding changes and seen resets cannot refund it.
     session = event.get("session_id")
@@ -736,7 +837,7 @@ def codex_agent_context(memory, event, result, budget, status):
     if len(text.encode()) > remaining:
         raise HookError("native-turn memory budget cannot fit whole required context")
     if eligible and not grant["granted"]:
-        text = render_agent_candidates(selected, result, remaining, status)
+        text = eager_agent_candidates(memory, result, remaining, status, deadline)
         if status["outcome"] == "delegated":
             grant["granted"] = True
             grant["reserved_native_bytes"] = status["native_allowance_bytes"]
@@ -1198,19 +1299,24 @@ def recall(memory, event, state=None):
     mode = memory.config.get("recall_mode", "ambient")
     if mode not in ("ambient", "agent_tools"):
         raise HookError("invalid lifecycle recall_mode: expected ambient or agent_tools")
+    if mode == "agent_tools":
+        deadline = started + 5
+    semantic = (mode == "agent_tools" and not defer_optional and bool(memory.config.get("semantic_fallback"))
+                and (memory.config.get("harness") != "codex" or
+                     (event["hook_event_name"] == "UserPromptSubmit" and native_uuid(event.get("turn_id")))))
     result = memory.search(query, room=RECALL_SEARCH_ROOM, entities=entities, kinds=kinds,
-                           timeout=recall_timeout(deadline, 5))
+                           semantic=semantic, timeout=recall_timeout(deadline, 5))
     budget = context_budget(memory.config)
     selected = result.get("selected", [])
     if len(render_recall(selected, []).encode()) > budget:
         raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")
     if mode == "agent_tools" and memory.config.get("harness") == "codex":
-        text = codex_agent_context(memory, event, result, budget, status)
+        text = codex_agent_context(memory, event, result, budget, status, deadline)
         status["elapsed_seconds"] = round(time.monotonic() - started, 3)
         return ({"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
                 if text else {})
     if mode == "agent_tools" and not defer_optional:
-        text = render_agent_candidates(selected, result, budget, status)
+        text = eager_agent_candidates(memory, result, budget, status, deadline)
         status.update(discovery="agent_tools", bytes=len(text.encode()),
                       elapsed_seconds=round(time.monotonic() - started, 3))
         return ({"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}

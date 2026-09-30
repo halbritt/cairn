@@ -106,6 +106,9 @@ const plugin: Plugin = async ({ client, directory, worktree }) => {
             const ids = [...new Set<string>([
               ...(view.index ?? []).map((e: any) => e.record_id),
               ...(view.selected ?? []).map((e: any) => e.record.record_id),
+              ...(view.candidate_bodies ?? []).flatMap((body: any) => [
+                body.response.selection, ...(body.response.competing ?? []),
+              ].map((e: any) => e.record.record_id)),
             ])]
             // Replace old versions, and keep one combined request budget.
             for (const [key, block] of state.blocks) if (block.ids.some(i => ids.includes(i))) state.blocks.delete(key)

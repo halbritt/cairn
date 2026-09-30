@@ -16,6 +16,15 @@ try {
     const event = JSON.parse(input);
     appendFileSync(${JSON.stringify(log)}, JSON.stringify(event) + "\\n");
     const recall = ["SessionStart", "UserPromptSubmit"].includes(event.hook_event_name);
+    if (event.session_id === "ses_eager" && recall) {
+      const response = event.prompt === "first" ? {
+        selection:{record:{record_id:"eager-main",version:1,body:"Old eager main"}},
+        competing:[{record:{record_id:"eager-peer",version:1,body:"Old eager peer"}}],
+      } : {selection:{record:{record_id:"eager-peer",version:2,body:"Fresh eager peer"}}};
+      const view = {selected:[],index:[],candidate_bodies:[{response}]};
+      console.log(JSON.stringify({hookSpecificOutput:{additionalContext:'Cairn lifecycle memory:\\n'+JSON.stringify(view)}}));
+      process.exit(0);
+    }
     if (event.session_id === "ses_mandatory" && recall) {
       const view = event.prompt === "optional" ? {selected:[], index:[{record_id:"optional", version:1}], expanded:{selection:{record:{body:"Retained optional lesson"}}}} : {selected:[{record:{record_id:"required", version:1, body:"Required instruction " + "x".repeat(3000)}, mandatory:true}], index:[]};
       console.log(JSON.stringify({hookSpecificOutput:{additionalContext:'Cairn lifecycle memory:\\n' + JSON.stringify(view)}}));
@@ -69,6 +78,16 @@ try {
   }
   events = (await readFile(log, "utf8")).trim().split("\n").map(JSON.parse)
   assert(events.at(-1).retained_record_ids.includes("required"))
+  const eagerFirst = owner("eager-first", "ses_eager")
+  eagerFirst.parts[0].text = "first"
+  assert(JSON.stringify(await mandatoryTransform([eagerFirst])).includes("Old eager main"))
+  const eagerSecond = owner("eager-second", "ses_eager")
+  const eagerOutput = JSON.stringify(await mandatoryTransform([eagerFirst, eagerSecond]))
+  assert(eagerOutput.includes("Fresh eager peer"))
+  assert(!eagerOutput.includes("Old eager main") && !eagerOutput.includes("Old eager peer"),
+    "New eager companion version must replace the prior whole candidate block")
+  events = (await readFile(log, "utf8")).trim().split("\n").map(JSON.parse)
+  assert.deepEqual(events.at(-1).retained_record_ids, ["eager-main", "eager-peer"])
   await mandatoryHooks.dispose()
   const before = events.length
   await writeFile(join(root, ".cairn-no-memory"), "")
