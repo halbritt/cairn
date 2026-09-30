@@ -1979,7 +1979,7 @@ def handle(config, event, event_name=None):
         if active_home != Path(config["config_home"]).resolve():
             return {}  # Merged config layers can include another account's hooks.
     if (event_name or event.get('hook_event_name')) == 'PostToolUse':
-        if config['harness'] not in ('claude', 'codex') or os.environ.get('CAIRN_WAKE_CONTEXT') or any(
+        if config['harness'] not in ('claude', 'codex', 'opencode') or os.environ.get('CAIRN_WAKE_CONTEXT') or any(
                 os.environ.get(k) == '1' for k in ('CAIRN_LIFECYCLE_DISABLED', 'CAIRN_LIFECYCLE_CHILD')):
             return {}
         return tool_cue(config, event)

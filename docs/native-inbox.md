@@ -42,7 +42,9 @@ wait silently behind one long turn. Claude and Codex bindings therefore also
 install a `PostToolUse` hook that adds one short line of context when work is
 waiting, for example "Cairn inbox: 1 request, 6 notices waiting for this
 session", with a reminder to end the turn at a safe point rather than claim the
-inbox manually.
+inbox manually. The OpenCode coordination plugin instead prepends the same cue
+to a completed native tool's output or an MCP result's text content. This enters
+the next model continuation without submitting a user prompt or claiming work.
 
 The cue is a hint, not delivery:
 
@@ -53,7 +55,9 @@ The cue is a hint, not delivery:
   bodies, and it claims, leases and acknowledges nothing. Idle sessions keep
   the ordinary wake path and are not counted.
 - The hook reads only that conversation's local state. It makes no API call,
-  takes no session lock and has a 2-second timeout. It stays silent for stale
+  takes no session lock and has a 2-second timeout in Claude/Codex. OpenCode's
+  optional cue lookup has a separate 1-second timeout; its exclusive-request
+  tool capture keeps its existing timeout and runs before the cue. It stays silent for stale
   counts (older than 90 seconds), another execution or live process, fresh
   workers, lifecycle children and other harnesses.
 - A cue repeats only when the counts or the newest counted position change,
@@ -64,7 +68,13 @@ The cue is a hint, not delivery:
 
 The watcher must observe an arrival before a later tool completion can show
 the cue. Its 30-second cycle does not guarantee a cue on the first tool call
-after arrival. This implementation covers Claude and Codex, not OpenCode.
+after arrival. OpenCode allows one in-flight cue lookup per tracked session;
+concurrent tool completions skip that lookup rather than queue behind it. A cue
+is not guaranteed on the first concurrent completion. Unsupported result shapes,
+lookup failures and disposed/deleted sessions leave tool output unchanged. MCP
+cues precede the original content because OpenCode truncates it after the hook.
+Updating the plugin file does not change instances already loaded into a running
+OpenCode process; the updated plugin must be loaded before relying on this cue.
 It does not clear an earlier submitted or uncertain channel wake, or prove
 that waiting work was delivered or completed.
 

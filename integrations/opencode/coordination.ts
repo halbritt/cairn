@@ -78,6 +78,7 @@ const plugin: Plugin = async ({ directory, client }) => {
   // TurnStart reply advertises tool capture support.
   const exclusive = new Map<string, { requestID: string; turn: string; capture: boolean }>()
   const jobs = new Map<string, Promise<void>>()
+  const cueing = new Set<string>()
   let closing = false
 
   const instanceId = randomUUID()
@@ -91,10 +92,10 @@ const plugin: Plugin = async ({ directory, client }) => {
   }
 
   function invoke(id: string, event: string, model = "", turn_id = "", admission?: Admission,
-                  extra: Record<string, string> = {}): Promise<any> {
+                  extra: Record<string, string> = {}, timeout = 15000): Promise<any> {
     return new Promise((resolve, reject) => {
       const child = execFile(config.python, [config.script, "hook", "--config", config.config],
-        { encoding: "utf8", timeout: 15000, maxBuffer: 32768 }, (error, stdout) => {
+        { encoding: "utf8", timeout, maxBuffer: 32768 }, (error, stdout) => {
           if (error) return reject(new Error("Cairn session presence unavailable"))
           try { resolve(JSON.parse(stdout)) } catch { reject(new Error("Invalid Cairn presence response")) }
         })
@@ -522,12 +523,30 @@ const plugin: Plugin = async ({ directory, client }) => {
         throw new Error("Cairn tool capture unavailable; refusing an uncaptured tool in an exclusive Cairn request")
       }
     },
-    "tool.execute.after": async (input) => {
+    "tool.execute.after": async (input, output) => {
       const current = exclusive.get(input.sessionID)
-      if (!current?.capture || closing) return
+      if (closing) return
       // A missed ToolEnd leaves the tool non-terminal, which keeps any hold.
-      await invoke(input.sessionID, "ToolEnd", "", current.turn, undefined,
-        { tool: input.tool, call_id: input.callID, request_id: current.requestID }).catch(() => {})
+      if (current?.capture)
+        await invoke(input.sessionID, "ToolEnd", "", current.turn, undefined,
+          { tool: input.tool, call_id: input.callID, request_id: current.requestID }).catch(() => {})
+      // Native tools expose output text; MCP tools still expose raw content
+      // here, before native flattening/truncation. Unknown shapes keep the cue.
+      const result = output as typeof output & { content?: Array<unknown> }
+      if (closing || !sessions.has(input.sessionID) || cueing.has(input.sessionID) ||
+          (!result || (typeof result.output !== "string" && !Array.isArray(result.content)))) return
+      cueing.add(input.sessionID)
+      try {
+        const reply = await invoke(input.sessionID, "PostToolUse", "", "", undefined, {}, 1000)
+        const cue = reply?.hookSpecificOutput?.additionalContext
+        if (closing || !sessions.has(input.sessionID) || typeof cue !== "string" || !cue) return
+        if (Array.isArray(result.content)) result.content.unshift({ type: "text", text: cue })
+        else result.output = `${cue}\n\n${result.output}`
+      } catch {
+        console.warn("Cairn inbox cue unavailable; tool result unchanged")
+      } finally {
+        cueing.delete(input.sessionID)
+      }
     },
     event: async ({ event }) => {
       if (event.type === "session.idle" && sessions.has(event.properties.sessionID) && !closing)
