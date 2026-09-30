@@ -27,8 +27,10 @@ possible failure, not its prevalence or measured harm on an owner task.
 
 ## Implemented slice
 
-New context indexes seal presentation policy `cairn.preview-boundaries/1`.
-After the existing admission and final total-budget trimming have finished, the
+Current context indexes seal `cairn.preview-compact/1`, combining the metadata
+fallback below with the existing boundary expansion. Historical
+`cairn.preview-boundaries/1` indexes retain their original behavior.
+After admission and final total-budget trimming have finished, the
 compiler considers each admitted advisory preview in its existing order:
 
 1. Find simple sentence boundaries surrounding its existing source span.
@@ -73,6 +75,40 @@ an earlier preview start can shift that bounded source read earlier. Monotone
 containment applies to the displayed preview, not every byte of a later fallback
 window. Semantic fallback still prefers the unchanged `match_span`.
 
+## Optional association metadata (CAIRN-122)
+
+A preview's optional-policy charge includes its serialized metadata and handle
+allowance. Two file associations can push a higher-ranked preview above a small
+optional limit even when its source body and the total response could fit. A
+synthetic decision-shaped case costs 658 bytes against a 650-byte allowance; the
+same preview without associations costs 551. Both unpaged and offset 0 calls skip
+that entry, then admit a cheaper lower-ranked entry. This reproduces a packing
+mechanism, not a general ranking defect or a measured task benefit.
+
+Before omitting a standalone optional A/B entry for `OPTIONAL_BUDGET`, the new
+policy tries removing its `entities` list and setting `entities_omitted` to the
+number removed. It uses that form only when its exact serialized cost, including
+the marker and existing handle allowance, fits the optional ceiling and is smaller
+than the full entry. Admission still checks the remaining allocation; a paged
+result defers a compact entry that can fit only on the next page. Final total
+packing still applies, including
+explicit memory budget escaping charges and any minimum pull reserve. This does
+not raise any cap or guarantee that the later body fits.
+
+The compact form preserves the ID, version, class, kind, body digest, summary,
+`summary_span` and `match_span` exactly. It skips subsequent sentence expansion;
+other entries retain the existing boundary behavior. The marker means that
+association details were omitted, not that the source has no associations. A
+checked pull returns the source's full association metadata. Stored associations,
+eligibility and ranking are unchanged. Mandatory selections, class C entries and
+conflict/competing groups never use this fallback. Source applicability still
+requires inspection, and caller-supplied associations remain fallible hints.
+
+The change can affect which optional records and page offsets are delivered.
+That change is versioned; it is not applied to retained old-policy receipts.
+Compaction only addresses optional admission pressure. If total-envelope packing
+later drops an entry, this implementation does not run a second compaction pass.
+
 ## Replay and compatibility
 
 The presentation identifier is an optional canonical-CBOR field. It is not a
@@ -81,11 +117,15 @@ preserve the original canonical bytes and legacy preview path. Recompilation
 uses the saved policy, facts and body versions; it must reproduce the original
 seal even after a later edit. Unknown policy identifiers fail integrity checks.
 
-An older API reader that does not know this sealed field cannot read new-policy
-receipts: dropping it fails the canonical seal check (`INTEGRITY_FAILURE`).
+An older API reader cannot accept the new policy: it either loses an unfamiliar
+sealed field and fails the canonical seal check, or rejects the unknown
+presentation identifier (`INTEGRITY_FAILURE`).
 After an API rollback, perform a fresh search to obtain an old-policy receipt;
-do not reuse an unreadable handle. Existing JSON MCP facades do not seal these
-packages and continue to pass search results and complete pull arguments.
+do not reuse an unreadable handle. Existing JSON MCP facades do not seal these packages, but older typed facades
+drop the new `entities_omitted` field. Update the CLI and MCP facade as well as the
+API to preserve the explicit marker, verifying the running facade versions before
+claiming that contract; do not claim an already loaded old facade
+provides this presentation contract. Full pull handles remain unchanged.
 
 The existing request-UUID contract also remains: a search recalculates its
 package before accepting an idempotent retry. If a compiler policy changes its

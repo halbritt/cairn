@@ -283,7 +283,7 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	if req.Mode == "index" {
 		p.Mode = "index"
 		if req.Purpose == "context" {
-			p.Presentation = previewBoundariesV1
+			p.Presentation = previewCompactV1
 		}
 		if len(req.Kinds) == 0 && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/17" && req.ErrorSignature == "" {
 			p.Schema = "cairn.semantic/8"

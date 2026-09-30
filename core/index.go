@@ -18,15 +18,17 @@ import (
 )
 
 type IndexEntry struct {
-	Conflicts  []AdvisoryConflict `json:"conflicts,omitempty" cbor:"conflicts,omitempty"`
-	Entities   []EntityRef        `json:"entities,omitempty" cbor:"entities,omitempty"`
-	Category   string             `json:"category,omitempty" cbor:"category,omitempty"`
-	RecordID   string             `json:"record_id"`
-	Version    int                `json:"version"`
-	Class      string             `json:"class"`
-	Kind       string             `json:"kind"`
-	Summary    string             `json:"summary"`
-	BodySHA256 string             `json:"body_sha256"`
+	// EntitiesOmitted counts associations retained on the source but omitted from this preview.
+	EntitiesOmitted int                `json:"entities_omitted,omitempty" cbor:"entities_omitted,omitempty"`
+	Conflicts       []AdvisoryConflict `json:"conflicts,omitempty" cbor:"conflicts,omitempty"`
+	Entities        []EntityRef        `json:"entities,omitempty" cbor:"entities,omitempty"`
+	Category        string             `json:"category,omitempty" cbor:"category,omitempty"`
+	RecordID        string             `json:"record_id"`
+	Version         int                `json:"version"`
+	Class           string             `json:"class"`
+	Kind            string             `json:"kind"`
+	Summary         string             `json:"summary"`
+	BodySHA256      string             `json:"body_sha256"`
 	// SummarySpan excludes the summary's synthetic omission markers.
 	SummarySpan *ByteSpanRequest `json:"summary_span,omitempty" cbor:"summary_span,omitempty"`
 	// MatchSpan addresses the complete passage scored by the local model.
@@ -166,6 +168,25 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 		if len(c.group) == 0 && seen[entries[0].BodySHA256] {
 			omit("REDUNDANT")
 			continue
+		}
+		// Keep the ranked source visible before spending its optional allowance
+		// on fallible association metadata. Whole instructions and groups are unchanged.
+		if p.Presentation == previewCompactV1 && optionalCost+cost > p.OptionalLimit && len(c.group) == 0 && len(entries) == 1 {
+			entry := entries[0]
+			if (entry.Class == "A" || entry.Class == "B") && len(entry.Conflicts) == 0 && len(entry.Entities) > 0 {
+				entry.EntitiesOmitted, entry.Entities = len(entry.Entities), nil
+				encoded, err := json.Marshal(entry)
+				if err != nil {
+					return p, err
+				}
+				compactCost := len(encoded) + 160
+				// Use empty-page fit here so the normal pager can defer an
+				// entry that cannot fit the remaining room on this page.
+				if compactCost < cost && compactCost <= p.OptionalLimit {
+					entries[0], cost = entry, compactCost
+					evaluations[entry.RecordID].Cost = compactCost
+				}
+			}
 		}
 		if len(p.Index)+len(entries) > 100 || optionalCost+cost > p.OptionalLimit {
 			omit("OPTIONAL_BUDGET")

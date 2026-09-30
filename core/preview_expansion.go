@@ -8,10 +8,16 @@ import (
 )
 
 const previewBoundariesV1 = "cairn.preview-boundaries/1"
+const previewCompactV1 = "cairn.preview-compact/1"
 
 func validatePresentation(p SemanticPackage) error {
-	if p.Presentation != "" && (p.Presentation != previewBoundariesV1 || p.Mode != "index" || p.Purpose != "context") {
+	if p.Presentation != "" && ((p.Presentation != previewBoundariesV1 && p.Presentation != previewCompactV1) || p.Mode != "index" || p.Purpose != "context") {
 		return failure("INTEGRITY_FAILURE", "historical preview presentation contract is invalid")
+	}
+	for _, entry := range p.Index {
+		if entry.EntitiesOmitted != 0 && (p.Presentation != previewCompactV1 || entry.EntitiesOmitted < 1 || entry.EntitiesOmitted > 16 || len(entry.Entities) != 0 || (entry.Class != "A" && entry.Class != "B") || len(entry.Conflicts) != 0) {
+			return failure("INTEGRITY_FAILURE", "historical compact preview metadata is invalid")
+		}
 	}
 	return nil
 }
@@ -40,7 +46,7 @@ func expandPreviewBoundaries(p SemanticPackage, candidates []candidate, evaluati
 		optionalCost += len(encoded) + 160
 	}
 	for i, entry := range p.Index {
-		if entry.SummarySpan == nil || entry.Class == "C" || len(entry.Conflicts) != 0 {
+		if entry.SummarySpan == nil || entry.Class == "C" || len(entry.Conflicts) != 0 || entry.EntitiesOmitted != 0 {
 			continue
 		}
 		text, span, ok := enclosingPreview(bodies[entry.RecordID], *entry.SummarySpan)
