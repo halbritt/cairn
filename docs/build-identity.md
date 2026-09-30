@@ -41,3 +41,35 @@ capabilities, source freshness or correctness. Different flags and toolchains
 can produce different executables. Use these identities to locate the relevant
 source and verification records; retain an executable hash when exact bytes
 matter. Do not invalidate a memory merely because its source revision differs.
+
+## Upgrade a running MCP facade
+
+Replacing the installed Cairn file does not change a process that already loaded
+the previous executable. Inspect the actual conversation's tool declarations and,
+when the host exposes it, the identity of its connected facade. A separate MCP
+discovery process can report the new build while the conversation still uses an
+older one.
+
+For Codex, consult the running host's protocol and the
+[App Server documentation](https://learn.chatgpt.com/docs/app-server) before using
+`config/mcpServer/reload`. An accepted reload is not proof that the facade was
+replaced: an unchanged server configuration can reuse an existing connection.
+Inspect the effective configuration layers first. A project `.codex/config.toml`
+can override the Cairn command in the user's configuration.
+
+When a host reuses connections by command, a verified executable at a new,
+content-addressed path lets the configured command identify the intended bytes.
+Change only `mcp_servers.cairn.command` in the effective layer; preserve the server
+name, arguments, profile, collection and tool restrictions. Check which loaded
+conversations a reload affects and use an idle boundary. Keep the previous
+configuration and compare it before applying or reverting an edit, so concurrent
+changes are not overwritten. This is an operator-controlled deployment procedure,
+not an automatic session restart.
+
+Verify the resulting process identity and behavior through that conversation's
+connection. A rejected unknown argument and a recognized argument with an invalid
+value are different observations. A bounded invalid-input check can establish
+validation behavior without reading memory; it does not show that an agent used
+the feature correctly. Confirm the agent-visible tool declarations on its next
+ordinary task, and report that separately from runtime replacement and task
+usefulness.
