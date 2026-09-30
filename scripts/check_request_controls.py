@@ -13,6 +13,9 @@ import uuid
 
 from check_wakeups import wait_for
 
+LAUNCH_WAIT_SECONDS = 15
+ADMISSION_WINDOW_SECONDS = LAUNCH_WAIT_SECONDS + 5
+
 
 def check(binary, root):
     assert os.environ.get('CAIRN_TEST_DATABASE_URL')
@@ -107,7 +110,7 @@ time.sleep(300)
 
     def launched(event):
         marker = root / (event['event_id'] + '.started')
-        wait_for(marker.exists, 15)
+        wait_for(marker.exists, LAUNCH_WAIT_SECONDS)
         selected = json.loads(marker.read_text())
         attempt = next(a for a in active() if a['delivery']['event']['event_id'] == event['event_id'])
         return selected, attempt
@@ -137,11 +140,18 @@ time.sleep(300)
         assert status(queued)['pool']['control']['code'] == 'operator_cancelled'
 
         start()
-        expiry = datetime.now(timezone.utc) + timedelta(seconds=5)
+        # Start the admission clock only after this fixture's supervisor has
+        # registered its slot, and leave room for the bounded launch wait.
+        wait_for(lambda: any(worker['repo'] == repo and worker['consumer'] == config['principal']
+                             and worker['spec'] == config['worker'] and worker['online']
+                             and worker['health'] == 'available'
+                             for worker in call('worker-list', {})['workers']), LAUNCH_WAIT_SECONDS)
+        expiry = datetime.now(timezone.utc) + timedelta(seconds=ADMISSION_WINDOW_SECONDS)
         event = publish(admission_expires_at=expiry.isoformat())
         selected, attempt = launched(event)
-        assert selected['context']['admission_expires_at']
-        wait_for(lambda: datetime.now(timezone.utc) > expiry + timedelta(seconds=.2), 8)
+        assert datetime.fromisoformat(selected['context']['admission_expires_at']) == expiry
+        assert datetime.now(timezone.utc) < expiry, 'worker launch was not observed before admission expiry'
+        wait_for(lambda: datetime.now(timezone.utc) > expiry + timedelta(seconds=.2), ADMISSION_WINDOW_SECONDS + 1)
         assert child_running(selected['child']) and status(event)['deliveries'][0]['state'] == 'leased'
         cancelled = operator('work-cancel', dict(request_id=str(uuid.uuid4()), repo=repo,
                              delivery_id=attempt['delivery']['delivery_id'], reason='Stop running fixture'))
