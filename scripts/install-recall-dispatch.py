@@ -57,14 +57,12 @@ def install(settings, dest, route, original, python=sys.executable):
         raise SystemExit("--original must be in shlex.join form so rollback restores it byte for byte")
     if route.exists():
         dispatch.load_route(route)  # refuse to wire an invalid route file
-    dest.mkdir(parents=True, exist_ok=True, mode=0o700)
     dispatcher = dest / "recall_dispatch.py"
-    shutil.copyfile(ROOT / "integrations/lifecycle/recall_dispatch.py", dispatcher)
-    dispatcher.chmod(0o700)
     data = json.loads(settings.read_text())  # read immediately before writing
     command = wrapped(python, dispatcher, route, original)
-    changed = found = 0
+    changed = 0
     for event in dispatch.RECALL_EVENTS:
+        found = 0
         for group in data.get("hooks", {}).get(event, []):
             for hook in group.get("hooks", []):
                 if hook.get("command") == original:
@@ -73,8 +71,11 @@ def install(settings, dest, route, original, python=sys.executable):
                     found += 1
                 elif hook.get("command") == command:
                     found += 1
-    if found != len(dispatch.RECALL_EVENTS):
-        raise SystemExit(f"expected the original command once on each of {dispatch.RECALL_EVENTS}; found {found}")
+        if found != 1:
+            raise SystemExit(f"expected the original command once on {event}; found {found}")
+    dest.mkdir(parents=True, exist_ok=True, mode=0o700)
+    shutil.copyfile(ROOT / "integrations/lifecycle/recall_dispatch.py", dispatcher)
+    dispatcher.chmod(0o700)
     if changed:
         backup = settings.with_name(settings.name + ".before-recall-dispatch")
         if not backup.exists():

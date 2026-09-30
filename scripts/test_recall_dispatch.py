@@ -49,9 +49,10 @@ class RecallDispatch(unittest.TestCase):
         self.route.write_text(json.dumps(dict(schema="cairn.recall-dispatch/1", sessions=sessions,
                                               command=command or self.candidate, **extra)))
 
-    def run_hook(self, event, session="ses-other", payload=None, env=None):
+    def run_hook(self, event, session="ses-other", payload=None, env=None, gate=None):
         body = payload if payload is not None else json.dumps(dict(hook_event_name=event, session_id=session, cwd="/tmp", prompt="p")).encode()
-        process = subprocess.Popen([sys.executable, str(DISPATCH), "--route", str(self.route), "--", *self.original],
+        process = subprocess.Popen([sys.executable, str(DISPATCH), "--route", str(self.route),
+                                    *(["--session", gate] if gate else []), "--", *self.original],
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    env=dict(os.environ, **(env or {})))
         out, err = process.communicate(body, timeout=20)
@@ -114,6 +115,19 @@ class RecallDispatch(unittest.TestCase):
             self.assertIn("Cairn recall dispatch:", err)
         self.route.write_text("{broken")
         self.assertEqual(self.run_hook("SessionStart")[0].returncode, 1)
+        self.assertEqual(self.run_hook("Stop", "ses-target")[1]["engine"], "original")
+        self.assertEqual(self.run_hook("PreCompact", "ses-target")[1]["engine"], "original")
+
+    def test_oversized_host_event_is_rejected_before_exec(self):
+        process, record, err, _ = self.run_hook(None, payload=b"x" * (1024 * 1024 + 1))
+        self.assertEqual((process.returncode, record), (1, None))
+        self.assertIn("host event exceeds input limit", err)
+
+    def test_fixed_session_gate_protects_others_from_invalid_mutable_route(self):
+        self.route.write_text("{broken")
+        self.assertEqual(self.run_hook("UserPromptSubmit", "ses-other", gate="ses-target")[1]["engine"], "original")
+        self.assertEqual(self.run_hook("UserPromptSubmit", "ses-target", gate="ses-target")[0].returncode, 1)
+        self.assertEqual(self.run_hook("Stop", "ses-target", gate="ses-target")[1]["engine"], "original")
 
     def test_invalid_candidate_fails_only_the_targeted_session(self):
         drifted = dict(SHARED, state_dir="/elsewhere")
@@ -130,6 +144,15 @@ class RecallDispatch(unittest.TestCase):
             process, record, err, _ = self.run_hook("UserPromptSubmit", "ses-target")
             self.assertEqual((process.returncode, record), (1, None), command)
             self.assertEqual(self.run_hook("UserPromptSubmit", "ses-other")[1]["engine"], "original")
+
+    def test_scope_and_harness_config_cannot_drift(self):
+        for key in ("harness", "task_id", "run_id"):
+            (self.root / "candidate/config.json").write_text(json.dumps(dict(SHARED, **{key: "other"})))
+            process, record, err, _ = self.run_hook("UserPromptSubmit", "ses-target")
+            self.assertEqual((process.returncode, record), (1, None))
+            self.assertIn(key, err)
+        (self.root / "candidate/config.json").write_text("[]")
+        self.assertIn("configs must be objects", self.run_hook("UserPromptSubmit", "ses-target")[2])
 
 
 class InstallRollback(unittest.TestCase):
@@ -183,6 +206,19 @@ class InstallRollback(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 installer.install(settings, root / "dest", route, "python3 /x.py --config /c.json")
             self.assertEqual(json.loads(settings.read_text()), {"hooks": {}})
+
+    def test_duplicate_start_does_not_substitute_for_missing_prompt_hook(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = "python3 /x.py --config /c.json"
+            settings = root / "hooks.json"
+            settings.write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [
+                {"command": original}, {"command": original}]}]}}))
+            before = settings.read_bytes()
+            with self.assertRaises(SystemExit):
+                installer.install(settings, root / "dest", root / "route.json", original)
+            self.assertEqual(settings.read_bytes(), before)
+            self.assertFalse((root / "dest").exists())
 
 
 if __name__ == "__main__":

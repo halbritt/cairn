@@ -19,6 +19,7 @@ A route file that exists but cannot be validated fails the hook visibly (exit 1)
 rather than guessing which sessions it meant. A targeted session whose candidate
 command is invalid also fails visibly; other sessions are unaffected.
 """
+import argparse
 import json
 import os
 from pathlib import Path
@@ -28,7 +29,8 @@ SCHEMA = "cairn.recall-dispatch/1"
 RECALL_EVENTS = ("SessionStart", "UserPromptSubmit")
 # Settings the candidate must share with the original so memory identity,
 # state files and their locks stay continuous across engines.
-SHARED_CONFIG = ("repo", "socket", "token_file", "state_dir")
+SHARED_CONFIG = ("repo", "socket", "token_file", "state_dir", "harness", "task_id", "run_id")
+INPUT_LIMIT = 1024 * 1024  # same host-event ceiling as memory.py
 
 
 class DispatchError(Exception):
@@ -77,22 +79,28 @@ def check_candidate(candidate, original):
         theirs = json.loads(config_path(original).read_text())
     except (OSError, ValueError) as exc:
         raise DispatchError(f"candidate or original config is unreadable: {type(exc).__name__}") from exc
+    if not isinstance(mine, dict) or not isinstance(theirs, dict):
+        raise DispatchError("candidate and original configs must be objects")
     differing = [k for k in SHARED_CONFIG if mine.get(k) != theirs.get(k)]
     if differing:
         raise DispatchError("candidate config differs from the original in " + ", ".join(differing))
 
 
-def select(route_path, original, payload):
+def select(route_path, original, payload, session=None):
     """Return the argv to exec. Raises DispatchError for a visible failure."""
     if not route_path.exists():
         return original
-    route = load_route(route_path)
     try:
         event = json.loads(payload)
     except ValueError:
         return original  # The original engine reports malformed input itself.
     if not isinstance(event, dict) or event.get("hook_event_name") not in RECALL_EVENTS:
         return original
+    # A fixed deployment gate protects unrelated sessions even when the mutable
+    # route file is corrupt. It is routing metadata, not authentication.
+    if session is not None and event.get("session_id") != session:
+        return original
+    route = load_route(route_path)
     if event.get("session_id") not in route["sessions"]:
         return original
     check_candidate(route["command"], original)
@@ -102,7 +110,12 @@ def select(route_path, original, payload):
 def exec_with_payload(argv, payload):
     # Hand the exact bytes to the engine's stdin through an in-memory file.
     fd = os.memfd_create("cairn-hook-payload")
-    os.write(fd, payload)
+    remaining = memoryview(payload)
+    while remaining:
+        written = os.write(fd, remaining)
+        if written == 0:
+            raise OSError("hook payload write made no progress")
+        remaining = remaining[written:]
     os.lseek(fd, 0, os.SEEK_SET)
     os.dup2(fd, 0)
     os.close(fd)
@@ -110,13 +123,19 @@ def exec_with_payload(argv, payload):
 
 
 def main(argv):
-    if len(argv) < 5 or argv[1] != "--route" or argv[3] != "--":
-        print("usage: recall_dispatch.py --route ROUTE.json -- ORIGINAL_COMMAND...", file=sys.stderr)
-        return 1
-    route_path, original = Path(argv[2]), argv[4:]
-    payload = sys.stdin.buffer.read()  # all of it: the engine applies its own limit
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--route", required=True, type=Path)
+    parser.add_argument("--session", help="fixed exact session gate checked before reading the route")
+    parser.add_argument("command", nargs=argparse.REMAINDER)
+    args = parser.parse_args(argv[1:])
+    original = args.command[1:] if args.command[:1] == ["--"] else args.command
+    if not original or (args.session is not None and not valid_session_id(args.session)):
+        parser.error("an original command and a valid exact session gate are required")
+    payload = sys.stdin.buffer.read(INPUT_LIMIT + 1)
     try:
-        selected = select(route_path, original, payload)
+        if len(payload) > INPUT_LIMIT:
+            raise DispatchError("host event exceeds input limit")
+        selected = select(args.route, original, payload, args.session)
     except DispatchError as exc:
         print(f"Cairn recall dispatch: {exc}; recall skipped for this event", file=sys.stderr)
         return 1

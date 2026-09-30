@@ -28,7 +28,7 @@ sessions use. It is not evidence that any recall mode is more useful.
   timeout. The settings timeout is unchanged, and the dispatcher adds about
   19 ms (one Python start-up).
 - **Continuity.** A candidate config must match the original's `repo`,
-  `socket`, `token_file` and `state_dir`. Session state files and their locks
+  `socket`, `token_file`, `state_dir`, `harness`, `task_id` and `run_id`. Session state files and their locks
   stay shared, so capture by the original engine and recall by the candidate
   see the same state. Other keys, such as `model` or `recall_mode`, may differ.
 - **Failure behavior.**
@@ -40,6 +40,12 @@ sessions use. It is not evidence that any recall mode is more useful.
 | Session not listed | Original command |
 | Route file present but invalid | Exit 1 with `Cairn recall dispatch: …` on stderr; recall skipped for that event |
 | Listed session, but the candidate's interpreter or engine is missing, it has no `--config`, or its shared keys differ | Exit 1 with the reason, for that session only; others unaffected |
+
+Payloads are limited to the lifecycle engine's existing 1 MiB host-event limit.
+Capture and other non-recall events are recognized before reading the route.
+An optional `--session EXACT_ID` fixes a deployment's outer gate: other sessions
+run the original even if the mutable route is invalid. The route cannot widen
+this gate. Without this option, an invalid route fails all wrapped recall events.
 
 A targeted session never silently falls back to the original engine. Exit 1 is
 a non-blocking hook error: the prompt continues without recall.
@@ -85,6 +91,37 @@ a non-blocking hook error: the prompt continues without recall.
    sessions pick up the dispatcher only after a restart or resume, which root
    decides. The route file itself is read on every event.
 
+## Existing Codex sessions
+
+Codex's JSON hook layout can represent these commands, but adoption of changed
+hook settings in an already loaded session has not been established. A separate
+helper app-server's successful `hooks/list` does not prove that adoption. Do not
+restart or replace a conversation solely to make a comparison run.
+
+A bounded deployment may instead retain the original command pathname and
+replace only that script with a small launcher. Preserve the original engine's
+exact bytes in a separate file, and have the launcher run this dispatcher with
+`--session EXACT_ID`, the route file, and the preserved engine plus the incoming
+original arguments. Keep hook settings, configuration and trusted definitions
+unchanged. The fixed gate must precede mutable route parsing. Every capture or
+other-session event executes the preserved original engine/config; only the
+listed session's recall may execute the candidate. This adds wrapper startup to
+those events, so measure it rather than claiming zero overhead.
+
+Before using this approach, verify that the original engine has no resources
+whose meaning depends on its old `__file__` path, that stdin/output/status/signals
+pass through, and that both engines preserve shared state and locks. Verify the
+actual native hook result after installation; a file hash alone does not prove
+execution. Preserve the model and private-session exclusion. Use an atomic
+replacement and a fixed rollback deadline. Rollback restores the preserved
+engine only if the live launcher still has the expected hash, so concurrent
+changes are not overwritten. This deployment does not modify capture logic or
+restore the database.
+
+The current engine's overall recall deadline is eleven seconds; its individual
+search timeout is at most five seconds. A five-second whole-hook target is a
+measurement criterion, not a configured deadline in this dispatcher.
+
 ## Rollback
 
 - **Stop routing immediately, settings untouched:** delete or rename the route
@@ -108,9 +145,10 @@ a non-blocking hook error: the prompt continues without recall.
   as the original. A candidate that changes the state format could confuse the
   original's capture. Review the candidate engine's state handling before
   targeting a session.
-- An invalid route file disables recall for every session until it is fixed or
-  removed, by design: the dispatcher cannot tell which sessions it meant.
+- Without a fixed `--session` gate, an invalid route file disables wrapped recall
+  for every session until fixed or removed. With the gate, only that session's
+  recall can fail because of the route; capture bypasses its parsing.
 - The route file is read on every recall event. A partially written file fails
   visibly for one event; write it atomically (write a temp file, then rename).
-- Codex, OpenCode and Hermes are not covered. Their hook layouts differ; add
-  them only if needed.
+- The settings installer defaults to Claude. The original-path Codex deployment
+  needs the additional checks above. OpenCode and Hermes deployment is not covered.
