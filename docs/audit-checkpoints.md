@@ -8,10 +8,14 @@ digest needed to detect a missing expected set.
 
 Before the dump starts, Cairn commits an unsigned checkpoint under a consistent
 snapshot. It lists every currently emitted governance/C/D audit event UUID and
-its metadata digest, up to 10,000 members. It refuses larger sets rather than
-silently truncating. New commits between checkpoint and dump can be included in
-the dump; verification reports them as `uncovered_count`. This is an explicit
-minimum expected audit set, not a claim that every dump transaction is covered.
+its metadata digest. The manifest retains every member with no count ceiling
+(memory grows with the number of these events, a few hundred bytes each). The
+command's response lists at most 10,000 members: a larger checkpoint reports
+`count`, `sha256` and `members_omitted: true`, which is all the backup catalog
+needs, and never truncates the retained manifest. New commits between checkpoint
+and dump can be included in the dump; verification reports them as
+`uncovered_count`. This is an explicit minimum expected audit set, not a claim
+that every dump transaction is covered.
 
 The initial subset includes root installation, grants/revocations, instruction
 issuance/retraction, conflict resolution, and emitted redaction/forgetting events.
@@ -45,7 +49,8 @@ python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["chec
 ```
 
 Missing checkpoints or mismatched expectations fail. Missing/altered members
-are reported individually and the CLI exits unsuccessfully. An old checkpoint
+are reported individually, up to the first 100 of each, with `missing_total` and
+`altered_total` counting every divergence, and the CLI exits unsuccessfully. An old checkpoint
 with exactly its old audit set can still verify; absent a newer external
 expectation, that says nothing about later lost commits. Verify the dump checksum
 before restoring it as a separate check of the dump file itself.

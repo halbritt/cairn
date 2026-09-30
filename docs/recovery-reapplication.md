@@ -61,8 +61,16 @@ explicit retained mapping of original event, digest, subject and repository to
 that deletion event. It still verifies the deletion's payload and dependency
 exclusions. Later exports merge retained external expectations with local audit
 and withdrawals; they do not silently discard known missing history. Conflicting
-expectations refuse. The existing 10,000-member/count limits remain, with overflow
-refusing the transaction rather than retaining a partial expectation set.
+expectations refuse. The retained union has no count ceiling, so an application is
+not refused for the size of what later exports must carry. One source record is
+still bounded to 10,000 entries per list and 16 MiB. When the combined set is
+larger than one record, `recovery-export` writes a complete segment set. Apply
+each segment with its own `recovery-reapply` invocation (its own request UUID and
+`--expected-sha256`): each is one transaction of at most 2,000 withdrawals, so
+progress commits segment by segment and an interrupted run resumes by applying
+the segments not yet applied. Restore verification refuses until every position
+of a referenced set is retained or supplied; see
+[Stores beyond one recovery record](restore-admission.md#stores-beyond-one-recovery-record).
 
 ## File custody and remaining recovery work
 

@@ -186,6 +186,16 @@ func dependentVersions(ctx context.Context, tx pgx.Tx, id string) ([]RecordVersi
 	return refs, nil
 }
 
+// dependentClosureSQL is the same version-qualified closure, left to PostgreSQL.
+// Restore reconciliation prefixes its own statement with it so a forgotten
+// source whose retained descendants grew past the ordinary 1,000-version preview
+// bound can still be checked and rebuilt without materializing the set in Go.
+// It takes the source record ID as $1.
+const dependentClosureSQL = `WITH RECURSIVE dependents(record_id,version) AS (
+ SELECT record_id,version FROM cairn.record_version WHERE record_id=$1::uuid
+ UNION SELECT r.from_id,r.from_version FROM cairn.record_relation r JOIN dependents d ON r.to_id=d.record_id AND r.to_version=d.version
+ ) `
+
 type RecordVersionRef struct {
 	RecordID string `json:"record_id"`
 	Version  int    `json:"version"`

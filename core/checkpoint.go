@@ -14,6 +14,10 @@ import (
 )
 
 const checkpointSchema = "cairn.audit-checkpoint/1"
+
+// maxCheckpointMembers bounds the member list returned to a caller. A larger
+// checkpoint still retains every member in its manifest and is identified by the
+// same digest; its response carries the count and digest only.
 const maxCheckpointMembers = 10000
 
 type CheckpointRequest struct {
@@ -25,24 +29,30 @@ type AuditMember struct {
 	Digest  string `json:"sha256"`
 }
 type AuditCheckpoint struct {
-	Schema    string        `json:"schema"`
-	ID        string        `json:"checkpoint_id"`
-	ExportID  string        `json:"export_id"`
-	CreatedAt time.Time     `json:"created_at"`
-	Members   []AuditMember `json:"members"`
-	Count     int           `json:"count"`
-	Digest    string        `json:"sha256"`
+	Schema         string        `json:"schema"`
+	ID             string        `json:"checkpoint_id"`
+	ExportID       string        `json:"export_id"`
+	CreatedAt      time.Time     `json:"created_at"`
+	Members        []AuditMember `json:"members"`
+	Count          int           `json:"count"`
+	Digest         string        `json:"sha256"`
+	MembersOmitted bool          `json:"members_omitted,omitempty"`
 }
 type VerifyCheckpointRequest struct {
 	CheckpointID     string `json:"checkpoint_id"`
 	ExpectedDigest   string `json:"expected_sha256"`
 	ExpectedExportID string `json:"expected_export_id"`
 }
+
+// Missing and Altered name at most the first 100 members each; the totals count
+// every divergence, so a large damaged set cannot produce unbounded output.
 type CheckpointVerification struct {
 	CheckpointID   string   `json:"checkpoint_id"`
 	Valid          bool     `json:"valid"`
 	Missing        []string `json:"missing"`
 	Altered        []string `json:"altered"`
+	MissingTotal   int      `json:"missing_total"`
+	AlteredTotal   int      `json:"altered_total"`
 	UncoveredCount int      `json:"uncovered_count"`
 	Limit          string   `json:"limit"`
 }
@@ -62,6 +72,8 @@ func checkpointDigest(members []AuditMember) (string, error) {
 // Only emitted governance and C/D transition events participate. B promotion,
 // correction and retraction and all ordinary A history are excluded. Reasons and
 // content are excluded; this detects audit metadata damage, not payload damage.
+// The member set has no count ceiling: memory grows with the number of these
+// events (a few hundred bytes each), never with records, evidence or receipts.
 func auditMembers(ctx context.Context, tx pgx.Tx) ([]AuditMember, error) {
 	rows, err := tx.Query(ctx, `SELECT e.event_id::text,
  (jsonb_build_object('event_id',e.event_id,'event_type',e.event_type,'subject_id',e.subject_id,
@@ -77,7 +89,7 @@ func auditMembers(ctx context.Context, tx pgx.Tx) ([]AuditMember, error) {
  FROM cairn.authority_event e
  WHERE e.event_type IN ('bootstrap','grant','revoke_grant','issue','authorize_scope','policy_revise','reapply_recovery','resume_restore','resolve','redact','forget')
  OR EXISTS(SELECT 1 FROM cairn.record_version v WHERE v.record_id=e.subject_id AND v.version=e.resulting_version AND v.version_class='C')
- ORDER BY e.event_id LIMIT 10001`)
+ ORDER BY e.event_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -91,13 +103,7 @@ func auditMembers(ctx context.Context, tx pgx.Tx) ([]AuditMember, error) {
 		sum := sha256.Sum256([]byte(metadata))
 		members = append(members, AuditMember{id, hex.EncodeToString(sum[:])})
 	}
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-	if len(members) > maxCheckpointMembers {
-		return nil, failure("BUDGET_REFUSED", "audit checkpoint exceeds 10000 members; a segmented checkpoint contract is required")
-	}
-	return members, nil
+	return members, rows.Err()
 }
 func (s *Store) checkpointAccess() error {
 	if !s.channel.Operator || s.channel.Repo != "" {
@@ -130,8 +136,15 @@ func (s *Store) Checkpoint(ctx context.Context, req CheckpointRequest) (AuditChe
 		if err = tx.QueryRow(ctx, `SELECT transaction_timestamp()`).Scan(&cp.CreatedAt); err != nil {
 			return cp, err
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO cairn.audit_checkpoint(checkpoint_id,export_id,manifest) VALUES($1,$2,$3)`, cp.ID, cp.ExportID, cp)
-		return cp, err
+		if _, err = tx.Exec(ctx, `INSERT INTO cairn.audit_checkpoint(checkpoint_id,export_id,manifest) VALUES($1,$2,$3)`, cp.ID, cp.ExportID, cp); err != nil {
+			return cp, err
+		}
+		// The manifest retains every member. The operator's backup catalog needs
+		// only the identity, count and digest, so a large response omits the list.
+		if len(cp.Members) > maxCheckpointMembers {
+			cp.Members, cp.MembersOmitted = []AuditMember{}, true
+		}
+		return cp, nil
 	})
 }
 func (s *Store) VerifyCheckpoint(ctx context.Context, req VerifyCheckpointRequest) (CheckpointVerification, error) {
@@ -166,7 +179,7 @@ func verifyCheckpoint(ctx context.Context, tx pgx.Tx, req VerifyCheckpointReques
 	if err != nil {
 		return result, err
 	}
-	if cp.Schema != checkpointSchema || cp.ID != req.CheckpointID || cp.ExportID != req.ExpectedExportID || cp.Count != len(cp.Members) || len(cp.Members) > maxCheckpointMembers {
+	if cp.Schema != checkpointSchema || cp.ID != req.CheckpointID || cp.ExportID != req.ExpectedExportID || cp.Count != len(cp.Members) {
 		return result, failure("CHECKPOINT_MISMATCH", "checkpoint metadata differs from expected restore set")
 	}
 	digest, err := checkpointDigest(cp.Members)
@@ -192,9 +205,15 @@ func verifyCheckpoint(ctx context.Context, tx pgx.Tx, req VerifyCheckpointReques
 		seen[m.EventID] = true
 		actual, ok := byID[m.EventID]
 		if !ok {
-			result.Missing = append(result.Missing, m.EventID)
+			result.MissingTotal++
+			if len(result.Missing) < maxReportedDetails {
+				result.Missing = append(result.Missing, m.EventID)
+			}
 		} else if actual != m.Digest {
-			result.Altered = append(result.Altered, m.EventID)
+			result.AlteredTotal++
+			if len(result.Altered) < maxReportedDetails {
+				result.Altered = append(result.Altered, m.EventID)
+			}
 		}
 	}
 	for id := range byID {
@@ -202,6 +221,6 @@ func verifyCheckpoint(ctx context.Context, tx pgx.Tx, req VerifyCheckpointReques
 			result.UncoveredCount++
 		}
 	}
-	result.Valid = len(result.Missing) == 0 && len(result.Altered) == 0
+	result.Valid = result.MissingTotal == 0 && result.AlteredTotal == 0
 	return result, nil
 }

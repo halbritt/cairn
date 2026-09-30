@@ -32,6 +32,7 @@ type RestoreVerification struct {
 	CheckpointID           string           `json:"checkpoint_id"`
 	Problems               []string         `json:"problems"`
 	ReappliedMissingEvents []string         `json:"reapplied_missing_events"`
+	ReappliedAdditional    int              `json:"reapplied_additional,omitempty"`
 	Fixtures               []RestoreFixture `json:"fixtures"`
 	ResidualEffects        int              `json:"residual_effects"`
 	Ready                  bool             `json:"ready"`
@@ -189,12 +190,23 @@ func (s *Store) verifyRestore(ctx context.Context, tx pgx.Tx, req VerifyRestoreR
 	if !checkpoint.Valid {
 		result.Problems = append(result.Problems, "CHECKPOINT_MISMATCH")
 	}
-	combined, err := captureRecoveryTx(ctx, tx)
+	// The combined expectations have no count ceiling: every retained application
+	// and the supplied record merge into one union that inspection checks in full.
+	// Only what is reported is bounded. A segmented export is complete only when
+	// every position is retained or supplied, so a missing position refuses.
+	segments := &recoverySegments{}
+	combined, err := captureRecovery(ctx, tx, segments)
 	if err != nil {
 		return result, err
 	}
 	if err = mergeRecovery(&combined, req.Recovery); err != nil {
 		return result, err
+	}
+	if err = segments.add(req.Recovery); err != nil {
+		return result, err
+	}
+	for _, missing := range segments.incomplete() {
+		result.Problems = append(result.Problems, "RECOVERY_SEGMENTS_INCOMPLETE:"+missing)
 	}
 	combined.SHA256, err = recoveryDigest(combined)
 	if err != nil {
@@ -212,19 +224,39 @@ func (s *Store) verifyRestore(ctx context.Context, tx pgx.Tx, req VerifyRestoreR
 	for _, w := range combined.Withdrawals {
 		withdrawals[w.EventID] = w
 	}
+	var actions map[recoveryActionKey][]RecoveryAction
+	if len(recovery.Gaps) > 0 {
+		if actions, err = loadRecoveryActions(ctx, tx, req.Recovery.RootGrantID); err != nil {
+			return result, err
+		}
+	}
+	// Every gap decides readiness; only the first 100 of each kind are named.
+	gapProblems := 0
 	for _, gap := range recovery.Gaps {
 		covered := false
 		if w, ok := withdrawals[gap.EventID]; ok && gap.Reason == "AUDIT_MISSING" {
-			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cairn.recovery_application a CROSS JOIN LATERAL jsonb_array_elements(a.actions) action WHERE a.source_root=$1 AND action->>'event_id'=$2 AND action->>'source_digest'=$3 AND action->>'subject_id'=$4 AND action->>'repo'=$5 AND action->>'kind'=$6 AND action->>'outcome' IN ('reapplied','already_restricted','absent'))`, req.Recovery.RootGrantID, w.EventID, digests[w.EventID], w.SubjectID, w.Repo, w.Kind).Scan(&covered)
-			if err != nil {
-				return result, err
+			for _, action := range actions[recoveryActionKey{w.EventID, digests[w.EventID], w.SubjectID, w.Repo, w.Kind}] {
+				switch action.Outcome {
+				case "reapplied", "already_restricted", "absent":
+					covered = true
+				}
 			}
 		}
 		if covered {
-			result.ReappliedMissingEvents = append(result.ReappliedMissingEvents, gap.EventID)
-		} else {
+			if len(result.ReappliedMissingEvents) < maxReportedDetails {
+				result.ReappliedMissingEvents = append(result.ReappliedMissingEvents, gap.EventID)
+			} else {
+				result.ReappliedAdditional++
+			}
+		} else if gapProblems < maxReportedDetails {
+			gapProblems++
 			result.Problems = append(result.Problems, gap.Reason+":"+gap.EventID+":"+gap.SubjectID)
+		} else {
+			gapProblems++
 		}
+	}
+	if gapProblems > maxReportedDetails {
+		result.Problems = append(result.Problems, fmt.Sprintf("RECOVERY_GAPS_ADDITIONAL:%d", gapProblems-maxReportedDetails))
 	}
 	if recovery.OutstandingEffects > 0 {
 		result.Problems = append(result.Problems, fmt.Sprintf("OUTSTANDING_EFFECTS:%d", recovery.OutstandingEffects))

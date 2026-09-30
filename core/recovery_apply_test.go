@@ -288,7 +288,10 @@ func TestRecoveryReapplyRejectsChangedExpectationsAndUnsafeCustody(t *testing.T)
 	}
 }
 
-func TestRecoveryReapplyRollsBackWhenNewAuditExceedsExportBudget(t *testing.T) {
+// An application whose retained expectations outgrow one exportable record is no
+// longer refused. The complete set is exported as validated segments that merge
+// back to exactly the captured union, and a partial set is detectable.
+func TestRecoveryReapplyBeyondOneRecordExportsCompleteSegmentSet(t *testing.T) {
 	ctx := context.Background()
 	s := restoreTestStore(t)
 	recoveryRoot(t, s)
@@ -308,13 +311,48 @@ func TestRecoveryReapplyRollsBackWhenNewAuditExceedsExportBudget(t *testing.T) {
 	if err = source.validate(); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.ReapplyRecovery(ctx, RecoveryReapplyRequest{uuid.NewString(), source, "Refuse application that cannot retain its new audit in an export"})
-	requireCode(t, err, "BUDGET_REFUSED")
+	if _, err = s.ReapplyRecovery(ctx, RecoveryReapplyRequest{uuid.NewString(), source, "Retain an application whose export needs a segment set"}); err != nil {
+		t.Fatal(err)
+	}
 	var lifecycle string
 	if err = s.pool.QueryRow(ctx, `SELECT lifecycle FROM cairn.memory_record WHERE record_id=$1`, note.RecordID).Scan(&lifecycle); err != nil {
 		t.Fatal(err)
 	}
-	if lifecycle != "active" {
-		t.Fatalf("unexportable deletion committed: %s", lifecycle)
+	if lifecycle != "tombstoned" {
+		t.Fatalf("application did not apply its withdrawal: %s", lifecycle)
+	}
+	_, err = s.CaptureRecovery(ctx)
+	requireCode(t, err, "BUDGET_REFUSED")
+	set, err := s.CaptureRecoverySet(ctx)
+	if err != nil || len(set) < 3 {
+		t.Fatalf("segment set: %d %v", len(set), err)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	full, err := captureRecoveryTx(ctx, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	union := RecoveryRecord{Schema: recoverySchema, RootGrantID: full.RootGrantID, Audit: []AuditMember{}, Withdrawals: []RecoveryWithdrawal{}, Contexts: []RecoveryContext{}}
+	for i, segment := range set {
+		if segment.Segment == nil || segment.Segment.Index != i+1 || segment.Segment.Count != len(set) || segment.Segment.SetID != set[0].Segment.SetID {
+			t.Fatalf("segment %d is not positioned in its set: %+v", i, segment.Segment)
+		}
+		if err = segment.validate(); err != nil {
+			t.Fatalf("segment %d is not independently valid: %v", i, err)
+		}
+		if err = mergeRecovery(&union, segment); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !reflect.DeepEqual(union.Audit, full.Audit) || !reflect.DeepEqual(union.Withdrawals, full.Withdrawals) || len(union.Audit) <= maxRecoveryEntries {
+		t.Fatalf("segments dropped expectations: %d/%d audit %d/%d withdrawals", len(union.Audit), len(full.Audit), len(union.Withdrawals), len(full.Withdrawals))
+	}
+	requireCode(t, CheckRecoverySegments(set[1:]), "INTEGRITY_FAILURE")
+	if err = CheckRecoverySegments(set); err != nil {
+		t.Fatal(err)
 	}
 }

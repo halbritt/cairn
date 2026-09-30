@@ -119,7 +119,9 @@ type RestoreResume struct {
 
 // ResumeRestore is an explicit operator decision under local-restore/1, not an
 // automatic consequence of a previously green report. Verification reruns while
-// the exclusive admission lock excludes ordinary work and recovery mutations.
+// the exclusive admission lock excludes ordinary work and recovery mutations. A
+// store above the old 10,000-entry ceilings resumes through the same complete
+// verification; unresolved problems keep the session paused.
 func (s *Store) ResumeRestore(ctx context.Context, req ResumeRestoreRequest) (RestoreResume, error) {
 	if err := s.checkpointAccess(); err != nil {
 		return RestoreResume{}, err
@@ -162,10 +164,9 @@ func (s *Store) ResumeRestore(ctx context.Context, req ResumeRestoreRequest) (Re
 		if _, err = tx.Exec(ctx, `UPDATE cairn.restore_admission SET paused=false WHERE singleton`); err != nil {
 			return result, err
 		}
-		// Admission metadata must remain capturable under the same recovery bounds.
-		if _, err = captureRecoveryTx(ctx, tx); err != nil {
-			return result, err
-		}
+		// Admission metadata adds to the recovery expectations. They have no count
+		// ceiling; an export beyond one record is a segment set, so resuming is
+		// never refused for the size of what later exports must carry.
 		return result, nil
 	}, func(tx pgx.Tx) error { return s.restoreOwner(ctx, tx, req.Verification.SessionID) })
 }

@@ -59,12 +59,23 @@ requires a fresh compile after resume.
 
 ## Rebuild and verify
 
-`rebuild.json` contains a fresh `request_id` and the returned `session_id`.
-Rebuild adds missing deletion-dependency exclusions from retained exact relations
-and advances affected use generations. It refuses more than 10,000 deletion
-requests or combined source/version references; each source retains its existing
-1,000-version bound. No partial rebuild commits. Repeating the same request
-returns the original counts; a new request on an intact projection adds zero.
+`rebuild.json` contains a fresh `request_id` and the returned `session_id`, and
+optionally `limit` (1 to 10,000 forgotten sources per call, default 1,000) and
+`after` (the previous call's `next_after`). Rebuild adds missing
+deletion-dependency exclusions from retained exact relations and advances
+affected use generations. It processes forgotten sources in record-ID order, one
+committed page per call, and computes each source's exact version-qualified
+closure inside PostgreSQL. There is no ceiling on the number of deletion
+requests, on source/version references, or on a source's retained descendants
+(the ordinary 1,000-version bound applies to impact previews, not to restore).
+The response reports `sources`, `added_exclusions`, `affected_records`,
+`complete`, and `next_after` while pages remain; counts describe that call only.
+Repeating the same request returns the original counts; a new request on an
+intact projection adds zero, so an interrupted pass restarts from the beginning
+or from the last `next_after` without skipping a source. The session stays paused
+between pages. A reapplication that adds a forgotten source with a record ID
+below the cursor needs a new pass; verification's dependency check for every
+forgotten source is the backstop if that pass is forgotten.
 
 Attribution is a SQL view and ranking is recomputed. Historical impact snapshots,
 receipt observations and authority rows are retained inputs, not projections to
@@ -98,7 +109,15 @@ state and invalidates affected previews. The supplied fixtures must reproduce
 their retained semantic seals through historical compilation.
 
 The external recovery record is merged with already-retained expectations before
-inspection. An older or incomplete input cannot erase known gaps. An original
+inspection. The merged expectation set has no count ceiling and is checked in
+full; only the report is bounded. `problems` names at most the first 100 gaps
+and adds `RECOVERY_GAPS_ADDITIONAL:N` for the rest, and
+`reapplied_missing_events` names at most 100 events with `reapplied_additional`
+counting the rest, so a large damaged restore cannot hide behind the bound or
+produce unbounded output. If any supplied or retained record is a segment of an
+exported set, every position of that set must be retained or supplied;
+otherwise verification reports `RECOVERY_SEGMENTS_INCOMPLETE:SET:HAVE/COUNT`
+and refuses. An older or incomplete input cannot erase known gaps. An original
 missing withdrawal event can be covered for admission only through the exact
 retained reapplication mapping and current restricted state; its original
 `AUDIT_MISSING` finding remains in recovery inspection. Unknown missing audit,
@@ -109,6 +128,58 @@ an unknown missing event that might represent a lost policy change.
 `verify-restore` is read-only. It returns `ready`, `problems`, covered original
 withdrawal-event IDs, fixture proofs and the residual count. Failure exits 7 with
 `RESTORE_INCOMPLETE`. A successful report is a snapshot, not permission to serve.
+
+## Stores beyond one recovery record
+
+This is a partial CAIRN-49 implementation, not a bounded-memory restore solution.
+Rebuild pages and recovery applications can commit progress between calls, and
+exports can span records. Verification, checkpoint construction and expectation
+capture still materialize the complete union in process memory. They cannot
+resume midway through a verification snapshot. The tested operator path above
+the previous 10,000-entry limit uses these steps:
+
+1. **Export.** `recovery-export PATH` writes one file while the expectations fit
+   one record (10,000 audit members, withdrawals and context references each,
+   16 MiB). Beyond that it writes every segment of one snapshot, named
+   `PATH.part-0001-of-0003.ext`. An ordinary write failure removes and syncs the
+   files created by that call; process or machine failure can leave an incomplete
+   set, which inspection refuses. Keep the previous complete export until the new
+   command succeeds and every new segment has been retained. Segments carry a set identity and position, stay independently
+   valid (a context segment repeats the forget withdrawal that anchors its
+   records) and merge back to exactly the captured union. Retain every segment
+   outside the database; a missing position is detectable, never silent. The
+   library call `CaptureRecovery` still refuses a set that needs several records
+   instead of exporting part of it; `CaptureRecoverySet` returns the segments.
+2. **Inspect.** `recovery-inspect FILE...` accepts every segment file and refuses a
+   list that names a set but omits a position before inspecting anything.
+3. **Reapply.** Run `recovery-reapply` once per segment, each with its own request
+   UUID and `--expected-sha256`. Each segment is one serializable transaction of at
+   most 2,000 withdrawals and retains its source record, so progress is committed
+   segment by segment. After an interruption, rerun the segments not yet applied;
+   an already restricted subject is reported `already_restricted`, never applied
+   twice, and an identical request UUID returns its original result. Retain every
+   original segment this way before exporting another recovery set, including the
+   segment passed to verification: a verification input alone is not a retained
+   application. Recapture refuses a retained incomplete set or conflicting content
+   at the same set position; it never strips that obligation into a new export.
+4. **Rebuild.** Page `rebuild-restore` with `limit` and `after` until `complete`.
+5. **Verify and resume.** Supply any one segment as `recovery`; the others are
+   already retained by their applications, and verification refuses unless every
+   position of each referenced set is retained or supplied. An abandoned partial
+   set keeps refusing until its missing segments are applied from their files.
+   Checkpoints have no member ceiling either, so a store above 10,000 audit members
+   can be backed up and verified.
+
+Remaining limit: process memory grows with all recovery expectations, and capture
+also builds the full exported segment array. Encoding the segment files holds one
+encoded file at a time, but does not make their decoded source array bounded.
+Evidence bytes are scanned in pages; audit members, withdrawals, custody, retained
+applications and checkpoint manifests are not. Larger stores still need a
+streamed or staged expectation/checkpoint contract before CAIRN-49 can be closed.
+Do not raise another aggregate ceiling, omit records or clear the pause as a
+workaround. Per-withdrawal checks are individual queries and can also be slow.
+Pause/fence checks and the exclusive resume lock remain in force; a failed or
+interrupted verification does not authorize service to resume.
 
 ## Operations policy and resume
 

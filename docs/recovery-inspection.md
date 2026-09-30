@@ -31,17 +31,30 @@ CAIRN_DATABASE_URL='host=/private/restore/socket dbname=cairn sslmode=disable' \
 
 Inspection requires an unscoped operator channel and an owner-only regular file.
 It rejects symlinks, malformed or oversized JSON, unknown fields, checksum damage,
-and unrelated root identities. Exports are bounded to 10,000 audit members,
-withdrawals and context references each, and 16 MiB of JSON; overflow refuses
-instead of silently exporting a partial expectation.
+and unrelated root identities. One record holds at most 10,000 audit members,
+withdrawals and context references each, and 16 MiB of JSON. An export that needs
+more is written as segment files sharing one snapshot
+(`after.part-0001-of-0003.json`). Success means every segment was written and
+synced. Ordinary failures remove files created by that call and report cleanup
+errors; a process crash can leave an incomplete set. Segments carry a set identity
+and position, so inspection refuses such a partial set. Retain all of them, and
+inspect them together with `cairn recovery-inspect FILE...`; a list that names a
+set but omits a position is refused before inspection, and a multi-file report
+lists each segment's result. The report names at most the first 100 gaps per
+record and counts the rest in `additional_gaps`; `consistent` reflects every gap.
+Keep the previous complete export until its replacement succeeds. Re-export
+refuses incomplete retained sets or conflicting content at the same set position;
+retain each missing original segment through reapplication before retrying.
 
 A mismatch exits 7 with `INTEGRITY_FAILURE` and a report in `data`. Reasons include
 `AUDIT_MISSING`, `AUDIT_CHANGED`, `GRANT_REVIVED`, `RECORD_REVIVED`,
 `INSTRUCTION_REVIVED`, `PAYLOAD_EXCLUSION_MISSING`, and
 `CONTEXT_CUSTODY_MISSING`. `DEPENDENCY_EXCLUSION_MISSING` identifies a forgotten
 source whose retained relation descendants lack the exact deletion's exclusion.
-This check traverses at most 1,000 retained versions per source and refuses
-overflow instead of certifying a partial set. A grant's revocation flag is checked even when its
+This check evaluates the complete retained closure inside PostgreSQL, however
+many descendants a source has accumulated since it was forgotten; the ordinary
+1,000-version bound applies to impact previews, not to recovery inspection.
+A grant's revocation flag is checked even when its
 original audit event is still present. Forgotten records must retain the
 logical exclusions on versions, selected receipts and cached mutation responses.
 Missing records and scopes that differ from the expectation also produce gaps.

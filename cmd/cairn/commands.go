@@ -72,7 +72,7 @@ JSON commands (read one request from stdin):
   run-status RECEIPT_UUID (owner-only process observation; never launch permission)
   recover-run RECEIPT_UUID (retry a runner-owned pending outcome)
 
-Administration: recovery-export FILE | recovery-inspect FILE
+Administration: recovery-export FILE | recovery-inspect FILE...
   recovery-reapply --request-id UUID --expected-sha256 DIGEST --reason TEXT FILE
   begin-restore | restore-status | rebuild-restore | verify-restore | resume-restore
   migrate | fence-restore < request.json | invalidate-handles < request.json | checkpoint < request.json | verify-checkpoint < expectation.json | serve [--identities FILE] [--socket PATH] [--machine-id ID] [--listen ADDR (--tls-cert FILE --tls-key FILE | --tls-terminated-proxy)]
@@ -188,13 +188,16 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 			return store.CaptureEvidence(ctx, req)
 		}
 	case "recovery-export", "recovery-inspect":
-		if len(args) != 2 {
-			return nil, invalid("recovery command requires one file path")
-		}
 		if args[0] == "recovery-export" {
+			if len(args) != 2 {
+				return nil, invalid("recovery-export requires one file path")
+			}
 			return exportRecovery(ctx, store, args[1])
 		}
-		return inspectRecovery(ctx, store, args[1])
+		if len(args) < 2 {
+			return nil, invalid("recovery-inspect requires one file path, or every file of a segmented export")
+		}
+		return inspectRecovery(ctx, store, args[1:])
 	case "recovery-reapply":
 		f := flags("recovery-reapply")
 		requestID := f.String("request-id", "", "stable UUID for retrying this application")
