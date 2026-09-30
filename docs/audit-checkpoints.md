@@ -8,11 +8,12 @@ digest needed to detect a missing expected set.
 
 Before the dump starts, Cairn commits an unsigned checkpoint under a consistent
 snapshot. It lists every currently emitted governance/C/D audit event UUID and
-its metadata digest. The manifest retains every member with no count ceiling
-(memory grows with the number of these events, a few hundred bytes each). The
-command's response lists at most 10,000 members: a larger checkpoint reports
-`count`, `sha256` and `members_omitted: true`, which is all the backup catalog
-needs, and never truncates the retained manifest. New commits between checkpoint
+its metadata digest. PostgreSQL retains immutable member rows separately from a
+bounded checkpoint header. Hashing and comparison stream those rows; application
+memory does not grow with the total membership. The command's response lists at
+most 10,000 members: a larger checkpoint reports `count`, `sha256` and
+`members_omitted: true`, which is all the backup catalog needs. No members are
+omitted from retained storage. New commits between checkpoint
 and dump can be included in the dump; verification reports them as
 `uncovered_count`. This is an explicit minimum expected audit set, not a claim
 that every dump transaction is covered.
@@ -39,6 +40,29 @@ compatibility is PostgreSQL 17. Reasons and payload bytes are excluded. These
 checks establish audit metadata integrity; they do not validate record bodies,
 current projections, truth, or resistance to a malicious database administrator.
 They are not signatures, security commitments, or a universal memory ledger.
+
+## Storage compatibility
+
+Migration 057 adds the explicit storage representations
+`cairn.audit-checkpoint-inline/1` and `cairn.audit-checkpoint-members/1`.
+Existing inline manifests are unchanged and remain readable. New checkpoints
+store an empty member array, the complete count/digest, `members_omitted: true`
+and the member-storage marker in their header; membership lives in immutable
+`audit_checkpoint_member` rows. Header and members commit in one transaction.
+The export/canonical digest schema remains `cairn.audit-checkpoint/1`: the new
+reader reconstructs the exact old ordered Go JSON bytes incrementally, including
+legacy array order, before comparing the retained and operator-pinned digests.
+
+Use a migration-057-aware binary to verify or restore new checkpoints.
+Pre-057 readers do not support member-backed storage: their existing count/list
+check refuses a nonempty member-backed checkpoint, and their migration/restore
+schema checks refuse a newer migration ledger. This is a fail-closed version
+boundary, not backward read compatibility. An old binary can still read an old
+inline checkpoint; new binaries read both representations. Do not remove the
+storage marker, replace the expected digest, or fill an empty header from current
+state to force an older reader to accept it. Updating or deleting a retained
+header/member is refused; missing, added or altered members cannot match the
+original externally retained digest.
 
 To verify a restored database, set `CAIRN_DATABASE_URL` to that dedicated restore
 and supply the catalog's `checkpoint_expectation` to `cairn verify-checkpoint`:
