@@ -12,3 +12,5 @@ CREATE TABLE cairn.audit_checkpoint_member (
 );
 CREATE TRIGGER immutable_checkpoint_member BEFORE UPDATE OR DELETE ON cairn.audit_checkpoint_member
  FOR EACH ROW EXECUTE FUNCTION cairn.immutable_audit();
+CREATE TRIGGER immutable_truncate BEFORE TRUNCATE ON cairn.audit_checkpoint_member
+ FOR EACH STATEMENT EXECUTE FUNCTION cairn.immutable_audit();

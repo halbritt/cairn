@@ -113,7 +113,7 @@ func (s *Store) ReapplyRecovery(ctx context.Context, req RecoveryReapplyRequest)
 			}
 		}
 		// New audit events grow the expectation set without a ceiling: an export
-		// larger than one record is divided into a segment set (CaptureRecoverySet),
+		// larger than one record uses the streamed directory operator path,
 		// so an application is never rolled back for the size of what it retains.
 		return result, nil
 	}, guard)

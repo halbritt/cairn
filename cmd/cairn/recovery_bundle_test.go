@@ -112,7 +112,7 @@ func TestRecoveryDirectoryInterruptedExportRetryAndCollision(t *testing.T) {
 }
 
 func TestRecoveryDirectoryRefusesDamagedPathsPartsAndManifest(t *testing.T) {
-	for _, damage := range []string{"missing", "bytes", "symlink", "path", "trailer", "oversized-line", "omitted-part"} {
+	for _, damage := range []string{"missing", "bytes", "symlink", "path", "trailer", "oversized-line", "omitted-part", "crlf", "unterminated"} {
 		t.Run(damage, func(t *testing.T) {
 			root := t.TempDir()
 			path := filepath.Join(root, "bundle")
@@ -154,6 +154,10 @@ func TestRecoveryDirectoryRefusesDamagedPathsPartsAndManifest(t *testing.T) {
 					body = bytes.Replace(body, []byte(recoveryPartName(2)), []byte("../outside.json"), 1)
 				case "trailer":
 					body = body[:bytes.LastIndex(bytes.TrimSuffix(body, []byte{'\n'}), []byte{'\n'})+1]
+				case "crlf":
+					body = bytes.ReplaceAll(body, []byte{'\n'}, []byte{'\r', '\n'})
+				case "unterminated":
+					body = bytes.TrimSuffix(body, []byte{'\n'})
 				case "oversized-line":
 					body = []byte(strings.Repeat("x", 5000) + "\n")
 				case "omitted-part":

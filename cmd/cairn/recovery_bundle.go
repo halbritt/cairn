@@ -238,6 +238,7 @@ func openRecoveryBundle(path string) (reader *recoveryBundleReader, err error) {
 	}
 	reader = &recoveryBundleReader{root: root, file: file, digest: sha256.New(), scanner: bufio.NewScanner(file)}
 	reader.scanner.Buffer(make([]byte, 4096), 4096)
+	reader.scanner.Split(recoveryManifestLine)
 	if err = reader.line(&reader.header, true); err != nil {
 		return nil, err
 	}
@@ -247,6 +248,18 @@ func openRecoveryBundle(path string) (reader *recoveryBundleReader, err error) {
 	return reader, nil
 }
 func (r *recoveryBundleReader) Close() error { return errors.Join(r.file.Close(), r.root.Close()) }
+
+// Keep the exact newline bytes in each token. ScanLines would normalize CRLF
+// and accept an unterminated last line, weakening the manifest byte checksum.
+func recoveryManifestLine(data []byte, atEOF bool) (int, []byte, error) {
+	if end := bytes.IndexByte(data, '\n'); end >= 0 {
+		return end + 1, data[:end+1], nil
+	}
+	if atEOF && len(data) != 0 {
+		return 0, nil, invalid("unterminated recovery bundle manifest line")
+	}
+	return 0, nil, nil
+}
 func (r *recoveryBundleReader) line(value any, hashed bool) error {
 	if !r.scanner.Scan() {
 		if err := r.scanner.Err(); err != nil {
@@ -265,7 +278,6 @@ func (r *recoveryBundleReader) line(value any, hashed bool) error {
 	}
 	if hashed {
 		r.digest.Write(body)
-		r.digest.Write([]byte{'\n'})
 	}
 	return nil
 }

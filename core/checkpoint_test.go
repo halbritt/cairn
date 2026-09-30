@@ -103,7 +103,7 @@ func TestAppendOnlyAuditTablesRejectTruncate(t *testing.T) {
 	ctx := context.Background()
 	s, _ := testOperator(t)
 	for _, table := range []string{
-		"authority_event", "audit_checkpoint", "restore_fence", "restore_session",
+		"authority_event", "audit_checkpoint", "audit_checkpoint_member", "restore_fence", "restore_session",
 		"restore_resume", "managed_context", "policy_revision", "recovery_application",
 		"recovery_context", "deletion_effect_event",
 	} {
@@ -113,7 +113,28 @@ func TestAppendOnlyAuditTablesRejectTruncate(t *testing.T) {
 			t.Fatalf("missing TRUNCATE guard on %s: %v", table, err)
 		}
 	}
-	if _, err := s.pool.Exec(ctx, `TRUNCATE cairn.audit_checkpoint`); err == nil || !strings.Contains(err.Error(), "authority audit is append-only") {
+	if _, err := s.pool.Exec(ctx, `TRUNCATE cairn.audit_checkpoint,cairn.audit_checkpoint_member`); err == nil || !strings.Contains(err.Error(), "authority audit is append-only") {
 		t.Fatalf("append-only checkpoint accepted TRUNCATE: %v", err)
+	}
+}
+
+func TestCheckpointMemberRejectsTruncate(t *testing.T) {
+	ctx := context.Background()
+	s, _ := testOperator(t)
+	cp, err := s.CheckpointHeader(ctx, CheckpointRequest{uuid.NewString(), "fixture:truncate-protection"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		`TRUNCATE cairn.audit_checkpoint_member`,
+		`TRUNCATE cairn.audit_checkpoint CASCADE`,
+	} {
+		if _, err := s.pool.Exec(ctx, statement); err == nil || !strings.Contains(err.Error(), "authority audit is append-only") {
+			t.Fatalf("append-only membership accepted %s: %v", statement, err)
+		}
+	}
+	verified, err := s.VerifyCheckpoint(ctx, VerifyCheckpointRequest{cp.ID, cp.Digest, cp.ExportID})
+	if err != nil || !verified.Valid {
+		t.Fatalf("truncate attempt changed membership: %+v %v", verified, err)
 	}
 }
