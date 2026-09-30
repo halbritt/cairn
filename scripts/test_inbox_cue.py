@@ -77,9 +77,47 @@ class InboxCue(unittest.TestCase):
         coordination.write_state(self.path, state)
         self.assertEqual(self.cue(), {})
 
+    def test_excluded_workspace_does_not_emit_or_consume_arrival(self):
+        workspaces = {name: self.root / name / 'child' for name in ('current', 'recorded', 'metadata')}
+        for workspace in workspaces.values():
+            workspace.mkdir(parents=True)
+        self.event['cwd'] = str(workspaces['current'])
+        agent = dict(AGENT, metadata=dict(AGENT['metadata'], workspace=str(workspaces['metadata'])))
+        marker = self.path.with_suffix('.cue')
+        for name, workspace in workspaces.items():
+            for ancestor in (False, True):
+                for exclusion in ('.cairn-no-coordination', '.cairn-no-memory'):
+                    with self.subTest(workspace=name, ancestor=ancestor, exclusion=exclusion):
+                        marker.unlink(missing_ok=True)
+                        self.write(dict(requests=1, latest_position=42), workspace=str(workspaces['recorded']))
+                        state = json.loads(self.path.read_text())
+                        state['agent'] = agent
+                        coordination.write_state(self.path, state)
+                        before = self.path.read_bytes()
+                        opt_out = (workspace.parent if ancestor else workspace) / exclusion
+                        opt_out.touch()
+                        try:
+                            self.assertEqual(self.cue(), {})
+                            self.assertFalse(marker.exists(), 'excluded workspace must not consume its arrival cue')
+                            self.assertEqual(self.path.read_bytes(), before)
+                        finally:
+                            opt_out.unlink()
+                        self.assertIn('1 request', self.cue()['hookSpecificOutput']['additionalContext'])
+
     def test_truncated_counts_are_marked(self):
         self.write(dict(requests=100, truncated=True, latest_position=3))
         self.assertIn('100+ requests', self.cue()['hookSpecificOutput']['additionalContext'])
+
+    def test_unassociated_wake_context_cannot_emit_or_consume_arrival(self):
+        self.write(dict(requests=1, latest_position=42))
+        before = self.path.read_bytes()
+        context = self.root / 'wake.json'
+        context.write_text(json.dumps(dict(schema='cairn.wake-context/0')))
+        with patch.dict(os.environ, CAIRN_WAKE_CONTEXT=str(context)):
+            self.assertEqual(self.cue(), {})
+        self.assertFalse(self.path.with_suffix('.cue').exists())
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertIn('1 request', self.cue()['hookSpecificOutput']['additionalContext'])
 
     def test_watcher_refreshes_busy_counts_and_clears_idle(self):
         state = dict(agent=AGENT)

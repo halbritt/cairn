@@ -1947,6 +1947,9 @@ def tool_cue(config, event):
             time.time() - pending.get('observed_at', 0) > INBOX_PENDING_FRESH or
             not any(pending.get(k) for k in ('requests', 'notices', 'responses'))):
         return {}
+    workspaces = (event.get('cwd'), state.get('workspace'), agent.get('metadata', {}).get('workspace'))
+    if any(coordination_excluded(Path(workspace).resolve()) for workspace in workspaces if workspace):
+        return {}
     signature = [pending['execution_id'], pending['latest_position'], pending['requests'], pending['notices'], pending['responses']]
     marker = path.with_suffix('.cue')
     try:
@@ -1976,7 +1979,7 @@ def handle(config, event, event_name=None):
         if active_home != Path(config["config_home"]).resolve():
             return {}  # Merged config layers can include another account's hooks.
     if (event_name or event.get('hook_event_name')) == 'PostToolUse':
-        if config['harness'] not in ('claude', 'codex') or wake_context(config) or any(
+        if config['harness'] not in ('claude', 'codex') or os.environ.get('CAIRN_WAKE_CONTEXT') or any(
                 os.environ.get(k) == '1' for k in ('CAIRN_LIFECYCLE_DISABLED', 'CAIRN_LIFECYCLE_CHILD')):
             return {}
         return tool_cue(config, event)
