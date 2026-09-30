@@ -47,10 +47,21 @@ or lexical-fallback metadata remains visible; no selector model runs.
 The hook attempts checked whole pulls in server order for up to two optional
 records. Competing positions form an indivisible group and count individually
 toward that limit. Record IDs, versions, body hashes and group membership must
-match. Oversized, changed, unavailable or refused sources stop eager inspection;
-there is no partial-body retry. Search and pulls share a five-second I/O deadline,
-with at most two seconds per pull; packing and state-save overhead can add time.
+match. If a whole optional A/B source exceeds the receipt or delivery budget,
+a single noncompeting source may instead supply a checked passage at its existing
+match/summary span. A delivery-budget refusal uses the already checked whole
+response locally (`span_origin: whole_pull`), keeping its paid receipt cost and
+one pull call. A receipt-budget refusal permits one additional checked span pull
+with a fresh request ID. `source_extent: partial_span`, full source identity/hash,
+byte range and passage checksum remain explicit; omitted text supports no claims.
+Required instructions, Class C and competing positions remain whole or omitted.
+Changed/unavailable identities never trigger this fallback. A passage that still
+cannot fit is refused without shortening or further retries. Search and pulls
+share a five-second I/O deadline, with at most two seconds per pull and four
+actual whole/span calls total; packing and state-save overhead can add time.
 `candidate_inspection` reports attempted pulls, remaining calls and refusals.
+`last_recall.search_discovery` retains the search API's discovery metadata
+separately from hook branch/outcome labels.
 
 Whole candidate bodies take priority within the configured context ceiling.
 The agent-tools cue states shared source-check and safety guidance once; the

@@ -49,7 +49,7 @@ class AgentToolRecallTests(unittest.TestCase):
         self.assertIn(self.required[0]['record']['body'], text)
         self.assertIn('cairn_search', text)
         self.assertIn('cairn_pull', text)
-        self.assertIn('unverified whole candidates and previews', text)
+        self.assertIn('unverified candidate bodies/passages and previews', text)
         self.assertIn('candidate preview', text)
         self.assertEqual(len(self.commands), 1)
         self.assertEqual(state['seen'], {})
@@ -190,7 +190,7 @@ class AgentToolRecallTests(unittest.TestCase):
         view = json.loads(text[text.index('{"selected":'):])
         self.assertEqual(view['selected'], self.required)
         self.assertEqual(view['index'], [])
-        self.assertIn('unverified whole candidates and previews', text)
+        self.assertIn('unverified candidate bodies/passages and previews', text)
         self.assertEqual(state['last_recall']['outcome'], 'delegated')
 
     def test_empty_candidates_preserve_omission_reasons_without_optional_calls(self):
