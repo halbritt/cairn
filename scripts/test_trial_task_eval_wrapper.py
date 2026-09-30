@@ -2,16 +2,41 @@
 import json
 import os
 from pathlib import Path
+import re
 import select
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
 
 
 WRAPPER = Path(__file__).with_name("trial-task-eval.sh")
+
+
+def owned_test_root(value):
+    if not isinstance(value, str) or not re.fullmatch(r"/tmp/cairn-task-eval-pg\.[A-Za-z0-9]{8}", value):
+        raise ValueError("invalid owned cluster path")
+    root = Path(value)
+    try:
+        info = root.lstat()
+    except FileNotFoundError:
+        return root  # Successful wrapper cleanup already removed it.
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise ValueError("cluster cleanup requires an owned nonsymlink directory")
+    return root
+
+
+def remove_owned_test_root(value):
+    # Recheck at cleanup time as well as before registering the callback.
+    root = owned_test_root(value)
+    if root.exists():
+        shutil.rmtree(root)
+
+
 PAYLOAD = r"""
 import json, os, pathlib, subprocess, sys
 socket = pathlib.Path(os.environ['CAIRN_TASK_EVAL_PG'])
@@ -66,9 +91,10 @@ sys.exit(5)
 """
         done = self.invoke("--", sys.executable, "-c", payload)
         observed = json.loads(done.stdout)
-        root = Path(observed["root"])
+        root = owned_test_root(observed["root"])
         # The failure case must not leave the disposable test data behind.
-        self.addCleanup(shutil.rmtree, root, True)
+        if root.exists():
+            self.addCleanup(remove_owned_test_root, str(root))
         self.assertEqual(done.returncode, 5, done.stderr)
         self.assertFalse(root.exists(), "dead postmaster left its cluster directory")
 
@@ -140,11 +166,40 @@ sys.exit(codes[min(n, len(codes)-1)])
                     done = subprocess.run(["bash", str(WRAPPER), "--", sys.executable,
                                            "-c", payload, str(command_status)], env=env,
                                           capture_output=True, text=True, timeout=10)
-                    root = Path(done.stdout.strip())
-                    self.addCleanup(shutil.rmtree, root, True)
+                    root = owned_test_root(done.stdout.strip())
+                    if root.exists():
+                        self.addCleanup(remove_owned_test_root, str(root))
                     self.assertTrue(root.is_dir(), "unknown server status deleted its directory")
                     self.assertEqual(done.returncode, command_status or 1, done.stderr)
                     self.assertIn("cleanup failed", done.stderr)
+
+    def test_cleanup_rejects_empty_relative_foreign_and_symlink_paths(self):
+        from unittest.mock import patch
+        for value in ("", ".", str(WRAPPER.parent), "/tmp/cairn-task-eval-pg.abc/../../x"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                remove_owned_test_root(value)
+        with tempfile.TemporaryDirectory(prefix="cairn-wrapper-guard-") as directory:
+            target = Path(directory)
+            marker = target / "preserve"
+            marker.write_text("untouched")
+            # Use a valid lexical owned-root name so lstat, not name validation,
+            # must reject the symlink. This fixture never starts PostgreSQL.
+            link = Path("/tmp") / ("cairn-task-eval-pg." + uuid.uuid4().hex[:8])
+            link.mkdir(mode=0o700)
+            try:
+                link.rmdir()
+                link.symlink_to(target, target_is_directory=True)
+                with self.assertRaises(ValueError):
+                    remove_owned_test_root(str(link))
+                self.assertEqual(marker.read_text(), "untouched")
+            finally:
+                if link.is_symlink():
+                    link.unlink()
+                else:
+                    link.rmdir()
+            foreign = os.stat_result((stat.S_IFDIR | 0o700, 0, 0, 1, os.getuid() + 1, 0, 0, 0, 0, 0))
+            with patch.object(Path, "lstat", return_value=foreign), self.assertRaises(ValueError):
+                remove_owned_test_root("/tmp/cairn-task-eval-pg.ABC12345")
 
 
 if __name__ == "__main__":
