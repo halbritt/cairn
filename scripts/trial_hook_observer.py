@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 import sys
 import time
+from trial_source_delivery import hook_delivery
 
 
 RECALL_FIELDS = (
@@ -91,6 +92,7 @@ def main():
         raw = captured.getvalue()
         record['stdout_bytes'] = len(raw.encode())
         record['stdout_sha256'] = hashlib.sha256(raw.encode()).hexdigest()
+        record['source_delivery'] = hook_delivery(raw)
         record['process_seconds'] = time.monotonic() - started
         # Multiple host hooks can finish concurrently. A partial write or disk
         # failure must remain visible instead of silently losing measurements.

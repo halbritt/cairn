@@ -82,9 +82,11 @@ def manifest(root):
             raise ValueError('invalid or duplicate case id')
         ids.add(case['id'])
         permitted = {'id','workspace','copy_to','cwd','workspace_commit','category','primary','provenance','expected',
-                     'acceptable','must_not_deliver','over_applied','wordings','preflight','correct','mistake','review','stratum'}
+                     'relevance_labels_complete','acceptable','must_not_deliver','over_applied','wordings','preflight','correct','mistake','review','stratum'}
         if set(case)-permitted:
             raise ValueError('unsupported prospective case fields; combine known corrections in exact task wording')
+        if 'relevance_labels_complete' in case and type(case['relevance_labels_complete']) is not bool:
+            raise ValueError('relevance_labels_complete must be an explicit boolean')
         for key in ('workspace','copy_to','cwd'):
             _relative(case[key])
         if not (root/'workspaces'/case['workspace']/'setup.sh').is_file():

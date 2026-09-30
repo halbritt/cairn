@@ -150,7 +150,11 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
             with contextlib.redirect_stdout(io.StringIO()):
                 te.main(['freeze-input','--input',str(root)])
             child=base/'native-fixture.py'
-            child.write_text("import json; print(json.dumps({'type':'result','is_error':True,'terminal_reason':'api_error','api_error_status':401,'result':'PRIVATE provider error'}))")
+            source_id='12345678-1234-4234-8234-123456789abc'
+            events=[{'type':'assistant','message':{'content':[{'type':'tool_use','id':'toolu_evidence','name':'mcp__cairn__cairn_pull','input':{'PRIVATE_QUERY':True}}]}},
+                    {'type':'user','message':{'content':[{'type':'tool_result','tool_use_id':'toolu_evidence','content':[{'type':'text','text':json.dumps({'selection':{'record':{'record_id':source_id,'version':1,'body':'PRIVATE_BODY'}}})}]}]}},
+                    {'type':'result','is_error':True,'terminal_reason':'api_error','api_error_status':401,'result':'PRIVATE provider error'}]
+            child.write_text('import json\nfor event in '+repr(events)+': print(json.dumps(event))\n')
             launches=[]
             def sandbox(work,cwd,binds,env,argv,harness='claude',**kwargs):
                 if argv[0]=='claude':
@@ -170,3 +174,29 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
             selected=(run/'native-terminal.json').read_text()
             self.assertNotIn('PRIVATE',selected)
             self.assertEqual(json.loads(selected)['admission_failure']['api_error_status'],401)
+            references=report['records'][0]['memory']['source_deliveries']
+            self.assertEqual(references[0]['delivery']['items'][0]['record_id'],source_id)
+            self.assertEqual(report['records'][0]['memory']['relevance_status'],'unknown_unlabelled')
+            self.assertNotIn('PRIVATE_',json.dumps(references))
+            self.assertTrue((run/'selected-input.json').is_file())
+
+    def test_direct_note_prompt_keeps_missing_source_channel_unknown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base=Path(directory);root=fixture(base/'input')
+            document=json.loads((root/'input.json').read_text())
+            document['arms']=['direct'];document['cases'][0]['expected']=['note']
+            (root/'input.json').write_text(json.dumps(document))
+            (root/'corpus.json').write_text(json.dumps({'notes':[{'id':'note','kind':'lesson','body':'PRIVATE_DIRECT_NOTE'}]}))
+            with contextlib.redirect_stdout(io.StringIO()):te.main(['freeze-input','--input',str(root)])
+            child=base/'fake.py';child.write_text("import json,sys\nprint(json.dumps({'type':'system','subtype':'init','model':'fixture-model'}))\nprint(sys.stdin.readline().strip())\nprint(json.dumps({'type':'result','is_error':False,'result':'inspected','permission_denials':[]}))\n")
+            def sandbox(work,cwd,binds,env,argv,harness='claude',**kwargs):
+                return [sys.executable,str(child)] if argv[0]=='claude' else argv
+            with patch.object(te,'sandbox_command',side_effect=sandbox),contextlib.redirect_stdout(io.StringIO()):
+                code=te.main(['agent','--prospective-input',str(root),'--model','fixture-model','--reasoning-effort','high',
+                             '--output',str(base/'out'),'--distractors','0','--parallel','1'])
+            self.assertEqual(code,2)
+            report=json.loads((base/'out/agent.json').read_text());record=report['records'][0]
+            self.assertEqual(record['outcome'],'correct')
+            self.assertEqual(record['selected_input']['status'],'unknown')
+            self.assertIn('direct_prompt_source_delivery_unobserved',record['selected_input']['unknown'])
+            self.assertNotIn('PRIVATE_DIRECT_NOTE',json.dumps(record['selected_input']))

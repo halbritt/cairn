@@ -45,15 +45,20 @@ class ArmContractTest(unittest.TestCase):
             bindings=bind_ordinary_claude(root,config,code/'inbox_recall.py')
             bindings += [(code,'/tmp/trial/hook','ro'),(state,'/tmp/trial/hookstate','rw'),
                          (root/'hook-config.json','/tmp/trial/hookconfig.json','ro'),
-                         (cli,'/tmp/trial/store/cairn','ro'),(work,'/workspace','rw')]
+                         (cli,'/tmp/trial/store/cairn','ro'),(work,'/workspace','rw'),
+                         (te.ROOT/'scripts/trial_hook_observer.py','/tmp/trial/hook-observer.py','ro'),
+                         (te.ROOT/'scripts/trial_source_delivery.py','/tmp/trial/trial_source_delivery.py','ro')]
             command=te.runtime_sandbox()
             for source,target,mode in bindings:
                 command += ['--ro-bind' if mode=='ro' else '--bind',str(source),str(target)]
             command += ['--setenv','PATH','/usr/bin:/bin','--setenv','HOME',str(Path.home()),'--chdir','/workspace',
-                        '/usr/bin/python3','/tmp/trial/hook/memory.py','--config','/tmp/trial/hookconfig.json']
+                        '/usr/bin/python3','-B','/tmp/trial/hook-observer.py','--engine','/tmp/trial/hook/memory.py',
+                        '--config','/tmp/trial/hookconfig.json','--observations','/tmp/trial/hookstate/observations.jsonl']
             event=dict(hook_event_name='UserPromptSubmit',cwd='/workspace',session_id='f9261114-9e01-4dc4-ad50-21f8b979c35a',
                        prompt_id='fresh-native-fixture',prompt='Inspect the synthetic fixture.')
             result=subprocess.run(command,input=json.dumps(event),text=True,capture_output=True,timeout=10)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertIn('additionalContext',json.loads(result.stdout)['hookSpecificOutput'])
+            metadata=json.loads((state/'observations.jsonl').read_text())
+            self.assertEqual(metadata['source_delivery'],dict(schema='cairn.source-delivery/1',status='observed',items=[]))
             self.assertEqual(json.loads((state/(event['session_id']+'.json')).read_text())['last_recall']['outcome'],'delegated')

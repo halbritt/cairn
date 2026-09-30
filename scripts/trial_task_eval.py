@@ -35,6 +35,7 @@ import time
 import uuid
 
 from trial_native_observation import capture, measure
+from trial_source_delivery import bind_origins
 from trial_corpus_fingerprint import corpus_stamp, same_corpus
 from trial_task_arms import copy_arms, checked_file, bind_ordinary_claude
 from trial_task_input import freeze_input, load_input
@@ -1007,6 +1008,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
         binds += [(store["store"].binary, trial / "cairn", "ro"), (store["store"].sockdir, trial / "sock", "rw"),
                   (store["store"].token_file, trial / "agent.token", "ro"), (Path(store["hook"]).parent, "/tmp/trial/hook", "ro"),
                   (ROOT / "scripts/trial_hook_observer.py", "/tmp/trial/hook-observer.py", "ro"),
+                  (ROOT / "scripts/trial_source_delivery.py", "/tmp/trial/trial_source_delivery.py", "ro"),
                   (base / "hook-config.json", "/tmp/trial/hookconfig.json", "ro"), (session_state, "/tmp/trial/hookstate", "rw"),
                   (base / "settings.json", "/tmp/trial/settings.json", "ro"), (base / "mcp.json", "/tmp/trial/mcp.json", "ro")]
         if args.harness == "claude":
@@ -1083,6 +1085,28 @@ def run_agent(case, arm, seed, order, args, stores, out):
             retained.flush()
             os.fsync(retained.fileno())
     failure = execution_failure(trace, code)
+    if prospective:
+        observations = base / "hook-state/observations.jsonl"
+        hook_rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
+        selected_input = measure(stdout, timings, hook_rows, input_bytes=input_charge,
+                                 expects_hooks=arm not in ("none", "direct"), model=args.model, prompt=prompt)
+        origin_path = stores[arm]["store"].root / "import-provenance.json" if arm in stores else None
+        origins = json.loads(origin_path.read_bytes()) if origin_path else []
+        selected_input['origin_map_sha256'] = hashlib.sha256(origin_path.read_bytes()).hexdigest() if origin_path else None
+        if arm == 'direct' and case['expected']:
+            selected_input['status'] = 'unknown'
+            selected_input['unknown'].append('direct_prompt_source_delivery_unobserved')
+        for delivery in selected_input['source_deliveries']:
+            delivery['delivery'] = bind_origins(delivery['delivery'], origins, bodies={n['id']: n['body'] for n in prospective['notes']})
+            if delivery['delivery']['status'] == 'unknown':
+                selected_input['status'] = 'unknown'
+                if 'source_delivery_or_origin_unknown' not in selected_input['unknown']:
+                    selected_input['unknown'].append('source_delivery_or_origin_unknown')
+        # Preserve source evidence even when the independent task grader fails.
+        with (base / "selected-input.json").open('x') as retained:
+            json.dump(selected_input, retained)
+            retained.flush()
+            os.fsync(retained.fileno())
     ctx = dict(cwd=cwd, commands=trace["commands"], answer=trace["answer"],
                tool_outputs=parse_tool_outputs(stdout, args.harness, require_completed=bool(prospective)),
                snapshot=json.loads((root / ".eval-snapshot.json").read_text()))
@@ -1096,16 +1120,11 @@ def run_agent(case, arm, seed, order, args, stores, out):
                   **graded, trace={k: v for k, v in trace.items() if k not in ("answer", "commands")},
                   commands=len(trace["commands"]), answer_chars=len(trace["answer"] or ""), memory=memory)
     if prospective:
-        observations = base / "hook-state/observations.jsonl"
-        hook_rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
-        record["selected_input"] = measure(stdout, timings, hook_rows, input_bytes=input_charge,
-                                            expects_hooks=arm not in ("none", "direct"), model=args.model, prompt=prompt)
+        record["selected_input"] = selected_input
     record["memory_tool_pulls"] = [names_for(stores.get(arm, {}).get("store"), call) for call in trace["memory_calls"]]
-    if memory:
-        expected = set(case["expected"])
-        memory["delivered_expected"] = sorted(expected & set(memory["delivered"]))
-        memory["forbidden"] = sorted((set(case.get("must_not_deliver", [])) | set(case.get("over_applied", []))) & set(memory["delivered"]))
-        memory["irrelevant"] = sorted(set(memory["delivered"]) - expected - set(case.get("acceptable", [])))
+    if prospective:
+        add_delivery_evidence(memory, selected_input)
+    classify_relevance(memory, case, prospective=bool(prospective))
     if prospective:
         record["trace"] = {key: value for key, value in record["trace"].items() if key not in ("writes", "memory_calls")}
         record["memory_tool_pulls"] = [dict(tool=row["tool"]) for row in record["memory_tool_pulls"]]
@@ -1113,6 +1132,34 @@ def run_agent(case, arm, seed, order, args, stores, out):
         (base / "answer.md").write_text(trace["answer"] or "")
     (base / "result.json").write_text(json.dumps(record, indent=2))
     return record
+
+
+def add_delivery_evidence(memory, selected_input):
+    deliveries = selected_input['source_deliveries']
+    memory['source_deliveries'] = deliveries
+    memory['origin_map_sha256'] = selected_input['origin_map_sha256']
+    # Only actual emitted payloads establish exposure; seen/inspection do not.
+    memory['delivered'] = sorted({item['input_id'] for row in deliveries for item in row['delivery']['items']
+                                  if item.get('input_id') and item['extent'] != 'history_metadata'})
+    memory['injected_bytes'] = selected_input['hook_wire_bytes']
+    memory['injected_byte_basis'] = 'hook_stdout_wire'
+
+
+def classify_relevance(memory, case, *, prospective=False):
+    if not memory:
+        return
+    delivered = set(memory.get('delivered', []))
+    memory['forbidden'] = sorted((set(case.get('must_not_deliver', [])) | set(case.get('over_applied', []))) & delivered)
+    if prospective and not case.get('relevance_labels_complete', False):
+        memory['relevance_status'] = 'unknown_unlabelled'
+        memory.pop('irrelevant', None)
+        memory.pop('delivered_expected', None)
+        return
+    if prospective:
+        memory['relevance_status'] = 'declared_exhaustive'
+    expected = set(case['expected'])
+    memory['delivered_expected'] = sorted(expected & delivered)
+    memory['irrelevant'] = sorted(delivered - expected - set(case.get('acceptable', [])))
 
 
 def names_for(store, call):
@@ -1326,6 +1373,15 @@ def cmd_agent(args):
                                 record["trace"] = {k: v for k, v in trace.items() if k not in ("answer", "commands")}
                             except (OSError, ValueError, TypeError, AttributeError) as parse_error:
                                 record["trace_parse_error"] = str(parse_error)[-600:]
+                        selected = base / "selected-input.json"
+                        if prospective and selected.is_file():
+                            try:
+                                record['selected_input'] = json.loads(selected.read_bytes())
+                                record['memory'] = {}
+                                add_delivery_evidence(record['memory'], record['selected_input'])
+                                classify_relevance(record['memory'], c, prospective=True)
+                            except (OSError, ValueError, TypeError, KeyError):
+                                record['source_delivery_error'] = 'selected_evidence_unavailable'
                     records.append(record)
                     failure = (record.get("trace") or {}).get("admission_failure")
                     if stop is None and failure:

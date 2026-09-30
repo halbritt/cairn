@@ -427,3 +427,41 @@ original plan and frozen `output/input/corpus.json`. It retains original grades
 and memory measurements. Because no raw prospective stream exists, its
 stream-derived delivery is **missing/unknown**, not observed zero; parser replay
 cannot manufacture that evidence. Historical reports/streams remain readable.
+
+### Selected source-delivery evidence
+
+Prospective reports retain `cairn.source-delivery/1` metadata extracted from actual
+native Cairn tool results and successful hook stdout. State `seen` entries,
+inspected candidates and API call counts do not establish delivery. The observer
+retains fixed record IDs/versions, preview versus whole-body versus partial-span
+extent, actual displayed-byte SHA256/length, declared full-source SHA256 where
+available, and span offsets. Whole-record bodies have no advertised digest;
+the observer computes UTF-8 bytes only for that known schema and checks them
+against the frozen import provenance. Span bytes must match their declared digest
+and the exact frozen source slice. Summaries may contain omission marks, so their
+location is a hint, not proof of a canonical source slice. History metadata does
+not count as a body delivery; historical bodies remain explicitly historical.
+
+References are mapped to frozen input IDs with the origin-map digest. No raw
+body, summary, query, arbitrary error string or reasoning is retained. Unknown
+payloads/encodings/hash mismatches remain unknown, never stringified as source
+text. Evidence-object pulls are currently unknown source representations rather
+than guessed note identities. Parsing is capped at1MiB/128items per payload and
+128delivery events/512items per run; hitting the cap marks missing evidence.
+Selected measurements are saved before task grading and survive grader errors.
+This is exposure evidence, not applicability, actual model use or currentness
+attestation; a reviewer must inspect the frozen source and action consequence.
+
+Natural prospective cases default to `relevance_status: unknown_unlabelled`:
+empty `expected` does not label every returned note irrelevant. Such records omit
+`irrelevant` and `delivered_expected`. Authors may explicitly set the boolean
+`relevance_labels_complete: true` only for prospectively exhaustive labels;
+otherwise relevance remains unclassified. Explicit forbidden-reference labels
+still report matching exposure. Historical labelled behavior and the CAPLAB
+report/import schema remain unchanged; selected metadata resides under the
+existing original-memory envelope.
+
+The explicit prospective `direct` control inserts notes in the task prompt rather
+than these observed source channels. If used with notes, its source-delivery
+measurement is unknown; an empty reference list must not be called zero exposure.
+Historical direct-control reports are unchanged.

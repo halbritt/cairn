@@ -10,6 +10,7 @@ import selectors
 import signal
 import subprocess
 import time
+from trial_source_delivery import hook_delivery, native_delivery
 
 
 def capture(command, timeout, timing_path, *, input_bytes=None):
@@ -82,7 +83,21 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
             failures.append(reason)
     memory_bytes, hook_bytes, last_memory = 0, 0, None
     native_searches, hook_searches, pulls, terminal_seen = 0, 0, 0, False
-    hook_started, hook_finished = {}, {}
+    hook_started, hook_finished, hook_sources = {}, {}, {}
+    source_deliveries = []
+    source_items, source_events_omitted = 0, 0
+    def retain_delivery(row):
+        nonlocal source_items, source_events_omitted
+        count = len(row['delivery']['items'])
+        if len(source_deliveries) >= 128 or source_items + count > 512:
+            source_events_omitted += 1
+            if 'source_delivery_limit' not in unknown:
+                unknown.append('source_delivery_limit')
+            return
+        source_items += count
+        source_deliveries.append(row)
+        if row['delivery']['status'] == 'unknown' and 'source_delivery_unknown' not in unknown:
+            unknown.append('source_delivery_unknown')
     calls, completed, seen_init, seen_prompt = {}, set(), False, False
     lines = stream.splitlines(keepends=True)
     if len(lines) != len(timings):
@@ -116,6 +131,8 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
                     unknown.append('duplicate_native_hook')
                 text = event.get('stdout')
                 hook_finished[ident] = (name, hashlib.sha256(text.encode()).hexdigest() if isinstance(text,str) else None)
+                if event.get('outcome') == 'success' and event.get('exit_code',0) == 0 and isinstance(text,str):
+                    hook_sources[ident] = dict(delivery=hook_delivery(text), received_seconds=timing.get('received_seconds'))
                 if event.get('outcome') != 'success' or event.get('exit_code',0) != 0:
                     fail('native_hook_failed')
         if event.get('type') == 'result':
@@ -156,6 +173,11 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
                 memory_bytes += len(json.dumps(part,ensure_ascii=False,separators=(',',':')).encode())
                 last_memory = timing.get('received_seconds')
                 completed.add(ident)
+                tool = calls[ident]
+                retain_delivery(dict(channel='native',tool=tool if tool in (
+                    'mcp__cairn__cairn_search','mcp__cairn__cairn_pull','mcp__cairn__cairn_history',
+                    'mcp__cairn__cairn_pull_evidence','mcp__cairn__cairn_client_info','mcp__cairn__cairn_assessments') else 'unknown',
+                    received_seconds=last_memory,delivery=native_delivery(tool,part)))
     if set(calls) != completed:
         unknown.append('unfinished_memory_calls')
     if not terminal_seen:
@@ -192,6 +214,9 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
             fail('hook_exceeded_5_seconds')
         if row.get('exit_code') != 0:
             fail('hook_failed')
+    for ident, observed in hook_sources.items():
+        if ident in hook_started and hook_started[ident] == hook_finished[ident][0]:
+            retain_delivery(dict(channel='hook',event=hook_finished[ident][0] if hook_finished[ident][0] in ('SessionStart','UserPromptSubmit','PostToolUse','PostToolUseFailure') else 'unknown',stdout_sha256=hook_finished[ident][1],**observed))
     if unmatched_hooks:
         unknown.append('native_hook_telemetry_missing')
     if native_searches > 2 or pulls > 4:
@@ -207,5 +232,5 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
                 hook_wire_bytes=hook_bytes, native_memory_result_bytes=memory_bytes,
                 total_bytes=total, last_native_memory_seconds=last_memory,
                 memory_attempted=bool(calls), memory_calls=len(calls), native_searches=native_searches, hook_searches=hook_searches,
-                total_actual_pull_calls=pulls,
+                total_actual_pull_calls=pulls, source_deliveries=source_deliveries, source_delivery_events_omitted=source_events_omitted,
                 limits=dict(selected_input_bytes=9500,hook_seconds=5,last_native_memory_seconds=30))
