@@ -119,6 +119,31 @@ class _Extract:
         for selected in self.list(value,'competing'):
             self.selection(selected)
 
+    def source_opening(self,candidate):
+        if 'source_opening_excerpt' not in candidate:return
+        opening=candidate['source_opening_excerpt']
+        if not isinstance(opening,dict):raise ValueError('source opening')
+        status=opening.get('status')
+        if status in ('unavailable','passage_starts_at_opening'):
+            if set(opening)-{'status','reason'}:raise ValueError('unaccounted opening content')
+            return
+        if status!='provided' or opening.get('origin') not in ('whole_pull','span_pull'):
+            raise ValueError('unknown source opening')
+        response=candidate['response']
+        record=response['selection']['record']
+        matched=response.get('span')
+        span=opening.get('span')
+        if (not isinstance(matched,dict) or not isinstance(span,dict)
+                or _identity(opening)!=_identity(record)
+                or span.get('source_sha256')!=matched.get('source_sha256')
+                or span.get('total_bytes')!=matched.get('total_bytes')
+                or span.get('offset')!=0
+                or not 0<_integer(span.get('end'))<=min(768,_integer(matched.get('offset')))
+                or 'body_base64' in span or not isinstance(span.get('body'),str)):
+            raise ValueError('source opening does not match candidate')
+        self.body(dict(_identity(record),body=''),span=span,mandatory=False)
+        self.items[-1]['source_component']='source_opening_excerpt'
+
     @staticmethod
     def list(value,key):
         items=value.get(key,[])
@@ -151,6 +176,7 @@ class _Extract:
         for candidate in self.list(value,'candidate_bodies'):
             if not isinstance(candidate,dict):raise ValueError('candidate')
             self.expansion(candidate.get('response'))
+            self.source_opening(candidate)
 
     def history(self,value):
         if not isinstance(value,dict) or value.get('historical') is not True or 'versions' not in value:

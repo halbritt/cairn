@@ -55,6 +55,57 @@ def main():
         self.assertTrue(result['items'][0]['mandatory'])
         self.assertNotIn('PRIVATE_',json.dumps(result))
 
+    def test_source_opening_is_counted_as_a_separate_exact_emitted_span(self):
+        from trial_source_delivery import bind_origins, hook_delivery
+        raw=BODY.encode()
+        def span(start,end):
+            part=raw[start:end]
+            return dict(offset=start,end=end,total_bytes=len(raw),body=part.decode(),
+                        sha256=sha(part),source_sha256=sha(raw))
+        candidate=dict(response=dict(selection=selection(body=''),span=span(25,len(raw))),
+            source_opening_excerpt=dict(status='provided',origin='whole_pull',record_id=RID,
+                                        version=1,span=span(0,10)))
+        result=hook_delivery(hook(dict(candidate_bodies=[candidate])))
+        self.assertEqual(result['status'],'observed')
+        self.assertEqual(len(result['items']),2)
+        opening=result['items'][1]
+        self.assertEqual(opening['extent'],'partial_span')
+        self.assertEqual(opening['source_component'],'source_opening_excerpt')
+        self.assertEqual(opening['span'],dict(offset=0,end=10,total_bytes=len(raw)))
+        self.assertEqual(opening['delivered_bytes'],10)
+        self.assertEqual(opening['delivered_sha256'],sha(raw[:10]))
+        self.assertNotIn('Concrete',json.dumps(result))
+        origins=[dict(input_id='note',imported_record_id=RID,imported_version=1,body_sha256=sha(raw))]
+        joined=bind_origins(result,origins,bodies={'note':BODY})
+        self.assertEqual([item['input_id'] for item in joined['items']],['note','note'])
+        self.assertEqual(sum(item['delivered_bytes'] for item in joined['items']),len(raw)-25+10)
+
+    def test_unknown_or_inconsistent_opening_is_not_silently_excluded(self):
+        from trial_source_delivery import hook_delivery
+        raw=BODY.encode()
+        matched=dict(offset=25,end=len(raw),total_bytes=len(raw),body=raw[25:].decode(),
+                     sha256=sha(raw[25:]),source_sha256=sha(raw))
+        prefix=dict(offset=0,end=10,total_bytes=len(raw),body=raw[:10].decode(),
+                    sha256=sha(raw[:10]),source_sha256=sha(raw))
+        for error in ('status','version','source_hash','span_hash','overlap','unknown_content'):
+            with self.subTest(error=error):
+                opening=dict(status='provided',origin='span_pull',record_id=RID,version=1,span=dict(prefix))
+                if error=='status':opening['status']='future-unknown'
+                if error=='version':opening['version']=2
+                if error=='source_hash':opening['span']['source_sha256']='0'*64
+                if error=='span_hash':opening['span']['sha256']='0'*64
+                if error=='overlap':opening['span']['end']=26
+                if error=='unknown_content':opening=dict(status='unavailable',body='UNCOUNTED_SOURCE')
+                result=hook_delivery(hook(dict(candidate_bodies=[dict(
+                    response=dict(selection=selection(body=''),span=matched),source_opening_excerpt=opening)])))
+                self.assertEqual(result['status'],'unknown')
+                self.assertEqual(result['items'],[])
+        for opening in (dict(status='unavailable',reason='pull_limit'),dict(status='passage_starts_at_opening')):
+            result=hook_delivery(hook(dict(candidate_bodies=[dict(
+                response=dict(selection=selection(body=''),span=matched),source_opening_excerpt=opening)])))
+            self.assertEqual(len(result['items']),1)
+            self.assertEqual(result['status'],'observed')
+
     def test_native_history_errors_malformed_and_hash_mismatch(self):
         from trial_source_delivery import native_delivery
         history={'record_id':RID,'historical':True,'versions':[{'version':1,'body':BODY,'body_sha256':sha(BODY.encode())}]}

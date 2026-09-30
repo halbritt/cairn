@@ -186,6 +186,9 @@ class EagerCandidateTests(unittest.TestCase):
 
     def test_receipt_refusal_can_deliver_two_checked_passages_with_four_actual_calls(self):
         self.optional(2)
+        # The first matched passage already includes its opening, leaving both
+        # remaining receipt calls for the second matched passage.
+        self.entries[0]['match_span'] = dict(offset=0, length=len('Old context. '))
         self.pull = self.receipt_span
         text, view, _ = self.invoke()
         self.assertEqual(len(self.calls), 4)
@@ -194,6 +197,8 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 0)
         self.assertEqual(view['candidate_inspection']['delivered_records'], 2)
         self.assertEqual(len(view['candidate_bodies']), 2)
+        self.assertEqual(view['candidate_bodies'][1]['source_opening_excerpt'],
+                         dict(status='unavailable', reason='pull_limit'))
         self.assertTrue(all(b['response']['source_extent'] == 'partial_span' for b in view['candidate_bodies']))
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 9500)
 

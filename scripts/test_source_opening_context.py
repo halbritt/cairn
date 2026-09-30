@@ -1,0 +1,221 @@
+"""Bounded original-source context beside optional matched passages; no provider."""
+import base64
+import hashlib
+import json
+import unittest
+from unittest.mock import patch
+
+import test_claude_inbox_recall as claude
+import test_eager_candidate_context as eager
+
+
+class SourceOpeningTests(unittest.TestCase):
+    def test_tight_native_envelope_keeps_heading_and_match_before_extra_previews(self):
+        case = claude.ClaudeInboxRecallTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        case.mc['context_bytes'] = 6318
+        opening = ('Historical audit handoff\nProject: fixture-engine (the audit tool was Surveyor).\n'
+                   'Context: prior audit repair, not current report implementation.\n')
+        passage = 'Report validation: preserve existing evidence and avoid new model calls. 日本語.\n'
+        body = opening + 'Earlier audit finding details. ' * 350 + passage
+        entry = case.fixture['search']['index'][0]
+        entry.update({'class': 'A', 'match_span': dict(offset=body.encode().index(passage.encode()),
+                     length=len(passage.encode())), 'body_sha256': hashlib.sha256(body.encode()).hexdigest()})
+        case.fixture['pull']['selection']['record'].update(body=body, **{'class': 'A'},
+            scope=dict(repo='/shared/collection', task_id='*', run_id='*'), kind='note',
+            observed_writer='fixture-importer', attribution_state='self', claim_type='self',
+            written_at='2026-09-01T00:00:00Z')
+        case.fixture['search']['index'].append(dict(entry, record_id='00000000-0000-4000-8000-000000000199',
+            summary='Another potentially useful report source. ' * 10,
+            pull_arguments=dict(entry['pull_arguments'], handle='other-preview')))
+        case.freeze()
+        event = dict(case.event, prompt='Inspect report fallback preservation.', prompt_id='source-opening-task')
+        out = case.memory_main(event)
+        self.assertEqual(out['code'], 0, out)
+        text = json.loads(out['stdout'])['hookSpecificOutput']['additionalContext']
+        view = json.loads(text[text.index('{"selected":'):])
+        candidate = view['candidate_bodies'][0]
+        self.assertEqual(candidate['response']['span']['body'], passage)
+        context = candidate['source_opening_excerpt']
+        self.assertEqual(context['status'], 'provided')
+        self.assertEqual(context['span']['body'], opening)
+        self.assertEqual(context['origin'], 'whole_pull')
+        self.assertEqual(context['span']['source_sha256'], entry['body_sha256'])
+        self.assertEqual(context['span']['end'], len(opening.encode()))
+        self.assertLessEqual(len(out['stdout'].encode()) + view['remaining_memory_bytes'], 6318)
+        self.assertIn(opening, text.replace('\\n', '\n'))
+        self.assertEqual(len([c for c in case.calls() if c['op'] == 'pull']), 2)
+        from trial_source_delivery import hook_delivery
+        delivery = hook_delivery(out['stdout'])
+        self.assertEqual(delivery['status'], 'observed')
+        emitted_opening = [item for item in delivery['items']
+                           if item.get('source_component') == 'source_opening_excerpt']
+        self.assertEqual(len(emitted_opening), 1)
+        self.assertEqual(emitted_opening[0]['delivered_bytes'], len(opening.encode()))
+        self.assertEqual(emitted_opening[0]['delivered_sha256'], hashlib.sha256(opening.encode()).hexdigest())
+
+    def span_case(self, opening='Original project: fixture-engine.\n', count=1):
+        case = eager.EagerCandidateTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        case.optional(count)
+        for entry in case.result['index']:
+            body = opening + 'Earlier unrelated details. ' * 350 + 'Checked prerequisite.'
+            entry['body_sha256'] = hashlib.sha256(body.encode()).hexdigest()
+            entry['match_span'] = dict(offset=body.encode().index(b'Checked prerequisite.'),
+                                      length=len(b'Checked prerequisite.'))
+            case.responses[entry['record_id']]['selection']['record']['body'] = body
+        def pull(operation, *, payload, timeout):
+            case.calls.append(payload)
+            if 'span' not in payload:
+                raise eager.hook.BudgetRefused('whole does not fit receipt')
+            result = json.loads(json.dumps(case.responses[payload['handle']]))
+            source = result['selection']['record']['body'].encode()
+            offset, length = payload['span']['offset'], payload['span']['length']
+            part = source[offset:offset + length]
+            result['selection']['record']['body'] = ''
+            result['span'] = dict(offset=offset, end=offset + len(part), total_bytes=len(source),
+                sha256=hashlib.sha256(part).hexdigest(), source_sha256=hashlib.sha256(source).hexdigest())
+            try:
+                result['span']['body'] = part.decode()
+            except UnicodeDecodeError:
+                result['span']['body_base64'] = base64.b64encode(part).decode()
+            return result
+        case.pull = pull
+        return case
+
+    def test_span_only_opening_uses_one_existing_credit_and_trims_utf8_boundary(self):
+        # Byte 768 bisects the final character; the API returns exact base64 bytes.
+        opening = '界' * 255 + 'ab界'
+        case = self.span_case(opening)
+        _, view, _ = case.invoke()
+        self.assertEqual(len(case.calls), 3)
+        self.assertEqual(case.calls[-1]['span'], dict(offset=0, length=768))
+        context = view['candidate_bodies'][0]['source_opening_excerpt']
+        self.assertEqual(context['origin'], 'span_pull')
+        self.assertEqual(context['span']['body'], '界' * 255 + 'ab')
+        self.assertEqual(context['span']['end'], 767)
+        self.assertEqual(context['span']['sha256'], hashlib.sha256(('界' * 255 + 'ab').encode()).hexdigest())
+        self.assertEqual(view['candidate_inspection']['pull_calls'], 3)
+        self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 1)
+
+    def test_failed_opening_preserves_original_passage_and_charges_failed_call(self):
+        for failure in ('unavailable', 'version', 'source_hash', 'total', 'span_hash', 'offset',
+                        'base64', 'mandatory', 'class_c', 'competing', 'malformed_span'):
+            with self.subTest(failure=failure):
+                case = self.span_case()
+                pull = case.pull
+                def changed(operation, *, payload, timeout):
+                    response = pull(operation, payload=payload, timeout=timeout)
+                    if payload['span']['offset'] == 0:
+                        if failure == 'unavailable':
+                            raise eager.hook.HookError('temporary fixture outage')
+                        if failure == 'version': response['selection']['record']['version'] = 2
+                        if failure == 'source_hash': response['span']['source_sha256'] = '0' * 64
+                        if failure == 'total': response['span']['total_bytes'] += 1
+                        if failure == 'span_hash': response['span']['sha256'] = '0' * 64
+                        if failure == 'offset': response['span']['offset'] = 1
+                        if failure == 'base64':
+                            response['span'].pop('body'); response['span']['body_base64'] = 'not base64!'
+                        if failure == 'mandatory': response['selection']['mandatory'] = True
+                        if failure == 'class_c': response['selection']['record']['class'] = 'C'
+                        if failure == 'competing': response['competing'] = [response['selection']]
+                        if failure == 'malformed_span': response['span'] = None
+                    return response
+                case.pull = changed
+                _, view, _ = case.invoke()
+                candidate = view['candidate_bodies'][0]
+                self.assertEqual(candidate['response']['span']['body'], 'Checked prerequisite.')
+                self.assertEqual(candidate['source_opening_excerpt'],
+                                 dict(status='unavailable', reason='pull_unavailable'))
+                self.assertEqual(view['candidate_inspection']['pull_calls'], 3)
+                self.assertEqual(len(case.calls), 3)
+
+    def test_prior_whole_and_required_survive_fourth_call_opening_failure(self):
+        case = self.span_case(count=2)
+        first = case.entries[0]
+        body = 'Existing whole independent guidance.'
+        first['body_sha256'] = hashlib.sha256(body.encode()).hexdigest()
+        case.responses[first['record_id']]['selection']['record']['body'] = body
+        case.result['selected'] = [dict(mandatory=True, record=dict(body='Whole mandatory condition.'))]
+        pull = case.pull
+        def fourth_fails(operation, *, payload, timeout):
+            if payload['handle'] == first['record_id']:
+                case.calls.append(payload)
+                return case.responses[first['record_id']]
+            response = pull(operation, payload=payload, timeout=timeout)
+            if payload['span']['offset'] == 0:
+                raise eager.hook.BudgetRefused('last credit unavailable')
+            return response
+        case.pull = fourth_fails
+        _, view, _ = case.invoke()
+        self.assertEqual(view['selected'], case.result['selected'])
+        self.assertEqual(view['candidate_bodies'][0]['response'], case.responses[first['record_id']])
+        self.assertEqual(view['candidate_bodies'][1]['response']['span']['body'], 'Checked prerequisite.')
+        self.assertEqual(view['candidate_inspection']['pull_calls'], 4)
+        self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 0)
+        self.assertEqual(len(case.calls), 4)
+
+    def test_deadline_after_match_does_not_dispatch_opening(self):
+        case = self.span_case()
+        clock = [100.0]
+        pull = case.pull
+        def expired(operation, *, payload, timeout):
+            response = pull(operation, payload=payload, timeout=timeout)
+            clock[0] = 105.01
+            return response
+        case.pull = expired
+        with patch.object(eager.hook.time, 'monotonic', side_effect=lambda: clock[0]):
+            _, view, _ = case.invoke()
+        self.assertEqual(len(case.calls), 2)
+        self.assertEqual(view['candidate_inspection']['pull_calls'], 2)
+        self.assertEqual(view['candidate_bodies'][0]['source_opening_excerpt'],
+                         dict(status='unavailable', reason='deadline'))
+
+    def test_passage_at_opening_needs_no_companion_call_or_duplicate_bytes(self):
+        case = self.span_case()
+        case.entries[0]['match_span'] = dict(offset=0, length=len(b'Original project: fixture-engine.\n'))
+        _, view, _ = case.invoke()
+        self.assertEqual(len(case.calls), 2)
+        self.assertEqual(view['candidate_bodies'][0]['source_opening_excerpt'],
+                         dict(status='passage_starts_at_opening'))
+
+    def test_disjoint_prefix_preserves_multiline_crlf_exactly(self):
+        prefix = 'Original task\r\nProject: α\r\n'
+        case = self.span_case(prefix)
+        case.entries[0]['match_span']['offset'] = len(prefix.encode())
+        case.entries[0]['match_span']['length'] = len('Earlier unrelated details.')
+        _, view, _ = case.invoke()
+        candidate = view['candidate_bodies'][0]
+        opening = candidate['source_opening_excerpt']['span']
+        self.assertEqual(opening['body'], prefix)
+        self.assertEqual(opening['end'], candidate['response']['span']['offset'])
+        self.assertEqual(opening['sha256'], hashlib.sha256(prefix.encode()).hexdigest())
+
+    def test_pair_too_large_keeps_exact_original_passage_with_missing_context(self):
+        case = self.span_case('Context ' * 96)
+        case.config['context_bytes'] = 3900
+        text, view, _ = case.invoke()
+        candidate = view['candidate_bodies'][0]
+        self.assertEqual(candidate['response']['span']['body'], 'Checked prerequisite.')
+        self.assertEqual(candidate['source_opening_excerpt'],
+                         dict(status='unavailable', reason='context_budget'))
+        self.assertNotIn('Context Context', text)
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 3900)
+        self.assertEqual(view['candidate_inspection']['pull_calls'], 3)
+
+    def test_later_refusal_metadata_drops_opening_before_admitted_passage(self):
+        case = self.span_case('Context ' * 96)
+        case.config['context_bytes'] = 4240
+        case.result['index'].append(dict(case.entries[1], body_sha256='unknown'))
+        text, view, _ = case.invoke()
+        self.assertEqual(view['candidate_bodies'][0]['response']['span']['body'], 'Checked prerequisite.')
+        self.assertNotIn('Context Context', text)
+        self.assertEqual(view['candidate_inspection']['delivered_records'], 1)
+        self.assertEqual(view['candidate_inspection']['refusals']['unverifiable_identity'], 1)
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 4240)
+
+
+if __name__ == '__main__':
+    unittest.main()

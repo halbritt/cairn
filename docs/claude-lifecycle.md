@@ -63,6 +63,33 @@ actual whole/span calls total; packing and state-save overhead can add time.
 `last_recall.search_discovery` retains the search API's discovery metadata
 separately from hook branch/outcome labels.
 
+An admitted optional partial candidate can also carry `source_opening_excerpt`:
+a separate exact prefix of at most 768 source bytes, ending at a UTF-8 boundary
+and preferably a complete line. Its own span/hash and the shared record/version
+and source hash remain explicit. It never overlaps the matched passage. The hook
+reuses an already checked whole pull; otherwise it may spend one remaining pull
+call on the opening under the same receipt, four-call cap and deadline. This can
+leave fewer calls for later candidate bodies or manual inspection. A passage
+starting at byte zero needs no additional opening.
+
+The opening is packed with the partial body before remaining previews. If the
+pair cannot fit the measured context allowance, the original passage remains
+and the opening is labelled unavailable. Later refusal metadata drops openings
+before previously admitted bodies. If even the missing-opening label cannot
+fit, the field is absent, which the cue explicitly treats as unknown. Required
+context and competing groups remain whole. The emitted-source observer records
+a supplied opening as a separate partial span; inspected but omitted openings
+are not delivered source evidence.
+
+Collection scope identifies shared storage, not the note's actual project.
+Opening text can help the task agent distinguish original project/task framing,
+historical commands and transferable conditions. It is fallible source wording,
+not inferred project identity, authority or an applicability verdict. A current
+version/hash does not make every paragraph current guidance: long handoffs can
+retain superseded directions internally. The agent must still check conditions,
+history and current source. No extra model call, ranking/filter change or note
+rewrite is performed; clearer source framing alone does not establish usefulness.
+
 Whole candidate bodies take priority within the configured context ceiling.
 The agent-tools cue states shared source-check and safety guidance once; the
 ambient guidance paragraph is not appended again. Response fields and whole
