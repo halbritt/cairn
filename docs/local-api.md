@@ -70,6 +70,37 @@ replacement. Native `cairn_edit` combines those choices in a different tool
 interface. Help explains this distinction and exact-request retries; a stale
 `expected_version` still requires a fresh read and reconciliation.
 
+## Add writer-supplied retrieval hints
+
+When useful task wording is absent from a note, a writer may add a short final
+paragraph to its existing body:
+
+```text
+Retrieval hints (writer-supplied): repeated camera imports; duplicate image cleanup.
+```
+
+Use a few concrete phrases, at most about five. This is an optional authoring
+convention, not a new field, parser or server limit. Keep the substantive
+guidance, prerequisites, exclusions and verification context in the main prose.
+Do not add unrelated keywords, private vocabulary to a shareable note, or phrases
+merely to fill a quota. Existing whole-body limits apply.
+
+The phrases are ordinary body text. They can affect lexical and semantic
+discovery, body hashes, duplicate detection and previews. They do not establish
+applicability, currentness, authority or permission, and they cannot bypass
+scope, destination or eligibility checks. A preview may show only a hint or omit
+it entirely; pull and check the substantive guidance before relying on it.
+
+Save and revise hints through the existing body operations. Full body replacement
+removes any omitted hints; correct or remove stale phrases instead of appending
+contradictory lists. Hints share the note's version history and sensitivity.
+Earlier versions and retained receipts keep their original bytes. There is no
+automatic enrichment or backfill of existing notes.
+
+This convention makes alternate writer vocabulary available to the existing
+matcher. Improved discovery and task outcomes still require fresh evidence;
+adding phrases alone does not demonstrate usefulness.
+
 ## Configure a profile
 
 Generate a local agent profile, keeping the plaintext token out of shell history:

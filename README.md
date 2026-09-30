@@ -118,6 +118,8 @@ provider credentials. The repository defaults to the current directory. Notes
 created by `remember` apply to all tasks and runs in that repository; empty scope
 bindings are never treated as wildcards. Optional [capture pins](docs/currentness-and-replay.md#saving-guidance-with-explicit-applicability)
 narrow when a saved note applies.
+Optional [writer-supplied retrieval hints](docs/local-api.md#add-writer-supplied-retrieval-hints)
+add alternate task wording to the note body without changing its authority.
 
 The default database and run artifacts live under `~/.local/share/cairn`.
 `CAIRN_HOME` changes that directory. `CAIRN_DATABASE_URL` selects an existing
