@@ -42,6 +42,37 @@ can produce different executables. Use these identities to locate the relevant
 source and verification records; retain an executable hash when exact bytes
 matter. Do not invalidate a memory merely because its source revision differs.
 
+## Inspect the connected MCP facade
+
+Call native `cairn_client_info` with `{}` through the conversation's existing
+Cairn connection. Its `cairn.client-info/1` result separates:
+
+- `facade.build`: the executing facade's build, captured at server construction.
+  `facade.search_memory_budget_bytes: "supported"` is a local declaration with
+  `support_basis: "registered_search_contract"`. Tests cover the registered
+  search argument, validation and forwarding to the authenticated API.
+- `api.build`: the build returned by one authenticated `/v1/version` request,
+  when available. `api.search_memory_budget_bytes` remains `"unknown"`, with
+  `support_basis: "no_api_capability_contract"`: the current version endpoint
+  declares builds and wire protocol, not feature support. This applies to older
+  responses too; equal revisions or unknown extra response fields do not change it.
+
+The probe has a two-second timeout and never retries. An unavailable API leaves
+facade information intact with `api.state: "unavailable"` and a fixed diagnostic
+such as `API_CONNECTION_FAILED`, `API_TIMEOUT`, `API_ACCESS_DENIED`,
+`VERSION_UNAVAILABLE`, or `API_PROBE_FAILED`. Malformed build metadata produces
+`invalid_response` / `INVALID_BUILD_IDENTITY`; arbitrary API error text and
+unknown fields are not forwarded. Build strings must fit the diagnostic's
+bounded recognized formats; unrecognized identities are not guessed at.
+
+The complete MCP result must fit both 4,096 UTF-8 bytes and the configured tool
+output room. Too little room refuses the result with `BUDGET_REFUSED`, without
+truncation. No socket, credential, repository or session paths are included.
+The tool does not enumerate clients, identify Python code, compare release order,
+restart anything or establish that an API operation is authorized or available.
+It performs no database writes. A newly launched facade diagnoses only itself;
+it cannot establish which implementation another conversation still uses.
+
 ## Upgrade a running MCP facade
 
 Replacing the installed Cairn file does not change a process that already loaded

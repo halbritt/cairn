@@ -92,7 +92,7 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	if !reflect.DeepEqual(names, []string{"cairn_assess", "cairn_assessments", "cairn_edit", "cairn_history", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_search"}) {
+	if !reflect.DeepEqual(names, []string{"cairn_assess", "cairn_assessments", "cairn_client_info", "cairn_edit", "cairn_history", "cairn_pull", "cairn_pull_evidence", "cairn_remember", "cairn_search"}) {
 		t.Fatal(names)
 	}
 	invokeMeasured := func(name string, args any, wantError string) (json.RawMessage, int) {

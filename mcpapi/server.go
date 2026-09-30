@@ -151,8 +151,10 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 		pins := *config.Context
 		config.Context = &pins
 	}
-	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: buildinfo.Read().Label()}, nil)
-	tools := memoryTools{client: client, config: config}
+	facadeBuild := buildinfo.Read()
+	server := mcp.NewServer(&mcp.Implementation{Name: "cairn", Version: facadeBuild.Label()}, nil)
+	tools := memoryTools{client: client, config: config, facadeBuild: facadeBuild}
+	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_client_info", Description: "Inspect this running MCP facade build and its declared search memory_budget_bytes support, separately from the authenticated API build. API failures retain local information with a sanitized diagnostic. API capability support remains unknown without a recognized declaration; revisions do not establish compatibility or release ordering. Does not identify installed Python code or other clients. No retries, restarts or writes."}, tools.clientInfo)
 	destructive := true
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_assess", Description: "Append a review to a receipt owned by the configured profile in its repository and destination. Read cairn_assessments first; expected_version is the latest reviewed version, or 0 for empty history. Choose a request UUID before writing and reuse the complete arguments for retries. VERSION_CONFLICT requires reading and reconciling history. For qualitative review with uncertain acceptance, use task_outcome=unknown, failure_domain=unknown, failure_kind=\"\", evidence_ids=[], and record observations, alternatives, costs and uncertainty in reason (8-4000 trimmed characters); name your method. Other outcomes require selected evidence IDs. Agent reviews remain testimony; an owned retrieval is distinct from the host's task assessment. Returns identifiers and attribution without echoing the reason. A failed response may follow a committed write; retry the saved request."}, tools.assess)
 	mcp.AddTool(server, &mcp.Tool{Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: new(bool), OpenWorldHint: new(bool)}, Name: "cairn_assessments", Description: "Read an owned receipt's assessment history in ascending version order, including reasons, evidence IDs, observer, witness and method. Empty history returns []. Read this before writing or interpreting a task outcome; unknown acceptance does not mean zero memory value. A linked retrieval does not grant access to the host's assessment. Returns evidence IDs without bodies, at most 1000 versions; there is no pagination. The configured output budget applies without silent truncation."}, tools.assessments)
@@ -166,8 +168,9 @@ func NewServer(client *localapi.Client, config Config) (*mcp.Server, error) {
 }
 
 type memoryTools struct {
-	client *localapi.Client
-	config Config
+	facadeBuild buildinfo.Info
+	client      *localapi.Client
+	config      Config
 }
 
 func (t memoryTools) search(ctx context.Context, request *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {

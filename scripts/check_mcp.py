@@ -84,7 +84,7 @@ def session(binary, root, environment, extra_args=(), generated=False):
 
         send(dict(method='notifications/initialized', params={}))
         names = {t['name'] for t in request('tools/list', {})['tools']}
-        assert names == {'cairn_search', 'cairn_pull', 'cairn_pull_evidence', 'cairn_remember', 'cairn_edit', 'cairn_history', 'cairn_assess', 'cairn_assessments'}, names
+        assert names == {'cairn_search', 'cairn_pull', 'cairn_pull_evidence', 'cairn_remember', 'cairn_edit', 'cairn_history', 'cairn_assess', 'cairn_assessments', 'cairn_client_info'}, names
         if enabled_tools is not None:
             assert enabled_tools == names, ('Codex allowlist differs from shipped tools', enabled_tools, names)
         yield tool
