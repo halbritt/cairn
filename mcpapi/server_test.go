@@ -281,6 +281,37 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 			t.Fatalf("memory cap leaked into later default search: %+v %v", defaultRoom, err)
 		}
 	})
+	t.Run("expanded preview envelope", func(t *testing.T) {
+		const allowance = 6000
+		previewServer, err := NewServer(client, Config{Scope: core.Scope{Repo: repo, TaskID: "preview-expansion", RunID: "attempt"}, AvailableTokens: 8000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		originalSession := session
+		session = connect(t, ctx, previewServer)
+		defer func() { session = originalSession }()
+		source := strings.Repeat("Background context. ", 12) + "Do not under any circumstances in the production environment reuse cached validation results at C:\\cache\\results.\tMore details follow."
+		invoke("cairn_remember", map[string]any{"request_id": uuid.NewString(), "scope": "task", "shareable": true, "body": source}, "")
+		body, searchBytes := invokeMeasured("cairn_search", map[string]any{"query": "reuse cached validation results", "available_tokens": 8000, "memory_budget_bytes": allowance}, "")
+		var found searchResult
+		if err := json.Unmarshal(body, &found); err != nil || len(found.Index) != 1 || !strings.Contains(found.Index[0].Summary, "Do not") || !strings.Contains(found.Index[0].Summary, `C:\cache\results`) || searchBytes > allowance {
+			t.Fatalf("expanded native MCP preview or envelope: %s %v", body, err)
+		}
+		if len(found.Selected) != 1 || found.Selected[0].Record.Body != mandatory.Body {
+			t.Fatal("preview expansion altered whole mandatory instruction")
+		}
+		pull := found.Index[0].PullArguments
+		pull.Span = found.Index[0].SummarySpan
+		if pull.Span == nil {
+			t.Fatal("missing expanded source locator")
+		}
+		pulled, pullBytes := invokeMeasured("cairn_pull", pull, "")
+		var expanded core.Expansion
+		if err := json.Unmarshal(pulled, &expanded); err != nil || expanded.Span == nil || expanded.Span.Body != source[pull.Span.Offset:pull.Span.Offset+pull.Span.Length] || expanded.Selection.Record.Body != "" || searchBytes+pullBytes > allowance {
+			t.Fatalf("escaped search plus checked source exceeds cap or loses provenance: search=%d pull=%d err=%v", searchBytes, pullBytes, err)
+		}
+		t.Logf("expanded preview: actual MCP search=%d span_pull=%d total=%d cap=%d", searchBytes, pullBytes, searchBytes+pullBytes, allowance)
+	})
 	t.Run("append", func(t *testing.T) {
 		original := "Preserved instructions.\r\n日本語  "
 		var saved recordWriteResult

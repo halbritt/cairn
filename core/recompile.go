@@ -166,6 +166,9 @@ func (s *Store) recompileTx(ctx context.Context, tx pgx.Tx, req RecompileRequest
 	if err = validateMemoryBudget(original.Semantic); err != nil {
 		return Package{}, err
 	}
+	if err = validatePresentation(original.Semantic); err != nil {
+		return Package{}, err
+	}
 	digest := sha256.Sum256([]byte(req.Query))
 	if original.Semantic.Query != "sha256:"+hex.EncodeToString(digest[:]) {
 		return Package{}, failure("INVALID_REQUEST", "query does not match the historical intent digest")

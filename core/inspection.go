@@ -91,6 +91,9 @@ func readPackage(ctx context.Context, tx pgx.Tx, receiptID string) (Package, err
 	if err = validateMemoryBudget(p.Semantic); err != nil {
 		return p, err
 	}
+	if err = validatePresentation(p.Semantic); err != nil {
+		return p, err
+	}
 	return p, nil
 }
 

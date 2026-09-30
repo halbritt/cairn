@@ -55,6 +55,9 @@ type Selection struct {
 	Reason    string             `json:"reason"`
 }
 type SemanticPackage struct {
+	// Presentation is sealed but does not spend public context room. Absence
+	// retains the historical preview algorithm and canonical bytes.
+	Presentation      string            `json:"-" cbor:"presentation,omitempty"`
 	MemoryBudget      *MemoryBudget     `json:"memory_budget,omitempty" cbor:"memory_budget,omitempty"`
 	AdvisoryConflicts bool              `json:"advisory_conflicts,omitempty" cbor:"advisory_conflicts,omitempty"`
 	EntitiesSHA256    string            `json:"entities_sha256,omitempty" cbor:"entities_sha256,omitempty"`
@@ -275,6 +278,9 @@ func (s *Store) compileSnapshot(ctx context.Context, tx pgx.Tx, req CompileReque
 	}
 	if req.Mode == "index" {
 		p.Mode = "index"
+		if req.Purpose == "context" {
+			p.Presentation = previewBoundariesV1
+		}
 		if len(req.Kinds) == 0 && p.Schema != "cairn.semantic/10" && p.Schema != "cairn.semantic/13" && p.Schema != "cairn.semantic/17" && req.ErrorSignature == "" {
 			p.Schema = "cairn.semantic/8"
 		}

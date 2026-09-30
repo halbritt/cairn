@@ -225,7 +225,7 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 	if page != nil && page.NextOffset != nil && len(p.Index) == 0 {
 		return p, failure("BUDGET_REFUSED", "index page cannot fit a preview; increase available input room")
 	}
-	return p, nil
+	return expandPreviewBoundaries(p, candidates, evaluations)
 }
 func createIndexSession(ctx context.Context, tx pgx.Tx, id string, p SemanticPackage, reader string) error {
 	cost, err := indexMemoryCost(p)
@@ -364,6 +364,9 @@ func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandReque
 		return failure("AUTHORITY_DENIED", "expansion destination differs from indexed destination")
 	}
 	if err = validateMemoryBudget(original); err != nil {
+		return err
+	}
+	if err = validatePresentation(original); err != nil {
 		return err
 	}
 	var id string
