@@ -1887,6 +1887,80 @@ def finish_presence(config, state, path, timeout=4, reason='process_exited'):
     write_state(path, state)
 
 
+INBOX_PENDING_FRESH = 90  # seconds; three watcher cycles
+
+
+def refresh_inbox_pending(config, state):
+    """Record this busy session's waiting inbox counts for the tool-boundary cue.
+
+    Best effort: an older API or transient failure only removes the cue.
+    """
+    agent = state['agent']
+    if (not config.get('native_delivery') or agent['metadata'].get('delivery_mode') != 'existing-session' or
+            agent['metadata'].get('state') != 'busy'):
+        state.pop('inbox_pending', None)
+        return
+    try:
+        counts = call(config, 'session-inbox-pending', session_ref(agent), timeout=1)
+    except CoordinationError:
+        state.pop('inbox_pending', None)
+        return
+    kinds = ('requests', 'notices', 'responses')
+    if not isinstance(counts, dict) or any(type(counts.get(k, 0)) is not int for k in kinds + ('latest_position',)):
+        state.pop('inbox_pending', None)
+        return
+    state['inbox_pending'] = dict({k: counts.get(k, 0) for k in kinds}, truncated=counts.get('truncated') is True,
+                                  latest_position=counts.get('latest_position', 0),
+                                  execution_id=agent['execution_id'], observed_at=time.time())
+
+
+def inbox_cue_text(pending):
+    parts = []
+    for key, word in (('requests', 'request'), ('notices', 'notice'), ('responses', 'response')):
+        count = pending[key]
+        if count:
+            parts.append(f"{count}{'+' if pending.get('truncated') else ''} {word}{'s' if count != 1 else ''}")
+    return ("Cairn inbox: " + ", ".join(parts) + " waiting for this session. Native delivery hands them over only at "
+            "a turn boundary, one per turn. When the current step reaches a safe stopping point, end your turn so "
+            "they can arrive; do not claim the inbox manually. This notice repeats only when new items arrive.")
+
+
+def tool_cue(config, event):
+    """PostToolUse: surface waiting inbox work during a long turn.
+
+    Reads only this conversation's local state written by the watcher. It never
+    calls the API, takes the session lock, claims, leases or acknowledges.
+    """
+    native = event.get('session_id')
+    if not config.get('native_delivery') or not valid_native_session_id(native):
+        return {}
+    path = state_path(config, native)
+    try:
+        state = json.loads(path.read_text())
+        process = owner_process(config, event)
+    except (OSError, ValueError, CoordinationError):
+        return {}
+    pending = state.get('inbox_pending')
+    agent = state.get('agent') or {}
+    if (state.get('retired') or not isinstance(pending, dict) or not state.get('process') or
+            not same_process(process, state['process']) or pending.get('execution_id') != agent.get('execution_id') or
+            time.time() - pending.get('observed_at', 0) > INBOX_PENDING_FRESH or
+            not any(pending.get(k) for k in ('requests', 'notices', 'responses'))):
+        return {}
+    signature = [pending['execution_id'], pending['latest_position'], pending['requests'], pending['notices'], pending['responses']]
+    marker = path.with_suffix('.cue')
+    try:
+        if json.loads(marker.read_text()).get('signature') == signature:
+            return {}
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        write_state(marker, dict(signature=signature))
+    except OSError:
+        return {}  # Without a marker the cue would repeat after every tool.
+    return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": inbox_cue_text(pending)}}
+
+
 def coordination_excluded(workspace):
     root = Path(workspace)
     return any((p / name).exists() for p in [root, *root.parents]
@@ -1901,6 +1975,11 @@ def handle(config, event, event_name=None):
         active_home = Path(os.environ.get(variable, str(Path.home() / ("." + config["harness"])))).resolve()
         if active_home != Path(config["config_home"]).resolve():
             return {}  # Merged config layers can include another account's hooks.
+    if (event_name or event.get('hook_event_name')) == 'PostToolUse':
+        if config['harness'] not in ('claude', 'codex') or wake_context(config) or any(
+                os.environ.get(k) == '1' for k in ('CAIRN_LIFECYCLE_DISABLED', 'CAIRN_LIFECYCLE_CHILD')):
+            return {}
+        return tool_cue(config, event)
     wake = wake_context(config)
     if not wake and (any(os.environ.get(k) == "1" for k in ("CAIRN_LIFECYCLE_DISABLED", "CAIRN_LIFECYCLE_CHILD")) or os.environ.get("CAIRN_WAKE_CONTEXT")):
         return {}
@@ -2061,6 +2140,7 @@ def watch_once(config):
                     else:
                         state["agent"] = heartbeat(config, state)
                         cancel_prepared = watch_inbox(config, state, path)
+                        refresh_inbox_pending(config, state)
                         cycle = {}
                         prepared = prepare_idle_wake(config, state, path, cycle)
                         report_delivery_observation(config, state, prepared, cycle)

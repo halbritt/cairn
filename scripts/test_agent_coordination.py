@@ -251,6 +251,9 @@ class CoordinationInstall(unittest.TestCase):
                 # Only Codex observes Interrupt; its natively interrupted turns
                 # are actually idle while their tools may still be running.
                 events = set(installed["hooks"])
+                # The tool-boundary inbox cue reads local state; keep it short.
+                cue = installed["hooks"]["PostToolUse"][0]["hooks"][0]
+                self.assertEqual(cue["timeout"], 2)
                 if harness == "codex":
                     self.assertIn("Interrupt", events)
                     interrupt = installed["hooks"]["Interrupt"][0]["hooks"][0]

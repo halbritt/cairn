@@ -24,7 +24,7 @@ var retryByOperation = map[string]string{
 	"preview-retract": "read", "supersession": "read", "refusal": "read",
 	"recompile": "read", "run-index": "read", "run-package": "read",
 	"run-report": "read", "run-status": "read", "use-report": "read",
-	"session-inbox-control": "read", "session-inbox-ready": "read",
+	"session-inbox-control": "read", "session-inbox-pending": "read", "session-inbox-ready": "read",
 	"version": "read",
 
 	"agent-heartbeat": "idempotent", "agent-leave": "idempotent", "worker-heartbeat": "idempotent",

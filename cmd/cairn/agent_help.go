@@ -26,6 +26,7 @@ Everyday operations:
 JSON operations (one request on stdin):
   agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory, agent-resolve
   session-inbox-ready, session-inbox-claim, session-inbox-reconcile Native host delivery
+  session-inbox-pending Native host busy-session inbox counts (read-only)
   session-delivery-observe Native host delivery diagnosis (host-reported)
   session-inbox-control, session-tool-capture, session-tool-stop Native request cancellation
   wake-attempts Inspect current or historical wake attempts
@@ -61,6 +62,9 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	switch operation {
 	case "session-inbox-ready":
 		detail = "Native host adapter only: read the first eligible delivery ID for a live idle execution without claiming or changing work. Empty when busy, held or unavailable. This is a snapshot; only the native hook claims ownership."
+		example = `{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}`
+	case "session-inbox-pending":
+		detail = "Native host adapter only: count requests, notices and responses that native delivery would hand this execution at a later boundary, whatever its presence state. Kinds and the newest position only; no senders, sources or bodies. Claims, leases and acknowledges nothing; truncated at 100."
 		example = `{"agent_id":"AGENT_UUID","execution_id":"EXECUTION_UUID"}`
 	case "session-delivery-observe":
 		detail = "Native host adapter only: replace this execution's current host observation of why its ready delivery has or lacks an automatic wake. Closed condition codes; delivery-scope conditions name the exact observed delivery. Refresh a persisting condition within 60 seconds; the store stamps receipt time, ignores older or repeated observations and labels the result host_reported, never a delivery guarantee. condition none clears it without deleting ordering."

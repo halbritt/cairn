@@ -7826,6 +7826,40 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.SessionInboxControlStatus"
       },
+      "core.SessionInboxPending": {
+        "properties": {
+          "latest_position": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "notices": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "requests": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "responses": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "notices",
+          "requests",
+          "responses"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.SessionInboxPending"
+      },
       "core.SessionInboxReadiness": {
         "properties": {
           "delivery_id": {
@@ -18525,6 +18559,131 @@
         "x-cairn-go-types": {
           "request": "github.com/halbritt/cairn/core.AgentSessionRef",
           "response": "github.com/halbritt/cairn/core.SessionInboxControlStatus"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "read",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "agent_sessions.go"
+      }
+    },
+    "/v1/session-inbox-pending": {
+      "post": {
+        "operationId": "session-inbox-pending",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "agent_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "execution_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.AgentSessionRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/core.SessionInboxPending"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.AgentSessionRef"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.AgentSessionRef",
+          "response": "github.com/halbritt/cairn/core.SessionInboxPending"
         },
         "x-cairn-local-roles": [
           "agent",

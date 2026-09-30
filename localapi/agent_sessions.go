@@ -13,6 +13,10 @@ func (s *Server) serveAgentSessions(w http.ResponseWriter, r *http.Request, c cl
 		serveJSON(w, r, func(ctx context.Context, req core.AgentSessionRef) (core.SessionInboxReadiness, error) {
 			return c.store.SessionInboxReady(ctx, req, c.destination)
 		})
+	case "/v1/session-inbox-pending":
+		serveJSON(w, r, func(ctx context.Context, req core.AgentSessionRef) (core.SessionInboxPending, error) {
+			return c.store.SessionInboxPending(ctx, req, c.destination)
+		})
 	case "/v1/session-inbox-claim":
 		serveJSON(w, r, func(ctx context.Context, req core.SessionInboxClaim) (core.SessionInboxResult, error) {
 			if c.remote && req.TurnExclusive {

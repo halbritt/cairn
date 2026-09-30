@@ -35,6 +35,32 @@ input when a native endpoint is missing. The native hook still owns the claim.
 Sessions without an enabled host capability wait for another
 boundary. Native delivery never starts a fresh worker to consume a conversation's inbox.
 
+### Waiting-work cue during long turns
+
+A busy conversation cannot see its inbox until its turn ends, so requests could
+wait silently behind one long turn. Claude and Codex bindings therefore also
+install a `PostToolUse` hook that adds one short line of context when work is
+waiting, for example "Cairn inbox: 1 request, 6 notices waiting for this
+session", with a reminder to end the turn at a safe point rather than claim the
+inbox manually.
+
+The cue is a hint, not delivery:
+
+- The watcher calls `session-inbox-pending` for busy existing-session
+  executions on its normal 30-second cycle. The call counts what native
+  delivery would hand this execution later (requests, notices, responses and
+  the newest position; truncated at 100). It returns no senders, sources or
+  bodies, and it claims, leases and acknowledges nothing. Idle sessions keep
+  the ordinary wake path and are not counted.
+- The hook reads only that conversation's local state. It makes no API call,
+  takes no session lock and has a 2-second timeout. It stays silent for stale
+  counts (older than 90 seconds), another execution or live process, fresh
+  workers, lifecycle children and other harnesses.
+- A cue repeats only when the counts or the newest position change, not after
+  every tool.
+- Against an API without the operation, the watcher drops the counts and the
+  cue never appears; delivery is unchanged.
+
 ### Claude channel activation and selection
 
 Claude Code admits channel notifications only from servers named on its launcher

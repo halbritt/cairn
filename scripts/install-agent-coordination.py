@@ -52,16 +52,17 @@ def install(root, settings, config):
         hooks = data.setdefault('hooks', {})
         # Codex also reports Interrupt: a natively interrupted turn is actually
         # idle for presence, while its tools may still be running.
-        events = ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd')
+        # PostToolUse only reads local state to cue waiting inbox work mid-turn.
+        events = ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'PostToolUse')
         if harness == 'codex':
-            events = ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'Interrupt')
+            events = ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'Interrupt', 'PostToolUse')
         for event in events:
             text = shlex.join(command)
             groups = hooks.setdefault(event, [])
             for group in groups:
                 group['hooks'] = [h for h in group['hooks'] if h.get('command') != text]
             groups[:] = [group for group in groups if group['hooks']]
-            groups.append({'hooks': [{'type': 'command', 'command': text, 'timeout': 2 if event in ('SessionEnd', 'Interrupt') else 15}]})
+            groups.append({'hooks': [{'type': 'command', 'command': text, 'timeout': 2 if event in ('SessionEnd', 'Interrupt', 'PostToolUse') else 15}]})
         backup(settings)
         engine.write_state(settings, data)
     elif harness == 'agy':
@@ -95,7 +96,7 @@ def install(root, settings, config):
     return config_path
 
 
-def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=None, expected=5):
+def trust_codex_hooks(config_home, settings, command, verify=None, codex_binary=None, expected=6):
     """Use the installed native protocol to trust only the reviewed Cairn commands."""
     codex = codex_binary or shutil.which('codex')
     if not codex:
