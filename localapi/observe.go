@@ -392,9 +392,9 @@ func (o *observer) observe(principal, machine string, headers []string) {
 			digest, descriptor = hex.EncodeToString(sum[:]), &reported
 		}
 	}
-	now := o.now()
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	now := o.now()
 	if state == MetadataInvalid {
 		if scope := o.scopeCounters(principal); scope != nil {
 			saturatingAdd(&scope.invalid)
@@ -475,9 +475,9 @@ func (o *observer) view(principal, machine string, request ClientsRequest) (Clie
 			return ClientsResponse{}, errInvalidLimit
 		}
 	}
-	now := o.now()
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	now := o.now()
 	o.expireLocked(now)
 	var own []*cohort
 	for _, c := range o.rows {

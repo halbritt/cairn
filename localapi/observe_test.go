@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -756,5 +757,70 @@ func TestRelayForwardsOneBoundedDeclarationVerbatimAndDropsTheRestWithoutRefusin
 				t.Fatalf("body or relay protocol changed: %q %q", last.body, last.relay)
 			}
 		})
+	}
+}
+
+// Sampling and updating must share one ordering: overlapping authenticated
+// contacts must not manufacture clock regression or expire a newer contact.
+func TestConcurrentContactsKeepLatestObservation(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	sampled, release := make(chan struct{}), make(chan struct{})
+	firstDone, secondDone := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	o := newObserverWith(func() time.Time {
+		switch calls.Add(1) {
+		case 1:
+			return base
+		case 2:
+			close(sampled)
+			<-release
+			return base
+		default:
+			return base.Add(time.Hour)
+		}
+	}, func() string { return "cohort" })
+	go func() { defer close(firstDone); o.observe("agent:a", "", nil) }()
+	<-sampled
+	go func() { defer close(secondDone); o.observe("agent:a", "", nil) }()
+	// Release independently of the second completion: a correct implementation
+	// holds the observation lock during the first clock sample.
+	select {
+	case <-secondDone:
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	<-firstDone
+	<-secondDone
+	got := view(t, o, "agent:a", "", nil)
+	if len(got.Rows) != 1 {
+		t.Fatalf("rows: %+v", got)
+	}
+	row := got.Rows[0]
+	if !row.FirstObservedAt.Equal(base) || !row.LastObservedAt.Equal(base.Add(time.Hour)) || got.WallClockRegressed {
+		t.Fatalf("ordered contacts lost: first=%s last=%s regressed=%t", row.FirstObservedAt, row.LastObservedAt, got.WallClockRegressed)
+	}
+	// A view just before the latest contact's retention boundary must retain it.
+	o.now = func() time.Time { return base.Add(time.Hour + ObservationRetention - time.Second) }
+	if got := view(t, o, "agent:a", "", nil); len(got.Rows) != 1 {
+		t.Fatal("latest contact expired early")
+	}
+}
+
+func TestViewSamplesTimeWithItsSnapshot(t *testing.T) {
+	clock := newFakeClock()
+	o := testObserver(clock)
+	o.observe("agent:a", "", nil)
+	// A snapshot timestamp must be sampled while the same mutex protects rows;
+	// otherwise a later contact can enter the returned snapshot after sampling.
+	o.now = func() time.Time {
+		if o.mu.TryLock() {
+			o.mu.Unlock()
+			t.Error("snapshot clock sampled outside observation lock")
+		}
+		return clock.Now()
+	}
+	got := view(t, o, "agent:a", "", nil)
+	if len(got.Rows) != 1 || got.ObservedAt.Before(got.Rows[0].LastObservedAt) {
+		t.Fatalf("snapshot predates included contact: %+v", got)
 	}
 }

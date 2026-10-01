@@ -45,7 +45,8 @@ After normal authentication (and the existing remote-profile and method checks),
 and before protocol admission so that a refused request still diagnoses its
 client, the API records one in-memory observation for authenticated POST calls
 other than `/v1/clients`. It reads no request body, writes no SQL and no log, and
-cannot fail, delay or roll back an operation.
+does not change business admission, retry behavior or identity, and cannot fail or
+roll back an operation. Bounded synchronous parsing and bookkeeping add overhead.
 
 - **Cohorts, not processes.** An observation joins the cohort keyed by the
   authenticated principal, the server-provisioned machine ID (if any) and a digest
