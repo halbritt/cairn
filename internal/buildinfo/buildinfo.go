@@ -2,9 +2,11 @@
 package buildinfo
 
 import (
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strconv"
+	"time"
 )
 
 type Info struct {
@@ -60,4 +62,46 @@ func (i Info) Label() string {
 		return i.ModuleVersion
 	}
 	return "unknown"
+}
+
+var (
+	goVersionPattern     = regexp.MustCompile(`^(devel )?go[0-9][A-Za-z0-9._+-]*( [A-Za-z0-9:+ -]+)?$`)
+	moduleVersionPattern = regexp.MustCompile(`^(\(devel\)|v[0-9][A-Za-z0-9.+-]*)$`)
+	revisionPattern      = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
+	svnRevisionPattern   = regexp.MustCompile(`^[0-9]{1,20}$`)
+)
+
+// Valid reports whether a build object that crossed a trust boundary is
+// well-formed and bounded. Peer metadata is a declaration, not trusted
+// arbitrary text to relay onward: a malformed identity is refused as a whole,
+// without reflecting its contents. A missing revision or a null modified flag
+// is valid and stays unknown.
+func (i Info) Valid() bool {
+	if i.Schema != "cairn.build/1" || len(i.GoVersion) > 128 || !goVersionPattern.MatchString(i.GoVersion) {
+		return false
+	}
+	if i.ModuleVersion != "" && (len(i.ModuleVersion) > 128 || !moduleVersionPattern.MatchString(i.ModuleVersion)) {
+		return false
+	}
+	if i.VCS != "" && i.VCS != "git" && i.VCS != "hg" && i.VCS != "svn" && i.VCS != "bzr" && i.VCS != "fossil" {
+		return false
+	}
+	if i.Revision != "" {
+		valid := revisionPattern.MatchString(i.Revision)
+		if i.VCS == "svn" {
+			valid = svnRevisionPattern.MatchString(i.Revision)
+		}
+		if !valid {
+			return false
+		}
+	}
+	if i.Time != "" {
+		if len(i.Time) > 40 {
+			return false
+		}
+		if _, err := time.Parse(time.RFC3339, i.Time); err != nil {
+			return false
+		}
+	}
+	return true
 }

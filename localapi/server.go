@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/halbritt/cairn/core"
@@ -44,6 +45,19 @@ type Server struct {
 	clients  map[[32]byte]client
 	readers  map[string]expansionReader
 	machines map[string]string
+	// obs is the volatile client observation registry, created on first use so a
+	// Server never depends on it for startup. Tests may set it before serving.
+	obs         *observer
+	observeOnce sync.Once
+}
+
+func (s *Server) observation() *observer {
+	s.observeOnce.Do(func() {
+		if s.obs == nil {
+			s.obs = newObserver()
+		}
+	})
+	return s.obs
 }
 
 func New(ctx context.Context, dsn string, identities []Identity) (*Server, error) {
@@ -117,6 +131,13 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 		writeError(w, 405, "INVALID_REQUEST", "use POST with JSON")
 		return
 	}
+	// Record the declaration of this authenticated contact before protocol
+	// admission, so a refused request is still diagnosable. Observation never
+	// reads the body, fails, retries or changes how the request is handled; the
+	// inspection route is excluded so that listing does not refresh anything.
+	if r.URL.Path != "/v1/clients" {
+		s.observation().observe(c.principal, c.machineID, r.Header.Values(ClientDiagnosticsHeader))
+	}
 	if !admitProtocol(w, r, remoteOnly) {
 		return
 	}
@@ -145,7 +166,13 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 	switch r.URL.Path {
 	case "/v1/version":
 		serveJSON(w, r, func(context.Context, struct{}) (VersionResponse, error) {
-			return VersionResponse{PreviewCapabilities: &PreviewCapabilities{Schema: PreviewCapabilitiesSchema, EntitiesOmitted: true}, VersionInfo: VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, RetrievalCapabilities: &RetrievalCapabilities{Schema: RetrievalCapabilitiesSchema, SearchMemoryBudgetBytes: true, SearchMinPullBytes: true}}, nil
+			return VersionResponse{PreviewCapabilities: &PreviewCapabilities{Schema: PreviewCapabilitiesSchema, EntitiesOmitted: true}, VersionInfo: VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, RetrievalCapabilities: CurrentRetrievalCapabilities()}, nil
+		})
+	case "/v1/clients":
+		// A principal-scoped read of this process's volatile observations. The
+		// caller's own principal and machine come from its authenticated profile.
+		serveJSON(w, r, func(_ context.Context, req ClientsRequest) (ClientsResponse, error) {
+			return s.observation().view(c.principal, c.machineID, req)
 		})
 	case "/v1/create":
 		serveJSON(w, r, c.store.Create)

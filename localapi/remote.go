@@ -82,8 +82,8 @@ func (s *Server) SetLocalMachineID(machine string) error {
 // Every current route is classified; unknown future routes remain unavailable
 // remotely. The route inventory test requires an explicit decision for additions.
 var remoteOperations = map[string]bool{
-	"version": true,
-	"create":  true, "edit": true, "revise": true, "append": true, "replace": true,
+	"version": true, "clients": true,
+	"create": true, "edit": true, "revise": true, "append": true, "replace": true,
 	"cite": true, "delete": true, "supersede": true,
 	"index": true, "expand": true, "expand-evidence": true, "compile": true, "recompile": true,
 	"evidence": true, "history": true, "get": true, "usage": true, "usage-coverage": true,

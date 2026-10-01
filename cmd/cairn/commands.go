@@ -30,6 +30,7 @@ Everyday commands:
   ack | complete | retry | renew (leased event handling; use --help)
   agent --help | agent OPERATION --help (ordinary JSON request examples)
   version | agent [--token-file FILE] [--socket PATH] version
+  clients [--profile NAME | --token-file FILE] [--socket PATH] [--limit N] (observed client declarations for your own principal; use --help)
   opencode-install --project DIRECTORY --socket PATH --token-file FILE --repo REPO [--recent-files] [--replace]
   opencode-config --socket PATH --token-file FILE --repo REPO --task TASK --run RUN [--memory-only]
   codex-config --socket PATH --token-file FILE --repo REPO (--codex-thread | --task TASK --run RUN) [--required]
@@ -133,6 +134,9 @@ func run(ctx context.Context, args []string, input io.Reader) (any, error) {
 	}
 	if args[0] == "agent" {
 		return agentRequest(ctx, args[1:], input)
+	}
+	if args[0] == "clients" {
+		return clientsCommand(ctx, args[1:], input)
 	}
 	if isEventCommand(args[0]) {
 		return eventCommand(ctx, args[0], args[1:], input, nil)

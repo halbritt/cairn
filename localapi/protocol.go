@@ -76,6 +76,12 @@ type RetrievalCapabilities struct {
 	SearchMinPullBytes      bool   `json:"search_min_pull_bytes"`
 }
 
+// CurrentRetrievalCapabilities is this build's declaration of the search
+// request semantics it implements; clients and the API share one source.
+func CurrentRetrievalCapabilities() *RetrievalCapabilities {
+	return &RetrievalCapabilities{Schema: RetrievalCapabilitiesSchema, SearchMemoryBudgetBytes: true, SearchMinPullBytes: true}
+}
+
 // VersionInfo is the version route's reply: the build identity, which is
 // diagnostic only, and the protocol range, which decides compatibility. A
 // legacy server replies with the build fields alone. Build/protocol consumers

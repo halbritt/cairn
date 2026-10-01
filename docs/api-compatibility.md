@@ -28,6 +28,14 @@ per request against an exact integer range, not by a matching major.
 
 This release declares server, relay and client range `[1, 2]`.
 
+## Observation additions
+
+The optional `Cairn-Client-Diagnostics` request header and the `POST /v1/clients`
+route are additive and leave the protocol range unchanged. Servers and relays that
+predate them ignore or drop the header; clients get `NOT_FOUND` for the route and
+report unsupported diagnostics. The header never decides admission, bodies,
+retries or mutation identity. See [observed clients](client-observations.md).
+
 ## Rules for changes
 
 | Change | Protocol effect |

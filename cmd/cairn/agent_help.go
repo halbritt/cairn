@@ -22,6 +22,7 @@ Everyday operations:
   pull         Read a selected note using the returned receipt and handle
   pull-evidence Read a selected supporting source
   version      Identify the CLI and running API builds
+  clients      List the client implementations this API process observed for your own principal (--help)
 
 JSON operations (one request on stdin):
   agent-register, agent-context, agent-heartbeat, agent-leave, agent-directory, agent-resolve
@@ -133,6 +134,10 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 		return agentFlagHelp(
 			"cairn agent [--token-file FILE] [--socket PATH] remember [OPTIONS] NOTE TEXT\n       cairn agent [--token-file FILE] [--socket PATH] remember [OPTIONS] --stdin",
 			"Save one selected ordinary note through the authenticated API. Use --stdin for exact multiline text; pass -- before note text that begins with a hyphen.", f), nil
+	case "clients":
+		f := flags("clients")
+		f.Int("limit", 0, "maximum cohorts to return, 1 to 100 (default 50)")
+		return agentFlagHelp("cairn agent [--token-file FILE] [--socket PATH] clients [--limit N]", clientsHelpDetail, f), nil
 	case "pull":
 		f, _ := newAgentPullFlags(operation)
 		return agentFlagHelp(

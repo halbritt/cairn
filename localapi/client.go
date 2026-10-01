@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/buildinfo"
 	"github.com/halbritt/cairn/internal/jsontext"
 )
 
@@ -25,6 +26,22 @@ type Client struct {
 	transport *http.Transport
 	token     string
 	session   *core.AgentSessionRef
+	// diagnostics is the encoded transport-only declaration, fixed when the view
+	// is made: one identity per client construction, never re-read per request.
+	diagnostics string
+}
+
+// WithDiagnostics returns a view of the client that declares itself to the API
+// with every request, without mutating the base client. The declaration is
+// transport metadata: it is a header, never part of a request body, so it
+// cannot alter an operation, its retry or its mutation identity. The
+// transport build is always read from the executing process; a value supplied
+// in d is ignored. A declaration that cannot be sent within bounds is omitted.
+func (c *Client) WithDiagnostics(d ClientDiagnostics) *Client {
+	d.TransportBuild = buildinfo.Read()
+	view := *c
+	view.diagnostics = EncodeClientDiagnostics(d)
+	return &view
 }
 
 // ForAgentSession selects a registered inbox using the same profile token.
@@ -99,6 +116,9 @@ func (c *Client) Call(ctx context.Context, operation string, request, response a
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(ProtocolHeader, strconv.Itoa(Protocol.Current))
+	if c.diagnostics != "" {
+		req.Header.Set(ClientDiagnosticsHeader, c.diagnostics)
+	}
 	if c.session != nil {
 		req.Header.Set("Cairn-Agent-ID", c.session.AgentID)
 		req.Header.Set("Cairn-Execution-ID", c.session.ExecutionID)

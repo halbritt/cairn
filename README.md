@@ -93,7 +93,9 @@ tools; no project-specific registration is needed.
 
 Use `cairn version` to identify the CLI; authenticated `cairn agent ... version`
 reports the CLI and running API separately. [Build diagnostics](docs/build-identity.md)
-explain unknown stamps and compatibility limits.
+explain unknown stamps and compatibility limits. `cairn clients` lists the declared
+client implementations this API process has observed for your own principal; see
+[observed clients](docs/client-observations.md) for its volatile, partial scope.
 
 Use `cairn mcp --help` or the [configuration command help](docs/mcp.md#command-help)
 to inspect the installed flags before connecting a harness.

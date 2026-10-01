@@ -93,6 +93,12 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, in *http.Request) {
 			out.Header.Set(header, values[0])
 		}
 	}
+	// One bounded diagnostic declaration is forwarded verbatim, never rewritten
+	// with relay identity. Several values or an oversized one are dropped rather
+	// than refused: a diagnostic never decides whether a request is served.
+	if values := in.Header.Values(ClientDiagnosticsHeader); len(values) == 1 && len(values[0]) <= maxDiagnosticsEncoded {
+		out.Header.Set(ClientDiagnosticsHeader, values[0])
+	}
 	// The relay states its own protocol; a client value is never forwarded.
 	out.Header.Set(RelayProtocolHeader, strconv.Itoa(Protocol.Current))
 	// A connection handed to net/http might have received request bytes even if

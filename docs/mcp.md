@@ -25,6 +25,11 @@ filtering. Do not give models operator or observer credentials.
 MCP initialization identifies this facade executable in `serverInfo.version`.
 It does not identify the API or change the MCP protocol version. To diagnose a
 client/server mismatch, use the separate [build commands](build-identity.md).
+Each API request also carries an optional transport-only declaration of this
+process (surface `mcp`, its own build, the retrieval support it implements and an
+optional `--client-harness` label you configure; never inferred). The API keeps it
+only in memory and lists it with [observed clients](client-observations.md).
+It never changes a request.
 
 By default, searches use the fixed startup scope. Capture saves reusable notes in that
 repository with task/run `*`. Pulls retain the API's caller/destination/handle

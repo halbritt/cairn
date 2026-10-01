@@ -42,6 +42,14 @@ can produce different executables. Use these identities to locate the relevant
 source and verification records; retain an executable hash when exact bytes
 matter. Do not invalidate a memory merely because its source revision differs.
 
+## Observe which clients contacted the API
+
+`cairn clients` lists the declared client implementations the running API has
+heard from under your own principal, within 24 hours and one server process. It
+shows reported claims in volatile cohorts, not an installed-client inventory.
+See [observed clients](client-observations.md) for the declaration, limits and
+release checklist.
+
 ## Inspect the connected MCP facade
 
 Call native `cairn_client_info` with `{}` through the conversation's existing

@@ -146,6 +146,48 @@ func TestMachineEnrollmentEndToEnd(t *testing.T) {
 		t.Fatalf("local profile on the network listener: %v", err)
 	}
 
+	// Client observations cross the real relay: the CLI's own declaration is listed for the
+	// enrolled machine's own principal and machine, its observer profile stays denied, and the
+	// central local profile sees none of these rows.
+	observed, err := agentRequest(ctx, []string{"clients"}, strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var view localapi.ClientsResponse
+	if encoded, _ := json.Marshal(observed); json.Unmarshal(encoded, &view) != nil || view.Schema != localapi.ClientsSchema || len(view.Rows) == 0 {
+		t.Fatalf("observed clients: %+v", observed)
+	}
+	declared := false
+	for _, row := range view.Rows {
+		if row.Principal != "machine:box-b/agent" || row.MachineID != "box-b" {
+			t.Fatalf("a row outside the caller's own principal and machine: %+v", row)
+		}
+		if row.MetadataState == localapi.MetadataPresent && row.Reported.Surface == "cli" && row.Reported.Harness == "unknown" && row.Reported.Origin == nil && row.OriginState == "unknown" {
+			declared = true
+		}
+	}
+	if !declared {
+		t.Fatalf("the CLI declaration did not survive the relay: %+v", view.Rows)
+	}
+	if _, err = agentRequest(ctx, []string{"--token-file", filepath.Join(home, "hosted-observer.token"), "clients"}, strings.NewReader("")); core.Code(err) != "AUTHORITY_DENIED" {
+		t.Fatalf("remote observer reached the observation view: %v", err)
+	}
+	centralReply := httptest.NewRecorder()
+	listRequest := httptest.NewRequest("POST", "/v1/clients", strings.NewReader(`{}`))
+	listRequest.Header.Set("Authorization", "Bearer "+localToken)
+	server.ServeHTTP(centralReply, listRequest)
+	var centralView struct {
+		Data localapi.ClientsResponse `json:"data"`
+	}
+	if centralReply.Code != 200 || json.Unmarshal(centralReply.Body.Bytes(), &centralView) != nil {
+		t.Fatalf("central view: %d %s", centralReply.Code, centralReply.Body)
+	}
+	for _, row := range centralView.Data.Rows { // Its own earlier contact is listed; the remote machine's rows are not.
+		if strings.Contains(row.Principal, "machine:box-b") || row.MachineID == "box-b" {
+			t.Fatalf("the central profile saw the remote machine's observations: %+v", row)
+		}
+	}
+
 	// Revocation takes effect when the API reloads its configuration.
 	if _, err = changeMachine(ctx, "revoke", []string{"--machine", "box-b", "--identities", filepath.Join(central, "identities.json")}); err != nil {
 		t.Fatal(err)

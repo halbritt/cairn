@@ -76,7 +76,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, invalid("agent requires an API operation and JSON on stdin")
 	}
 	operation := f.Arg(0)
-	commandArgs := isEventCommand(operation) || operation == "evidence" || operation == "remember" || operation == "run" || operation == "start" || operation == "search" || operation == "pull" || operation == "pull-evidence"
+	commandArgs := isEventCommand(operation) || operation == "clients" || operation == "evidence" || operation == "remember" || operation == "run" || operation == "start" || operation == "search" || operation == "pull" || operation == "pull-evidence"
 	if !commandArgs && f.NArg() != 1 {
 		return nil, invalid("agent operation requires one JSON request on stdin")
 	}
@@ -84,7 +84,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 	case "event-watch":
 	case "agent-register", "agent-context", "agent-heartbeat", "agent-leave", "agent-directory", "agent-resolve", "session-inbox-ready", "session-inbox-pending", "session-inbox-claim", "session-inbox-reconcile", "session-inbox-control", "session-delivery-observe", "session-tool-capture", "session-tool-stop":
 	case "worker-register", "worker-heartbeat", "worker-health", "worker-list", "pool-list", "wake-claim", "wake-attempts", "wake-control", "wake-change", "event-list", "event-inspect", "event-metrics", "event-publish", "event-next", "event-complete", "event-retry", "event-renew", "event-subscribe", "event-subscriptions", "publish", "inbox", "ack", "complete", "retry", "renew", "subscribe", "unsubscribe", "subscriptions", "events", "event-status", "event-stats", "event-group", "event-groups", "response-group", "response-groups":
-	case "version", "remember", "search", "start", "pull", "pull-evidence", "run-package", "run-index", "revise", "append", "replace", "cite", "assessments", "assessments-page", "history", "recompile":
+	case "version", "clients", "remember", "search", "start", "pull", "pull-evidence", "run-package", "run-index", "revise", "append", "replace", "cite", "assessments", "assessments-page", "history", "recompile":
 	case "run", "run-status", "register-context", "check-evidence", "evidence-impact", "refusal", "index", "expand", "expand-evidence", "create", "edit", "delete", "compile", "get", "usage", "usage-coverage", "evidence", "spawn", "terminal", "task-state", "bind-run", "link-run-retrieval", "claim-run", "delivery", "outcome", "assess-run", "use-report", "run-report", "conflict", "conflicts", "supersede", "supersession", "preview-retract":
 	default:
 		return nil, invalid("unknown agent operation")
@@ -94,6 +94,7 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 		return nil, err
 	}
 	defer client.Close()
+	client = client.WithDiagnostics(cliDiagnostics())
 	if session != nil {
 		client = client.ForAgentSession(*session)
 	}
@@ -116,6 +117,9 @@ func agentRequest(ctx context.Context, args []string, input io.Reader) (any, err
 			ServerProtocol localapi.ProtocolRange `json:"server_protocol"`
 			Protocol       int                    `json:"protocol"`
 		}{"cairn.version/1", buildinfo.Read(), server.Info, localapi.Protocol, serverProtocol, localapi.Protocol.Effective(serverProtocol, declared)}, nil
+	}
+	if operation == "clients" {
+		return agentClients(ctx, client, f.Args()[1:])
 	}
 	if operation == "evidence" && f.NArg() > 1 {
 		req, err := evidenceFileRequest(f.Args()[1:])

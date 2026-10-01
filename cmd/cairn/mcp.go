@@ -11,10 +11,11 @@ import (
 )
 
 type mcpOptions struct {
-	socket string
-	token  string
-	config mcpapi.Config
-	pins   core.ContextPins
+	socket  string
+	token   string
+	harness string
+	config  mcpapi.Config
+	pins    core.ContextPins
 }
 
 func mcpFlags(f *flag.FlagSet) *mcpOptions {
@@ -32,6 +33,7 @@ func mcpFlags(f *flag.FlagSet) *mcpOptions {
 	f.StringVar(&o.pins.TaskPhase, "task-phase", "", "declared task phase (exact label)")
 	f.StringVar(&o.pins.BindingID, "binding", "", "binding identity")
 	f.StringVar(&o.pins.CapabilityID, "capability", "", "capability identity")
+	f.StringVar(&o.harness, "client-harness", "", "optional harness label reported in client observations (codex, claude, opencode, hermes, agy, other); reported, never verified or inferred")
 	return o
 }
 
@@ -42,10 +44,23 @@ func (o *mcpOptions) validate(positional int) error {
 	if err := validateHarnessText(o.socket, o.token); err != nil {
 		return err
 	}
+	if o.harness != "" && !map[string]bool{"codex": true, "claude": true, "opencode": true, "hermes": true, "agy": true, "other": true}[o.harness] {
+		return invalid("--client-harness must be one of codex, claude, opencode, hermes, agy, other")
+	}
 	if o.pins != (core.ContextPins{}) {
 		o.config.Context = &o.pins
 	}
 	return o.config.Validate()
+}
+
+// declaration is what this MCP process reports about itself. The harness is
+// only ever the explicitly configured label; absent configuration is unknown.
+func (o *mcpOptions) declaration() localapi.ClientDiagnostics {
+	harness := o.harness
+	if harness == "" {
+		harness = "unknown"
+	}
+	return localapi.ClientDiagnostics{Surface: "mcp", Harness: harness, RetrievalCapabilities: localapi.CurrentRetrievalCapabilities()}
 }
 
 func serveMCP(ctx context.Context, args []string) error {
@@ -62,7 +77,10 @@ func serveMCP(ctx context.Context, args []string) error {
 		return err
 	}
 	defer client.Close()
-	server, err := mcpapi.NewServer(client, o.config)
+	// The facade declares itself once, at construction, so replacing the installed
+	// executable never changes what an already running process reports.
+	declared := client.WithDiagnostics(o.declaration())
+	server, err := mcpapi.NewServer(declared, o.config)
 	if err != nil {
 		return err
 	}

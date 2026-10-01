@@ -1,12 +1,9 @@
 package mcpapi
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"regexp"
 	"time"
 
 	"github.com/halbritt/cairn/core"
@@ -96,95 +93,11 @@ func clientInfoError(ctx context.Context, err error) string {
 	}
 }
 
-var diagnosticGoVersion = regexp.MustCompile(`^(devel )?go[0-9][A-Za-z0-9._+-]*( [A-Za-z0-9:+ -]+)?$`)
-var diagnosticModuleVersion = regexp.MustCompile(`^(\(devel\)|v[0-9][A-Za-z0-9.+-]*)$`)
-var diagnosticRevision = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
-var diagnosticSVNRevision = regexp.MustCompile(`^[0-9]{1,20}$`)
-
 // API metadata is a declaration, not trusted arbitrary text to relay to a model.
 // Refuse malformed identities as a whole, without reflecting their contents.
-func validDiagnosticBuild(b buildinfo.Info) bool {
-	if b.Schema != "cairn.build/1" || len(b.GoVersion) > 128 || !diagnosticGoVersion.MatchString(b.GoVersion) {
-		return false
-	}
-	if b.ModuleVersion != "" && (len(b.ModuleVersion) > 128 || !diagnosticModuleVersion.MatchString(b.ModuleVersion)) {
-		return false
-	}
-	if b.VCS != "" && b.VCS != "git" && b.VCS != "hg" && b.VCS != "svn" && b.VCS != "bzr" && b.VCS != "fossil" {
-		return false
-	}
-	if b.Revision != "" {
-		valid := diagnosticRevision.MatchString(b.Revision)
-		if b.VCS == "svn" {
-			valid = diagnosticSVNRevision.MatchString(b.Revision)
-		}
-		if !valid {
-			return false
-		}
-	}
-	if b.Time != "" {
-		if len(b.Time) > 40 {
-			return false
-		}
-		if _, err := time.Parse(time.RFC3339, b.Time); err != nil {
-			return false
-		}
-	}
-	return true
-}
+func validDiagnosticBuild(b buildinfo.Info) bool { return b.Valid() }
 
-// Deliberately closed and bounded. Unknown schema/fields, duplicate members,
-// missing flags and contradictory declarations remain unknown, not unsupported.
+// Deliberately closed and bounded; see localapi.ParseRetrievalCapabilities.
 func recognizedRetrievalCapabilities(raw json.RawMessage) (localapi.RetrievalCapabilities, bool) {
-	var result localapi.RetrievalCapabilities
-	if len(raw) == 0 || len(raw) > 256 {
-		return result, false
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	token, err := decoder.Token()
-	if err != nil || token != json.Delim('{') {
-		return result, false
-	}
-	seen := map[string]bool{}
-	for decoder.More() {
-		token, err = decoder.Token()
-		if err != nil {
-			return result, false
-		}
-		key, ok := token.(string)
-		if !ok || seen[key] {
-			return result, false
-		}
-		seen[key] = true
-		var value json.RawMessage
-		if err = decoder.Decode(&value); err != nil {
-			return result, false
-		}
-		switch key {
-		case "schema":
-			if err = json.Unmarshal(value, &result.Schema); err != nil {
-				return result, false
-			}
-		case "search_memory_budget_bytes", "search_min_pull_bytes":
-			if !bytes.Equal(value, []byte("true")) && !bytes.Equal(value, []byte("false")) {
-				return result, false
-			}
-			flag := bytes.Equal(value, []byte("true"))
-			if key == "search_memory_budget_bytes" {
-				result.SearchMemoryBudgetBytes = flag
-			} else {
-				result.SearchMinPullBytes = flag
-			}
-		default:
-			return result, false
-		}
-	}
-	token, err = decoder.Token()
-	if err != nil || token != json.Delim('}') {
-		return result, false
-	}
-	if _, err = decoder.Token(); err != io.EOF {
-		return result, false
-	}
-	return result, len(seen) == 3 && result.Schema == localapi.RetrievalCapabilitiesSchema && (!result.SearchMinPullBytes || result.SearchMemoryBudgetBytes)
+	return localapi.ParseRetrievalCapabilities(raw)
 }

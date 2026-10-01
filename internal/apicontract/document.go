@@ -73,6 +73,7 @@ func Build(source *Source) (Document, error) {
 					map[string]any{"$ref": "#/components/parameters/ExecutionID"},
 					map[string]any{"$ref": "#/components/parameters/Protocol"},
 					map[string]any{"$ref": "#/components/parameters/RelayProtocol"},
+					map[string]any{"$ref": "#/components/parameters/ClientDiagnostics"},
 				},
 				"responses": map[string]any{
 					"200": map[string]any{
@@ -108,7 +109,7 @@ func Build(source *Source) (Document, error) {
 			return nil, fmt.Errorf("%s has no remote allowlist decision", path)
 		}
 	}
-	documented := map[string]bool{"Authorization": true, "Cairn-Agent-ID": true, "Cairn-Execution-ID": true, localapi.ProtocolHeader: true, localapi.RelayProtocolHeader: true}
+	documented := map[string]bool{"Authorization": true, "Cairn-Agent-ID": true, "Cairn-Execution-ID": true, localapi.ProtocolHeader: true, localapi.RelayProtocolHeader: true, localapi.ClientDiagnosticsHeader: true}
 	for _, header := range source.Headers {
 		if !documented[header] {
 			return nil, fmt.Errorf("request header %s is read by the server but not documented", header)
@@ -156,10 +157,11 @@ func Build(source *Source) (Document, error) {
 				"description": "Authorization: Bearer <profile token>, at most 512 bytes. The token's configured profile fixes principal, collection, role (agent|observer) and destination (local|hosted); no request field can change them.",
 			}},
 			"parameters": map[string]any{
-				"AgentID":       map[string]any{"name": "Cairn-Agent-ID", "in": "header", "required": false, "schema": map[string]any{"type": "string", "format": "uuid"}, "description": "Registered session UUID. Send together with Cairn-Execution-ID to act as that session's inbox; forbidden on agent-* directory operations."},
-				"Protocol":      map[string]any{"name": localapi.ProtocolHeader, "in": "header", "required": false, "schema": map[string]any{"type": "string", "pattern": "^[1-9][0-9]{0,3}$"}, "description": "Wire protocol the client speaks: one canonical decimal value. Absent means protocol 1, or defers to the body guard. Malformed or duplicate: 400 INVALID_REQUEST. Outside the server's range: 426 PROTOCOL_UNSUPPORTED. Checked after authentication and before any effect; never affects authority."},
-				"RelayProtocol": map[string]any{"name": localapi.RelayProtocolHeader, "in": "header", "required": false, "schema": map[string]any{"type": "string", "pattern": "^[1-9][0-9]{0,3}$"}, "description": "Set by the relay to its own protocol, overwriting any client value; diagnostic only. Malformed: 400 INVALID_REQUEST."},
-				"ExecutionID":   map[string]any{"name": "Cairn-Execution-ID", "in": "header", "required": false, "schema": map[string]any{"type": "string", "format": "uuid"}, "description": "Current execution UUID of the session named by Cairn-Agent-ID. A replaced or restored execution is refused with STALE_SESSION."},
+				"AgentID":           map[string]any{"name": "Cairn-Agent-ID", "in": "header", "required": false, "schema": map[string]any{"type": "string", "format": "uuid"}, "description": "Registered session UUID. Send together with Cairn-Execution-ID to act as that session's inbox; forbidden on agent-* directory operations."},
+				"Protocol":          map[string]any{"name": localapi.ProtocolHeader, "in": "header", "required": false, "schema": map[string]any{"type": "string", "pattern": "^[1-9][0-9]{0,3}$"}, "description": "Wire protocol the client speaks: one canonical decimal value. Absent means protocol 1, or defers to the body guard. Malformed or duplicate: 400 INVALID_REQUEST. Outside the server's range: 426 PROTOCOL_UNSUPPORTED. Checked after authentication and before any effect; never affects authority."},
+				"RelayProtocol":     map[string]any{"name": localapi.RelayProtocolHeader, "in": "header", "required": false, "schema": map[string]any{"type": "string", "pattern": "^[1-9][0-9]{0,3}$"}, "description": "Set by the relay to its own protocol, overwriting any client value; diagnostic only. Malformed: 400 INVALID_REQUEST."},
+				"ClientDiagnostics": map[string]any{"name": localapi.ClientDiagnosticsHeader, "in": "header", "required": false, "schema": map[string]any{"type": "string", "maxLength": 4096, "pattern": "^[A-Za-z0-9_-]*$"}, "description": "Optional transport-only declaration of the calling client: unpadded base64url of one JSON object of schema " + localapi.ClientDiagnosticsSchema + " (at most 4096 encoded and 3072 decoded bytes). A reported claim, never identity: it selects no principal, machine, session or operation and never changes admission, bodies, retries or mutation identity. Missing, duplicate, oversized or invalid declarations are counted and ignored, not refused. Recorded only for authenticated requests, in memory, for the current server process; read back with POST /v1/clients."},
+				"ExecutionID":       map[string]any{"name": "Cairn-Execution-ID", "in": "header", "required": false, "schema": map[string]any{"type": "string", "format": "uuid"}, "description": "Current execution UUID of the session named by Cairn-Agent-ID. A replaced or restored execution is refused with STALE_SESSION."},
 			},
 			"responses": map[string]any{"Error": map[string]any{
 				"description": "Error envelope. HTTP status and code pairs are listed in x-cairn-errors.",

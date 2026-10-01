@@ -11,6 +11,17 @@
           "type": "string"
         }
       },
+      "ClientDiagnostics": {
+        "description": "Optional transport-only declaration of the calling client: unpadded base64url of one JSON object of schema cairn.client-diagnostics/1 (at most 4096 encoded and 3072 decoded bytes). A reported claim, never identity: it selects no principal, machine, session or operation and never changes admission, bodies, retries or mutation identity. Missing, duplicate, oversized or invalid declarations are counted and ignored, not refused. Recorded only for authenticated requests, in memory, for the current server process; read back with POST /v1/clients.",
+        "in": "header",
+        "name": "Cairn-Client-Diagnostics",
+        "required": false,
+        "schema": {
+          "maxLength": 4096,
+          "pattern": "^[A-Za-z0-9_-]*$",
+          "type": "string"
+        }
+      },
       "ExecutionID": {
         "description": "Current execution UUID of the session named by Cairn-Agent-ID. A replaced or restored execution is refused with STALE_SESSION.",
         "in": "header",
@@ -80,6 +91,41 @@
             }
           }
         ]
+      },
+      "buildinfo.Info": {
+        "properties": {
+          "go_version": {
+            "type": "string"
+          },
+          "module_version": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "string"
+          },
+          "vcs": {
+            "type": "string"
+          },
+          "vcs_modified": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "vcs_revision": {
+            "type": "string"
+          },
+          "vcs_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "go_version",
+          "schema",
+          "vcs_modified"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/internal/buildinfo.Info"
       },
       "core.AdvisoryConflict": {
         "properties": {
@@ -10071,6 +10117,243 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.WorkerSpec"
       },
+      "localapi.ClientDiagnostics": {
+        "properties": {
+          "harness": {
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/localapi.ClientOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retrieval_capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/localapi.RetrievalCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "transport_build": {
+            "$ref": "#/components/schemas/buildinfo.Info"
+          }
+        },
+        "required": [
+          "harness",
+          "schema",
+          "surface",
+          "transport_build"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.ClientDiagnostics"
+      },
+      "localapi.ClientOrigin": {
+        "properties": {
+          "basis": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "implementation_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "basis",
+          "component"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.ClientOrigin"
+      },
+      "localapi.ClientsCounters": {
+        "properties": {
+          "evicted_cohorts": {
+            "maximum": 18446744073709551615,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "invalid_declarations": {
+            "maximum": 18446744073709551615,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "evicted_cohorts",
+          "invalid_declarations"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.ClientsCounters"
+      },
+      "localapi.ClientsRequest": {
+        "properties": {
+          "limit": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.ClientsRequest"
+      },
+      "localapi.ClientsRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.ClientsRequest"
+      },
+      "localapi.ClientsResponse": {
+        "properties": {
+          "counters": {
+            "$ref": "#/components/schemas/localapi.ClientsCounters"
+          },
+          "eligible_rows": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "observation_epoch": {
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "retention_seconds": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "returned": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/localapi.ObservedClient"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "schema": {
+            "type": "string"
+          },
+          "server": {
+            "$ref": "#/components/schemas/buildinfo.Info"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "storage": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "wall_clock_regressed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "counters",
+          "eligible_rows",
+          "observation_epoch",
+          "observed_at",
+          "partial",
+          "retention_seconds",
+          "returned",
+          "rows",
+          "schema",
+          "server",
+          "started_at",
+          "storage",
+          "truncated",
+          "wall_clock_regressed"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.ClientsResponse"
+      },
+      "localapi.ObservedClient": {
+        "properties": {
+          "cohort_id": {
+            "type": "string"
+          },
+          "first_observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "machine_id": {
+            "type": "string"
+          },
+          "metadata_state": {
+            "type": "string"
+          },
+          "origin_state": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "reported": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/localapi.ClientDiagnostics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cohort_id",
+          "first_observed_at",
+          "last_observed_at",
+          "metadata_state",
+          "origin_state",
+          "principal"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/localapi.ObservedClient"
+      },
       "localapi.PreviewCapabilities": {
         "properties": {
           "entities_omitted": {
@@ -10280,6 +10563,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -10427,6 +10713,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -10616,6 +10905,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -10741,6 +11033,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -10866,6 +11161,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -11013,6 +11311,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -11202,6 +11503,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -11347,6 +11651,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -11526,6 +11833,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -11652,6 +11962,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -11800,6 +12113,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -11965,6 +12281,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -12088,6 +12407,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -12243,6 +12565,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -12349,6 +12674,130 @@
         "x-cairn-source": "server.go"
       }
     },
+    "/v1/clients": {
+      "post": {
+        "operationId": "clients",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "limit": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/localapi.ClientsRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/localapi.ClientsResponse"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/localapi.ClientsRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/localapi.ClientsRequest",
+          "response": "github.com/halbritt/cairn/localapi.ClientsResponse"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "read",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "server.go"
+      }
+    },
     "/v1/compile": {
       "post": {
         "operationId": "compile",
@@ -12364,6 +12813,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -12626,6 +13078,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -12746,6 +13201,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -12891,6 +13349,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -13020,6 +13481,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -13153,6 +13617,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -13306,6 +13773,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -13449,6 +13919,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -13609,6 +14082,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -13744,6 +14220,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -13885,6 +14364,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -14018,6 +14500,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -14165,6 +14650,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -14310,6 +14798,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -14441,6 +14932,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -14669,6 +15163,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -14802,6 +15299,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -14933,6 +15433,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -15076,6 +15579,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -15223,6 +15729,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -15368,6 +15877,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -15517,6 +16029,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -15650,6 +16165,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -15798,6 +16316,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -15958,6 +16479,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -16077,6 +16601,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -16243,6 +16770,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -16505,6 +17035,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -16646,6 +17179,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -16811,6 +17347,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -16928,6 +17467,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -17045,6 +17587,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -17198,6 +17743,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -17318,6 +17866,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -17465,6 +18016,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -17616,6 +18170,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -17761,6 +18318,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -17884,6 +18444,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -18007,6 +18570,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -18158,6 +18724,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -18278,6 +18847,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -18437,6 +19009,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -18584,6 +19159,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -18709,6 +19287,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -18834,6 +19415,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -18959,6 +19543,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -19100,6 +19687,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -19249,6 +19839,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -19422,6 +20015,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -19567,6 +20163,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -19728,6 +20327,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -19845,6 +20447,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -19992,6 +20597,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -20127,6 +20735,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -20278,6 +20889,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -20415,6 +21029,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -20566,6 +21183,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -20676,6 +21296,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -20819,6 +21442,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -21000,6 +21626,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -21129,6 +21758,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -21246,6 +21878,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -21402,6 +22037,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -21525,6 +22163,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -21642,6 +22283,9 @@
           },
           {
             "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
           }
         ],
         "requestBody": {
@@ -21981,6 +22625,7 @@
   "x-cairn-request-headers": [
     "Authorization",
     "Cairn-Agent-ID",
+    "Cairn-Client-Diagnostics",
     "Cairn-Execution-ID",
     "Cairn-Protocol",
     "Cairn-Relay-Protocol"

@@ -16,6 +16,20 @@ and MCP processes.
 
 ## 2026-10-01
 
+- Add a principal-scoped, volatile view of declared client implementations.
+  The CLI and MCP facade attach an optional, bounded, transport-only
+  `Cairn-Client-Diagnostics` header (their own build, surface, an explicitly
+  configured harness label, retrieval support and an optional allowlisted caller
+  origin); the authenticated API records it in memory only after authentication,
+  in cohorts per principal, machine and validated declaration, kept 24 hours
+  after last contact with at most 128 cohorts per principal and 1,024 overall.
+  `POST /v1/clients` and `cairn clients` list only the caller's own cohorts
+  (limit 1-100), never refresh them, and mark partial views, evictions,
+  missing, invalid and unrecognized declarations. A declaration is a reported
+  claim: it cannot change admission, bodies, retries or identity. No SQL, no
+  persistence across restarts, no process counts, no release ordering, no
+  Python origin producer yet. See [observed clients](docs/client-observations.md).
+
 - The busy-turn inbox cue no longer waits for the presence watcher's next
   30-second refresh. At each Claude/Codex `PostToolUse` and OpenCode tool
   completion the hook makes one bounded (0.5-second) lookup through the existing
