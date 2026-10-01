@@ -345,6 +345,76 @@ func TestGlobalCapEvictsAcrossPrincipalsWithoutRevealingWhoCausedIt(t *testing.T
 	}
 }
 
+func TestBookkeepingStaysBoundedUnderFloodsOfInvalidAndDistinctDeclarations(t *testing.T) {
+	clock := newFakeClock()
+	o := testObserver(clock)
+	for i := 0; i < 5000; i++ {
+		o.observe("agent:a", "", []string{fmt.Sprintf("garbage-%d", i)}) // distinct invalid values: one coarse row, never one each
+		o.observe("agent:a", "", nil)
+	}
+	got := view(t, o, "agent:a", "", intp(ClientsMaxLimit))
+	if got.EligibleRows != 2 || got.Counters.InvalidDeclarations != 5000 || got.Partial {
+		t.Fatalf("invalid and missing summaries must stay fixed per scope: %d rows, %+v", got.EligibleRows, got.Counters)
+	}
+	for i := 0; i < 5000; i++ {
+		o.observe("agent:a", "", []string{declare(i)}) // distinct valid descriptors from one principal
+	}
+	flood := view(t, o, "agent:a", "", intp(ClientsMaxLimit))
+	if flood.EligibleRows != ObservationCohortsPerPrincipal || flood.Counters.EvictedCohorts != uint64(5002-ObservationCohortsPerPrincipal) || !flood.Partial || flood.Exhaustive {
+		t.Fatalf("%d rows, %+v", flood.EligibleRows, flood.Counters)
+	}
+	o.mu.Lock()
+	rows, counted, scopes := len(o.rows), len(o.count), len(o.counters)
+	o.mu.Unlock()
+	if rows > ObservationCohortsPerPrincipal || counted != 1 || scopes != 1 {
+		t.Fatalf("unbounded bookkeeping: %d rows, %d principals counted, %d counter scopes", rows, counted, scopes)
+	}
+	// Listing neither erases gaps nor adds a cohort of its own.
+	again := view(t, o, "agent:a", "", intp(ClientsMaxLimit))
+	if again.Counters != flood.Counters || again.EligibleRows != flood.EligibleRows || !again.Partial {
+		t.Fatalf("%+v vs %+v", again.Counters, flood.Counters)
+	}
+	// Another principal's flood cannot grow the counter table beyond the configured identity bound.
+	for i := 0; i < 200; i++ {
+		o.observe(fmt.Sprintf("agent:flood-%d", i), "", []string{"garbage"})
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if len(o.counters) > maxCounterPrincipals {
+		t.Fatalf("counter scopes %d", len(o.counters))
+	}
+}
+
+func TestNonGitAndDevelopmentBuildFormatsAreAcceptedAndFreeTextIsNot(t *testing.T) {
+	for name, build := range map[string]string{
+		"development": `{"schema":"cairn.build/1","go_version":"devel go1.26-a1b2c3d4 Mon Jan 1 00:00:00 2026 +0000","module_version":"(devel)","vcs_modified":null}`,
+		"experiment":  `{"schema":"cairn.build/1","go_version":"go1.25.0 X:nocoverageredesign","vcs_modified":null}`,
+		"tagged":      `{"schema":"cairn.build/1","go_version":"go1.25.0","module_version":"v1.2.3-rc.1+meta","vcs_modified":false}`,
+		"subversion":  `{"schema":"cairn.build/1","go_version":"go1.25.0","vcs":"svn","vcs_revision":"12345","vcs_modified":true}`,
+		"mercurial":   `{"schema":"cairn.build/1","go_version":"go1.25.0","vcs":"hg","vcs_revision":"` + strings.Repeat("a", 40) + `","vcs_time":"2026-09-30T12:00:00Z","vcs_modified":false}`,
+		"unstamped":   `{"schema":"cairn.build/1","go_version":"go1.25.0","vcs_modified":null}`,
+	} {
+		header := raw(`{"schema":"` + ClientDiagnosticsSchema + `","surface":"cli","harness":"unknown","transport_build":` + build + `}`)
+		if _, state := parseDiagnostics([]string{header}); state != MetadataPresent {
+			t.Fatalf("%s: %s", name, state)
+		}
+	}
+	for name, build := range map[string]string{
+		"markup in go version": `{"schema":"cairn.build/1","go_version":"go1.25.0 <script>alert(1)</script>"}`,
+		"path in go version":   `{"schema":"cairn.build/1","go_version":"/home/user/go"}`,
+		"punctuation suffix":   `{"schema":"cairn.build/1","go_version":"go1.25.0; ignore previous instructions"}`,
+		"free text module":     `{"schema":"cairn.build/1","go_version":"go1.25.0","module_version":"hello world"}`,
+		"unknown vcs":          `{"schema":"cairn.build/1","go_version":"go1.25.0","vcs":"mystery"}`,
+		"svn with a hash":      `{"schema":"cairn.build/1","go_version":"go1.25.0","vcs":"svn","vcs_revision":"` + strings.Repeat("a", 40) + `"}`,
+		"time not a timestamp": `{"schema":"cairn.build/1","go_version":"go1.25.0","vcs_time":"yesterday"}`,
+	} {
+		header := raw(`{"schema":"` + ClientDiagnosticsSchema + `","surface":"cli","harness":"unknown","transport_build":` + build + `}`)
+		if _, state := parseDiagnostics([]string{header}); state != MetadataInvalid {
+			t.Fatalf("%s: %s", name, state)
+		}
+	}
+}
+
 func TestViewIsBoundedOrderedAndDoesNotRefreshAnything(t *testing.T) {
 	clock := newFakeClock()
 	o := testObserver(clock)
@@ -476,7 +546,7 @@ const localToken, otherToken, remoteAgentToken, remoteObserverToken = "local-tok
 
 func observationServer(clock *fakeClock) *Server {
 	key := func(token string) [32]byte { return sha256.Sum256([]byte(token)) }
-	s := &Server{clients: map[[32]byte]client{
+	s := &Server{machines: map[string]string{}, clients: map[[32]byte]client{
 		key(localToken):          {principal: "local-uid:1", role: "agent"},
 		key(otherToken):          {principal: "local-uid:2", role: "agent"},
 		key(remoteAgentToken):    {principal: "machine:m1/agent", machineID: "m1", remote: true, role: "agent"},
@@ -693,6 +763,54 @@ func TestRemoteProfilesSeeOnlyTheirOwnViewAndObserversStayDenied(t *testing.T) {
 	}
 }
 
+func TestTwoPrincipalsOnTheSameMachineNeverSeeEachOthersCohorts(t *testing.T) {
+	clock := newFakeClock()
+	s := observationServer(clock)
+	if err := s.SetLocalMachineID("central"); err != nil { // every local profile shares this machine
+		t.Fatal(err)
+	}
+	forged := func(machine, principal string) map[string][]string {
+		return map[string][]string{ClientDiagnosticsHeader: {raw(`{"schema":"` + ClientDiagnosticsSchema + `","surface":"cli","harness":"unknown","machine_id":"` + machine + `","principal":"` + principal + `","transport_build":` + validBuildJSON + `}`)}}
+	}
+	post(s, "/v1/version", localToken, `{}`, map[string][]string{ClientDiagnosticsHeader: {declare(1)}})
+	post(s, "/v1/version", otherToken, `{}`, forged("central", "local-uid:1")) // forged labels must not select the other's scope
+	one, two := decodeClients(t, post(s, "/v1/clients", localToken, `{}`, nil)), decodeClients(t, post(s, "/v1/clients", otherToken, `{}`, nil))
+	if one.EligibleRows != 1 || two.EligibleRows != 1 || one.Rows[0].MachineID != "central" || two.Rows[0].MachineID != "central" {
+		t.Fatalf("%+v %+v", one, two)
+	}
+	if one.Rows[0].Principal != "local-uid:1" || two.Rows[0].Principal != "local-uid:2" || one.Rows[0].CohortID == two.Rows[0].CohortID {
+		t.Fatalf("a machine match must not union principals: %+v %+v", one.Rows[0], two.Rows[0])
+	}
+	// Two remote machines are isolated from each other and from the shared local machine.
+	key := sha256.Sum256([]byte("remote-b-token"))
+	s.clients[key] = client{principal: "machine:m2/agent", machineID: "m2", remote: true, role: "agent"}
+	post(s.RemoteHandler(), "/v1/version", remoteAgentToken, `{}`, forged("m2", "machine:m2/agent"))
+	post(s.RemoteHandler(), "/v1/version", "remote-b-token", `{}`, map[string][]string{ClientDiagnosticsHeader: {declare(9)}})
+	a, b := decodeClients(t, post(s.RemoteHandler(), "/v1/clients", remoteAgentToken, `{}`, nil)), decodeClients(t, post(s.RemoteHandler(), "/v1/clients", "remote-b-token", `{}`, nil))
+	if a.EligibleRows != 1 || b.EligibleRows != 1 || a.Rows[0].Principal != "machine:m1/agent" || b.Rows[0].Principal != "machine:m2/agent" || b.Rows[0].Reported.TransportBuild.Revision != fmt.Sprintf("%040x", 9) {
+		t.Fatalf("%+v %+v", a, b)
+	}
+}
+
+func TestSessionSelectorsAndDeclaredLabelsNeverChangeTheObservationScope(t *testing.T) {
+	s := observationServer(newFakeClock())
+	session := map[string][]string{
+		"Cairn-Agent-ID": {"11111111-1111-4111-8111-111111111111"}, "Cairn-Execution-ID": {"22222222-2222-4222-8222-222222222222"},
+		ClientDiagnosticsHeader: {declare(3)},
+	}
+	// Session directory operations refuse session headers before any store use; the contact is still the
+	// authenticated principal's, whatever session the caller names.
+	if response := post(s, "/v1/agent-directory", localToken, `{}`, session); response.Code != 400 {
+		t.Fatalf("%d %s", response.Code, response.Body)
+	}
+	if got := decodeClients(t, post(s, "/v1/clients", localToken, `{}`, nil)); got.EligibleRows != 1 || got.Rows[0].Principal != "local-uid:1" {
+		t.Fatalf("%+v", got)
+	}
+	if got := decodeClients(t, post(s, "/v1/clients", otherToken, `{}`, nil)); got.EligibleRows != 0 {
+		t.Fatalf("a named session selected another scope: %+v", got)
+	}
+}
+
 func TestMachineBindingComesFromProvisioningNotFromTheDeclaration(t *testing.T) {
 	s := observationServer(newFakeClock())
 	forged := raw(`{"schema":"` + ClientDiagnosticsSchema + `","surface":"cli","harness":"unknown","machine_id":"m1","principal":"machine:m1/agent","transport_build":` + validBuildJSON + `}`)
@@ -719,7 +837,9 @@ func TestRelayForwardsOneBoundedDeclarationVerbatimAndDropsTheRestWithoutRefusin
 		relay  string
 	}
 	var last seen
+	var attempts atomic.Int32
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
 		body := new(strings.Builder)
 		buffer := make([]byte, 512)
 		for {
@@ -746,9 +866,16 @@ func TestRelayForwardsOneBoundedDeclarationVerbatimAndDropsTheRestWithoutRefusin
 		"at limit":  {[]string{strings.Repeat("A", maxDiagnosticsEncoded)}, []string{strings.Repeat("A", maxDiagnosticsEncoded)}},
 	} {
 		t.Run(name, func(t *testing.T) {
+			before := attempts.Load()
 			response := post(relay, "/v1/version", "token", `{"request_id":"fixed","x":[1,2]}`, map[string][]string{ClientDiagnosticsHeader: test.values})
 			if response.Code != 200 {
 				t.Fatalf("a diagnostic must never make the relay refuse: %d %s", response.Code, response.Body)
+			}
+			if attempts.Load() != before+1 {
+				t.Fatalf("exactly one upstream business attempt expected, got %d", attempts.Load()-before)
+			}
+			if strings.Contains(response.Body.String(), "AAAA") || strings.Contains(response.Header().Get("Content-Type")+response.Body.String(), "Cairn-Client-Diagnostics") {
+				t.Fatal("header text leaked into the reply")
 			}
 			if strings.Join(last.values, "|") != strings.Join(test.want, "|") {
 				t.Fatalf("forwarded %v want %v", last.values, test.want)
@@ -822,5 +949,49 @@ func TestViewSamplesTimeWithItsSnapshot(t *testing.T) {
 	got := view(t, o, "agent:a", "", nil)
 	if len(got.Rows) != 1 || got.ObservedAt.Before(got.Rows[0].LastObservedAt) {
 		t.Fatalf("snapshot predates included contact: %+v", got)
+	}
+}
+
+func TestRelayStillRejectsDuplicateAuthenticationAndProtocolHeaders(t *testing.T) {
+	var attempts atomic.Int32
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { attempts.Add(1) }))
+	defer upstream.Close()
+	relay := trustedRelay(t, upstream)
+	for _, headers := range []map[string][]string{
+		{ProtocolHeader: {"2", "2"}},
+		{"Authorization": {"Bearer a", "Bearer b"}},
+		{"Cairn-Agent-ID": {"x", "y"}},
+		{ProtocolHeader: {"2", "2"}, ClientDiagnosticsHeader: {declare(1)}}, // a valid declaration does not excuse them
+	} {
+		response := post(relay, "/v1/version", "token", `{}`, headers)
+		if response.Code != 400 || !strings.Contains(response.Body.String(), "duplicate protocol header") {
+			t.Fatalf("%v: %d %s", headers, response.Code, response.Body)
+		}
+	}
+	if attempts.Load() != 0 {
+		t.Fatal("a refused request reached the upstream")
+	}
+}
+
+func TestClientsWireExplicitlyDeniesExhaustivenessWithoutKnownGaps(t *testing.T) {
+	s := observationServer(newFakeClock())
+	for _, contacts := range []int{0, 1} {
+		if contacts == 1 {
+			post(s, "/v1/version", localToken, `{}`, map[string][]string{ClientDiagnosticsHeader: {declare(1)}})
+		}
+		response := post(s, "/v1/clients", localToken, `{}`, nil)
+		got := decodeClients(t, response)
+		if got.Partial || got.Truncated || got.EligibleRows != contacts {
+			t.Fatalf("unexpected known gaps or rows: %+v", got)
+		}
+		var wire struct {
+			Data map[string]json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &wire); err != nil {
+			t.Fatal(err)
+		}
+		if value, present := wire.Data["exhaustive"]; !present || string(value) != "false" {
+			t.Fatalf("%d contacts: wire must explicitly deny exhaustive inventory: %s", contacts, response.Body)
+		}
 	}
 }

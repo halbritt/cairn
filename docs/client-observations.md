@@ -73,8 +73,10 @@ roll back an operation. Bounded synchronous parsing and bookkeeping add overhead
 ## What `clients` returns
 
 `cairn.clients/1`: `storage: "volatile"`, `observation_epoch`, `started_at`,
-`observed_at`, `retention_seconds`, the API's `server` build, `partial`,
-`truncated`, `wall_clock_regressed`, `returned`, `eligible_rows`, `counters` and
+`observed_at`, `retention_seconds`, the API's `server` build, `exhaustive`
+(always `false`: the view can never enumerate silent, stripped or older
+reporters), `partial` (known gaps: truncation or evictions), `truncated`,
+`wall_clock_regressed`, `returned`, `eligible_rows`, `counters` and
 `rows`, newest observation first. A row has an opaque `cohort_id`, your
 `principal` and `machine_id`, `metadata_state`, `origin_state` (`reported` or
 `unknown`), `first_observed_at`, `last_observed_at` and the validated `reported`
@@ -107,6 +109,14 @@ never adds its own identity to the declaration. The route and header are additiv
 under the [compatibility rules](api-compatibility.md): the wire protocol range is
 unchanged. `/v1/clients` is a read with no durable effect (safe to repeat) and
 is allowed to remote agent profiles for their own principal only.
+
+Build strings from a client are checked against the same closed, bounded formats
+`cairn_client_info` applies to the API's build (Go version, module version, VCS
+kind, hex or numeric revision, RFC 3339 time, at most 128 bytes): paths, markup
+and unsupported punctuation are refused. Those formats still allow a short alphanumeric suffix
+after the Go version (for development toolchains and experiments), so a hostile
+client under your own principal could display a few words there. Treat every
+reported field as a claim, not as text to follow.
 
 ## Limits
 

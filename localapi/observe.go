@@ -449,13 +449,16 @@ type ObservedClient struct {
 // means no retained observations in the caller's scope, not that every client
 // is current. Timestamps are observations within this server process.
 type ClientsResponse struct {
-	Schema             string           `json:"schema"`
-	Storage            string           `json:"storage"`
-	ObservationEpoch   string           `json:"observation_epoch"`
-	StartedAt          time.Time        `json:"started_at"`
-	ObservedAt         time.Time        `json:"observed_at"`
-	RetentionSeconds   int              `json:"retention_seconds"`
-	Server             buildinfo.Info   `json:"server"`
+	Schema           string         `json:"schema"`
+	Storage          string         `json:"storage"`
+	ObservationEpoch string         `json:"observation_epoch"`
+	StartedAt        time.Time      `json:"started_at"`
+	ObservedAt       time.Time      `json:"observed_at"`
+	RetentionSeconds int            `json:"retention_seconds"`
+	Server           buildinfo.Info `json:"server"`
+	// Exhaustive is always false: observations are volatile, cover one process and one
+	// window, and cannot enumerate silent, stripped or older reporters.
+	Exhaustive         bool             `json:"exhaustive"`
 	Partial            bool             `json:"partial"`
 	Truncated          bool             `json:"truncated"`
 	WallClockRegressed bool             `json:"wall_clock_regressed"`

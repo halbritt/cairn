@@ -10242,6 +10242,9 @@
             "minimum": -9223372036854775808,
             "type": "integer"
           },
+          "exhaustive": {
+            "type": "boolean"
+          },
           "observation_epoch": {
             "type": "string"
           },
@@ -10294,6 +10297,7 @@
         "required": [
           "counters",
           "eligible_rows",
+          "exhaustive",
           "observation_epoch",
           "observed_at",
           "partial",
