@@ -6,17 +6,18 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// SessionInboxPending counts what native delivery would hand this session at
-// a later boundary. It carries kinds and a position only, never senders,
-// sources or bodies, and it claims, leases and acknowledges nothing.
+// SessionInboxPending counts the newest eligible events, up to 100, that
+// native delivery would hand this session at a later boundary. It carries only
+// kinds and a position, never senders, sources or bodies. It claims, leases and
+// acknowledges nothing.
 type SessionInboxPending struct {
 	Requests  int `json:"requests"`
 	Notices   int `json:"notices"`
 	Responses int `json:"responses"`
 	// Truncated reports that at least sessionInboxPendingLimit items wait.
 	Truncated bool `json:"truncated,omitempty"`
-	// LatestPosition is the newest counted event's position, so a host can
-	// tell a new arrival from an unchanged backlog without reading events.
+	// LatestPosition is the highest currently eligible event position, even
+	// when counts are truncated. It is not a cursor over eligibility changes.
 	LatestPosition int64 `json:"latest_position,omitempty"`
 }
 
@@ -52,7 +53,7 @@ func (s *Store) SessionInboxPending(ctx context.Context, ref AgentSessionRef, de
 		WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp()
 		AND e.task_deadline IS NULL AND `+requestAdmissionOpen+` AND `+wakeHold+` AND `+sessionInboxHold+`
 		AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp()))
-		ORDER BY e.position LIMIT $4) pending`, a.Repo, a.Inbox, dest.AllowLocal, sessionInboxPendingLimit).
+		ORDER BY e.position DESC LIMIT $4) pending`, a.Repo, a.Inbox, dest.AllowLocal, sessionInboxPendingLimit).
 		Scan(&out.Requests, &out.Notices, &out.Responses, &total, &out.LatestPosition)
 	if err != nil {
 		return out, err

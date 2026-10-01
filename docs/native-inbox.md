@@ -54,9 +54,9 @@ The cue is a hint, not delivery:
 - The watcher calls `session-inbox-pending` for busy existing-session
   executions on its normal 30-second cycle. The call counts what native
   delivery would hand this execution later (requests, notices, responses and
-  the newest position; truncated at 100). It returns no senders, sources or
-  bodies, and it claims, leases and acknowledges nothing. Idle sessions keep
-  the ordinary wake path and are not counted.
+  the highest eligible position; counts cover the newest 100). It returns no
+  senders, sources or bodies, and it claims, leases and acknowledges nothing.
+  Idle sessions keep the ordinary wake path and are not counted.
 - The hook reads only that conversation's local state. It makes no API call,
   takes no session lock and has a 2-second timeout in Claude/Codex. OpenCode's
   optional cue lookup has a separate 1-second timeout; its exclusive-request
@@ -64,8 +64,15 @@ The cue is a hint, not delivery:
   counts (older than 90 seconds), another execution or live process, fresh
   workers, lifecycle children and other harnesses.
 - A cue repeats only when the counts or the newest counted position change,
-  not after every tool. The API counts the earliest 100 eligible deliveries;
-  new arrivals beyond an unchanged first 100 do not change the cue.
+  not after every tool. The API counts the newest 100 eligible deliveries,
+  so a newer eligible arrival changes the position even with a saturated
+  backlog. Removing an older delivery does not advance that position. Counts
+  by kind describe this bounded newest sample, not the entire backlog or
+  claim order; native delivery still claims oldest first. `truncated` means
+  at least 100 eligible deliveries, including exactly 100. The position is a
+  current-set hint, not a durable arrival cursor: it can decrease when the
+  newest item leaves, and an older item becoming eligible again need not
+  change a saturated summary.
 - Against an API without the operation, the watcher drops the counts and the
   cue never appears; delivery is unchanged.
 
