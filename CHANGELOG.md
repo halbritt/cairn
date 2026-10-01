@@ -14,6 +14,22 @@ observations and [build identity](docs/build-identity.md) for unstamped builds
 and MCP processes.
 
 
+## 2026-10-01
+
+- The busy-turn inbox cue no longer waits for the presence watcher's next
+  30-second refresh. At each Claude/Codex `PostToolUse` and OpenCode tool
+  completion the hook makes one bounded (0.5-second) lookup through the existing
+  read-only `session-inbox-pending` operation and cues only new arrivals; an
+  unchanged or shrinking backlog stays silent. Process, execution, account,
+  workspace opt-out and wake-context guards run before the lookup, and a changed
+  execution voids it. A failed or malformed lookup omits the cue without cached
+  fallback, tool output is unchanged, and concurrent callbacks skip rather than
+  repeat one arrival's cue. The cue still never claims,
+  acknowledges, renews, wakes, releases or cancels anything. Tests use disposable
+  fixtures only; the live next-tool-call demonstration in Claude, Codex and
+  OpenCode is still pending, so CAIRN113 is not closed. See
+  [the cue contract](docs/native-inbox.md#waiting-work-cue-during-long-turns).
+
 ## 2026-09-30
 
 - Diagnose an exact native refusal for a missing retained Codex queue item as

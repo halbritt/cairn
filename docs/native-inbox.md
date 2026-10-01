@@ -51,42 +51,63 @@ the next model continuation without submitting a user prompt or claiming work.
 
 The cue is a hint, not delivery:
 
-- The watcher calls `session-inbox-pending` for busy existing-session
-  executions on its normal 30-second cycle. The call counts what native
+- At each supported tool boundary the hook makes one `session-inbox-pending`
+  lookup for this busy existing-session execution, so a request that arrives
+  after the watcher's last refresh shows at the next tool boundary rather than
+  after the watcher's next 30-second cycle. The call counts what native
   delivery would hand this execution later (requests, notices, responses and
-  the highest eligible position; counts cover the newest 100). It returns no
-  senders, sources or bodies, and it claims, leases and acknowledges nothing.
-  Idle sessions keep the ordinary wake path and are not counted.
-- The hook reads only that conversation's local state. It makes no API call,
-  takes no session lock and has a 2-second timeout in Claude/Codex. OpenCode's
-  optional cue lookup has a separate 1-second timeout; its exclusive-request
-  tool capture keeps its existing timeout and runs before the cue. It stays silent for stale
-  counts (older than 90 seconds), another execution or live process, fresh
-  workers, lifecycle children and other harnesses.
-- A cue repeats only when the counts or the newest counted position change,
-  not after every tool. The API counts the newest 100 eligible deliveries,
-  so a newer eligible arrival changes the position even with a saturated
-  backlog. Removing an older delivery does not advance that position. Counts
-  by kind describe this bounded newest sample, not the entire backlog or
-  claim order; native delivery still claims oldest first. `truncated` means
-  at least 100 eligible deliveries, including exactly 100. The position is a
-  current-set hint, not a durable arrival cursor: it can decrease when the
-  newest item leaves, and an older item becoming eligible again need not
-  change a saturated summary.
-- Against an API without the operation, the watcher drops the counts and the
-  cue never appears; delivery is unchanged.
+  the highest eligible position; counts cover the newest 100). It is the existing
+  read-only,
+  authenticated operation: it returns no senders, sources or bodies and claims,
+  leases, acknowledges, renews, wakes, heartbeats, releases or cancels nothing,
+  and the hook never replaces the session. Idle sessions keep the ordinary wake
+  path and are not counted.
+- The lookup is optional and bounded. It has a 0.5-second deadline inside the
+  hook's own limit (2 seconds in Claude/Codex, 1 second for OpenCode's cue
+  hook; OpenCode's exclusive-request tool capture keeps its existing timeout and
+  runs before the cue). The hook takes no presence lock, so it never waits behind
+  the watcher, and it does not write presence state. It checks the process,
+  execution, account, workspace opt-outs (`.cairn-no-memory`,
+  `.cairn-no-coordination`), lifecycle-child and wake-context guards before
+  asking, and again confirms afterwards that the execution did not change
+  while the lookup ran and rechecks workspace opt-outs before emission. Fresh
+  workers, idle or ending sessions, lifecycle
+  children and other harnesses are never looked up.
+- A failed, refused or malformed fresh lookup omits the cue and leaves tool
+  output and the last valid deduplication marker unchanged. It never falls back
+  to watcher counts: an older cached backlog could repeat an already-cued arrival
+  after a successful lookup observed a reduction. Presence refresh is unchanged.
+- A cue appears only for new arrivals: waiting work whose newest position or
+  total count exceeds what the last lookup observed. An unchanged or
+  shrinking backlog does not repeat, and the baseline follows a fresh lookup
+  down so later arrivals compare against what was actually waiting. The API
+  counts the newest 100 eligible deliveries, so a newer eligible arrival changes
+  the position even with a saturated backlog. Counts describe this bounded sample,
+  not the entire backlog or claim order; delivery still claims oldest first.
+  `truncated` means at least 100, including exactly 100. The position is a
+  current-set hint, not a durable arrival cursor: it can decrease when the newest
+  item leaves, and an older item becoming eligible again need not change a
+  saturated summary.
+- One tool callback per conversation looks up at a time. Concurrent callbacks
+  (parallel Claude/Codex tool hooks, simultaneous OpenCode completions) skip
+  their lookup instead of queueing, so one arrival yields one cue; the skipped
+  callbacks' own output is untouched, and the next boundary observes anything
+  newer.
 
-The watcher must observe an arrival before a later tool completion can show
-the cue. Its 30-second cycle does not guarantee a cue on the first tool call
-after arrival. OpenCode allows one in-flight cue lookup per tracked session;
-concurrent tool completions skip that lookup rather than queue behind it. A cue
-is not guaranteed on the first concurrent completion. Unsupported result shapes,
-lookup failures and disposed/deleted sessions leave tool output unchanged. MCP
+An arrival is cued at the next tool boundary only if that boundary's lookup
+succeeds. A turn with no further tool calls gets no cue, and the cue is
+consumed when emitted: if the host drops the hook output after the hook
+returns, the same arrival is not cued again. OpenCode additionally allows one
+in-flight cue lookup per tracked session. Unsupported result shapes, lookup
+failures and disposed/deleted sessions leave tool output unchanged. MCP
 cues precede the original content because OpenCode truncates it after the hook.
 Updating the plugin file does not change instances already loaded into a running
 OpenCode process; the updated plugin must be loaded before relying on this cue.
-It does not clear an earlier submitted or uncertain channel wake, or prove
-that waiting work was delivered or completed.
+The cue does not clear an earlier submitted or uncertain channel wake, or prove
+that waiting work was delivered or completed. Tests exercise the hook and the
+plugin against disposable fixtures only; a live next-tool-call demonstration
+followed by ordinary delivery in Claude, Codex and OpenCode remains separate
+deployment evidence.
 
 ### Claude channel activation and selection
 

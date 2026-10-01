@@ -52,7 +52,7 @@ def install(root, settings, config):
         hooks = data.setdefault('hooks', {})
         # Codex also reports Interrupt: a natively interrupted turn is actually
         # idle for presence, while its tools may still be running.
-        # PostToolUse only reads local state to cue waiting inbox work mid-turn.
+        # PostToolUse makes one bounded read-only count lookup to cue new inbox work mid-turn.
         events = ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'PostToolUse')
         if harness == 'codex':
             events = ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'Interrupt', 'PostToolUse')

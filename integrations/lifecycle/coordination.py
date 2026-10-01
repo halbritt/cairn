@@ -1933,13 +1933,29 @@ def finish_presence(config, state, path, timeout=4, reason='process_exited'):
     write_state(path, state)
 
 
-INBOX_PENDING_FRESH = 90  # seconds; three watcher cycles
+# The tool-boundary lookup shares the hook's budget: OpenCode kills its cue hook
+# after 1 second and Claude/Codex after 2, and an interpreter start costs ~0.05.
+INBOX_CUE_LOOKUP_TIMEOUT = 0.5
+INBOX_CUE_KINDS = ('requests', 'notices', 'responses')
+
+
+def inbox_pending_record(counts, agent):
+    """Validate one read-only session-inbox-pending reply; None when malformed."""
+    if (not isinstance(counts, dict) or
+            any(type(counts.get(k)) is not int or counts[k] < 0 for k in INBOX_CUE_KINDS) or
+            type(counts.get('latest_position', 0)) is not int or counts.get('latest_position', 0) < 0 or
+            type(counts.get('truncated', False)) is not bool):
+        return None
+    return dict({k: counts[k] for k in INBOX_CUE_KINDS}, truncated=counts.get('truncated') is True,
+                latest_position=counts.get('latest_position', 0),
+                execution_id=agent['execution_id'], observed_at=time.time())
 
 
 def refresh_inbox_pending(config, state):
     """Record this busy session's waiting inbox counts for the tool-boundary cue.
 
-    Best effort: an older API or transient failure only removes the cue.
+    Best effort: an older API or transient failure removes this diagnostic.
+    The tool boundary independently looks up fresh counts; it does not reuse this record.
     """
     agent = state['agent']
     if (not config.get('native_delivery') or agent['metadata'].get('delivery_mode') != 'existing-session' or
@@ -1951,13 +1967,11 @@ def refresh_inbox_pending(config, state):
     except CoordinationError:
         state.pop('inbox_pending', None)
         return
-    kinds = ('requests', 'notices', 'responses')
-    if not isinstance(counts, dict) or any(type(counts.get(k, 0)) is not int for k in kinds + ('latest_position',)):
+    record = inbox_pending_record(counts, agent)
+    if record is None:
         state.pop('inbox_pending', None)
         return
-    state['inbox_pending'] = dict({k: counts.get(k, 0) for k in kinds}, truncated=counts.get('truncated') is True,
-                                  latest_position=counts.get('latest_position', 0),
-                                  execution_id=agent['execution_id'], observed_at=time.time())
+    state['inbox_pending'] = record
 
 
 def inbox_cue_text(pending):
@@ -1971,43 +1985,115 @@ def inbox_cue_text(pending):
             "they can arrive; do not claim the inbox manually. This notice repeats only when new items arrive.")
 
 
-def tool_cue(config, event):
-    """PostToolUse: surface waiting inbox work during a long turn.
+def cue_session(path, process):
+    """Re-read this conversation's state; the busy existing-session agent a cue may speak for.
 
-    Reads only this conversation's local state written by the watcher. It never
-    calls the API, takes the session lock, claims, leases or acknowledges.
+    Returns (state, agent), or None for a retired or ending presence, another live
+    process, or an execution that native delivery would not hand work to later.
+    """
+    try:
+        state = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    agent = state.get('agent') if isinstance(state, dict) else None
+    if (not isinstance(agent, dict) or state.get('retired') or state.get('ending') or not state.get('process') or
+            not same_process(process, state['process']) or
+            any(not isinstance(agent.get(k), str) or not agent[k] for k in ('agent_id', 'execution_id'))):
+        return None
+    metadata = agent.get('metadata')
+    if (not isinstance(metadata, dict) or metadata.get('delivery_mode') != 'existing-session' or
+            metadata.get('state') != 'busy'):
+        return None
+    return state, agent
+
+
+@contextmanager
+def cue_lock(path):
+    """One tool callback per conversation looks up arrivals; concurrent ones skip rather than queue.
+
+    This is not the session lock, so a cue never waits behind the watcher or delays presence.
+    """
+    fd = os.open(str(path.with_suffix('.cuelock')), os.O_CREAT | os.O_RDWR, 0o600)
+    with os.fdopen(fd, 'a') as file:
+        try:
+            fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        yield True
+
+
+def cue_arrival(previous, signature):
+    """True when the counts show waiting work beyond what the last observation recorded.
+
+    An unchanged or shrinking backlog is not an arrival. Work that becomes
+    eligible again at an older position is detected only if the bounded total grows.
+    Kind redistribution within a saturated summary is not evidence of an arrival.
+    """
+    if not any(signature[2:]):
+        return False
+    if (not isinstance(previous, list) or len(previous) != len(signature) or previous[0] != signature[0] or
+            any(type(value) is not int for value in previous[1:])):
+        return True
+    return signature[1] > previous[1] or sum(signature[2:]) > sum(previous[2:])
+
+
+def tool_cue(config, event):
+    """PostToolUse: surface newly waiting inbox work at the next tool boundary of a long turn.
+
+    Makes one bounded read-only lookup of this session's pending counts, so an
+    arrival after the watcher's last refresh still shows now. It takes no session
+    lock and never claims, leases, acknowledges, renews, wakes, heartbeats,
+    cancels or replaces anything; any failure only omits the cue.
     """
     native = event.get('session_id')
     if not config.get('native_delivery') or not valid_native_session_id(native):
         return {}
     path = state_path(config, native)
     try:
-        state = json.loads(path.read_text())
         process = owner_process(config, event)
-    except (OSError, ValueError, CoordinationError):
-        return {}
-    pending = state.get('inbox_pending')
-    agent = state.get('agent') or {}
-    if (state.get('retired') or not isinstance(pending, dict) or not state.get('process') or
-            not same_process(process, state['process']) or pending.get('execution_id') != agent.get('execution_id') or
-            time.time() - pending.get('observed_at', 0) > INBOX_PENDING_FRESH or
-            not any(pending.get(k) for k in ('requests', 'notices', 'responses'))):
-        return {}
-    workspaces = (event.get('cwd'), state.get('workspace'), agent.get('metadata', {}).get('workspace'))
-    if any(coordination_excluded(Path(workspace).resolve()) for workspace in workspaces if workspace):
-        return {}
-    signature = [pending['execution_id'], pending['latest_position'], pending['requests'], pending['notices'], pending['responses']]
-    marker = path.with_suffix('.cue')
-    try:
-        if json.loads(marker.read_text()).get('signature') == signature:
+        session = cue_session(path, process)
+        if session is None:
             return {}
-    except (OSError, ValueError, AttributeError):
-        pass
-    try:
-        write_state(marker, dict(signature=signature))
-    except OSError:
-        return {}  # Without a marker the cue would repeat after every tool.
-    return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": inbox_cue_text(pending)}}
+        state, agent = session
+        workspaces = (event.get('cwd'), state.get('workspace'), agent['metadata'].get('workspace'))
+        if any(coordination_excluded(Path(workspace).resolve()) for workspace in workspaces if workspace):
+            return {}
+        with cue_lock(path) as owned:
+            if not owned:
+                return {}  # Another callback for this conversation is already looking.
+            pending = inbox_pending_record(call(config, 'session-inbox-pending', session_ref(agent),
+                                                timeout=INBOX_CUE_LOOKUP_TIMEOUT), agent)
+            if pending is None:
+                return {}
+            # The lookup ran without the session lock; a replacement or exit meanwhile voids it.
+            current = cue_session(path, process)
+            if current is None or session_ref(current[1]) != session_ref(agent):
+                return {}
+            current_state, current_agent = current
+            workspaces = (event.get('cwd'), current_state.get('workspace'),
+                          current_agent['metadata'].get('workspace'))
+            if any(coordination_excluded(Path(workspace).resolve()) for workspace in workspaces if workspace):
+                return {}
+            signature = [pending['execution_id'], pending['latest_position'], pending['requests'],
+                         pending['notices'], pending['responses']]
+            marker = path.with_suffix('.cue')
+            try:
+                previous = json.loads(marker.read_text()).get('signature')
+            except (OSError, ValueError, AttributeError):
+                previous = None
+            arrival = cue_arrival(previous, signature)
+            # Only a validated fresh lookup may advance or lower the observed backlog.
+            if arrival or (previous is not None and signature != previous):
+                try:
+                    write_state(marker, dict(signature=signature))
+                except OSError:
+                    return {}  # Without a marker the cue would repeat after every tool.
+            if not arrival:
+                return {}
+            return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": inbox_cue_text(pending)}}
+    except (CoordinationError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        return {}
 
 
 def coordination_excluded(workspace):
