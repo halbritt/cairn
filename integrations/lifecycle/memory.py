@@ -654,7 +654,7 @@ def quoted_phrases(prompt):
         fence = match.group("fence")
         if fence and not (fence[0] == "`" and "`" in match.group("info")):
             closing = re.compile(r'(?m)^ {0,3}' + re.escape(fence[0]) +
-                                 '{' + str(len(fence)) + r',}[ \t]*$')
+                                 '{' + str(len(fence)) + r',}[ \t]*\r?$')
             end = closing.search(prompt, position)
             position = end.end() if end else len(prompt)
             continue

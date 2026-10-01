@@ -77,6 +77,8 @@ class SemanticRecallAnchors(unittest.TestCase):
             '`printf "shell argument"` then "RATE_OVERFLOW"',
             '```sh\nprintf "shell argument"\n```\nThen "RATE_OVERFLOW"',
             '~~~sh\nprintf "shell argument"\n~~~~\nThen "RATE_OVERFLOW"',
+            '```sh\r\nprintf "shell argument"\r\n```\r\nThen "RATE_OVERFLOW"',
+            '~~~sh\r\nprintf "shell argument"\r\n~~~~\r\nThen "RATE_OVERFLOW"',
             'Broken `code "shell argument"\nThen "RATE_OVERFLOW"',
             'Broken "mixed delimiter`\nThen "RATE_OVERFLOW"',
         ]
