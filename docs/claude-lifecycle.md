@@ -57,8 +57,10 @@ byte range and passage checksum remain explicit; omitted text supports no claims
 Required instructions, Class C and competing positions remain whole or omitted.
 Changed/unavailable identities never trigger this fallback. A passage that still
 cannot fit is refused without shortening or further retries. Search and pulls
-share a five-second I/O deadline, with at most two seconds per pull and four
-actual whole/span calls total; packing and state-save overhead can add time.
+share a five-second I/O deadline, with at most two seconds per pull and two
+automatic whole/span calls, including failed attempts and opening reads. This
+leaves at least two of the four total inspection calls for task-driven choice;
+packing and state-save overhead can add time.
 `candidate_inspection` reports attempted pulls, remaining calls and refusals.
 `last_recall.search_discovery` retains the search API's discovery metadata
 separately from hook branch/outcome labels.
@@ -68,8 +70,9 @@ a separate exact prefix of at most 768 source bytes, ending at a UTF-8 boundary
 and preferably a complete line. Its own span/hash and the shared record/version
 and source hash remain explicit. It never overlaps the matched passage. The hook
 reuses an already checked whole pull; otherwise it may spend one remaining pull
-call on the opening under the same receipt, four-call cap and deadline. This can
-leave fewer calls for later candidate bodies or manual inspection. A passage
+call on the opening under the same receipt, two-call automatic cap and deadline.
+A whole receipt refusal followed by a span already uses both automatic calls,
+so that path leaves the opening unavailable for later agent inspection. A passage
 starting at byte zero needs no additional opening.
 
 The opening is packed with the partial body before remaining previews. If the
@@ -90,7 +93,16 @@ retain superseded directions internally. The agent must still check conditions,
 history and current source. No extra model call, ranking/filter change or note
 rewrite is performed; clearer source framing alone does not establish usefulness.
 
-Whole candidate bodies take priority within the configured context ceiling.
+Automatic bodies, previews and refusal metadata together may use at most half
+of the measured room left after the whole task/control/required context, cue and
+fixed metadata. The other half is reserved for task-driven selection or query
+reformulation. The same caller-supplied serialization measure bounds tentative
+and final output, including the remaining-allowance counter. The configured
+total budget is unchanged; the smaller automatic ceiling is not a new receipt
+or a per-call allowance. Small whole candidates still precede previews, but a
+larger whole body that previously fit can now be deferred to a complete handle
+or a checked excerpt. Fixed required costs can leave little or no optional room;
+required context is never truncated to manufacture a reserve.
 The agent-tools cue states shared source-check and safety guidance once; the
 ambient guidance paragraph is not appended again. For standalone optional A/B
 bodies, the hook omits consumed receipt counters (`credits_remaining` and
@@ -104,9 +116,9 @@ view determines `remaining_memory_bytes`; smaller metadata can let more existing
 ranked content fit, without changing source order or establishing relevance.
 Up to three remaining previews retain complete handles and source-span/conflict
 metadata, except the redundant CLI `pull_command`. Whole preview groups occupy
-at most 2,000 additional UTF-8 bytes. When no bodies are delivered, previews also
-use at most half the space left after required context, cue and metadata; with
-bodies, they use available remaining space. A group that does not fit and later
+at most 2,000 additional UTF-8 bytes within the same automatic ceiling.
+Preview-only delivery retains its half-room bound; it does not deduct a second
+reserve when the automatic ceiling is already applied. A group that does not fit and later
 groups are omitted whole. Search status and `candidate_search.returned_entries`
 remain visible. The optional search view omits only known omission counters with
 an explicit integer zero, and the valid discovery `scores_sha256` digest. Missing
@@ -122,8 +134,11 @@ use, without re-pulling an identical whole version. Other promising notes can be
 pulled through its native tools. Hook and tools must have access to the same
 receipt; handles grant no new access. No new seen-state or applicability credit
 is given. `last_recall.outcome` remains `delegated`; delivered bodies and previews
-do not establish correct use. Two irrelevant bodies can consume most of the
-allowance, and the first oversized candidate can prevent any whole delivery.
+do not establish correct use. Irrelevant bodies can still consume the automatic allocation, and the first
+oversized candidate can prevent any whole delivery. The reserve preserves an
+opportunity to inspect or reformulate, not relevance or a guaranteed successful
+pull. Handles retain currentness, receipt and access checks; a stale or exhausted
+handle requires a fresh search within the remaining limits, not a budget refund.
 Taskless startup and wake deferral are unchanged.
 
 The cue allows at most two further searches per task when the supplied candidates

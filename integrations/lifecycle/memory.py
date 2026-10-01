@@ -26,6 +26,7 @@ NOTE_BYTES = 6000
 CHECKPOINT_BYTES = 4500
 SEARCH_ROOM = 8000
 RECALL_SEARCH_ROOM = 32000
+EAGER_PULL_LIMIT = 2
 SUMMARY_EXCERPT_BYTES = 1536
 RECALL_SECONDS = 11
 RECALL_CANDIDATES = 6
@@ -674,25 +675,34 @@ def render_agent_candidates(selected, result, budget, status, bodies=(), inspect
             discovery = {key: value for key, value in discovery.items() if key != "scores_sha256"}
         search["discovery"] = discovery
 
-    def render(entries, remaining=budget):
+    def render(entries, remaining=budget, supplied=bodies, progress=inspection):
         view = dict(selected=selected, index=entries, candidate_search=search,
                     remaining_memory_bytes=remaining)
-        if inspection is not None:
-            view.update(candidate_bodies=[optional_delivery_view(body) for body in bodies],
-                        candidate_inspection=inspection)
+        if progress is not None:
+            view.update(candidate_bodies=[optional_delivery_view(body) for body in supplied],
+                        candidate_inspection=progress)
         return cue + encoded(view)
 
+    # Reserve native choice once against fixed task/control/required/cue costs,
+    # not against whichever bodies or refusal counters a later attempt adds.
+    # The caller's measure includes its actual outer serialization and context.
+    ceiling = budget
+    if inspection is not None:
+        initial = dict(pull_calls=0, remaining_pull_calls=4, delivered_records=0, refusals={})
+        fixed_bytes = measure(render([], supplied=(), progress=initial))
+        ceiling -= max(0, budget - fixed_bytes) // 2
     text = render([])
     base_bytes = measure(text)
-    if base_bytes > budget:
+    if base_bytes > ceiling:
         if bodies:
-            raise ContextRefused("whole candidate group exceeds lifecycle context budget")
+            raise ContextRefused("whole candidate group exceeds automatic context allowance")
         status["outcome"] = "delegation_omitted"
         status["rejected"]["delegation_context_budget"] = 1
         return render_recall(selected, []) if selected else ""
-    # Once bodies are present their whole delivery has priority. Preview-only
-    # delivery still leaves half its post-instruction room for native inspection.
-    preview_bytes = min(2000, budget - base_bytes if bodies else (budget - base_bytes) // 2)
+    # Bodies and previews share the automatic ceiling. Legacy preview-only
+    # rendering keeps its half-room rule without a second reserve deduction.
+    preview_bytes = min(2000, ceiling - base_bytes if inspection is not None or bodies
+                        else (budget - base_bytes) // 2)
     delivered = {(selection["record"]["record_id"], selection["record"]["version"])
                  for body in bodies for selection in
                  [body["response"]["selection"], *body["response"].get("competing", [])]}
@@ -735,7 +745,7 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
         if time.monotonic() >= deadline:
             inspection["refusals"]["deadline"] = 1
             break
-        if inspection["pull_calls"] >= 4:
+        if inspection["pull_calls"] >= EAGER_PULL_LIMIT:
             inspection["refusals"]["pull_limit"] = 1
             break
         pulled = None
@@ -778,7 +788,7 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
                 inspection["refusals"]["deadline"] = 1
                 break
             if pulled is None:
-                if inspection["pull_calls"] >= 4:
+                if inspection["pull_calls"] >= EAGER_PULL_LIMIT:
                     inspection["refusals"]["pull_limit"] = 1
                     break
                 inspection["pull_calls"] += 1
@@ -1436,7 +1446,7 @@ def attach_source_opening(memory, entry, whole, candidate, inspection, deadline,
     elif whole is not None:
         source = whole["selection"]["record"]["body"].encode()[:length]
         context = source_opening_excerpt(entry, source, span, "whole_pull")
-    elif inspection["pull_calls"] >= 4:
+    elif inspection["pull_calls"] >= EAGER_PULL_LIMIT:
         context = dict(status="unavailable", reason="pull_limit")
     elif time.monotonic() >= deadline:
         context = dict(status="unavailable", reason="deadline")

@@ -118,7 +118,9 @@ class EagerCandidateTests(unittest.TestCase):
             before = render(9500)
             # Cross the actual full-envelope boundary, without changing source,
             # handles, policy or the compact renderer's accounting.
-            budget = measure(before) - 1
+            fixed = hook.render_agent_candidates([], dict(status='READY', index=[], omitted={}),
+                9500, dict(rejected={}), [], dict(pull_calls=0, remaining_pull_calls=4, delivered_records=0, refusals={}), measure=measure)
+            budget = 2 * measure(before) - measure(fixed) - 8
             with self.assertRaises(hook.ContextRefused):
                 render(budget)
         text = render(budget)
@@ -176,7 +178,7 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertIn('unverified', text)
 
     def test_compact_instructions_leave_room_for_whole_conflict_and_native_inspection(self):
-        self.config['context_bytes'] = 5000
+        self.config['context_bytes'] = 7000
         self.result['selected'] = [dict(mandatory=True, record=dict(
             record_id='required', version=1, body='Retain both competing positions whole.'))]
         self.conflict(2)
@@ -193,7 +195,7 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertEqual(view['candidate_inspection']['delivered_records'], 2)
         self.assertEqual(view['candidate_inspection']['pull_calls'], 1)
         self.assertGreaterEqual(view['remaining_memory_bytes'], 500)
-        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5000)
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 7000)
         self.assertEqual(self.result, original)
         self.assertEqual(state['seen'], {})
 
@@ -290,22 +292,19 @@ class EagerCandidateTests(unittest.TestCase):
                              source_sha256=hashlib.sha256(source).hexdigest())
         return result
 
-    def test_receipt_refusal_can_deliver_two_checked_passages_with_four_actual_calls(self):
+    def test_receipt_refusal_can_deliver_one_checked_passage_with_two_actual_calls_and_native_reserve(self):
         self.optional(2)
-        # The first matched passage already includes its opening, leaving both
-        # remaining receipt calls for the second matched passage.
         self.entries[0]['match_span'] = dict(offset=0, length=len('Old context. '))
         self.pull = self.receipt_span
         text, view, _ = self.invoke()
-        self.assertEqual(len(self.calls), 4)
-        self.assertEqual([bool(c.get('span')) for c in self.calls], [False, True, False, True])
-        self.assertEqual(view['candidate_inspection']['pull_calls'], 4)
-        self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 0)
-        self.assertEqual(view['candidate_inspection']['delivered_records'], 2)
-        self.assertEqual(len(view['candidate_bodies']), 2)
-        self.assertEqual(view['candidate_bodies'][1]['source_opening_excerpt'],
-                         dict(status='unavailable', reason='pull_limit'))
-        self.assertTrue(all(b['response']['source_extent'] == 'partial_span' for b in view['candidate_bodies']))
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual([bool(c.get('span')) for c in self.calls], [False, True])
+        self.assertEqual(view['candidate_inspection']['pull_calls'], 2)
+        self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 2)
+        self.assertEqual(view['candidate_inspection']['delivered_records'], 1)
+        self.assertEqual(len(view['candidate_bodies']), 1)
+        self.assertEqual(view['candidate_bodies'][0]['response']['source_extent'], 'partial_span')
+        self.assertIn(self.entries[1], view['index'])
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 9500)
 
     def test_required_c_and_competing_sources_remain_whole_or_omitted(self):
@@ -387,7 +386,7 @@ class EagerCandidateTests(unittest.TestCase):
         self.result['selected'] = [required]
         def pull(operation, *, payload, timeout):
             if payload['handle'] == first['record_id']:
-                return self.receipt_span(operation, payload=payload, timeout=timeout)
+                return EagerCandidateTests.pull(self, operation, payload=payload, timeout=timeout)
             return EagerCandidateTests.pull(self, operation, payload=payload, timeout=timeout)
         self.pull = pull
         text, view, state = self.invoke()
@@ -395,9 +394,9 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertEqual([item['response'] for item in view['candidate_bodies']],
                          [self.responses[later['record_id']]])
         self.assertEqual([call['handle'] for call in self.calls],
-                         [first['record_id'], first['record_id'], later['record_id']])
-        self.assertEqual(view['candidate_inspection'], dict(pull_calls=3, remaining_pull_calls=1,
-            delivered_records=1, refusals=dict(whole_pull_budget=1, span_context_budget=1)))
+                         [first['record_id'], later['record_id']])
+        self.assertEqual(view['candidate_inspection'], dict(pull_calls=2, remaining_pull_calls=2,
+            delivered_records=1, refusals=dict(whole_context_budget=1, span_context_budget=1)))
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5400)
         self.assertEqual(state['seen'], {})
 
@@ -414,7 +413,7 @@ class EagerCandidateTests(unittest.TestCase):
                     competing=[self.responses[right['record_id']]['selection']])
         def pull(operation, *, payload, timeout):
             if payload['handle'] == first['record_id']:
-                return self.receipt_span(operation, payload=payload, timeout=timeout)
+                return EagerCandidateTests.pull(self, operation, payload=payload, timeout=timeout)
             self.calls.append(payload)
             self.assertEqual(payload, left['pull_arguments'])
             return pair
@@ -422,12 +421,12 @@ class EagerCandidateTests(unittest.TestCase):
         text, view, _ = self.invoke()
         self.assertEqual([item['response'] for item in view['candidate_bodies']], [pair])
         self.assertEqual(view['candidate_inspection']['delivered_records'], 2)
-        self.assertEqual(view['candidate_inspection']['pull_calls'], 3)
+        self.assertEqual(view['candidate_inspection']['pull_calls'], 2)
         self.assertEqual(view['candidate_inspection']['refusals']['span_context_budget'], 1)
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 6400)
 
     def test_after_oversized_passage_global_stops_remain_terminal(self):
-        for stop in ('authority', 'identity', 'receipt_budget', 'deadline', 'four_calls'):
+        for stop in ('authority', 'identity', 'receipt_budget', 'deadline', 'two_calls'):
             with self.subTest(stop=stop):
                 case = EagerCandidateTests(); case.setUp(); self.addCleanup(case.doCleanups)
                 case.config['context_bytes'] = 5400
@@ -440,10 +439,10 @@ class EagerCandidateTests(unittest.TestCase):
                 def pull(operation, *, payload, timeout):
                     self.assertNotEqual(payload['handle'], last['record_id'])
                     if payload['handle'] == first['record_id']:
-                        result = case.receipt_span(operation, payload=payload, timeout=timeout)
+                        result = EagerCandidateTests.pull(case, operation, payload=payload, timeout=timeout)
                         if stop == 'deadline': clock[0] = 106.0
                         return result
-                    if stop == 'four_calls':
+                    if stop == 'two_calls':
                         return case.receipt_span(operation, payload=payload, timeout=timeout)
                     case.calls.append(payload)
                     if stop == 'authority': raise hook.HookError('AUTHORITY_DENIED')
@@ -455,24 +454,25 @@ class EagerCandidateTests(unittest.TestCase):
                 with patch.object(hook.time, 'monotonic', side_effect=lambda: clock[0]):
                     text, view, _ = case.invoke()
                 self.assertEqual(view['candidate_bodies'], [])
-                expected_calls = dict(authority=3, identity=3, receipt_budget=4, deadline=2, four_calls=4)[stop]
+                expected_calls = dict(authority=2, identity=2, receipt_budget=2, deadline=1, two_calls=2)[stop]
                 self.assertEqual(len(case.calls), expected_calls)
                 self.assertEqual(view['candidate_inspection']['pull_calls'], expected_calls)
-                self.assertEqual(view['candidate_inspection']['refusals']['span_context_budget'], 1)
+                if stop != 'deadline':
+                    self.assertEqual(view['candidate_inspection']['refusals']['span_context_budget'], 1)
                 terminal = dict(authority='whole_pull_unavailable', identity='whole_pull_unavailable',
-                                receipt_budget='span_pull_budget', deadline='deadline', four_calls='pull_limit')[stop]
+                                receipt_budget='pull_limit', deadline='deadline', two_calls='pull_limit')[stop]
                 self.assertEqual(view['candidate_inspection']['refusals'][terminal], 1)
                 self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5400)
 
     def test_saturated_prior_body_is_not_evicted_by_extra_attempt_metadata(self):
-        # The accepted whole response plus the two existing refusal fields
-        # leaves only three bytes. Another failed read must not displace it.
+        # An accepted whole response must survive the next failed call.
+        # Neither a third call nor an uncharged retry may consume native choice.
         self.config['context_bytes'] = 5073
         self.optional()
         large, later, earlier = self.entries
         large['match_span'] = dict(offset=0, length=4096)
         self.result['index'] = [earlier, large, later]
-        body = 'Earlier whole condition. ' * 95
+        body = 'Earlier whole condition. ' * 35
         earlier['body_sha256'] = hashlib.sha256(body.encode()).hexdigest()
         self.responses[earlier['record_id']]['selection']['record']['body'] = body
         def pull(operation, *, payload, timeout):
@@ -487,10 +487,10 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertEqual([item['response'] for item in view['candidate_bodies']],
                          [self.responses[earlier['record_id']]])
         self.assertEqual([call['handle'] for call in self.calls],
-                         [earlier['record_id'], large['record_id'], large['record_id']])
-        self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 1)
+                         [earlier['record_id'], large['record_id']])
+        self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 2)
         self.assertEqual(view['candidate_inspection']['refusals'],
-                         dict(whole_pull_budget=1, span_context_budget=1))
+                         dict(whole_pull_budget=1, pull_limit=1))
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5073)
 
     def test_passage_still_too_large_refuses_without_shortening_or_more_reads(self):
@@ -619,16 +619,17 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertEqual(view['candidate_inspection']['refusals'], {'deadline': 1})
         self.assertEqual(view['candidate_inspection']['pull_calls'], 0)
 
-    def test_eager_body_can_use_more_than_half_room_without_false_future_allowance(self):
+    def test_large_whole_candidate_leaves_handle_and_native_room(self):
         self.result['index'] = self.entries[:1]
         body = 'Large but whole guidance. ' * 190
         entry = self.entries[0]
         entry['body_sha256'] = hashlib.sha256(body.encode()).hexdigest()
         self.responses[entry['record_id']]['selection']['record']['body'] = body
         text, view, _ = self.invoke()
-        self.assertEqual(view['candidate_bodies'][0]['response']['selection']['record']['body'], body)
-        self.assertGreater(len(text.encode()), 7000)
-        self.assertLess(view['remaining_memory_bytes'], 2500)
+        self.assertEqual(view['candidate_bodies'], [])
+        self.assertEqual(view['index'], [entry])
+        self.assertGreater(view['remaining_memory_bytes'], 3000)
+        self.assertEqual(len(self.calls), 1)
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 9500)
 
 if __name__ == '__main__':

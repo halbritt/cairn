@@ -3,6 +3,8 @@ import base64
 import hashlib
 import json
 import unittest
+import time
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import test_claude_inbox_recall as claude
@@ -85,20 +87,50 @@ class SourceOpeningTests(unittest.TestCase):
         case.pull = pull
         return case
 
+    def checked_opening(self, case):
+        # Exercise the existing checked-opening boundary with one paid passage.
+        # Eager whole-refusal + span now consumes both automatic calls, so that
+        # production path cannot reach a third-call opening any longer.
+        entry = case.entries[0]
+        hint = entry['match_span']
+        args = dict(entry['pull_arguments'], span=hint)
+        response = case.pull('pull', payload=args, timeout=1)
+        passage = eager.hook.checked_optional_span(entry, response, hint)
+        candidate = dict(pull_arguments=entry['pull_arguments'], response=passage)
+        progress = dict(pull_calls=1, remaining_pull_calls=3)
+        supplied = eager.hook.attach_source_opening(SimpleNamespace(call=case.pull), entry, None,
+            candidate, progress, time.monotonic() + 5, lambda item: None)
+        return supplied, progress
+
+    def paid_whole(self, case):
+        def pull(operation, *, payload, timeout):
+            case.calls.append(payload)
+            self.assertNotIn('span', payload)
+            return case.responses[payload['handle']]
+        case.pull = pull
+        return case
+
+    def half_room_boundary(self, text):
+        prefix, raw = text.split('{"selected":', 1)
+        fixed = dict(json.loads('{"selected":' + raw), index=[], candidate_bodies=[],
+            remaining_memory_bytes=9500, candidate_inspection=dict(pull_calls=0,
+                remaining_pull_calls=4, delivered_records=0, refusals={}))
+        return 2 * len(text.encode()) - len((prefix + eager.hook.encoded(fixed)).encode())
+
     def test_span_only_opening_uses_one_existing_credit_and_trims_utf8_boundary(self):
         # Byte 768 bisects the final character; the API returns exact base64 bytes.
         opening = '界' * 255 + 'ab界'
         case = self.span_case(opening)
-        _, view, _ = case.invoke()
-        self.assertEqual(len(case.calls), 3)
+        candidate, progress = self.checked_opening(case)
+        self.assertEqual(len(case.calls), 2)
         self.assertEqual(case.calls[-1]['span'], dict(offset=0, length=768))
-        context = view['candidate_bodies'][0]['source_opening_excerpt']
+        context = candidate['source_opening_excerpt']
         self.assertEqual(context['origin'], 'span_pull')
         self.assertEqual(context['span']['body'], '界' * 255 + 'ab')
         self.assertEqual(context['span']['end'], 767)
         self.assertEqual(context['span']['sha256'], hashlib.sha256(('界' * 255 + 'ab').encode()).hexdigest())
-        self.assertEqual(view['candidate_inspection']['pull_calls'], 3)
-        self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 1)
+        self.assertEqual(progress['pull_calls'], 2)
+        self.assertEqual(progress['remaining_pull_calls'], 2)
 
     def test_failed_opening_preserves_original_passage_and_charges_failed_call(self):
         for failure in ('unavailable', 'version', 'source_hash', 'total', 'span_hash', 'offset',
@@ -124,15 +156,14 @@ class SourceOpeningTests(unittest.TestCase):
                         if failure == 'malformed_span': response['span'] = None
                     return response
                 case.pull = changed
-                _, view, _ = case.invoke()
-                candidate = view['candidate_bodies'][0]
+                candidate, progress = self.checked_opening(case)
                 self.assertEqual(candidate['response']['span']['body'], 'Checked prerequisite.')
                 self.assertEqual(candidate['source_opening_excerpt'],
                                  dict(status='unavailable', reason='pull_unavailable'))
-                self.assertEqual(view['candidate_inspection']['pull_calls'], 3)
-                self.assertEqual(len(case.calls), 3)
+                self.assertEqual(progress['pull_calls'], 2)
+                self.assertEqual(len(case.calls), 2)
 
-    def test_prior_whole_and_required_survive_fourth_call_opening_failure(self):
+    def test_prior_whole_and_required_survive_second_call_receipt_failure(self):
         case = self.span_case(count=2)
         first = case.entries[0]
         body = 'Existing whole independent guidance.'
@@ -152,10 +183,11 @@ class SourceOpeningTests(unittest.TestCase):
         _, view, _ = case.invoke()
         self.assertEqual(view['selected'], case.result['selected'])
         self.assertEqual(view['candidate_bodies'][0]['response'], case.responses[first['record_id']])
-        self.assertEqual(view['candidate_bodies'][1]['response']['span']['body'], 'Checked prerequisite.')
-        self.assertEqual(view['candidate_inspection']['pull_calls'], 4)
-        self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 0)
-        self.assertEqual(len(case.calls), 4)
+        self.assertEqual(len(view['candidate_bodies']), 1)
+        self.assertEqual(view['candidate_inspection']['refusals']['pull_limit'], 1)
+        self.assertEqual(view['candidate_inspection']['pull_calls'], 2)
+        self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 2)
+        self.assertEqual(len(case.calls), 2)
 
     def test_deadline_after_match_does_not_dispatch_opening(self):
         case = self.span_case()
@@ -171,7 +203,7 @@ class SourceOpeningTests(unittest.TestCase):
         self.assertEqual(len(case.calls), 2)
         self.assertEqual(view['candidate_inspection']['pull_calls'], 2)
         self.assertEqual(view['candidate_bodies'][0]['source_opening_excerpt'],
-                         dict(status='unavailable', reason='deadline'))
+                         dict(status='unavailable', reason='pull_limit'))
 
     def test_passage_at_opening_needs_no_companion_call_or_duplicate_bytes(self):
         case = self.span_case()
@@ -183,7 +215,7 @@ class SourceOpeningTests(unittest.TestCase):
 
     def test_disjoint_prefix_preserves_multiline_crlf_exactly(self):
         prefix = 'Original task\r\nProject: α\r\n'
-        case = self.span_case(prefix)
+        case = self.paid_whole(self.span_case(prefix))
         case.entries[0]['match_span']['offset'] = len(prefix.encode())
         case.entries[0]['match_span']['length'] = len('Earlier unrelated details.')
         _, view, _ = case.invoke()
@@ -194,13 +226,13 @@ class SourceOpeningTests(unittest.TestCase):
         self.assertEqual(opening['sha256'], hashlib.sha256(prefix.encode()).hexdigest())
 
     def test_pair_too_large_keeps_exact_original_passage_with_missing_context(self):
-        calibration = self.span_case('Context ' * 96)
+        calibration = self.paid_whole(self.span_case('Context ' * 96))
         initial_text, initial_view, _ = calibration.invoke()
         self.assertEqual(initial_view['candidate_bodies'][0]['source_opening_excerpt']['status'], 'provided')
         # Put the complete pair beyond the current renderer's byte boundary,
         # independently of the instruction wording or omission presentation.
-        budget = len(initial_text.encode()) - 20
-        case = self.span_case('Context ' * 96)
+        budget = self.half_room_boundary(initial_text) - 40
+        case = self.paid_whole(self.span_case('Context ' * 96))
         case.config['context_bytes'] = budget
         text, view, _ = case.invoke()
         candidate = view['candidate_bodies'][0]
@@ -209,16 +241,16 @@ class SourceOpeningTests(unittest.TestCase):
                          dict(status='unavailable', reason='context_budget'))
         self.assertNotIn('Context Context', text)
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], budget)
-        self.assertEqual(view['candidate_inspection']['pull_calls'], 3)
+        self.assertEqual(view['candidate_inspection']['pull_calls'], 1)
 
     def test_later_refusal_metadata_drops_opening_before_admitted_passage(self):
-        calibration = self.span_case('Context ' * 96)
+        calibration = self.paid_whole(self.span_case('Context ' * 96))
         initial_text, initial_view, _ = calibration.invoke()
         self.assertEqual(initial_view['candidate_bodies'][0]['source_opening_excerpt']['status'], 'provided')
         # Fill the current rendered boundary, independent of cue wording. A
         # subsequent refusal must evict optional opening context before source.
-        budget = len(initial_text.encode())
-        case = self.span_case('Context ' * 96)
+        budget = self.half_room_boundary(initial_text)
+        case = self.paid_whole(self.span_case('Context ' * 96))
         case.config['context_bytes'] = budget
         case.result['index'].append(dict(case.entries[1], body_sha256='unknown'))
         text, view, _ = case.invoke()
