@@ -74,6 +74,29 @@ class SelectionReserveTests(unittest.TestCase):
         self.assertEqual(grant['native_allowance_bytes'], view['remaining_memory_bytes'])
         self.assertEqual(grant['output_bytes'], len(out['stdout'].encode()))
 
+    def test_saturated_whole_survives_later_receipt_failure(self):
+        case = self.fixture()
+        case.config['context_bytes'] = 5073
+        case.optional()
+        large, later, earlier = case.entries
+        large['match_span'] = dict(offset=0, length=4096)
+        case.result['index'] = [earlier, large, later]
+        body = 'X' * 1154
+        earlier['body_sha256'] = hashlib.sha256(body.encode()).hexdigest()
+        case.responses[earlier['record_id']]['selection']['record']['body'] = body
+        def pull(operation, *, payload, timeout):
+            if payload['handle'] == large['record_id']:
+                return case.receipt_span(operation, payload=payload, timeout=timeout)
+            return eager.EagerCandidateTests.pull(case, operation, payload=payload, timeout=timeout)
+        case.pull = pull
+        text, view, _ = case.invoke()
+        self.assertEqual([item['response'] for item in view['candidate_bodies']],
+                         [case.responses[earlier['record_id']]])
+        self.assertEqual(len(case.calls), 1)
+        self.assertEqual(case.calls[0], earlier['pull_arguments'])
+        self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 3)
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5073)
+
     def test_near_cap_required_context_is_whole_without_optional_calls(self):
         from test_claude_inbox_recall import ClaudeInboxRecallTests
         case = ClaudeInboxRecallTests()

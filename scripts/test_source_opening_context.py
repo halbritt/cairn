@@ -243,12 +243,12 @@ class SourceOpeningTests(unittest.TestCase):
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], budget)
         self.assertEqual(view['candidate_inspection']['pull_calls'], 1)
 
-    def test_later_refusal_metadata_drops_opening_before_admitted_passage(self):
+    def test_saturated_source_and_opening_stop_before_later_inspection(self):
         calibration = self.paid_whole(self.span_case('Context ' * 96))
         initial_text, initial_view, _ = calibration.invoke()
         self.assertEqual(initial_view['candidate_bodies'][0]['source_opening_excerpt']['status'], 'provided')
         # Fill the current rendered boundary, independent of cue wording. A
-        # subsequent refusal must evict optional opening context before source.
+        # subsequent inspection must stop before risking already selected context.
         budget = self.half_room_boundary(initial_text)
         case = self.paid_whole(self.span_case('Context ' * 96))
         case.config['context_bytes'] = budget
@@ -257,10 +257,11 @@ class SourceOpeningTests(unittest.TestCase):
         self.assertEqual(len(view['candidate_bodies']), 1)
         self.assertEqual(view['candidate_bodies'][0]['response']['span']['body'], 'Checked prerequisite.')
         self.assertEqual(view['candidate_bodies'][0]['source_opening_excerpt'],
-                         dict(status='unavailable', reason='context_budget'))
-        self.assertNotIn('Context Context', text)
+                         initial_view['candidate_bodies'][0]['source_opening_excerpt'])
+        self.assertEqual(len(case.calls), 1)
+        self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 3)
         self.assertEqual(view['candidate_inspection']['delivered_records'], 1)
-        self.assertEqual(view['candidate_inspection']['refusals']['unverifiable_identity'], 1)
+        self.assertNotIn('unverifiable_identity', view['candidate_inspection']['refusals'])
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], budget)
 
 

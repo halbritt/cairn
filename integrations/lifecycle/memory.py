@@ -736,6 +736,20 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
     if status["outcome"] != "delegated":
         return text
     for group in candidate_groups(entries):
+        if bodies:
+            # A later refusal must not evict an already selected source. Check
+            # the bounded worst-case bookkeeping before spending another call;
+            # stopping here leaves the current inspected view and allowance intact.
+            possible_refusals = dict.fromkeys(("record_limit", "unverifiable_identity",
+                "deadline", "pull_limit", "whole_pull_budget", "whole_context_budget",
+                "whole_pull_unavailable", "span_pull_budget", "span_context_budget",
+                "span_unavailable"), 1)
+            future = dict(inspection, refusals={**inspection["refusals"], **possible_refusals})
+            try:
+                render_agent_candidates(selected, result, budget, dict(status, rejected=dict(status["rejected"])),
+                                        bodies, future, measure=measure)
+            except ContextRefused:
+                break
         if inspection["delivered_records"] + len(group) > 2:
             inspection["refusals"]["record_limit"] = 1
             break

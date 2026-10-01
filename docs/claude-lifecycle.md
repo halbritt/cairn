@@ -103,6 +103,9 @@ or a per-call allowance. Small whole candidates still precede previews, but a
 larger whole body that previously fit can now be deferred to a complete handle
 or a checked excerpt. Fixed required costs can leave little or no optional room;
 required context is never truncated to manufacture a reserve.
+After selecting a source, the hook checks space for the bounded refusal metadata
+that further inspection could add. If that metadata could displace selected
+content, automatic inspection stops and leaves its unused calls to the task agent.
 The agent-tools cue states shared source-check and safety guidance once; the
 ambient guidance paragraph is not appended again. For standalone optional A/B
 bodies, the hook omits consumed receipt counters (`credits_remaining` and
