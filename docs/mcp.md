@@ -483,8 +483,9 @@ optional `error_signature_sha256` tool field and operator sharing requirement.
 MCP facade. Newly generated Codex configurations enable it; existing tool
 allowlists must add it explicitly, and long-running facades need the updated
 binary on their next normal start. This change does not deploy or restart them.
-The separate OpenCode custom-tool adapter can use its existing search/pull/edit
-workflow; it does not gain this MCP-only tool automatically.
+The separate [OpenCode custom-tool adapter](opencode-tools.md) also exports
+`cairn_prepare_note`; its host permission must allow the tool. See that guide
+for the adapter's supported parameters and installation requirements.
 
 For example:
 
