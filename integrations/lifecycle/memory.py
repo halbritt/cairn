@@ -915,6 +915,57 @@ def render_agent_candidates(selected, result, budget, status, bodies=(), inspect
     return render(packed, status["native_allowance_bytes"])
 
 
+def fit_optional_excerpt(entry, candidate, render, deadline):
+    """Fit already checked optional bytes without losing the displayed preview."""
+    def checked_render(item):
+        if time.monotonic() >= deadline:
+            raise ContextRefused("optional excerpt fitting deadline expired")
+        rendered = render(item)
+        if time.monotonic() >= deadline:
+            raise ContextRefused("optional excerpt fitting deadline expired")
+        return rendered
+
+    try:
+        checked_render(candidate)
+        return candidate
+    except ContextRefused as original:
+        if time.monotonic() >= deadline:
+            raise
+        response = candidate["response"]
+        span = response["span"]
+        preview = entry.get("summary_span")
+        if (not isinstance(preview, dict) or type(preview.get("offset")) is not int
+                or type(preview.get("length")) is not int or preview["length"] <= 0
+                or preview["offset"] < span["offset"]
+                or preview["offset"] + preview["length"] > span["end"]):
+            raise original
+        source = span["body"].encode()
+        minimum = max(preview["offset"] + preview["length"] - span["offset"],
+                      preview["length"] + 1)
+        cuts = [end for end in range(minimum, len(source)) if source[end] & 0xc0 != 0x80]
+        best = None
+        low, high = 0, len(cuts) - 1
+        while low <= high:
+            middle = (low + high) // 2
+            part = source[:cuts[middle]]
+            excerpt = dict(span, body=part.decode(), end=span["offset"] + len(part),
+                           sha256=hashlib.sha256(part).hexdigest())
+            smaller = dict(candidate, response=dict(response, span=excerpt,
+                           span_origin=response.get("span_origin", "span_pull")))
+            try:
+                checked_render(smaller)
+            except ContextRefused:
+                if time.monotonic() >= deadline:
+                    raise
+                high = middle - 1
+            else:
+                best = smaller
+                low = middle + 1
+        if best is None or time.monotonic() >= deadline:
+            raise original
+        return best
+
+
 def eager_agent_candidates(memory, result, budget, status, deadline, measure=None):
     selected = result.get("selected", [])
     entries = result.get("index", [])
@@ -924,6 +975,7 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
         return render_agent_candidates(selected, result, budget, status, measure=measure)
     inspection = dict(pull_calls=0, remaining_pull_calls=4, delivered_records=0, refusals={})
     bodies = []
+    oversized = None
     text = render_agent_candidates(selected, result, budget, status, bodies, inspection, measure=measure)
     if status["outcome"] != "delegated":
         return text
@@ -944,16 +996,22 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
                 break
         if inspection["delivered_records"] + len(group) > 2:
             inspection["refusals"]["record_limit"] = 1
+            oversized = None
             break
         if not all(re.fullmatch(r"[0-9a-f]{64}", entry.get("body_sha256", "")) for entry in group):
             inspection["refusals"]["unverifiable_identity"] = 1
+            oversized = None
             break
         if time.monotonic() >= deadline:
             inspection["refusals"]["deadline"] = 1
+            oversized = None
             break
         if inspection["pull_calls"] >= EAGER_PULL_LIMIT:
             inspection["refusals"]["pull_limit"] = 1
             break
+        # A later read failure remains terminal; it cannot revive an earlier
+        # omitted passage. Only the last checked attempt can be recovered.
+        oversized = None
         pulled = None
         inspection["pull_calls"] += 1
         inspection["remaining_pull_calls"] = 4 - inspection["pull_calls"]
@@ -1021,10 +1079,25 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
             # otherwise displace an already admitted body at the context limit.
             if bodies:
                 break
+            oversized = (entry, candidate)
             continue
         except HookError:
             inspection["refusals"]["span_unavailable"] = 1
             break
+    # Preserve the existing chance to deliver a later whole source. Only recover
+    # checked bytes when ordinary inspection ended without any supplied body.
+    if not bodies and oversized is not None:
+        entry, candidate = oversized
+        tentative = dict(inspection, delivered_records=1)
+        try:
+            fitted = fit_optional_excerpt(entry, candidate, lambda item: render_agent_candidates(
+                selected, result, budget, status, [item], tentative, measure=measure), deadline)
+        except ContextRefused:
+            if time.monotonic() >= deadline:
+                inspection["refusals"]["deadline"] = 1
+        else:
+            bodies.append(fitted)
+            inspection = tentative
     # Failure/omission metadata is part of the final measured context, never a
     # silent truncation or a relevance/success assertion.
     while True:

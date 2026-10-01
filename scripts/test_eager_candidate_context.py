@@ -493,10 +493,11 @@ class EagerCandidateTests(unittest.TestCase):
                          dict(whole_pull_budget=1, pull_limit=1))
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5073)
 
-    def test_passage_still_too_large_refuses_without_shortening_or_more_reads(self):
+    def test_passage_refuses_when_complete_preview_cannot_fit_without_more_reads(self):
         self.config['context_bytes'] = 5400
         self.optional()
         self.entries[0]['match_span'] = dict(offset=0, length=4096)
+        self.entries[0]['summary_span'] = dict(offset=4000, length=96)
         _, view, _ = self.invoke()
         self.assertEqual(len(self.calls), 1)
         self.assertEqual(view['candidate_bodies'], [])

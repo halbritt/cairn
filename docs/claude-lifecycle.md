@@ -69,9 +69,20 @@ one pull call. A receipt-budget refusal permits one additional checked span pull
 with a fresh request ID. `source_extent: partial_span`, full source identity/hash,
 byte range and passage checksum remain explicit; omitted text supports no claims.
 Required instructions, Class C and competing positions remain whole or omitted.
-Changed/unavailable identities never trigger this fallback. A passage that still
-cannot fit is refused without shortening or further retries. Search and pulls
-share a five-second I/O deadline, with at most two seconds per pull and two
+Changed/unavailable identities never trigger this fallback. An oversized passage
+does not displace a later source that fits under the normal admission rules. If
+normal inspection delivers no body, the last checked optional passage may supply
+a shorter exact UTF-8 prefix, only when it includes the complete original preview
+span and more source bytes than that preview. Missing or out-of-range preview
+spans, insufficient room and expired deadlines refuse this recovery. A later
+failed read or invalid identity cannot revive an earlier omitted passage.
+Fitting measures the complete task/control/required envelope and keeps the native
+reserve. It makes no further reads or refunds: fetched bytes, receipt charges and
+attempted calls stay unchanged. The partial source offset, full source hash and
+size remain intact; its displayed end and checksum describe the shorter bytes.
+The passage remains `partial_span`, with no claim about omitted conditions or
+whole-note applicability. Search, pulls and optional fitting share a five-second
+deadline, with at most two seconds per pull and two
 automatic whole/span calls, including failed attempts and opening reads. This
 leaves at least two of the four total inspection calls for task-driven choice;
 packing and state-save overhead can add time.
