@@ -43,13 +43,60 @@ class SemanticRecallAnchors(unittest.TestCase):
         self.assertNotIn('"CONTRIBUTING.md"',query)
         self.assertIn('rounding',query.split())
 
-    def test_explicit_file_and_error_quotes_or_backticks_keep_exact_preference(self):
-        for mark in ('"','`'):
-            with self.subTest(mark=mark):
-                query,args=self.search_for(f'Repair {mark}src/rates.py{mark} after {mark}RATE_OVERFLOW{mark}.')
-                self.assertIn('"src/rates.py"',query)
+    def test_explicit_file_and_error_quotes_keep_exact_preference(self):
+        query,args=self.search_for('Repair "src/rates.py" after "RATE_OVERFLOW".')
+        self.assertIn('"src/rates.py"',query)
+        self.assertIn('"RATE_OVERFLOW"',query)
+        self.assertEqual(args['entities'],['src/rates.py'])
+
+    def test_code_formatting_keeps_words_without_exact_phrase_preference(self):
+        prompts = [
+            'Run `make test-integration` and inspect `ordinary prose`.',
+            'Run `printf "shell argument"`.',
+            'Run ``printf "shell argument" and `inner code` ``.',
+            '```printf "shell argument"```',
+            'Run ``code ` "shell argument" ``.',
+            'Run `printf\n"shell argument"`.',
+            '```sh\nprintf "shell argument"\n```',
+            '~~~sh\nprintf "shell argument"\n~~~',
+            '````sh\nprintf "shell argument"\n```\necho "still code"\n````',
+            '```sh\nprintf "shell argument"',
+            '```sh\n~~~\necho "still code"',
+            'Broken `code "shell argument"',
+            'Broken "mixed delimiter`',
+        ]
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                query,args=self.search_for(prompt)
+                self.assertNotIn('"',query)
+                self.assertTrue(args['semantic'])
+                self.assertTrue(hook.terms(prompt) <= set(query.split()))
+
+    def test_quotes_outside_code_and_after_unclosed_inline_code_are_exact(self):
+        prompts = [
+            '`printf "shell argument"` then "RATE_OVERFLOW"',
+            '```sh\nprintf "shell argument"\n```\nThen "RATE_OVERFLOW"',
+            '~~~sh\nprintf "shell argument"\n~~~~\nThen "RATE_OVERFLOW"',
+            'Broken `code "shell argument"\nThen "RATE_OVERFLOW"',
+            'Broken "mixed delimiter`\nThen "RATE_OVERFLOW"',
+        ]
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                query,_=self.search_for(prompt)
                 self.assertIn('"RATE_OVERFLOW"',query)
-                self.assertEqual(args['entities'],['src/rates.py'])
+                self.assertNotIn('"shell argument"',query)
+        for phrase in ('make test-integration','ordinary prose','expected `value` here'):
+            query,_=self.search_for('Find "'+phrase+'".')
+            self.assertIn('"'+phrase+'"',query)
+
+    def test_backticked_paths_keep_semantic_hints_and_lexical_path_policy(self):
+        for semantic in (True,False):
+            query,args=self.search_for('Inspect `src/rates.py` and `RATE_OVERFLOW`.',semantic=semantic)
+            self.assertEqual(args['entities'],['src/rates.py'])
+            self.assertIn('src/rates.py',query)
+            self.assertEqual('"src/rates.py"' in query,not semantic)
+            self.assertNotIn('"RATE_OVERFLOW"',query)
+            self.assertIn('rate_overflow',query.split())
 
     def test_legitimate_document_edit_keeps_file_text_and_entity(self):
         for filename in ('README.md','AGENTS.md'):
@@ -72,7 +119,7 @@ class SemanticRecallAnchors(unittest.TestCase):
         self.assertEqual(set(shlex.split(query)),set(shlex.split(lexical)))
 
     def test_quoted_setup_is_deliberate_and_not_classified_by_filename(self):
-        query,args=self.search_for('Fix currency rounding. Read `CONTRIBUTING.md`.')
+        query,args=self.search_for('Fix currency rounding. Read "CONTRIBUTING.md".')
         self.assertIn('"CONTRIBUTING.md"',query)
         self.assertIn('CONTRIBUTING.md',args['entities'])
 

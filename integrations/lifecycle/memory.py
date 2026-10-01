@@ -639,6 +639,49 @@ def file_hint(value, cwd, project=None):
     return name
 
 
+def quoted_phrases(prompt):
+    """Extract intentional ASCII quotes, skipping inline and fenced code.
+
+    This is a query convention, not a Markdown renderer. Unclosed inline code
+    suppresses quotes through that line; unclosed fences suppress the remainder.
+    A double quote encountered first owns its same-line contents, including ticks.
+    """
+    phrases = []
+    token = re.compile(r'(?m)^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>[^\n]*)|(?P<ticks>`+)|"')
+    position = 0
+    while match := token.search(prompt, position):
+        position = match.end()
+        fence = match.group("fence")
+        if fence and not (fence[0] == "`" and "`" in match.group("info")):
+            closing = re.compile(r'(?m)^ {0,3}' + re.escape(fence[0]) +
+                                 '{' + str(len(fence)) + r',}[ \t]*$')
+            end = closing.search(prompt, position)
+            position = end.end() if end else len(prompt)
+            continue
+        ticks = match.group("ticks") or (fence if fence else None)
+        if ticks:
+            # A same-line backtick sequence with ticks in its info is inline.
+            position = match.start("info") if fence else position
+            closing = re.compile(r'(?<!`)' + re.escape(ticks) + r'(?!`)')
+            end = closing.search(prompt, position)
+            if end:
+                position = end.end()
+            else:
+                newline = prompt.find("\n", position)
+                position = newline + 1 if newline >= 0 else len(prompt)
+            continue
+        end = prompt.find('"', position)
+        newline = prompt.find("\n", position)
+        if end >= 0 and (newline < 0 or end < newline):
+            phrase = prompt[position:end]
+            if 3 <= len(phrase) <= 160 and terms(phrase):
+                phrases.append(phrase)
+            position = end + 1
+        else:
+            position = newline + 1 if newline >= 0 else len(prompt)
+    return phrases
+
+
 def retrieval_intent(event, state, *, semantic=False):
     project = project_root(event).name
     prompt = event.get("prompt", "")
@@ -664,7 +707,7 @@ def retrieval_intent(event, state, *, semantic=False):
     remaining = 16 - len(paths)
     if remaining:
         paths.extend(recent[-remaining:])
-    phrases = [p for p in re.findall(r'["`]([^"`\n]{3,160})["`]', prompt) if terms(p)]
+    phrases = quoted_phrases(prompt)
     error_terms = hints.get("errors", []) if now - hints.get("error_at", 0) < 900 else []
     # Scan all supplied prompt text so a file/error after a long preamble survives.
     project_words = terms(project)

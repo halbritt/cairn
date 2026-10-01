@@ -288,18 +288,32 @@ relevance or interpret a correction or negation. Lexical recall and related-note
 searches during capture retain this construction; capture admission and write
 checks are separate.
 
+For automatic query derivation in all recall and capture modes, ASCII double
+quotes request exact phrase preference. Backticks are code formatting: code
+words still contribute lexical vocabulary and eligible paths still contribute
+file hints. Quotes inside matching inline backtick spans (including multiple
+backticks) or backtick/tilde fences do not create exact anchors. Fences start
+with at least three matching characters after at most three spaces and close
+with the same character and at least the opening width on a line of their own.
+An unclosed fence suppresses quoted anchors for the remainder; unclosed inline
+code suppresses them through that line. An outside double quote owns its
+same-line quoted contents, so a deliberately quoted error may contain literal
+backticks. Mixed delimiters do not close each other. These are extraction rules,
+not a full Markdown parser. Explicit phrase length, anchor count and query byte
+limits are unchanged.
+
 When the initial automatic `agent_tools` search requests semantic discovery,
 inferred task paths and recent file hints remain entity hints and unquoted query
 text. The hook does not invent exact-body literal preferences for those paths.
-Explicitly quoted or backticked phrases, recent errors and workstream anchors
-retain their existing exact preference. A task about an unquoted README still
+Explicit ASCII double-quoted phrases outside code, recent errors and workstream
+anchors retain their exact preference. A task about an unquoted README still
 includes its file identity and text; an older unassociated note that merely
 mentions that filename can now rank lower. Explicitly quoted setup filenames can
 still win exact preference, and saved entity associations retain their priority.
 This changes automatic query construction, not the API's quoted-search contract.
 A labelled lexical fallback uses the same submitted semantic query, with no
 hidden retry to restore inferred quotes. Ambient recall, deliberately lexical
-requests and capture-related queries are unchanged. These construction checks do
+requests and capture-related queries retain their inferred-path anchor policy. These construction checks do
 not establish that returned notes apply or change a task's outcome.
 
 A prompt beginning with `continue` or `resume` (optionally preceded by `please`)
