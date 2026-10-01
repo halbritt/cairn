@@ -3,14 +3,15 @@ package localapi
 import (
 	"encoding/base64"
 	"encoding/json"
-	"regexp"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
+	"github.com/halbritt/cairn/internal/jsontext"
 )
-
-var clientPrincipalPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$`)
 
 // ParseClientsResponse validates peer diagnostics before a facade exposes them.
 // Unknown additive fields are discarded by typed projection; unknown schemas,
@@ -19,7 +20,7 @@ func ParseClientsResponse(raw []byte, limit int) (ClientsResponse, error) {
 	invalid := func() (ClientsResponse, error) {
 		return ClientsResponse{}, &core.Error{Code: "INVALID_DIAGNOSTICS", Message: "API client observations are invalid or unsupported; observed clients are unknown"}
 	}
-	if len(raw) > 512*1024 || checkBoundedJSON(raw) != nil || limit < 1 || limit > ClientsMaxLimit {
+	if len(raw) > 512*1024 || jsontext.CheckUnicode(raw) != nil || checkBoundedJSON(raw) != nil || limit < 1 || limit > ClientsMaxLimit {
 		return invalid()
 	}
 	var fields map[string]json.RawMessage
@@ -58,7 +59,7 @@ func ParseClientsResponse(raw []byte, limit int) (ClientsResponse, error) {
 	seen := map[string]bool{}
 	for i := range view.Rows {
 		row := &view.Rows[i]
-		if !canonicalClientUUID(row.CohortID) || seen[row.CohortID] || !clientPrincipalPattern.MatchString(row.Principal) || (row.MachineID != "" && !machineIDPattern.MatchString(row.MachineID)) || row.FirstObservedAt.IsZero() || row.LastObservedAt.IsZero() {
+		if !canonicalClientUUID(row.CohortID) || seen[row.CohortID] || !safeClientPrincipal(row.Principal) || (row.MachineID != "" && !machineIDPattern.MatchString(row.MachineID)) || row.FirstObservedAt.IsZero() || row.LastObservedAt.IsZero() {
 			return invalid()
 		}
 		seen[row.CohortID] = true
@@ -96,4 +97,17 @@ func ParseClientsResponse(raw []byte, limit int) (ClientsResponse, error) {
 func canonicalClientUUID(value string) bool {
 	id, err := uuid.Parse(value)
 	return err == nil && id.String() == value
+}
+
+// Preserve the provisioning label contract while refusing diagnostic control text.
+func safeClientPrincipal(value string) bool {
+	if len(value) > 256 || strings.TrimSpace(value) == "" || !utf8.ValidString(value) {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }

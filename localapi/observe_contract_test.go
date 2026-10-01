@@ -3,8 +3,10 @@ package localapi
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -74,5 +76,67 @@ func TestCaseCollidingDiagnosticMembersAreInvalid(t *testing.T) {
 		if _, state := parseDiagnostics([]string{raw(object)}); state != MetadataInvalid {
 			t.Fatalf("ambiguous declaration classified %s", state)
 		}
+	}
+}
+
+// Exercise the real authenticated producer before its public response parser.
+// Safe provisioned labels must survive without narrowing authentication policy.
+func TestProvisionedPrincipalObservationRoundTrip(t *testing.T) {
+	for _, principal := range []string{"agent:review", "agent review", "agent:équipe", "_review", " agent review ", strings.Repeat("é", 128)} {
+		t.Run(principal, func(t *testing.T) {
+			raw := provisionedPrincipalObservation(t, principal)
+			view, err := ParseClientsResponse(raw, 50)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(view.Rows) != 1 || view.Rows[0].Principal != principal {
+				t.Fatal("configured principal changed during projection")
+			}
+		})
+	}
+}
+
+func provisionedPrincipalObservation(t *testing.T, principal string) json.RawMessage {
+	t.Helper()
+	token := "synthetic-principal-contract-token"
+	digest := sha256.Sum256([]byte(token))
+	identity := Identity{Principal: principal, TokenSHA256: hex.EncodeToString(digest[:]), Repo: "fixture:review", Role: "agent", Destination: "hosted"}
+	if err := ValidateIdentities([]Identity{identity}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{clients: map[[32]byte]client{digest: {principal: principal, role: "agent"}}, obs: newObserver()}
+	if got := post(s, "/v1/version", token, `{}`, nil); got.Code != http.StatusOK {
+		t.Fatalf("observation status %d", got.Code)
+	}
+	response := post(s, "/v1/clients", token, `{}`, nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("clients status %d", response.Code)
+	}
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	return envelope.Data
+}
+
+func TestClientsRefusesUnsafePrincipalText(t *testing.T) {
+	original := provisionedPrincipalObservation(t, "agent:review")
+	for name, wire := range map[string]string{
+		"escape":             `"agent:\u001breview"`,
+		"newline":            `"agent:\nreview"`,
+		"unicode control":    `"agent:\u0085review"`,
+		"blank":              `"  "`,
+		"over byte limit":    `"` + strings.Repeat("é", 129) + `"`,
+		"unpaired surrogate": `"agent:\ud800review"`,
+		"invalid utf8":       "\"agent:" + string([]byte{0xff}) + "review\"",
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw := strings.Replace(string(original), `"agent:review"`, wire, 1)
+			if _, err := ParseClientsResponse([]byte(raw), 50); err == nil {
+				t.Fatal("unsafe principal text accepted")
+			}
+		})
 	}
 }

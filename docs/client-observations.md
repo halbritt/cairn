@@ -110,9 +110,10 @@ Unrecognized schemas, unsafe known fields, inconsistent counters and out-of-boun
 pages return `INVALID_DIAGNOSTICS` without reflecting peer content. Unknown
 additive fields are omitted. This includes checking build/origin/capability
 formats, cohort/epoch UUIDs, timestamps, known metadata states, machine IDs, and
-bounded ASCII principal labels (`A-Z a-z 0-9 . _ : / @ + -`, with an alphanumeric
-first character). Other provisioned principal labels remain valid for API
-authentication but cannot be shown by this diagnostic CLI. Responses are capped
+nonblank UTF-8 principal labels of at most 256 bytes, without Unicode control
+characters. Safe provisioned labels retain their exact spelling, including spaces
+and Unicode. Invalid UTF-8 or unpaired JSON surrogate escapes are refused before
+decoding. These display checks do not change identity provisioning. Responses are capped
 at 512 KiB and the requested row limit. The declared principal remains a server
 claim; response validation does not independently authenticate it.
 
