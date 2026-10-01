@@ -51,7 +51,10 @@ Two callbacks can straddle that replacement. The first complete reserved-wake
 callback records an enabled/disabled decision for the actual session and native
 turn in the existing memory-budget ledger, or Claude prompt owner in the inbox
 grant ledger, under its session lock. The other
-callback keeps that decision in either order. This writes mode metadata only;
+callback keeps that decision in either order. Activation waits at most 250 ms for
+a busy session lock, then refuses if it remains unavailable. This wait precedes
+the handler deadline and can add up to 250 ms to callback latency; it never
+bypasses the ledger or allocates a grant. This writes mode metadata only;
 it does not create a turn grant, change the active turn, read a source, or confer
 authority. Locating the ledger during disabled staging reads only the owner-controlled
 memory configuration's state directory; it does not require partly staged hashes.

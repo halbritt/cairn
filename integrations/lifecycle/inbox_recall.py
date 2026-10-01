@@ -103,7 +103,18 @@ def activation_decision(config, event, enabled):
     if directory.stat().st_uid != os.getuid() or directory.stat().st_mode & 0o022:
         raise ValueError('activation ledger directory is not owner-controlled')
     with (directory / (session + '.lock')).open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # The two reserved-wake hooks can overlap while persisting this same
+        # decision. Wait briefly for that writer, never bypass its accounting.
+        deadline = time.monotonic() + 0.25
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(0.01, remaining))
         if config['harness'] == 'claude':
             path = directory / (session + '.inbox-recall.json')
             marker = path.with_suffix('.initialized')
