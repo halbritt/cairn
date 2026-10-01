@@ -92,8 +92,16 @@ rewrite is performed; clearer source framing alone does not establish usefulness
 
 Whole candidate bodies take priority within the configured context ceiling.
 The agent-tools cue states shared source-check and safety guidance once; the
-ambient guidance paragraph is not appended again. Response fields and whole
-source bodies retain their existing representation.
+ambient guidance paragraph is not appended again. For standalone optional A/B
+bodies, the hook omits consumed receipt counters (`credits_remaining` and
+`bytes_remaining`) and empty `evidence`/`authority` fields from its delivery view.
+These receipt counters are not the shared task allowance. Source text, identity,
+version, whole/partial extent and hashes, complete pull arguments, nonempty
+support, applicability/provenance and unknown fields remain intact. Required,
+Class C and competing response groups retain their complete representation.
+API responses and local inspection accounting are unchanged. The final encoded
+view determines `remaining_memory_bytes`; smaller metadata can let more existing
+ranked content fit, without changing source order or establishing relevance.
 Up to three remaining previews retain complete handles and source-span/conflict
 metadata, except the redundant CLI `pull_command`. Whole preview groups occupy
 at most 2,000 additional UTF-8 bytes. When no bodies are delivered, previews also

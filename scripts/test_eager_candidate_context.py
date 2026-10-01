@@ -55,6 +55,109 @@ class EagerCandidateTests(unittest.TestCase):
         view = json.loads(text[text.index('{"selected":'):]) if text else {}
         return text, view, state
 
+    def test_optional_delivery_view_preserves_sources_and_usable_handles(self):
+        from trial_source_delivery import hook_delivery
+        self.result['index'] = self.entries[:1]
+        entry = self.entries[0]
+        response = self.responses[entry['record_id']]
+        response['selection'].update(mandatory=False, evidence=[], authority=None,
+                                     reason='optional relevance', category='note')
+        record = response['selection']['record']
+        record.update(**{'class': 'B'}, lifecycle='accepted', sensitivity='shareable',
+                      kind='lesson', scope=dict(repository='fixture', task='*', run='*'),
+                      observed_writer='authenticated-writer', witness='selected evidence',
+                      written_at='2026-01-01T00:00:00Z', attribution_state='observed',
+                      future_field=dict(condition='Preserve this too.'))
+        before = json.loads(json.dumps(response))
+        text, view, state = self.invoke()
+        supplied = view['candidate_bodies'][0]
+        compact = supplied['response']
+        self.assertEqual(compact['selection']['record'], record)
+        self.assertEqual(supplied['pull_arguments'], entry['pull_arguments'])
+        self.assertEqual(compact['selection']['reason'], before['selection']['reason'])
+        self.assertEqual(compact['selection']['category'], before['selection']['category'])
+        self.assertIs(compact['selection']['mandatory'], False)
+        self.assertNotIn('credits_remaining', compact)
+        self.assertNotIn('bytes_remaining', compact)
+        self.assertNotIn('evidence', compact['selection'])
+        self.assertNotIn('authority', compact['selection'])
+        self.assertEqual(response, before)
+        def emitted(candidate):
+            return json.dumps(dict(hookSpecificOutput=dict(additionalContext=hook.encoded(dict(
+                candidate_bodies=[candidate])))))
+        original = dict(pull_arguments=entry['pull_arguments'], response=before)
+        self.assertEqual(hook_delivery(emitted(original)), hook_delivery(emitted(supplied)))
+        self.assertLess(len(emitted(supplied).encode()), len(emitted(original).encode()))
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 9500)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(state['seen'], {})
+
+    def test_optional_view_does_not_erase_unknown_or_malformed_metadata(self):
+        for value in (True, -1, 1.5, 'unknown', dict(future='preserve'), None):
+            with self.subTest(value=value):
+                candidate = dict(future_top=dict(keep='unknown'), pull_arguments=self.entries[0]['pull_arguments'],
+                    response=dict(credits_remaining=value, bytes_remaining=value, future_response=['keep'],
+                        selection=dict(record=dict(body='Known source', **{'class':'A'}), mandatory=False,
+                                       evidence='malformed but not ours to discard', authority=dict(future='support'))))
+                before = json.loads(json.dumps(candidate))
+                self.assertEqual(hook.optional_delivery_view(candidate), before)
+                self.assertEqual(candidate, before)
+
+    def test_saturated_optional_response_fits_without_shortening_or_changing_handles(self):
+        entry = self.entries[0]
+        response = self.responses[entry['record_id']]
+        response['selection'].update(mandatory=False, evidence=[], authority=[])
+        response['selection']['record']['class'] = 'A'
+        candidate = dict(pull_arguments=entry['pull_arguments'], response=response)
+        original = json.loads(json.dumps(candidate))
+        measure = lambda text: hook.codex_hook_cost(self.event, text)
+        def render(budget):
+            return hook.render_agent_candidates([], dict(status='READY', index=[], omitted={}),
+                budget, dict(rejected={}), [candidate], dict(pull_calls=1), measure=measure)
+        with patch.object(hook, 'optional_delivery_view', side_effect=lambda item: item):
+            before = render(9500)
+            # Cross the actual full-envelope boundary, without changing source,
+            # handles, policy or the compact renderer's accounting.
+            budget = measure(before) - 1
+            with self.assertRaises(hook.ContextRefused):
+                render(budget)
+        text = render(budget)
+        view = json.loads(text[text.index('{"selected":'):])
+        shown = view['candidate_bodies'][0]
+        self.assertEqual(shown['pull_arguments'], original['pull_arguments'])
+        self.assertEqual(shown['response']['selection']['record'], original['response']['selection']['record'])
+        self.assertLessEqual(measure(text) + view['remaining_memory_bytes'], budget)
+        self.assertGreater(view['remaining_memory_bytes'], 0)
+        self.assertEqual(candidate, original)
+
+    def test_optional_compaction_keeps_support_and_protected_groups_complete(self):
+        for protected in ('mandatory', 'C', 'competing', 'conflicts', 'unknown_class', 'support'):
+            with self.subTest(protected=protected):
+                record = dict(record_id=self.entries[0]['record_id'], version=1, body='日本語 condition', **{'class':'A'})
+                selection = dict(record=record, mandatory=False, evidence=[], authority=[])
+                response = dict(selection=selection, credits_remaining=3, bytes_remaining=4096)
+                if protected == 'mandatory': selection['mandatory'] = True
+                if protected == 'C': record['class'] = 'C'
+                if protected == 'competing': response['competing'] = [dict(record=dict(record, body='Competing whole 日本語'), mandatory=False)]
+                if protected == 'conflicts': selection['conflicts'] = [dict(members=[dict(record_id='other',version=1)])]
+                if protected == 'unknown_class': record.pop('class')
+                if protected == 'support':
+                    selection.update(evidence=[dict(digest='a'*64,condition='Supported prerequisite')],
+                                     authority=[dict(grant='existing authority metadata')])
+                candidate = dict(pull_arguments=self.entries[0]['pull_arguments'], response=response)
+                before = json.loads(json.dumps(candidate))
+                selected = [dict(mandatory=True, record=dict(body='Keep the whole required instruction.'))]
+                text = hook.render_agent_candidates(selected, dict(index=[], omitted={}), 9500,
+                    dict(rejected={}), [candidate], dict(pull_calls=1))
+                view = json.loads(text[text.index('{"selected":'):])
+                self.assertEqual(view['selected'], selected)
+                shown = view['candidate_bodies'][0]
+                if protected != 'support': self.assertEqual(shown, before)
+                else:
+                    self.assertEqual(shown['response']['selection'], selection)
+                    self.assertNotIn('credits_remaining', shown['response'])
+                self.assertEqual(candidate, before)
+
     def test_initial_context_delivers_two_whole_unverified_sources_and_remaining_handle(self):
         text, view, state = self.invoke()
         self.assertEqual(len(self.calls), 2)
@@ -121,6 +224,7 @@ class EagerCandidateTests(unittest.TestCase):
         entry.update({'class': 'A', 'match_span': dict(offset=offset, length=len(passage.encode())),
                       'body_sha256': hashlib.sha256(body.encode()).hexdigest()})
         self.responses[entry['record_id']]['selection']['record'].update(body=body, **{'class': 'A'})
+        self.responses[entry['record_id']]['selection'].update(mandatory=False, evidence=[], authority=None)
         before = json.loads(json.dumps(self.responses))
         text, view, state = self.invoke()
         self.assertEqual(len(self.calls), 1)  # The checked whole read already paid for these bytes.
@@ -129,6 +233,8 @@ class EagerCandidateTests(unittest.TestCase):
         response = supplied['response']
         self.assertEqual(response['selection']['record']['body'], '')
         self.assertEqual(response['source_extent'], 'partial_span')
+        self.assertNotIn('credits_remaining', response)
+        self.assertNotIn('bytes_remaining', response)
         self.assertEqual(response['span_origin'], 'whole_pull')
         self.assertEqual(response['span']['body'], passage)
         self.assertEqual(response['span']['source_sha256'], entry['body_sha256'])

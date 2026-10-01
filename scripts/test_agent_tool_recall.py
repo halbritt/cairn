@@ -73,7 +73,7 @@ class AgentToolRecallTests(unittest.TestCase):
     def test_reserve_guidance_fits_small_and_normal_allowances_without_extra_calls(self):
         self.entries = []
         self.required[0]['record']['body'] = 'Preserve 日本語 and "quoted" required context. '
-        for budget in (3400, 9500):
+        for budget in (3000, 3400, 9500):
             with self.subTest(budget=budget):
                 self.config['context_bytes'] = budget
                 self.commands.clear()
@@ -92,7 +92,7 @@ class AgentToolRecallTests(unittest.TestCase):
                 self.assertTrue(text.startswith(hook.AGENT_TOOLS_CUE.format(budget=budget)))
                 self.assertGreater(view['remaining_memory_bytes'], 0)
                 self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], budget)
-                if budget == 3400:
+                if budget == 3000:
                     self.assertLess(view['remaining_memory_bytes'], 1024)
 
     def test_reported_remaining_memory_fits_full_unicode_context_and_whole_required_text(self):
