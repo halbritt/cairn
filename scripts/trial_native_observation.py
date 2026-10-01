@@ -108,6 +108,7 @@ class PublicActions:
     def __init__(self, workspace, commands):
         self.workspace, self.commands = workspace, commands or {}
         self.actions, self.by_id, self.unknown = [], {}, set()
+        self.ambiguous_ids = set()
         self.omitted, self.unmatched, self.duplicates = 0, 0, 0
 
     def consume(self, part, event, received):
@@ -127,6 +128,7 @@ class PublicActions:
         if kind == 'tool_use':
             if ident is not None and ident in self.by_id:
                 self.duplicates += 1
+                self.ambiguous_ids.add(ident)
                 self.by_id[ident]['state'] = 'unknown'
                 self.unknown.add('duplicate_action_identity')
                 return
@@ -173,6 +175,7 @@ class PublicActions:
         row['result_count'] += 1
         if row['result_count'] > 1:
             self.duplicates += 1
+            self.ambiguous_ids.add(ident)
             row['state'] = 'unknown'
             self.unknown.add('duplicate_action_result')
             return
@@ -183,11 +186,12 @@ class PublicActions:
         if row['state'] == 'unknown':
             return  # A duplicate call ID prevents a unique result association.
         error = part.get('is_error')
-        if row['tool'] == 'Bash' and (row['requested_background'] or background_result(part) or background_result(event.get('tool_use_result'))):
+        if error is True:
+            row['state'] = 'tool_error'
+        elif row['tool'] == 'Bash' and (row['requested_background'] or background_result(part) or background_result(event.get('tool_use_result'))):
             row['state'] = 'background'
-            self.unknown.add('background_completion_unobserved')
-        elif type(error) is bool:
-            row['state'] = 'tool_error' if error else 'tool_success'
+        elif error is False:
+            row['state'] = 'tool_success'
         else:
             row['state'] = 'unknown'
             self.unknown.add('action_result_state_unknown')
@@ -201,11 +205,23 @@ class PublicActions:
             else:
                 self.unknown.add('action_exit_code_unknown')
 
+    def observe_denials(self, denials):
+        for denial in denials:
+            if not isinstance(denial, dict):
+                continue
+            ident = bounded_identity(denial.get('tool_use_id'))['sha256']
+            row = self.by_id.get(ident)
+            if row is not None and ident not in self.ambiguous_ids and row['tool'] == denial.get('tool_name'):
+                row['state'] = 'tool_error'
+                row['exit_code'] = None
+
     def finish(self):
         if not self.actions:
             self.unknown.add('no_observed_actions')
         if any(row['state'] == 'unfinished' for row in self.actions):
             self.unknown.add('unfinished_actions')
+        if any(row['state'] == 'background' for row in self.actions):
+            self.unknown.add('background_completion_unobserved')
         return dict(schema='cairn.public-actions/1', status='unknown' if self.unknown else 'observed',
                     time_basis='capture_start_monotonic', time_unit='seconds',
                     actions=self.actions, actions_omitted=self.omitted,
@@ -294,6 +310,7 @@ def measure(stream, timings, hook_rows, *, input_bytes, expects_hooks, model, pr
                 unknown.append('permission_denials_missing_or_malformed')
             elif denials:
                 fail('native_permission_denial')
+                actions.observe_denials(denials)
         if event.get('type') not in ('assistant','user'):
             continue
         message = event.get('message')

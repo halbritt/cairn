@@ -148,7 +148,7 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
             self.assertEqual(report['records'][0]['selected_input']['failures'],['native_permission_denial'])
             actions=report['records'][0]['selected_input']['public_actions']
             self.assertEqual(actions['actions'][0]['command_category'],'go_test')
-            self.assertEqual(actions['actions'][0]['state'],'unfinished')
+            self.assertEqual(actions['actions'][0]['state'],'tool_error')
             self.assertNotIn('SECRET',json.dumps(actions))
             self.assertFalse((base/'out/runs/new-work.none.s0/stream.jsonl').exists())
             if os.environ.get('CAPLAB_CHECKOUT'):

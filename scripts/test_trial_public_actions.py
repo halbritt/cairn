@@ -8,10 +8,10 @@ import unittest
 from trial_native_observation import measure
 
 
-def observed(events, workspace, commands=None, times=None):
+def observed(events, workspace, commands=None, times=None, denials=None):
     events = [dict(type='system', subtype='init', model='fixture'),
               dict(type='user', message=dict(content='ordinary task'))] + events + [
-              dict(type='result', permission_denials=[])]
+              dict(type='result', permission_denials=denials or [])]
     text = ''.join(json.dumps(e, ensure_ascii=True) + '\n' for e in events)
     timings = [dict(line=n+1, received_seconds=(times or {}).get(n,n/10), sha256=hashlib.sha256(line.encode()).hexdigest())
                for n, line in enumerate(text.splitlines(keepends=True))]
@@ -97,6 +97,42 @@ class PublicActionTests(unittest.TestCase):
             self.assertEqual(output['actions_omitted'],1)
             self.assertEqual(output['unmatched_results'],1)
             self.assertEqual(output['status'],'unknown')
+
+    def test_tool_error_overrides_requested_or_reported_background(self):
+        with tempfile.TemporaryDirectory() as root:
+            for requested in (True, False):
+                with self.subTest(requested=requested):
+                    events=[call('denied','Bash',dict(command='make check',run_in_background=requested)),
+                            result('denied',True,tool_use_result=dict(backgroundTaskId='PRIVATE TASK'))]
+                    output=observed(events,root)['public_actions']
+                    self.assertEqual(output['actions'][0]['state'],'tool_error')
+                    self.assertNotIn('background_completion_unobserved',output['unknown'])
+                    self.assertNotIn('PRIVATE',json.dumps(output))
+
+    def test_terminal_denial_overrides_background_without_hiding_other_work(self):
+        with tempfile.TemporaryDirectory() as root:
+            for other_background in (False, True):
+                with self.subTest(other_background=other_background):
+                    events=[call('denied','Bash',dict(command='make check',run_in_background=True)),result('denied')]
+                    if other_background:
+                        events += [call('running','Bash',dict(command='go test ./core',run_in_background=True)),result('running')]
+                    denial=dict(tool_name='Bash',tool_use_id='denied',reason='PRIVATE REASON',tool_input=dict(command='PRIVATE COMMAND'))
+                    measurement=observed(events,root,denials=[denial])
+                    output=measurement['public_actions']
+                    self.assertEqual(output['actions'][0]['state'],'tool_error')
+                    self.assertIsNone(output['actions'][0]['exit_code'])
+                    self.assertEqual('background_completion_unobserved' in output['unknown'],other_background)
+                    self.assertIn('native_permission_denial',measurement['failures'])
+                    self.assertNotIn('PRIVATE',json.dumps(output))
+
+    def test_terminal_denial_cannot_resolve_duplicate_action_identity(self):
+        with tempfile.TemporaryDirectory() as root:
+            events=[call('dup','Bash',dict(command='make check',run_in_background=True)),
+                    call('dup','Bash',dict(command='go test ./core')),result('dup')]
+            denial=dict(tool_name='Bash',tool_use_id='dup')
+            output=observed(events,root,denials=[denial])['public_actions']
+            self.assertEqual(output['actions'][0]['state'],'unknown')
+            self.assertIn('duplicate_action_identity',output['unknown'])
 
     def test_source_delivery_precedes_action_without_retaining_either_payload(self):
         with tempfile.TemporaryDirectory() as root:
