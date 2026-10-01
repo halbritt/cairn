@@ -326,6 +326,14 @@ in each arm's own copy, so it must be repeatable local preparation. This gate is
 not native task admission or task success; the outer disposable PostgreSQL
 wrapper and native version check may already have run.
 
+Prospective prerequisite argv runs under a fixed Python supervisor inside the
+namespace. It waits for the literal command without a shell, so process checks
+can observe a live parent above PID 1. Standard input/output/error, working
+directory and environment are inherited; normal exit codes pass through and
+signal termination becomes conventional `128 + signal`. Receipts retain the
+original argv, and the existing prerequisite timeout remains. Native workers
+and graders do not use this supervisor.
+
 ### Freeze new inputs
 
 A reviewed directory contains `input.json`, `corpus.json` and

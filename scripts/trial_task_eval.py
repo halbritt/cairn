@@ -968,6 +968,13 @@ def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="cl
     return command + provider_args
 
 
+def prerequisite_command(argv):
+    """Give a prerequisite a waiting non-init parent; preserve shell-style signal status."""
+    supervisor = ("import subprocess,sys; result=subprocess.run(sys.argv[1:]); "
+                  "sys.exit(result.returncode if result.returncode >= 0 else 128-result.returncode)")
+    return ["python3", "-c", supervisor, *argv]
+
+
 def run_agent(case, arm, seed, order, args, stores, out):
     run_id = f"{case['id']}.{arm}.s{seed}"
     base = out / "runs" / run_id
@@ -1087,7 +1094,7 @@ def run_agent(case, arm, seed, order, args, stores, out):
         binding_check = [["python3", "-c", "import json,runpy; config=json.load(open('/tmp/trial/hookconfig.json')); engine=runpy.run_path('/tmp/trial/hook/memory.py'); assert engine.get('RECALL_TASK_VERSION')==1; engine['recall_task_key'](config); runpy.run_path('/tmp/trial/hook/inbox_recall.py')['validate_binding'](config, require_enabled=True)"]] if arm not in ("none", "direct") and arm_config["recall_mode"] == "agent_tools" else []
         prerequisite_commands = binding_check + ([["go", "version"], ["go", "list", "./..."]] if (cwd / "go.mod").exists() else []) + case["preflight"]
         for argv in prerequisite_commands:
-            checked = sandbox_command(root, case["cwd"], binds, env, argv, args.harness, **sandbox_options)
+            checked = sandbox_command(root, case["cwd"], binds, env, prerequisite_command(argv), args.harness, **sandbox_options)
             try:
                 done = subprocess.run(checked, capture_output=True, timeout=min(120, args.timeout))
                 row = dict(argv=argv, exit=done.returncode, stdout_sha256=hashlib.sha256(done.stdout).hexdigest(),
