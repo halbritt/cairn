@@ -1398,7 +1398,7 @@ def release_inbox(config, state, path, reason, fenced=False):
 
 def clear_inbox(state, path):
     for key in ('inbox_intent', 'inbox_attempt', 'inbox_close', 'inbox_completion', 'inbox_response',
-                'inbox_turn_ended', 'cancel_turn_end', 'cancel_submission', 'cancel_owner_join',
+                'inbox_turn_ended', 'inbox_result_policy', 'cancel_turn_end', 'cancel_submission', 'cancel_owner_join',
                 'cancel_scan_report', 'cancel_final_report',
                 'tool_calls', 'opencode_turn_since', 'opencode_request_endpoint'):
         state.pop(key, None)
@@ -1743,6 +1743,35 @@ def watch_inbox(config, state, path):
     renew_inbox(config, state, path, state['inbox_attempt'])
 
 
+def completion_scope(state, attempt):
+    """An admission-pinned presentation policy, never authority or a scope migration."""
+    if 'inbox_result_policy' not in state:
+        return []  # Existing and uncertain pre-upgrade admissions stay legacy.
+    policy = state['inbox_result_policy']
+    if not isinstance(policy, dict):
+        raise CoordinationError('INVALID_HOST', 'invalid inbox result policy')
+    claim = policy.get('claim_request_id')
+    try:
+        if not isinstance(claim, str) or str(uuid.UUID(claim)) != claim:
+            raise ValueError('noncanonical claim identity')
+    except ValueError as exc:
+        raise CoordinationError('INVALID_HOST', 'invalid inbox result policy identity') from exc
+    intent = state.get('inbox_intent') or {}
+    if claim != intent.get('request_id'):
+        return []  # Old watcher cleanup may leave another admission's marker.
+    if (set(policy) != {'claim_request_id', 'version'} or type(policy['version']) is not int
+            or policy['version'] != 1 or claim != attempt.get('attempt_id')
+            or intent.get('session') != attempt.get('session')):
+        raise CoordinationError('INVALID_HOST', 'unsupported or mismatched inbox result policy')
+    delivery = attempt['delivery']['delivery_id']
+    try:
+        if not isinstance(delivery, str) or str(uuid.UUID(delivery)) != delivery:
+            raise ValueError('noncanonical delivery identity')
+    except ValueError as exc:
+        raise CoordinationError('INVALID_HOST', 'invalid inbox result delivery identity') from exc
+    return ['--task', 'coordination-result/' + delivery, '--run', '*']
+
+
 def inbox_context(config, state, path, observation, wake_binding=None):
     config = claude_session_config(config, state.get('agent', {}).get('native_session_id'), state.get('process'))
     if not config.get('native_delivery'):
@@ -1821,6 +1850,7 @@ def inbox_context(config, state, path, observation, wake_binding=None):
                                   native_turn_id=observation['native_turn_id'])
         state['inbox_intent'] = dict(request_id=str(uuid.uuid4()), session=session_ref(state['agent']),
                                      **(wake_binding or replay_binding))
+        state['inbox_result_policy'] = dict(claim_request_id=state['inbox_intent']['request_id'], version=1)
         write_state(path, state)
         recover_inbox(config, state, path)
     attempt = state.get('inbox_attempt')
@@ -1851,7 +1881,8 @@ def inbox_context(config, state, path, observation, wake_binding=None):
     common = ['--socket', config['socket'], '--token-file', config['token_file'],
               '--agent-id', attempt['session']['agent_id'], '--execution-id', attempt['session']['execution_id'],
               '--request-id', state['inbox_completion'], '--lease', delivery['lease_id']]
-    commands = dict(complete=[config['cairn'], 'complete', *common, '--shareable', '--stdin', delivery['delivery_id']],
+    commands = dict(complete=[config['cairn'], 'complete', *common, *completion_scope(state, attempt),
+                              '--shareable', '--stdin', delivery['delivery_id']],
                     ack=[config['cairn'], 'ack', *common, delivery['delivery_id']])
     if event['kind'] == 'request':
         commands['respond'] = [config['cairn'], 'publish', '--socket', config['socket'], '--token-file', config['token_file'],

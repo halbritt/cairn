@@ -121,9 +121,31 @@ event to the newest version, and historical text is not current authority.
 
 This recipe does not retroactively rescope old repository-wide assignments.
 Review any migration separately; do not rewrite or forget historical sources as
-routine cleanup. Completion also does not automatically inherit the source task:
-its result uses the supplied Draft/defaults. Preserve supplied native completion
-arguments; do not assume that publishing a scoped source changes result policy.
+routine cleanup. Completion does not automatically inherit the source task:
+its result uses the supplied Draft/defaults.
+
+For newly admitted native inbox attempts, the coordinator pins a versioned result
+policy with the claim request UUID **before** sending the claim. Its supplied
+completion command uses task `coordination-result/<delivery UUID>` and run `*`.
+This keeps a one-off result out of ordinary searches for other tasks; it does not
+change access to its exact authorized History or response reference. Reusable
+lessons remain a separate, explicit memory capture. Existing results are never
+rescoped.
+
+An admission already present at upgrade stays legacy when its policy marker is
+absent, including an uncertain claim whose reply has not arrived. A marker from
+another claim cannot change that admission. An unknown or malformed matching
+policy refuses context generation explicitly. Recovery reuses the exact saved
+completion arguments, body and request UUID; it never strips scope flags or
+changes request identity to get past a refusal.
+
+Install the CLI supporting `complete --task/--run` before enabling this native
+policy. Keep that compatible CLI and coordinator while scoped attempts or pending
+command journals remain: an older coordinator can regenerate legacy commands,
+and an older CLI refuses the new flags. Watchers only replay saved command argv;
+old watcher cleanup can leave a stale marker, which the new coordinator ignores
+for other claims and overwrites on a new admission. Preserve supplied native
+completion arguments rather than inferring policy from the assignment scope.
 
 ## Delivery, leases and completion
 

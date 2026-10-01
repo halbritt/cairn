@@ -148,6 +148,126 @@ class InboxRecovery(unittest.TestCase):
         self.assertEqual(context['request_ids']['completion'], self.state['inbox_completion'])
         self.assertEqual(context['request_ids']['response'], self.state['inbox_response'])
 
+    def test_new_admission_pins_result_scope_before_claim(self):
+        attempt = self.state.pop('inbox_attempt')
+        self.state.pop('inbox_intent')
+        coordination.write_state(self.path, self.state)
+        # The subprocess observes the persisted policy before it can answer
+        # admission; response identity comes from that same request.
+        self.cairn.write_text(FAKE.replace("print(json.dumps(dict(schema='cairn.response/1', **reply)))",
+            "if operation == 'session-inbox-claim':\n"
+            "    state = json.load(open(os.path.join(root, 'state', 'session.json')))\n"
+            "    request = json.loads(body)\n"
+            "    assert state['inbox_result_policy'] == dict(claim_request_id=request['request_id'], version=1)\n"
+            "    reply['data']['attempt']['attempt_id'] = request['request_id']\n"
+            "print(json.dumps(dict(schema='cairn.response/1', **reply)))"))
+        self.replies({'session-inbox-claim': [dict(ok=True, status='OK', data=dict(attempt=attempt))],
+                      'event-renew': [dict(ok=True, status='OK', data=attempt['delivery'])],
+                      'session-inbox-reconcile': [dict(ok=False, status='DELIVERY_ACTIVE')]})
+        observation = dict(event='UserPromptSubmit', phase='busy', native_turn_id='')
+        coordination.inbox_context(self.config, self.state, self.path, observation)
+        identity = self.state['inbox_attempt']['attempt_id']
+        context = json.loads((self.root / 'state' / 'inbox' / (identity + '.json')).read_text())
+        command = context['commands']['complete']
+        self.assertEqual(command[command.index('--task') + 1], 'coordination-result/' + DELIVERY)
+        self.assertEqual(command[command.index('--run') + 1], '*')
+        self.assertNotIn('--task', context['commands']['ack'])
+        self.assertNotIn('--task', context['commands']['respond'])
+
+    def test_lost_new_claim_recovers_persisted_policy_and_overwrites_stale_marker(self):
+        attempt = self.state.pop('inbox_attempt')
+        self.state.pop('inbox_intent')
+        # This is the state an old watcher can leave after clearing known
+        # inbox fields. A genuinely new admission replaces its stale policy.
+        self.state['inbox_result_policy'] = dict(claim_request_id=EVENT, version=1)
+        self.replies({'session-inbox-claim': [LOST]})
+        observation = dict(event='UserPromptSubmit', phase='busy', native_turn_id='')
+        with self.assertRaises(coordination.CoordinationError):
+            coordination.inbox_context(self.config, self.state, self.path, observation)
+        recovered = json.loads(self.path.read_text())
+        identity = recovered['inbox_intent']['request_id']
+        self.assertNotEqual(identity, EVENT)
+        self.assertEqual(recovered['inbox_result_policy'], dict(claim_request_id=identity, version=1))
+        self.assertNotIn('inbox_attempt', recovered)
+        attempt['attempt_id'] = identity
+        self.replies({'session-inbox-claim': [dict(ok=True, status='OK', data=dict(attempt=attempt))],
+                      'event-renew': [dict(ok=True, status='OK', data=attempt['delivery'])],
+                      'session-inbox-reconcile': [dict(ok=False, status='DELIVERY_ACTIVE')]})
+        coordination.inbox_context(self.config, recovered, self.path, observation)
+        claims = [entry for entry in self.log() if entry['operation'] == 'session-inbox-claim']
+        self.assertEqual(len(claims), 2)
+        self.assertEqual(claims[0], claims[1])
+        context = json.loads((self.root / 'state' / 'inbox' / (identity + '.json')).read_text())
+        argv = context['commands']['complete']
+        self.assertEqual(argv[argv.index('--task') + 1], 'coordination-result/' + DELIVERY)
+
+    def test_existing_and_uncertain_admissions_remain_legacy(self):
+        for uncertain in (False, True):
+            with self.subTest(uncertain=uncertain):
+                if uncertain:
+                    attempt = self.state.pop('inbox_attempt')
+                    self.replies({'session-inbox-claim': [dict(ok=True, status='OK', data=dict(attempt=attempt))]})
+                    coordination.recover_inbox(self.config, self.state, self.path)
+                context = self.context()
+                self.assertNotIn('--task', context['commands']['complete'])
+                self.assertNotIn('--run', context['commands']['complete'])
+                self.assertNotIn('inbox_result_policy', self.state)
+
+    def test_matching_invalid_policy_refuses_context(self):
+        for policy in (None, {}, dict(claim_request_id=ATTEMPT, version=2),
+                       dict(claim_request_id=ATTEMPT, version=True),
+                       dict(claim_request_id=ATTEMPT, version=1, extra='unknown')):
+            with self.subTest(policy=policy):
+                self.state['inbox_result_policy'] = policy
+                with self.assertRaises(coordination.CoordinationError) as caught:
+                    self.context()
+                self.assertEqual(caught.exception.code, 'INVALID_HOST')
+                self.assertFalse((self.root / 'state' / 'inbox' / (ATTEMPT + '.json')).exists())
+
+    def test_policy_cannot_bind_a_different_attempt_or_session(self):
+        self.state['inbox_result_policy'] = dict(claim_request_id=ATTEMPT, version=1)
+        for field, value in (('attempt_id', EVENT), ('session', dict(agent_id=AGENT, execution_id=EVENT))):
+            with self.subTest(field=field):
+                old = self.state['inbox_attempt'][field]
+                self.state['inbox_attempt'][field] = value
+                with self.assertRaises(coordination.CoordinationError) as caught:
+                    self.context()
+                self.assertEqual(caught.exception.code, 'INVALID_HOST')
+                self.state['inbox_attempt'][field] = old
+
+    def test_old_watcher_cleanup_marker_does_not_scope_another_legacy_admission(self):
+        # An old watcher removes only its known inbox fields and can leave the
+        # new marker behind. A subsequent old-host claim has another identity.
+        self.state['inbox_result_policy'] = dict(claim_request_id=EVENT, version=1)
+        context = self.context()
+        self.assertNotIn('--task', context['commands']['complete'])
+        coordination.clear_inbox(self.state, self.path)
+        self.assertNotIn('inbox_result_policy', self.state)
+
+    def test_scoped_journal_survives_lost_reply_and_watcher_replay(self):
+        self.state['inbox_result_policy'] = dict(claim_request_id=ATTEMPT, version=1)
+        context = self.context()
+        self.replies({'complete': [LOST]})
+        result = self.run_context(context['completion'], 'Selected scoped result')
+        self.assertEqual(json.loads(result.stdout)['status'], 'API_CONNECTION_FAILED')
+        original = self.journal()['completion']
+        self.assertIn('--task', original['argv'])
+        # An older coordinator would regenerate this context without flags.
+        # The pending journal must refuse that changed argv without rewriting it.
+        command = context['commands']['complete']
+        offset = command.index('--task')
+        del command[offset:offset + 4]
+        target = self.root / 'state' / 'inbox' / (ATTEMPT + '.json')
+        target.write_text(json.dumps(context))
+        changed = self.run_context(context['completion'], 'Selected scoped result')
+        self.assertEqual(json.loads(changed.stdout)['status'], 'IDEMPOTENCY_CONFLICT')
+        self.replies({'complete': [HANDLED], 'event-renew': [dict(ok=True, status='OK', data=self.state['inbox_attempt']['delivery'])]})
+        coordination.watch_inbox(self.config, self.state, self.path)
+        sent = [entry for entry in self.log() if entry['operation'] == 'complete']
+        self.assertEqual(len(sent), 2)
+        self.assertEqual(sent[0], sent[1])
+        self.assertEqual(self.journal()['completion']['status'], 'committed')
+
     def test_completion_is_durable_before_it_is_sent(self):
         context = self.context()
         # The fake refuses to answer if the journal is not already on disk.
