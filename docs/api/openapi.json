@@ -7945,6 +7945,9 @@
         "properties": {
           "delivery_id": {
             "type": "string"
+          },
+          "event_id": {
+            "type": "string"
           }
         },
         "type": "object",

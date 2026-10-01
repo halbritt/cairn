@@ -12,10 +12,15 @@ completed with an explicit reply and released native hold.
 The existing presence watcher checks for eligible inbox work during its 30-second
 cycle. PostgreSQL remains the authority for session generations, delivery state,
 leases and holds. `session-inbox-ready` is a read-only, bounded hint: it returns
-the first eligible delivery UUID only for a current, online, idle existing
+the first eligible delivery UUID and its `event_id` only for a current, online, idle existing
 session with no competing native/wake hold or live manual lease. It creates no
 poll history or delivery attempt. Eligibility uses the same selection conditions
-as the native claim, including admission expiry and delayed availability.
+as the native claim, including admission expiry and delayed availability. An empty
+result remains `{}`. The additive event UUID identifies the same selected delivery;
+it carries no event body or authority and is not proof of `pending` with zero
+attempts: readiness also permits an expired lease. Recovery must inspect the
+current exact event and delivery separately. Older servers may omit `event_id`;
+clients needing that proof must retain the wake rather than infer it.
 
 The watcher checks the native process's own Herdr socket. It requires a unique
 matching harness and conversation, an unfocused idle/done pane, the observed PID

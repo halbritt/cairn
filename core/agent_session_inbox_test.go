@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"testing"
 
@@ -84,7 +85,7 @@ func TestSessionInboxReadinessDoesNotClaimAndRespectsOwners(t *testing.T) {
 	}
 	ref := AgentSessionRef{a.AgentID, a.ExecutionID}
 	ready, err := receiver.SessionInboxReady(ctx, ref, dest)
-	if err != nil || ready.DeliveryID != "" {
+	if err != nil || ready != (SessionInboxReadiness{}) {
 		t.Fatalf("empty readiness: %+v %v", ready, err)
 	}
 	event, err := sender.PublishEvent(ctx, PublishEventRequest{RequestID: uuid.NewString(), Kind: "request", Ref: RecordVersionRef{source.RecordID, source.Version}, Destination: EventDestination{Type: "agent", Name: a.Inbox}}, dest)
@@ -100,17 +101,53 @@ func TestSessionInboxReadinessDoesNotClaimAndRespectsOwners(t *testing.T) {
 		t.Fatalf("read changed readiness: %+v %v", again, err)
 	}
 	status, err := sender.AgentEventStatus(ctx, EventStatusRequest{EventID: event.EventID}, dest)
-	if err != nil || status.Deliveries[0].State != "pending" || status.Deliveries[0].Attempts != 0 {
+	if err != nil || status.Deliveries[0].State != "pending" || status.Deliveries[0].Attempts != 0 || status.Deliveries[0].DeliveryID != ready.DeliveryID {
 		t.Fatalf("read claimed work: %+v %v", status, err)
+	}
+	wire, err := json.Marshal(ready)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]string
+	if err = json.Unmarshal(wire, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if len(fields) != 2 || fields["event_id"] != event.EventID || fields["delivery_id"] != status.Deliveries[0].DeliveryID {
+		t.Fatalf("readiness must correlate only the eligible delivery and event: %s", wire)
 	}
 	_, err = sender.SessionInboxReady(ctx, ref, dest)
 	requireCode(t, err, "NOT_FOUND")
+	// Readiness also accepts an expired manual lease; its event ID is a
+	// correlation hint, not evidence of pending state or zero attempts.
+	consumer, err := receiver.ForAgentSession(ref, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := consumer.NextEvent(ctx, NextEventRequest{}, dest)
+	if err != nil || leased.Delivery == nil || leased.Delivery.DeliveryID != ready.DeliveryID {
+		t.Fatalf("lease: %+v %v", leased, err)
+	}
+	blocked, err := receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || blocked != (SessionInboxReadiness{}) {
+		t.Fatalf("live lease readiness: %+v %v", blocked, err)
+	}
+	if _, err = receiver.pool.Exec(ctx, `UPDATE cairn.agent_delivery SET lease_until=clock_timestamp()-interval '1 second' WHERE delivery_id=$1`, ready.DeliveryID); err != nil {
+		t.Fatal(err)
+	}
+	expired, err := receiver.SessionInboxReady(ctx, ref, dest)
+	if err != nil || expired != ready {
+		t.Fatalf("expired lease readiness: %+v %v", expired, err)
+	}
+	status, err = sender.AgentEventStatus(ctx, EventStatusRequest{EventID: expired.EventID}, dest)
+	if err != nil || status.Deliveries[0].State != "leased" || status.Deliveries[0].Attempts != 1 {
+		t.Fatalf("hint changed lease: %+v %v", status, err)
+	}
 	claimed, err := receiver.ClaimSessionInbox(ctx, SessionInboxClaim{RequestID: uuid.NewString(), Session: ref}, dest)
 	if err != nil || claimed.Attempt == nil {
 		t.Fatalf("claim: %+v %v", claimed, err)
 	}
 	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
-	if err != nil || ready.DeliveryID != "" {
+	if err != nil || ready != (SessionInboxReadiness{}) {
 		t.Fatalf("held readiness: %+v %v", ready, err)
 	}
 }
@@ -129,7 +166,7 @@ func TestSessionInboxReadinessRequiresCurrentIdlePresence(t *testing.T) {
 		t.Fatal(err)
 	}
 	ready, err := receiver.SessionInboxReady(ctx, ref, dest)
-	if err != nil || ready.DeliveryID != "" {
+	if err != nil || ready != (SessionInboxReadiness{}) {
 		t.Fatalf("busy: %+v %v", ready, err)
 	}
 	metadata := a.Metadata
@@ -146,7 +183,7 @@ func TestSessionInboxReadinessRequiresCurrentIdlePresence(t *testing.T) {
 		t.Fatal(err)
 	}
 	ready, err = receiver.SessionInboxReady(ctx, ref, dest)
-	if err != nil || ready.DeliveryID != "" {
+	if err != nil || ready != (SessionInboxReadiness{}) {
 		t.Fatalf("expired: %+v %v", ready, err)
 	}
 	registration.RequestID = uuid.NewString()
@@ -337,5 +374,12 @@ func TestSessionInboxConcurrentClaimHasOneConsumer(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("concurrent claimants: %d", count)
+	}
+}
+
+func TestEmptySessionInboxReadinessWireRemainsEmpty(t *testing.T) {
+	wire, err := json.Marshal(SessionInboxReadiness{})
+	if err != nil || string(wire) != "{}" {
+		t.Fatalf("empty readiness changed: %s %v", wire, err)
 	}
 }

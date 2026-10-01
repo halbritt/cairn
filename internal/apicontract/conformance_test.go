@@ -170,14 +170,20 @@ func TestRealRepliesConformToContract(t *testing.T) {
 	c.ok("remote", "agent-heartbeat", `{"agent_id":"`+agent.AgentID+`","execution_id":"`+agent.ExecutionID+`"}`)
 	c.ok("local", "agent-directory", `{}`)
 	c.ok("local", "agent-resolve", `{"harness":"codex"}`)
-	c.ok("local", "event-publish", `{"request_id":"`+uuid.NewString()+`","destination":{"type":"agent","name":"agent/`+agent.AgentID+`"},"kind":"notice","ref":{"record_id":"`+record.RecordID+`","version":1}}`)
+	notice := c.ok("local", "event-publish", `{"request_id":"`+uuid.NewString()+`","destination":{"type":"agent","name":"agent/`+agent.AgentID+`"},"kind":"notice","ref":{"record_id":"`+record.RecordID+`","version":1}}`)
+	var noticeEvent core.AgentEvent
+	if err := json.Unmarshal(notice, &noticeEvent); err != nil {
+		t.Fatal(err)
+	}
 	c.ok("local", "event-list", `{}`)
 	c.ok("local", "event-metrics", `{}`)
 	c.ok("local", "event-subscribe", `{"request_id":"`+uuid.NewString()+`","topic":"contract","active":true}`)
 	c.ok("local", "event-subscriptions", `{}`)
 	session := map[string]string{"Cairn-Agent-ID": agent.AgentID, "Cairn-Execution-ID": agent.ExecutionID}
-	if out := c.call(c.server, "remote", "session-inbox-ready", `{"agent_id":"`+agent.AgentID+`","execution_id":"`+agent.ExecutionID+`"}`, nil); out.status != 200 {
-		t.Fatalf("session-inbox-ready: %d %s", out.status, out.body)
+	readyBytes := c.ok("remote", "session-inbox-ready", `{"agent_id":"`+agent.AgentID+`","execution_id":"`+agent.ExecutionID+`"}`)
+	var ready core.SessionInboxReadiness
+	if err := json.Unmarshal(readyBytes, &ready); err != nil || ready.EventID != noticeEvent.EventID || ready.DeliveryID == "" {
+		t.Fatalf("session-inbox-ready identity: %s %v", readyBytes, err)
 	}
 	c.call(c.server, "remote", "event-watch", `{}`, session)
 	now := time.Now().UTC().Format(time.RFC3339Nano)

@@ -46,13 +46,16 @@ type SessionInboxResult struct {
 
 type SessionInboxReadiness struct {
 	DeliveryID string `json:"delivery_id,omitempty"`
+	EventID    string `json:"event_id,omitempty"`
 }
 
 const sessionInboxHold = `NOT EXISTS(SELECT 1 FROM cairn.agent_session_attempt n WHERE n.delivery_id=d.delivery_id AND n.finished_at IS NULL)`
 
 const sessionInboxOccupied = `SELECT EXISTS(SELECT 1 FROM cairn.agent_session_attempt WHERE agent_id=$1 AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_wake_attempt WHERE (consumer=$2 OR agent_id=$1) AND finished_at IS NULL) OR EXISTS(SELECT 1 FROM cairn.agent_delivery WHERE consumer=$2 AND state='leased' AND lease_until>clock_timestamp())`
 
-const sessionInboxNext = `SELECT d.delivery_id::text FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND ` + requestAdmissionOpen + ` AND ` + wakeHold + ` AND ` + sessionInboxHold + ` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position`
+const sessionInboxEligible = ` FROM cairn.agent_delivery d JOIN cairn.agent_event e USING(event_id) WHERE e.repo=$1 AND d.consumer=$2 AND (e.sensitivity='shareable' OR $3) AND d.available_at<=clock_timestamp() AND e.task_deadline IS NULL AND ` + requestAdmissionOpen + ` AND ` + wakeHold + ` AND ` + sessionInboxHold + ` AND (d.state='pending' OR (d.state='leased' AND d.lease_until<=clock_timestamp())) ORDER BY e.position`
+
+const sessionInboxNext = `SELECT d.delivery_id::text` + sessionInboxEligible
 
 // SessionInboxReady is a bounded hint for an idle host wakeup, never a claim.
 // The native turn still acquires ownership through ClaimSessionInbox.
@@ -83,7 +86,7 @@ func (s *Store) SessionInboxReady(ctx context.Context, ref AgentSessionRef, dest
 	if held {
 		return out, nil
 	}
-	err = tx.QueryRow(ctx, sessionInboxNext+` LIMIT 1`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&out.DeliveryID)
+	err = tx.QueryRow(ctx, `SELECT d.delivery_id::text, e.event_id::text`+sessionInboxEligible+` LIMIT 1`, a.Repo, a.Inbox, dest.AllowLocal).Scan(&out.DeliveryID, &out.EventID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, nil
 	}
