@@ -1057,7 +1057,7 @@ def claude_agent_context(memory, event, result, budget, status, deadline):
                 raise RequiredContextRefused("initial whole required Claude context exceeds grant budget")
             ledger["pending_bytes"] = ledger.get("pending_bytes", 0) + measure(text)
         status.update(outcome="required_only" if selected else "empty", discovery="deferred",
-                      optional_deferred="bound_claude_required_refresh", bytes=len(text.encode()))
+                      optional_deferred="bound_claude_required_refresh")
     else:
         prior = ledger.get("pending_bytes", 0)
         remaining = budget - prior
@@ -1080,6 +1080,7 @@ def claude_agent_context(memory, event, result, budget, status, deadline):
         ledger["pending_bytes"] = 0
     status["recall_task_scope"] = "launcher_task" if task_key else "native_prompt"
     persist()
+    status["bytes"] = len(text.encode("utf-8"))
     return text
 
 

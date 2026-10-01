@@ -35,6 +35,54 @@ class ClaudeInboxRecallTests(unittest.TestCase):
     def ledger(self):
         return json.loads((self.root/'memory'/f'{SESSION}.inbox-recall.json').read_text())
 
+    def test_ordinary_prompt_reports_returned_utf8_text_bytes_not_envelope(self):
+        required = 'Current required guard: 日本語 🛡.'
+        self.fixture['search']['selected'] = [dict(mandatory=True, record=dict(body=required))]
+        self.freeze()
+        event = dict(self.event, prompt='Inspect the fixture migration safeguards.')
+        state_path = self.root / 'memory' / f'{SESSION}.json'
+
+        def reported(result):
+            self.assertEqual(result['code'], 0, result)
+            text = json.loads(result['stdout']).get('hookSpecificOutput', {}).get('additionalContext', '')
+            status = json.loads(state_path.read_text())['last_recall']
+            self.assertEqual(status['bytes'], len(text.encode('utf-8')))
+            return text, status
+
+        first = self.memory_main(event)
+        self.assertEqual(first['code'], 0, first)
+        self.assertIn('candidate_bodies', first['stdout'])
+        text, status = reported(first)
+        self.assertEqual(status['outcome'], 'delegated')
+        self.assertIn(required, text)
+        self.assertGreater(status['bytes'], len(text))
+        self.assertLess(status['bytes'], len(first['stdout'].encode('utf-8')))
+        before = self.ledger()
+        grant = before['grants'][before['active']]
+        self.assertEqual(grant['output_bytes'], len(first['stdout'].encode('utf-8')))
+
+        refreshed = self.memory_main(event)
+        text, status = reported(refreshed)
+        self.assertEqual(status['outcome'], 'required_only')
+        self.assertIn(required, text)
+        self.assertNotIn('candidate_bodies', text)
+        self.assertEqual(self.ledger()['grants'][before['active']]['output_bytes'], grant['output_bytes'])
+
+        self.fixture['search']['selected'] = []
+        self.freeze()
+        text, status = reported(self.memory_main(event))
+        self.assertEqual(text, '')
+        self.assertEqual(status['outcome'], 'empty')
+
+        self.fixture['fail_search'] = 'API_UNAVAILABLE'
+        self.freeze()
+        failed = self.memory_main(dict(event, prompt_id='next-prompt'))
+        self.assertNotEqual(failed['code'], 0)
+        self.assertEqual(failed['stdout'], '')
+        status = json.loads(state_path.read_text())['last_recall']
+        self.assertEqual(status['outcome'], 'failed')
+        self.assertEqual(status['bytes'], 0)
+
     def test_admitted_channel_delivers_source_and_memory_once_through_public_main(self):
         original = dict(self.event)
         self.assertEqual(self.memory_main(self.event)['code'], 0)
