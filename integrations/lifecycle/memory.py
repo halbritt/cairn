@@ -803,7 +803,11 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
             break
         except ContextRefused:
             inspection["refusals"]["span_context_budget"] = 1
-            break
+            # Recover an empty delivery only. Further refusal metadata could
+            # otherwise displace an already admitted body at the context limit.
+            if bodies:
+                break
+            continue
         except HookError:
             inspection["refusals"]["span_unavailable"] = 1
             break

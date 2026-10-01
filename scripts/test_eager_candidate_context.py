@@ -373,6 +373,126 @@ class EagerCandidateTests(unittest.TestCase):
                 self.assertEqual(view['candidate_inspection']['pull_calls'], 1)
                 self.assertEqual(view['candidate_bodies'], [])
 
+    def test_oversized_optional_passage_does_not_hide_later_checked_whole_note(self):
+        self.config['context_bytes'] = 5400
+        self.optional()
+        first, later = self.entries[:2]
+        first['match_span'] = dict(offset=0, length=4096)
+        self.result['index'] = [first, later]
+        body = 'Later migration guidance: preserve the rollback prerequisite. 日本語. ' * 12
+        later['body_sha256'] = hashlib.sha256(body.encode()).hexdigest()
+        self.responses[later['record_id']]['selection']['record']['body'] = body
+        required = dict(mandatory=True, record=dict(record_id='required', version=1,
+                        body='Always preserve the complete required safeguard.', **{'class': 'C'}))
+        self.result['selected'] = [required]
+        def pull(operation, *, payload, timeout):
+            if payload['handle'] == first['record_id']:
+                return self.receipt_span(operation, payload=payload, timeout=timeout)
+            return EagerCandidateTests.pull(self, operation, payload=payload, timeout=timeout)
+        self.pull = pull
+        text, view, state = self.invoke()
+        self.assertEqual(view['selected'], [required])
+        self.assertEqual([item['response'] for item in view['candidate_bodies']],
+                         [self.responses[later['record_id']]])
+        self.assertEqual([call['handle'] for call in self.calls],
+                         [first['record_id'], first['record_id'], later['record_id']])
+        self.assertEqual(view['candidate_inspection'], dict(pull_calls=3, remaining_pull_calls=1,
+            delivered_records=1, refusals=dict(whole_pull_budget=1, span_context_budget=1)))
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5400)
+        self.assertEqual(state['seen'], {})
+
+    def test_after_oversized_passage_competing_group_is_delivered_whole(self):
+        self.config['context_bytes'] = 6400
+        self.optional()
+        first, left, right = self.entries
+        first['match_span'] = dict(offset=0, length=4096)
+        members = [dict(record_id=e['record_id'], version=1) for e in (left, right)]
+        for entry in (left, right):
+            entry['conflicts'] = [dict(members=members)]
+        self.result['index'] = self.entries
+        pair = dict(self.responses[left['record_id']],
+                    competing=[self.responses[right['record_id']]['selection']])
+        def pull(operation, *, payload, timeout):
+            if payload['handle'] == first['record_id']:
+                return self.receipt_span(operation, payload=payload, timeout=timeout)
+            self.calls.append(payload)
+            self.assertEqual(payload, left['pull_arguments'])
+            return pair
+        self.pull = pull
+        text, view, _ = self.invoke()
+        self.assertEqual([item['response'] for item in view['candidate_bodies']], [pair])
+        self.assertEqual(view['candidate_inspection']['delivered_records'], 2)
+        self.assertEqual(view['candidate_inspection']['pull_calls'], 3)
+        self.assertEqual(view['candidate_inspection']['refusals']['span_context_budget'], 1)
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 6400)
+
+    def test_after_oversized_passage_global_stops_remain_terminal(self):
+        for stop in ('authority', 'identity', 'receipt_budget', 'deadline', 'four_calls'):
+            with self.subTest(stop=stop):
+                case = EagerCandidateTests(); case.setUp(); self.addCleanup(case.doCleanups)
+                case.config['context_bytes'] = 5400
+                case.optional(2)
+                first, second, last = case.entries
+                case.result['index'] = case.entries
+                for entry in (first, second):
+                    entry['match_span'] = dict(offset=0, length=4096)
+                clock = [100.0]
+                def pull(operation, *, payload, timeout):
+                    self.assertNotEqual(payload['handle'], last['record_id'])
+                    if payload['handle'] == first['record_id']:
+                        result = case.receipt_span(operation, payload=payload, timeout=timeout)
+                        if stop == 'deadline': clock[0] = 106.0
+                        return result
+                    if stop == 'four_calls':
+                        return case.receipt_span(operation, payload=payload, timeout=timeout)
+                    case.calls.append(payload)
+                    if stop == 'authority': raise hook.HookError('AUTHORITY_DENIED')
+                    if stop == 'receipt_budget': raise hook.BudgetRefused('no remaining receipt allowance')
+                    changed = json.loads(json.dumps(case.responses[second['record_id']]))
+                    changed['selection']['record']['version'] = 2
+                    return changed
+                case.pull = pull
+                with patch.object(hook.time, 'monotonic', side_effect=lambda: clock[0]):
+                    text, view, _ = case.invoke()
+                self.assertEqual(view['candidate_bodies'], [])
+                expected_calls = dict(authority=3, identity=3, receipt_budget=4, deadline=2, four_calls=4)[stop]
+                self.assertEqual(len(case.calls), expected_calls)
+                self.assertEqual(view['candidate_inspection']['pull_calls'], expected_calls)
+                self.assertEqual(view['candidate_inspection']['refusals']['span_context_budget'], 1)
+                terminal = dict(authority='whole_pull_unavailable', identity='whole_pull_unavailable',
+                                receipt_budget='span_pull_budget', deadline='deadline', four_calls='pull_limit')[stop]
+                self.assertEqual(view['candidate_inspection']['refusals'][terminal], 1)
+                self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5400)
+
+    def test_saturated_prior_body_is_not_evicted_by_extra_attempt_metadata(self):
+        # The accepted whole response plus the two existing refusal fields
+        # leaves only three bytes. Another failed read must not displace it.
+        self.config['context_bytes'] = 5073
+        self.optional()
+        large, later, earlier = self.entries
+        large['match_span'] = dict(offset=0, length=4096)
+        self.result['index'] = [earlier, large, later]
+        body = 'Earlier whole condition. ' * 95
+        earlier['body_sha256'] = hashlib.sha256(body.encode()).hexdigest()
+        self.responses[earlier['record_id']]['selection']['record']['body'] = body
+        def pull(operation, *, payload, timeout):
+            if payload['handle'] == large['record_id']:
+                return self.receipt_span(operation, payload=payload, timeout=timeout)
+            if payload['handle'] == later['record_id']:
+                self.calls.append(payload)
+                raise hook.HookError('later authority unavailable')
+            return EagerCandidateTests.pull(self, operation, payload=payload, timeout=timeout)
+        self.pull = pull
+        text, view, _ = self.invoke()
+        self.assertEqual([item['response'] for item in view['candidate_bodies']],
+                         [self.responses[earlier['record_id']]])
+        self.assertEqual([call['handle'] for call in self.calls],
+                         [earlier['record_id'], large['record_id'], large['record_id']])
+        self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 1)
+        self.assertEqual(view['candidate_inspection']['refusals'],
+                         dict(whole_pull_budget=1, span_context_budget=1))
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5073)
+
     def test_passage_still_too_large_refuses_without_shortening_or_more_reads(self):
         self.config['context_bytes'] = 5400
         self.optional()

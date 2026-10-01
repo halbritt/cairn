@@ -206,15 +206,24 @@ class SourceOpeningTests(unittest.TestCase):
         self.assertEqual(view['candidate_inspection']['pull_calls'], 3)
 
     def test_later_refusal_metadata_drops_opening_before_admitted_passage(self):
+        calibration = self.span_case('Context ' * 96)
+        initial_text, initial_view, _ = calibration.invoke()
+        self.assertEqual(initial_view['candidate_bodies'][0]['source_opening_excerpt']['status'], 'provided')
+        # Fill the current rendered boundary, independent of cue wording. A
+        # subsequent refusal must evict optional opening context before source.
+        budget = len(initial_text.encode())
         case = self.span_case('Context ' * 96)
-        case.config['context_bytes'] = 4240
+        case.config['context_bytes'] = budget
         case.result['index'].append(dict(case.entries[1], body_sha256='unknown'))
         text, view, _ = case.invoke()
+        self.assertEqual(len(view['candidate_bodies']), 1)
         self.assertEqual(view['candidate_bodies'][0]['response']['span']['body'], 'Checked prerequisite.')
+        self.assertEqual(view['candidate_bodies'][0]['source_opening_excerpt'],
+                         dict(status='unavailable', reason='context_budget'))
         self.assertNotIn('Context Context', text)
         self.assertEqual(view['candidate_inspection']['delivered_records'], 1)
         self.assertEqual(view['candidate_inspection']['refusals']['unverifiable_identity'], 1)
-        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 4240)
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], budget)
 
 
 if __name__ == '__main__':
