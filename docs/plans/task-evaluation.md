@@ -437,6 +437,37 @@ engineering task may finish, but the report's measurement fails. Unknown or
 failed measurement returns nonzero. No-memory-attempt is explicit, not successful
 retrieval or proof of usefulness.
 
+Prospective selected-input reports also retain at most 256 public action rows
+(`public_actions`, schema `cairn.public-actions/1`), identically for both arms.
+Each row correlates a tool-call identity digest with its native result state,
+receipt times in seconds since the capture process's monotonic start, and a
+fixed tool/category label. Bash command text, arguments, output and reasoning
+are not retained; a command digest and optional exact predeclared validation
+label are retained. A case can declare `public_validation_commands`, for example
+`{"make-check":"make check","test-integration":"make test-integration"}`;
+these exact commands must already appear in the common frozen task wording.
+Native `tool_success` is not a test-pass verdict. An exit code is recorded only
+from explicit, uniquely associated native structured metadata; otherwise it
+remains null. Background acknowledgments do not establish completion.
+
+This projection recognizes Claude assistant/user tool-use/result envelopes;
+unsupported formats and empty action evidence are explicitly unknown, not
+observed zero. Read/edit/write observations establish file-level sequence only:
+edit contents, content hashes and byte counts are not recorded, so linking a
+specific edit requires independent product-diff review. Paths are relative to
+the actual task workspace and checked for
+containment after execution; this does not attest the filesystem at action time.
+Outside, traversal, malformed and symlink-escaping paths are not retained.
+Duplicate identities/results, unmatched results, invalid times, unfinished
+calls and cap overflow make action attribution unknown, with explicit counts.
+Observed empty source envelopes still count toward bytes and hook correlation,
+but do not occupy the separate 128-event/512-item source evidence allowance;
+unknown/error source envelopes still do. Source receipts and action receipts
+share the capture clock, allowing ordering checks without proving causation.
+A selected-input write failure remains an observation failure and does not erase
+independently available technical grades. These records do not establish that
+unobserved actions did not occur or that prior guidance changed an action.
+
 System/status string messages are not assistant/user content. Malformed relevant
 message shapes make observation unknown. If selected-input measurement or origin
 binding raises, the prospective report records a fixed phase and exception

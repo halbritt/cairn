@@ -47,6 +47,48 @@ class NativeObservationTest(unittest.TestCase):
         self.assertEqual(len(bounded['native_prompt_events']),32)
         self.assertEqual(bounded['native_prompt_events_omitted'],11)
 
+    def test_empty_hook_sources_cannot_displace_late_delivered_source(self):
+        events = base(); rows = []
+        source = dict(record_id='b69027d6-3b8a-4d2d-bf07-ac75aef044ce', version=1,
+                      body='Synthetic later guidance é漢🙂')
+        provided = json.dumps(dict(hookSpecificOutput=dict(additionalContext=json.dumps(
+            dict(selected=[dict(record=source, mandatory=False)]), ensure_ascii=False))), ensure_ascii=False) + '\n'
+        payloads = ['{}\n'] * 160 + ['malformed public output\n', provided]
+        for n, text in enumerate(payloads):
+            name = 'UserPromptSubmit' if n == len(payloads) - 1 else 'PostToolUse'
+            events.extend([dict(type='system', subtype='hook_started', hook_id=str(n), hook_event=name),
+                           dict(type='system', subtype='hook_response', hook_id=str(n), hook_event=name,
+                                stdout=text, outcome='success', exit_code=0)])
+            rows.append(dict(event=name, stdout_bytes=len(text.encode()), stderr_bytes=0,
+                stdout_sha256=hashlib.sha256(text.encode()).hexdigest(), exit_code=0, process_seconds=.1,
+                memory_call_attempts=dict(search=int(n == len(payloads)-1), pull=0, history=0, other=0, **{'pull-evidence':0})))
+        result = observe(events, rows)
+        self.assertEqual(result['source_delivery_events_omitted'], 0)
+        self.assertEqual(result['source_delivery_empty_events'], 160)
+        self.assertEqual(len(result['source_deliveries']), 2)
+        self.assertEqual(result['source_deliveries'][0]['delivery']['status'], 'unknown')
+        self.assertEqual(result['source_deliveries'][1]['delivery']['items'][0]['record_id'], source['record_id'])
+        self.assertIn('source_delivery_unknown', result['unknown'])
+        self.assertNotIn('source_delivery_limit', result['unknown'])
+        self.assertEqual(result['hook_wire_bytes'], sum(len(p.encode()) for p in payloads))
+        self.assertEqual(result['hook_searches'], 1)
+        self.assertNotIn(source['body'], json.dumps(result))
+
+    def test_nonempty_and_error_delivery_caps_stay_explicit(self):
+        events = base()
+        for n in range(129):
+            events.extend([dict(type='assistant', message=dict(content=[dict(type='tool_use', id=str(n),
+                name='mcp__cairn__cairn_pull', input={})])),
+                dict(type='user', message=dict(content=[dict(type='tool_result', tool_use_id=str(n),
+                    is_error=True, content='PRIVATE error payload')]))])
+        result = observe(events)
+        self.assertEqual(len(result['source_deliveries']),128)
+        self.assertEqual(result['source_delivery_events_omitted'],1)
+        self.assertEqual(result['source_delivery_empty_events'],0)
+        self.assertIn('source_delivery_limit',result['unknown'])
+        self.assertEqual(result['total_actual_pull_calls'],129)
+        self.assertNotIn('PRIVATE',json.dumps(result))
+
     def test_successful_hook_missing_error_bytes_is_unknown(self):
         row=dict(event='UserPromptSubmit',stdout_bytes=3,process_seconds=.1,exit_code=0,
                  memory_call_attempts=dict(search=1,pull=0,history=0,other=0,**{'pull-evidence':0}))

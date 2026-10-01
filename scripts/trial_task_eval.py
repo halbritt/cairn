@@ -1149,7 +1149,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
             hook_rows = [json.loads(line) for line in observations.read_text().splitlines()] if observations.exists() else []
             observation_phase = "measurement"
             selected_input = measure(stdout, timings, hook_rows, input_bytes=input_charge,
-                                     expects_hooks=arm not in ("none", "direct"), model=args.model, prompt=prompt)
+                                     expects_hooks=arm not in ("none", "direct"), model=args.model, prompt=prompt,
+                                     workspace=cwd, public_validation_commands=case.get("public_validation_commands"))
             observation_phase = "origin_binding"
             origin_path = stores[arm]["store"].root / "import-provenance.json" if arm in stores else None
             origins = json.loads(origin_path.read_bytes()) if origin_path else []
@@ -1234,7 +1235,11 @@ def failed_selected_input(input_bytes, phase, error):
                 input_bytes=input_bytes, hook_wire_bytes=None, native_memory_result_bytes=None,
                 total_bytes=None, last_native_memory_seconds=None, memory_attempted=None,
                 memory_calls=None, native_searches=None, hook_searches=None, total_actual_pull_calls=None,
-                source_deliveries=[], source_delivery_events_omitted=None, origin_map_sha256=None,
+                source_deliveries=[], source_delivery_events_omitted=None, source_delivery_empty_events=None, origin_map_sha256=None,
+                public_actions=dict(schema='cairn.public-actions/1', status='unknown', actions=[],
+                    time_basis='capture_start_monotonic', time_unit='seconds',
+                    actions_omitted=None, unmatched_results=None, duplicate_events=None,
+                    unknown=['observation_failed'], limit=256),
                 native_prompt_events=[], native_prompt_events_omitted=None,
                 limits=dict(selected_input_bytes=9500, hook_seconds=5, last_native_memory_seconds=30))
 

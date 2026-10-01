@@ -31,6 +31,23 @@ def fixture(root):
 
 
 class ProspectiveInputTests(unittest.TestCase):
+    def test_public_validation_labels_are_frozen_and_already_in_common_prompt(self):
+        from trial_task_input import load_input
+        with tempfile.TemporaryDirectory() as directory:
+            root=fixture(Path(directory)/'input')
+            path=root/'input.json';document=json.loads(path.read_text())
+            case=document['cases'][0]
+            case['wordings']['task'] += ' Run `make check` and `make test-integration`.'
+            valid={'make-check':'make check','test-integration':'make test-integration'}
+            for invalid in ({'label':'PRIVATE hidden grader command'}, {'PRIVATE label':'make check'},
+                            {'duplicate':'make check','another':'make check'}, ['make check']):
+                case['public_validation_commands']=invalid;path.write_text(json.dumps(document))
+                with self.assertRaises(ValueError),contextlib.redirect_stdout(io.StringIO()):
+                    te.main(['freeze-input','--input',str(root)])
+            case['public_validation_commands']=valid;path.write_text(json.dumps(document))
+            with contextlib.redirect_stdout(io.StringIO()):te.main(['freeze-input','--input',str(root)])
+            self.assertEqual(load_input(root)['cases'][0]['public_validation_commands'],valid)
+
     def test_workspace_preflight_precedes_store_creation_and_cleans_scratch(self):
         for invalid in (True, False):
             with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as directory:
@@ -129,6 +146,10 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
             self.assertEqual(report['records'][0]['case'],'new-work')
             self.assertEqual(report['records'][0]['outcome'],'correct')
             self.assertEqual(report['records'][0]['selected_input']['failures'],['native_permission_denial'])
+            actions=report['records'][0]['selected_input']['public_actions']
+            self.assertEqual(actions['actions'][0]['command_category'],'go_test')
+            self.assertEqual(actions['actions'][0]['state'],'unfinished')
+            self.assertNotIn('SECRET',json.dumps(actions))
             self.assertFalse((base/'out/runs/new-work.none.s0/stream.jsonl').exists())
             if os.environ.get('CAPLAB_CHECKOUT'):
                 sys.path.insert(0,str(Path(os.environ['CAPLAB_CHECKOUT'])/'src'))
@@ -179,7 +200,7 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
                          '--output',str(base/'out'),'--distractors','0','--parallel','1'])
 
     def test_observer_exception_preserves_independent_task_correctness(self):
-        for failing_phase in ('measurement', 'hook_summary'):
+        for failing_phase in ('measurement', 'hook_summary', 'selected_input_write'):
             with self.subTest(phase=failing_phase), tempfile.TemporaryDirectory() as directory:
                 base=Path(directory); root=fixture(base/'input')
                 with contextlib.redirect_stdout(io.StringIO()):
@@ -188,8 +209,15 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
                 child.write_text("import json,sys\nprint(json.dumps({'type':'system','subtype':'init','model':'fixture-model'}))\nprint(sys.stdin.readline().strip())\nprint(json.dumps({'type':'result','is_error':False,'result':'inspected','permission_denials':[]}))\n")
                 def sandbox(work,cwd,binds,env,argv,harness='claude',**kwargs):
                     return [sys.executable,str(child)] if argv[0]=='claude' else argv
+                original_open=Path.open
+                def guarded_open(path,*args,**kwargs):
+                    if path.name=='selected-input.json' and args and args[0]=='x':
+                        raise OSError('PRIVATE write failure')
+                    return original_open(path,*args,**kwargs)
                 target='measure' if failing_phase=='measurement' else 'hook_observations'
-                with patch.object(te,'sandbox_command',side_effect=sandbox), patch.object(te,target,side_effect=AttributeError('PRIVATE failure payload')), contextlib.redirect_stdout(io.StringIO()):
+                failure_patch=(patch.object(Path,'open',guarded_open) if failing_phase=='selected_input_write' else
+                               patch.object(te,target,side_effect=AttributeError('PRIVATE failure payload')))
+                with patch.object(te,'sandbox_command',side_effect=sandbox), failure_patch, contextlib.redirect_stdout(io.StringIO()):
                     te.main(['agent','--prospective-input',str(root),'--model','fixture-model','--reasoning-effort','high',
                              '--output',str(base/'out'),'--distractors','0','--parallel','1'])
                 report=json.loads((base/'out/agent.json').read_text())
@@ -197,16 +225,17 @@ print(json.dumps({'type':'result','is_error':False,'result':'inspected','num_tur
                 self.assertEqual(record['outcome'],'correct')
                 self.assertIsInstance(record['seconds'],(int,float))
                 selected=record['selected_input']
-                if failing_phase=='measurement':
+                if failing_phase in ('measurement','selected_input_write'):
+                    self.assertEqual(selected['public_actions']['status'],'unknown')
                     self.assertEqual(selected['status'],'unknown')
                     self.assertIsNone(selected['total_bytes'])
                     self.assertIsNone(selected['total_actual_pull_calls'])
                     error=selected['observation_error']
                 else:
                     error=record['memory']['observation_error']
-                self.assertEqual(error,{'phase':failing_phase,'exception_type':'AttributeError'})
+                self.assertEqual(error,{'phase':failing_phase,'exception_type':'OSError' if failing_phase=='selected_input_write' else 'AttributeError'})
                 self.assertEqual(selected['status'],'unknown')
-                error_file='observation-error.json' if failing_phase=='measurement' else 'hook-summary-error.json'
+                error_file='hook-summary-error.json' if failing_phase=='hook_summary' else 'observation-error.json'
                 self.assertEqual(json.loads((base/'out/runs/new-work.none.s0'/error_file).read_text()),error)
                 self.assertNotIn('PRIVATE',json.dumps(report))
                 self.assertFalse((base/'out/runs/new-work.none.s0/stream.jsonl').exists())

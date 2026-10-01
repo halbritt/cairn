@@ -85,7 +85,7 @@ def manifest(root):
             raise ValueError('invalid or duplicate case id')
         ids.add(case['id'])
         permitted = {'id','workspace','copy_to','cwd','workspace_commit','category','primary','provenance','expected',
-                     'relevance_labels_complete','acceptable','must_not_deliver','over_applied','wordings','preflight','correct','mistake','review','stratum'}
+                     'public_validation_commands','relevance_labels_complete','acceptable','must_not_deliver','over_applied','wordings','preflight','correct','mistake','review','stratum'}
         if set(case)-permitted:
             raise ValueError('unsupported prospective case fields; combine known corrections in exact task wording')
         if 'relevance_labels_complete' in case and type(case['relevance_labels_complete']) is not bool:
@@ -97,6 +97,14 @@ def manifest(root):
         if (set(case['wordings']) != {'task'} or not isinstance(case['wordings']['task'],str)
                 or not case['wordings']['task']):
             raise ValueError('prospective input requires one exact task wording')
+        labels = case.get('public_validation_commands', {})
+        if (not isinstance(labels, dict) or len(labels) > 32
+                or any(not isinstance(label, str) or not re.fullmatch('[a-z][a-z0-9_-]{0,47}', label)
+                       or not isinstance(command, str) or not command or len(command.encode()) > 4096
+                       or '\0' in command or command not in case['wordings']['task']
+                       for label, command in labels.items())
+                or len(set(labels.values())) != len(labels)):
+            raise ValueError('public validation labels require bounded exact commands in the common task')
         commands = case.get('preflight')
         if (not isinstance(commands,list) or not commands
                 or any(not isinstance(cmd,list) or not cmd or any(not isinstance(s,str) or not s or '\0' in s for s in cmd) for cmd in commands)):
