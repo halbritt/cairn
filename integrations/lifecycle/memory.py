@@ -2403,17 +2403,28 @@ def main():
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
     config = event = None
+    phase = "configuration"
     try:
         config = json.loads(args.config.read_text())
+        phase = "input"
         raw = sys.stdin.buffer.read(1024 * 1024 + 1)
         if len(raw) > 1024 * 1024:
             raise HookError("host event exceeds input limit")
         event = json.loads(raw)
         if not isinstance(config, dict) or not isinstance(event, dict):
             raise HookError("configuration and host event must be objects")
+        phase = "activation"
         config = effective_inbox_config(config, event)
+        phase = "handle"
         result = handle(config, event, _inbox_resolved=True)
     except (HookError, OSError, ValueError, KeyError, TypeError) as exc:
+        # Fixed labels only: messages, paths and arbitrary subclass names may be private.
+        error_class = next(label for kind, label in (
+            (RequiredContextRefused, "RequiredContextRefused"), (HookError, "HookError"),
+            (BlockingIOError, "BlockingIOError"), (OSError, "OSError"),
+            (ValueError, "ValueError"), (KeyError, "KeyError"), (TypeError, "TypeError"),
+        ) if isinstance(exc, kind))
+        print(f"Cairn lifecycle diagnostic: phase={phase} error_class={error_class}", file=sys.stderr)
         if isinstance(config, dict) and isinstance(event, dict):
             exc = (claude_boundary_error(config, event, exc) if bound_claude(config)
                    else codex_required_error(config, event, exc))
