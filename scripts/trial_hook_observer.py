@@ -71,6 +71,28 @@ def prompt_metadata(event, frozen_sha256=None):
                 origin=origin,matches_frozen_prompt=matches)
 
 
+def bounded_search_discovery(value):
+    """Retain API discovery identity without arbitrary reason/query text."""
+    states = ('ready', 'unavailable', 'invalid_result', 'not_needed')
+    if not isinstance(value, dict) or value.get('state') not in states:
+        return dict(state='unknown')
+    result = dict(state=value['state'])
+    for key in ('model_sha256', 'scores_sha256'):
+        field = value.get(key)
+        if isinstance(field, str) and re.fullmatch('[0-9a-f]{64}', field):
+            result[key] = field
+    algorithm = value.get('algorithm')
+    if algorithm == 'bge-original-passages/1':
+        result['algorithm'] = algorithm
+    coverage = value.get('coverage')
+    if (isinstance(coverage, dict)
+            and all(type(coverage.get(k)) is int and 0 <= coverage[k] <= 2**63 - 1
+                    for k in ('indexed', 'eligible'))
+            and coverage['indexed'] <= coverage['eligible']):
+        result['coverage'] = {k: coverage[k] for k in ('indexed', 'eligible')}
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--engine', type=Path, required=True)
@@ -110,6 +132,8 @@ def main():
         finally:
             if recall_status is not None:
                 record['recall'] = copy.deepcopy({k: recall_status[k] for k in RECALL_FIELDS if k in recall_status})
+                if 'search_discovery' in recall_status:
+                    record['recall']['search_discovery'] = bounded_search_discovery(recall_status['search_discovery'])
 
     def observed_recall(memory, event, state=None):
         nonlocal recall_status

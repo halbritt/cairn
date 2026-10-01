@@ -1804,18 +1804,28 @@ def recall(memory, event, state=None):
                            semantic=semantic, timeout=recall_timeout(deadline, 5))
     if result.get("discovery") is not None:
         status["search_discovery"] = result["discovery"]
+    if bound_claude(memory.config) or bound_codex(memory.config):
+        discovery = status.get("search_discovery")
+        search_state = discovery.get("state") if isinstance(discovery, dict) else None
+        search_state = search_state if isinstance(search_state, str) else None
+        bound_discovery = ({"ready": "semantic", "unavailable": "lexical_fallback",
+                            "invalid_result": "lexical_fallback", "not_needed": "not_needed"}
+                           .get(search_state, "unknown" if semantic or discovery is not None else "lexical"))
     budget = context_budget(memory.config)
     selected = result.get("selected", [])
     if not (bound_codex(memory.config) or bound_claude(memory.config)) and len(render_recall(selected, []).encode()) > budget:
         raise HookError("retrieval exceeds lifecycle context budget; no partial instructions injected")
     if bound_claude(memory.config):
         text = claude_agent_context(memory, event, result, budget, status, deadline)
-        status["elapsed_seconds"] = round(time.monotonic() - started, 3)
+        status.update(elapsed_seconds=round(time.monotonic() - started, 3),
+                      discovery="deferred" if status.get("optional_deferred") else bound_discovery)
         return ({"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
                 if text else {})
     if mode == "agent_tools" and memory.config.get("harness") == "codex":
         text = codex_agent_context(memory, event, result, budget, status, deadline)
         status["elapsed_seconds"] = round(time.monotonic() - started, 3)
+        if bound_codex(memory.config):
+            status["discovery"] = "deferred" if status.get("optional_deferred") else bound_discovery
         return ({"hookSpecificOutput": {"hookEventName": event["hook_event_name"], "additionalContext": text}}
                 if text else {})
     if mode == "agent_tools" and not defer_optional:

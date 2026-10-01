@@ -56,6 +56,65 @@ class HookObserverTest(unittest.TestCase):
             self.assertNotIn('PRIVATE',observations.read_text())
             self.assertNotIn('native-one',observations.read_text())
 
+    def test_bound_discovery_reaches_observer_without_changing_delivery(self):
+        from test_inbox_recall_bridge import InboxRecallBridgeTests
+        from test_claude_inbox_recall import ClaudeInboxRecallTests
+        ready = dict(state='ready', coverage=dict(indexed=2, eligible=3),
+                     algorithm='bge-original-passages/1', model_sha256='a' * 64,
+                     scores_sha256='b' * 64)
+        cases = [(ready, True, False, 'semantic'),
+                 (dict(state='unavailable'), True, False, 'lexical_fallback'),
+                 (dict(state='invalid_result'), True, False, 'lexical_fallback'),
+                 (dict(state='not_needed'), True, False, 'not_needed'),
+                 (dict(state=[]), True, False, 'unknown'),
+                 (None, False, False, 'lexical'),
+                 (None, True, False, 'unknown'),
+                 (None, True, True, 'deferred')]
+        for fixture in (InboxRecallBridgeTests, ClaudeInboxRecallTests):
+            for discovery, semantic, startup, expected in cases:
+                with self.subTest(harness=fixture.__name__, discovery=discovery, startup=startup):
+                    case = fixture(); case.setUp(); self.addCleanup(case.doCleanups)
+                    case.mc['semantic_fallback'] = semantic
+                    if discovery is not None:
+                        case.fixture['search']['discovery'] = discovery
+                    case.freeze()
+                    event = dict(case.event, prompt='Inspect fixture safeguards.')
+                    if startup:
+                        event.update(hook_event_name='SessionStart', source='startup', prompt='')
+                    observations = case.root / 'observations.jsonl'
+                    result = subprocess.run([sys.executable, str(OBSERVER),
+                        '--engine', str(case.root / 'memory.py'), '--config', str(case.root / 'memory.json'),
+                        '--observations', str(observations)], input=json.dumps(event),
+                        text=True, capture_output=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    row = json.loads(observations.read_text())
+                    self.assertEqual(row['recall']['discovery'], expected)
+                    if discovery is None:
+                        self.assertNotIn('search_discovery', row['recall'])
+                    else:
+                        self.assertEqual(row['recall']['search_discovery'],
+                                         dict(state='unknown') if expected == 'unknown' else discovery)
+                    self.assertEqual(row['stdout_bytes'], len(result.stdout.encode()))
+                    if not startup:
+                        view_text = json.loads(result.stdout)['hookSpecificOutput']['additionalContext']
+                        self.assertIn('Preserve the fixture scope', view_text)
+                    calls = [c for c in case.calls() if c['op'] == 'search']
+                    self.assertEqual(len(calls), 1)
+                    self.assertEqual('--semantic' in calls[0]['args'], semantic and not startup)
+
+    def test_discovery_observation_rejects_free_text_and_malformed_fields(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('observer_projection', OBSERVER)
+        observer = importlib.util.module_from_spec(spec); spec.loader.exec_module(observer)
+        raw = dict(state='ready', reason='PRIVATE query', query='PRIVATE',
+                   algorithm='PRIVATE algorithm text', model_sha256='PRIVATE', scores_sha256='f'*64,
+                   coverage=dict(indexed=True, eligible=-1, body='PRIVATE'))
+        projected = observer.bounded_search_discovery(raw)
+        self.assertEqual(projected, dict(state='ready', scores_sha256='f'*64))
+        for invalid in ('PRIVATE', None, [], dict(state='PRIVATE')):
+            self.assertEqual(observer.bounded_search_discovery(invalid), dict(state='unknown'))
+        self.assertEqual(raw['query'], 'PRIVATE')
+
     def test_actual_engine_search_failure_records_final_failed_status_without_payloads(self):
         engine = OBSERVER.parent.parent / 'integrations/lifecycle/memory.py'
         with tempfile.TemporaryDirectory() as directory:
@@ -130,7 +189,7 @@ class HookObserverTest(unittest.TestCase):
             self.assertIsNone(row['recall'])
             self.assertTrue(row['recall_attempted'])
             self.assertIsNone(row['exit_code'])
-            self.assertNotIn('999', observations.read_text())
+            self.assertNotIn('preview_reported_cost_usd', row.get('recall') or {})
 
     def test_keeps_both_recalls_without_counting_unchanged_tool_state(self):
         with tempfile.TemporaryDirectory() as directory:
