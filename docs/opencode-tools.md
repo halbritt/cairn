@@ -167,6 +167,13 @@ file hints are added by the optional search plugin. Its separate native
 `cairn_prepare_note` permission must be allowed by the host; the installer does
 not grant it or weaken other permissions.
 
+Preparation is optional. For a likely vocabulary mismatch, use ordinary
+`cairn_search` with `semantic: true` directly; inspect `discovery.state` for
+semantic availability or lexical fallback. This can serve as predecessor
+inspection without a separate preparation call. Budget the search and whole
+current predecessor pulls together. Semantic similarity does not establish
+applicability or certify novelty; the source checks below still apply.
+
 Preparation reserves the actual UTF-8 JSON cost of adding its guidance field
 within the total allowance. At least 256 receipt bytes must remain to attempt
 retrieval; envelope and required context can need more. An explicit pull reserve

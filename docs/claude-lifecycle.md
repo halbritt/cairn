@@ -174,8 +174,11 @@ Taskless startup and wake deferral are unchanged.
 
 The cue allows at most two further searches per task when the supplied candidates
 do not fit, coverage is incomplete or a handle expires, and four pull/span calls
-total, including the hook's attempted candidate pulls. Use a semantic rephrase
-for a vocabulary miss when room permits; repeating
+total, including the hook's attempted candidate pulls. Use ordinary
+`cairn_search` with `semantic: true` directly for a vocabulary miss when room
+permits, and inspect `discovery.state` for semantic availability or lexical
+fallback. This does not require first spending the allowance on lexical-only
+preparation. Repeating
 discovery merely to obtain an already supplied handle adds delay. When searching
 for guidance, describe the decision, constraint or failure the task needs help
 with, preserving its stated conditions and known project, files or errors.

@@ -504,7 +504,15 @@ pretend the draft's pins describe the workspace. It uses the current lexical
 ranking, without a model call, semantic worker, subject-line inference, or
 recency-based replacement rule. Unrelated high matches remain possible.
 
-The response is the normal search view, including required `selected` context,
+Preparation is optional. When the likely predecessor uses different wording,
+use ordinary `cairn_search` with `semantic: true` directly and check
+`discovery.state` for semantic availability or lexical fallback. That search can
+serve as the predecessor inspection; it does not require another preparation
+call. Budget search results and whole current predecessor pulls together before
+spending the remaining allowance. Neither search mode certifies novelty or
+replaces the source and applicability checks below.
+
+The preparation response is the normal search view, including required `selected` context,
 `index`, omission reasons, source seal, receipt and complete `pull_arguments`.
 An added `preparation` object says `note_saved: false` and explains the decision.
 The receipt records retrieval, not a save reservation or a duplicate-check
