@@ -107,9 +107,15 @@ metadata, except the redundant CLI `pull_command`. Whole preview groups occupy
 at most 2,000 additional UTF-8 bytes. When no bodies are delivered, previews also
 use at most half the space left after required context, cue and metadata; with
 bodies, they use available remaining space. A group that does not fit and later
-groups are omitted whole. Search status, omissions, discovery metadata and
-`candidate_search.returned_entries` remain visible. Empty output does not prove
-that guidance is absent.
+groups are omitted whole. Search status and `candidate_search.returned_entries`
+remain visible. The optional search view omits only known omission counters with
+an explicit integer zero, and the valid discovery `scores_sha256` digest. Missing
+counts remain unknown; nonzero counts, booleans, malformed values and unknown
+counter names stay visible. Discovery state, coverage, algorithm and model hash
+remain visible. Canonical search results and `last_recall.search_discovery` retain
+the complete metadata. Candidate admission and final output use this same
+projection and serialized budget measurement. Empty output does not prove that
+guidance is absent.
 
 The task agent checks supplied bodies against the task and current source before
 use, without re-pulling an identical whole version. Other promising notes can be

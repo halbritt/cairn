@@ -194,15 +194,21 @@ class SourceOpeningTests(unittest.TestCase):
         self.assertEqual(opening['sha256'], hashlib.sha256(prefix.encode()).hexdigest())
 
     def test_pair_too_large_keeps_exact_original_passage_with_missing_context(self):
+        calibration = self.span_case('Context ' * 96)
+        initial_text, initial_view, _ = calibration.invoke()
+        self.assertEqual(initial_view['candidate_bodies'][0]['source_opening_excerpt']['status'], 'provided')
+        # Put the complete pair beyond the current renderer's byte boundary,
+        # independently of the instruction wording or omission presentation.
+        budget = len(initial_text.encode()) - 20
         case = self.span_case('Context ' * 96)
-        case.config['context_bytes'] = 3900
+        case.config['context_bytes'] = budget
         text, view, _ = case.invoke()
         candidate = view['candidate_bodies'][0]
         self.assertEqual(candidate['response']['span']['body'], 'Checked prerequisite.')
         self.assertEqual(candidate['source_opening_excerpt'],
                          dict(status='unavailable', reason='context_budget'))
         self.assertNotIn('Context Context', text)
-        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 3900)
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], budget)
         self.assertEqual(view['candidate_inspection']['pull_calls'], 3)
 
     def test_later_refusal_metadata_drops_opening_before_admitted_passage(self):
