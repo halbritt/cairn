@@ -630,12 +630,19 @@ def evaluate(check, ctx):
     if kind == "shell":
         # Checks execute agent-written code with only runtime and fixture paths.
         workdir = Path(cwd).resolve()
-        sandbox = runtime_sandbox() + [
+        common_runtime=ctx.get('common_runtime')
+        from trial_task_runtime import runtime_environment
+        try:
+            sandbox = runtime_sandbox(common_runtime=common_runtime, runtime_identity=ctx.get('runtime_identity'), writable=workdir.parent)
+        except (ValueError,OSError,TypeError) as error:
+            raise Undetermined('common runtime setup unavailable: '+type(error).__name__) from error
+        sandbox += [
             "--bind", str(workdir.parent), str(workdir.parent), "--chdir", str(workdir),
             "--ro-bind", str(TRIAL / "revisions"), str(TRIAL / "revisions"), "--unshare-net"]
         env = dict(HOME=str(Path.home()), PATH=f"{Path.home()}/.local/go/bin:/usr/bin:/bin",
                    LANG="C.UTF-8", GOTOOLCHAIN="local", GOFLAGS="-mod=mod", GOCACHE="/tmp/go-cache", GOPATH="/tmp/go",
                    TASK_EVAL_REVISIONS=str(TRIAL / "revisions"))
+        env.update(runtime_environment(common_runtime))
         for key, value in env.items():
             sandbox += ["--setenv", key, value]
         started = time.monotonic()
@@ -885,7 +892,7 @@ def execution_failure(trace, code):
     return None
 
 
-def runtime_sandbox():
+def runtime_sandbox(*, common_runtime=None, runtime_identity=None, writable=None):
     """Mount system runtimes, not the host root or its application/service data.
 
     Network isolation is selected by the caller. Provider processes still need
@@ -908,15 +915,18 @@ def runtime_sandbox():
         elif path.exists():
             command += ["--ro-bind", name, name]
     go = home / ".local/go"
-    if go.exists():
+    if go.exists() and common_runtime is None:
         command += ["--ro-bind", str(go.resolve()), str(go)]
+    if common_runtime is not None:
+        from trial_task_runtime import runtime_mounts
+        command += runtime_mounts(common_runtime, runtime_identity, writable)
     return command
 
 
-def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="claude", *, native_executable=None):
+def sandbox_command(root, cwd_name, extra_binds, env, provider_args, harness="claude", *, native_executable=None, common_runtime=None, runtime_identity=None):
     """Add the chosen provider and owned trial paths to the runtime filesystem."""
     home = Path.home()
-    command = runtime_sandbox()
+    command = runtime_sandbox(common_runtime=common_runtime, runtime_identity=runtime_identity, writable=root)
     if harness == "claude":
         claude = home / ".local/bin/claude"
         command += ["--ro-bind", str(Path(native_executable).resolve(strict=True) if native_executable else claude.resolve(strict=True)), str(claude),
@@ -950,6 +960,14 @@ def run_agent(case, arm, seed, order, args, stores, out):
                GIT_COMMITTER_NAME="trial agent", GIT_COMMITTER_EMAIL="agent@example.invalid")
     binds = []
     sandbox_options = dict(native_executable=checked_file(prospective["document"]["native"]["binary"])) if prospective else {}
+    common_runtime = prospective['document'].get('runtime') if prospective else None
+    runtime_identity = None
+    if common_runtime is not None:
+        from trial_task_runtime import validate_runtime, prepare_identity, runtime_environment
+        validate_runtime(common_runtime)
+        runtime_identity = prepare_identity(base/'runtime-identity')
+        sandbox_options.update(common_runtime=common_runtime, runtime_identity=runtime_identity)
+        env.update(runtime_environment(common_runtime))
     if args.harness == "claude":
         provider = ["claude", "-p", "--model", args.model, "--output-format", "stream-json", "--verbose",
                     "--permission-mode", "bypassPermissions", "--no-session-persistence", "--strict-mcp-config",
@@ -1125,7 +1143,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
             retain_observation_error(base, selected_input["observation_error"])
     ctx = dict(cwd=cwd, commands=trace["commands"], answer=trace["answer"],
                tool_outputs=parse_tool_outputs(stdout, args.harness, require_completed=bool(prospective)),
-               snapshot=json.loads((root / ".eval-snapshot.json").read_text()))
+               snapshot=json.loads((root / ".eval-snapshot.json").read_text()),
+               common_runtime=common_runtime, runtime_identity=runtime_identity)
     graded = grade(case, ctx)
     if failure:
         graded = dict(graded, check_outcome=graded["outcome"], outcome="harness_error", execution_failure=failure,

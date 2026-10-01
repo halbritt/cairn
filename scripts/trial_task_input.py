@@ -46,7 +46,7 @@ def manifest(root):
         elif not path.is_file() and not path.is_dir():
             raise ValueError('prospective input must contain regular files only')
     document, corpus = _read(root/'input.json'), _read(root/'corpus.json')
-    if document.get('schema') != SCHEMA or set(document) != {'schema','baseline_commit','corpus_policy','native','arms','memory_arms','cases'}:
+    if document.get('schema') != SCHEMA or set(document)-{'runtime'} != {'schema','baseline_commit','corpus_policy','native','arms','memory_arms','cases'}:
         raise ValueError('unsupported prospective input schema or fields')
     if not isinstance(document['corpus_policy'],dict) or not isinstance(document['corpus_policy'].get('description'),str) or not document['corpus_policy']['description']:
         raise ValueError('explicit corpus selection policy description required')
@@ -55,6 +55,9 @@ def manifest(root):
     if set(corpus) != {'notes'} or not isinstance(corpus['notes'], list):
         raise ValueError('corpus must contain notes')
     validate_arms(document)
+    if 'runtime' in document:
+        from trial_task_runtime import validate_runtime
+        validate_runtime(document['runtime'])
     native = document['native']
     if (not isinstance(native,dict) or set(native) != {'binary','model','effort'}
             or not isinstance(native['model'],str) or not native['model']

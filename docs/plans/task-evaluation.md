@@ -506,3 +506,38 @@ or make a run within budget by construction. Earlier failed runs remain unchange
 The observer counts hook stdout and forwarded engine stderr bytes separately,
 without retaining stderr content or claiming its native consumption. Any hook missing that count remains unknown;
 an observer exception or host timeout is not reconstructed as zero error output.
+
+### Explicit common offline Go/PostgreSQL runtime
+
+A prospective input can include one top-level `runtime` descriptor shared by all
+arms and their shell graders:
+
+```json
+{"schema":"cairn.task-runtime/go-postgres/1","root":"/absolute/owned/runtime-inputs","sha256":"TREE_DIGEST"}
+```
+
+Use `trial_task_runtime.runtime_descriptor(root)` to obtain the descriptor before
+freezing input. The root contains only `go` (Go1.25.x) and `module-cache`; all
+files must be owned, regular and free of symlinks. The digest covers relative
+paths, file bytes and executable bits. Freeze/load and task launch validate it.
+Provision these assets separately, without provider credentials or production
+store files. The executor does not download a toolchain or dependencies. A new
+runtime descriptor changes the frozen input and executor setup; it does not
+change or relabel the original recall component's pinned source.
+
+The common setup mounts those inputs read-only, plus the fixed public system
+runtime directories `/usr/libexec/gcc`, `/usr/include`, `/usr/share/postgresql`
+and `/usr/share/zoneinfo`. It supplies synthetic current UID/GID account entries,
+not the host account databases. Go uses the owned toolchain/cache with
+`GOTOOLCHAIN=local`, `GOPROXY=off` and `GOSUMDB=off`; build caches and PostgreSQL
+clusters remain in each sandbox's disposable `/tmp`. Neither runtime inputs nor
+synthetic account files may overlap writable workspace mounts. Grader networking
+remains disabled; provider routing and native command permissions are unchanged.
+System runtime mounts still depend on installed packages and are not a hermetic
+image. Both arms use the same selected runtime; no performance parity is inferred.
+
+Missing common assets make shell grading undetermined, not a failed behavioral
+check. Worker prerequisites still run before a provider can launch. Omitting the
+descriptor preserves existing runtime behavior. This does not make unknown Go
+modules available offline, authorize wider tool commands, or prove a future task
+will pass its tests.
