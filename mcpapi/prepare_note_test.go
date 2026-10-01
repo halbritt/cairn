@@ -11,6 +11,15 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func currentPreparationOverhead(t *testing.T) int {
+	t.Helper()
+	size, err := preparationOverhead(preparationGuidance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return size
+}
+
 func TestPrepareNoteUsesOnlyBoundedAuthenticatedIndex(t *testing.T) {
 	calls := 0
 	client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +35,7 @@ func TestPrepareNoteUsesOnlyBoundedAuthenticatedIndex(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatal(err)
 		}
-		if req.Query != "config subject" || req.Semantic || req.AvailableTokens != 32000 || req.MemoryBudgetBytes == nil || *req.MemoryBudgetBytes != 6000-preparationOverhead || req.MinPullBytes != nil || req.Scope.TaskID != "/private-session-canary" || len(req.Entities) != 1 {
+		if req.Query != "config subject" || req.Semantic || req.AvailableTokens != 32000 || req.MemoryBudgetBytes == nil || *req.MemoryBudgetBytes != 6000-currentPreparationOverhead(t) || req.MinPullBytes != nil || req.Scope.TaskID != "/private-session-canary" || len(req.Entities) != 1 {
 			t.Errorf("preparation changed retrieval contract: %+v", req)
 		}
 		entry := core.IndexEntry{RecordID: "old", Version: 7, Class: "A", Kind: "procedure", Summary: "日本語 \\\" configuration", BodySHA256: "digest"}
@@ -49,14 +58,23 @@ func TestPrepareNoteUsesOnlyBoundedAuthenticatedIndex(t *testing.T) {
 	if len(encoded) > 6000 || calls != 1 {
 		t.Fatalf("budget/call count: %d/%d", len(encoded), calls)
 	}
-	view.Preparation = nil
-	plain, _, err := toolResult(view, nil, 6000)
+	// Preserve all returned fields verbatim; round-tripping the embedded
+	// SemanticPackage through searchResult can normalize unrelated fields.
+	var unchanged map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &unchanged); err != nil {
+		t.Fatal(err)
+	}
+	delete(unchanged, "preparation")
+	plain, _, err := toolResult(unchanged, nil, 6000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plainBytes, _ := json.Marshal(plain)
-	if len(encoded)-len(plainBytes) > preparationOverhead {
-		t.Fatal("guidance exceeds its reserved serialized overhead")
+	// Keep SDK-added metadata identical on both sides of the delta.
+	plainWithMetadata := *result
+	plainWithMetadata.Content = plain.Content
+	plainBytes, _ := json.Marshal(&plainWithMetadata)
+	if len(encoded)-len(plainBytes) != currentPreparationOverhead(t) {
+		t.Fatalf("guidance reservation must equal SDK serialized delta: actual=%d reserved=%d", len(encoded)-len(plainBytes), currentPreparationOverhead(t))
 	}
 }
 
@@ -66,7 +84,7 @@ func TestPrepareNoteRefusesInvalidInputBeforeAPI(t *testing.T) {
 	})
 	session := diagnosticSession(t, client, 8000)
 	for _, args := range []map[string]any{
-		{"query": " "}, {"query": "subject", "memory_budget_bytes": 1279},
+		{"query": " "}, {"query": "subject", "memory_budget_bytes": currentPreparationOverhead(t) + 255},
 		{"query": "subject", "available_tokens": 8001},
 		{"query": "subject", "available_tokens": 2000, "memory_budget_bytes": 2001},
 	} {
@@ -130,9 +148,9 @@ func TestPrepareNoteReserveRefusesInvalidBoundsBeforeAPI(t *testing.T) {
 		{map[string]any{"query": "subject", "memory_budget_bytes": 8000, "min_pull_bytes": -1}, "min_pull_bytes"},
 		{map[string]any{"query": "subject", "memory_budget_bytes": 32000, "min_pull_bytes": 24001}, "min_pull_bytes"},
 		// The receipt cap is the total less guidance, so the search limit is one byte too large.
-		{map[string]any{"query": "subject", "memory_budget_bytes": 4000, "min_pull_bytes": 4000 - preparationOverhead + 1}, "min_pull_bytes"},
+		{map[string]any{"query": "subject", "memory_budget_bytes": 4000, "min_pull_bytes": 4000 - currentPreparationOverhead(t) + 1}, "min_pull_bytes"},
 		{map[string]any{"query": "subject", "memory_budget_bytes": 4000, "min_pull_bytes": 4000}, "min_pull_bytes"},
-		{map[string]any{"query": "subject", "memory_budget_bytes": 1279, "min_pull_bytes": 1}, "BUDGET_REFUSED"},
+		{map[string]any{"query": "subject", "memory_budget_bytes": currentPreparationOverhead(t) + 255, "min_pull_bytes": 1}, "BUDGET_REFUSED"},
 		{map[string]any{"query": "subject", "memory_budget_bytes": 4000, "min_pull_bytes": 1.5}, "min_pull_bytes"},
 		{map[string]any{"query": "subject", "memory_budget_bytes": 4000, "min_pull_bytes": "2000"}, "min_pull_bytes"},
 		{map[string]any{"query": "subject", "memory_budget_bytes": 4000, "min_pull_bytes": true}, "min_pull_bytes"},
@@ -189,7 +207,7 @@ func TestPrepareNoteReserveChargesGuidanceAndEnvelopeOnce(t *testing.T) {
 	}
 	// The API receives the total less guidance and the reserve once. Deducting
 	// the reserve here as well would make it subtract twice.
-	if len(forwarded) != 1 || forwarded[0].MemoryBudgetBytes == nil || *forwarded[0].MemoryBudgetBytes != total-preparationOverhead || forwarded[0].MinPullBytes == nil || *forwarded[0].MinPullBytes != reserve || forwarded[0].AvailableTokens != 32000 || forwarded[0].Semantic {
+	if len(forwarded) != 1 || forwarded[0].MemoryBudgetBytes == nil || *forwarded[0].MemoryBudgetBytes != total-currentPreparationOverhead(t) || forwarded[0].MinPullBytes == nil || *forwarded[0].MinPullBytes != reserve || forwarded[0].AvailableTokens != 32000 || forwarded[0].Semantic {
 		t.Fatalf("reserve changed forwarded retrieval contract: %+v", forwarded)
 	}
 
@@ -200,7 +218,7 @@ func TestPrepareNoteReserveChargesGuidanceAndEnvelopeOnce(t *testing.T) {
 	}
 	// Omission keeps the historical allowance: the same envelope fits the total.
 	result, size = call(map[string]any{"query": "subject", "memory_budget_bytes": total})
-	if result.IsError || size != total-reserve+1 || len(forwarded) != 3 || forwarded[2].MinPullBytes != nil || forwarded[2].MemoryBudgetBytes == nil || *forwarded[2].MemoryBudgetBytes != total-preparationOverhead {
+	if result.IsError || size != total-reserve+1 || len(forwarded) != 3 || forwarded[2].MinPullBytes != nil || forwarded[2].MemoryBudgetBytes == nil || *forwarded[2].MemoryBudgetBytes != total-currentPreparationOverhead(t) {
 		t.Fatalf("omission changed legacy preparation: size=%d %+v %+v", size, result, forwarded)
 	}
 
@@ -211,11 +229,11 @@ func TestPrepareNoteReserveChargesGuidanceAndEnvelopeOnce(t *testing.T) {
 	for _, tc := range []struct {
 		total, reserve int
 		refused        bool
-	}{{4000, 4000 - preparationOverhead, true}, {32000, 24000, false}, {2000, 1, false}} {
+	}{{4000, 4000 - currentPreparationOverhead(t), true}, {32000, 24000, false}, {2000, 1, false}} {
 		forwarded = forwarded[:0]
 		result, _ = call(map[string]any{"query": "subject", "memory_budget_bytes": tc.total, "min_pull_bytes": tc.reserve})
 		text := result.Content[0].(*mcp.TextContent).Text
-		if len(forwarded) != 1 || *forwarded[0].MemoryBudgetBytes != tc.total-preparationOverhead || *forwarded[0].MinPullBytes != tc.reserve ||
+		if len(forwarded) != 1 || *forwarded[0].MemoryBudgetBytes != tc.total-currentPreparationOverhead(t) || *forwarded[0].MinPullBytes != tc.reserve ||
 			result.IsError != tc.refused || (tc.refused && !strings.Contains(text, "BUDGET_REFUSED")) {
 			t.Fatalf("reserve endpoint %+v misreported: %s calls=%+v", tc, text, forwarded)
 		}
@@ -239,3 +257,30 @@ func TestPrepareNoteReserveUnsupportedAPIDoesNotRetryWithoutReserve(t *testing.T
 }
 
 func ptrInt(v int) *int { return &v }
+
+func TestPreparationOverheadTracksEscapedUTF8Guidance(t *testing.T) {
+	for _, guidance := range []string{preparationGuidance, "日本語 \"quoted\" \\ path\n<>&\u2028", strings.Repeat("\t界\"", 1000)} {
+		want, err := preparationOverhead(guidance)
+		if err != nil {
+			t.Fatal(err)
+		}
+		view := map[string]any{"schema": "fixture", "selected": []string{"whole 日本語 \"required\"\n"}, "bytes_remaining": 1234}
+		plain, _, err := toolResult(view, nil, 100000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before, _ := json.Marshal(plain)
+		view["preparation"] = notePreparation{Guidance: guidance}
+		prepared, _, err := toolResult(view, nil, 100000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after, _ := json.Marshal(prepared)
+		if len(after)-len(before) != want {
+			t.Fatalf("encoded overhead=%d; reserved=%d", len(after)-len(before), want)
+		}
+		if _, _, err := toolResult(view, nil, len(after)-1); err == nil {
+			t.Fatal("final native byte boundary was not enforced")
+		}
+	}
+}

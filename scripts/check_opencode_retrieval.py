@@ -3,6 +3,13 @@ import json
 import uuid
 
 
+def preparation_bytes(value):
+    """Observe the native JSON delta without assuming a guidance length."""
+    def size(item):
+        return len(json.dumps(item, ensure_ascii=False, separators=(',', ':')).encode())
+    return size(value) - size({key: item for key, item in value.items() if key != 'preparation'})
+
+
 def check_presentation(invoke, settings_path, settings, root):
     response = root / 'retrieval-response.json'
     calls = root / 'retrieval-calls.json'
@@ -40,7 +47,7 @@ def check_presentation(invoke, settings_path, settings, root):
             result = invoke(name, request)
             argv, flag = flags()
             assert flag('--tokens') == '32000' and flag('--min-pull-bytes') == '2000'
-            assert flag('--memory-budget-bytes') == str(6000 - (1024 if name == 'prepare_note' else 0))
+            assert flag('--memory-budget-bytes') == str(6000 - preparation_bytes(result))
             assert flag('--request-id') == request['request_id'] and flag('--task-class') == 'repair'
             assert 'create' not in argv and 'edit' not in argv
             assert result['selected'] == source['selected'] and result['omitted'] == source['omitted']
@@ -65,11 +72,12 @@ def check_presentation(invoke, settings_path, settings, root):
             assert spent['bytes_remaining'] == 1999
             reply(source)
 
+        overhead = preparation_bytes(result)
         no_dispatch('prepare_note', dict(query='  '))
         for field in ('body', 'draft', 'pins', 'semantic', 'browse', 'kinds', 'offset'):
             no_dispatch('prepare_note', dict(query='subject', **{field: 'unsupported'}))
-        no_dispatch('prepare_note', dict(query='subject', memory_budget_bytes=1279), 'BUDGET_REFUSED')
-        no_dispatch('prepare_note', dict(query='subject', memory_budget_bytes=2000, min_pull_bytes=977))
+        no_dispatch('prepare_note', dict(query='subject', memory_budget_bytes=overhead + 255), 'BUDGET_REFUSED')
+        no_dispatch('prepare_note', dict(query='subject', memory_budget_bytes=2000, min_pull_bytes=2000 - overhead + 1))
         for name in ('search', 'prepare_note'):
             # Exact final UTF-8 presentation and remaining expansion allowance.
             reply(dict(source, bytes_remaining=2000))
@@ -86,12 +94,31 @@ def check_presentation(invoke, settings_path, settings, root):
             if name == 'search':
                 assert '--memory-budget-bytes' not in argv
             else:
-                assert flag('--memory-budget-bytes') == str(32000 - 1024)
+                assert flag('--memory-budget-bytes') == str(32000 - overhead)
         settings_path.write_text(json.dumps(dict(settings, executable=str(executable),
                                                  context={'task_phase': 'validation'})))
         for name in ('search', 'prepare_note'):
             no_dispatch(name, dict(query='subject', context={'task_phase': 'implementation'}))
-        print('Native reserve/preparation: strict validation, forwarding, omission, retry inputs, whole context and exact UTF-8 accounting passed')
+        # Installed fixture copy only: future UTF-8/escaped guidance must be
+        # charged by its native encoder without a production threshold update.
+        adapter = settings_path.parent / 'tools' / 'cairn.ts'
+        original = adapter.read_text()
+        try:
+            for guidance in ('条件 "quoted" \\ path\n<>&', '界\t"' * 100):
+                lines = original.splitlines(keepends=True)
+                adapter.write_text(''.join('const preparationGuidance = ' + json.dumps(guidance, ensure_ascii=False) + '\n'
+                    if line.startswith('const preparationGuidance = ') else line for line in lines))
+                reply(source)
+                result = invoke('prepare_note', dict(query='subject', memory_budget_bytes=6000))
+                _, flag = flags()
+                assert result['preparation'] == dict(note_saved=False, guidance=guidance)
+                assert flag('--memory-budget-bytes') == str(6000 - preparation_bytes(result))
+                exact = size(result) + source['bytes_remaining']
+                assert invoke('prepare_note', dict(query='subject', memory_budget_bytes=exact)) == result
+                invoke('prepare_note', dict(query='subject', memory_budget_bytes=exact - 1), 'BUDGET_REFUSED')
+        finally:
+            adapter.write_text(original)
+        print('Native reserve/preparation: strict validation, forwarding, omission, retry inputs, whole context, future guidance and exact UTF-8 accounting passed')
     finally:
         settings_path.write_text(json.dumps(settings))
 
@@ -119,7 +146,7 @@ def check_store(invoke, binary, environment, settings_path, settings):
             request = dict(query=marker, request_id=str(uuid.uuid4()), memory_budget_bytes=9000, min_pull_bytes=3000)
             result = invoke(name, request)
             assert result['memory_budget'] == dict(schema='cairn.memory-budget/2',
-                bytes=9000 - (1024 if name == 'prepare_note' else 0), min_pull_bytes=3000)
+                bytes=9000 - preparation_bytes(result), min_pull_bytes=3000)
             assert result['available_tokens'] == settings['tokens']
             assert result['bytes_remaining'] >= 3000 and result['index']
             ids = {entry['record_id'] for entry in result['index']}

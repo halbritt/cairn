@@ -167,14 +167,18 @@ file hints are added by the optional search plugin. Its separate native
 `cairn_prepare_note` permission must be allowed by the host; the installer does
 not grant it or weaken other permissions.
 
-Preparation reserves 1,024 bytes within the total allowance for bounded decision
-guidance, so it needs at least 1,280 bytes. With an explicit reserve, its maximum
-is `min(24000, memory_budget_bytes - 1024)`. The API receives the smaller receipt
-cap; the final native result plus the receipt's remaining expansion allowance
+Preparation reserves the actual UTF-8 JSON cost of adding its guidance field
+within the total allowance. At least 256 receipt bytes must remain to attempt
+retrieval; envelope and required context can need more. An explicit pull reserve
+can be at most `min(24000, memory_budget_bytes - encoded_preparation_overhead)`.
+The API receives the smaller receipt cap; the final native result plus the receipt's remaining expansion allowance
 must fit the caller's original total. Guidance and whole mandatory selections
 are never shortened to fit. The result retains the ordinary search metadata and
 complete pull handles, adding `preparation: {note_saved: false, guidance: ...}`.
 The receipt's `memory_budget.bytes` describes the cap after guidance reservation.
+If an adapter upgrade changes that overhead, an earlier request UUID can return
+`IDEMPOTENCY_CONFLICT`; a newly budgeted request needs a fresh UUID. Old receipt
+allowances are not reinterpreted or replenished.
 
 Pull complete current predecessor bodies and check subject, scope, pins and
 evidence before deciding whether to edit the same active A note or separately

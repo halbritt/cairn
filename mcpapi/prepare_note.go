@@ -2,7 +2,9 @@ package mcpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 
 	"github.com/halbritt/cairn/core"
@@ -16,8 +18,8 @@ type prepareNoteArgs struct {
 	Entities          []core.EntityRef  `json:"entities,omitempty" jsonschema:"Known file or symbol hints, at most 16; not evidence of identity or applicability."`
 	Context           *core.ContextPins `json:"context,omitempty" jsonschema:"Actual current retrieval context; must not conflict with host context. Not the proposed note's capture pins."`
 	AvailableTokens   *int              `json:"available_tokens,omitempty" jsonschema:"Known free input-context room within the host ceiling. Omit when unknown to use host policy default; not the memory allocation."`
-	MemoryBudgetBytes *int              `json:"memory_budget_bytes,omitempty" jsonschema:"Optional total UTF-8 allowance for preparation output and receipt expansions, within available_tokens. 1024 bytes are reserved for guidance; at least 1280 bytes are needed. Count combined recall across calls yourself."`
-	MinPullBytes      *int              `json:"min_pull_bytes,omitempty" jsonschema:"Optional minimum charged receipt expansion allowance left after preparation, for pulling predecessor sources. Requires memory_budget_bytes; 1 through min(24000, memory_budget_bytes minus the 1024 guidance bytes). Reserves within that total by reducing preview delivery, never by increasing total room, dropping the guidance or truncating required context; the final preparation result must fit memory_budget_bytes minus this reserve. May refuse if guidance, envelope and required context cannot fit. Not plain body bytes, a guaranteed successful pull, proof of relevance or clearance to save. Omit for existing allocation; repeat on retries and use a new request UUID when changing it."`
+	MemoryBudgetBytes *int              `json:"memory_budget_bytes,omitempty" jsonschema:"Optional total UTF-8 allowance for preparation output and receipt expansions, within available_tokens. The actual encoded preparation-field overhead is reserved; at least 256 receipt bytes must remain to attempt retrieval. Count combined recall across calls yourself."`
+	MinPullBytes      *int              `json:"min_pull_bytes,omitempty" jsonschema:"Optional minimum charged receipt expansion allowance left after preparation, for pulling predecessor sources. Requires memory_budget_bytes; 1 through min(24000, memory_budget_bytes minus the encoded preparation-field overhead). Reserves within that total by reducing preview delivery, never by increasing total room, dropping the guidance or truncating required context; the final preparation result must fit memory_budget_bytes minus this reserve. May refuse if guidance, envelope and required context cannot fit. Not plain body bytes, a guaranteed successful pull, proof of relevance or clearance to save. Omit for existing allocation; repeat on retries and use a new request UUID when changing it."`
 	RequestID         string            `json:"request_id,omitempty" jsonschema:"Optional search retry UUID. Reuse only for identical preparation arguments. Later save/edit is a separate explicit mutation."`
 }
 
@@ -26,8 +28,28 @@ type notePreparation struct {
 	Guidance  string `json:"guidance"`
 }
 
-const preparationOverhead = 1024
 const preparationGuidance = "No note saved. These are possible predecessors, not verified replacements. Pull complete current bodies with pull_arguments and compare subject, scope, pins and evidence. Same active A note: use cairn_edit with its expected_version and a new request_id, preserving unrelated content. Distinct knowledge: use cairn_remember. Separate obsolete record: formal supersession requires protected preview and authorized local/operator access; do not borrow another profile. B/C changes need their authority path. Empty or budget-limited results do not prove no predecessor exists. Search failure is not clearance to save."
+
+// Measure the field through the same JSON-in-MCP text encoding as the output.
+// Other search fields are identical, so only the added preparation is reserved.
+func preparationOverhead(guidance string) (int, error) {
+	plain := searchResult{}
+	prepared := plain
+	prepared.Preparation = &notePreparation{NoteSaved: false, Guidance: guidance}
+	var sizes [2]int
+	for i, view := range []searchResult{plain, prepared} {
+		result, _, err := toolResult(view, nil, math.MaxInt)
+		if err != nil {
+			return 0, err
+		}
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			return 0, err
+		}
+		sizes[i] = len(encoded)
+	}
+	return sizes[1] - sizes[0], nil
+}
 
 func (t memoryTools) prepareNote(ctx context.Context, request *mcp.CallToolRequest, args prepareNoteArgs) (*mcp.CallToolResult, any, error) {
 	if strings.TrimSpace(args.Query) == "" {

@@ -200,11 +200,17 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 	// preparation that is the caller's allowance less the guidance bytes, which
 	// the final result check below still charges once, with the reserve.
 	receiptRoom := memoryRoom
+	guidanceBytes := 0
 	if prepare {
+		var err error
+		guidanceBytes, err = preparationOverhead(preparationGuidance)
+		if err != nil {
+			return nil, nil, err
+		}
 		// Reserve space for the decision guidance without treating the smaller
 		// memory allowance as measured free input room. Final serialization is
 		// still checked by toolResult; required selections are never truncated.
-		receiptRoom -= preparationOverhead
+		receiptRoom -= guidanceBytes
 		if receiptRoom < 256 {
 			return nil, nil, errors.New("BUDGET_REFUSED: note preparation needs room for guidance and a search receipt")
 		}
@@ -212,7 +218,7 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 	if args.MinPullBytes != nil && (args.MemoryBudgetBytes == nil || *args.MinPullBytes < 1 || *args.MinPullBytes > min(24000, receiptRoom)) {
 		bound := "memory_budget_bytes"
 		if prepare {
-			bound = fmt.Sprintf("memory_budget_bytes-%d", preparationOverhead)
+			bound = fmt.Sprintf("memory_budget_bytes-%d", guidanceBytes)
 		}
 		return nil, nil, fmt.Errorf("INVALID_REQUEST: min_pull_bytes requires memory_budget_bytes and 1..min(24000, %s)", bound)
 	}

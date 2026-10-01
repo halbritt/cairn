@@ -872,16 +872,21 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 			return view, size
 		}
 		legacy, legacySize := prepare(nil, "")
-		if legacy.MemoryBudget == nil || legacy.MemoryBudget.Schema != "cairn.memory-budget/1" || legacy.MemoryBudget.MinPullBytes != 0 || legacy.MemoryBudget.Bytes != allowance-preparationOverhead ||
+		if legacy.MemoryBudget == nil || legacy.MemoryBudget.Schema != "cairn.memory-budget/1" || legacy.MemoryBudget.MinPullBytes != 0 || legacy.MemoryBudget.Bytes != allowance-currentPreparationOverhead(t) ||
 			len(legacy.Index) != len(sources) || legacySize+legacy.BytesRemaining > allowance || legacy.BytesRemaining >= reserve {
 			t.Fatalf("omission changed legacy preparation or fixture cannot show the reserve: size=%d %+v", legacySize, legacy)
 		}
-		// Without a reserve this fixture leaves too little receipt room for even
-		// its first source, which is the failure the option addresses.
-		invoke("cairn_pull", legacy.Index[0].PullArguments, "BUDGET_REFUSED")
+		// Exact guidance charging now lets the unreserved fixture pull its first
+		// source. It still exhausts room before the next complete source.
+		first, firstSize := invokeMeasured("cairn_pull", legacy.Index[0].PullArguments, "")
+		var firstExpansion core.Expansion
+		if err := json.Unmarshal(first, &firstExpansion); err != nil || firstExpansion.Selection.Record.Body != sources[legacy.Index[0].RecordID] || legacySize+firstSize > allowance {
+			t.Fatalf("unreserved first pull lost whole source or exceeded total: %v", err)
+		}
+		invoke("cairn_pull", legacy.Index[1].PullArguments, "BUDGET_REFUSED")
 		minimum := reserve
 		reserved, size := prepare(&minimum, "")
-		if reserved.Preparation == nil || reserved.Preparation.NoteSaved || reserved.MemoryBudget == nil || reserved.MemoryBudget.Schema != "cairn.memory-budget/2" || reserved.MemoryBudget.MinPullBytes != reserve || reserved.MemoryBudget.Bytes != allowance-preparationOverhead {
+		if reserved.Preparation == nil || reserved.Preparation.NoteSaved || reserved.MemoryBudget == nil || reserved.MemoryBudget.Schema != "cairn.memory-budget/2" || reserved.MemoryBudget.MinPullBytes != reserve || reserved.MemoryBudget.Bytes != allowance-currentPreparationOverhead(t) {
 			t.Fatalf("reserve lost sealed contract or no-save guidance: %+v", reserved)
 		}
 		// The reserve reduces optional previews within the same total. It must
@@ -914,9 +919,15 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		invoke("cairn_prepare_note", args, "IDEMPOTENCY_CONFLICT")
 		args.MinPullBytes = nil
 		invoke("cairn_prepare_note", args, "IDEMPOTENCY_CONFLICT")
+		// An older facade reserved 1024 bytes for the same native arguments.
+		// Persist that underlying request, then verify the upgraded cap conflicts
+		// instead of reinterpreting its receipt or replenishing spent allowance.
+		oldRequest := uuid.NewString()
+		invoke("cairn_search", searchArgs{Query: "reservedprep", MemoryBudgetBytes: ptrInt(allowance - 1024), RequestID: oldRequest}, "")
+		invoke("cairn_prepare_note", prepareNoteArgs{Query: "reservedprep", MemoryBudgetBytes: ptrInt(allowance), RequestID: oldRequest}, "IDEMPOTENCY_CONFLICT")
 		// Mandatory context and the guidance envelope come first: a reserve that
 		// leaves no room for them refuses instead of truncating either one.
-		args = prepareNoteArgs{Query: "reservedprep", MemoryBudgetBytes: ptrInt(1500), MinPullBytes: ptrInt(1500 - preparationOverhead), RequestID: uuid.NewString()}
+		args = prepareNoteArgs{Query: "reservedprep", MemoryBudgetBytes: ptrInt(1500), MinPullBytes: ptrInt(1500 - currentPreparationOverhead(t)), RequestID: uuid.NewString()}
 		invoke("cairn_prepare_note", args, "BUDGET_REFUSED")
 	})
 

@@ -540,15 +540,19 @@ selector call nor changes lifecycle capture behavior.
 
 `available_tokens` is known free input room, not this workflow's allowance.
 Omit it when unknown to use the host policy default; use `memory_budget_bytes`
-for the smaller allocation. The facade reserves 1,024 bytes for guidance and
-passes the remaining cap to the existing index/expansion API, keeping the actual
-policy input unchanged. At least 1,280 bytes are needed even to attempt a
-search; required context may need more. The final native JSON (including escaped
-Unicode and quotes) must fit the caller's effective allowance or the call
+for the smaller allocation. The facade reserves the preparation field's actual
+encoded overhead in the MCP text result and passes the remaining cap to the
+existing index/expansion API, keeping the actual policy input unchanged. At least 256 bytes must remain after that reservation
+to attempt a search; the envelope and required context may need more. The final
+native JSON (including escaped Unicode and quotes) must fit the caller's effective allowance or the call
 refuses. Required context and handles are never truncated. The receipt exposes
 the smaller search/expansion cap; account for preparation output and later pulls
 against the original total, and combine this with other memory calls yourself.
 An older API that refuses the cap remains an error, with no uncapped retry.
+A facade upgrade that changes the encoded overhead also changes the underlying
+receipt cap. Reusing an earlier request UUID then returns `IDEMPOTENCY_CONFLICT`;
+start a newly budgeted request with a fresh UUID instead of reinterpreting or
+replenishing the old receipt.
 
 To keep room to pull a predecessor after preparation, add `min_pull_bytes` with
 an explicit `memory_budget_bytes`, for example
@@ -557,8 +561,8 @@ It uses the search reserve contract above: at least that much **charged receipt
 expansion allowance** remains after the call, gained by omitting complete
 optional preview groups. It does not enlarge the total, drop the guidance, or
 truncate required context. Its range is 1 through the smaller of 24,000 or the
-total less the 1,024 guidance bytes; a value above that, or without an explicit
-total, is refused before any API call. The facade forwards the total less
+total less that encoded preparation overhead; a value above that, or without
+an explicit total, is refused before any API call. The facade forwards the total less
 guidance once as the receipt cap and the reserve once as `min_pull_bytes`, then
 requires the final native JSON, including the guidance, to fit the total less
 the reserve; otherwise the call returns `BUDGET_REFUSED`. A reserve near the
