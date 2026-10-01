@@ -14,6 +14,176 @@ SCHEMA = 'cairn.inbox-recall-binding/1'
 RECALL_OBSERVATION_VERSION = 1
 
 
+class InboxRouteTrace:
+    """Bounded selected metadata, never an authority or a model-facing view."""
+    def __init__(self, directory, identity):
+        self.directory = Path(directory) / 'inbox-recall-traces'
+        self.started = time.monotonic()
+        self.phase = 'required'
+        self.phase_started = self.started
+        self.data = dict(schema='cairn.inbox-route-trace/1', complete=True, dropped=0,
+                         identity={}, rpc=[], routes=[], stages=[], renders=0)
+        for key in ('event_id', 'delivery_id', 'attempt_id'):
+            value = identity.get(key)
+            if isinstance(value, str) and re.fullmatch('[0-9a-f-]{36}', value):
+                self.data['identity'][key] = value
+        for key in ('agent_id', 'execution_id'):
+            value = identity.get('session', {}).get(key)
+            if isinstance(value, str) and re.fullmatch('[0-9a-f-]{36}', value):
+                self.data['identity'][key] = value
+
+    def stamp(self):
+        return max(0, round((time.monotonic() - self.started) * 1000, 3))
+
+    def bounded(self, key, row, limit):
+        if len(self.data[key]) < limit:
+            self.data[key].append(row)
+        else:
+            self.data['complete'] = False
+            self.data['dropped'] += 1
+
+    def source(self, record, extent, span=None):
+        value = dict(extent=extent)
+        ident = record.get('record_id')
+        if not isinstance(ident, str) or not re.fullmatch('[0-9a-f-]{36}', ident):
+            self.data['complete'] = False
+            return None
+        value['record_id'] = ident
+        version = record.get('version')
+        if type(version) is not int or version <= 0:
+            self.data['complete'] = False
+            return None
+        value['version'] = version
+        digest = record.get('body_sha256')
+        if digest is None and extent == 'whole' and isinstance(record.get('body'), str):
+            digest = hashlib.sha256(record['body'].encode()).hexdigest()
+            value['bytes'] = len(record['body'].encode())
+        if isinstance(digest, str) and re.fullmatch('[0-9a-f]{64}', digest):
+            value['body_sha256'] = digest
+        if isinstance(span, dict):
+            value['span'] = {k: span[k] for k in ('offset', 'length', 'end', 'total_bytes')
+                             if type(span.get(k)) is int and span[k] >= 0}
+            for key in ('sha256', 'source_sha256'):
+                if isinstance(span.get(key), str) and re.fullmatch('[0-9a-f]{64}', span[key]):
+                    value['span'][key] = span[key]
+        return value
+
+    def set_phase(self, phase):
+        now = time.monotonic()
+        self.bounded('stages', dict(phase=self.phase, elapsed_ms=max(0, round((now-self.phase_started)*1000, 3))), 8)
+        self.phase_started, self.phase = now, phase
+
+    def rpc(self, operation, started, payload, result, outcome):
+        if operation not in ('search', 'history', 'pull'):
+            return
+        row = dict(operation=operation, phase=self.phase, at_ms=self.stamp(),
+                   elapsed_ms=max(0, round((time.monotonic()-started)*1000, 3)), outcome=outcome)
+        if isinstance(payload, dict) and isinstance(payload.get('span'), dict):
+            row['requested_span'] = {k: payload['span'][k] for k in ('offset', 'length')
+                                     if type(payload['span'].get(k)) is int and payload['span'][k] >= 0}
+        data = result.get('data', {}) if isinstance(result, dict) else {}
+        if isinstance(data, dict):
+            if operation == 'search':
+                if data.get('status') in ('READY', 'SCOPE_EMPTY', 'DEGRADED_NO_EMBEDDINGS'):
+                    row['search_status'] = data['status']
+                discovery = data.get('discovery', {})
+                if isinstance(discovery, dict):
+                    if discovery.get('state') in ('ready', 'not_needed', 'unavailable', 'invalid_result'):
+                        row['discovery_state'] = discovery['state']
+                    coverage = discovery.get('coverage', {})
+                    if isinstance(coverage, dict):
+                        row['coverage'] = {k: coverage[k] for k in ('indexed', 'eligible')
+                                           if type(coverage.get(k)) is int and coverage[k] >= 0}
+            for key in ('credits_remaining', 'bytes_remaining'):
+                if type(data.get(key)) is int and data[key] >= 0:
+                    row[key] = data[key]
+            receipt = data.get('receipt_id')
+            if isinstance(receipt, str) and re.fullmatch('[0-9a-f-]{36}', receipt):
+                row['receipt_id'] = receipt
+        self.bounded('rpc', row, 8)
+
+    def route(self, reason, group=()):
+        # Only constant host branch labels enter this interface.
+        self.bounded('routes', dict(at_ms=self.stamp(), reason=reason,
+                     sources=[self.source(e, 'candidate') for e in group[:16]]), 32)
+        if len(group) > 16:
+            self.data['complete'] = False
+
+    def validated(self, extent, response):
+        selections = [response['selection'], *response.get('competing', [])]
+        self.bounded('routes', dict(at_ms=self.stamp(), reason='checked_source_returned',
+            sources=[self.source(item['record'], extent, response.get('span')) for item in selections[:16]]), 32)
+        if len(selections) > 16:
+            self.data['complete'] = False
+
+    def rendered(self, entries, bodies, selected, budget, measured, remaining, packing):
+        measure, text = measured
+        wire_bytes = measure(text)
+        self.data['renders'] += 1
+        final = dict(previews=[], bodies=[], required=[], budget_bytes=budget,
+                     serialized_bytes=wire_bytes, remaining_bytes=remaining, packing=packing)
+        for entry in entries[:16]:
+            final['previews'].append(self.source(entry, 'preview', entry.get('summary_span')))
+        for body in bodies[:16]:
+            response = body['response']
+            selections = [response['selection'], *response.get('competing', [])]
+            if len(selections) > 16:
+                self.data['complete'] = False
+                self.data['dropped'] += len(selections) - 16
+            for selection in selections[:16]:
+                final['bodies'].append(self.source(selection['record'],
+                    'span' if response.get('span') else 'whole', response.get('span')))
+            opening = body.get('source_opening_excerpt', {})
+            if opening.get('status') == 'provided':
+                final['bodies'].append(self.source(response['selection']['record'], 'opening', opening.get('span')))
+        for item in selected[:16]:
+            final['required'].append(self.source(item.get('record', {}), 'whole'))
+        for items in (entries, bodies, selected):
+            if len(items) > 16:
+                self.data['complete'] = False
+                self.data['dropped'] += len(items) - 16
+        for key in ('previews', 'bodies', 'required'):
+            if len(final[key]) > 16:
+                self.data['complete'] = False
+                self.data['dropped'] += len(final[key]) - 16
+                final[key] = final[key][:16]
+        self.data['final'] = final
+
+    def task(self, source):
+        self.data['task_source'] = self.source(source, 'whole')
+
+    def finish(self, returned, failed):
+        self.set_phase('finished')
+        self.data.update(status='error' if failed else 'bridge_returned', elapsed_ms=self.stamp(),
+                         returned_context_bytes=len(returned.encode()) if isinstance(returned, str) and not failed else 0)
+        if failed:
+            self.data.pop('final', None)
+        elif 'final' not in self.data:
+            self.data.update(complete=False, final_unobserved=True)
+
+    def flush(self, deadline):
+        # Optional local observation: no wait/retry/fsync or network call. A slow
+        # filesystem can still delay this write; it is not a real-time guarantee.
+        if time.monotonic() >= deadline:
+            return
+        parent = self.directory.parent
+        for path in (parent, self.directory):
+            if path == self.directory:
+                path.mkdir(mode=0o700, exist_ok=True)
+            stat = path.lstat()
+            if path.is_symlink() or not path.is_dir() or stat.st_uid != os.getuid() or stat.st_mode & 0o077:
+                return
+        raw = json.dumps(self.data, ensure_ascii=True, separators=(',', ':')).encode()
+        if len(raw) > 32768:
+            self.data.update(complete=False, dropped=self.data['dropped']+1, rpc=[], routes=[])
+            self.data.pop('final', None)
+            raw = json.dumps(self.data, separators=(',', ':')).encode()
+        path = self.directory / (str(uuid.uuid4()) + '.json')
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'wb') as out:
+            out.write(raw)
+
+
 def checked_file(spec):
     path = Path(spec['path'])
     if not path.is_absolute() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o022:
@@ -265,6 +435,13 @@ def output(config, event, observation, state, control, *, revalidate, outer_dead
         try:
             memory = metrics.get('memory')
             reporter = getattr(engine, 'report_recall', None)
+            trace = getattr(memory, 'inbox_trace', None)
+            if reports is not None and trace is not None:
+                try:
+                    trace.finish(result, failure is not None)
+                    reports.append((trace.flush, dict(deadline=outer_deadline)))
+                except Exception:  # A trace failure cannot suppress the existing metric report.
+                    pass
             if reports is not None and memory is not None and callable(reporter):
                 error_class = None if failure is None else next((label for kind, label in (
                     (engine.HookError, 'HookError'), (BlockingIOError, 'BlockingIOError'),
@@ -345,6 +522,9 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         started = time.monotonic()
         deadline = min(started + 5, outer_deadline)
         memory = engine.Memory(memory_config, session)
+        if (memory_config.get('inbox_recall_trace') is True
+                and getattr(engine, 'INBOX_ROUTE_TRACE_VERSION', None) == 1):
+            memory.inbox_trace = InboxRouteTrace(directory, identity)
         # This required-only search also verifies actual destination before a
         # source body can become a query. Profile filenames are not authority.
         required = memory.search(engine.project_root(event).name, room=engine.RECALL_SEARCH_ROOM,
@@ -352,6 +532,7 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         hosted(required)
         if metrics is not None:
             metrics['memory'] = memory
+        engine.trace_phase(memory, 'task_source') if hasattr(engine, 'trace_phase') else None
         body = None
         source = None
         label = 'required_only'
@@ -371,6 +552,8 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                 body = source_body(history, ref)
                 source = dict(**ref, body_sha256=hashlib.sha256(body.encode()).hexdigest(), body=body,
                               historical=True, sender=publication['from'])
+                if hasattr(engine, 'trace_observe'):
+                    engine.trace_observe(memory, 'task', source)
                 label = 'task_source'
         budget = memory_config['context_bytes']
         codex_path = directory / (session + '.memory-budget.json')
@@ -423,8 +606,10 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         if body is not None:
             # Only retrieval sees this text. Original event/owner dialogue and
             # capture state are never rewritten with sender-authored task data.
+            engine.trace_phase(memory, 'intent') if hasattr(engine, 'trace_phase') else None
             semantic = bool(memory_config.get('semantic_fallback'))
             intent = engine.retrieval_intent(dict(event, prompt=body), {}, semantic=semantic)
+            engine.trace_phase(memory, 'optional_search') if hasattr(engine, 'trace_phase') else None
             try:
                 found = memory.search(intent['query'], room=engine.RECALL_SEARCH_ROOM, entities=intent['files'],
                                       semantic=semantic,
@@ -438,9 +623,11 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
                 selected = found.get('selected', [])
                 if cost(engine.render_recall(selected, [])) > budget:
                     raise ValueError('whole required task context exceeds delivery budget')
+                engine.trace_phase(memory, 'expansion') if hasattr(engine, 'trace_phase') else None
                 text = engine.eager_agent_candidates(memory, found, budget, status, deadline, measure=cost)
                 if status.get('outcome') != 'delegated':
                     label = 'optional_recall_unavailable'
+        engine.trace_phase(memory, 'final_persistence') if hasattr(engine, 'trace_phase') else None
         if status.get('outcome') != 'delegated':
             prefix_text = text + '\nNo new optional lookup allowance. Exact-source reads, if needed, must fit '
             provisional = prefix_text + str(budget) + ' remaining UTF-8 bytes including result envelopes.'

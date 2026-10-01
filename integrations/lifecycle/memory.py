@@ -36,6 +36,7 @@ SEMANTIC_PAGE_LIMIT = 4
 SEMANTIC_SEARCH_ROOM = 64000
 MAX_PULLED_CANDIDATES = 8
 INBOX_RECALL_VERSION = 1
+INBOX_ROUTE_TRACE_VERSION = 1
 PREVIEW_MODEL_SECONDS = 5
 SEMANTIC_MODEL_SECONDS = 8
 SELECTOR_INPUT_BYTES = 24000
@@ -328,6 +329,21 @@ def whole_ms(seconds):
     return max(0, int(round(seconds * 1000)))
 
 
+def trace_observe(memory, method, *args):
+    trace = getattr(memory, 'inbox_trace', None)
+    if trace is not None:
+        try:
+            getattr(trace, method)(*args)
+        except Exception:  # Optional observation must not affect source delivery.
+            trace.data['complete'] = False
+
+
+def trace_phase(memory, phase):
+    trace = getattr(memory, 'inbox_trace', None)
+    if trace is not None:
+        trace_observe(memory, 'set_phase', phase)
+
+
 class RecallMeter:
     """What one hook invocation observed about the cost of its own recall.
 
@@ -460,11 +476,15 @@ class Memory:
                 raise BudgetRefused("receipt expansion credits exhausted")
             self.pull_calls[receipt] = self.pull_calls.get(receipt, 0) + 1
         started = time.monotonic()
+        result = None
+        outcome = 'error'
         try:
             result = run_json(self.command + [operation, *args],
                               body=None if payload is None else encoded(payload), timeout=timeout)
+            outcome = 'returned' if result.get('ok') is True else 'error'
         finally:
             self.meter.operation(operation, started)
+            trace_observe(self, 'rpc', operation, started, payload, result, outcome)
         if result.get("ok") is not True or not isinstance(result.get("data"), dict):
             raise HookError("Cairn did not confirm the operation")
         if operation == "search":
@@ -849,7 +869,7 @@ def optional_delivery_view(candidate):
     return dict(candidate, response=dict(response, selection=selection))
 
 
-def render_agent_candidates(selected, result, budget, status, bodies=(), inspection=None, measure=None):
+def render_agent_candidates(selected, result, budget, status, bodies=(), inspection=None, measure=None, observer=None):
     measure = measure or (lambda text: len(text.encode()))
     cue = AGENT_TOOLS_CUE.format(budget=budget)
     omitted = result.get("omitted", {})
@@ -890,6 +910,7 @@ def render_agent_candidates(selected, result, budget, status, bodies=(), inspect
             raise ContextRefused("whole candidate group exceeds automatic context allowance")
         status["outcome"] = "delegation_omitted"
         status["rejected"]["delegation_context_budget"] = 1
+        trace_observe(observer, 'route', 'delegation_context_budget')
         return render_recall(selected, []) if selected else ""
     # Bodies and previews share the automatic ceiling. Legacy preview-only
     # rendering keeps its half-room rule without a second reserve deduction.
@@ -901,18 +922,26 @@ def render_agent_candidates(selected, result, budget, status, bodies=(), inspect
     entries = [entry for entry in result.get("index", [])
                if (entry["record_id"], entry["version"]) not in delivered]
     packed = []
+    packing_stop = 'end'
     for group in candidate_groups(entries):
         if len(packed) + len(group) > 3:
+            packing_stop = 'preview_limit'
             break
         group = [{key: value for key, value in entry.items() if key != "pull_command"} for entry in group]
         candidate = render([*packed, *group])
         if measure(candidate) - base_bytes > preview_bytes:
+            packing_stop = 'preview_context_budget'
             break
         packed.extend(group)
         text = candidate
     status.update(outcome="delegated", candidate_previews=len(packed), candidate_body_records=len(delivered))
     status["native_allowance_bytes"] = budget - measure(text)
-    return render(packed, status["native_allowance_bytes"])
+    final = render(packed, status["native_allowance_bytes"])
+    if getattr(observer, 'inbox_trace', None) is not None:
+        trace_observe(observer, 'rendered', packed, bodies, selected, budget, (measure, final), status["native_allowance_bytes"],
+                      dict(ceiling_bytes=ceiling, base_bytes=base_bytes, preview_bytes=preview_bytes,
+                           returned_entries=len(entries), stop=packing_stop))
+    return final
 
 
 def fit_optional_excerpt(entry, candidate, render, deadline):
@@ -972,14 +1001,15 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
     # A whole body needs a checked immutable identity; legacy/test envelopes may
     # offer only previews, which remain available without speculative reads.
     if not any(re.fullmatch(r"[0-9a-f]{64}", entry.get("body_sha256", "")) for entry in entries):
-        return render_agent_candidates(selected, result, budget, status, measure=measure)
+        return render_agent_candidates(selected, result, budget, status, measure=measure, observer=memory)
     inspection = dict(pull_calls=0, remaining_pull_calls=4, delivered_records=0, refusals={})
     bodies = []
     oversized = None
-    text = render_agent_candidates(selected, result, budget, status, bodies, inspection, measure=measure)
+    text = render_agent_candidates(selected, result, budget, status, bodies, inspection, measure=measure, observer=memory)
     if status["outcome"] != "delegated":
         return text
     for group in candidate_groups(entries):
+        trace_observe(memory, 'route', 'candidate_start', group)
         if bodies:
             # A later refusal must not evict an already selected source. Check
             # the bounded worst-case bookkeeping before spending another call;
@@ -991,23 +1021,28 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
             future = dict(inspection, refusals={**inspection["refusals"], **possible_refusals})
             try:
                 render_agent_candidates(selected, result, budget, dict(status, rejected=dict(status["rejected"])),
-                                        bodies, future, measure=measure)
+                                        bodies, future, measure=measure, observer=memory)
             except ContextRefused:
+                trace_observe(memory, 'route', 'protected_body_budget', group)
                 break
         if inspection["delivered_records"] + len(group) > 2:
             inspection["refusals"]["record_limit"] = 1
+            trace_observe(memory, 'route', 'record_limit', group)
             oversized = None
             break
         if not all(re.fullmatch(r"[0-9a-f]{64}", entry.get("body_sha256", "")) for entry in group):
             inspection["refusals"]["unverifiable_identity"] = 1
+            trace_observe(memory, 'route', 'unverifiable_identity', group)
             oversized = None
             break
         if time.monotonic() >= deadline:
             inspection["refusals"]["deadline"] = 1
+            trace_observe(memory, 'route', 'deadline', group)
             oversized = None
             break
         if inspection["pull_calls"] >= EAGER_PULL_LIMIT:
             inspection["refusals"]["pull_limit"] = 1
+            trace_observe(memory, 'route', 'pull_limit', group)
             break
         # A later read failure remains terminal; it cannot revive an earlier
         # omitted passage. Only the last checked attempt can be recovered.
@@ -1025,24 +1060,29 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
                            or hashlib.sha256(item["record"]["body"].encode()).hexdigest()
                            != expected[key]["body_sha256"] for key, item in zip(actual, selections))):
                 raise HookError("whole competing candidate identity changed")
+            trace_observe(memory, 'validated', 'whole', pulled)
             candidate = dict(pull_arguments=group[0]["pull_arguments"], response=pulled)
             tentative = dict(inspection, delivered_records=inspection["delivered_records"] + len(group))
-            text = render_agent_candidates(selected, result, budget, status, [*bodies, candidate], tentative, measure=measure)
+            text = render_agent_candidates(selected, result, budget, status, [*bodies, candidate], tentative, measure=measure, observer=memory)
             bodies.append(candidate)
             inspection = tentative
             continue
         except BudgetRefused:
             inspection["refusals"]["whole_pull_budget"] = 1
+            trace_observe(memory, 'route', 'whole_pull_budget', group)
         except ContextRefused:
             inspection["refusals"]["whole_context_budget"] = 1
+            trace_observe(memory, 'route', 'whole_context_budget', group)
         except HookError:
             inspection["refusals"]["whole_pull_unavailable"] = 1
+            trace_observe(memory, 'route', 'whole_pull_unavailable', group)
             break
         entry = group[0]
         if (len(group) != 1 or entry.get("class") not in ("A", "B")
                 or entry.get("mandatory") or entry.get("conflicts")
                 or any(item.get("mandatory") and item.get("record", {}).get("record_id") == entry["record_id"]
                        for item in selected)):
+            trace_observe(memory, 'route', 'group_not_excerptable', group)
             break
         try:
             # Validate the hint before spending another receipt call. A checked
@@ -1050,31 +1090,37 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
             optional_span_hint(entry)
             if time.monotonic() >= deadline:
                 inspection["refusals"]["deadline"] = 1
+                trace_observe(memory, 'route', 'deadline', group)
                 break
             if pulled is None:
                 if inspection["pull_calls"] >= EAGER_PULL_LIMIT:
                     inspection["refusals"]["pull_limit"] = 1
+                    trace_observe(memory, 'route', 'pull_limit', group)
                     break
                 inspection["pull_calls"] += 1
                 inspection["remaining_pull_calls"] = 4 - inspection["pull_calls"]
                 passage = current_span_pull(memory, entry, deadline)
             else:
+                trace_observe(memory, 'route', 'span_from_paid_whole', group)
                 passage = excerpt_from_full(entry, pulled)
+            trace_observe(memory, 'validated', 'span', passage)
             candidate = dict(pull_arguments=entry["pull_arguments"], response=passage)
             candidate = attach_source_opening(memory, entry, pulled, candidate, inspection, deadline,
                                               lambda item: render_agent_candidates(
                                                   selected, result, budget, status, [*bodies, item],
                                                   dict(inspection, delivered_records=inspection["delivered_records"] + 1),
-                                                  measure=measure))
+                                                  measure=measure, observer=memory))
             tentative = dict(inspection, delivered_records=inspection["delivered_records"] + 1)
-            text = render_agent_candidates(selected, result, budget, status, [*bodies, candidate], tentative, measure=measure)
+            text = render_agent_candidates(selected, result, budget, status, [*bodies, candidate], tentative, measure=measure, observer=memory)
             bodies.append(candidate)
             inspection = tentative
         except BudgetRefused:
             inspection["refusals"]["span_pull_budget"] = 1
+            trace_observe(memory, 'route', 'span_pull_budget', group)
             break
         except ContextRefused:
             inspection["refusals"]["span_context_budget"] = 1
+            trace_observe(memory, 'route', 'span_context_budget', group)
             # Recover an empty delivery only. Further refusal metadata could
             # otherwise displace an already admitted body at the context limit.
             if bodies:
@@ -1083,26 +1129,30 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
             continue
         except HookError:
             inspection["refusals"]["span_unavailable"] = 1
+            trace_observe(memory, 'route', 'span_unavailable', group)
             break
     # Preserve the existing chance to deliver a later whole source. Only recover
     # checked bytes when ordinary inspection ended without any supplied body.
     if not bodies and oversized is not None:
         entry, candidate = oversized
+        trace_observe(memory, 'route', 'fit_start', [entry])
         tentative = dict(inspection, delivered_records=1)
         try:
             fitted = fit_optional_excerpt(entry, candidate, lambda item: render_agent_candidates(
-                selected, result, budget, status, [item], tentative, measure=measure), deadline)
+                selected, result, budget, status, [item], tentative, measure=measure, observer=memory), deadline)
         except ContextRefused:
+            trace_observe(memory, 'route', 'fit_refused', [entry])
             if time.monotonic() >= deadline:
                 inspection["refusals"]["deadline"] = 1
         else:
+            trace_observe(memory, 'route', 'fit_admitted', [entry])
             bodies.append(fitted)
             inspection = tentative
     # Failure/omission metadata is part of the final measured context, never a
     # silent truncation or a relevance/success assertion.
     while True:
         try:
-            text = render_agent_candidates(selected, result, budget, status, bodies, inspection, measure=measure)
+            text = render_agent_candidates(selected, result, budget, status, bodies, inspection, measure=measure, observer=memory)
             status["candidate_inspection"] = inspection
             return text
         except ContextRefused:
@@ -1120,6 +1170,7 @@ def eager_agent_candidates(memory, result, budget, status, deadline, measure=Non
             removed = bodies.pop()
             inspection["delivered_records"] -= 1 + len(removed["response"].get("competing", []))
             inspection["refusals"]["whole_context_budget"] = 1
+            trace_observe(memory, 'route', 'whole_context_budget', group)
 
 
 def native_uuid(value):

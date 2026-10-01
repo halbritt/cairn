@@ -199,3 +199,36 @@ channel activation, native-session restart, or measured task-benefit claim.
 Focused tests exercise
 public hook JSON/exit behavior and disposable transport fixtures; they do not
 establish task benefit, live lease races, model compliance, or host adoption.
+
+### Optional local route diagnostics
+
+The pinned memory config may set `inbox_recall_trace: true` to observe the next
+ordinary inbox invocations. It is off by default and requires a bridge and engine
+with the route-trace contract. An older engine remains unobserved. Enabling it is
+an explicit config/binding update; task text cannot enable diagnostics.
+
+The bridge writes one private JSON file below the memory state directory's
+`inbox-recall-traces/` after both locks release, within the existing reporting
+deadline. It makes no additional Cairn or model calls. The trace includes host
+attempt identifiers, checked source IDs/versions/hashes/spans, monotonic phase
+and RPC durations, expansion/refusal branches, packing bounds and the final
+bridge-returned source extents. `checked_source_returned` can precede a packing
+refusal and is not delivery. `bridge_returned` does not acknowledge native
+consumption or attention, and a later coordinator/host failure is outside this
+bridge observation. A bridge persistence failure records error and zero returned
+bytes, without a final emission list.
+
+No task/query/note bodies, reasoning, handles, commands, exception messages,
+credentials or token fields are retained. The sidecar is separate from the model
+context and durable grant. At most eight RPCs, eight phase segments, 32 route
+events and 16 source entries per collection are recorded, with a 32KiB file cap.
+`complete: false` marks metadata collection errors or truncation; missing files
+mean unknown observation. Invalid/unvalidated hosted destinations produce no
+trace. Files and their directory must be owned and private; unsafe paths, write
+failures or an elapsed deadline omit the trace without changing hook behavior.
+The local write has no retries/fsync, but filesystem stalls cannot be assigned a
+hard real-time bound. File count is per invocation: turn this diagnostic off after
+the bounded observation and manage retained files explicitly.
+
+The trace does not contain lexical/dense ranks or establish applicability,
+currentness of claims within a note, useful action or comparative benefit.
