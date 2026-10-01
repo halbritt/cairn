@@ -228,6 +228,9 @@ def validate_binding(config, *, require_enabled=False):
         raise ValueError('incompatible inbox recall profile binding')
     spec = importlib.util.spec_from_file_location('cairn_bound_memory', files['engine'][0])
     engine = importlib.util.module_from_spec(spec)
+    # The engine reports a source snapshot as its caller origin. Hand it the exact pinned bytes executed
+    # below so that snapshot cannot come from a second read of the path; an engine without it ignores this.
+    engine.__dict__['_CAIRN_VALIDATED_SOURCE'] = files['engine'][1]
     exec(compile(files['engine'][1], str(files['engine'][0]), 'exec'), engine.__dict__)
     if getattr(engine, 'INBOX_RECALL_VERSION', None) != 1:
         raise ValueError('pinned memory engine lacks the inbox recall contract')

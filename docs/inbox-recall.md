@@ -25,7 +25,11 @@ writable by another user, and is pinned by SHA-256:
 }
 ```
 
-The memory engine must implement inbox recall version 1. Configurations must
+The memory engine must implement inbox recall version 1. The bridge executes the
+engine's pinned bytes and hands those same bytes to it, so a current engine's
+reported [caller-origin](client-observations.md#python-lifecycle-memory-origin)
+`implementation_id` equals the manifest's `engine.sha256`; an older engine reports
+none. Configurations must
 agree on explicit `harness: "codex"` or `harness: "claude"`, `cairn`, `socket`, `token_file`,
 and repository. Memory uses `recall_mode: "agent_tools"` and a byte allowance
 between 1000 and 9500. Coordination uses `native_delivery: true`. State directories

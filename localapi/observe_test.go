@@ -182,6 +182,29 @@ func TestCallerOriginIsAllowlistedAndBounded(t *testing.T) {
 	}
 }
 
+// The Python lifecycle memory producer reports the full lowercase SHA-256 of its observed source as
+// implementation_id, or only its component when the source is unknown. Both exact forms must stay
+// within the existing allowlist: a reported claim, never a build, path or identity.
+func TestCallerOriginAcceptsTheLifecycleProducersSourceDigestAndUnknownForms(t *testing.T) {
+	digest := strings.Repeat("0123456789abcdef", 4)
+	known := `{"component":"lifecycle-memory","implementation_id":"` + digest + `","basis":"reported"}`
+	unknown := `{"component":"lifecycle-memory","basis":"reported"}`
+	if len(known) > 512 {
+		t.Fatalf("the producer's declaration is %d bytes", len(known))
+	}
+	if origin, ok := ParseCallerOrigin(known); !ok || origin.ImplementationID != digest || origin.Component != "lifecycle-memory" || origin.Basis != "reported" {
+		t.Fatalf("%v %v", origin, ok)
+	}
+	if origin, ok := ParseCallerOrigin(unknown); !ok || origin.ImplementationID != "" {
+		t.Fatalf("%v %v", origin, ok)
+	}
+	origin, _ := ParseCallerOrigin(known)
+	parsed, state := parseDiagnostics([]string{declare(1, func(d *ClientDiagnostics) { d.Origin = origin })})
+	if state != MetadataPresent || parsed.Origin == nil || parsed.Origin.ImplementationID != digest {
+		t.Fatalf("%v %+v", state, parsed)
+	}
+}
+
 // ---- cohorts, retention, caps ----------------------------------------------
 
 func TestCohortsGroupByPrincipalMachineAndValidatedDescriptor(t *testing.T) {

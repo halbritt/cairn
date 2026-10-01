@@ -16,6 +16,24 @@ and MCP processes.
 
 ## 2026-10-01
 
+- The Python lifecycle memory module now reports its own origin on the existing
+  `CAIRN_CALLER_DIAGNOSTICS` channel (CAIRN-114, producer only): its `Memory.call`
+  operations and `recall-observation` report declare `component:
+  "lifecycle-memory"`, `basis: "reported"` and, when its one `.py` source is
+  readable, regular and at most 1 MiB, an `implementation_id` that is that source's
+  full lowercase SHA-256, so `cairn clients` can tell a hook artifact from the Go
+  CLI that executes. The ID is a source snapshot taken once when the module is
+  initialized (an import, a script run or the bound inbox engine's pinned bytes),
+  not loaded-code attestation; a missing, oversize, nonregular, bytecode-only or
+  concurrently changed source leaves it absent. Inherited caller declarations are
+  replaced or discarded in a copied child environment; arguments, bodies, request
+  UUIDs, retries, credits, deadlines, hook output and recall telemetry are
+  unchanged, and the selector, coordination and watch callers are not relabeled.
+  No receiver, header, schema, database or installer change. Installed hooks keep
+  reporting nothing until reinstalled. This is not a client census, stale-release
+  detector or updater, and does not complete CAIRN-114. See
+  [observed clients](docs/client-observations.md#python-lifecycle-memory-origin).
+
 - Add `cairn adopt-context RECEIPT_UUID RUN_DIRECTORY`, an operator command that
   brings one historical run's `context.txt` into managed forgetting (CAIRN-15).
   It accepts only a finished run of the invoking channel with a retained,
