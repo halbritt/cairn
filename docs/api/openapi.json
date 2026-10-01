@@ -1487,6 +1487,100 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.CandidateFacts"
       },
+      "core.CandidateReference": {
+        "properties": {
+          "body_sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cost_bytes": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "entity_match": {
+            "type": "boolean"
+          },
+          "exact_text_match": {
+            "type": "boolean"
+          },
+          "facts_present": {
+            "type": "boolean"
+          },
+          "failure_match": {
+            "type": "boolean"
+          },
+          "idf_score": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lexical_matches": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "mandatory": {
+            "type": "boolean"
+          },
+          "rank": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "record_id": {
+            "type": "string"
+          },
+          "scope_specificity": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "semantic_score": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "version": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "body_sha256",
+          "cost_bytes",
+          "entity_match",
+          "exact_text_match",
+          "facts_present",
+          "failure_match",
+          "idf_score",
+          "lexical_matches",
+          "mandatory",
+          "rank",
+          "reason",
+          "record_id",
+          "scope_specificity",
+          "semantic_score",
+          "version"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.CandidateReference"
+      },
       "core.CiteRequest": {
         "properties": {
           "evidence_citations": {
@@ -4137,6 +4231,122 @@
         ],
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.Expansion"
+      },
+      "core.ExplainPageRequest": {
+        "properties": {
+          "after_record_id": {
+            "type": "string"
+          },
+          "after_version": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "limit": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "receipt_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt_id"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.ExplainPageRequest"
+      },
+      "core.ExplainPageRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "after_record_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "after_version": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limit": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "receipt_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.ExplainPageRequest"
+      },
+      "core.ExplanationPage": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/core.CandidateReference"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "coverage": {
+            "type": "string"
+          },
+          "explanation_version": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "historical": {
+            "type": "boolean"
+          },
+          "more": {
+            "type": "boolean"
+          },
+          "next_after_record_id": {
+            "type": "string"
+          },
+          "next_after_version": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "string"
+          },
+          "seal": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidates",
+          "coverage",
+          "explanation_version",
+          "historical",
+          "more",
+          "receipt_id",
+          "schema",
+          "seal"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.ExplanationPage"
       },
       "core.FailureMatch": {
         "properties": {
@@ -17701,6 +17911,150 @@
         "x-cairn-request-limit-bytes": 131072,
         "x-cairn-requires-local-destination": false,
         "x-cairn-retry": "request-id",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "server.go"
+      }
+    },
+    "/v1/explain-page": {
+      "post": {
+        "operationId": "explain-page",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "after_record_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "after_version": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "limit": {
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "receipt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.ExplainPageRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/core.ExplanationPage"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.ExplainPageRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.ExplainPageRequest",
+          "response": "github.com/halbritt/cairn/core.ExplanationPage"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "allowed",
+        "x-cairn-remote-roles": [
+          "agent"
+        ],
+        "x-cairn-request-limit-bytes": 4096,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "read",
         "x-cairn-session-headers": "optional",
         "x-cairn-source": "server.go"
       }

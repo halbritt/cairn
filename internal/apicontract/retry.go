@@ -22,7 +22,7 @@ var retryByOperation = map[string]string{
 	"evidence-impact": "read", "get": "read", "handoff-request-status": "read", "history": "read",
 	"pool-list": "read", "worker-list": "read", "wake-attempts": "read", "wake-control": "read",
 	"preview-retract": "read", "supersession": "read", "refusal": "read",
-	"recompile": "read", "run-index": "read", "run-package": "read",
+	"recompile": "read", "explain-page": "read", "run-index": "read", "run-package": "read",
 	"run-report": "read", "run-status": "read", "use-report": "read",
 	"session-inbox-control": "read", "session-inbox-pending": "read", "session-inbox-ready": "read",
 	"version": "read", "clients": "read",

@@ -46,6 +46,7 @@ JSON operations (one request on stdin):
   assessments-page  Read owned task-review history in bounded pages
   assess-run   Append or correct a qualitative task review
   recompile    Reconstruct an owned historical receipt for inspection
+  explain-page Inspect an owned receipt's retained candidate metadata in pages
 
 Use cairn agent OPERATION --help for these JSON operations and their examples.
 Save your request in a file, then execute:
@@ -182,6 +183,9 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	case "recall-observation":
 		detail = "Report one lifecycle recall hook invocation's metrics: status, elapsed and\nsearch/selector/pull milliseconds, selector calls, model, token usage and\nprovider-reported cost, and injected bytes, for the harness named. Omit any value\nthe hook did not observe: omission is unknown, never zero, and a cost is only what\nthe provider reported. Prompt, query, note and model text are not accepted. Named\nreceipts must be this profile's own, in the same repository. The report is\ntestimony; it does not prove delivery or usefulness. It appears in use-report.\n"
 		example = `{"request_id":"NEW_UUID","repo":"REPOSITORY","receipt_ids":["RECEIPT_UUID"],"harness":"claude","hook_event":"UserPromptSubmit","method":"cairn-lifecycle/recall-meter/1","status":"completed","elapsed_ms":1840,"search_ms":210,"selector_ms":1390,"pulls_ms":120,"selector_calls":1,"selector_model":"MODEL","selector_model_source":"reported","selector_usage_calls":1,"selector_input_tokens":2100,"selector_output_tokens":40,"selector_cost_calls":1,"selector_cost_usd":0.0121,"injected_bytes":3300}`
+	case "explain-page":
+		detail = "Inspect retained candidate references, ranks and omission reasons for an\nowned receipt. No bodies, previews, new handles or credits are returned. Use\nthe original owner and destination profile; current disclosure checks cover\nevery retained candidate on every page. Any inaccessible candidate refuses the\nwhole inspection without partial rows. Start without a cursor; pass\nnext_after_record_id and next_after_version as after_record_id and after_version\nwhile more is true. Omitted/zero limit means 20; maximum 100.\nThis is historical diagnostic metadata, not verified reconstruction, proof of\nrelevance or permission to act. No request UUID or original query is required.\n"
+		example = `{"receipt_id":"RECEIPT_UUID","limit":20}`
 	case "recompile":
 		detail = "Inspect an owned receipt's retained read set using its original query and\nentities, if any. Use the original owner and destination profile. Later notes\ndo not join the old set, and current privacy and forgetting still apply.\nA saved query digest cannot recover missing query text. This is historical\ninspection, not permission to launch or deliver an old package.\n"
 		example = `{"receipt_id":"RECEIPT_UUID","query":"original query"}`

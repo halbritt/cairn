@@ -235,6 +235,17 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 			}
 			return c.store.Compile(ctx, req, c.destination)
 		})
+	case "/v1/explain-page":
+		serveJSON(w, r, func(ctx context.Context, req core.ExplainPageRequest) (core.ExplanationPage, error) {
+			page, err := c.store.ExplainPageForDestination(ctx, req, c.destination)
+			if err != nil {
+				return core.ExplanationPage{}, err
+			}
+			if err = boundEnvelope(page, 32*1024); err != nil {
+				return core.ExplanationPage{}, err
+			}
+			return page, nil
+		})
 	case "/v1/recompile":
 		serveJSON(w, r, func(ctx context.Context, req core.RecompileRequest) (any, error) {
 			pkg, err := c.store.RecompileForDestination(ctx, req, c.destination)

@@ -87,7 +87,7 @@ var remoteOperations = map[string]bool{
 	"version": true, "clients": true,
 	"create": true, "edit": true, "revise": true, "append": true, "replace": true,
 	"cite": true, "delete": true, "supersede": true,
-	"index": true, "expand": true, "expand-evidence": true, "compile": true, "recompile": true,
+	"index": true, "expand": true, "expand-evidence": true, "compile": true, "recompile": true, "explain-page": true,
 	"evidence": true, "history": true, "get": true, "usage": true, "usage-coverage": true, "recall-observation": true,
 	"agent-register": true, "agent-context": true, "agent-heartbeat": true, "agent-leave": true, "agent-resolve": true, "agent-directory": true,
 	"session-inbox-ready": true, "session-inbox-pending": true, "session-inbox-claim": true, "session-inbox-reconcile": true, "session-inbox-control": true, "session-delivery-observe": true,

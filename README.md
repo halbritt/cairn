@@ -84,6 +84,9 @@ with a scoped observer token instead of direct database access.
 The same profile can [recompile its historical receipts](docs/currentness-and-replay.md#recompile-a-retained-read-set)
 with `cairn agent ... recompile`. Inspection preserves the original read set and
 seal while enforcing receipt ownership, current privacy and forgetting rules.
+Bounded [candidate inspection](docs/currentness-and-replay.md#inspect-retained-candidate-decisions)
+also exposes retained ranks and omission reasons through `agent explain-page`,
+without returning note bodies or granting new delivery rights.
 
 ## Get started
 

@@ -60,7 +60,7 @@ a home directory, opening credentials or contacting the API. Flag help for
 `search`, `remember`, `pull`, and `pull-evidence` is generated from the same flag
 definitions used by normal execution, and includes positional usage.
 JSON-operation help covers `edit`, `revise`, `append`, `replace`, `cite`, `history`,
-`assessments`, `assess-run`, and `recompile`; `-h` also works. Replace example
+`assessments`, `assess-run`, `recompile`, and `explain-page`; `-h` also works. Replace example
 placeholders with actual values, then pass one JSON request on stdin. Connection
 flags go before the operation. Normal responses retain their JSON envelope and
 existing access checks.
@@ -253,7 +253,7 @@ and needs no stdin request. [Build identity and limitations](build-identity.md).
 Authenticated `clients` takes `{}` or `{"limit":1..100}` and lists only the caller's
 own volatile client observations; see [observed clients](client-observations.md).
 
-Operations: `create`, `edit`, `revise`, `append`, `replace`, `cite`, `delete`, ordinary `supersede`, `compile`, `recompile`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
+Operations: `create`, `edit`, `revise`, `append`, `replace`, `cite`, `delete`, ordinary `supersede`, `compile`, `recompile`, `explain-page`, `index`, `expand`, `expand-evidence`, `get`, `history`, `evidence`, `usage`, `use-report`, `run-report`, `run-status`,
 local-profile-only `conflicts`, `conflict`, `preview-retract` and `supersession`,
 `assess-run`, `assessments`, `assessments-page`, and observer-only `spawn`, `terminal`, `task-state`, `bind-run`,
 `run-package`, `run-index`, `claim-run`, `link-run-retrieval`, `register-context`, `delivery`, `outcome`, `usage-coverage`. Ordinary agent profiles, local or remote, may also report their own lifecycle hook's `recall-observation` (metrics only; see [recall latency and selector cost](use-outcome-loop.md#recall-latency-and-selector-cost)); the protected `use-report` that shows it stays local-profile-only. All use `POST /v1/OPERATION` with JSON
@@ -266,6 +266,13 @@ for paging and historical-inspection limits.
 no request UUID. It returns a historical package only to the original caller and
 destination, subject to current privacy and forgetting checks. See
 [historical reconstruction](currentness-and-replay.md#recompile-a-retained-read-set).
+`explain-page` takes `receipt_id`, optional `limit` (default 20, maximum 100),
+and an optional `after_record_id`/`after_version` cursor pair. It returns bounded
+historical candidate metadata without bodies or new delivery rights. Every page
+checks current disclosure for the entire retained evaluated set; one unavailable
+candidate refuses the whole inspection. See
+[candidate inspection](currentness-and-replay.md#inspect-retained-candidate-decisions)
+for continuation, byte limits and the distinction from verified reconstruction.
 `assessments` takes `receipt_id` and returns the owner's full assessment versions
 in ascending order, including reasons and evidence IDs. The profile's repository
 and destination must match the receipt. It returns no evidence or package bodies;

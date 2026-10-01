@@ -201,6 +201,57 @@ separately distinguish original-time availability from later recurrence scenario
 The [E3 audit](verification/replay-requirements-2026-09-10.md) identifies the
 implemented contracts and the remaining original-incident evidence gap.
 
+## Inspect retained candidate decisions
+
+`cairn agent ... explain-page` reads bounded diagnostic metadata for a receipt
+owned by the authenticated profile. Save the JSON below as
+`candidate-request.json`, replacing `RECEIPT_UUID` with that receipt's ID:
+
+```sh
+cairn agent --token-file "$HOME/.local/share/cairn/hosted-agent.token" explain-page \
+  < candidate-request.json
+```
+
+```json
+{"receipt_id":"RECEIPT_UUID","limit":20}
+```
+
+The result identifies original record versions, pre-packing ranks, omission
+reasons and retained scoring features. It returns no bodies, previews, evidence,
+authority objects, query text, expansion handles or credits. A zero rank means
+unranked. Nullable scores and costs remain unknown when not recorded; a packing
+cost is not the cost of a later source pull.
+
+The default limit is 20, including an omitted or zero `limit`; the maximum is
+100. Pages contain whole entries within a 30 KiB result cap and a 32 KiB API
+success-envelope cap. When `more` is true, pass `next_after_record_id` and
+`next_after_version` back as `after_record_id` and `after_version`, keeping the
+same receipt. Both cursor fields are required together and must name a candidate
+from that receipt. Entries sort by record ID and version, not by rank. New notes
+do not enter this retained set.
+
+Every page checks the original caller, repository and destination. It also checks
+current disclosure and exact-version availability for **every** retained
+candidate, including omitted candidates and entries outside that page. If one
+candidate has become private, forgotten or otherwise unavailable, the entire
+inspection refuses with a generic `PAYLOAD_UNAVAILABLE` response. No partial
+rows, offending identity, counts or continuation cursor accompany that refusal.
+Do not switch profiles to bypass it. Restore admission also applies.
+
+`coverage: retained_evaluated_set` names the records this receipt actually
+evaluated. It excludes records skipped before evaluation, such as hosted-private,
+inactive and out-of-scope records. A full inspection requires starting without a
+cursor and following every page successfully. It is not a census of all memory
+or proof that no relevant guidance existed. Read selected historical sources
+separately before judging their content. Current delivery and permission to act
+remain separate from historical eligibility.
+
+The returned seal identifies the original package; this operation does not verify
+it or reconstruct ranking. Use `recompile` with the original query for that
+separate check. Unsupported explanation formats refuse with `REPLAY_INCOMPLETE`
+rather than an empty result. This read creates no retrieval, delivery, use or
+outcome record and does not replenish an earlier receipt's budget.
+
 ## Historical ranking profiles
 
 Lexical ranker v2 removes a fixed set of English function words. Domain tokens
