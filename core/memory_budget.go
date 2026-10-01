@@ -6,10 +6,15 @@ import "encoding/json"
 // expansion allowance. AvailableTokens remains the context-room policy input.
 // A nil extension preserves every historical schema and its encoded bytes.
 type MemoryBudget struct {
-	Schema       string `json:"schema" cbor:"schema"`
-	Bytes        int    `json:"bytes" cbor:"bytes"`
-	MinPullBytes int    `json:"min_pull_bytes,omitempty" cbor:"min_pull_bytes,omitempty"`
+	Schema           string `json:"schema" cbor:"schema"`
+	Bytes            int    `json:"bytes" cbor:"bytes"`
+	MinPullBytes     int    `json:"min_pull_bytes,omitempty" cbor:"min_pull_bytes,omitempty"`
+	InspectionPolicy string `json:"inspection_policy,omitempty" cbor:"inspection_policy,omitempty"`
+	InspectionStatus string `json:"inspection_status,omitempty" cbor:"inspection_status,omitempty"`
+	SkippedUnits     int    `json:"skipped_units,omitempty" cbor:"skipped_units,omitempty"`
 }
+
+const firstFittingWhole = "first-fitting-whole/1"
 
 func memoryRoom(p SemanticPackage) int {
 	if p.MemoryBudget != nil {
@@ -66,12 +71,30 @@ func validateMemoryBudget(p SemanticPackage) error {
 	}
 	switch b.Schema {
 	case "cairn.memory-budget/1":
-		if b.MinPullBytes == 0 {
+		if b.MinPullBytes == 0 && b.InspectionPolicy == "" && b.InspectionStatus == "" && b.SkippedUnits == 0 {
 			return nil
 		}
 	case "cairn.memory-budget/2":
-		if b.MinPullBytes > 0 && b.MinPullBytes <= min(24000, b.Bytes) {
+		if b.MinPullBytes > 0 && b.MinPullBytes <= min(24000, b.Bytes) && b.InspectionPolicy == "" && b.InspectionStatus == "" && b.SkippedUnits == 0 {
 			return nil
+		}
+	case "cairn.memory-budget/3":
+		if b.InspectionPolicy != firstFittingWhole || b.SkippedUnits < 0 || b.SkippedUnits > 10000 {
+			break
+		}
+		switch b.InspectionStatus {
+		case "ready":
+			if b.MinPullBytes > 0 && b.MinPullBytes <= min(24000, b.Bytes) && len(p.Index) > 0 {
+				return nil
+			}
+		case "no_whole_fits":
+			if b.MinPullBytes == 0 && len(p.Index) == 0 {
+				return nil
+			}
+		case "no_candidates":
+			if b.MinPullBytes == 0 && b.SkippedUnits == 0 && len(p.Index) == 0 {
+				return nil
+			}
 		}
 	}
 	return failure("INTEGRITY_FAILURE", "historical memory budget reserve is invalid")

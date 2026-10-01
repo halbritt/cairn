@@ -69,6 +69,22 @@ func indexEntry(r Record) IndexEntry {
 	return IndexEntry{Entities: r.Entities, RecordID: r.RecordID, Version: r.Version, Class: r.Class, Kind: r.Kind, Summary: summary, BodySHA256: hex.EncodeToString(sum[:])}
 }
 func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation, query string) (SemanticPackage, error) {
+	if p.MemoryBudget != nil && p.MemoryBudget.InspectionPolicy != "" {
+		return packInspectionIndex(p, candidates, evaluations, query)
+	}
+	return packIndexPass(p, candidates, evaluations, query, nil, nil)
+}
+
+func packIndexPass(p SemanticPackage, candidates []candidate, evaluations map[string]*CandidateEvaluation, query string, excluded map[string]bool, wholeCosts map[string]int) (SemanticPackage, error) {
+	inspection := p.MemoryBudget != nil && p.MemoryBudget.InspectionPolicy != ""
+	protected := 0
+	if inspection {
+		budget := *p.MemoryBudget
+		budget.MinPullBytes, budget.SkippedUnits = 0, 0
+		budget.InspectionStatus = "no_candidates"
+		p.MemoryBudget = &budget
+		p.Omitted["WHOLE_PULL_BUDGET"] = 0
+	}
 	if p.AdvisoryConflicts {
 		candidates = allocationUnits(candidates)
 	} else {
@@ -131,6 +147,9 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 				omit("OPTIONAL_BUDGET")
 				continue
 			}
+		}
+		if inspection && protected == 0 {
+			p.MemoryBudget.InspectionStatus = "no_whole_fits"
 		}
 		entries := make([]IndexEntry, 0, len(members))
 		cost := 0
@@ -199,10 +218,54 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 		}
 		// Conflict groups contain only A/B positions; instruction policy still
 		// applies to standalone optional C records.
+		var priorUsage instructionUsage
+		if instructions != nil {
+			priorUsage = instructions.used[c.selection.Category]
+		}
 		if admitted, err := instructions.admit(c.selection, e, p.Omitted); err != nil {
 			return p, err
 		} else if !admitted {
 			continue
+		}
+		if inspection && protected == 0 {
+			id := entries[0].RecordID
+			wholeCost, ok := wholeCosts[id]
+			if !ok {
+				positions := make([]Selection, 0, len(members)-1)
+				for _, member := range members[1:] {
+					positions = append(positions, member.selection)
+				}
+				_, _, payload := wholeExpansionPayload(members[0].selection, positions)
+				encoded, err := json.Marshal(payload)
+				if err != nil {
+					return p, err
+				}
+				wholeCost, err = expansionMemoryCost(encoded, p.MemoryBudget)
+				if err != nil {
+					return p, err
+				}
+				wholeCosts[id] = wholeCost
+			}
+			p.MemoryBudget.MinPullBytes = wholeCost
+			p.MemoryBudget.InspectionStatus = "ready"
+			trial := p
+			trial.Index = entries
+			trial = discoveryStatus(withEntitySchema(trial))
+			indexCost, err := indexMemoryCost(trial)
+			if err != nil {
+				return p, err
+			}
+			if excluded[id] || wholeCost > 24000 || indexCost > indexMemoryRoom(trial) {
+				p.MemoryBudget.MinPullBytes = 0
+				p.MemoryBudget.InspectionStatus = "no_whole_fits"
+				p.MemoryBudget.SkippedUnits++
+				omit("WHOLE_PULL_BUDGET")
+				if instructions != nil {
+					instructions.used[c.selection.Category] = priorUsage
+				}
+				continue
+			}
+			protected = len(entries)
 		}
 		p.Index = append(p.Index, entries...)
 		optionalCost += cost
@@ -213,7 +276,7 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 	}
 	p = withEntitySchema(p)
 	for {
-		if len(p.Index) == 0 && len(p.Selected) == 0 {
+		if len(p.Index) == 0 && len(p.Selected) == 0 && (!inspection || p.MemoryBudget.InspectionStatus != "no_whole_fits") {
 			p.Status = "SCOPE_EMPTY"
 		}
 		p = discoveryStatus(p)
@@ -226,6 +289,9 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 		}
 		if len(p.Index) == 0 {
 			return p, failure("BUDGET_REFUSED", "mandatory bootstrap and index envelope exceed input room")
+		}
+		if inspection && len(p.Index) == protected {
+			return p, errInspectionTargetDoesNotFit
 		}
 		e := p.Index[len(p.Index)-1]
 		if page != nil {
@@ -243,7 +309,7 @@ func packIndex(p SemanticPackage, candidates []candidate, evaluations map[string
 			}
 		}
 	}
-	if page != nil && page.NextOffset != nil && len(p.Index) == 0 {
+	if page != nil && page.NextOffset != nil && len(p.Index) == 0 && !inspection {
 		return p, failure("BUDGET_REFUSED", "index page cannot fit a preview; increase available input room")
 	}
 	return expandPreviewBoundaries(p, candidates, evaluations)
@@ -459,13 +525,9 @@ func (s *Store) prepareExpansion(ctx context.Context, tx pgx.Tx, req ExpandReque
 			if err = check(other); err != nil {
 				return err
 			}
-			other.Reason = "competing indexed position; current eligibility revalidated"
 			companions = append(companions, other)
 		}
 	}
-	sortSelections(companions)
-	// The queryless recheck establishes eligibility, not the original ranking.
-	selection.Reason = "indexed record; current eligibility revalidated"
 	*state = expansionState{memoryBudget: original.MemoryBudget, selection: selection, competing: companions, credits: credits, remaining: remaining}
 	return nil
 }
@@ -505,16 +567,11 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 		Request     ExpandRequest
 		Destination Destination
 	}{req, dest}, func(tx pgx.Tx) (Expansion, error) {
-		selection := state.selection
+		selection, companions, payload := wholeExpansionPayload(state.selection, state.competing)
 		credits, remaining := state.credits, state.remaining
 		method := "authorized-body-pull/1"
 		var span *NoteSpan
-		var payload any = selection
-		if len(state.competing) > 0 {
-			payload = struct {
-				Selection Selection   `json:"selection"`
-				Competing []Selection `json:"competing"`
-			}{selection, state.competing}
+		if len(companions) > 0 {
 			method = "authorized-advisory-group-pull/1"
 		}
 		if req.Span != nil {
@@ -549,12 +606,12 @@ func (s *Store) Expand(ctx context.Context, req ExpandRequest, dest Destination)
 			return Expansion{}, err
 		}
 
-		for _, position := range append([]Selection{selection}, state.competing...) {
+		for _, position := range append([]Selection{selection}, companions...) {
 			if _, err = tx.Exec(ctx, `INSERT INTO cairn.usage_observation(observation_id,receipt_id,record_id,version,signal,witness,method) VALUES($1,$2,$3,$4,'expanded','instrumented',$5)`, uuid.NewString(), req.ReceiptID, position.Record.RecordID, position.Record.Version, method); err != nil {
 				return Expansion{}, err
 			}
 		}
-		return Expansion{Selection: selection, Competing: state.competing, CreditsRemaining: credits - 1, BytesRemaining: remaining - cost, Span: span}, nil
+		return Expansion{Selection: selection, Competing: companions, CreditsRemaining: credits - 1, BytesRemaining: remaining - cost, Span: span}, nil
 	}, guard)
 }
 func sameSelectionFacts(a, b []Selection) bool {
