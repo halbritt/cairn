@@ -560,11 +560,17 @@ def prepare_workspace(case, root):
     """Copy the fixture, run its setup and tag the evaluation base. Returns the working directory."""
     source = workspace_dir(case)
     target = Path(root) / case["copy_to"]
-    shutil.copytree(source, target, ignore=shutil.ignore_patterns("setup.sh", "__pycache__"))
+    def ignored(directory, names):
+        return {name for name in names if name == "__pycache__"
+                or (name == "setup.sh" and Path(directory) == source)}
+    shutil.copytree(source, target, ignore=ignored)
     env = dict(os.environ, GIT_AUTHOR_NAME="fixture", GIT_AUTHOR_EMAIL="fixture@example.invalid",
                GIT_COMMITTER_NAME="fixture", GIT_COMMITTER_EMAIL="fixture@example.invalid",
                GIT_AUTHOR_DATE="2026-09-01T00:00:00Z", GIT_COMMITTER_DATE="2026-09-01T00:00:00Z")
-    run(["bash", "-e", source / "setup.sh"], cwd=target, env=env)
+    setup_command = ["bash", "-e", source / "setup.sh"]
+    setup = run(setup_command, cwd=target, env=env, check=False)
+    if setup.returncode:
+        raise subprocess.CalledProcessError(setup.returncode, setup_command, output=setup.stdout, stderr=setup.stderr)
     cwd = Path(root) / case["cwd"]
     if case.get("workspace_commit"):
         actual = run(["git", "rev-parse", "HEAD"], cwd=cwd, env=env).stdout.decode().strip()
@@ -577,6 +583,26 @@ def prepare_workspace(case, root):
             snapshot[path.relative_to(cwd).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     (Path(root) / ".eval-snapshot.json").write_text(json.dumps(snapshot))
     return cwd
+
+
+def preflight_workspaces(cases, out):
+    """Check trusted workspace preparation before allocating any comparison stores."""
+    rows = []
+    for case in cases:
+        row = dict(case=case["id"], stage="workspace_prepare")
+        try:
+            with tempfile.TemporaryDirectory(prefix="workspace-preflight-", dir=out) as scratch:
+                prepare_workspace(case, Path(scratch))
+                row.update(status="passed", exit_code=0,
+                           snapshot_sha256=hashlib.sha256((Path(scratch) / ".eval-snapshot.json").read_bytes()).hexdigest())
+        except Exception as exc:
+            row.update(status="failed", error_type=type(exc).__name__, error=str(exc)[:800],
+                       exit_code=getattr(exc, "returncode", None))
+            rows.append(row)
+            (out / "workspace-preflight.json").write_text(json.dumps(rows, indent=2) + "\n")
+            raise
+        rows.append(row)
+        (out / "workspace-preflight.json").write_text(json.dumps(rows, indent=2) + "\n")
 
 
 def added_lines(cwd):
@@ -1350,6 +1376,7 @@ def cmd_agent(args):
                                                frozen_sha256=hashlib.sha256((out / "input/FROZEN.json").read_bytes()).hexdigest())
         execution["reasoning_effort"] = args.reasoning_effort
         execution["permission_policy_sha256"] = hashlib.sha256((ROOT / "scripts/trial_task_permissions.py").read_bytes()).hexdigest()
+        preflight_workspaces(cases, out)
     with ExitStack() as cleanup:
         stores = {}
         corpus = prospective["notes"] if prospective else load_corpus()

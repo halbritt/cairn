@@ -317,6 +317,15 @@ turns, automatic hosted selector arms and unknown input fields are refused.
 Include **all already-known issue corrections** in the exact `wordings.task`;
 no summarizer shortens it. This integration is not task-benefit evidence.
 
+Before creating comparison stores or indexing, prospective execution runs trusted
+workspace setup on one temporary copy per selected case and records
+`workspace-preflight.json`. It checks the prepared revision and snapshot, and
+cleans that copy on success or failure. Only the top-level trusted `setup.sh` is
+excluded from the copy; nested product setup scripts remain. Setup runs again
+in each arm's own copy, so it must be repeatable local preparation. This gate is
+not native task admission or task success; the outer disposable PostgreSQL
+wrapper and native version check may already have run.
+
 ### Freeze new inputs
 
 A reviewed directory contains `input.json`, `corpus.json` and

@@ -106,6 +106,41 @@ def scripted(case, script):
 
 
 class FixtureTest(unittest.TestCase):
+    def test_prepare_workspace_preserves_nested_tracked_setup_scripts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'fixture'
+            source.mkdir()
+            nested = source / 'product' / 'fixtures' / 'setup.sh'
+            nested.parent.mkdir(parents=True)
+            nested.write_text('#!/bin/sh\nexit 71 # product fixture, never the trusted setup\n')
+            nested.chmod(0o755)
+            (source / 'README.md').write_text('Synthetic product source.\n')
+            env = dict(os.environ, GIT_AUTHOR_NAME='fixture', GIT_AUTHOR_EMAIL='fixture@example.invalid',
+                       GIT_COMMITTER_NAME='fixture', GIT_COMMITTER_EMAIL='fixture@example.invalid')
+            for command in (['git', 'init', '-q'], ['git', 'add', '.'], ['git', 'commit', '-qm', 'source']):
+                subprocess.run(command, cwd=source, env=env, check=True, capture_output=True)
+            commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source).decode().strip()
+            (source / 'setup.sh').write_text('git diff --exit-code HEAD --\ntest ! -e setup.sh\n')
+            cache = source / 'product' / '__pycache__'
+            cache.mkdir()
+            (cache / 'discard.pyc').write_bytes(b'cache')
+            case = dict(_prospective_workspace=str(source), copy_to='cairn', cwd='cairn', workspace_commit=commit)
+            work = root / 'work'
+            cwd = te.prepare_workspace(case, work)
+            self.assertEqual(cwd, work / 'cairn')
+            self.assertEqual((cwd / nested.relative_to(source)).read_bytes(), nested.read_bytes())
+            self.assertEqual((cwd / nested.relative_to(source)).stat().st_mode & 0o777, 0o755)
+            self.assertFalse((cwd / 'setup.sh').exists())
+            self.assertFalse((cwd / 'product' / '__pycache__').exists())
+            for ref in ('HEAD', 'eval-base'):
+                self.assertEqual(subprocess.check_output(['git', 'rev-parse', ref], cwd=cwd).decode().strip(), commit)
+            self.assertEqual(subprocess.check_output(['git', 'status', '--porcelain'], cwd=cwd), b'')
+            snapshot = json.loads((work / '.eval-snapshot.json').read_text())
+            self.assertEqual(snapshot, {name: hashlib.sha256((source / name).read_bytes()).hexdigest()
+                                       for name in ('README.md', 'product/fixtures/setup.sh')})
+            self.assertEqual(subprocess.check_output(['git', 'tag'], cwd=source), b'')
+
     def test_pairing_rejects_changed_revision_assets_with_same_base_fixtures(self):
         with tempfile.TemporaryDirectory() as directory:
             frozen = te.verify_frozen()

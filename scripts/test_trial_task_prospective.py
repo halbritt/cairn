@@ -31,6 +31,44 @@ def fixture(root):
 
 
 class ProspectiveInputTests(unittest.TestCase):
+    def test_workspace_preflight_precedes_store_creation_and_cleans_scratch(self):
+        for invalid in (True, False):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                root = fixture(base / 'input')
+                if invalid:
+                    (root / 'workspaces/new-work/setup.sh').write_text('exit 23\n')
+                with contextlib.redirect_stdout(io.StringIO()):
+                    te.main(['freeze-input', '--input', str(root)])
+                out = base / 'results'
+                reached_store = []
+                def store(*args, **kwargs):
+                    reached_store.append(True)
+                    raise RuntimeError('fixture store boundary reached')
+                with patch.object(te, 'copy_arms', return_value=(['baseline'], {
+                        'baseline': dict(binary='/unused/api', hook='/unused/hook')})), \
+                     patch.object(te, 'TrialStore', side_effect=store), \
+                     patch.object(te, 'run_agent', side_effect=AssertionError('no provider')), \
+                     patch.object(te, 'prepare_workspace', wraps=te.prepare_workspace) as prepare, \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    with self.assertRaises(Exception):
+                        te.main(['agent', '--prospective-input', str(root), '--output', str(out),
+                                 '--model', 'fixture-model', '--reasoning-effort', 'high',
+                                 '--distractors', '0', '--parallel', '1'])
+                self.assertEqual(reached_store, [] if invalid else [True])
+                self.assertEqual(prepare.call_count, 1)
+                self.assertEqual(list(out.glob('workspace-preflight-*')), [])
+                rows = json.loads((out / 'workspace-preflight.json').read_text())
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]['case'], 'new-work')
+                self.assertEqual(rows[0]['stage'], 'workspace_prepare')
+                self.assertEqual(rows[0]['status'], 'failed' if invalid else 'passed')
+                self.assertEqual(rows[0]['exit_code'], 23 if invalid else 0)
+                if invalid:
+                    self.assertTrue(rows[0]['error'])
+                else:
+                    self.assertRegex(rows[0]['snapshot_sha256'], '^[0-9a-f]{64}$')
+
     def test_freeze_fresh_input_without_legacy_overlays_and_refuse_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = fixture(Path(directory)/'input')
