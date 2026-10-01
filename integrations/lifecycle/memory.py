@@ -2585,7 +2585,14 @@ def handle_event(config, event, reports, *, _inbox_resolved=False):
                 state["codex_capture_marker"] = state["capture_snapshot_marker"]
             elif prior is not None:
                 state["capture_snapshot_marker"] = prior
-        save_state(path, state)
+        try:
+            save_state(path, state)
+        except OSError:
+            # No context can be returned when final state persistence fails.
+            for report in reports:
+                if report["status"] == "completed":
+                    report.update(status="error", injected=0, error_class="OSError")
+            raise
         if config.get("harness") == "hermes":
             result = dict(result, cairn_status={key: state[key] for key in ("last_recall", "last_capture", "workstream") if key in state})
         return result

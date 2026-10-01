@@ -5,10 +5,13 @@ model, token usage and provider-reported cost, status and injected bytes. A
 value it did not observe is omitted, never reported as zero, and reporting never
 changes what the hook returns or whether it fails.
 """
+import contextlib
+import io
 import itertools
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -232,6 +235,26 @@ class RecallObservationTests(unittest.TestCase):
                 self.assertEqual((report['search_calls'], report['search_ms'], report['pull_calls']), (1, 250, 0))
                 self.assertEqual(report['elapsed_ms'], 250)  # the failed attempt's own time, not zero
                 self.assertNotIn('receipt_ids', report)  # no receipt was produced
+
+    def test_public_main_persistence_failure_reports_no_context_injection(self):
+        config = self.config()
+        config_path = self.root / 'config.json'
+        config_path.write_text(json.dumps(config))
+        output, errors = io.StringIO(), io.StringIO()
+        with patch.object(hook, 'bounded_command', side_effect=self.transport), \
+             patch.object(hook, 'save_state', side_effect=OSError('private persistence detail')), \
+             patch.object(sys, 'argv', ['memory.py', '--config', str(config_path)]), \
+             patch.object(sys, 'stdin', io.TextIOWrapper(io.BytesIO(json.dumps(self.event()).encode()))), \
+             contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            code = hook.main()
+        self.assertEqual(code, 1)
+        self.assertEqual(output.getvalue(), '')
+        (report,) = self.transport.reports
+        self.assertEqual((report['status'], report.get('error_class'), report['injected_bytes']),
+                         ('error', 'OSError', 0))
+        self.assertEqual(report['receipt_ids'], [RECEIPT])
+        self.assertEqual((report['search_calls'], report['pull_calls'], report['elapsed_ms']), (1, 1, 750))
+        self.assertNotIn('private persistence detail', json.dumps(report))
 
     def test_report_failure_never_changes_hook_output_or_exit(self):
         baseline = self.handle(self.config(recall_observations=False), self.event())
