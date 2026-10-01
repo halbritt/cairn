@@ -605,3 +605,27 @@ not proof of ranking, applicability or source use. A later deterministic query
 reconstruction must match the retained digest before it is identified with that
 request. This does not recover query evidence for previously frozen runs or add
 any retrieval calls.
+
+### Retained candidate explanations
+
+Prospective memory arms export `receipt-explanations.json` before task grading
+and disposal of the trial database. The export reads the candidate metadata
+already stored for hook-observed search receipts. It checks the exact receipt,
+the arm's principal and the trial repository against the evaluator-owned store;
+it does not issue another search or impersonate the receipt owner through the
+operator CLI. The execution plan records the exporter source hash, and the
+result links the artifact by its byte count and SHA-256.
+
+The artifact contains fixed candidate identities, versions, original ranks,
+gate or packing reasons, and bounded ranking features. It excludes note bodies,
+query text, evidence objects and uncontrolled strings. At most 16 distinct
+receipts and 256 candidates per receipt are retained, with ranked candidates
+first. The output ceiling is 1 MiB. Limits, malformed metadata, unavailable
+receipts and export failures remain explicit incomplete or unknown observations.
+Export failure does not change a task's technical grade or bypass store cleanup.
+
+Coverage is limited to the hook receipts actually observed. Native tool searches
+remain outside this export, and retained passage metadata does not prove which
+preview the renderer displayed. These are historical search decisions, not
+current eligibility, applicability, causal memory use or task-benefit evidence.
+Existing sealed runs and their missing observations remain unchanged.

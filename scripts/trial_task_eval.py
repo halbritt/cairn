@@ -37,6 +37,7 @@ import uuid
 from trial_native_observation import capture, measure
 from trial_source_delivery import bind_origins
 from trial_corpus_fingerprint import corpus_stamp, same_corpus
+from trial_receipt_explanation import export_receipts, retain_hook_explanations, receipt_export_metadata
 from trial_task_arms import copy_arms, checked_file, bind_ordinary_claude
 from trial_task_input import freeze_input, load_input
 from trial_task_permissions import settings_permissions, command_metadata, error_metadata, denial_metadata, background_result
@@ -280,9 +281,20 @@ class TrialStore:
                            repo=TRIAL_REPO, role="agent", destination="hosted")]
         (self.home / "identities.json").write_text(json.dumps(identities))
         (self.home / "identities.json").chmod(0o600)
+        self.principal = "agent:task-eval-" + label
         self.ids = {}  # fixture id -> record id
         self.names = {}  # record id -> fixture id
         self.server = None
+
+    def receipt_explanations(self, observed):
+        try:
+            socket = disposable_pg()
+        except SystemExit as error:
+            raise ValueError("owned database routing unavailable") from error
+        if socket != self.pg_socket:
+            raise ValueError("owned database routing changed")
+        return export_receipts(self.pg_bin / "psql", self.pg_socket, self.database, self.env, run,
+                               self.principal, TRIAL_REPO, observed)
 
     def fingerprint(self):
         # This instance created its database in the wrapper-owned cluster.
@@ -1175,6 +1187,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
             # technical grading. Never retain exception text or raw native data.
             selected_input = failed_selected_input(input_charge, observation_phase, error)
             retain_observation_error(base, selected_input["observation_error"])
+    receipt_export = (retain_hook_explanations(stores[arm]["store"], base)
+                      if prospective and arm in stores else None)
     ctx = dict(cwd=cwd, commands=trace["commands"], answer=trace["answer"],
                tool_outputs=parse_tool_outputs(stdout, args.harness, require_completed=bool(prospective)),
                snapshot=json.loads((root / ".eval-snapshot.json").read_text()),
@@ -1198,6 +1212,8 @@ def run_agent(case, arm, seed, order, args, stores, out):
                   commands=len(trace["commands"]), answer_chars=len(trace["answer"] or ""), memory=memory)
     if prospective:
         record["selected_input"] = selected_input
+    if prospective:
+        record["receipt_explanation_export"] = receipt_export
     record["memory_tool_pulls"] = [names_for(stores.get(arm, {}).get("store"), call) for call in trace["memory_calls"]]
     if prospective:
         add_delivery_evidence(memory, selected_input)
@@ -1365,6 +1381,7 @@ def cmd_agent(args):
                      harness=args.harness, reasoning_effort=args.reasoning_effort if args.harness == "codex" else None,
                      evaluator_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                      hook_observer_sha256=hashlib.sha256((ROOT / "scripts/trial_hook_observer.py").read_bytes()).hexdigest(),
+                     receipt_exporter_sha256=hashlib.sha256((ROOT / "scripts/trial_receipt_explanation.py").read_bytes()).hexdigest(),
                      harness_version=run([str(Path(args.codex_install) / "codex/bin/codex.js") if args.harness == "codex" else str(checked_file(prospective["document"]["native"]["binary"])) if prospective else "claude", "--version"]).stdout.decode().strip())
     out = Path(args.output)
     out.mkdir(mode=0o700)
@@ -1494,6 +1511,8 @@ def cmd_agent(args):
                                 classify_relevance(record['memory'], c, prospective=True)
                             except (OSError, ValueError, TypeError, KeyError):
                                 record['source_delivery_error'] = 'selected_evidence_unavailable'
+                    if prospective and arm in stores and "receipt_explanation_export" not in record:
+                        record["receipt_explanation_export"] = receipt_export_metadata(out / "runs" / record["run_id"])
                     records.append(record)
                     failure = (record.get("trace") or {}).get("admission_failure")
                     if stop is None and failure:
