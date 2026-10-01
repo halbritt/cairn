@@ -36,11 +36,12 @@ type SemanticRankResult struct {
 	Scores      []SemanticScore `json:"scores"`
 }
 type DiscoveryRanking struct {
-	Coverage     *SemanticCoverage `json:"coverage,omitempty" cbor:"coverage,omitempty"`
-	State        string            `json:"state"`
-	ModelSHA256  string            `json:"model_sha256,omitempty" cbor:"model_sha256,omitempty"`
-	Algorithm    string            `json:"algorithm,omitempty" cbor:"algorithm,omitempty"`
-	ScoresSHA256 string            `json:"scores_sha256,omitempty" cbor:"scores_sha256,omitempty"`
+	QueryProjection *SemanticQueryProjection `json:"query_projection,omitempty" cbor:"query_projection,omitempty"`
+	Coverage        *SemanticCoverage        `json:"coverage,omitempty" cbor:"coverage,omitempty"`
+	State           string                   `json:"state"`
+	ModelSHA256     string                   `json:"model_sha256,omitempty" cbor:"model_sha256,omitempty"`
+	Algorithm       string                   `json:"algorithm,omitempty" cbor:"algorithm,omitempty"`
+	ScoresSHA256    string                   `json:"scores_sha256,omitempty" cbor:"scores_sha256,omitempty"`
 }
 
 func scoreDigest(scores []SemanticScore) string {
@@ -186,6 +187,13 @@ func discoveryStatus(p SemanticPackage) SemanticPackage {
 }
 
 func validateFrozenDiscovery(p SemanticPackage, evaluations map[string]*CandidateEvaluation, query string) error {
+	if p.Schema == "cairn.semantic/18" {
+		if p.Discovery == nil || p.Discovery.QueryProjection == nil || !hasInterleavedRanking(p.Ranking) || ValidateSemanticQueryProjection(p.Discovery.QueryProjection, query) != nil {
+			return failure("INTEGRITY_FAILURE", "historical query projection is invalid")
+		}
+	} else if p.Discovery != nil && p.Discovery.QueryProjection != nil {
+		return failure("INTEGRITY_FAILURE", "query projection has the wrong schema")
+	}
 	if p.Schema == "cairn.semantic/17" {
 		if !hasIDFRanking(p.Ranking) || p.IDF == nil || p.Discovery != nil || p.Mode != "index" || p.Purpose != "context" || strings.TrimSpace(query) == "" || p.Browse != nil {
 			return failure("INTEGRITY_FAILURE", "historical IDF search intent is invalid")

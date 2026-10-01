@@ -242,3 +242,58 @@ to a retained one-shot launcher to run six interleaved API comparisons against
 the same disposable store. The stream check also verifies note edits, retirement,
 local-only exclusions and shutdown. This optional check uses the installed local
 CPU environment; regular Go process and Python framing tests need no model.
+
+### Long query projection
+
+The persistent embedding worker accepts an original query of at most 4096 UTF-8
+bytes. Its model accepts at most 512 tokens, including the fixed query instruction
+and special tokens. These are separate bounds. An oversized token sequence now
+uses one **lossy original-text prefix** for semantic discovery. The worker selects
+an offset with its actual tokenizer, slices the original characters, and checks
+the complete prefixed input again. It permits at most eight bounded retreat
+checks, then refuses if no nonblank prefix fits. It never reconstructs text from
+token IDs, retries inference, or embeds several query chunks. Short queries use
+exactly the original model input. The full original query still controls lexical
+ranking, eligibility, and the receipt's query digest. Suffix constraints can be
+absent from semantic input; preserved lexical matching does not make this
+projection equivalent to embedding the full query.
+
+A ready indexed result with a checked declaration uses `cairn.semantic/18` and
+`discovery.query_projection`:
+
+- `method: "original-prefix/1"` and `truncated` identify the projection.
+- `original_tokens` and `embedded_tokens` include the fixed instruction and
+  special tokens; the latter is at most 512.
+- `prefix_bytes` and `prefix_sha256` identify the retained prefix of the original
+  query **without** that instruction. They contain no query text.
+
+The host checks the original UTF-8 prefix, digest, count bounds and consistency.
+Token counts remain a report by the trusted local worker. Malformed or unknown
+declarations are refused, with existing labelled lexical fallback; no request
+is silently retried with changed semantics. Ready metadata is sealed and replayed
+without a model call using the original query supplied to recompile. An absent
+legacy declaration means unreported, not untruncated, and retains the previous
+schema and canonical bytes. Unavailable, invalid, not-needed and empty-index
+fallbacks do not claim a successful projection. Existing query deadlines remain
+unchanged (two seconds at the persistent retrieval boundary).
+
+#### Deployment compatibility
+
+Publish matching API and worker source before activation. The old strict worker
+response decoder cannot consume the new declaration; new API code accepts an old
+worker's absent declaration. A live `CommandEmbedder` pins identity, so replacing
+its worker underneath it is unsupported. Updating this worker changes its source-
+bound model identity even though document passage construction is unchanged.
+Restart the API coherently with the matching worker and allow its owned indexer
+to rebuild online. Partial coverage and lexical fallback during that rebuild must
+remain visible. Do not run old and new indexers concurrently on the same store:
+the document and job ownership is per record. Rolling back API and worker also
+requires rederiving that identity's index; it must preserve intervening writes.
+
+Older typed CLI/MCP facades may omit projection diagnostics. That omission grants
+no authority or change to source handles, but such a facade cannot establish
+which query extent was embedded. Updated facades preserve the declaration.
+Older APIs cannot recompile schema 18 receipts; old readers that discard the
+metadata fail the canonical seal check. Existing absent-metadata receipts remain
+replayable. No ranking-quality or real-task benefit is established by this input
+repair.

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/halbritt/cairn/core"
 )
 
 const embeddingFrameLimit = 4 * 1024 * 1024
@@ -33,10 +34,11 @@ type CommandEmbedder struct {
 }
 
 type embeddingReply struct {
-	ID       string            `json:"id"`
-	Identity EmbeddingIdentity `json:"identity"`
-	Vector   []float32         `json:"vector,omitempty"`
-	Passages []EmbeddedPassage `json:"passages,omitempty"`
+	QueryProjection *core.SemanticQueryProjection `json:"query_projection,omitempty"`
+	ID              string                        `json:"id"`
+	Identity        EmbeddingIdentity             `json:"identity"`
+	Vector          []float32                     `json:"vector,omitempty"`
+	Passages        []EmbeddedPassage             `json:"passages,omitempty"`
 }
 
 func EmbeddingCommand(owner context.Context, path string) (*CommandEmbedder, error) {
@@ -62,11 +64,15 @@ func (e *CommandEmbedder) Identity(ctx context.Context) (EmbeddingIdentity, erro
 	return r.Identity, err
 }
 func (e *CommandEmbedder) Query(ctx context.Context, text string) ([]float32, error) {
+	vector, _, err := e.QueryWithProjection(ctx, text)
+	return vector, err
+}
+func (e *CommandEmbedder) QueryWithProjection(ctx context.Context, text string) ([]float32, *core.SemanticQueryProjection, error) {
 	if len(text) > 4096 {
-		return nil, fmt.Errorf("embedding query exceeds limit")
+		return nil, nil, fmt.Errorf("embedding query exceeds limit")
 	}
 	r, err := e.call(ctx, &e.query, "query", text)
-	return r.Vector, err
+	return r.Vector, r.QueryProjection, err
 }
 func (e *CommandEmbedder) Document(ctx context.Context, text string) ([]EmbeddedPassage, error) {
 	if len(text) > 65536 {
@@ -148,6 +154,13 @@ func (e *CommandEmbedder) call(ctx context.Context, lane *embeddingLane, operati
 		lane.worker = nil
 		<-done
 		return embeddingReply{}, e.ctx.Err()
+	}
+	if result.err == nil {
+		if operation == "query" {
+			result.err = core.ValidateSemanticQueryProjection(result.reply.QueryProjection, text)
+		} else if result.reply.QueryProjection != nil {
+			result.err = fmt.Errorf("query projection on non-query reply")
+		}
 	}
 	if result.err == nil {
 		e.identityMu.Lock()

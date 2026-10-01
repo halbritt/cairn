@@ -22,10 +22,11 @@ type SemanticPassageHit struct {
 }
 
 type SemanticRetrievalResult struct {
-	ModelSHA256 string
-	Algorithm   string
-	Indexed     int
-	Hits        []SemanticPassageHit
+	QueryProjection *SemanticQueryProjection
+	ModelSHA256     string
+	Algorithm       string
+	Indexed         int
+	Hits            []SemanticPassageHit
 }
 
 type SemanticCoverage struct {
@@ -85,7 +86,7 @@ func (s *Store) rankIndexed(ctx context.Context, query string, p *SemanticPackag
 	}
 	p.Discovery.State = "invalid_result"
 	id := &DiscoveryRanking{State: "ready", ModelSHA256: r.ModelSHA256, Algorithm: r.Algorithm}
-	valid := semanticIdentityValid(id) && r.Indexed > 0 && r.Indexed <= len(notes) && len(r.Hits) <= min(r.Indexed, 100)
+	valid := ValidateSemanticQueryProjection(r.QueryProjection, query) == nil && semanticIdentityValid(id) && r.Indexed > 0 && r.Indexed <= len(notes) && len(r.Hits) <= min(r.Indexed, 100)
 	seen := map[string]bool{}
 	for _, h := range r.Hits {
 		e := evaluations[h.RecordID]
@@ -102,6 +103,11 @@ func (s *Store) rankIndexed(ctx context.Context, query string, p *SemanticPackag
 	id.ScoresSHA256 = passageDigest(r.Hits)
 	id.Coverage = &SemanticCoverage{Indexed: r.Indexed, Eligible: len(notes)}
 	p.Discovery = id
+	if r.QueryProjection != nil {
+		projection := *r.QueryProjection
+		id.QueryProjection = &projection
+		p.Schema = "cairn.semantic/18"
+	}
 	switch {
 	case hasEntityRanking(p.Ranking):
 		p.Ranking = "interleaved-scope-recency/4"
@@ -212,7 +218,7 @@ func passagePreview(body string, span ByteSpanRequest) (string, ByteSpanRequest)
 
 func validateFrozenIndexed(p SemanticPackage, evaluations map[string]*CandidateEvaluation) error {
 	invalid := func() error { return failure("INTEGRITY_FAILURE", "historical indexed retrieval metadata is invalid") }
-	validContract := (p.Schema == "cairn.semantic/15" && hasHybridRanking(p.Ranking)) || (p.Schema == "cairn.semantic/16" && hasInterleavedRanking(p.Ranking))
+	validContract := (p.Schema == "cairn.semantic/15" && hasHybridRanking(p.Ranking)) || ((p.Schema == "cairn.semantic/16" || p.Schema == "cairn.semantic/18") && hasInterleavedRanking(p.Ranking))
 	if !validContract || p.Discovery == nil || p.Discovery.State != "ready" || !semanticIdentityValid(p.Discovery) || p.Discovery.Coverage == nil {
 		return invalid()
 	}

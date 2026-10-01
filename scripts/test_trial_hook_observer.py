@@ -61,7 +61,9 @@ class HookObserverTest(unittest.TestCase):
         from test_claude_inbox_recall import ClaudeInboxRecallTests
         ready = dict(state='ready', coverage=dict(indexed=2, eligible=3),
                      algorithm='bge-original-passages/1', model_sha256='a' * 64,
-                     scores_sha256='b' * 64)
+                     scores_sha256='b' * 64,
+                     query_projection=dict(method='original-prefix/1', truncated=True,
+                         original_tokens=537, embedded_tokens=512, prefix_bytes=2701, prefix_sha256='c'*64))
         cases = [(ready, True, False, 'semantic'),
                  (dict(state='unavailable'), True, False, 'lexical_fallback'),
                  (dict(state='invalid_result'), True, False, 'lexical_fallback'),
@@ -98,6 +100,11 @@ class HookObserverTest(unittest.TestCase):
                     if not startup:
                         view_text = json.loads(result.stdout)['hookSpecificOutput']['additionalContext']
                         self.assertIn('Preserve the fixture scope', view_text)
+                        if expected == 'semantic':
+                            view = json.loads(view_text[view_text.index('{"selected":'):])
+                            self.assertEqual(view['candidate_search']['discovery']['query_projection'], ready['query_projection'])
+                            self.assertLessEqual(len(result.stdout.encode()) + view['remaining_memory_bytes'], 9500)
+
                     calls = [c for c in case.calls() if c['op'] == 'search']
                     self.assertEqual(len(calls), 1)
                     self.assertEqual('--semantic' in calls[0]['args'], semantic and not startup)
@@ -114,6 +121,15 @@ class HookObserverTest(unittest.TestCase):
         for invalid in ('PRIVATE', None, [], dict(state='PRIVATE')):
             self.assertEqual(observer.bounded_search_discovery(invalid), dict(state='unknown'))
         self.assertEqual(raw['query'], 'PRIVATE')
+        projection = dict(method='original-prefix/1', truncated=True, original_tokens=537,
+                          embedded_tokens=512, prefix_bytes=2701, prefix_sha256='a'*64)
+        raw['query_projection'] = projection
+        self.assertEqual(observer.bounded_search_discovery(raw)['query_projection'], projection)
+        for key, invalid in (('truncated', None), ('prefix_bytes', True), ('method', 'PRIVATE'),
+                             ('prefix_sha256', 'PRIVATE'), ('embedded_tokens', 513)):
+            changed = dict(raw, query_projection=dict(projection, **{key: invalid}))
+            self.assertNotIn('query_projection', observer.bounded_search_discovery(changed))
+
 
     def test_actual_engine_search_failure_records_final_failed_status_without_payloads(self):
         engine = OBSERVER.parent.parent / 'integrations/lifecycle/memory.py'
@@ -151,7 +167,7 @@ class HookObserverTest(unittest.TestCase):
         digest = hashlib.sha256(b'PRIVATE exact query').hexdigest()
         receipt = 'da3fddc4-431d-4c40-acdd-d4323d73a2db'
         variants = [('sha256:' + digest, receipt, 'cairn.semantic/' + str(version), True)
-                    for version in (8, 17, 3, 9, 10, 11, 12, 13, 14, 16)] + [
+                    for version in (8, 17, 3, 9, 10, 11, 12, 13, 14, 16, 18)] + [
                     ('sha256:' + digest, receipt, 'cairn.semantic/999', False),
                     ('PRIVATE raw query', receipt, 'cairn.semantic/1', False),
                     ('sha256:PRIVATE', receipt, 'cairn.semantic/3', False),

@@ -289,3 +289,60 @@ func TestIndexEditDuringEmbeddingCannotPublishStalePassages(t *testing.T) {
 		t.Fatalf("deleted passages remain: %+v %v", result, err)
 	}
 }
+
+type projectedFixtureEmbedder struct {
+	fixtureEmbedder
+	original string
+}
+
+func (e *projectedFixtureEmbedder) QueryWithProjection(ctx context.Context, text string) ([]float32, *core.SemanticQueryProjection, error) {
+	e.original = text
+	v, err := e.Query(ctx, text)
+	prefix := strings.Split(text, " ")[0]
+	sum := sha256.Sum256([]byte(prefix))
+	return v, &core.SemanticQueryProjection{Method: "original-prefix/1", Truncated: true, OriginalTokens: 600, EmbeddedTokens: 20, PrefixBytes: len(prefix), PrefixSHA256: hex.EncodeToString(sum[:])}, err
+}
+func TestPersistentIndexCarriesProjectionWithoutReplacingQuery(t *testing.T) {
+	dsn := os.Getenv("CAIRN_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("requires disposable PostgreSQL")
+	}
+	ctx := context.Background()
+	s, err := core.Open(ctx, dsn, core.Channel{Principal: "projection-fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	body := "Keep full lexical source selection."
+	record, err := s.Create(ctx, core.CreateRequest{RequestID: uuid.NewString(), Draft: core.Draft{Kind: "lesson", Body: body, Sensitivity: "shareable", Scope: core.Scope{Repo: uuid.NewString(), TaskID: "*", RunID: "*"}, ClaimType: "self"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := &projectedFixtureEmbedder{}
+	idx, err := OpenIndex(ctx, dsn, model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.Close()
+	for range 100 {
+		worked, err := idx.Step(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !worked {
+			break
+		}
+	}
+	sum := sha256.Sum256([]byte(body))
+	query := "é漢🙂 " + strings.Repeat("full lexical constraints ", 35)
+	result, err := idx.Search(ctx, core.SemanticRankRequest{Query: query, Notes: []core.SemanticNote{{RecordID: record.RecordID, Version: 1, BodySHA256: hex.EncodeToString(sum[:]), Body: body}}})
+	if err != nil || result.Indexed != 1 || len(result.Hits) != 1 || model.original != query || result.QueryProjection == nil {
+		t.Fatalf("projected index result: %+v %v", result, err)
+	}
+	if err = core.ValidateSemanticQueryProjection(result.QueryProjection, query); err != nil {
+		t.Fatal(err)
+	}
+}

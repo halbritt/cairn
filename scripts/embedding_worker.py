@@ -35,6 +35,40 @@ def source_passages(tokenizer, body):
         # a short final decision merely because an earlier window covers it.
 
 
+def query_prefix(tokenizer, text):
+    """Lossy discovery only: retain original characters, never decoded tokens."""
+    if not text.strip() or len(text.encode()) > 4096:
+        raise ValueError("query exceeds input bounds")
+    question = PREFIX + text
+    encoding = tokenizer.encode(question)
+    original_tokens = len(encoding.ids)
+    embedded_tokens = original_tokens
+    prefix = text
+    if original_tokens > 512:
+        # Reserve the final special token. Re-tokenize the actual original-text
+        # prefix: a cut can change tokenization. Bound retreat work independently
+        # of input length and refuse if this tokenizer cannot provide a fit.
+        end = 511
+        for _ in range(8):
+            offsets = encoding.offsets[:end]
+            last = max((stop for first, stop in offsets if stop > first), default=0)
+            length = last - len(PREFIX)
+            if not 0 < length < len(text):
+                raise ValueError("query has no bounded original prefix")
+            prefix = text[:length]
+            embedded_tokens = len(tokenizer.encode(PREFIX + prefix).ids)
+            if prefix.strip() and embedded_tokens <= 512:
+                break
+            end -= max(1, embedded_tokens - 512)
+        else:
+            raise ValueError("query prefix exceeds token bound")
+    metadata = dict(method="original-prefix/1", truncated=prefix != text,
+                    original_tokens=original_tokens, embedded_tokens=embedded_tokens,
+                    prefix_bytes=len(prefix.encode()),
+                    prefix_sha256=hashlib.sha256(prefix.encode()).hexdigest())
+    return PREFIX + prefix, metadata
+
+
 class Embeddings:
     def __init__(self, model_dir):
         self.scorer = Scorer(model_dir)
@@ -67,9 +101,7 @@ class Embeddings:
             if text:
                 raise ValueError("identity request must have empty text")
         elif operation == "query":
-            question = PREFIX + text
-            if not text.strip() or len(text.encode()) > 4096 or len(self.scorer.tokenizer.encode(question).ids) > 512:
-                raise ValueError("query exceeds input bounds")
+            question, response["query_projection"] = query_prefix(self.scorer.tokenizer, text)
             response["vector"] = self.vectors([question])[0]
         elif operation == "document":
             if not text.strip() or len(text.encode()) > 65536:

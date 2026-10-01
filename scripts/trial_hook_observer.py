@@ -90,6 +90,20 @@ def bounded_search_discovery(value):
                     for k in ('indexed', 'eligible'))
             and coverage['indexed'] <= coverage['eligible']):
         result['coverage'] = {k: coverage[k] for k in ('indexed', 'eligible')}
+    projection = value.get('query_projection')
+    keys = ('method', 'truncated', 'original_tokens', 'embedded_tokens', 'prefix_bytes', 'prefix_sha256')
+    if (isinstance(projection, dict) and set(projection) == set(keys)
+            and projection['method'] == 'original-prefix/1'
+            and type(projection['truncated']) is bool
+            and all(type(projection[k]) is int for k in ('original_tokens', 'embedded_tokens', 'prefix_bytes'))
+            and 0 < projection['embedded_tokens'] <= 512
+            and projection['embedded_tokens'] <= projection['original_tokens'] <= 8192
+            and 0 < projection['prefix_bytes'] <= 4096
+            and isinstance(projection['prefix_sha256'], str)
+            and re.fullmatch('[0-9a-f]{64}', projection['prefix_sha256'])
+            and (projection['original_tokens'] > 512 if projection['truncated'] else
+                 projection['original_tokens'] == projection['embedded_tokens'])):
+        result['query_projection'] = {k: projection[k] for k in keys}
     return result
 
 
@@ -97,7 +111,7 @@ MAX_SEARCH_RECEIPTS = 16
 # collectCandidates initializes the digest; compileSnapshot, withEntitySchema and
 # rankIndexed change these schema labels without replacing Query.
 DIGEST_SOURCE_SCHEMAS = tuple('cairn.semantic/' + str(version)
-                              for version in (3, 8, 9, 10, 11, 12, 13, 14, 16, 17))
+                              for version in (3, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18))
 
 
 def bounded_search_receipt(value):

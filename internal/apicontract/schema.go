@@ -82,6 +82,11 @@ func (r *reflector) schema(t types.Type, m mode) map[string]any {
 			switch object.Pkg().Path() + "." + object.Name() {
 			case "time.Time":
 				return map[string]any{"type": "string", "format": "date-time"}
+			case "github.com/halbritt/cairn/core.SemanticQueryProjection":
+				// The closed decoder requires every non-null field in this output declaration.
+				schema := r.schema(t.Underlying(), canonical)
+				schema["additionalProperties"] = false
+				return schema
 			case "encoding/json.RawMessage":
 				return map[string]any{"description": "any JSON value, passed through unchanged"}
 			}

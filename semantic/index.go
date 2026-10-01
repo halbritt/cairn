@@ -204,7 +204,18 @@ func (i *Index) Search(ctx context.Context, req core.SemanticRankRequest) (core.
 	if len(req.Notes) > 10000 || strings.TrimSpace(req.Query) == "" || len(req.Query) > 4096 {
 		return result, fmt.Errorf("indexed search exceeds input bounds")
 	}
-	v, err := i.model.Query(ctx, req.Query)
+	var v []float32
+	var err error
+	if model, ok := i.model.(interface {
+		QueryWithProjection(context.Context, string) ([]float32, *core.SemanticQueryProjection, error)
+	}); ok {
+		v, result.QueryProjection, err = model.QueryWithProjection(ctx, req.Query)
+	} else {
+		v, err = i.model.Query(ctx, req.Query)
+	}
+	if err == nil {
+		err = core.ValidateSemanticQueryProjection(result.QueryProjection, req.Query)
+	}
 	if err != nil {
 		return result, err
 	}
