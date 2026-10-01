@@ -41,6 +41,7 @@ JSON operations (one request on stdin):
   edit         Replace a complete draft; preserve metadata intentionally
   cite         Replace an ordinary note's evidence citations
   history      Inspect retained versions of one note
+  handoff-request-status  Read handling of request events you link to a saved handoff
   assessments  Read owned task-review history
   assessments-page  Read owned task-review history in bounded pages
   assess-run   Append or correct a qualitative task review
@@ -166,6 +167,9 @@ func agentOperationHelp(operation string) (commandHelp, error) {
 	case "history":
 		detail = "List newest-first retained version metadata (limit 1..100, default 20).\nFollow next_before_version as before_version. For one exact body, replace limit\nwith a positive version; do not combine version with paging fields. An exact\nversion also accepts span: {offset,length} in bytes. History is not current\nauthority; pull the current note before editing. No request UUID is required.\n"
 		example = `{"record_id":"RECORD_UUID","limit":20}`
+	case "handoff-request-status":
+		detail = "Read-only check of up to 16 request events you link to one saved handoff.\nSupply the handoff's exact current record_id and version and one item_id/event_id\npair per item; the links are caller assertions, not verified associations. The\nhandoff must be active and readable to this profile. Each linked request is read\nwith your own event permissions: an inaccessible, absent or non-request event is\nreported only as unavailable. A request shows up to 16 delivery states and, for\nits publisher, the response group's state and counts. These describe handling,\nnever the work: task_outcome is always unknown. A stale version refuses with\nVERSION_CONFLICT and an oversized combined result with BUDGET_REFUSED. No request\nUUID is required; nothing is claimed, acknowledged, closed or changed.\n"
+		example = `{"handoff":{"record_id":"RECORD_UUID","version":1},"items":[{"item_id":"review","event_id":"REVIEW_REQUEST_EVENT_UUID"},{"item_id":"deliver","event_id":"DELIVERY_REQUEST_EVENT_UUID"}]}`
 	case "assessments":
 		detail = "Read retained task-review versions for an owned receipt, oldest first,\nincluding full reasons and evidence IDs. This is task-review history, not note\nhistory. Repository, owner and destination must still match the profile.\nNo request UUID is required.\n"
 		example = `{"receipt_id":"RECEIPT_UUID"}`

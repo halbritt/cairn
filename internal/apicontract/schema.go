@@ -205,7 +205,9 @@ type jsonField struct {
 
 // collectFields applies encoding/json's field rules: exported fields,
 // json tags, "-", embedded struct promotion and depth/tag conflict resolution.
-func (r *reflector) collectFields(s *types.Struct, m mode, depth int, visited map[*types.Struct]bool, out *[]jsonField) {
+// A field promoted through an embedded pointer is omitted while that pointer is
+// nil, so it is never required.
+func (r *reflector) collectFields(s *types.Struct, m mode, depth int, visited map[*types.Struct]bool, optional bool, out *[]jsonField) {
 	if visited[s] {
 		return
 	}
@@ -221,11 +223,12 @@ func (r *reflector) collectFields(s *types.Struct, m mode, depth int, visited ma
 		fieldType := types.Unalias(field.Type())
 		if field.Embedded() && name == "" {
 			embedded := fieldType
-			if pointer, ok := embedded.(*types.Pointer); ok {
+			pointer, viaPointer := embedded.(*types.Pointer)
+			if viaPointer {
 				embedded = pointer.Elem()
 			}
 			if inner, ok := embedded.Underlying().(*types.Struct); ok {
-				r.collectFields(inner, m, depth+1, visited, out)
+				r.collectFields(inner, m, depth+1, visited, optional || viaPointer, out)
 				continue
 			}
 			if !field.Exported() {
@@ -238,7 +241,7 @@ func (r *reflector) collectFields(s *types.Struct, m mode, depth int, visited ma
 		if name == "" {
 			name = field.Name()
 		}
-		omit := false
+		omit := optional
 		quoted := false
 		for _, option := range strings.Split(options, ",") {
 			switch option {
@@ -273,7 +276,7 @@ func canBeEmpty(t types.Type) bool {
 
 func (r *reflector) structSchema(s *types.Struct, m mode) map[string]any {
 	var fields []jsonField
-	r.collectFields(s, m, 0, map[*types.Struct]bool{}, &fields)
+	r.collectFields(s, m, 0, map[*types.Struct]bool{}, false, &fields)
 	byName := map[string][]jsonField{}
 	var order []string
 	for _, field := range fields {

@@ -19,7 +19,7 @@ var retryByOperation = map[string]string{
 	"conflict": "read", "conflicts": "read",
 	"event-group": "read", "event-groups": "read", "event-inspect": "read",
 	"event-list": "read", "event-metrics": "read", "event-subscriptions": "read", "event-watch": "read",
-	"evidence-impact": "read", "get": "read", "history": "read",
+	"evidence-impact": "read", "get": "read", "handoff-request-status": "read", "history": "read",
 	"pool-list": "read", "worker-list": "read", "wake-attempts": "read", "wake-control": "read",
 	"preview-retract": "read", "supersession": "read", "refusal": "read",
 	"recompile": "read", "run-index": "read", "run-package": "read",

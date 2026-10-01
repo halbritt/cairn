@@ -100,4 +100,5 @@ var remoteOperations = map[string]bool{
 	"run-index": false, "run-package": false, "spawn": false, "terminal": false, "task-state": false, "run-status": false, "claim-run": false, "bind-run": false, "link-run-retrieval": false, "delivery": false, "outcome": false,
 	"assess-run": false, "assessments": false, "assessments-page": false,
 	"refusal": false, "use-report": false, "run-report": false, "conflicts": false, "conflict": false, "event-metrics": false,
+	"handoff-request-status": false,
 }

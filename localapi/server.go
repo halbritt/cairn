@@ -463,5 +463,24 @@ func serveJSON[Q any, R any](w http.ResponseWriter, r *http.Request, call func(c
 	}
 	// HTTP write errors mean the caller may not have received a committed result;
 	// the request's idempotency key remains its recovery mechanism. Never retry here.
-	_ = json.NewEncoder(w).Encode(response{Schema: "cairn.response/1", OK: true, Status: "OK", Data: result, Protocol: Protocol})
+	_ = encodeSuccess(w, result)
+}
+
+// encodeSuccess writes the one success envelope. Size checks use it too, so a
+// bound on the response measures the bytes serveJSON actually sends.
+func encodeSuccess(w io.Writer, data any) error {
+	return json.NewEncoder(w).Encode(response{Schema: "cairn.response/1", OK: true, Status: "OK", Data: data, Protocol: Protocol})
+}
+
+// boundEnvelope refuses a result whose complete success envelope, final newline
+// included, exceeds limit bytes. The refusal names no content.
+func boundEnvelope(data any, limit int) error {
+	var encoded bytes.Buffer
+	if err := encodeSuccess(&encoded, data); err != nil {
+		return err
+	}
+	if encoded.Len() > limit {
+		return &core.Error{Code: "BUDGET_REFUSED", Message: "response exceeds its byte bound; request fewer items"}
+	}
+	return nil
 }

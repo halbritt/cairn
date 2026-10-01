@@ -194,6 +194,14 @@ func TestRealRepliesConformToContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.ok("local", "event-inspect", `{"event_id":"`+request.EventID+`"}`)
+	// An available row (all seven fields) and an unavailable row (four) must both
+	// satisfy the schema, as must the stale-version refusal.
+	linked := `{"handoff":{"record_id":"` + record.RecordID + `","version":1},"items":[{"item_id":"review","event_id":"` + request.EventID + `"},{"item_id":"absent","event_id":"` + uuid.NewString() + `"}]}`
+	var status core.HandoffRequestStatus
+	if err := json.Unmarshal(c.ok("local", "handoff-request-status", linked), &status); err != nil || len(status.Items) != 2 || status.Items[0].Availability != "available" || status.Items[1].Availability != "unavailable" {
+		t.Fatalf("handoff-request-status rows: %+v %v", status, err)
+	}
+	c.call(c.server, "local", "handoff-request-status", strings.Replace(linked, `"version":1`, `"version":2`, 1), nil)
 	c.ok("local", "preview-retract", `{"record_id":"`+record.RecordID+`"}`)
 	// Representative refusals must also match the error envelope and inventory.
 	c.call(c.server, "local", "get", `{"record_id":"`+uuid.NewString()+`"}`, nil)

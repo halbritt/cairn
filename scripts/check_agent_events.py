@@ -382,13 +382,55 @@ def check(binary, directory):
         assert call("alice","response-groups","--state","collected")["groups"][0]["event_id"]==grouped["event_id"]
         # Keep open and deadline-closed groups populated for full-row restore checks.
         group_args[group_args.index("--request-id")+1]=str(uuid.uuid4())
-        call("alice","publish",*group_args)
+        opened=call("alice","publish",*group_args)
         group_args[group_args.index("--request-id")+1]=str(uuid.uuid4())
         group_args[group_args.index("--response-deadline")+1]=(datetime.now(timezone.utc)+timedelta(seconds=1)).isoformat()
         overdue=call("alice","publish",*group_args)
         time.sleep(1.1)
         operator("request-control-sweep",dict(repo=repo))
         assert call("alice","response-group",overdue["event_id"])["state"]=="incomplete"
+        # A saved handoff's caller-asserted links are read with each caller's own
+        # event permissions. Collected, open and overdue groups and handled
+        # deliveries are observations; none is a task outcome, and the read
+        # changes nothing.
+        handoff=call("alice","remember","--shareable","--repo",repo,"Handoff: review the grouped requests",raw=True)
+        links=[dict(item_id="collected",event_id=grouped["event_id"]),dict(item_id="open",event_id=opened["event_id"]),
+               dict(item_id="overdue",event_id=overdue["event_id"]),dict(item_id="absent",event_id=str(uuid.uuid4()))]
+        def link_request(version=handoff["version"],items=links):
+            return json.dumps(dict(handoff=dict(record_id=handoff["record_id"],version=version),items=items))
+        def counters(name):
+            stats=call(name,"event-stats")
+            return {key:stats[key] for key in ("published","deliveries","pending","leased","handled","ignored","failed","redeliveries")}
+        observed_before=(counters("alice"),counters("carol"),call("alice","response-group",overdue["event_id"]))
+        view=call("alice","handoff-request-status",raw=True,body=link_request())
+        assert view["schema"]=="cairn.handoff-request-status/1" and view["links"]=="caller_asserted"
+        assert view["handoff"]["record_id"]==handoff["record_id"] and view["handoff"]["version"]==handoff["version"]
+        assert len(view["handoff"]["body_sha256"])==64
+        assert [row["item_id"] for row in view["items"]]==["collected","open","overdue","absent"]
+        assert all(row["task_outcome"]=="unknown" for row in view["items"])
+        rows={row["item_id"]:row for row in view["items"]}
+        assert rows["collected"]["response_group"]==dict(state="collected",expected=2,responded=2)
+        assert [d["state"] for d in rows["collected"]["deliveries"]]==["handled","handled"] and not rows["collected"]["deliveries_more"]
+        assert rows["open"]["response_group"]==dict(state="open",expected=1,responded=0)
+        assert rows["overdue"]["response_group"]==dict(state="incomplete",expected=1,responded=0)
+        assert [d["state"] for d in rows["open"]["deliveries"]+rows["overdue"]["deliveries"]]==["pending","pending"]
+        assert rows["absent"]==dict(item_id="absent",event_id=links[3]["event_id"],availability="unavailable",task_outcome="unknown")
+        assert all(set(d)=={"delivery_id","state"} for row in view["items"] for d in row.get("deliveries",[]))
+        # Recipients read only their own deliveries and never the publisher's group;
+        # a request they were not sent is indistinguishable from an absent one.
+        bob_view={row["item_id"]:row for row in call("bob","handoff-request-status",raw=True,body=link_request())["items"]}
+        assert bob_view["collected"]["availability"]=="available" and bob_view["collected"]["response_group"] is None
+        assert len(bob_view["collected"]["deliveries"])==1 and bob_view["collected"]["deliveries"][0]["state"]=="handled"
+        for item in ("open","overdue"):
+            assert bob_view[item]==dict(item_id=item,event_id=rows[item]["event_id"],availability="unavailable",task_outcome="unknown")
+        carol_view={row["item_id"]:row for row in call("carol","handoff-request-status",raw=True,body=link_request())["items"]}
+        assert all(carol_view[item]["response_group"] is None and len(carol_view[item]["deliveries"])==1 for item in ("collected","open","overdue"))
+        # A stale version, an absent handoff and bad links are coded refusals.
+        call("alice","handoff-request-status",raw=True,body=link_request(version=handoff["version"]+1),expected="VERSION_CONFLICT")
+        call("alice","handoff-request-status",raw=True,body=json.dumps(dict(handoff=dict(record_id=str(uuid.uuid4()),version=1),items=links)),expected="NOT_FOUND")
+        call("alice","handoff-request-status",raw=True,body=link_request(items=links+links[:1]),expected="INVALID_REQUEST")
+        call("alice","handoff-request-status",raw=True,body=link_request().replace("{",'{"principal":"agent/bob",',1),expected="INVALID_REQUEST")
+        assert (counters("alice"),counters("carol"),call("alice","response-group",overdue["event_id"]))==observed_before,"status read changed coordination state"
         print("Response groups: fixed snapshot, explicit replies, retry, API restart, owner isolation, paging and deadline audit passed")
         print("Scheduling: durable one-shot restart, exact occurrence identity, misfire audit and pending cancellation passed")
         print("Inbox watch: real CLI/API restart, cursor checkpoint, resume and read-only delivery passed")

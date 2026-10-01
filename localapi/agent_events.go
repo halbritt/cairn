@@ -89,6 +89,14 @@ func serveAgentEvents(w http.ResponseWriter, r *http.Request, c client) bool {
 		serveJSON(w, r, func(ctx context.Context, req core.EventStatusRequest) (core.EventStatus, error) {
 			return c.store.AgentEventStatus(ctx, req, c.destination)
 		})
+	case "/v1/handoff-request-status":
+		serveJSON(w, r, func(ctx context.Context, req core.HandoffRequestStatusRequest) (core.HandoffRequestStatus, error) {
+			out, err := c.store.HandoffRequestStatus(ctx, req, c.destination)
+			if err != nil {
+				return out, err
+			}
+			return out, boundEnvelope(out, core.HandoffRequestStatusEnvelopeLimit)
+		})
 	case "/v1/event-metrics":
 		serveJSON(w, r, func(ctx context.Context, req core.EventQuery) (core.EventStats, error) {
 			return c.store.AgentEventStats(ctx, req, c.destination)

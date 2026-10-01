@@ -4212,6 +4212,234 @@
         "type": "object",
         "x-go-type": "github.com/halbritt/cairn/core.Grant"
       },
+      "core.HandoffDelivery": {
+        "properties": {
+          "delivery_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "delivery_id",
+          "state"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.HandoffDelivery"
+      },
+      "core.HandoffItemLink": {
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "item_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "item_id"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.HandoffItemLink"
+      },
+      "core.HandoffItemLink.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.HandoffItemLink"
+      },
+      "core.HandoffItemStatus": {
+        "properties": {
+          "availability": {
+            "type": "string"
+          },
+          "deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/core.HandoffDelivery"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "deliveries_more": {
+            "type": "boolean"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "item_id": {
+            "type": "string"
+          },
+          "response_group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.HandoffResponseGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "task_outcome": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "availability",
+          "event_id",
+          "item_id",
+          "task_outcome"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.HandoffItemStatus"
+      },
+      "core.HandoffRequestStatus": {
+        "properties": {
+          "handoff": {
+            "$ref": "#/components/schemas/core.HandoffSource"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/core.HandoffItemStatus"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "links": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "handoff",
+          "items",
+          "links",
+          "schema"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.HandoffRequestStatus"
+      },
+      "core.HandoffRequestStatusRequest": {
+        "properties": {
+          "handoff": {
+            "$ref": "#/components/schemas/core.RecordVersionRef"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/core.HandoffItemLink"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "handoff",
+          "items"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.HandoffRequestStatusRequest"
+      },
+      "core.HandoffRequestStatusRequest.accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "handoff": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/core.RecordVersionRef.accepted"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/core.HandoffItemLink.accepted"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.HandoffRequestStatusRequest"
+      },
+      "core.HandoffResponseGroup": {
+        "properties": {
+          "expected": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "responded": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected",
+          "responded",
+          "state"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.HandoffResponseGroup"
+      },
+      "core.HandoffSource": {
+        "properties": {
+          "body_sha256": {
+            "type": "string"
+          },
+          "record_id": {
+            "type": "string"
+          },
+          "version": {
+            "maximum": 9223372036854775807,
+            "minimum": -9223372036854775808,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "body_sha256",
+          "record_id",
+          "version"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/halbritt/cairn/core.HandoffSource"
+      },
       "core.HistoricalVersion": {
         "properties": {
           "body": {
@@ -17597,6 +17825,146 @@
         "x-cairn-retry": "read",
         "x-cairn-session-headers": "optional",
         "x-cairn-source": "server.go"
+      }
+    },
+    "/v1/handoff-request-status": {
+      "post": {
+        "operationId": "handoff-request-status",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionID"
+          },
+          {
+            "$ref": "#/components/parameters/Protocol"
+          },
+          {
+            "$ref": "#/components/parameters/RelayProtocol"
+          },
+          {
+            "$ref": "#/components/parameters/ClientDiagnostics"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cairn_protocol": {
+                        "description": "Reserved client minimum protocol guard; requires canonical decimal integer syntax, verified and removed before decoding. Older servers refuse it as an unknown field.",
+                        "maximum": 9999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "handoff": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/core.RecordVersionRef.accepted"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "items": {
+                        "items": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/core.HandoffItemLink.accepted"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object",
+                    "x-go-type": "github.com/halbritt/cairn/core.HandoffRequestStatusRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Exactly one JSON value. Accepted input: unknown fields are refused; absent and null fields decode as zero values; keys match case-insensitively (encoding/json). Send the canonical shape.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/core.HandoffRequestStatus"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "const": true
+                    },
+                    "protocol": {
+                      "$ref": "#/components/schemas/localapi.ProtocolRange"
+                    },
+                    "refusal_id": {
+                      "type": "string"
+                    },
+                    "schema": {
+                      "const": "cairn.response/1"
+                    },
+                    "status": {
+                      "const": "OK"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "ok",
+                    "protocol",
+                    "schema",
+                    "status"
+                  ],
+                  "type": "object",
+                  "x-go-type": "github.com/halbritt/cairn/localapi.response"
+                }
+              }
+            },
+            "description": "Success envelope"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-cairn-canonical-request": {
+          "$ref": "#/components/schemas/core.HandoffRequestStatusRequest"
+        },
+        "x-cairn-go-types": {
+          "request": "github.com/halbritt/cairn/core.HandoffRequestStatusRequest",
+          "response": "github.com/halbritt/cairn/core.HandoffRequestStatus"
+        },
+        "x-cairn-local-roles": [
+          "agent",
+          "observer"
+        ],
+        "x-cairn-remote": "denied",
+        "x-cairn-remote-roles": [],
+        "x-cairn-request-limit-bytes": 131072,
+        "x-cairn-requires-local-destination": false,
+        "x-cairn-retry": "read",
+        "x-cairn-session-headers": "optional",
+        "x-cairn-source": "agent_events.go"
       }
     },
     "/v1/history": {
