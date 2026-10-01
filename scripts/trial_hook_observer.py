@@ -93,6 +93,26 @@ def bounded_search_discovery(value):
     return result
 
 
+MAX_SEARCH_RECEIPTS = 16
+# collectCandidates initializes the digest; compileSnapshot, withEntitySchema and
+# rankIndexed change these schema labels without replacing Query.
+DIGEST_SOURCE_SCHEMAS = tuple('cairn.semantic/' + str(version)
+                              for version in (3, 8, 9, 10, 11, 12, 13, 14, 16, 17))
+
+
+def bounded_search_receipt(value):
+    """Project only known digest-bearing search views and canonical receipt identity."""
+    if (not isinstance(value, dict) or value.get('schema') != 'cairn.agent-search/1'
+            or value.get('source_schema') not in DIGEST_SOURCE_SCHEMAS):
+        return dict(state='unknown')
+    query, receipt = value.get('query'), value.get('receipt_id')
+    if (not isinstance(query, str) or not re.fullmatch('sha256:[0-9a-f]{64}', query)
+            or not isinstance(receipt, str)
+            or not re.fullmatch('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', receipt)):
+        return dict(state='unknown')
+    return dict(state='observed', query_sha256=query[7:], receipt_id=receipt)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--engine', type=Path, required=True)
@@ -112,13 +132,26 @@ def main():
                   recall_attempted=False, recall=None, exit_code=None)
     recall_status = None
     record['memory_call_attempts'] = None
+    record['search_receipts'] = None
+    record['search_receipts_omitted'] = None
     if hasattr(engine, 'Memory') and hasattr(engine.Memory, 'call'):
         counts = {key: 0 for key in ('search', 'pull', 'pull-evidence', 'history', 'other')}
         record['memory_call_attempts'] = counts
+        record['search_receipts'] = []
+        record['search_receipts_omitted'] = 0
         original_call = engine.Memory.call
         def observed_call(memory, operation, *args, **kwargs):
             counts[operation if operation in counts else 'other'] += 1
-            return original_call(memory, operation, *args, **kwargs)
+            result = None
+            try:
+                result = original_call(memory, operation, *args, **kwargs)
+                return result
+            finally:
+                if operation == 'search':
+                    if len(record['search_receipts']) < MAX_SEARCH_RECEIPTS:
+                        record['search_receipts'].append(bounded_search_receipt(result))
+                    else:
+                        record['search_receipts_omitted'] += 1
         engine.Memory.call = observed_call
 
     def observed_handle(config, event, **kwargs):

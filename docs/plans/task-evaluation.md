@@ -558,3 +558,19 @@ check. Worker prerequisites still run before a provider can launch. Omitting the
 descriptor preserves existing runtime behavior. This does not make unknown Go
 modules available offline, authorize wider tool commands, or prove a future task
 will pass its tests.
+
+### Retained search query digests
+
+The prospective hook observer projects `Memory.call('search')` responses before
+the engine discards them. For the known agent-search/1 view with semantic source schemas
+3, 8–14, 16 or 17, it retains only a strictly tagged SHA-256 query digest and
+canonical UUID receipt identity. These current compiler variants preserve the
+same digest construction, including ordinary index/8 and lexical IDF index/17. Raw query text, prompt text and other response fields are not
+copied. Legacy, absent, malformed or failed responses remain `unknown`; an engine
+without the observed call seam reports null metadata. The first 16 search
+attempts per hook have entries in call order, with an explicit
+`search_receipts_omitted` count for overflow. These are query-identity observations,
+not proof of ranking, applicability or source use. A later deterministic query
+reconstruction must match the retained digest before it is identified with that
+request. This does not recover query evidence for previously frozen runs or add
+any retrieval calls.

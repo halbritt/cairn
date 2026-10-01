@@ -145,6 +145,69 @@ class HookObserverTest(unittest.TestCase):
             self.assertGreater(row['stderr_bytes'],0)
             self.assertNotIn('private', observations.read_text())
 
+    def test_search_receipt_digest_preserved_without_retaining_raw_query(self):
+        import hashlib
+        engine = OBSERVER.parent.parent / 'integrations/lifecycle/memory.py'
+        digest = hashlib.sha256(b'PRIVATE exact query').hexdigest()
+        receipt = 'da3fddc4-431d-4c40-acdd-d4323d73a2db'
+        variants = [('sha256:' + digest, receipt, 'cairn.semantic/' + str(version), True)
+                    for version in (8, 17, 3, 9, 10, 11, 12, 13, 14, 16)] + [
+                    ('sha256:' + digest, receipt, 'cairn.semantic/999', False),
+                    ('PRIVATE raw query', receipt, 'cairn.semantic/1', False),
+                    ('sha256:PRIVATE', receipt, 'cairn.semantic/3', False),
+                    ('sha256:' + digest, 'PRIVATE receipt', 'cairn.semantic/3', False),
+                    (None, receipt, 'cairn.semantic/3', False)]
+        for query, ident, schema, known in variants:
+            with self.subTest(source_schema=schema, query_kind='digest' if known else 'unknown'), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); (root / '.git').mkdir()
+                cli = root / 'cairn'
+                data = dict(status='SCOPE_EMPTY', destination=dict(name='hosted'), selected=[], index=[], omitted={},
+                            schema='cairn.agent-search/1', mode='index', purpose='context',
+                            source_schema=schema, source_seal='a' * 64, receipt_id=ident,
+                            request_id=receipt, credits_remaining=4, bytes_remaining=24000,
+                            query=query, arbitrary_text='PRIVATE response text')
+                cli.write_text('#!' + sys.executable + '\nimport json\nprint(json.dumps(' + repr(dict(ok=True, data=data)) + '))\n')
+                cli.chmod(0o700)
+                config = root / 'config.json'
+                config.write_text(json.dumps(dict(cairn=str(cli), socket='unused', token_file='unused',
+                    repo='trial', harness='claude', state_dir=str(root / 'state'), semantic_fallback=False, recall_observations=False)))
+                observations = root / 'observations.jsonl'
+                event = json.dumps(dict(hook_event_name='UserPromptSubmit', cwd=str(root),
+                    session_id=receipt, prompt='PRIVATE owner task'))
+                direct = subprocess.run([sys.executable, str(engine), '--config', str(config)], input=event, text=True, capture_output=True)
+                observed = subprocess.run([sys.executable, str(OBSERVER), '--engine', str(engine), '--config', str(config),
+                    '--observations', str(observations)], input=event, text=True, capture_output=True)
+                self.assertEqual((observed.returncode, observed.stdout, observed.stderr),
+                                 (direct.returncode, direct.stdout, direct.stderr))
+                self.assertEqual(observed.returncode, 0, observed.stderr)
+                row = json.loads(observations.read_text())
+                expected = dict(state='observed', query_sha256=digest, receipt_id=receipt) if known else dict(state='unknown')
+                self.assertEqual(row['search_receipts'], [expected])
+                self.assertNotIn('PRIVATE', observations.read_text())
+                self.assertNotIn('sha256:' + digest, observations.read_text())
+
+    def test_search_receipt_projection_reports_truncation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); engine=root/'memory.py'; config=root/'config.json'; observations=root/'observations.jsonl'
+            engine.write_text(ENGINE + """
+class Memory:
+    def call(self, operation):
+        return {'query': 'PRIVATE legacy query'}
+def recall(config, event, state):
+    memory=Memory()
+    for _ in range(18): memory.call('search')
+    return {}
+""")
+            config.write_text(json.dumps(dict(state=str(root/'state.json'))))
+            done=subprocess.run([sys.executable,str(OBSERVER),'--engine',str(engine),'--config',str(config),
+                '--observations',str(observations)],input=json.dumps(dict(hook_event_name='UserPromptSubmit')),text=True,capture_output=True)
+            self.assertEqual(done.returncode,0,done.stderr)
+            row=json.loads(observations.read_text())
+            self.assertEqual(row['memory_call_attempts']['search'],18)
+            self.assertEqual(row['search_receipts'],[dict(state='unknown')]*16)
+            self.assertEqual(row['search_receipts_omitted'],2)
+            self.assertNotIn('PRIVATE',observations.read_text())
+
     def test_actual_engine_empty_search_preserves_output(self):
         engine = OBSERVER.parent.parent / 'integrations/lifecycle/memory.py'
         with tempfile.TemporaryDirectory() as directory:
