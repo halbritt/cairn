@@ -418,7 +418,7 @@ def injected_bytes(result):
     return len(context.encode()) if isinstance(context, str) else 0
 
 
-def report_recall(memory, event, started, elapsed, status, injected, error_class=None):
+def report_recall(memory, event, started, elapsed, status, injected, error_class=None, *, method=None, deadline=None):
     """Best-effort: report one finished invocation's metrics, after the session lock is released.
 
     elapsed was taken before this call, so reporting is not part of the figure.
@@ -430,9 +430,13 @@ def report_recall(memory, event, started, elapsed, status, injected, error_class
                 or event.get("hook_event_name") not in ("SessionStart", "UserPromptSubmit")):
             return
         timeout = min(RECALL_REPORT_SECONDS, RECALL_HOOK_SECONDS - RECALL_REPORT_MARGIN - (time.monotonic() - started))
+        if deadline is not None:
+            timeout = min(timeout, deadline - time.monotonic() - RECALL_REPORT_MARGIN)
         if timeout < 0.25:
             return
         body = memory.meter.request(config, event, status, elapsed, injected, error_class)
+        if method is not None:
+            body["method"] = method
         run_json(memory.command + ["recall-observation"], body=encoded(body), timeout=timeout)
     except Exception:  # noqa: BLE001 - a missing observation is unknown, never a hook failure
         return

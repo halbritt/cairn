@@ -11,6 +11,7 @@ import tempfile
 import uuid
 
 SCHEMA = 'cairn.inbox-recall-binding/1'
+RECALL_OBSERVATION_VERSION = 1
 
 
 def checked_file(spec):
@@ -242,17 +243,43 @@ def source_body(history, ref):
     return body
 
 
-def output(config, event, observation, state, control, *, revalidate, outer_deadline):
-    """Called with coordination session lock held. Never admits or completes work."""
+def output(config, event, observation, state, control, *, revalidate, outer_deadline, reports=None):
+    """Called with coordination lock held; reports flush only after its release."""
+    started = time.monotonic()
     engine, memory_config = binding(config)
+    metrics = {}
+    result = None
+    failure = None
     try:
-        return deliver(engine, memory_config, config, event, observation, state, control,
-                       revalidate=revalidate, outer_deadline=outer_deadline)
-    except engine.HookError as exc:
-        raise ValueError('required/source inbox memory operation unavailable') from exc
+        result = deliver(engine, memory_config, config, event, observation, state, control,
+                         revalidate=revalidate, outer_deadline=outer_deadline, metrics=metrics)
+        return result
+    except Exception as exc:
+        failure = exc
+        if isinstance(exc, engine.HookError):
+            raise ValueError('required/source inbox memory operation unavailable') from exc
+        raise
+    finally:
+        # Optional telemetry must not change a successful output or mask refusal.
+        # Only a successfully validated hosted destination makes reporting eligible.
+        try:
+            memory = metrics.get('memory')
+            reporter = getattr(engine, 'report_recall', None)
+            if reports is not None and memory is not None and callable(reporter):
+                error_class = None if failure is None else next((label for kind, label in (
+                    (engine.HookError, 'HookError'), (BlockingIOError, 'BlockingIOError'),
+                    (OSError, 'OSError'), (ValueError, 'ValueError'), (KeyError, 'KeyError'),
+                    (TypeError, 'TypeError')) if isinstance(failure, kind)), 'Exception')
+                reports.append((reporter, dict(memory=memory, event=event, started=started,
+                    elapsed=time.monotonic() - started,
+                    status=('timeout' if engine.is_timeout(failure) else 'error') if failure else 'completed',
+                    injected=len(result.encode()) if failure is None else 0, error_class=error_class,
+                    method='cairn-lifecycle/inbox-recall-meter/1', deadline=outer_deadline)))
+        except Exception:  # Missing observation stays unknown; never changes admission.
+            pass
 
 
-def deliver(engine, memory_config, config, event, observation, state, control, *, revalidate, outer_deadline):
+def deliver(engine, memory_config, config, event, observation, state, control, *, revalidate, outer_deadline, metrics=None):
     if not reserved(engine, event):
         return control
     project = event.get('project_path')
@@ -323,6 +350,8 @@ def deliver(engine, memory_config, config, event, observation, state, control, *
         required = memory.search(engine.project_root(event).name, room=engine.RECALL_SEARCH_ROOM,
                                  kinds=('decision', 'preference'), timeout=engine.recall_timeout(deadline, 2))
         hosted(required)
+        if metrics is not None:
+            metrics['memory'] = memory
         body = None
         source = None
         label = 'required_only'

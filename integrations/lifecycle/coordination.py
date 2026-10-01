@@ -2341,19 +2341,27 @@ def load_inbox_recall(config, *, validate=True):
 
 
 def handle(config, event, event_name=None, *, _inbox_resolved=False):
+    recall_reports = []
     try:
         if not _inbox_resolved:
             config = effective_inbox_config(config, event)
-        return _handle(config, event, event_name)
+        return _handle(config, event, event_name, recall_reports=recall_reports)
     except (CoordinationError, ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as exc:
         if config.get('inbox_recall_binding') and inbox_recall_wake(event):
             if isinstance(exc, NativePromptRefused):
                 raise
             raise NativePromptRefused('bound inbox wake refused; required context or live ownership unavailable') from exc
         raise
+    finally:
+        # Both coordination and bridge memory locks have unwound before reporting.
+        for reporter, report in recall_reports:
+            try:
+                reporter(**report)
+            except Exception:  # Telemetry cannot change the native return/refusal.
+                pass
 
 
-def _handle(config, event, event_name=None):
+def _handle(config, event, event_name=None, *, recall_reports=None):
     bridge_deadline = time.monotonic() + 12
     if os.environ.get('CAIRN_COORDINATION_DISABLED') == '1':
         return {}
@@ -2512,8 +2520,10 @@ def _handle(config, event, event_name=None):
                     raise CoordinationError('STALE_LEASE', 'inbox recall delivery changed')
             try:
                 bridge = load_inbox_recall(config)
+                telemetry = ({'reports': recall_reports}
+                             if getattr(bridge, 'RECALL_OBSERVATION_VERSION', None) == 1 else {})
                 message = bridge.output(config, event, observation, state, message,
-                                        revalidate=revalidate, outer_deadline=bridge_deadline)
+                                        revalidate=revalidate, outer_deadline=bridge_deadline, **telemetry)
             except (ValueError, KeyError, TypeError, OSError, CoordinationError) as exc:
                 raise NativePromptRefused('bound inbox recall unavailable; no source or memory grant delivered') from exc
         if config["harness"] == "agy":

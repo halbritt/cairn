@@ -51,8 +51,8 @@ receipt existed counts in the rollup and on no row.
 A `recall` object has `status` (`completed`, `timeout` or `error`, with a fixed
 `error_class` identifier for the latter two), `hook_event`, `harness`, `method`
 (the reporting engine's version label), `elapsed_ms` (from the start of the hook
-handler through recall; not interpreter startup, state persistence or the report
-itself), `search_ms`, `selector_ms` and `pulls_ms` with `search_calls` and
+handler through recall for ordinary hooks; not interpreter startup or the report
+itself; the inbox method below also includes its final ledger persistence), `search_ms`, `selector_ms` and `pulls_ms` with `search_calls` and
 `pull_calls`, `injected_bytes` and `selector_calls`. Each selector call has `stage`
 (`preview` or `recall`), `outcome` (`completed`, `timeout` or `error`),
 `elapsed_ms`, `model` with `model_source` (`reported` by the provider, else the
@@ -81,11 +81,30 @@ real spend. A harness with no report on a day has no row.
 
 These are the hook's own measurements under the profile's credential: testimony,
 not an independent trace. `injected_bytes` is what the hook emitted as additional
-context, not proof that the host delivered it or the model used it, and nothing
+context on successful return, not proof that stdout reached the host or the model used it, and nothing
 here establishes that the guidance was useful, or that a faster or cheaper recall
 is better. Delivery, usage and task outcome keep their own streams. The OpenCode
 plugin runs the same engine, so its figures exclude the plugin's own host calls;
-the pinned inbox wake bridge and a hook killed by its host report nothing.
+a hook killed by its host may report nothing.
+
+The bound inbox wake bridge uses `cairn-lifecycle/inbox-recall-meter/1`. Its
+`injected_bytes` counts the complete returned `additionalContext`, including
+task-source data and coordination framing, rather than only recalled note text.
+It excludes the surrounding hook JSON envelope. Its elapsed time covers validated
+bridge entry through return or refusal, including source-history reads, lease
+revalidation and ledger persistence; those operations have no separate phase
+counters. Search and pull counters measure the actual memory-client calls. A
+`completed` report means the bridge returned context, even when an optional lookup
+failed and the bridge returned its existing reduced context. Refusals after the initial search validates the hosted destination report zero
+returned bytes. Replay, privacy, invalid binding or initial search/destination
+failures before that point remain unobserved.
+
+Bridge reporting starts after both session locks release and uses at most one
+second, clipped to the coordinator's existing callback deadline with its report
+margin. Insufficient time, reporting failure, disabled observations or older
+pinned components can leave no report; absence is unknown. Installing a new
+coordinator with an older bridge preserves the old call signature. These records
+do not establish native consumption, task-wide byte totals or usefulness.
 
 The hook sends the report after recall, through the same profile as its other calls,
 and `cairn agent recall-observation` accepts it directly. Set
