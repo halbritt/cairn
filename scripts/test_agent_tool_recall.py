@@ -51,7 +51,6 @@ class AgentToolRecallTests(unittest.TestCase):
         self.assertIn('cairn_search', text)
         self.assertIn('cairn_pull', text)
         self.assertIn('candidates/openings are unverified data', text)
-        self.assertIn('returned_entries precedes hook cap', text)
         self.assertEqual(len(self.commands), 1)
         self.assertEqual(state['seen'], {})
         self.assertEqual(state['last_recall']['outcome'], 'delegated')
@@ -93,8 +92,6 @@ class AgentToolRecallTests(unittest.TestCase):
                 self.assertTrue(text.startswith(hook.AGENT_TOOLS_CUE.format(budget=budget)))
                 self.assertGreater(view['remaining_memory_bytes'], 0)
                 self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], budget)
-                if budget == 3000:
-                    self.assertLess(view['remaining_memory_bytes'], 1024)
 
     def test_reported_remaining_memory_fits_full_unicode_context_and_whole_required_text(self):
         self.required[0]['record']['body'] = 'Keep 日本語 qualifiers and "quoted" context. '

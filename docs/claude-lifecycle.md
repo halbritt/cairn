@@ -118,16 +118,20 @@ retain superseded directions internally. The agent must still check conditions,
 history and current source. No extra model call, ranking/filter change or note
 rewrite is performed; clearer source framing alone does not establish usefulness.
 
-Automatic bodies, previews and refusal metadata together may use at most half
-of the measured room left after the whole task/control/required context, cue and
-fixed metadata. The other half is reserved for task-driven selection or query
-reformulation. The same caller-supplied serialization measure bounds tentative
+Automatic delivery leaves half the total configured allowance for task-driven
+selection or query reformulation when complete fixed context permits. Whole
+task/control/required context, the cue and fixed metadata take precedence. If
+those costs exceed half but fit the total, the hook supplies them intact and
+reports the smaller remaining native allowance without speculative body pulls.
+Optional bodies and previews share any room below the automatic ceiling.
+The same caller-supplied serialization measure bounds tentative
 and final output, including the remaining-allowance counter. The configured
 total budget is unchanged; the smaller automatic ceiling is not a new receipt
 or a per-call allowance. Small whole candidates still precede previews, but a
 larger whole body that previously fit can now be deferred to a complete handle
 or a checked excerpt. Fixed required costs can leave little or no optional room;
-required context is never truncated to manufacture a reserve.
+required context is never truncated to manufacture a reserve. A reserve does not
+guarantee that a search, preparation envelope or whole source will fit.
 After selecting a source, the hook checks space for the bounded refusal metadata
 that further inspection could add. If that metadata could displace selected
 content, automatic inspection stops and leaves its unused calls to the task agent.
@@ -145,8 +149,7 @@ ranked content fit, without changing source order or establishing relevance.
 Up to three remaining previews retain complete handles and source-span/conflict
 metadata, except the redundant CLI `pull_command`. Whole preview groups occupy
 at most 2,000 additional UTF-8 bytes within the same automatic ceiling.
-Preview-only delivery retains its half-room bound; it does not deduct a second
-reserve when the automatic ceiling is already applied. A group that does not fit and later
+Preview-only delivery uses the same conditional half-total reserve. A group that does not fit and later
 groups are omitted whole. Search status and `candidate_search.returned_entries`
 remain visible. The optional search view omits only known omission counters with
 an explicit integer zero, and the valid discovery `scores_sha256` digest. Missing

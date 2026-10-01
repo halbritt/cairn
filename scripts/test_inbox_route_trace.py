@@ -96,7 +96,7 @@ def save_codex_budget(path, value):
                     sha256=hashlib.sha256(span_body.encode()).hexdigest(), source_sha256=entry['body_sha256'])
         case.fixture['pull'] = dict(selection=dict(record=dict(record_id=fixtures.AGENT, version=1, body='', **{'class':'A'})),
                                     span=span, credits_remaining=3, bytes_remaining=22000)
-        case.mc['context_bytes'] = 7000
+        case.mc['context_bytes'] = 9500
         case.freeze()
         code = case.cli.read_text().replace("elif op=='pull': result=fixture['pull']", """elif op=='pull':
  if 'span' not in json.loads(body):
@@ -190,7 +190,6 @@ InboxRouteTrace.flush = refused_trace
         self.assertNotIn('PRIVATE', json.dumps(out))
 
     def test_final_delegation_omission_cannot_retain_tentative_emission(self):
-        import time
         from types import SimpleNamespace
         from test_eager_candidate_context import EagerCandidateTests, hook
         case = EagerCandidateTests()
@@ -198,12 +197,18 @@ InboxRouteTrace.flush = refused_trace
         self.addCleanup(case.doCleanups)
         bridge = fixtures.module('trace_final_omission', fixtures.ROOT/'integrations/lifecycle/inbox_recall.py')
         trace = bridge.InboxRouteTrace(case.root/'memory', {})
-        def refused(*args, **kwargs):
-            raise hook.HookError('private unavailable detail')
-        memory = SimpleNamespace(inbox_trace=trace, call=refused)
+        memory = SimpleNamespace(inbox_trace=trace)
         status = dict(rejected={})
-        result = dict(case.result, index=case.entries[:1])
-        text = hook.eager_agent_candidates(memory, result, 2160, status, time.monotonic()+10)
+        result = dict(case.result, index=[])
+        progress = dict(pull_calls=0, remaining_pull_calls=4, delivered_records=0, refusals={})
+        initial = hook.render_agent_candidates([], result, 9500, dict(rejected={}), [], progress)
+        budget = len(initial.encode())
+        # The new fixed-priority path avoids speculative calls at this boundary.
+        # Exercise final renderer refusal directly: a later, larger bookkeeping
+        # envelope must invalidate an earlier successful tentative render.
+        hook.render_agent_candidates([], result, budget, status, [], progress, observer=memory)
+        progress = dict(progress, pull_calls=1, refusals=dict(whole_pull_unavailable=1))
+        text = hook.render_agent_candidates([], result, budget, status, [], progress, observer=memory)
         self.assertEqual((text, status['outcome']), ('', 'delegation_omitted'))
         self.assertGreater(trace.data['renders'], 0)  # An earlier tentative render succeeded.
         trace.finish('Bridge fallback allowance prose', False)

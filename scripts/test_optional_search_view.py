@@ -59,8 +59,8 @@ class OptionalSearchViewTests(unittest.TestCase):
 
     def test_bound_public_hook_admits_whole_unicode_source_and_later_refusal(self):
         case = claude_fixture.ClaudeInboxRecallTests(); case.setUp(); self.addCleanup(case.doCleanups)
-        # Generic synthetic source, deliberately near the full 9500-byte envelope.
-        body = '日本語 "guard"\n' + 'x' * 5800
+        # Generic synthetic source, deliberately near the automatic half of the 9500-byte envelope.
+        body = '日本語 "guard"\n' + 'x' * 1400
         selection = case.fixture['pull']['selection']
         selection.update(mandatory=False, evidence=[], authority=[], reason='checked candidate')
         record = selection['record']
@@ -94,7 +94,7 @@ class OptionalSearchViewTests(unittest.TestCase):
         self.assertEqual(shown['candidate_inspection']['pull_calls'], 1)
         wire = len(first['stdout'].encode())
         self.assertLessEqual(wire + shown['remaining_memory_bytes'], 9500)
-        self.assertGreater(wire, 8500)
+        self.assertGreater(wire, 3500)
         self.assertEqual(case.fixture, canonical)
         self.assertEqual(len([c for c in case.calls() if c['op'] == 'pull']), 1)
         second = case.memory_main(event)

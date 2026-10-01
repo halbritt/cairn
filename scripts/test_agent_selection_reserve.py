@@ -30,11 +30,11 @@ class SelectionReserveTests(unittest.TestCase):
         self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 9500)
 
 
-    def test_bound_inbox_preserves_half_post_fixed_wire_room_and_total_policy(self):
+    def test_bound_inbox_preserves_half_total_wire_room_and_total_policy(self):
         from test_claude_inbox_recall import ClaudeInboxRecallTests
         self.bound_reserve(ClaudeInboxRecallTests())
 
-    def test_bound_codex_preserves_half_post_fixed_wire_room_and_total_policy(self):
+    def test_bound_codex_preserves_half_total_wire_room_and_total_policy(self):
         from test_inbox_recall_bridge import InboxRecallBridgeTests
         self.bound_reserve(InboxRecallBridgeTests())
 
@@ -59,7 +59,7 @@ class SelectionReserveTests(unittest.TestCase):
                                                delivered_records=0, refusals={}))
         envelope['hookSpecificOutput']['additionalContext'] = prefix + eager.hook.encoded(fixed)
         fixed_bytes = len((json.dumps(envelope, ensure_ascii=False, separators=(',', ':')) + '\n').encode())
-        reserve = (9500 - fixed_bytes) // 2
+        reserve = min(9500 // 2, 9500 - fixed_bytes)
         self.assertGreater(reserve, 1000)
         self.assertGreaterEqual(view['remaining_memory_bytes'], reserve)
         self.assertLessEqual(len(out['stdout'].encode()), 9500 - reserve)
@@ -76,7 +76,6 @@ class SelectionReserveTests(unittest.TestCase):
 
     def test_saturated_whole_survives_later_receipt_failure(self):
         case = self.fixture()
-        case.config['context_bytes'] = 5073
         case.optional()
         large, later, earlier = case.entries
         large['match_span'] = dict(offset=0, length=4096)
@@ -84,6 +83,13 @@ class SelectionReserveTests(unittest.TestCase):
         body = 'X' * 1154
         earlier['body_sha256'] = hashlib.sha256(body.encode()).hexdigest()
         case.responses[earlier['record_id']]['selection']['record']['body'] = body
+        # Saturate the new half-total boundary with this exact whole response.
+        supplied = dict(pull_arguments=earlier['pull_arguments'],
+                        response=case.responses[earlier['record_id']])
+        rendered = eager.hook.render_agent_candidates([], dict(case.result, index=[]), 9500,
+            dict(rejected={}), [supplied], dict(pull_calls=1, remaining_pull_calls=3,
+                                              delivered_records=1, refusals={}))
+        case.config['context_bytes'] = 2 * len(rendered.encode())
         def pull(operation, *, payload, timeout):
             if payload['handle'] == large['record_id']:
                 return case.receipt_span(operation, payload=payload, timeout=timeout)
@@ -95,14 +101,14 @@ class SelectionReserveTests(unittest.TestCase):
         self.assertEqual(len(case.calls), 1)
         self.assertEqual(case.calls[0], earlier['pull_arguments'])
         self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 3)
-        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5073)
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], case.config['context_bytes'])
 
     def test_near_cap_required_context_is_whole_without_optional_calls(self):
         from test_claude_inbox_recall import ClaudeInboxRecallTests
         case = ClaudeInboxRecallTests()
         case.setUp()
         self.addCleanup(case.doCleanups)
-        required = 'Mandatory current condition. ' * 230
+        required = 'Mandatory current condition. ' * 180
         case.fixture['search']['selected'] = [dict(mandatory=True, record=dict(body=required))]
         case.freeze()
         out = case.invoke(main=True)
@@ -110,8 +116,9 @@ class SelectionReserveTests(unittest.TestCase):
         text = json.loads(out['stdout'])['hookSpecificOutput']['additionalContext']
         self.assertIn(required, text)
         self.assertIn(case.body, text)
-        self.assertNotIn('candidate_bodies', text)
-        self.assertIn('optional_recall_unavailable', text)
+        view = json.loads(text[text.index('{"selected":'):].split('\n', 1)[0])
+        self.assertEqual(view['candidate_bodies'], [])
+        self.assertGreater(view['remaining_memory_bytes'], 0)
         self.assertEqual([c for c in case.calls() if c['op'] == 'pull'], [])
         ledger = case.ledger()
         grant = ledger['grants'][ledger['active']]

@@ -12,7 +12,7 @@ hook = eager.hook
 
 
 class OptionalExcerptFitTests(unittest.TestCase):
-    def fixture(self, *, overhead=2400, unicode=False, preview_offset=48):
+    def fixture(self, *, overhead=1000, unicode=False, preview_offset=48):
         case = eager.EagerCandidateTests()
         case.setUp()
         self.addCleanup(case.doCleanups)
@@ -98,7 +98,7 @@ class OptionalExcerptFitTests(unittest.TestCase):
                              candidate_inspection=dict(pull_calls=0, remaining_pull_calls=4,
                                                        delivered_records=0, refusals={}))
                 fixed_text = hook.AGENT_TOOLS_CUE.format(budget=9500) + hook.encoded(fixed)
-                reserve = (9500 - measure(fixed_text)) // 2
+                reserve = min(9500 // 2, 9500 - measure(fixed_text))
                 self.assertGreaterEqual(view['remaining_memory_bytes'], reserve)
                 self.assertLessEqual(measure(text) + view['remaining_memory_bytes'], 9500)
 
@@ -191,7 +191,7 @@ class OptionalExcerptFitTests(unittest.TestCase):
                 case = factory()
                 case.setUp()
                 self.addCleanup(case.doCleanups)
-                case.body = 'Implement the fixture change and preserve its documented boundaries. ' * 30
+                case.body = 'Implement the fixture change and preserve its documented boundaries. ' * 5
                 historical = case.fixture['history']['versions'][0]
                 historical.update(body=case.body, body_bytes=len(case.body.encode()),
                                   body_sha256=hashlib.sha256(case.body.encode()).hexdigest())

@@ -118,9 +118,7 @@ class EagerCandidateTests(unittest.TestCase):
             before = render(9500)
             # Cross the actual full-envelope boundary, without changing source,
             # handles, policy or the compact renderer's accounting.
-            fixed = hook.render_agent_candidates([], dict(status='READY', index=[], omitted={}),
-                9500, dict(rejected={}), [], dict(pull_calls=0, remaining_pull_calls=4, delivered_records=0, refusals={}), measure=measure)
-            budget = 2 * measure(before) - measure(fixed) - 8
+            budget = 2 * measure(before) - 8
             with self.assertRaises(hook.ContextRefused):
                 render(budget)
         text = render(budget)
@@ -373,7 +371,7 @@ class EagerCandidateTests(unittest.TestCase):
                 self.assertEqual(view['candidate_bodies'], [])
 
     def test_oversized_optional_passage_does_not_hide_later_checked_whole_note(self):
-        self.config['context_bytes'] = 5400
+        self.config['context_bytes'] = 6500
         self.optional()
         first, later = self.entries[:2]
         first['match_span'] = dict(offset=0, length=4096)
@@ -397,7 +395,7 @@ class EagerCandidateTests(unittest.TestCase):
                          [first['record_id'], later['record_id']])
         self.assertEqual(view['candidate_inspection'], dict(pull_calls=2, remaining_pull_calls=2,
             delivered_records=1, refusals=dict(whole_context_budget=1, span_context_budget=1)))
-        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5400)
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 6500)
         self.assertEqual(state['seen'], {})
 
     def test_after_oversized_passage_competing_group_is_delivered_whole(self):
@@ -467,7 +465,7 @@ class EagerCandidateTests(unittest.TestCase):
     def test_saturated_prior_body_is_not_evicted_by_extra_attempt_metadata(self):
         # An accepted whole response must survive the next failed call.
         # Neither a third call nor an uncharged retry may consume native choice.
-        self.config['context_bytes'] = 5073
+        self.config['context_bytes'] = 6400
         self.optional()
         large, later, earlier = self.entries
         large['match_span'] = dict(offset=0, length=4096)
@@ -491,7 +489,7 @@ class EagerCandidateTests(unittest.TestCase):
         self.assertEqual(view['candidate_inspection']['remaining_pull_calls'], 2)
         self.assertEqual(view['candidate_inspection']['refusals'],
                          dict(whole_pull_budget=1, pull_limit=1))
-        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 5073)
+        self.assertLessEqual(len(text.encode()) + view['remaining_memory_bytes'], 6400)
 
     def test_passage_refuses_when_complete_preview_cannot_fit_without_more_reads(self):
         self.config['context_bytes'] = 5400

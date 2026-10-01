@@ -47,7 +47,7 @@ class SourceOpeningTests(unittest.TestCase):
         self.assertEqual(context['span']['end'], len(opening.encode()))
         self.assertLessEqual(len(out['stdout'].encode()) + view['remaining_memory_bytes'], 6318)
         self.assertIn(opening, text.replace('\\n', '\n'))
-        self.assertEqual(len([c for c in case.calls() if c['op'] == 'pull']), 2)
+        self.assertEqual(len([c for c in case.calls() if c['op'] == 'pull']), 1)
         from trial_source_delivery import hook_delivery
         delivery = hook_delivery(out['stdout'])
         self.assertEqual(delivery['status'], 'observed')
@@ -111,11 +111,7 @@ class SourceOpeningTests(unittest.TestCase):
         return case
 
     def half_room_boundary(self, text):
-        prefix, raw = text.split('{"selected":', 1)
-        fixed = dict(json.loads('{"selected":' + raw), index=[], candidate_bodies=[],
-            remaining_memory_bytes=9500, candidate_inspection=dict(pull_calls=0,
-                remaining_pull_calls=4, delivered_records=0, refusals={}))
-        return 2 * len(text.encode()) - len((prefix + eager.hook.encoded(fixed)).encode())
+        return 2 * len(text.encode())
 
     def test_span_only_opening_uses_one_existing_credit_and_trims_utf8_boundary(self):
         # Byte 768 bisects the final character; the API returns exact base64 bytes.
