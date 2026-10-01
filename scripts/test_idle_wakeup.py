@@ -854,7 +854,7 @@ time.sleep(30)
 
         with mock.patch.object(coordination, 'call', fake_call):
             for number in range(3):
-                delivery_id = 'delivery-'+str(number)
+                delivery_id = f'00000000-0000-4000-8000-{number + 1:012d}'
                 marker = dict(transport='claude-channel', status='submitted', delivery_id=delivery_id,
                               session=coordination.session_ref(agent))
                 state = json.loads(path.read_text())
@@ -900,7 +900,7 @@ time.sleep(30)
                     # Completion can be reconciled without a matching Stop.
                     # The next delivery still cannot join this same prompt.
                     state = json.loads(path.read_text())
-                    same_turn = dict(marker, delivery_id='delivery-next')
+                    same_turn = dict(marker, delivery_id='00000000-0000-4000-8000-000000000004')
                     state['idle_wake'] = same_turn
                     coordination.write_state(path, state)
                     with self.assertRaisesRegex(coordination.CoordinationError, 'NATIVE_PROMPT_REFUSED'):
@@ -936,7 +936,8 @@ time.sleep(30)
             process=coordination.process_reference(os.getpid()),
             socket=str(channel_dir/'bridge.sock'))))
         agent = dict(self.agent, context_revision=3, display_name='agent-one', inbox='agent/agent-one')
-        marker = dict(transport='claude-channel', delivery_id='delivery-one',
+        delivery_id = '00000000-0000-4000-8000-000000000010'
+        marker = dict(transport='claude-channel', delivery_id=delivery_id,
                       session=coordination.session_ref(agent))
         state = dict(schema='cairn.native-session/1', process=host_ref, agent=agent,
                      workspace=str(self.root), idle_wake=marker)
@@ -959,9 +960,9 @@ time.sleep(30)
                 return dict(current, context_revision=current['context_revision']+1,
                             metadata=json.loads(json.dumps(request['metadata'])))
             if operation == 'session-inbox-claim':
-                return dict(attempt=dict(attempt_id='attempt-one', session=request['session'],
+                return dict(attempt=dict(attempt_id=request['request_id'], session=request['session'],
                     native_turn_id=request.get('native_turn_id'),
-                    delivery=dict(delivery_id='delivery-one', lease_id='lease-one',
+                    delivery=dict(delivery_id=delivery_id, lease_id='lease-one',
                         event=dict(event_id='event-one', kind='request',
                                    ref=dict(record_id='r', version=1), **{'from': 'agent:x'}))))
             if operation == 'event-renew':
@@ -983,7 +984,7 @@ time.sleep(30)
                 coordination.handle(config, joined_prompt)     # The wake joins the busy prompt.
             after_join = json.loads(path.read_text())
             self.assertNotIn('idle_wake', after_join, 'joined wake kept its marker')
-            self.assertEqual(after_join['active_prompt'].get('refused_delivery'), 'delivery-one')
+            self.assertEqual(after_join['active_prompt'].get('refused_delivery'), delivery_id)
             self.assertNotIn('session-inbox-claim', recorded)  # Never claimed onto the owner prompt.
             coordination.handle(config, dict(owner_prompt, hook_event_name='Stop'))
             self.assertNotIn('active_prompt', json.loads(path.read_text()))
@@ -1007,7 +1008,8 @@ time.sleep(30)
         # cancellation contract.
         host = os.getppid()
         agent = dict(self.agent, context_revision=3, display_name='agent-one', inbox='agent/agent-one')
-        marker = dict(transport='claude-channel', delivery_id='delivery-two',
+        delivery_id = '00000000-0000-4000-8000-000000000012'
+        marker = dict(transport='claude-channel', delivery_id=delivery_id,
                       session=coordination.session_ref(agent))
         state = dict(schema='cairn.native-session/1',
             process=coordination.process_reference(host), agent=agent,
@@ -1032,9 +1034,9 @@ time.sleep(30)
                 return dict(current, context_revision=current['context_revision']+1,
                             metadata=json.dumps(request['metadata']) and json.loads(json.dumps(request['metadata'])))
             if operation == 'session-inbox-claim':
-                return dict(attempt=dict(attempt_id='attempt-two', session=request['session'],
+                return dict(attempt=dict(attempt_id=request['request_id'], session=request['session'],
                     native_turn_id=request.get('native_turn_id'),
-                    delivery=dict(delivery_id='delivery-two', lease_id='lease-two',
+                    delivery=dict(delivery_id=delivery_id, lease_id='lease-two',
                         event=dict(event_id='event-two', kind='request',
                                    ref=dict(record_id='r2', version=1), **{'from': 'agent:x'}))))
             if operation == 'event-renew':

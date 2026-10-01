@@ -293,13 +293,14 @@ class OpenCodeCancelHostTests(unittest.TestCase):
 
     def test_repeated_accepted_turn_start_reuses_the_claim_and_completion(self):
         session = self.session
-        delivery = dict(delivery_id='delivery-one', lease_id='lease-one',
+        delivery_id = '00000000-0000-4000-8000-000000000011'
+        delivery = dict(delivery_id=delivery_id, lease_id='lease-one',
                         event=dict(event_id='event-one', kind='request', ref={},
                                    **{'from': 'agent/source'}))
-        attempt = dict(attempt_id='attempt-one', session=session,
+        attempt = dict(session=session,
                        native_turn_id='turn-one', turn_exclusive=True, delivery=delivery)
-        wake = dict(transport='opencode-queue', session=session, delivery_id='delivery-one',
-                    request_id='delivery-one', native_id='ses-one', endpoint='/unused/bridge.sock',
+        wake = dict(transport='opencode-queue', session=session, delivery_id=delivery_id,
+                    request_id=delivery_id, native_id='ses-one', endpoint='/unused/bridge.sock',
                     cancel_capable=True)
         state = dict(agent=dict(**session, native_session_id='ses-one'),
                      process=self.state['process'], idle_wake=wake)
@@ -310,6 +311,7 @@ class OpenCodeCancelHostTests(unittest.TestCase):
         def store_call(_config, operation, request, **_kwargs):
             if operation == 'session-inbox-claim':
                 claims.append(copy.deepcopy(request))
+                attempt['attempt_id'] = request['request_id']
                 return dict(attempt=copy.deepcopy(attempt))
             if operation == 'session-inbox-control':
                 return dict(attempt=copy.deepcopy(attempt))
@@ -320,7 +322,7 @@ class OpenCodeCancelHostTests(unittest.TestCase):
             self.fail(f'unexpected operation {operation}')
 
         observation = dict(event='TurnStart', phase='busy', native_turn_id='turn-one')
-        binding = dict(delivery_id='delivery-one', native_turn_id='turn-one', turn_exclusive=True)
+        binding = dict(delivery_id=delivery_id, native_turn_id='turn-one', turn_exclusive=True)
         with patch.object(coordination, 'call', side_effect=store_call):
             first = coordination.inbox_context(self.config, state, self.path, observation, binding)
             completion_id = state['inbox_completion']
@@ -329,7 +331,7 @@ class OpenCodeCancelHostTests(unittest.TestCase):
         self.assertIn('Cairn has a request', second)
         self.assertEqual(len(claims), 1)
         self.assertEqual(state['inbox_completion'], completion_id)
-        self.assertEqual(state['inbox_attempt']['attempt_id'], 'attempt-one')
+        self.assertEqual(state['inbox_attempt']['attempt_id'], claims[0]['request_id'])
 
 
 if __name__ == '__main__':
