@@ -617,7 +617,7 @@ func TestClientsRequestCannotSelectAnotherIdentityOrPage(t *testing.T) {
 	s := observationServer(newFakeClock())
 	post(s, "/v1/version", otherToken, `{}`, map[string][]string{ClientDiagnosticsHeader: {declare(2)}})
 	for _, body := range []string{
-		`{"principal":"local-uid:2"}`, `{"all":true}`, `{"machine_id":"m1"}`, `{"cursor":"x"}`, `{"after":"x"}`, `{"limit":0}`, `{"limit":101}`,
+		`{"principal":"local-uid:2"}`, `{"all":true}`, `{"machine_id":"m1"}`, `{"cursor":"x"}`, `{"after":"x"}`, `{"limit":0}`, `{"limit":129}`,
 		`{"limit":-1}`, `{"limit":"5"}`, `{"limit":1.5}`, `[]`, `{"limit":5}{}`, `x`,
 	} {
 		response := post(s, "/v1/clients", localToken, body, nil)

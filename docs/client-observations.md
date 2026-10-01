@@ -14,7 +14,7 @@ cairn clients [--profile NAME | --token-file FILE] [--socket PATH] [--limit N]
 cairn agent --token-file FILE [--socket PATH] clients [--limit N]
 ```
 
-Authenticated `POST /v1/clients` takes `{}` or `{"limit": 1..100}` (default 50).
+Authenticated `POST /v1/clients` takes `{}` or `{"limit": 1..128}` (default 50).
 `cairn clients --help` needs no credentials, home directory or connection.
 
 ## What a client reports
@@ -22,7 +22,7 @@ Authenticated `POST /v1/clients` takes `{}` or `{"limit": 1..100}` (default 50).
 The CLI and the MCP facade attach one optional, transport-only HTTP header,
 `Cairn-Client-Diagnostics`, to their API requests: unpadded base64url of one JSON
 object (at most 4096 encoded and 3072 decoded bytes, depth 6, no duplicate
-member names, strings at most 256 bytes) with schema `cairn.client-diagnostics/1`:
+member names (including case variants at every level), strings at most 256 bytes) with schema `cairn.client-diagnostics/1`:
 
 | Field | Meaning |
 | --- | --- |
@@ -61,14 +61,16 @@ roll back an operation. Bounded synchronous parsing and bookkeeping add overhead
   echoed. Raw bytes of an unusable declaration are never kept.
 - **Retention.** Volatile, per server process: a cohort is forgotten 24 hours after
   its last observation (the monotonic reading decides when the clock provides one),
-  at most 128 cohorts per principal and 1,024 in all. When full, the least recently
-  observed cohort is evicted, deterministically. A restart starts empty with a new
+  at most 128 cohorts per principal and 4,096 in all (32 configured identities × 128). A principal that fills its quota evicts its own least recently observed
+  cohort, deterministically. The global bound accommodates every configured
+  principal’s full quota; traffic from another configured principal cannot evict
+  these rows. A restart starts empty with a new
   `observation_epoch`; first and last times are observations within this process
   and window, not launch or exit times.
 - **Scoped counters.** `counters.evicted_cohorts` and `invalid_declarations` count
   only your principal's rows; `partial` is true when your view is truncated or
-  your rows were evicted. A capacity eviction caused by another principal's traffic
-  shows only as your own eviction count, never who caused it.
+  your rows were evicted. A capacity eviction reflects your own principal's quota. Counters never reveal
+  another principal's traffic.
 
 ## What `clients` returns
 
@@ -87,18 +89,32 @@ request content is ever included.
   authenticated profile. There is no `all`, principal, machine or cursor field
   (unknown fields are refused). A remote machine's agent profile sees its own rows;
   a remote observer profile stays denied as before.
-- **One bounded page.** At most 100 rows; `truncated` and `eligible_rows` say what
+- **One bounded page.** At most 128 rows (request `--limit 128` to read every retained cohort); `truncated` and `eligible_rows` say what
   was left out. There is no cursor and no inventory promise.
 - **Listing observes nothing.** `/v1/clients` is not itself recorded, and listing
   never refreshes a cohort. `/v1/version` calls do count as contact.
 - **An empty list** means no retained observation in your scope, not that every
   client is current. An old API without the route is reported by the CLI as
-  `UNSUPPORTED_DIAGNOSTICS`; an unreachable one stays `API_CONNECTION_FAILED`.
+  `UNSUPPORTED_DIAGNOSTICS`. Remote profiles can instead receive
+  `AUTHORITY_DENIED` from an older API: the CLI preserves that code and explains
+  that access is denied or the API predates the view, with observations unknown.
+  An unreachable API stays `API_CONNECTION_FAILED`.
 - **No ordering claims.** Rows are ordered by observation order, never by wall
   time or Git history. `wall_clock_regressed` labels a clock that moved backwards;
   such times are displayed as observed and never used to order, expire or compare
   releases. Equal revisions do not prove equal bytes or capabilities, and
   different revisions are not older or newer.
+
+The CLI validates the versioned response before printing a typed projection.
+Unrecognized schemas, unsafe known fields, inconsistent counters and out-of-bound
+pages return `INVALID_DIAGNOSTICS` without reflecting peer content. Unknown
+additive fields are omitted. This includes checking build/origin/capability
+formats, cohort/epoch UUIDs, timestamps, known metadata states, machine IDs, and
+bounded ASCII principal labels (`A-Z a-z 0-9 . _ : / @ + -`, with an alphanumeric
+first character). Other provisioned principal labels remain valid for API
+authentication but cannot be shown by this diagnostic CLI. Responses are capped
+at 512 KiB and the requested row limit. The declared principal remains a server
+claim; response validation does not independently authenticate it.
 
 ## Wire behavior
 

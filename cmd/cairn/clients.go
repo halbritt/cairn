@@ -21,7 +21,8 @@ declarations; they are not process counts. A missing or invalid declaration is
 shown as such, never as an old client. An empty list means no retained
 observations, not that every client is current. Listing does not refresh any
 cohort. Output is the bounded, safe JSON view; no header, token, path or prompt
-is included. An API that predates this view returns UNSUPPORTED_DIAGNOSTICS.`
+is included. A missing route returns UNSUPPORTED_DIAGNOSTICS. Remote denial may mean access
+is denied or the API predates the view; observed clients remain unknown.`
 
 // cliDiagnostics declares this executing CLI process. Origin comes only from
 // the dedicated bounded caller value, validated against the fixed component
@@ -38,7 +39,7 @@ func cliDiagnostics() localapi.ClientDiagnostics {
 // call. The request has no principal, machine or "all" selector.
 func agentClients(ctx context.Context, client *localapi.Client, args []string) (any, error) {
 	f := flags("clients")
-	limit := f.Int("limit", 0, "maximum cohorts to return, 1 to 100 (default 50)")
+	limit := f.Int("limit", 0, "maximum cohorts to return, 1 to 128 (default 50)")
 	if err := f.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return agentFlagHelp("cairn agent [--token-file FILE] [--socket PATH] clients [--limit N]", clientsHelpDetail, f), nil
@@ -62,9 +63,20 @@ func agentClients(ctx context.Context, client *localapi.Client, args []string) (
 		if core.Code(err) == "NOT_FOUND" {
 			return nil, &core.Error{Code: "UNSUPPORTED_DIAGNOSTICS", Message: "this API does not provide client observations; observed clients are unknown, not an empty list"}
 		}
+		if core.Code(err) == "AUTHORITY_DENIED" {
+			return nil, &core.Error{Code: "AUTHORITY_DENIED", Message: "client observations unavailable: access denied or this API predates the view; observed clients are unknown"}
+		}
 		return nil, err
 	}
-	return result, nil
+	pageLimit := localapi.ClientsDefaultLimit
+	if request.Limit != nil {
+		pageLimit = *request.Limit
+	}
+	view, err := localapi.ParseClientsResponse(result, pageLimit)
+	if err != nil {
+		return nil, err
+	}
+	return view, nil
 }
 
 // clientsCommand is the top-level `cairn clients`. It only translates the
@@ -75,7 +87,7 @@ func clientsCommand(ctx context.Context, args []string, input io.Reader) (any, e
 	token := f.String("token-file", "", "owner-only API token file")
 	profile := f.String("profile", "", "provisioned profile name")
 	socket := f.String("socket", "", "Cairn Unix socket")
-	limit := f.Int("limit", 0, "maximum cohorts to return, 1 to 100 (default 50)")
+	limit := f.Int("limit", 0, "maximum cohorts to return, 1 to 128 (default 50)")
 	if err := f.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return agentFlagHelp("cairn clients [--profile NAME | --token-file FILE] [--socket PATH] [--limit N]", clientsHelpDetail, f), nil

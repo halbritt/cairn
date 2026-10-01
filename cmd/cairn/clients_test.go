@@ -57,7 +57,7 @@ func clientsAPI(t *testing.T, handler func(http.ResponseWriter, *http.Request)) 
 	}
 }
 
-const emptyView = `{"schema":"cairn.response/1","ok":true,"status":"OK","protocol":{"min":1,"current":2},"data":{"schema":"cairn.clients/1","storage":"volatile","rows":[],"returned":0,"eligible_rows":0}}`
+const emptyView = `{"schema":"cairn.response/1","ok":true,"status":"OK","protocol":{"min":1,"current":2},"data":{"schema":"cairn.clients/1","storage":"volatile","observation_epoch":"00000000-0000-4000-8000-000000000001","started_at":"2026-09-30T12:00:00Z","observed_at":"2026-09-30T12:01:00Z","retention_seconds":86400,"server":{"schema":"cairn.build/1","go_version":"go1.25.0","vcs_modified":null},"exhaustive":false,"partial":false,"truncated":false,"wall_clock_regressed":false,"counters":{"evicted_cohorts":0,"invalid_declarations":0},"rows":[],"returned":0,"eligible_rows":0}}`
 
 func answer(body string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }
@@ -119,7 +119,7 @@ func TestClientsChecksItsArgumentsBeforeAnyConnection(t *testing.T) {
 	socket, token, calls := clientsAPI(t, answer(emptyView))
 	for _, args := range [][]string{
 		{"clients", "--socket", socket, "--token-file", token, "--limit", "0"},
-		{"clients", "--socket", socket, "--token-file", token, "--limit", "101"},
+		{"clients", "--socket", socket, "--token-file", token, "--limit", "129"},
 		{"clients", "--socket", socket, "--token-file", token, "--limit", "-3"},
 		{"clients", "--socket", socket, "--token-file", token, "--limit", "many"},
 		{"clients", "--socket", socket, "--token-file", token, "extra"},

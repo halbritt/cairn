@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -44,11 +45,11 @@ const (
 	ObservationRetention = 24 * time.Hour
 	// ObservationCohortsPerPrincipal and ObservationCohortsTotal bound memory.
 	ObservationCohortsPerPrincipal = 128
-	ObservationCohortsTotal        = 1024
+	ObservationCohortsTotal        = maxAPIIdentities * ObservationCohortsPerPrincipal
 	// ClientsDefaultLimit and ClientsMaxLimit bound the single response page.
 	ClientsDefaultLimit  = 50
-	ClientsMaxLimit      = 100
-	maxCounterPrincipals = 32
+	ClientsMaxLimit      = ObservationCohortsPerPrincipal
+	maxCounterPrincipals = maxAPIIdentities
 	counterCeiling       = uint64(1) << 62
 )
 
@@ -148,8 +149,20 @@ func ParseCallerOrigin(value string) (*ClientOrigin, bool) {
 	return &origin, true
 }
 
+func foldDiagnosticKey(key string) string {
+	return strings.Map(func(r rune) rune {
+		smallest := r
+		for next := unicode.SimpleFold(r); next != r; next = unicode.SimpleFold(next) {
+			if next < smallest {
+				smallest = next
+			}
+		}
+		return smallest
+	}, key)
+}
+
 // checkBoundedJSON accepts exactly one JSON object with bounded depth, no
-// duplicate member names at any level, bounded strings and valid Unicode.
+// case-colliding member names at any level, bounded strings and valid Unicode.
 func checkBoundedJSON(data []byte) error {
 	if !utf8.Valid(data) {
 		return errInvalidDiagnostics
@@ -188,10 +201,10 @@ func checkBoundedJSON(data []byte) error {
 				continue
 			}
 			key, ok := token.(string)
-			if !ok || len(key) > maxDiagnosticsString || top.keys[key] {
+			if !ok || len(key) > maxDiagnosticsString || top.keys[foldDiagnosticKey(key)] {
 				return errInvalidDiagnostics
 			}
-			top.keys[key], top.expectKey = true, false
+			top.keys[foldDiagnosticKey(key)], top.expectKey = true, false
 			continue
 		}
 		switch value := token.(type) {
@@ -222,7 +235,7 @@ func checkBoundedJSON(data []byte) error {
 
 var errInvalidDiagnostics = errors.New("invalid client diagnostics")
 
-var errInvalidLimit = &core.Error{Code: "INVALID_REQUEST", Message: "limit must be an integer from 1 to 100"}
+var errInvalidLimit = &core.Error{Code: "INVALID_REQUEST", Message: "limit must be an integer from 1 to 128"}
 
 // parseDiagnostics classifies the header values of one request. It retains and
 // echoes nothing from an unusable declaration. A declaration with a newer

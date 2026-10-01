@@ -9,6 +9,8 @@ import (
 	"github.com/halbritt/cairn/core"
 )
 
+const maxAPIIdentities = 32
+
 var machineIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
 // ValidateIdentities is shared by provisioning and server startup. Remote
@@ -18,7 +20,7 @@ func ValidateIdentities(identities []Identity) error {
 	invalid := func() error {
 		return &core.Error{Code: "INVALID_REQUEST", Message: "invalid or duplicate API identity configuration"}
 	}
-	if len(identities) == 0 || len(identities) > 32 {
+	if len(identities) == 0 || len(identities) > maxAPIIdentities {
 		return invalid()
 	}
 	principals := map[string]bool{}

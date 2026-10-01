@@ -2,6 +2,7 @@ package localapi_test
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -25,6 +26,8 @@ func TestDeclarationsNeverChangeStoreBackedOperationsOrRetryIdentity(t *testing.
 			case "duplicate":
 				value := r.Header.Get(localapi.ClientDiagnosticsHeader)
 				r.Header.Add(localapi.ClientDiagnosticsHeader, value)
+			case "case-collision":
+				r.Header.Set(localapi.ClientDiagnosticsHeader, base64.RawURLEncoding.EncodeToString([]byte(`{"schema":"cairn.client-diagnostics/1","surface":"cli","Surface":"mcp","harness":"unknown","transport_build":{"schema":"cairn.build/1","go_version":"go1.25.0","vcs_modified":null}}`)))
 			case "oversized":
 				r.Header.Set(localapi.ClientDiagnosticsHeader, strings.Repeat("A", 8001))
 			}
@@ -42,7 +45,7 @@ func TestDeclarationsNeverChangeStoreBackedOperationsOrRetryIdentity(t *testing.
 	}
 	// The same request ID, retried with a changed (even broken) diagnostic identity, returns the committed
 	// result and creates nothing new.
-	for _, m := range []string{"none", "garbage", "duplicate", "oversized"} {
+	for _, m := range []string{"none", "garbage", "duplicate", "oversized", "case-collision"} {
 		mode.Store(m)
 		var again core.Revision
 		if err := declared.Call(ctx, "create", request, &again); err != nil || again != first {
