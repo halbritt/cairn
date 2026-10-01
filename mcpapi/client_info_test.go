@@ -385,3 +385,74 @@ func TestClientInfoActualAPICapabilitiesAndSearch(t *testing.T) {
 		t.Fatalf("API accepted reserve without cap: %v", err)
 	}
 }
+
+func TestClientInfoInspectionCapabilitiesIndependent(t *testing.T) {
+	const valid = `{"schema":"cairn.inspection-capabilities/1","first_fitting_whole_v1":true}`
+	for _, tc := range []struct{ name, declaration, want string }{
+		{"supported", valid, "supported"},
+		{"unsupported", strings.Replace(valid, "true", "false", 1), "unsupported"},
+		{"absent", "", "unknown"}, {"null", "null", "unknown"}, {"array", "[]", "unknown"},
+		{"future", strings.Replace(valid, "/1", "/2", 1), "unknown"},
+		{"flag-null", strings.Replace(valid, "true", "null", 1), "unknown"},
+		{"flag-number", strings.Replace(valid, "true", "1", 1), "unknown"},
+		{"flag-string", strings.Replace(valid, "true", `"true"`, 1), "unknown"},
+		{"schema-null", strings.Replace(valid, `"cairn.inspection-capabilities/1"`, `null`, 1), "unknown"},
+		{"missing", `{"schema":"cairn.inspection-capabilities/1"}`, "unknown"},
+		{"duplicate", strings.Replace(valid, `"first_fitting_whole_v1":true`, `"first_fitting_whole_v1":false,"first_fitting_whole_v1":true`, 1), "unknown"},
+		{"duplicate-schema", strings.Replace(valid, `"schema":`, `"schema":"future/9","schema":`, 1), "unknown"},
+		{"unknown", strings.TrimSuffix(valid, "}") + `,"private-canary":"private-canary"}`, "unknown"},
+		{"case", strings.Replace(valid, "first_fitting_whole_v1", "First_Fitting_Whole_V1", 1), "unknown"},
+		{"oversized", "{" + strings.Repeat(" ", 256) + valid[1:], "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.URL.Path != "/v1/version" {
+					t.Errorf("unexpected RPC %s", r.URL.Path)
+				}
+				body := `{"schema":"cairn.response/1","ok":true,"data":{"schema":"cairn.build/1","go_version":"go1.25.0","retrieval_capabilities":{"schema":"cairn.retrieval-capabilities/1","search_memory_budget_bytes":true,"search_min_pull_bytes":true}`
+				if tc.declaration != "" {
+					body += `,"inspection_capabilities":` + tc.declaration
+				}
+				_, _ = w.Write([]byte(body + `}}`))
+			})
+			info := invokeDiagnostic(t, diagnosticSession(t, client, 32000))
+			raw, _ := json.Marshal(info)
+			var wire struct{ API, Facade map[string]any }
+			if err := json.Unmarshal(raw, &wire); err != nil {
+				t.Fatal(err)
+			}
+			if wire.API["inspection_first_fitting_whole_v1"] != tc.want {
+				t.Fatalf("inspection support = %v, want %s", wire.API["inspection_first_fitting_whole_v1"], tc.want)
+			}
+			basis := "api_inspection_capabilities_v1"
+			if tc.want == "unknown" {
+				basis = "no_api_inspection_capability_contract"
+			}
+			if wire.API["inspection_support_basis"] != basis || wire.Facade["inspection_first_fitting_whole_v1"] != "supported" || wire.Facade["inspection_support_basis"] != "registered_search_contract" {
+				t.Fatalf("independent support basis: %s", raw)
+			}
+			if info.API.State != "available" || info.API.Build == nil || info.API.SearchMemoryBudgetBytes != "supported" || info.API.SearchMinPullBytes != "supported" || info.API.SupportBasis != "api_retrieval_capabilities_v1" || calls.Load() != 1 {
+				t.Fatalf("changed build/retrieval/call count: %+v calls%d", info, calls.Load())
+			}
+		})
+	}
+}
+
+func TestClientInfoInspectionUnconnectedIsUnknown(t *testing.T) {
+	info := invokeDiagnostic(t, diagnosticSession(t, nil, 32000))
+	if info.API.InspectionFirstFittingWholeV1 != "unknown" || info.API.InspectionSupportBasis != "no_api_inspection_capability_contract" || info.API.State != "unavailable" {
+		t.Fatalf("unconnected support guessed: %+v", info)
+	}
+}
+
+func TestClientInfoInspectionDoesNotDependOnRetrievalDeclaration(t *testing.T) {
+	client, _ := diagnosticClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"schema":"cairn.response/1","ok":true,"data":{"schema":"cairn.build/1","go_version":"go1.25.0","inspection_capabilities":{"schema":"cairn.inspection-capabilities/1","first_fitting_whole_v1":true},"retrieval_capabilities":{"schema":"unknown","private":"canary"}}}`))
+	})
+	info := invokeDiagnostic(t, diagnosticSession(t, client, 32000))
+	if info.API.InspectionFirstFittingWholeV1 != "supported" || info.API.SearchMemoryBudgetBytes != "unknown" || info.API.SupportBasis != "no_api_capability_contract" || info.API.State != "available" {
+		t.Fatalf("coupled declarations: %+v", info)
+	}
+}

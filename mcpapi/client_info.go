@@ -13,10 +13,12 @@ import (
 )
 
 type clientInfoComponent struct {
-	Build                   *buildinfo.Info `json:"build,omitempty"`
-	SearchMemoryBudgetBytes string          `json:"search_memory_budget_bytes"`
-	SearchMinPullBytes      string          `json:"search_min_pull_bytes"`
-	SupportBasis            string          `json:"support_basis"`
+	Build                         *buildinfo.Info `json:"build,omitempty"`
+	SearchMemoryBudgetBytes       string          `json:"search_memory_budget_bytes"`
+	SearchMinPullBytes            string          `json:"search_min_pull_bytes"`
+	SupportBasis                  string          `json:"support_basis"`
+	InspectionFirstFittingWholeV1 string          `json:"inspection_first_fitting_whole_v1"`
+	InspectionSupportBasis        string          `json:"inspection_support_basis"`
 }
 type clientInfoAPI struct {
 	clientInfoComponent
@@ -33,16 +35,17 @@ type clientInfoResult struct {
 // cover both its exposed argument and forwarding to the authenticated API.
 func (t memoryTools) clientInfo(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 	result := clientInfoResult{Schema: "cairn.client-info/1",
-		Facade: clientInfoComponent{Build: &t.facadeBuild, SearchMemoryBudgetBytes: "supported", SearchMinPullBytes: "supported", SupportBasis: "registered_search_contract"},
-		API:    clientInfoAPI{clientInfoComponent: clientInfoComponent{SearchMemoryBudgetBytes: "unknown", SearchMinPullBytes: "unknown", SupportBasis: "no_api_capability_contract"}, State: "unavailable"}}
+		Facade: clientInfoComponent{Build: &t.facadeBuild, SearchMemoryBudgetBytes: "supported", SearchMinPullBytes: "supported", SupportBasis: "registered_search_contract", InspectionFirstFittingWholeV1: "supported", InspectionSupportBasis: "registered_search_contract"},
+		API:    clientInfoAPI{clientInfoComponent: clientInfoComponent{SearchMemoryBudgetBytes: "unknown", SearchMinPullBytes: "unknown", SupportBasis: "no_api_capability_contract", InspectionFirstFittingWholeV1: "unknown", InspectionSupportBasis: "no_api_inspection_capability_contract"}, State: "unavailable"}}
 	probe, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	// Keep capability decoding separate: malformed optional declarations must
 	// not discard a valid build identity or expose untrusted response strings.
 	var version struct {
 		buildinfo.Info
-		PreviewCapabilities   json.RawMessage `json:"preview_capabilities"`
-		RetrievalCapabilities json.RawMessage `json:"retrieval_capabilities"`
+		PreviewCapabilities    json.RawMessage `json:"preview_capabilities"`
+		RetrievalCapabilities  json.RawMessage `json:"retrieval_capabilities"`
+		InspectionCapabilities json.RawMessage `json:"inspection_capabilities"`
 	}
 	var err error
 	if t.client == nil {
@@ -56,6 +59,13 @@ func (t memoryTools) clientInfo(ctx context.Context, _ *mcp.CallToolRequest, _ s
 		} else {
 			result.API.State = "available"
 			result.API.Build = &version.Info
+			if capabilities, ok := localapi.ParseInspectionCapabilities(version.InspectionCapabilities); ok {
+				result.API.InspectionFirstFittingWholeV1 = "unsupported"
+				if capabilities.FirstFittingWholeV1 {
+					result.API.InspectionFirstFittingWholeV1 = "supported"
+				}
+				result.API.InspectionSupportBasis = "api_inspection_capabilities_v1"
+			}
 			if capabilities, ok := recognizedRetrievalCapabilities(version.RetrievalCapabilities); ok {
 				support := func(value bool) string {
 					if value {

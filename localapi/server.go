@@ -166,7 +166,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request, remoteOnly bo
 	switch r.URL.Path {
 	case "/v1/version":
 		serveJSON(w, r, func(context.Context, struct{}) (VersionResponse, error) {
-			return VersionResponse{PreviewCapabilities: &PreviewCapabilities{Schema: PreviewCapabilitiesSchema, EntitiesOmitted: true}, VersionInfo: VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, RetrievalCapabilities: CurrentRetrievalCapabilities()}, nil
+			return VersionResponse{PreviewCapabilities: &PreviewCapabilities{Schema: PreviewCapabilitiesSchema, EntitiesOmitted: true}, VersionInfo: VersionInfo{Info: buildinfo.Read(), Protocol: &Protocol}, RetrievalCapabilities: CurrentRetrievalCapabilities(), InspectionCapabilities: CurrentInspectionCapabilities()}, nil
 		})
 	case "/v1/clients":
 		// A principal-scoped read of this process's volatile observations. The

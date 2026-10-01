@@ -96,7 +96,8 @@ type VersionInfo struct {
 type VersionResponse struct {
 	PreviewCapabilities *PreviewCapabilities `json:"preview_capabilities,omitempty"`
 	VersionInfo
-	RetrievalCapabilities *RetrievalCapabilities `json:"retrieval_capabilities,omitempty"`
+	RetrievalCapabilities  *RetrievalCapabilities  `json:"retrieval_capabilities,omitempty"`
+	InspectionCapabilities *InspectionCapabilities `json:"inspection_capabilities,omitempty"`
 }
 
 // ServerProtocol is a peer's declared range, or protocol 1 when it declared none.
