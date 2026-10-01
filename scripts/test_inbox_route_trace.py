@@ -189,6 +189,29 @@ InboxRouteTrace.flush = refused_trace
         self.assertEqual(self.traces(case), [])
         self.assertNotIn('PRIVATE', json.dumps(out))
 
+    def test_final_delegation_omission_cannot_retain_tentative_emission(self):
+        import time
+        from types import SimpleNamespace
+        from test_eager_candidate_context import EagerCandidateTests, hook
+        case = EagerCandidateTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        bridge = fixtures.module('trace_final_omission', fixtures.ROOT/'integrations/lifecycle/inbox_recall.py')
+        trace = bridge.InboxRouteTrace(case.root/'memory', {})
+        def refused(*args, **kwargs):
+            raise hook.HookError('private unavailable detail')
+        memory = SimpleNamespace(inbox_trace=trace, call=refused)
+        status = dict(rejected={})
+        result = dict(case.result, index=case.entries[:1])
+        text = hook.eager_agent_candidates(memory, result, 2160, status, time.monotonic()+10)
+        self.assertEqual((text, status['outcome']), ('', 'delegation_omitted'))
+        self.assertGreater(trace.data['renders'], 0)  # An earlier tentative render succeeded.
+        trace.finish('Bridge fallback allowance prose', False)
+        self.assertEqual(trace.data['returned_context_bytes'], len('Bridge fallback allowance prose'))
+        self.assertNotIn('final', trace.data)
+        self.assertTrue(trace.data['final_unobserved'])
+        self.assertFalse(trace.data['complete'])
+
     def test_default_off_creates_no_trace(self):
         case = self.fixture()
         self.assertEqual(case.invoke(main=True)['code'], 0)

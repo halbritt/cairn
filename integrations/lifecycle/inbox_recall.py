@@ -103,6 +103,10 @@ class InboxRouteTrace:
         self.bounded('rpc', row, 8)
 
     def route(self, reason, group=()):
+        if reason == 'delegation_context_budget':
+            # A previous successful render was only tentative. The bridge may
+            # now return different required/fallback text, not that old view.
+            self.data.pop('final', None)
         # Only constant host branch labels enter this interface.
         self.bounded('routes', dict(at_ms=self.stamp(), reason=reason,
                      sources=[self.source(e, 'candidate') for e in group[:16]]), 32)
