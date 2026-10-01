@@ -113,7 +113,7 @@ const preparationGuidance = "No note saved. These are possible predecessors, not
 const preparation = { note_saved: false, guidance: preparationGuidance }
 const preparationOverhead = Buffer.byteLength(JSON.stringify({ preparation }), "utf8") - 1
 
-const searchFields = { min_pull_bytes: z.number().int().min(1).max(24000).optional().describe("Optional minimum charged expansion allowance reserved within memory_budget_bytes; cannot exceed that cap. Reduces search presentation room, not required context or policy input room. Not plain body bytes or guaranteed source fit. Repeat on retries/pages; changing it needs a new request UUID. The reserve is granted once, not replenished by retries."), memory_budget_bytes: z.number().int().min(256).max(1000000).optional().describe("Optional smaller allowance for this search response and its receipt expansions, in UTF-8 bytes: 256 through available_tokens (or the configured default). Omit to preserve the existing budget. Repeat on retries/pages; changing this value requires a new request UUID. Does not enforce aggregate conversation usage."), available_tokens: z.number().int().min(256).max(1000000).optional().describe("Actual free input-context room for this search, in conservative UTF-8 bytes; not model capacity. Cannot exceed the configured host ceiling. Use memory_budget_bytes for a smaller memory allowance. Omit for the host default. Repeat on retries and pages; changed room needs a new request UUID. Does not measure or enforce whole-conversation context usage."), advisory_conflicts: z.boolean().optional().describe("Opt in to qualified competing advisory positions. All must be eligible together; otherwise the group is omitted. Pulling a marked position returns its complete competing positions under the shared budget. Repeat on retries and later pages. Does not resolve disagreement or change authority."), entities: entities.describe("Optional explicit file/symbol hints. With the recent-files plugin, omission on a fresh first search uses recent successful file reads; [] disables that behavior. Copy returned query_entities on retries and later pages. Names are fallible relevance metadata, not authority."), context: z.object(contextFields).strict().optional().describe("Context declared for this search only. May fill fields the host left unset; conflicting configured values are refused. Observe actual task state first. Does not certify execution or change repository/session scope. Repeat the same context on later pages."), error_signature_sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional().describe("SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by a shareable operator review. May replace query text; cannot browse. Not proof of failure or correctness."), kinds: z.array(z.enum(["note", "observation", "claim", "lesson", "procedure", "decision", "preference", "instruction"])).max(8).optional().describe("Select any listed optional record label; empty means all. Required instructions always apply. Labels do not establish authority."), query: z.string().optional().describe("Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available."), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget."), request_id: z.string().uuid().optional() }
+const searchFields = { inspection_policy: z.literal("first-fitting-whole/1").optional().describe("Reserve the actual charged whole-pull cost of the first ranked eligible group that fits. Requires memory_budget_bytes and excludes min_pull_bytes. The first index group is the reserved target; larger skipped groups may be more relevant. Inspect memory_budget.inspection_status/skipped_units. Pull remains explicit and revalidates current access; no body is automatically delivered. Repeat on retries/pages; changed intent needs a new request UUID."), min_pull_bytes: z.number().int().min(1).max(24000).optional().describe("Optional minimum charged expansion allowance reserved within memory_budget_bytes; cannot exceed that cap. Reduces search presentation room, not required context or policy input room. Not plain body bytes or guaranteed source fit. Repeat on retries/pages; changing it needs a new request UUID. The reserve is granted once, not replenished by retries."), memory_budget_bytes: z.number().int().min(256).max(1000000).optional().describe("Optional smaller allowance for this search response and its receipt expansions, in UTF-8 bytes: 256 through available_tokens (or the configured default). Omit to preserve the existing budget. Repeat on retries/pages; changing this value requires a new request UUID. Does not enforce aggregate conversation usage."), available_tokens: z.number().int().min(256).max(1000000).optional().describe("Actual free input-context room for this search, in conservative UTF-8 bytes; not model capacity. Cannot exceed the configured host ceiling. Use memory_budget_bytes for a smaller memory allowance. Omit for the host default. Repeat on retries and pages; changed room needs a new request UUID. Does not measure or enforce whole-conversation context usage."), advisory_conflicts: z.boolean().optional().describe("Opt in to qualified competing advisory positions. All must be eligible together; otherwise the group is omitted. Pulling a marked position returns its complete competing positions under the shared budget. Repeat on retries and later pages. Does not resolve disagreement or change authority."), entities: entities.describe("Optional explicit file/symbol hints. With the recent-files plugin, omission on a fresh first search uses recent successful file reads; [] disables that behavior. Copy returned query_entities on retries and later pages. Names are fallible relevance metadata, not authority."), context: z.object(contextFields).strict().optional().describe("Context declared for this search only. May fill fields the host left unset; conflicting configured values are refused. Observe actual task state first. Does not certify execution or change repository/session scope. Repeat the same context on later pages."), error_signature_sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional().describe("SHA-256 of a known failure signature. Prefers an eligible exact lesson version linked by a shareable operator review. May replace query text; cannot browse. Not proof of failure or correctness."), kinds: z.array(z.enum(["note", "observation", "claim", "lesson", "procedure", "decision", "preference", "instruction"])).max(8).optional().describe("Select any listed optional record label; empty means all. Required instructions always apply. Labels do not establish authority."), query: z.string().optional().describe("Words describing the memory needed. ASCII double quotes prefer exact case-sensitive text in a note; other lexical matches remain available."), semantic: z.boolean().optional().describe("Optional semantic discovery for vocabulary mismatch; no browsing. Similarity is not confidence. Unavailable backends return labelled lexical fallback."), browse: z.boolean().optional(), offset: z.number().int().min(0).max(10000).optional().describe("Set 0 to start ranked pagination, then pass page.next_offset with the same query, semantic mode, kinds and scope. Browsing uses browse.next_offset. Pages read current state and each has its own budget."), request_id: z.string().uuid().optional() }
 const searchArgumentSchema = z.object(searchFields)
 type SearchArguments = ReturnType<typeof searchArgumentSchema.parse>
 
@@ -131,7 +131,10 @@ async function executeSearch(args: SearchArguments, context: ToolContext, prepar
   if (allowance > room) throw new Error("INVALID_REQUEST: memory_budget_bytes exceeds available_tokens " + room)
   const receiptAllowance = allowance - (prepare ? preparationOverhead : 0)
   if (prepare && receiptAllowance < 256) throw new Error("BUDGET_REFUSED: note preparation needs room for guidance and a search receipt")
-  const reserve = args.min_pull_bytes ?? 0
+  let reserve = args.min_pull_bytes ?? 0
+  if (args.inspection_policy !== undefined && (args.memory_budget_bytes === undefined || args.min_pull_bytes !== undefined)) {
+    throw new Error("INVALID_REQUEST: inspection_policy requires memory_budget_bytes and excludes min_pull_bytes")
+  }
   if (args.min_pull_bytes !== undefined && (args.memory_budget_bytes === undefined || reserve > Math.min(24000, receiptAllowance))) {
     throw new Error("INVALID_REQUEST: min_pull_bytes requires memory_budget_bytes and cannot exceed its receipt allowance (after preparation guidance)")
   }
@@ -139,6 +142,7 @@ async function executeSearch(args: SearchArguments, context: ToolContext, prepar
   const command = ["search", "--repo", scope.repo, "--task", scope.task_id, "--run", scope.run_id, "--tokens", String(room)]
   if (args.memory_budget_bytes !== undefined || prepare) command.push("--memory-budget-bytes", String(receiptAllowance))
   if (args.min_pull_bytes !== undefined) command.push("--min-pull-bytes", String(reserve))
+  if (args.inspection_policy !== undefined) command.push("--inspection-policy", args.inspection_policy)
   if (args.request_id) command.push("--request-id", args.request_id)
   const declared: Record<string, string | undefined> = { ...args.context }
   for (const [key, value] of Object.entries(config.context ?? {})) {
@@ -164,6 +168,32 @@ async function executeSearch(args: SearchArguments, context: ToolContext, prepar
     command.push("--", query)
   }
   const view = searchView.parse(await call(config, context, command))
+  if (args.inspection_policy !== undefined) {
+    const parsed = z.object({
+      schema: z.literal("cairn.memory-budget/3"), bytes: z.number().int(),
+      inspection_policy: z.literal("first-fitting-whole/1"),
+      inspection_status: z.enum(["ready", "no_whole_fits", "no_candidates"]),
+      min_pull_bytes: z.number().int().min(0).max(24000).optional(),
+      skipped_units: z.number().int().min(0).optional(),
+    }).safeParse(view.memory_budget)
+    if (!parsed.success || parsed.data.bytes !== receiptAllowance) {
+      throw new Error("INTEGRITY_FAILURE: inspection response did not preserve the requested policy and allowance")
+    }
+    reserve = parsed.data.min_pull_bytes ?? 0
+    if (reserve > receiptAllowance || (parsed.data.inspection_status === "ready"
+        ? reserve === 0 || view.index.length === 0
+        : reserve !== 0 || view.index.length !== 0)) {
+      throw new Error("INTEGRITY_FAILURE: inspection response has inconsistent target or reserve")
+    }
+    const remaining = view.bytes_remaining
+    if (typeof remaining !== "number" || !Number.isSafeInteger(remaining) || remaining < 0 ||
+        remaining > Math.min(24000, receiptAllowance)) {
+      throw new Error("INTEGRITY_FAILURE: inspection response has invalid remaining allowance")
+    }
+    // A retry can return a spent balance. The sealed derived minimum stays in
+    // the response; native presentation must coexist with the actual balance.
+    reserve = remaining
+  }
   // Native callers need the structured arguments, not a shell invocation.
   const index = view.index.map(({ pull_command, ...entry }) => entry)
   // Presentation metadata for repeatable retries/pages, not part of the seal.
@@ -192,6 +222,7 @@ export const prepare_note = validatedTool({
     query: z.string().min(1).describe("Short subject query including project and known identifiers; no draft body or secrets."),
     entities: entities.describe("Explicit known file/symbol hints; not source identity or applicability proof. No automatic recent-file hints."),
     context: searchFields.context,
+    inspection_policy: searchFields.inspection_policy,
     available_tokens: searchFields.available_tokens,
     memory_budget_bytes: z.number().int().min(256).max(1000000).optional().describe("Total preparation output plus receipt expansion allowance within available_tokens. Reserves the encoded preparation-field overhead; at least 256 receipt bytes must remain to attempt retrieval. Omit for the host default. Repeat exact values on retries; changed allowance needs a new UUID."),
     min_pull_bytes: z.number().int().min(1).max(24000).optional().describe("Minimum charged receipt expansion allowance; requires memory_budget_bytes and cannot exceed memory_budget_bytes minus the encoded preparation-field overhead. Final preparation output must fit total minus reserve. Not plain body bytes or guaranteed successful retrieval. Repeat on retries; changing it needs a new UUID. No replenishment after pulls."),

@@ -72,6 +72,83 @@ def check_presentation(invoke, settings_path, settings, root):
             assert spent['bytes_remaining'] == 1999
             reply(source)
 
+        # Source-derived inspection keeps caller choice and the actual receipt
+        # balance. The CLI is the external boundary; native validation and
+        # JSON serialization execute unchanged through OpenCode's real tool.
+        policy = 'first-fitting-whole/1'
+        for name in ('search', 'prepare_note'):
+            overhead_bytes = preparation_bytes(result) if name == 'prepare_note' else 0
+            request = dict(query='current subject', memory_budget_bytes=6000, inspection_policy=policy,
+                           request_id=str(uuid.uuid4()))
+            inspection = dict(schema='cairn.memory-budget/3', bytes=6000 - overhead_bytes,
+                              inspection_policy=policy, inspection_status='ready', min_pull_bytes=2000, skipped_units=1)
+            reply(dict(source, memory_budget=inspection))
+            inspected = invoke(name, request)
+            argv, flag = flags()
+            assert flag('--inspection-policy') == policy and '--min-pull-bytes' not in argv
+            assert flag('--request-id') == request['request_id'] and '--semantic' not in argv
+            assert inspected['memory_budget'] == inspection and inspected['index'][0]['pull_arguments'] == handles
+            assert inspected['selected'] == source['selected'] and inspected['omitted'] == source['omitted']
+            assert size(inspected) + inspected['bytes_remaining'] <= 6000
+            assert invoke(name, request) == inspected
+            if name == 'search':
+                invoke(name, dict(request, semantic=True))
+                assert '--semantic' in flags()[0]
+            else:
+                no_dispatch(name, dict(request, semantic=True))
+            for invalid in (None, True, '', 'first-fitting-whole/2'):
+                no_dispatch(name, dict(request, inspection_policy=invalid))
+            no_dispatch(name, dict(query='subject', inspection_policy=policy))
+            no_dispatch(name, dict(request, min_pull_bytes=1))
+            # Unsupported/malformed successful CLI responses must not silently
+            # downgrade the requested mode or manufacture usable room.
+            for budget in (None, dict(inspection, schema='cairn.memory-budget/2'),
+                           dict(inspection, inspection_policy='other'),
+                           dict(inspection, bytes=5999 - overhead_bytes),
+                           dict(inspection, inspection_status='unknown'),
+                           dict(inspection, min_pull_bytes=0),
+                           dict(inspection, min_pull_bytes=True)):
+                reply(dict(source, memory_budget=budget))
+                invoke(name, request, 'INTEGRITY_FAILURE')
+            for remaining in (None, True, -1, 0.5, '2000', 6001):
+                reply(dict(source, memory_budget=inspection, bytes_remaining=remaining))
+                invoke(name, request, 'INTEGRITY_FAILURE')
+            for status in ('no_whole_fits', 'no_candidates'):
+                empty = dict(inspection, inspection_status=status, skipped_units=0 if status == 'no_candidates' else 1)
+                empty.pop('min_pull_bytes')
+                reply(dict(source, index=[], memory_budget=empty))
+                no_fit = invoke(name, request)
+                assert no_fit['index'] == [] and no_fit['selected'] == source['selected']
+                assert no_fit['memory_budget']['inspection_status'] == status
+                reply(dict(source, memory_budget=empty))
+                invoke(name, request, 'INTEGRITY_FAILURE')
+            # A spent-balance retry is not a fresh reserve. Test exact final
+            # UTF-8 bytes using actual remaining rather than original minimum.
+            for remaining in (3000, 7):
+                reply(dict(source, memory_budget=inspection, bytes_remaining=remaining))
+                rendered = invoke(name, request)
+                boundary_budget = dict(inspection, min_pull_bytes=256)
+                rendered = dict(rendered, memory_budget=boundary_budget)
+                exact = size(rendered) + remaining
+                # The echoed cap can change decimal width. Find the encoded
+                # boundary using Python's independent JSON encoder.
+                for _ in range(4):
+                    expected = dict(rendered, memory_budget=dict(boundary_budget, bytes=exact - overhead_bytes))
+                    measured = size(expected) + remaining
+                    if measured == exact:
+                        break
+                    exact = measured
+                else:
+                    raise AssertionError('native fixture byte boundary did not settle')
+                reply(dict(source, memory_budget=dict(boundary_budget, bytes=exact - overhead_bytes), bytes_remaining=remaining))
+                bounded = invoke(name, dict(request, memory_budget_bytes=exact))
+                assert size(bounded) + remaining == exact and bounded['bytes_remaining'] == remaining
+                reply(dict(source, memory_budget=dict(boundary_budget, bytes=exact - 1 - overhead_bytes), bytes_remaining=remaining))
+                invoke(name, dict(request, memory_budget_bytes=exact - 1), 'BUDGET_REFUSED')
+            reply(source)
+            invoke(name, request, 'INTEGRITY_FAILURE')
+        reply(source)
+
         overhead = preparation_bytes(result)
         no_dispatch('prepare_note', dict(query='  '))
         for field in ('body', 'draft', 'pins', 'semantic', 'browse', 'kinds', 'offset'):
