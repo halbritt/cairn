@@ -14,6 +14,7 @@ import (
 // This is a writer-facing view over ordinary retrieval, not a second ranking
 // algorithm or a create-and-then-search mutation with ambiguous retry behavior.
 type prepareNoteArgs struct {
+	InspectionPolicy  string            `json:"inspection_policy,omitempty" jsonschema:"Optional first-fitting-whole/1 allocation for inspecting a complete predecessor without guessing its charged size. Requires memory_budget_bytes, excludes min_pull_bytes. Preserves lexical preparation and guidance. The first indexed group is reserved; inspect inspection_status/skipped_units. Does not establish relevance or permit a save. Repeat on retries; changing intent needs a new request UUID."`
 	Query             string            `json:"query" jsonschema:"Short subject query for the proposed knowledge, including project and known identifiers. Do not send the draft body or secrets. No automatic subject or replacement inference."`
 	Entities          []core.EntityRef  `json:"entities,omitempty" jsonschema:"Known file or symbol hints, at most 16; not evidence of identity or applicability."`
 	Context           *core.ContextPins `json:"context,omitempty" jsonschema:"Actual current retrieval context; must not conflict with host context. Not the proposed note's capture pins."`
@@ -58,6 +59,6 @@ func (t memoryTools) prepareNote(ctx context.Context, request *mcp.CallToolReque
 	return t.searchWithPreparation(ctx, request, searchArgs{
 		Query: args.Query, Entities: args.Entities, Context: args.Context,
 		AvailableTokens: args.AvailableTokens, MemoryBudgetBytes: args.MemoryBudgetBytes,
-		MinPullBytes: args.MinPullBytes, RequestID: args.RequestID,
+		MinPullBytes: args.MinPullBytes, InspectionPolicy: args.InspectionPolicy, RequestID: args.RequestID,
 	}, true)
 }

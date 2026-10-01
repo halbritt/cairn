@@ -62,7 +62,12 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 			t.Error(err)
 		}
 		requests <- req
-		if err := json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "status": "OK", "data": response}); err != nil {
+		answer := response
+		if req.InspectionPolicy != "" {
+			answer.Package.Semantic.MemoryBudget = &core.MemoryBudget{Schema: "cairn.memory-budget/3", Bytes: *req.MemoryBudgetBytes, InspectionPolicy: req.InspectionPolicy, InspectionStatus: "ready", MinPullBytes: 1800}
+			answer.BytesRemaining = 2000
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{"schema": "cairn.response/1", "ok": true, "status": "OK", "data": answer}); err != nil {
 			t.Error(err)
 		}
 	})}
@@ -87,7 +92,7 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 	if req.Scope != scope || req.RequestID != requestID || req.Query != "fixture query" || req.AvailableTokens != 32000 || req.Context.Revision != "fixture-revision" || req.Context.TaskPhase != "validation" {
 		t.Fatalf("request changed: %+v", req)
 	}
-	if req.MemoryBudgetBytes != nil || req.MinPullBytes != nil {
+	if req.MemoryBudgetBytes != nil || req.MinPullBytes != nil || req.InspectionPolicy != "" {
 		t.Fatal("omitted memory budget changed the legacy request")
 	}
 	t.Run("memory allowance forwarding and final envelope", func(t *testing.T) {
@@ -104,6 +109,32 @@ func TestAgentSearchKeepsContextAndPairsPullCommands(t *testing.T) {
 			}
 			if room == 256 && core.Code(err) != "BUDGET_REFUSED" {
 				t.Fatalf("oversized CLI view escaped memory cap: %v", err)
+			}
+		}
+	})
+	t.Run("inspection policy forwarding and validation", func(t *testing.T) {
+		base := []string{"agent", "--socket", socket, "--token-file", tokenFile, "search", "--repo", scope.Repo, "--task", scope.TaskID, "--run", scope.RunID}
+		view, err := run(context.Background(), append(append([]string{}, base...), "--memory-budget-bytes", "8000", "--inspection-policy", "first-fitting-whole/1", "fixture query"), strings.NewReader(""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		forwarded := <-requests
+		if forwarded.InspectionPolicy != "first-fitting-whole/1" || forwarded.MinPullBytes != nil || forwarded.MemoryBudgetBytes == nil || *forwarded.MemoryBudgetBytes != 8000 {
+			t.Fatalf("inspection intent changed: %+v", forwarded)
+		}
+		wire, err := json.Marshal(view)
+		if err != nil || len(wire)+2000 > 8000 || !strings.Contains(string(wire), `"inspection_status":"ready"`) {
+			t.Fatalf("inspection view/cap lost: %s %v", wire, err)
+		}
+		for _, flags := range [][]string{{"--inspection-policy", "first-fitting-whole/1"}, {"--memory-budget-bytes", "8000", "--inspection-policy", "other"}, {"--memory-budget-bytes", "8000", "--inspection-policy", "first-fitting-whole/1", "--min-pull-bytes", "1000"}} {
+			_, err := run(context.Background(), append(append(append([]string{}, base...), flags...), "fixture query"), strings.NewReader(""))
+			if core.Code(err) != "INVALID_REQUEST" {
+				t.Fatalf("invalid inspection: %v %v", flags, err)
+			}
+			select {
+			case req := <-requests:
+				t.Fatalf("invalid request reached API: %+v", req)
+			default:
 			}
 		}
 	})

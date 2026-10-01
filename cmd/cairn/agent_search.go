@@ -18,6 +18,7 @@ type agentSearchEntry = indexview.Entry
 type agentSearchView = indexview.View
 
 type agentSearchOptions struct {
+	inspection *string
 	kinds      []string
 	entities   *[]core.EntityRef
 	repo       *string
@@ -52,6 +53,7 @@ func newAgentSearchFlags() (*flag.FlagSet, *agentSearchOptions) {
 	options.tokens = f.Int("tokens", 32000, "actual available input context in conservative UTF-8 bytes (not model capacity)")
 	options.memory = f.Int("memory-budget-bytes", 0, "optional smaller search and receipt memory allowance (256 through --tokens); --tokens remains available context for policy")
 	options.minPull = f.Int("min-pull-bytes", 0, "reserve 1..24000 charged expansion bytes within --memory-budget-bytes; not guaranteed body bytes or a successful pull")
+	options.inspection = f.String("inspection-policy", "", "first-fitting-whole/1 reserves a complete source/group within --memory-budget-bytes; mutually exclusive with --min-pull-bytes")
 	options.browse = f.Bool("browse", false, "browse eligible memory without a query (bounded by the memory budget)")
 	options.advisory = f.Bool("advisory-conflicts", false, "include qualified competing advisory positions together; context retrieval only")
 	options.signature = f.String("error-signature-sha256", "", "optional reviewed failure signature (SHA-256); a retrieval hint, not observed failure")
@@ -104,6 +106,9 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 	if minPull != nil && (memoryBudget == nil || *minPull < 1 || *minPull > min(24000, room)) {
 		return agentSearchView{}, invalid("min-pull-bytes requires --memory-budget-bytes and 1..min(24000, memory-budget-bytes)")
 	}
+	if *options.inspection != "" && (*options.inspection != "first-fitting-whole/1" || memoryBudget == nil || minPull != nil) {
+		return agentSearchView{}, invalid("inspection-policy requires first-fitting-whole/1, --memory-budget-bytes and no --min-pull-bytes")
+	}
 	if *options.browse {
 		browseOffset = options.offset
 	} else {
@@ -130,13 +135,19 @@ func agentSearch(ctx context.Context, client *localapi.Client, args []string, so
 		return agentSearchView{}, err
 	}
 	var result core.IndexResult
-	if err = client.Call(ctx, "index", core.CompileRequest{CompactPreviewEntities: compact, MemoryBudgetBytes: memoryBudget, MinPullBytes: minPull, AdvisoryConflicts: *options.advisory, Entities: *options.entities, ErrorSignature: *options.signature, Kinds: options.kinds, RequestID: *options.request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *options.semantic,
+	if err = client.Call(ctx, "index", core.CompileRequest{CompactPreviewEntities: compact, MemoryBudgetBytes: memoryBudget, MinPullBytes: minPull, InspectionPolicy: *options.inspection, AdvisoryConflicts: *options.advisory, Entities: *options.entities, ErrorSignature: *options.signature, Kinds: options.kinds, RequestID: *options.request, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: *options.semantic,
 		Scope: core.Scope{Repo: *options.repo, TaskID: *options.task, RunID: *options.run}, Query: query, Purpose: "context", AvailableTokens: *options.tokens,
 		Context: &core.ContextPins{Revision: *options.revision, WorkspaceSHA256: *options.workspace, TaskClass: *options.taskClass, TaskPhase: *options.taskPhase, BindingID: *options.binding, CapabilityID: *options.capability}}, &result); err != nil {
 		return agentSearchView{}, err
 	}
 	if minPull != nil {
 		room -= *minPull
+	}
+	if *options.inspection != "" {
+		room, err = indexview.InspectionViewRoom(result, *options.inspection, room, room)
+		if err != nil {
+			return agentSearchView{}, err
+		}
 	}
 	return presentAgentSearch(result, *options.request, []string{executable, "agent", "--socket", socket, "--token-file", tokenFile}, room)
 }

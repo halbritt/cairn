@@ -281,6 +281,32 @@ func TestToolsUseAuthenticatedStore(t *testing.T) {
 		if err := json.Unmarshal(invoke("cairn_search", map[string]any{"query": "allocationneedle"}, ""), &defaultRoom); err != nil || defaultRoom.AvailableTokens != 64000 {
 			t.Fatalf("memory cap leaked into later default search: %+v %v", defaultRoom, err)
 		}
+		t.Run("derived inspection permits checked pull", func(t *testing.T) {
+			args := map[string]any{"query": "allocationneedle", "available_tokens": 24000, "memory_budget_bytes": memoryAllowance, "inspection_policy": "first-fitting-whole/1", "request_id": uuid.NewString()}
+			body, searchBytes := invokeMeasured("cairn_search", args, "")
+			var inspected searchResult
+			if err := json.Unmarshal(body, &inspected); err != nil {
+				t.Fatal(err)
+			}
+			if inspected.MemoryBudget == nil || inspected.MemoryBudget.Schema != "cairn.memory-budget/3" || inspected.MemoryBudget.InspectionStatus != "ready" || inspected.MemoryBudget.MinPullBytes <= 0 || inspected.BytesRemaining < inspected.MemoryBudget.MinPullBytes || len(inspected.Index) == 0 || searchBytes+inspected.BytesRemaining > memoryAllowance {
+				t.Fatalf("derived native allocation lost: bytes=%d result=%s", searchBytes, body)
+			}
+			if len(inspected.Selected) != 1 || inspected.Selected[0].Record.Body != mandatory.Body {
+				t.Fatal("inspection truncated required context")
+			}
+			pulled, pullBytes := invokeMeasured("cairn_pull", inspected.Index[0].PullArguments, "")
+			var expanded core.Expansion
+			if err := json.Unmarshal(pulled, &expanded); err != nil || !strings.Contains(expanded.Selection.Record.Body, "日本語") || searchBytes+pullBytes > memoryAllowance {
+				t.Fatalf("whole native inspection failed: search=%d pull=%d result=%s err=%v", searchBytes, pullBytes, pulled, err)
+			}
+			var retried searchResult
+			if err := json.Unmarshal(invoke("cairn_search", args, ""), &retried); err != nil || retried.ReceiptID != inspected.ReceiptID || retried.BytesRemaining != expanded.BytesRemaining {
+				t.Fatalf("retry replenished inspection: %+v %v", retried, err)
+			}
+			delete(args, "inspection_policy")
+			invoke("cairn_search", args, "IDEMPOTENCY_CONFLICT")
+			t.Logf("derived native envelopes search=%d pull=%d cap=%d", searchBytes, pullBytes, memoryAllowance)
+		})
 		t.Run("reserve permits checked pull", func(t *testing.T) {
 			const reserve = 3500
 			args := map[string]any{"query": "allocationneedle", "available_tokens": 24000, "memory_budget_bytes": memoryAllowance, "min_pull_bytes": reserve, "request_id": uuid.NewString()}

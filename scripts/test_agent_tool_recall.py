@@ -86,7 +86,10 @@ class AgentToolRecallTests(unittest.TestCase):
                 self.assertNotIn('--min-pull-bytes', self.commands[0],
                                  'cue guidance must not change the hook search contract')
                 self.assertEqual(state['last_recall']['outcome'], 'delegated')
-                self.assertIn('min_pull_bytes', text)
+                self.assertIn('inspection_policy:first-fitting-whole/1 if exposed', text)
+                self.assertIn('no min_pull_bytes', text)
+                self.assertNotIn('--inspection-policy', self.commands[0],
+                                 'native guidance must not alter an admitted hook request')
                 # Small allowances still receive the complete policy, including
                 # capability fallback; the renderer must not trim instructions.
                 self.assertTrue(text.startswith(hook.AGENT_TOOLS_CUE.format(budget=budget)))

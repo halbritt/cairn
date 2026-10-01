@@ -404,3 +404,10 @@ identical search retry reports the remaining amount without replenishing it.
 The CLI and MCP also check the final serialized search response against the
 cap minus the requested reserve. Repeated exposure still counts toward the
 caller's aggregate task budget.
+
+## Derive the source inspection allowance
+
+Use `--inspection-policy first-fitting-whole/1` with an explicit memory cap
+when the source cost is unknown. This opt-in mode reserves a whole source/group
+without caller byte estimates; see [inspection allocation](inspection-allocation.md)
+for affordability omissions, status, replay and native-output limits.

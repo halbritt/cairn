@@ -77,6 +77,13 @@ is unknown or an older tool lacks the field, use the existing smaller
 Never retry an unsupported new argument by silently dropping its cap while
 keeping the larger context declaration.
 
+For a complete source whose size is unknown, use the explicit
+[source inspection allocation](inspection-allocation.md):
+`{"query":"deployment rollback", "memory_budget_bytes":4500, "inspection_policy":"first-fitting-whole/1"}`.
+It reserves the first affordable complete source/group, reports oversized
+omissions, and leaves the relevance decision to you. Do not combine it with a
+numeric reserve.
+
 To leave room for source inspection, optionally add `min_pull_bytes`, for example
 `{"query":"deployment rollback", "memory_budget_bytes":7800, "min_pull_bytes":3500}`.
 It requires an explicit memory cap and must be between 1 and the smaller of

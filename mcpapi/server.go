@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/halbritt/cairn/core"
 	"github.com/halbritt/cairn/internal/buildinfo"
+	"github.com/halbritt/cairn/internal/indexview"
 	"github.com/halbritt/cairn/localapi"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -56,6 +57,7 @@ func (c Config) Validate() error {
 }
 
 type searchArgs struct {
+	InspectionPolicy  string            `json:"inspection_policy,omitempty" jsonschema:"Use first-fitting-whole/1 to reserve the actual charged cost of the first affordable whole source/group. Requires memory_budget_bytes; cannot combine with min_pull_bytes. The first indexed group is the reserved target; skipped_units counts higher-ranked eligible units too large to inspect. Affordable does not mean most relevant. No bodies are pulled. Check inspection_status; pull revalidates eligibility. Omit for legacy preview allocation. Repeat on retries/pages; changes need a new request UUID."`
 	MemoryBudgetBytes *int              `json:"memory_budget_bytes,omitempty" jsonschema:"Optional smaller memory allowance for this search response and its receipt expansions, in UTF-8 bytes: 256 through available_tokens. available_tokens remains actual free input-context room used by optional policy, not model capacity. Omit to preserve the existing budget. Repeat on retries/pages; changing this field requires a new request UUID. Does not enforce aggregate conversation usage."`
 	MinPullBytes      *int              `json:"min_pull_bytes,omitempty" jsonschema:"Optional minimum charged receipt expansion allowance left after search. Requires memory_budget_bytes; 1 through min(24000, memory_budget_bytes). Reserves within that budget by reducing preview delivery, never by increasing total room or truncating required context. May refuse if the envelope and required context cannot fit. Not plain body bytes, a guaranteed successful pull, or proof of relevance. Omit for existing allocation; repeat on retries/pages and use a new request UUID when changing it."`
 	AvailableTokens   *int              `json:"available_tokens,omitempty" jsonschema:"Actual free input-context room, in conservative UTF-8 bytes, used by optional policy. At least 256 and no greater than the configured host ceiling; not model capacity. Omit for the host default. Set memory_budget_bytes for a smaller memory allocation without reducing this policy input. Repeat on retries/pages; changed room requires a new request UUID. Does not measure or enforce whole-conversation usage."`
@@ -222,6 +224,9 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 		}
 		return nil, nil, fmt.Errorf("INVALID_REQUEST: min_pull_bytes requires memory_budget_bytes and 1..min(24000, %s)", bound)
 	}
+	if args.InspectionPolicy != "" && (args.InspectionPolicy != "first-fitting-whole/1" || args.MemoryBudgetBytes == nil || args.MinPullBytes != nil) {
+		return nil, nil, errors.New("INVALID_REQUEST: inspection_policy requires first-fitting-whole/1, memory_budget_bytes and no min_pull_bytes")
+	}
 	if prepare {
 		args.MemoryBudgetBytes = &receiptRoom
 	}
@@ -260,7 +265,7 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 		return toolResult(nil, err, memoryRoom)
 	}
 	var index core.IndexResult
-	err = t.client.Call(ctx, "index", core.CompileRequest{CompactPreviewEntities: compact, MemoryBudgetBytes: args.MemoryBudgetBytes, MinPullBytes: args.MinPullBytes, AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: room, Context: declared}, &index)
+	err = t.client.Call(ctx, "index", core.CompileRequest{CompactPreviewEntities: compact, MemoryBudgetBytes: args.MemoryBudgetBytes, MinPullBytes: args.MinPullBytes, InspectionPolicy: args.InspectionPolicy, AdvisoryConflicts: args.AdvisoryConflicts, Entities: args.Entities, ErrorSignature: args.ErrorSignature, Kinds: args.Kinds, RequestID: args.RequestID, BrowseOffset: browseOffset, PageOffset: pageOffset, Semantic: args.Semantic, Scope: scope, Query: args.Query, Purpose: "context", AvailableTokens: room, Context: declared}, &index)
 	if err != nil {
 		return toolResult(nil, err, memoryRoom)
 	}
@@ -270,6 +275,9 @@ func (t memoryTools) searchWithPreparation(ctx context.Context, request *mcp.Cal
 	}
 	if err == nil && args.MinPullBytes != nil {
 		memoryRoom -= *args.MinPullBytes
+	}
+	if err == nil && args.InspectionPolicy != "" {
+		memoryRoom, err = indexview.InspectionViewRoom(index, args.InspectionPolicy, memoryRoom, receiptRoom)
 	}
 	return toolResult(view, err, memoryRoom)
 }
